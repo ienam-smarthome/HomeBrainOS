@@ -1,0 +1,27 @@
+name: HomeBrain OS
+version: "0.4.0-alpha"
+slug: homebrainos
+description: AI-ready smart home assistant for Hubitat via Maker API
+url: https://github.com/ienam-smarthome/HomeBrainOS
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: services
+boot: auto
+init: false
+ports:
+  8787/tcp: 8787
+ports_description:
+  8787/tcp: HomeBrain OS web UI
+webui: http://[HOST]:[PORT:8787]
+options:
+  hubitat_base_url: "http://192.168.1.239"
+  maker_api_app_id: "4143"
+  maker_api_token: ""
+  refresh_seconds: 30
+schema:
+  hubitat_base_url: str
+  maker_api_app_id: str
+  maker_api_token: password
+  refresh_seconds: int

@@ -1,32 +1,42 @@
 # HomeBrain OS
 
-AI-ready smart home operating system for Home Assistant OS and Hubitat.
+AI-ready smart home operating system for Hubitat and Home Assistant.
 
-## Current release
+HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API, normalises devices into a clean internal model, and exposes a mobile-friendly dashboard/API.
 
-`v0.3.0-alpha`
+## Current status
 
-This repository currently contains a Home Assistant OS add-on that connects to Hubitat Maker API, normalises device attributes, caches devices, and provides a mobile dashboard/chat interface.
+`v0.4.0-alpha` foundation:
+
+- Home Assistant OS add-on structure
+- Hubitat Maker API integration
+- Device normalisation
+- Dashboard API
+- Mobile web UI
+- CI validation
+- Release packaging workflow
 
 ## Install on Home Assistant OS
 
-1. Copy `addon/homebrainos` into your Home Assistant `addons` share, or add this repository as a custom add-on repository when the add-on repository metadata is finalised.
-2. In Home Assistant, go to **Settings → Add-ons → Add-on Store → ⋮ → Reload**.
-3. Install **HomeBrain OS** from Local add-ons.
-4. Configure:
-   - `hubitat_base_url`
-   - `maker_api_app_id`
-   - `maker_api_token`
-5. Start the add-on and open the Web UI.
+Copy `addon/homebrainos` to your Home Assistant `/addons/homebrainos` folder, reload the Add-on Store, configure options, then install/start the add-on.
+
+Required options:
+
+```yaml
+hubitat_base_url: http://192.168.1.239
+maker_api_app_id: "4143"
+maker_api_token: your-token-here
+refresh_seconds: 30
+```
+
+## Development roadmap
+
+- `v0.4.0-alpha` Device engine + normalised cache
+- `v0.5.0-alpha` Live dashboard + rooms
+- `v0.6.0-alpha` Voice assistant
+- `v0.7.0-alpha` Ollama AI router
+- `v1.0.0-beta` Stable core
 
 ## Security
 
-Do not commit your Maker API token, Hubitat token, or any private home configuration to this repository.
-
-## Roadmap
-
-- v0.4-alpha: persistent SQLite cache
-- v0.5-alpha: room pages and device cards
-- v0.6-alpha: WebSocket live updates
-- v0.7-alpha: Ollama / GMKtec AI router
-- v1.0-beta: stable Home Assistant add-on release
+Never commit Maker API tokens, local IP credentials, `.env` files, or database/cache files containing personal home data.

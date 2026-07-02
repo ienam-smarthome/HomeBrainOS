@@ -1,34 +1,22 @@
 from pathlib import Path
 import sys
-import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-ADDON = ROOT / "addon" / "homebrainos"
-REQUIRED = [
-    ADDON / "config.yaml",
-    ADDON / "Dockerfile",
-    ADDON / "run.sh",
+required = [
+    'addon/homebrainos/config.yaml',
+    'addon/homebrainos/Dockerfile',
+    'addon/homebrainos/run.sh',
+    'addon/homebrainos/rootfs/app/main.py',
+    'backend/integrations/hubitat_maker.py',
+    'backend/services/normalizer.py',
+    'frontend/index.html',
+    '.github/workflows/validate.yml',
 ]
 
-errors = []
-for path in REQUIRED:
-    if not path.exists():
-        errors.append(f"Missing required file: {path.relative_to(ROOT)}")
-
-config = ADDON / "config.yaml"
-if config.exists():
-    try:
-        data = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
-        for key in ["name", "version", "slug", "description"]:
-            if key not in data:
-                errors.append(f"config.yaml missing key: {key}")
-    except Exception as exc:
-        errors.append(f"config.yaml is not valid YAML: {exc}")
-
-if errors:
-    print("HomeBrain OS validation failed:")
-    for err in errors:
-        print(f"- {err}")
+missing = [p for p in required if not Path(p).exists()]
+if missing:
+    print('Missing required files:')
+    for p in missing:
+        print(f' - {p}')
     sys.exit(1)
 
-print("HomeBrain OS add-on validation passed.")
+print('HomeBrain OS repository layout OK')

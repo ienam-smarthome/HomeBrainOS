@@ -1,20 +1,12 @@
 # Changelog
 
-## 0.3.0-alpha
+## v0.4.0-alpha
 
-- Normalised Hubitat Maker API device attributes.
-- Fixed dashboard metrics for lights, switches, humidity, temperature, power, and batteries.
-- Added device classification in the cache layer.
-- Added chat/query handling for basic home questions.
-
-## 0.2.0-alpha
-
-- Added dashboard cards.
-- Added live status badge.
-- Added voice feedback in the mobile UI.
-
-## 0.1.0-alpha
-
-- Initial Home Assistant OS add-on scaffold.
-- Maker API connectivity.
-- Basic mobile UI.
+- Add complete repository structure.
+- Add Home Assistant add-on scaffold.
+- Add FastAPI backend.
+- Add Hubitat Maker API client.
+- Add device normalisation service.
+- Add dashboard summary API.
+- Add mobile-friendly frontend.
+- Add GitHub Actions validation and packaging workflows.
