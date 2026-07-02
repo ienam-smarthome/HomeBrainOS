@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.2-alpha
+
+- Update the SQLite cache immediately after successful switch commands so summary counts and switch cards reflect the new state.
+- Show explicit on/off state badges and disable the button for the current switch state.
+
 ## v0.6.1-alpha
 
 - Add direct switch controls and clearer command feedback for matched and non-switchable devices.

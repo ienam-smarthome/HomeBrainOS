@@ -4,12 +4,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HomeBrain OS</title>
   <style>
-    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.error{background:#7f1d1d}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.state{color:#bbb;font-size:14px}
+    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}button:disabled{opacity:.45}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.error{background:#7f1d1d}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.state{display:inline-block;color:#fff;font-size:13px;border-radius:999px;padding:3px 8px;margin-top:6px}.state.on{background:#166534}.state.off{background:#555}.state.unknown{background:#7f1d1d}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.6</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.6.2</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -52,8 +52,9 @@ function roomCard(room){
   return `<div class="room"><b>${escapeHtml(room.room)}</b><br>${room.devices} devices<br>💡 ${room.lights_on} on<br>🌡 ${room.avg_temperature??'—'}° 💧 ${room.avg_humidity??'—'}%</div>`;
 }
 function deviceCard(device){
-  const state = escapeHtml(device.switch??'unknown');
-  return `<div class="device"><b>${escapeHtml(device.label)}</b><br><span class="state">${escapeHtml(device.room||'Unknown')} · ${state}</span><div class="row"><button onclick="deviceCommand('${device.id}','on')">On</button><button class="secondary" onclick="deviceCommand('${device.id}','off')">Off</button></div></div>`;
+  const rawState = String(device.switch??'unknown').toLowerCase();
+  const stateClass = rawState==='on'?'on':rawState==='off'?'off':'unknown';
+  return `<div class="device"><b>${escapeHtml(device.label)}</b><br><span class="state ${stateClass}">${escapeHtml(rawState)}</span><br><span class="stateText">${escapeHtml(device.room||'Unknown')}</span><div class="row"><button onclick="deviceCommand('${device.id}','on')" ${rawState==='on'?'disabled':''}>On</button><button class="secondary" onclick="deviceCommand('${device.id}','off')" ${rawState==='off'?'disabled':''}>Off</button></div></div>`;
 }
 async function status(){
   const badge=$('status');
@@ -84,6 +85,7 @@ async function deviceCommand(id, command){
   try{
     const j=await api('/api/device/'+encodeURIComponent(id)+'/command/'+command);
     $('out').textContent=j.message||JSON.stringify(j,null,2);
+    if(j.devices) $('devices').innerHTML=j.devices.slice(0,24).map(deviceCard).join('');
     status();
   }catch(err){
     $('out').textContent='Command failed: '+err.message;

@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.6.1-alpha'
+APP_VERSION = '0.6.2-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -215,6 +215,33 @@ def upsert_devices(devices: list[dict[str, Any]]) -> None:
         conn.close()
 
 
+def update_cached_switch(device_ids: list[str], switch: str) -> list[dict[str, Any]]:
+    now = int(time.time())
+    updated: list[dict[str, Any]] = []
+    conn = db()
+    try:
+        for device_id in device_ids:
+            row = conn.execute('SELECT json FROM devices WHERE id=?', (device_id,)).fetchone()
+            if not row:
+                continue
+            device = json.loads(row['json'])
+            device['switch'] = switch
+            device.setdefault('attributes', {})['switch'] = switch
+            updated.append(device)
+            conn.execute(
+                'UPDATE devices SET json=?, switch=?, updated_at=? WHERE id=?',
+                (json.dumps(device), switch, now, device_id),
+            )
+            conn.execute(
+                'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
+                (device_id, 'switch', switch, now),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return updated
+
+
 def refresh_devices() -> int:
     global LAST_ERROR, LAST_REFRESH
     try:
@@ -358,10 +385,11 @@ def command_devices(devices: list[dict[str, Any]], command: str) -> dict[str, An
             errors.append(f"{d['label']}: {exc}")
     refresh_devices()
     if changed:
+        updated = update_cached_switch([d['id'] for d in candidates if d['label'] in changed], command)
         message = f"Turned {command}:\n" + '\n'.join(changed)
         if errors:
             message += '\n\nErrors:\n' + '\n'.join(errors)
-        return {'success': True, 'message': message, 'changed': changed, 'errors': errors}
+        return {'success': True, 'message': message, 'changed': changed, 'errors': errors, 'devices': updated}
     return {'success': False, 'message': 'Hubitat command failed:\n' + '\n'.join(errors), 'errors': errors}
 
 
