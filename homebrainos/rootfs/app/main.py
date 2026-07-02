@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.6.2-alpha'
+APP_VERSION = '0.6.3-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -24,7 +24,7 @@ ROOM_WORDS = [
     'kitchen', 'toilet', 'entrance', 'ventilation', 'dehumidifier', 'energy', 'sockets',
     'multimedia', 'office', 'internet', 'router'
 ]
-DEVICE_ATTRS = ['switch','level','temperature','humidity','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint']
+DEVICE_ATTRS = ['switch','level','temperature','humidity','illuminance','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint']
 
 
 def load_config() -> dict[str, Any]:
@@ -136,6 +136,8 @@ def infer_room(label: str) -> str:
 def classify(device: dict[str, Any], attrs: dict[str, Any]) -> str:
     label = (device.get('label') or device.get('name') or '').lower()
     caps = caps_text(device)
+    if 'light sensor' in label or 'illuminance' in attrs or 'illuminance' in caps:
+        return 'light_sensor'
     if (
         'light' in label
         or 'bulb' in label
@@ -176,6 +178,7 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
         'level': attrs.get('level'),
         'temperature': safe_float(attrs.get('temperature')),
         'humidity': safe_float(attrs.get('humidity')),
+        'illuminance': safe_float(attrs.get('illuminance')),
         'power': safe_float(attrs.get('power')),
         'energy': safe_float(attrs.get('energy')),
         'battery': safe_float(attrs.get('battery')),
@@ -193,6 +196,11 @@ def upsert_devices(devices: list[dict[str, Any]]) -> None:
     try:
         for d in devices:
             old = conn.execute('SELECT json FROM devices WHERE id=?', (d['id'],)).fetchone()
+            if old and d.get('switch') is None:
+                old_d = json.loads(old['json'])
+                if old_d.get('switch') is not None:
+                    d['switch'] = old_d.get('switch')
+                    d.setdefault('attributes', {})['switch'] = old_d.get('switch')
             conn.execute('''
                 INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)

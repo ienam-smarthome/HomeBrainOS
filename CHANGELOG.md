@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.3-alpha
+
+- Preserve last known switch states during Hubitat refreshes when Maker API omits switch values.
+- Stop classifying illuminance/light sensors as controllable lights.
+
 ## v0.6.2-alpha
 
 - Update the SQLite cache immediately after successful switch commands so summary counts and switch cards reflect the new state.

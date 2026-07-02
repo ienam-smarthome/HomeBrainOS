@@ -43,6 +43,8 @@ def infer_room(label: str) -> str:
 def classify_device(device: dict[str, Any], attrs: dict[str, Any]) -> str:
     label = (device.get('label') or device.get('name') or '').lower()
     caps = ' '.join(str(cap) for cap in device.get('capabilities', []) or []).lower()
+    if 'light sensor' in label or 'illuminance' in attrs or 'illuminance' in caps:
+        return 'light_sensor'
     if (
         'light' in label
         or 'bulb' in label
@@ -83,6 +85,7 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
         'level': attrs.get('level'),
         'temperature': safe_float(attrs.get('temperature')),
         'humidity': safe_float(attrs.get('humidity')),
+        'illuminance': safe_float(attrs.get('illuminance')),
         'power': safe_float(attrs.get('power')),
         'energy': safe_float(attrs.get('energy')),
         'battery': safe_float(attrs.get('battery')),

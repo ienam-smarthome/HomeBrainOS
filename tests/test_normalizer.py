@@ -49,3 +49,15 @@ def test_dict_attribute_shape():
     assert d['category'] == 'motion_sensor'
     assert d['humidity'] == 48.0
     assert d['motion'] == 'active'
+
+
+def test_light_sensor_is_not_controllable_light():
+    raw = {
+        'id': '6',
+        'label': 'Aqara Light Sensor T1',
+        'capabilities': ['IlluminanceMeasurement'],
+        'attributes': [{'name': 'illuminance', 'currentValue': '123'}],
+    }
+    d = normalise_device(raw)
+    assert d['category'] == 'light_sensor'
+    assert d['illuminance'] == 123.0
