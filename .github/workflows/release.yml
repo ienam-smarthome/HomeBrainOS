@@ -1,0 +1,21 @@
+name: Package HomeBrain OS add-on
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create add-on archive
+        run: |
+          mkdir -p dist
+          tar -czf dist/homebrainos-addon.tar.gz -C addon homebrainos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homebrainos-addon
+          path: dist/homebrainos-addon.tar.gz
