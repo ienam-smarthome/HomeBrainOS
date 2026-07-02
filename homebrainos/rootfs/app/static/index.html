@@ -4,12 +4,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HomeBrain OS</title>
   <style>
-    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}button:disabled{opacity:.45}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.error{background:#7f1d1d}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.state,.attr{display:inline-block;color:#fff;font-size:13px;border-radius:999px;padding:3px 8px;margin-top:6px}.state.on{background:#166534}.state.off{background:#555}.state.unknown{background:#7f1d1d}.attrs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;min-height:24px}.attr{background:#3a3a3d}.muted{color:#b9b9bd;font-size:14px}
+    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}button:disabled{opacity:.45}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.error{background:#7f1d1d}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px;transition:opacity .15s,background .15s,box-shadow .15s}.device.active,.room.active{background:#292c2a;box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}.device.inactive,.room.inactive{opacity:.68}.device.inactive .row button{background:#303033;color:#aaa}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.state,.attr{display:inline-block;color:#fff;font-size:13px;border-radius:999px;padding:3px 8px;margin-top:6px}.state.on{background:#166534}.state.off{background:#555}.state.unknown{background:#7f1d1d}.attrs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;min-height:24px}.attr{background:#3a3a3d}.muted{color:#b9b9bd;font-size:14px}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.4</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.8</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -51,7 +51,8 @@ function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }
 function roomCard(room){
-  return `<div class="room"><b>${escapeHtml(room.room)}</b><br>${room.devices} devices<br>💡 ${room.lights_on} on · ⏻ ${room.switches_on||0} on<br>🌡 ${room.avg_temperature??'—'}° 💧 ${room.avg_humidity??'—'}%<br>⚡ ${room.power_total||0}W · 🏃 ${room.motion_active||0} · 🔋 ${room.low_batteries||0}</div>`;
+  const active=(room.lights_on||0)+(room.switches_on||0)+(room.motion_active||0)>0;
+  return `<div class="room ${active?'active':'inactive'}"><b>${escapeHtml(room.room)}</b><br>${room.devices} devices<br>💡 ${room.lights_on} on · ⏻ ${room.switches_on||0} on<br>🌡 ${room.avg_temperature??'—'}° 💧 ${room.avg_humidity??'—'}%<br>⚡ ${room.power_total||0}W · 🏃 ${room.motion_active||0} · 🔋 ${room.low_batteries||0}</div>`;
 }
 function formatAttr(key, value){
   const labels={level:'Level',temperature:'Temp',humidity:'Humidity',illuminance:'Lux',power:'Power',energy:'Energy',battery:'Battery',motion:'Motion',contact:'Contact',presence:'Presence',lock:'Lock',water:'Water',smoke:'Smoke',carbonMonoxide:'CO',tamper:'Tamper',acceleration:'Accel',valve:'Valve',windowShade:'Shade',thermostatMode:'Mode',thermostatOperatingState:'Operating',heatingSetpoint:'Heat set',coolingSetpoint:'Cool set'};
@@ -86,7 +87,7 @@ function isThermostat(device){
 function controls(device, rawState){
   if(isThermostat(device)){
     const setpoint=device.heatingSetpoint??(device.attributes||{}).heatingSetpoint??'—';
-    return `<div class="row"><button class="secondary" onclick="setpoint('${device.id}',-1)">-1°</button><button disabled>${escapeHtml(setpoint)}°</button><button onclick="setpoint('${device.id}',1)">+1°</button></div>`;
+    return `<div class="row"><button class="secondary" onclick="setpoint('${device.id}',-1)">-</button><button disabled>${escapeHtml(setpoint)}°</button><button onclick="setpoint('${device.id}',1)">+</button></div>`;
   }
   return `<div class="row"><button onclick="deviceCommand('${device.id}','on')" ${rawState==='on'?'disabled':''}>On</button><button class="secondary" onclick="deviceCommand('${device.id}','off')" ${rawState==='off'?'disabled':''}>Off</button></div>`;
 }
@@ -95,7 +96,8 @@ function deviceCard(device){
   const stateClass = rawState==='on'?'on':rawState==='off'?'off':'unknown';
   const badge=isThermostat(device)?'climate':rawState;
   const badgeClass=isThermostat(device)?'off':stateClass;
-  return `<div class="device"><b>${escapeHtml(device.label)}</b><br><span class="state ${badgeClass}">${escapeHtml(badge)}</span> <span class="muted">${escapeHtml(device.category||'device')} · ${escapeHtml(device.room||'Unknown')}</span>${attrChips(device)}${controls(device,rawState)}</div>`;
+  const active=isThermostat(device)?String(device.thermostatOperatingState||'').toLowerCase().includes('heat'):rawState==='on';
+  return `<div class="device ${active?'active':'inactive'}"><b>${escapeHtml(device.label)}</b><br><span class="state ${badgeClass}">${escapeHtml(badge)}</span> <span class="muted">${escapeHtml(device.category||'device')} · ${escapeHtml(device.room||'Unknown')}</span>${attrChips(device)}${controls(device,rawState)}</div>`;
 }
 async function status(){
   const badge=$('status');

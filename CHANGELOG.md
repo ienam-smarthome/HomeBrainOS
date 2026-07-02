@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.8-alpha
+
+- Show TRV setpoint buttons as simple `-` and `+` controls.
+- Dim inactive/off device cards and highlight active/on device cards.
+- Dim inactive rooms and highlight rooms with active lights, switches, or motion.
+- Classify TRV battery child devices as battery sensors instead of climate controls.
+
 ## v0.7.7-alpha
 
 - Exclude TRV battery/sensor child devices from heating commands.

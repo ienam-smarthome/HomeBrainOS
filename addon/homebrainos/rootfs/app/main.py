@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.7-alpha'
+APP_VERSION = '0.7.8-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -220,6 +220,9 @@ def classify(device: dict[str, Any], attrs: dict[str, Any]) -> str:
     label = (device.get('label') or device.get('name') or '').lower()
     caps = caps_text(device)
     commands = commands_text(device)
+    climate_attrs = ('thermostatMode', 'thermostatOperatingState', 'heatingSetpoint', 'coolingSetpoint')
+    if 'battery' in label and not any(attrs.get(attr) is not None for attr in climate_attrs):
+        return 'battery_sensor'
     if 'light sensor' in label or 'illuminance' in attrs or 'illuminance' in caps:
         return 'light_sensor'
     if (
@@ -659,6 +662,8 @@ def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def is_climate_control_device(device: dict[str, Any]) -> bool:
     label = normalise(device.get('label', ''))
     sensor_words = ('battery', 'sensor', 'meter', 'lux', 'power')
+    if any(word in label for word in sensor_words):
+        return False
     has_climate_state = (
         device.get('category') == 'thermostat'
         or device.get('thermostatMode') is not None
@@ -666,8 +671,6 @@ def is_climate_control_device(device: dict[str, Any]) -> bool:
         or device.get('thermostatOperatingState') is not None
     )
     if not has_climate_state:
-        return False
-    if any(word in label for word in sensor_words) and device.get('category') != 'thermostat':
         return False
     return True
 

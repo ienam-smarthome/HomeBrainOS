@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.7-alpha'
+APP_VERSION = '0.7.9-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -220,6 +220,9 @@ def classify(device: dict[str, Any], attrs: dict[str, Any]) -> str:
     label = (device.get('label') or device.get('name') or '').lower()
     caps = caps_text(device)
     commands = commands_text(device)
+    climate_attrs = ('thermostatMode', 'thermostatOperatingState', 'heatingSetpoint', 'coolingSetpoint')
+    if 'battery' in label and not any(attrs.get(attr) is not None for attr in climate_attrs):
+        return 'battery_sensor'
     if 'light sensor' in label or 'illuminance' in attrs or 'illuminance' in caps:
         return 'light_sensor'
     if (
@@ -659,6 +662,8 @@ def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def is_climate_control_device(device: dict[str, Any]) -> bool:
     label = normalise(device.get('label', ''))
     sensor_words = ('battery', 'sensor', 'meter', 'lux', 'power')
+    if any(word in label for word in sensor_words):
+        return False
     has_climate_state = (
         device.get('category') == 'thermostat'
         or device.get('thermostatMode') is not None
@@ -666,8 +671,6 @@ def is_climate_control_device(device: dict[str, Any]) -> bool:
         or device.get('thermostatOperatingState') is not None
     )
     if not has_climate_state:
-        return False
-    if any(word in label for word in sensor_words) and device.get('category') != 'thermostat':
         return False
     return True
 
@@ -878,10 +881,10 @@ def run_command(text: str) -> dict[str, Any]:
     if 'which switches are on' in t or 'what switches are on' in t:
         switches = [d['label'] for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None')}
-    m_heat = re.search(r'^(turn on|switch on|enable|start|turn off|switch off|disable|stop)\s+(?:(.+?)\s+)?heating$', t)
+    m_heat = re.search(r'^(turn on|switch on|enable|start|turn off|switch off|disable|stop)\s+(?:(.+?)\s+)?heating(?:\s+(?:in|for)\s+(.+))?$', t)
     if m_heat:
         action = m_heat.group(1)
-        target = (m_heat.group(2) or 'home').replace('the ', '').replace('all ', '').strip() or 'home'
+        target = (m_heat.group(3) or m_heat.group(2) or 'home').replace('the ', '').replace('all ', '').strip() or 'home'
         mode = 'off' if any(word in action for word in ('off', 'disable', 'stop')) else 'heat'
         return set_heating_mode(mode, target)
     attr_terms = {
