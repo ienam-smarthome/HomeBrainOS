@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.5</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.6</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -38,29 +38,56 @@
   <pre id="out">Ready</pre>
 </div>
 <script>
+const $ = id => document.getElementById(id);
+async function api(path){
+  const response = await fetch(path);
+  if(!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+function roomCard(room){
+  return `<div class="room"><b>${escapeHtml(room.room)}</b><br>${room.devices} devices<br>💡 ${room.lights_on} on<br>🌡 ${room.avg_temperature??'—'}° 💧 ${room.avg_humidity??'—'}%</div>`;
+}
 async function status(){
-  const s=await fetch('/api/status').then(r=>r.json());
-  const badge=document.getElementById('status');
-  badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices · SQLite cache';
-  badge.className=s.error?'pill error':'pill';
-  const d=await fetch('/api/dashboard').then(r=>r.json());
-  lights.textContent=d.lights_on; switches.textContent=d.switches_on; batt.textContent=d.low_batteries;
-  people.textContent=d.people_home; motion.textContent=d.motion_active;
-  temp.textContent=(d.avg_temperature??'—')+'°'; hum.textContent=(d.avg_humidity??'—')+'%'; power.textContent=d.power_total+'W';
-  loadRooms();
+  const badge=$('status');
+  try{
+    const s=await api('/api/status');
+    badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices · SQLite cache';
+    badge.className=s.error?'pill error':'pill';
+    const d=await api('/api/dashboard');
+    $('lights').textContent=d.lights_on; $('switches').textContent=d.switches_on; $('batt').textContent=d.low_batteries;
+    $('people').textContent=d.people_home; $('motion').textContent=d.motion_active;
+    $('temp').textContent=(d.avg_temperature??'—')+'°'; $('hum').textContent=(d.avg_humidity??'—')+'%'; $('power').textContent=d.power_total+'W';
+    loadRooms();
+  }catch(err){
+    badge.textContent='API offline: '+err.message;
+    badge.className='pill error';
+  }
 }
 async function loadRooms(){
-  const r=await fetch('/api/rooms').then(r=>r.json());
-  rooms.innerHTML=(r.rooms||[]).filter(x=>x.room!=='Unknown').slice(0,12).map(x=>`<div class="room"><b>${x.room}</b><br>${x.devices} devices<br>💡 ${x.lights_on} on<br>🌡 ${x.avg_temperature??'—'}° 💧 ${x.avg_humidity??'—'}%</div>`).join('') || 'No rooms found';
+  try{
+    const r=await api('/api/rooms');
+    $('rooms').innerHTML=(r.rooms||[]).filter(x=>x.room!=='Unknown').slice(0,12).map(roomCard).join('') || 'No rooms found';
+  }catch(err){
+    $('rooms').textContent='Rooms unavailable';
+  }
 }
 async function ask(){
-  const text=document.getElementById('q').value.trim(); if(!text) return;
-  if(text.toLowerCase()==='refresh cache'){await fetch('/api/refresh'); await status(); out.textContent='Cache refreshed'; return;}
-  const j=await fetch('/api/ask?q='+encodeURIComponent(text)).then(r=>r.json()); out.textContent=j.message||JSON.stringify(j,null,2); speak(j.message||'Done'); status();
+  const text=$('q').value.trim(); if(!text) return;
+  try{
+    const j=await api('/api/ask?q='+encodeURIComponent(text));
+    $('out').textContent=j.message||JSON.stringify(j,null,2);
+    speak(j.message||'Done');
+    status();
+  }catch(err){
+    $('out').textContent='Request failed: '+err.message;
+  }
 }
-function quick(t){q.value=t;ask()}
+function quick(t){$('q').value=t;ask()}
 function speak(t){ if('speechSynthesis' in window && t) speechSynthesis.speak(new SpeechSynthesisUtterance(t)); }
-function voice(){ const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){alert('Voice not supported');return;} const r=new SR(); r.lang='en-GB'; r.onresult=e=>{q.value=e.results[0][0].transcript;ask()}; r.start(); }
+function voice(){ const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){alert('Voice not supported');return;} const r=new SR(); r.lang='en-GB'; r.onresult=e=>{$('q').value=e.results[0][0].transcript;ask()}; r.start(); }
 status(); setInterval(status,30000);
 </script>
 </body>

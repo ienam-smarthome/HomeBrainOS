@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
+
 import requests
 
 
@@ -18,8 +20,10 @@ class HubitatMakerApi:
 
     def _url(self, path: str) -> str:
         base = self.config.base_url.rstrip('/')
+        app_id = quote(self.config.app_id.strip(), safe='')
+        token = quote(self.config.token.strip(), safe='')
         sep = '&' if '?' in path else '?'
-        return f'{base}/apps/api/{self.config.app_id}/{path}{sep}access_token={self.config.token}'
+        return f'{base}/apps/api/{app_id}/{path}{sep}access_token={token}'
 
     def devices(self) -> list[dict[str, Any]]:
         response = requests.get(self._url('devices'), timeout=15)

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.0-alpha
+
+- Align add-on, API, and documentation version metadata.
+- Add dashboard command support for refreshing the device cache.
+- Harden Maker API URL generation for special characters in credentials.
+- Improve room API efficiency by avoiding repeated cache reads.
+
 ## v0.5.0-alpha
 
 - Add SQLite-backed device cache in the Home Assistant add-on.

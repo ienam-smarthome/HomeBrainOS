@@ -9,12 +9,14 @@ import time
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import requests
 import uvicorn
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 
+APP_VERSION = '0.6.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -39,7 +41,7 @@ def load_config() -> dict[str, Any]:
 CONFIG = load_config()
 LAST_ERROR: str | None = None
 LAST_REFRESH: float | None = None
-app = FastAPI(title='HomeBrain OS', version='0.5.0-alpha')
+app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
 def db() -> sqlite3.Connection:
@@ -76,8 +78,8 @@ def db() -> sqlite3.Connection:
 
 def maker_url(path: str) -> str:
     base = str(CONFIG.get('hubitat_base_url', '')).rstrip('/')
-    app_id = str(CONFIG.get('maker_api_app_id', '')).strip()
-    token = str(CONFIG.get('maker_api_token', '')).strip()
+    app_id = quote(str(CONFIG.get('maker_api_app_id', '')).strip(), safe='')
+    token = quote(str(CONFIG.get('maker_api_token', '')).strip(), safe='')
     sep = '&' if '?' in path else '?'
     return f'{base}/apps/api/{app_id}/{path}{sep}access_token={token}'
 
@@ -301,6 +303,11 @@ def answer_attribute(target: str, attr: str) -> dict[str, Any]:
 
 def run_command(text: str) -> dict[str, Any]:
     t = normalise(text)
+    if t in ('refresh', 'refresh cache', 'reload cache', 'update cache'):
+        count = refresh_devices()
+        if LAST_ERROR:
+            return {'success': False, 'message': f'Refresh failed: {LAST_ERROR}', 'devices': count, 'error': LAST_ERROR}
+        return {'success': True, 'message': f'Cache refreshed: {count} devices', 'devices': count, 'last_refresh': LAST_REFRESH}
     if t in ('summary', 'status', 'home summary'):
         s = dashboard_summary()
         return {'success': True, 'message': f"🏠 Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}°C\nAverage humidity: {s['avg_humidity']}%\nPower total: {s['power_total']} W\nPeople home: {s['people_home']}\nLow batteries: {s['low_batteries']}"}
@@ -360,7 +367,7 @@ async def startup() -> None:
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': '0.5.0-alpha', 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR}
 
 
 @app.get('/api/refresh')
@@ -386,15 +393,16 @@ def api_devices(category: str | None = None, room: str | None = None):
 
 @app.get('/api/rooms')
 def api_rooms():
+    devices = all_devices()
     rooms: dict[str, dict[str, Any]] = {}
-    for d in all_devices():
+    for d in devices:
         room = d.get('room') or 'Unknown'
         rooms.setdefault(room, {'room': room, 'devices': 0, 'lights_on': 0, 'avg_temperature': None, 'avg_humidity': None})
         rooms[room]['devices'] += 1
         if d['category'] == 'light' and d.get('switch') == 'on':
             rooms[room]['lights_on'] += 1
     for room in rooms.values():
-        ds = [d for d in all_devices() if (d.get('room') or 'Unknown') == room['room']]
+        ds = [d for d in devices if (d.get('room') or 'Unknown') == room['room']]
         temps = [d['temperature'] for d in ds if isinstance(d.get('temperature'), (int,float))]
         hums = [d['humidity'] for d in ds if isinstance(d.get('humidity'), (int,float))]
         room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None
