@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.6.4</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -22,12 +22,13 @@
     <div class="metric"><div class="big" id="motion">0</div><div>Motion active</div></div>
   </div>
   <div class="card">
-    <input id="q" placeholder="Ask or command...">
-    <button onclick="ask()">Send</button>
+    <input id="q" placeholder="Ask HomeBrain...">
+    <button onclick="ask()">Ask</button>
     <button onclick="voice()">🎤 Speak</button>
   </div>
   <div class="card grid">
     <button class="secondary" onclick="quick('summary')">Summary</button>
+    <button class="secondary" onclick="quick('diagnostics')">Diagnostics</button>
     <button class="secondary" onclick="quick('refresh cache')">Refresh cache</button>
     <button class="secondary" onclick="clearRefresh()">Clear cache</button>
     <button class="secondary" onclick="quick('hallway humidity')">Hallway humidity</button>
@@ -112,7 +113,7 @@ async function loadRooms(){
 async function ask(){
   const text=$('q').value.trim(); if(!text) return;
   try{
-    const j=await api('/api/ask?q='+encodeURIComponent(text));
+    const j=await api('/api/assistant?q='+encodeURIComponent(text));
     $('out').textContent=j.message||JSON.stringify(j,null,2);
     speak(j.message||'Done');
     status();

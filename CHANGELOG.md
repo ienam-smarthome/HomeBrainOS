@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.0-alpha
+
+- Add `/api/assistant` as the main smart-home assistant endpoint.
+- Add assistant help, diagnostics, room device listing, safer command routing, and home-level attribute answers.
+- Add optional local Ollama answer support for explanatory questions without allowing LLM-driven device control.
+- Update the dashboard prompt and quick actions for assistant workflows.
+
 ## v0.6.4-alpha
 
 - Prune cached devices that no longer exist in Hubitat Maker API.

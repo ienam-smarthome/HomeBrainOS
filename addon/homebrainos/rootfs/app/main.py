@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.6.4-alpha'
+APP_VERSION = '0.7.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -35,6 +35,9 @@ def load_config() -> dict[str, Any]:
         'maker_api_app_id': os.getenv('MAKER_API_APP_ID', '4143'),
         'maker_api_token': os.getenv('MAKER_API_TOKEN', ''),
         'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '30')),
+        'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
+        'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
+        'ollama_model': os.getenv('OLLAMA_MODEL', 'llama3.2'),
     }
 
 
@@ -335,6 +338,29 @@ def dashboard_summary() -> dict[str, Any]:
     }
 
 
+def device_diagnostics() -> dict[str, Any]:
+    devices = all_devices()
+    switchable = switchable_devices(devices)
+    unknown_switches = [d for d in switchable if d.get('switch') is None]
+    no_room = [d for d in devices if (d.get('room') or 'Unknown') == 'Unknown']
+    temp_devices = [d for d in devices if isinstance(d.get('temperature'), (int, float))]
+    humidity_devices = [d for d in devices if isinstance(d.get('humidity'), (int, float))]
+    power_devices = [d for d in devices if isinstance(d.get('power'), (int, float))]
+    return {
+        'devices': len(devices),
+        'switchable': len(switchable),
+        'unknown_switch_state': len(unknown_switches),
+        'unknown_switch_examples': [d['label'] for d in unknown_switches[:8]],
+        'unknown_room': len(no_room),
+        'unknown_room_examples': [d['label'] for d in no_room[:8]],
+        'temperature_devices': len(temp_devices),
+        'humidity_devices': len(humidity_devices),
+        'power_devices': len(power_devices),
+        'last_error': LAST_ERROR,
+        'last_refresh': LAST_REFRESH,
+    }
+
+
 def normalise(text: str) -> str:
     text = text.lower().strip()
     replacements = {
@@ -398,6 +424,15 @@ def maker_command(device_id: str, command: str) -> Any:
         return {'success': True}
 
 
+def device_line(device: dict[str, Any]) -> str:
+    parts = [device['label'], f"room {device.get('room') or 'Unknown'}", device['category']]
+    for attr, unit in (('switch', ''), ('temperature', 'C'), ('humidity', '%'), ('power', 'W'), ('battery', '%')):
+        value = device.get(attr)
+        if value is not None:
+            parts.append(f"{attr} {value}{unit}")
+    return ' - ' + ', '.join(parts)
+
+
 def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [d for d in devices if d.get('switch') is not None or d['category'] in ('light', 'switch', 'power_device')]
 
@@ -427,6 +462,12 @@ def command_devices(devices: list[dict[str, Any]], command: str) -> dict[str, An
 
 
 def answer_attribute(target: str, attr: str) -> dict[str, Any]:
+    if target in ('home', 'house'):
+        summary = dashboard_summary()
+        key = {'temperature': 'avg_temperature', 'humidity': 'avg_humidity', 'power': 'power_total'}.get(attr)
+        if key and summary.get(key) is not None:
+            unit = {'temperature': 'C', 'humidity': '%', 'power': 'W'}.get(attr, '')
+            return {'success': True, 'message': f"Home {attr} is {summary[key]}{unit}", 'attribute': attr, 'value': summary[key]}
     candidates = room_devices(target) or find_devices(target)
     candidates = [d for d in candidates if d.get(attr) is not None]
     if not candidates:
@@ -434,6 +475,81 @@ def answer_attribute(target: str, attr: str) -> dict[str, Any]:
     d = candidates[0]
     unit = {'temperature': '°C', 'humidity': '%', 'power': 'W', 'battery': '%', 'energy': 'kWh'}.get(attr, '')
     return {'success': True, 'message': f"{d['label']} {attr} is {d[attr]}{unit}", 'device': d, 'attribute': attr, 'value': d[attr]}
+
+
+def ollama_answer(text: str) -> dict[str, Any] | None:
+    if not CONFIG.get('ollama_enabled'):
+        return None
+    devices = all_devices()[:80]
+    context = '\n'.join(device_line(d) for d in devices)
+    prompt = (
+        'You are HomeBrain OS, a concise smart home assistant. '
+        'Answer using only the device facts below. Do not invent device states. '
+        'If asked to control devices, explain that control is handled by HomeBrain deterministic commands.\n\n'
+        f'Device facts:\n{context}\n\nUser: {text}\nAssistant:'
+    )
+    try:
+        response = requests.post(
+            str(CONFIG.get('ollama_base_url', '')).rstrip('/') + '/api/generate',
+            json={'model': CONFIG.get('ollama_model', 'llama3.2'), 'prompt': prompt, 'stream': False},
+            timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+        message = str(data.get('response') or '').strip()
+        if message:
+            return {'success': True, 'message': message, 'intent': 'ollama_answer', 'source': 'ollama'}
+    except Exception as exc:
+        return {'success': False, 'message': f'Ollama is enabled but did not answer: {exc}', 'intent': 'ollama_error'}
+    return None
+
+
+def assistant(text: str) -> dict[str, Any]:
+    t = normalise(text)
+    if t in ('help', 'what can you do', 'commands'):
+        return {
+            'success': True,
+            'intent': 'help',
+            'message': (
+                "I can summarize the home, list lights or switches that are on, answer temperature/humidity/power/battery questions, "
+                "control switchable devices, refresh or clear the cache, list room devices, and run diagnostics."
+            ),
+        }
+    if any(word in t for word in ('diagnostic', 'diagnostics', 'problem', 'problems', 'why', 'unknown', 'missing')):
+        d = device_diagnostics()
+        lines = [
+            f"Devices: {d['devices']}",
+            f"Switchable devices: {d['switchable']}",
+            f"Unknown switch states: {d['unknown_switch_state']}",
+            f"Unknown rooms: {d['unknown_room']}",
+            f"Temperature sensors: {d['temperature_devices']}",
+            f"Humidity sensors: {d['humidity_devices']}",
+            f"Power sensors: {d['power_devices']}",
+        ]
+        if d['unknown_switch_examples']:
+            lines.append('Unknown switch examples:\n' + '\n'.join(d['unknown_switch_examples']))
+        if d['last_error']:
+            lines.append(f"Last Hubitat error: {d['last_error']}")
+        return {'success': True, 'intent': 'diagnostics', 'message': '\n'.join(lines), 'diagnostics': d}
+    m = re.search(r'(devices|what|list|show).*(in|inside) (.+)', t)
+    if m:
+        room = m.group(3).strip()
+        devices = room_devices(room)
+        if not devices:
+            return {'success': False, 'intent': 'room_devices', 'message': f'I found no devices in {room}.'}
+        return {'success': True, 'intent': 'room_devices', 'message': f"{room.title()} devices:\n" + '\n'.join(device_line(d) for d in devices[:20]), 'devices': devices[:20]}
+    result = run_command(text)
+    if result.get('success') or result.get('message') != f'I did not understand yet: {text}':
+        result.setdefault('intent', 'deterministic_command')
+        return result
+    ollama = ollama_answer(text)
+    if ollama:
+        return ollama
+    return {
+        'success': False,
+        'intent': 'unknown',
+        'message': "I do not understand that yet. Try 'summary', 'diagnostics', 'which lights are on', 'turn off hallway light', or 'devices in hallway'.",
+    }
 
 
 def run_command(text: str) -> dict[str, Any]:
@@ -566,7 +682,12 @@ def api_device_command(device_id: str, command: str):
 
 @app.get('/api/ask')
 def api_ask(q: str = Query(...)):
-    return run_command(q)
+    return assistant(q)
+
+
+@app.get('/api/assistant')
+def api_assistant(q: str = Query(...)):
+    return assistant(q)
 
 
 @app.get('/', response_class=HTMLResponse)
