@@ -1,7 +1,7 @@
 name: HomeBrain OS
-version: "0.4.0-alpha"
+version: "0.5.0-alpha"
 slug: homebrainos
-description: AI-ready smart home assistant for Hubitat via Maker API
+description: HomeBrain OS Core with SQLite device engine and Hubitat Maker API
 url: https://github.com/ienam-smarthome/HomeBrainOS
 arch:
   - amd64

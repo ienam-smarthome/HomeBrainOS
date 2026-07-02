@@ -4,12 +4,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HomeBrain OS</title>
   <style>
-    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:860px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}
+    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.error{background:#7f1d1d}.rooms{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.room{background:#262629;border-radius:14px;padding:12px}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS</h1>
+  <h1>🏠 HomeBrain OS <small>v0.5</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -17,34 +17,46 @@
     <div class="metric"><div class="big" id="hum">—%</div><div>Avg humidity</div></div>
     <div class="metric"><div class="big" id="power">0W</div><div>Power</div></div>
     <div class="metric"><div class="big" id="switches">0</div><div>Switches on</div></div>
+    <div class="metric"><div class="big" id="people">0</div><div>People home</div></div>
     <div class="metric"><div class="big" id="batt">0</div><div>Low batteries</div></div>
+    <div class="metric"><div class="big" id="motion">0</div><div>Motion active</div></div>
   </div>
   <div class="card">
     <input id="q" placeholder="Ask or command...">
     <button onclick="ask()">Send</button>
     <button onclick="voice()">🎤 Speak</button>
   </div>
-  <div class="card">
-    <button onclick="quick('summary')">Summary</button>
-    <button onclick="quick('refresh cache')">Refresh cache</button>
-    <button onclick="quick('hallway humidity')">Hallway humidity</button>
-    <button onclick="quick('hallway temperature')">Hallway temperature</button>
-    <button onclick="quick('which lights are on')">Which lights are on?</button>
+  <div class="card grid">
+    <button class="secondary" onclick="quick('summary')">Summary</button>
+    <button class="secondary" onclick="quick('refresh cache')">Refresh cache</button>
+    <button class="secondary" onclick="quick('hallway humidity')">Hallway humidity</button>
+    <button class="secondary" onclick="quick('hallway temperature')">Hallway temperature</button>
+    <button class="secondary" onclick="quick('which lights are on')">Which lights are on?</button>
+    <button class="secondary" onclick="quick('which switches are on')">Which switches are on?</button>
   </div>
+  <div class="card"><h2>Rooms</h2><div class="rooms" id="rooms">Loading rooms...</div></div>
   <pre id="out">Ready</pre>
 </div>
 <script>
 async function status(){
   const s=await fetch('/api/status').then(r=>r.json());
-  document.getElementById('status').textContent=s.error?'Hubitat error':'Online · '+s.devices+' devices';
+  const badge=document.getElementById('status');
+  badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices · SQLite cache';
+  badge.className=s.error?'pill error':'pill';
   const d=await fetch('/api/dashboard').then(r=>r.json());
   lights.textContent=d.lights_on; switches.textContent=d.switches_on; batt.textContent=d.low_batteries;
+  people.textContent=d.people_home; motion.textContent=d.motion_active;
   temp.textContent=(d.avg_temperature??'—')+'°'; hum.textContent=(d.avg_humidity??'—')+'%'; power.textContent=d.power_total+'W';
+  loadRooms();
+}
+async function loadRooms(){
+  const r=await fetch('/api/rooms').then(r=>r.json());
+  rooms.innerHTML=(r.rooms||[]).filter(x=>x.room!=='Unknown').slice(0,12).map(x=>`<div class="room"><b>${x.room}</b><br>${x.devices} devices<br>💡 ${x.lights_on} on<br>🌡 ${x.avg_temperature??'—'}° 💧 ${x.avg_humidity??'—'}%</div>`).join('') || 'No rooms found';
 }
 async function ask(){
   const text=document.getElementById('q').value.trim(); if(!text) return;
   if(text.toLowerCase()==='refresh cache'){await fetch('/api/refresh'); await status(); out.textContent='Cache refreshed'; return;}
-  const j=await fetch('/api/ask?q='+encodeURIComponent(text)).then(r=>r.json()); out.textContent=j.message||JSON.stringify(j,null,2); speak(j.message||'Done');
+  const j=await fetch('/api/ask?q='+encodeURIComponent(text)).then(r=>r.json()); out.textContent=j.message||JSON.stringify(j,null,2); speak(j.message||'Done'); status();
 }
 function quick(t){q.value=t;ask()}
 function speak(t){ if('speechSynthesis' in window && t) speechSynthesis.speak(new SpeechSynthesisUtterance(t)); }

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.0-alpha
+
+- Add SQLite-backed device cache in the Home Assistant add-on.
+- Add automatic background refresh from Hubitat Maker API.
+- Add room inference and richer device classification.
+- Add `/api/rooms` and filtered `/api/devices` endpoints.
+- Add unified command/query engine for dashboard, typed commands, and voice.
+- Add room-aware light control and generic attribute queries.
+- Improve mobile dashboard with live room cards.
+
+
 ## v0.4.0-alpha
 
 - Add complete repository structure.

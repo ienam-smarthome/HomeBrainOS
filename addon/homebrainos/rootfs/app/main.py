@@ -1,5 +1,12 @@
+from __future__ import annotations
+
+import asyncio
 import json
 import os
+import re
+import sqlite3
+import time
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +16,13 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 
 CONFIG_PATH = Path('/data/options.json')
+DB_PATH = Path('/data/homebrainos.sqlite3')
+ROOM_WORDS = [
+    'hallway', 'bathroom', 'bedroom 1', 'bedroom 2', 'bedroom 3', 'living room', 'livingroom',
+    'kitchen', 'toilet', 'entrance', 'ventilation', 'dehumidifier', 'energy', 'sockets',
+    'multimedia', 'office', 'internet', 'router'
+]
+DEVICE_ATTRS = ['switch','level','temperature','humidity','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint']
 
 
 def load_config() -> dict[str, Any]:
@@ -23,10 +37,41 @@ def load_config() -> dict[str, Any]:
 
 
 CONFIG = load_config()
-DEVICES: list[dict[str, Any]] = []
 LAST_ERROR: str | None = None
+LAST_REFRESH: float | None = None
+app = FastAPI(title='HomeBrain OS', version='0.5.0-alpha')
 
-app = FastAPI(title='HomeBrain OS', version='0.4.0-alpha')
+
+def db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS devices (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            label TEXT NOT NULL,
+            room TEXT,
+            category TEXT NOT NULL,
+            json TEXT NOT NULL,
+            switch TEXT,
+            temperature REAL,
+            humidity REAL,
+            power REAL,
+            energy REAL,
+            battery REAL,
+            updated_at INTEGER NOT NULL
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT NOT NULL,
+            attr TEXT NOT NULL,
+            value TEXT,
+            created_at INTEGER NOT NULL
+        )
+    ''')
+    return conn
 
 
 def maker_url(path: str) -> str:
@@ -37,119 +82,291 @@ def maker_url(path: str) -> str:
     return f'{base}/apps/api/{app_id}/{path}{sep}access_token={token}'
 
 
+def safe_float(value: Any) -> float | None:
+    try:
+        if value in (None, ''):
+            return None
+        return float(str(value).replace('%',''))
+    except Exception:
+        return None
+
+
 def attr_map(device: dict[str, Any]) -> dict[str, Any]:
     attrs: dict[str, Any] = {}
     for item in device.get('attributes', []) or []:
         name = item.get('name')
-        if not name:
-            continue
-        attrs[name] = item.get('currentValue')
+        if name:
+            attrs[name] = item.get('currentValue')
     return attrs
 
 
+def infer_room(label: str) -> str:
+    text = normalise(label)
+    for room in ROOM_WORDS:
+        if room in text:
+            return 'Living Room' if room == 'livingroom' else room.title()
+    # Common Hubitat labels like "01 Livingroom TRV" or "Bedroom 1 Meter"
+    m = re.search(r'(bedroom\s*[123]|hallway|bathroom|living\s*room|livingroom|kitchen|toilet)', text)
+    if m:
+        return m.group(1).replace('livingroom', 'living room').title()
+    return 'Unknown'
+
+
 def classify(device: dict[str, Any], attrs: dict[str, Any]) -> str:
-    name = (device.get('label') or device.get('name') or '').lower()
+    label = (device.get('label') or device.get('name') or '').lower()
     caps = ' '.join(device.get('capabilities', []) or []).lower()
-    if 'light' in name or 'dimmer' in name or 'switchlevel' in caps:
+    if 'light' in label or 'dimmer' in label or 'switchlevel' in caps:
         return 'light'
-    if 'thermostat' in caps or 'trv' in name:
+    if 'thermostat' in caps or 'trv' in label or 'heatingsetpoint' in attrs:
         return 'thermostat'
+    if 'presence' in attrs or 'presencesensor' in caps:
+        return 'presence_sensor'
+    if 'motion' in attrs or 'motionsensor' in caps:
+        return 'motion_sensor'
+    if 'contact' in attrs or 'contactsensor' in caps:
+        return 'contact_sensor'
     if 'temperature' in attrs or 'humidity' in attrs:
         return 'climate_sensor'
-    if 'motion' in attrs:
-        return 'motion_sensor'
-    if 'presence' in attrs:
-        return 'presence_sensor'
     if 'power' in attrs or 'energy' in attrs:
         return 'power_device'
-    if 'switch' in attrs:
+    if 'switch' in attrs or 'switch' in caps:
         return 'switch'
     return 'device'
 
 
 def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
     attrs = attr_map(device)
-    label = device.get('label') or device.get('name') or f"Device {device.get('id')}"
+    label = str(device.get('label') or device.get('name') or f"Device {device.get('id')}")
     return {
         'id': str(device.get('id')),
         'name': str(device.get('name') or label),
-        'label': str(label),
+        'label': label,
+        'room': infer_room(label),
         'category': classify(device, attrs),
         'attributes': attrs,
         'switch': attrs.get('switch'),
-        'temperature': attrs.get('temperature'),
-        'humidity': attrs.get('humidity'),
-        'power': attrs.get('power'),
-        'energy': attrs.get('energy'),
-        'battery': attrs.get('battery'),
+        'level': attrs.get('level'),
+        'temperature': safe_float(attrs.get('temperature')),
+        'humidity': safe_float(attrs.get('humidity')),
+        'power': safe_float(attrs.get('power')),
+        'energy': safe_float(attrs.get('energy')),
+        'battery': safe_float(attrs.get('battery')),
+        'motion': attrs.get('motion'),
+        'contact': attrs.get('contact'),
+        'presence': attrs.get('presence'),
+        'thermostatMode': attrs.get('thermostatMode'),
+        'heatingSetpoint': attrs.get('heatingSetpoint'),
     }
 
 
-def refresh_devices() -> None:
-    global DEVICES, LAST_ERROR
+def upsert_devices(devices: list[dict[str, Any]]) -> None:
+    now = int(time.time())
+    conn = db()
     try:
-        response = requests.get(maker_url('devices'), timeout=15)
+        for d in devices:
+            old = conn.execute('SELECT json FROM devices WHERE id=?', (d['id'],)).fetchone()
+            conn.execute('''
+                INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name, label=excluded.label, room=excluded.room, category=excluded.category,
+                    json=excluded.json, switch=excluded.switch, temperature=excluded.temperature,
+                    humidity=excluded.humidity, power=excluded.power, energy=excluded.energy,
+                    battery=excluded.battery, updated_at=excluded.updated_at
+            ''', (
+                d['id'], d['name'], d['label'], d['room'], d['category'], json.dumps(d),
+                d.get('switch'), d.get('temperature'), d.get('humidity'), d.get('power'), d.get('energy'), d.get('battery'), now
+            ))
+            if old:
+                old_d = json.loads(old['json'])
+                for attr in ('switch','temperature','humidity','power','battery','motion','presence'):
+                    if old_d.get(attr) != d.get(attr):
+                        conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', (d['id'], attr, str(d.get(attr)), now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def refresh_devices() -> int:
+    global LAST_ERROR, LAST_REFRESH
+    try:
+        response = requests.get(maker_url('devices'), timeout=20)
         response.raise_for_status()
         raw = response.json()
-        DEVICES = [normalise_device(d) for d in raw]
+        devices = [normalise_device(d) for d in raw]
+        upsert_devices(devices)
+        LAST_REFRESH = time.time()
         LAST_ERROR = None
+        return len(devices)
     except Exception as exc:
         LAST_ERROR = str(exc)
+        return count_devices()
 
 
-def safe_float(value: Any) -> float | None:
+def rows_to_devices(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+    return [json.loads(r['json']) for r in rows]
+
+
+def all_devices() -> list[dict[str, Any]]:
+    conn = db()
     try:
-        if value in (None, ''):
-            return None
-        return float(value)
-    except Exception:
-        return None
+        return rows_to_devices(conn.execute('SELECT json FROM devices ORDER BY label').fetchall())
+    finally:
+        conn.close()
+
+
+def count_devices() -> int:
+    conn = db()
+    try:
+        return int(conn.execute('SELECT COUNT(*) c FROM devices').fetchone()['c'])
+    finally:
+        conn.close()
 
 
 def dashboard_summary() -> dict[str, Any]:
-    lights_on = [d for d in DEVICES if d['category'] == 'light' and d.get('switch') == 'on']
-    switches_on = [d for d in DEVICES if d['category'] in ('switch', 'power_device') and d.get('switch') == 'on']
-    temps = [v for d in DEVICES if (v := safe_float(d.get('temperature'))) is not None]
-    hums = [v for d in DEVICES if (v := safe_float(d.get('humidity'))) is not None]
-    powers = [v for d in DEVICES if (v := safe_float(d.get('power'))) is not None]
-    low_batt = [d for d in DEVICES if (v := safe_float(d.get('battery'))) is not None and v <= 20]
+    devices = all_devices()
+    lights_on = [d for d in devices if d['category'] == 'light' and d.get('switch') == 'on']
+    switches_on = [d for d in devices if d['category'] in ('switch', 'power_device') and d.get('switch') == 'on']
+    temps = [d['temperature'] for d in devices if isinstance(d.get('temperature'), (int, float))]
+    hums = [d['humidity'] for d in devices if isinstance(d.get('humidity'), (int, float))]
+    powers = [d['power'] for d in devices if isinstance(d.get('power'), (int, float))]
+    low_batt = [d for d in devices if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20]
+    motion_active = [d for d in devices if d.get('motion') == 'active']
+    people_home = [d for d in devices if d.get('presence') == 'present']
     return {
-        'devices': len(DEVICES),
+        'devices': len(devices),
         'lights_on': len(lights_on),
         'switches_on': len(switches_on),
         'avg_temperature': round(sum(temps) / len(temps), 1) if temps else None,
         'avg_humidity': round(sum(hums) / len(hums), 1) if hums else None,
         'power_total': round(sum(powers), 1) if powers else 0,
         'low_batteries': len(low_batt),
+        'motion_active': len(motion_active),
+        'people_home': len(people_home),
+        'last_refresh': LAST_REFRESH,
     }
 
 
-def find_devices(query: str) -> list[dict[str, Any]]:
-    q = query.lower().strip()
-    return [d for d in DEVICES if q in d['label'].lower() or q in d['name'].lower()]
+def normalise(text: str) -> str:
+    text = text.lower().strip()
+    replacements = {
+        'turn of': 'turn off', 'switch of': 'switch off', 'the humidifier': 'dehumidifier',
+        'de humidifier': 'dehumidifier', 'humidifier': 'dehumidifier', 'ligth': 'light',
+        'lite': 'light', 'livingroom': 'living room', 'one': '1', 'two': '2', 'three': '3'
+    }
+    for a, b in replacements.items():
+        text = re.sub(rf'\b{re.escape(a)}\b', b, text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def find_devices(query: str, category: str | None = None) -> list[dict[str, Any]]:
+    q = normalise(query)
+    devices = all_devices()
+    if category:
+        devices = [d for d in devices if d['category'] == category]
+    direct = [d for d in devices if q in normalise(d['label']) or q in normalise(d['name']) or q == normalise(d.get('room',''))]
+    if direct:
+        return direct
+    labels = {normalise(d['label']): d for d in devices}
+    match = get_close_matches(q, list(labels.keys()), n=1, cutoff=0.55)
+    return [labels[match[0]]] if match else []
+
+
+def room_devices(room: str, category: str | None = None) -> list[dict[str, Any]]:
+    room_n = normalise(room)
+    devices = [d for d in all_devices() if room_n in normalise(d.get('room','')) or room_n in normalise(d.get('label',''))]
+    if category:
+        devices = [d for d in devices if d['category'] == category]
+    return devices
+
+
+def maker_command(device_id: str, command: str) -> Any:
+    response = requests.get(maker_url(f'devices/{device_id}/{command}'), timeout=10)
+    response.raise_for_status()
+    try:
+        return response.json()
+    except Exception:
+        return {'success': True}
+
+
+def answer_attribute(target: str, attr: str) -> dict[str, Any]:
+    candidates = room_devices(target) or find_devices(target)
+    candidates = [d for d in candidates if d.get(attr) is not None]
+    if not candidates:
+        return {'success': False, 'message': f'I could not find {attr} for {target}.'}
+    d = candidates[0]
+    unit = {'temperature': '°C', 'humidity': '%', 'power': 'W', 'battery': '%', 'energy': 'kWh'}.get(attr, '')
+    return {'success': True, 'message': f"{d['label']} {attr} is {d[attr]}{unit}", 'device': d, 'attribute': attr, 'value': d[attr]}
+
+
+def run_command(text: str) -> dict[str, Any]:
+    t = normalise(text)
+    if t in ('summary', 'status', 'home summary'):
+        s = dashboard_summary()
+        return {'success': True, 'message': f"🏠 Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}°C\nAverage humidity: {s['avg_humidity']}%\nPower total: {s['power_total']} W\nPeople home: {s['people_home']}\nLow batteries: {s['low_batteries']}"}
+    if 'which lights are on' in t or 'what lights are on' in t:
+        lights = [d['label'] for d in all_devices() if d['category'] == 'light' and d.get('switch') == 'on']
+        return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None')}
+    if 'which switches are on' in t or 'what switches are on' in t:
+        switches = [d['label'] for d in all_devices() if d['category'] in ('switch','power_device') and d.get('switch') == 'on']
+        return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None')}
+    for attr in ('humidity', 'temperature', 'power', 'battery', 'energy'):
+        if attr in t or (attr == 'temperature' and 'temp' in t):
+            target = t.replace('what is','').replace("what's",'').replace('level','').replace('the','').replace(attr,'').replace('temp','').strip()
+            if not target:
+                target = 'home'
+            return answer_attribute(target, attr)
+    m = re.search(r'(turn on|switch on|turn off|switch off) (.+)', t)
+    if m:
+        action, target = m.group(1), m.group(2).strip()
+        command = 'on' if 'on' in action else 'off'
+        if target.endswith('lights') or target.endswith('light'):
+            room = target.replace('lights','').replace('light','').strip()
+            devices = room_devices(room, 'light')
+        else:
+            devices = find_devices(target)
+        if not devices:
+            return {'success': False, 'message': f'Device not found: {target}'}
+        changed = []
+        errors = []
+        for d in devices[:10]:
+            if d.get('switch') is None:
+                continue
+            try:
+                maker_command(d['id'], command)
+                changed.append(d['label'])
+            except Exception as exc:
+                errors.append(f"{d['label']}: {exc}")
+        refresh_devices()
+        if changed:
+            return {'success': True, 'message': f"✅ Turned {command}:\n" + '\n'.join(changed), 'changed': changed, 'errors': errors}
+        return {'success': False, 'message': f'No switchable devices found for {target}', 'errors': errors}
+    return {'success': False, 'message': f'I did not understand yet: {text}'}
+
+
+async def refresh_loop() -> None:
+    seconds = max(10, int(CONFIG.get('refresh_seconds', 30)))
+    while True:
+        await asyncio.sleep(seconds)
+        await asyncio.to_thread(refresh_devices)
 
 
 @app.on_event('startup')
-def startup() -> None:
+async def startup() -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     refresh_devices()
+    asyncio.create_task(refresh_loop())
 
 
 @app.get('/api/status')
 def api_status():
-    return {
-        'success': True,
-        'app': 'HomeBrain OS',
-        'version': '0.4.0-alpha',
-        'hubitat': CONFIG.get('hubitat_base_url'),
-        'devices': len(DEVICES),
-        'error': LAST_ERROR,
-    }
+    return {'success': True, 'app': 'HomeBrain OS', 'version': '0.5.0-alpha', 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR}
 
 
 @app.get('/api/refresh')
 def api_refresh():
-    refresh_devices()
-    return api_status()
+    count = refresh_devices()
+    return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
 
 
 @app.get('/api/dashboard')
@@ -158,36 +375,42 @@ def api_dashboard():
 
 
 @app.get('/api/devices')
-def api_devices():
-    return {'success': True, 'count': len(DEVICES), 'devices': DEVICES}
+def api_devices(category: str | None = None, room: str | None = None):
+    devices = all_devices()
+    if category:
+        devices = [d for d in devices if d['category'] == category]
+    if room:
+        devices = [d for d in devices if normalise(room) in normalise(d.get('room',''))]
+    return {'success': True, 'count': len(devices), 'devices': devices}
+
+
+@app.get('/api/rooms')
+def api_rooms():
+    rooms: dict[str, dict[str, Any]] = {}
+    for d in all_devices():
+        room = d.get('room') or 'Unknown'
+        rooms.setdefault(room, {'room': room, 'devices': 0, 'lights_on': 0, 'avg_temperature': None, 'avg_humidity': None})
+        rooms[room]['devices'] += 1
+        if d['category'] == 'light' and d.get('switch') == 'on':
+            rooms[room]['lights_on'] += 1
+    for room in rooms.values():
+        ds = [d for d in all_devices() if (d.get('room') or 'Unknown') == room['room']]
+        temps = [d['temperature'] for d in ds if isinstance(d.get('temperature'), (int,float))]
+        hums = [d['humidity'] for d in ds if isinstance(d.get('humidity'), (int,float))]
+        room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None
+        room['avg_humidity'] = round(sum(hums)/len(hums),1) if hums else None
+    return {'success': True, 'rooms': sorted(rooms.values(), key=lambda x: x['room'])}
 
 
 @app.get('/api/device/{device_id}')
 def api_device(device_id: str):
-    for d in DEVICES:
-        if d['id'] == device_id:
-            return {'success': True, 'device': d}
-    return {'success': False, 'message': 'Device not found'}
+    matches = [d for d in all_devices() if d['id'] == device_id]
+    return {'success': bool(matches), 'device': matches[0] if matches else None}
 
 
 @app.get('/api/ask')
 def api_ask(q: str = Query(...)):
-    text = q.lower().strip().replace('the humidifier', 'dehumidifier').replace('humidifier', 'dehumidifier')
-    if text in ('summary', 'status'):
-        s = dashboard_summary()
-        return {'success': True, 'message': f"Devices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}°C\nAverage humidity: {s['avg_humidity']}%\nPower total: {s['power_total']} W\nLow batteries: {s['low_batteries']}"}
-    if 'which lights are on' in text:
-        lights = [d['label'] for d in DEVICES if d['category'] == 'light' and d.get('switch') == 'on']
-        return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None')}
-    if 'hallway humidity' in text:
-        matches = [d for d in find_devices('hallway') if d.get('humidity') is not None]
-        if matches:
-            return {'success': True, 'message': f"{matches[0]['label']} humidity is {matches[0]['humidity']}%"}
-    if 'hallway temperature' in text:
-        matches = [d for d in find_devices('hallway') if d.get('temperature') is not None]
-        if matches:
-            return {'success': True, 'message': f"{matches[0]['label']} temperature is {matches[0]['temperature']}°C"}
-    return {'success': False, 'message': f'I did not understand yet: {q}'}
+    return run_command(q)
 
 
 @app.get('/', response_class=HTMLResponse)
