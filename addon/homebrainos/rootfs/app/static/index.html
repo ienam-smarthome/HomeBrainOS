@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.3</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.4</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -80,10 +80,22 @@ function attrChips(device){
   }
   return chips.length?`<div class="attrs">${chips.join('')}</div>`:'';
 }
+function isThermostat(device){
+  return device.category==='thermostat' || String(device.label||'').toLowerCase().includes('trv');
+}
+function controls(device, rawState){
+  if(isThermostat(device)){
+    const setpoint=device.heatingSetpoint??(device.attributes||{}).heatingSetpoint??'—';
+    return `<div class="row"><button class="secondary" onclick="setpoint('${device.id}',-1)">-1°</button><button disabled>${escapeHtml(setpoint)}°</button><button onclick="setpoint('${device.id}',1)">+1°</button></div>`;
+  }
+  return `<div class="row"><button onclick="deviceCommand('${device.id}','on')" ${rawState==='on'?'disabled':''}>On</button><button class="secondary" onclick="deviceCommand('${device.id}','off')" ${rawState==='off'?'disabled':''}>Off</button></div>`;
+}
 function deviceCard(device){
   const rawState = String(device.switch??'unknown').toLowerCase();
   const stateClass = rawState==='on'?'on':rawState==='off'?'off':'unknown';
-  return `<div class="device"><b>${escapeHtml(device.label)}</b><br><span class="state ${stateClass}">${escapeHtml(rawState)}</span> <span class="muted">${escapeHtml(device.category||'device')} · ${escapeHtml(device.room||'Unknown')}</span>${attrChips(device)}<div class="row"><button onclick="deviceCommand('${device.id}','on')" ${rawState==='on'?'disabled':''}>On</button><button class="secondary" onclick="deviceCommand('${device.id}','off')" ${rawState==='off'?'disabled':''}>Off</button></div></div>`;
+  const badge=isThermostat(device)?'climate':rawState;
+  const badgeClass=isThermostat(device)?'off':stateClass;
+  return `<div class="device"><b>${escapeHtml(device.label)}</b><br><span class="state ${badgeClass}">${escapeHtml(badge)}</span> <span class="muted">${escapeHtml(device.category||'device')} · ${escapeHtml(device.room||'Unknown')}</span>${attrChips(device)}${controls(device,rawState)}</div>`;
 }
 async function status(){
   const badge=$('status');
@@ -118,6 +130,15 @@ async function deviceCommand(id, command){
     status();
   }catch(err){
     $('out').textContent='Command failed: '+err.message;
+  }
+}
+async function setpoint(id, delta){
+  try{
+    const j=await api('/api/device/'+encodeURIComponent(id)+'/setpoint/'+delta);
+    $('out').textContent=j.message||JSON.stringify(j,null,2);
+    status();
+  }catch(err){
+    $('out').textContent='Setpoint failed: '+err.message;
   }
 }
 async function clearRefresh(){

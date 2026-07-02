@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.3-alpha'
+APP_VERSION = '0.7.4-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -401,6 +401,27 @@ def update_cached_switch(device_ids: list[str], switch: str) -> list[dict[str, A
     return updated
 
 
+def update_cached_setpoint(device_id: str, setpoint: float) -> dict[str, Any] | None:
+    now = int(time.time())
+    conn = db()
+    try:
+        row = conn.execute('SELECT json FROM devices WHERE id=?', (device_id,)).fetchone()
+        if not row:
+            return None
+        device = json.loads(row['json'])
+        device['heatingSetpoint'] = setpoint
+        device.setdefault('attributes', {})['heatingSetpoint'] = setpoint
+        conn.execute('UPDATE devices SET json=?, updated_at=? WHERE id=?', (json.dumps(device), now, device_id))
+        conn.execute(
+            'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
+            (device_id, 'heatingSetpoint', str(setpoint), now),
+        )
+        conn.commit()
+        return device
+    finally:
+        conn.close()
+
+
 def refresh_devices() -> int:
     global LAST_ERROR, LAST_REFRESH
     try:
@@ -558,6 +579,15 @@ def maker_command(device_id: str, command: str) -> Any:
         return {'success': True}
 
 
+def maker_command_value(device_id: str, command: str, value: Any) -> Any:
+    response = requests.get(maker_url(f'devices/{device_id}/{command}/{quote(str(value), safe="")}'), timeout=10)
+    response.raise_for_status()
+    try:
+        return response.json()
+    except Exception:
+        return {'success': True}
+
+
 def device_line(device: dict[str, Any]) -> str:
     parts = [device['label'], f"room {device.get('room') or 'Unknown'}", device['category']]
     for attr, unit in (('switch', ''), ('level', '%'), ('temperature', 'C'), ('humidity', '%'), ('illuminance', ' lux'), ('power', 'W'), ('energy', 'kWh'), ('battery', '%'), ('motion', ''), ('contact', ''), ('presence', ''), ('lock', ''), ('water', ''), ('valve', '')):
@@ -594,8 +624,19 @@ def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [d for d in devices if is_switchable_device(d)]
 
 
+def climate_control_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [d for d in devices if d.get('category') == 'thermostat' or 'trv' in normalise(d.get('label', ''))]
+
+
+def controllable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    controls: dict[str, dict[str, Any]] = {}
+    for device in switchable_devices(devices) + climate_control_devices(devices):
+        controls[device['id']] = device
+    return sorted(controls.values(), key=lambda d: d.get('label', ''))
+
+
 def command_devices(devices: list[dict[str, Any]], command: str) -> dict[str, Any]:
-    candidates = switchable_devices(devices)[:10]
+    candidates = [d for d in switchable_devices(devices) if d.get('category') != 'thermostat'][:10]
     if not candidates:
         labels = [d['label'] for d in devices[:5]]
         suffix = '\nMatched: ' + '\n'.join(labels) if labels else ''
@@ -616,6 +657,24 @@ def command_devices(devices: list[dict[str, Any]], command: str) -> dict[str, An
             message += '\n\nErrors:\n' + '\n'.join(errors)
         return {'success': True, 'message': message, 'changed': changed, 'errors': errors, 'devices': updated}
     return {'success': False, 'message': 'Hubitat command failed:\n' + '\n'.join(errors), 'errors': errors}
+
+
+def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
+    matches = [d for d in all_devices() if d['id'] == device_id]
+    if not matches:
+        raise HTTPException(status_code=404, detail='Device not found.')
+    device = matches[0]
+    current = safe_float(device.get('heatingSetpoint') or device.get('attributes', {}).get('heatingSetpoint'))
+    if current is None:
+        raise HTTPException(status_code=400, detail='Device has no heating setpoint.')
+    new_value = round(current + delta, 1)
+    try:
+        maker_command_value(device_id, 'setHeatingSetpoint', new_value)
+    except Exception as exc:
+        return {'success': False, 'message': f"Setpoint command failed for {device['label']}: {exc}", 'device': device}
+    refresh_devices()
+    updated = update_cached_setpoint(device_id, new_value)
+    return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}°", 'device': updated or device, 'setpoint': new_value}
 
 
 def answer_attribute(target: str, attr: str) -> dict[str, Any]:
@@ -826,7 +885,7 @@ def api_switches(room: str | None = None):
     devices = all_devices()
     if room:
         devices = [d for d in devices if normalise(room) in normalise(d.get('room',''))]
-    devices = switchable_devices(devices)
+    devices = controllable_devices(devices)
     return {'success': True, 'count': len(devices), 'devices': devices}
 
 
@@ -881,6 +940,13 @@ def api_device_command(device_id: str, command: str):
     if not matches:
         raise HTTPException(status_code=404, detail='Device not found.')
     return command_devices(matches, command)
+
+
+@app.get('/api/device/{device_id}/setpoint/{delta}')
+def api_device_setpoint(device_id: str, delta: float):
+    if delta not in (-1, 1):
+        raise HTTPException(status_code=400, detail='Only -1 and +1 setpoint adjustments are supported.')
+    return adjust_setpoint(device_id, delta)
 
 
 @app.get('/api/ask')

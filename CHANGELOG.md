@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.4-alpha
+
+- Replace TRV thermostat On/Off buttons with -1/+1 heating setpoint controls.
+- Add a setpoint adjustment API that sends `setHeatingSetpoint` to Hubitat Maker API.
+- Keep thermostat devices out of regular switch command routing.
+
 ## v0.7.3-alpha
 
 - Reduce dashboard card noise by showing only the most useful attributes for each device type.
