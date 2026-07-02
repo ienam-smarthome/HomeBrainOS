@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.1-alpha'
+APP_VERSION = '0.7.2-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -64,12 +64,14 @@ def load_config() -> dict[str, Any]:
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
         'ollama_model': os.getenv('OLLAMA_MODEL', 'llama3.2'),
+        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
     }
 
 
 CONFIG = load_config()
 LAST_ERROR: str | None = None
 LAST_REFRESH: float | None = None
+LAST_DETAIL_ERRORS: list[str] = []
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
@@ -111,6 +113,12 @@ def maker_url(path: str) -> str:
     token = quote(str(CONFIG.get('maker_api_token', '')).strip(), safe='')
     sep = '&' if '?' in path else '?'
     return f'{base}/apps/api/{app_id}/{path}{sep}access_token={token}'
+
+
+def maker_get(path: str, timeout: int = 20) -> Any:
+    response = requests.get(maker_url(path), timeout=timeout)
+    response.raise_for_status()
+    return response.json()
 
 
 def safe_float(value: Any) -> float | None:
@@ -272,6 +280,53 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def merge_raw_device(summary: dict[str, Any], detail: Any) -> dict[str, Any]:
+    if isinstance(detail, list):
+        detail = detail[0] if len(detail) == 1 and isinstance(detail[0], dict) else {}
+    if not isinstance(detail, dict):
+        return summary
+    merged = dict(summary)
+    for key, value in detail.items():
+        if value not in (None, '', [], {}):
+            merged[key] = value
+    merged.setdefault('id', summary.get('id'))
+    merged.setdefault('name', summary.get('name'))
+    merged.setdefault('label', summary.get('label'))
+    return merged
+
+
+def needs_device_detail(raw_device: dict[str, Any], device: dict[str, Any]) -> bool:
+    if not device.get('attributes'):
+        return True
+    if is_switchable_device(device) and device.get('switch') is None:
+        return True
+    sensor_categories = {'light_sensor', 'climate_sensor', 'motion_sensor', 'contact_sensor', 'presence_sensor', 'thermostat'}
+    if device.get('category') in sensor_categories and not any(device.get(attr) is not None for attr in DEVICE_ATTRS):
+        return True
+    return False
+
+
+def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    global LAST_DETAIL_ERRORS
+    limit = max(0, int(CONFIG.get('device_detail_refresh_limit', 150)))
+    enriched: list[dict[str, Any]] = []
+    detail_errors: list[str] = []
+    detail_count = 0
+    for raw_device in raw_devices:
+        device = normalise_device(raw_device)
+        should_fetch = detail_count < limit and needs_device_detail(raw_device, device)
+        if should_fetch:
+            try:
+                detail = maker_get(f"devices/{quote(str(device['id']), safe='')}", timeout=8)
+                raw_device = merge_raw_device(raw_device, detail)
+                detail_count += 1
+            except Exception as exc:
+                detail_errors.append(f"{device['label']}: {exc}")
+        enriched.append(raw_device)
+    LAST_DETAIL_ERRORS = detail_errors[:10]
+    return enriched
+
+
 def upsert_devices(devices: list[dict[str, Any]]) -> None:
     now = int(time.time())
     conn = db()
@@ -349,9 +404,8 @@ def update_cached_switch(device_ids: list[str], switch: str) -> list[dict[str, A
 def refresh_devices() -> int:
     global LAST_ERROR, LAST_REFRESH
     try:
-        response = requests.get(maker_url('devices'), timeout=20)
-        response.raise_for_status()
-        raw = response.json()
+        raw = maker_get('devices', timeout=20)
+        raw = enrich_raw_devices(raw if isinstance(raw, list) else [])
         devices = [normalise_device(d) for d in raw]
         upsert_devices(devices)
         prune_missing_devices({d['id'] for d in devices})
@@ -436,6 +490,7 @@ def device_diagnostics() -> dict[str, Any]:
         'humidity_devices': len(humidity_devices),
         'power_devices': len(power_devices),
         'last_error': LAST_ERROR,
+        'detail_errors': LAST_DETAIL_ERRORS,
         'last_refresh': LAST_REFRESH,
     }
 
@@ -516,12 +571,18 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
     label = normalise(device.get('label', '') + ' ' + device.get('name', ''))
     caps = ' '.join(device.get('capabilities', []) or []).lower()
     commands = {str(command).lower() for command in device.get('commands', []) or []}
-    controllable_words = ('light', 'dimmer', 'plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier')
+    category = device.get('category')
+    sensor_categories = {'light_sensor', 'climate_sensor', 'motion_sensor', 'contact_sensor', 'presence_sensor', 'thermostat'}
+    sensor_words = ('sensor', 'meter', 'lux', 'camera', 'cam', 'contact', 'motion', 'temperature', 'humidity')
+    explicit_switch = device.get('switch') is not None or 'switch' in caps or {'on', 'off'}.issubset(commands)
+    if category in sensor_categories and not explicit_switch:
+        return False
+    if any(word in label for word in sensor_words) and not explicit_switch:
+        return False
+    controllable_words = ('light', 'dimmer', 'plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier')
     return (
-        device.get('switch') is not None
-        or device.get('category') in ('light', 'switch', 'power_device')
-        or 'switch' in caps
-        or {'on', 'off'}.issubset(commands)
+        explicit_switch
+        or category in ('light', 'switch', 'power_device')
         or any(word in label for word in controllable_words)
     )
 
@@ -623,6 +684,8 @@ def assistant(text: str) -> dict[str, Any]:
             lines.append('Unknown switch examples:\n' + '\n'.join(d['unknown_switch_examples']))
         if d['last_error']:
             lines.append(f"Last Hubitat error: {d['last_error']}")
+        if d['detail_errors']:
+            lines.append('Detail refresh issues:\n' + '\n'.join(d['detail_errors'][:5]))
         return {'success': True, 'intent': 'diagnostics', 'message': '\n'.join(lines), 'diagnostics': d}
     m = re.search(r'(devices|what|list|show).*(in|inside) (.+)', t)
     if m:
@@ -724,7 +787,7 @@ async def startup() -> None:
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS}
 
 
 @app.get('/api/refresh')

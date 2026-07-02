@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.2-alpha
+
+- Automatically fetch Hubitat per-device detail records when the device list does not include usable attributes.
+- Use detail refresh to populate switch, sensor, meter, and thermostat states without requiring an on/off command.
+- Keep sensor and meter devices out of the controllable-device grid unless Hubitat explicitly reports switch support.
+- Show switch state as an attribute chip instead of reporting no attributes.
+
 ## v0.7.1-alpha
 
 - Normalize switch, sensor, thermostat, safety, and power attributes across Hubitat attribute shapes and casing.
