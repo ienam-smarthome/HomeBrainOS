@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.4-alpha'
+APP_VERSION = '0.7.6-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -422,6 +422,30 @@ def update_cached_setpoint(device_id: str, setpoint: float) -> dict[str, Any] | 
         conn.close()
 
 
+def update_cached_thermostat_mode(device_ids: list[str], mode: str) -> list[dict[str, Any]]:
+    now = int(time.time())
+    updated: list[dict[str, Any]] = []
+    conn = db()
+    try:
+        for device_id in device_ids:
+            row = conn.execute('SELECT json FROM devices WHERE id=?', (device_id,)).fetchone()
+            if not row:
+                continue
+            device = json.loads(row['json'])
+            device['thermostatMode'] = mode
+            device.setdefault('attributes', {})['thermostatMode'] = mode
+            updated.append(device)
+            conn.execute('UPDATE devices SET json=?, updated_at=? WHERE id=?', (json.dumps(device), now, device_id))
+            conn.execute(
+                'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
+                (device_id, 'thermostatMode', mode, now),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return updated
+
+
 def refresh_devices() -> int:
     global LAST_ERROR, LAST_REFRESH
     try:
@@ -677,6 +701,43 @@ def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
     return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}°", 'device': updated or device, 'setpoint': new_value}
 
 
+def set_heating_mode(mode: str, target: str = 'home') -> dict[str, Any]:
+    devices = climate_control_devices(all_devices())
+    if target not in ('home', 'house', 'heating', 'heat'):
+        matched_ids = {d['id'] for d in room_devices(target)}
+        devices = [d for d in devices if d['id'] in matched_ids]
+    if not devices:
+        return {'success': False, 'message': f'No heating devices found for {target}.'}
+    command = 'heat' if mode == 'heat' else 'off'
+    changed = []
+    errors = []
+    setpoints: list[str] = []
+    for device in devices[:20]:
+        try:
+            maker_command_value(device['id'], 'setThermostatMode', command)
+            if command == 'heat':
+                temperature = safe_float(device.get('temperature') or device.get('attributes', {}).get('temperature'))
+                current_setpoint = safe_float(device.get('heatingSetpoint') or device.get('attributes', {}).get('heatingSetpoint'))
+                if temperature is not None and (current_setpoint is None or current_setpoint <= temperature):
+                    new_setpoint = round(temperature + 1, 1)
+                    maker_command_value(device['id'], 'setHeatingSetpoint', new_setpoint)
+                    update_cached_setpoint(device['id'], new_setpoint)
+                    setpoints.append(f"{device['label']}: {new_setpoint}°")
+            changed.append(device['label'])
+        except Exception as exc:
+            errors.append(f"{device['label']}: {exc}")
+    refresh_devices()
+    updated = update_cached_thermostat_mode([d['id'] for d in devices if d['label'] in changed], command)
+    if changed:
+        message = f"Heating turned {command} for:\n" + '\n'.join(changed)
+        if setpoints:
+            message += '\n\nRaised setpoints above room temp:\n' + '\n'.join(setpoints)
+        if errors:
+            message += '\n\nErrors:\n' + '\n'.join(errors)
+        return {'success': True, 'message': message, 'changed': changed, 'errors': errors, 'devices': updated}
+    return {'success': False, 'message': 'Heating command failed:\n' + '\n'.join(errors), 'errors': errors}
+
+
 def answer_attribute(target: str, attr: str) -> dict[str, Any]:
     if target in ('home', 'house'):
         summary = dashboard_summary()
@@ -786,6 +847,12 @@ def run_command(text: str) -> dict[str, Any]:
     if 'which switches are on' in t or 'what switches are on' in t:
         switches = [d['label'] for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None')}
+    m_heat = re.search(r'^(turn on|switch on|enable|start|turn off|switch off|disable|stop)\s+(?:(.+?)\s+)?heating$', t)
+    if m_heat:
+        action = m_heat.group(1)
+        target = (m_heat.group(2) or 'home').replace('the ', '').replace('all ', '').strip() or 'home'
+        mode = 'off' if any(word in action for word in ('off', 'disable', 'stop')) else 'heat'
+        return set_heating_mode(mode, target)
     attr_terms = {
         'humidity': ('humidity',),
         'temperature': ('temperature', 'temp'),

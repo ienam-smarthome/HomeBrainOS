@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.6-alpha
+
+- Make `turn on heating` raise each TRV heating setpoint above its measured room temperature when needed.
+- Leave TRVs with already-higher setpoints unchanged.
+
+## v0.7.5-alpha
+
+- Add assistant commands for `turn on heating` and `turn off heating`.
+- Support room-targeted heating mode commands such as `turn on hallway heating`.
+- Send `setThermostatMode/heat` or `setThermostatMode/off` to Hubitat thermostat/TRV devices.
+
 ## v0.7.4-alpha
 
 - Replace TRV thermostat On/Off buttons with -1/+1 heating setpoint controls.
