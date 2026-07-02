@@ -1,5 +1,5 @@
 name: HomeBrain OS
-version: "0.7.9-alpha"
+version: "0.7.10-alpha"
 slug: homebrainos
 description: HomeBrain OS live dashboard with SQLite device engine and Hubitat Maker API
 url: https://github.com/ienam-smarthome/HomeBrainOS

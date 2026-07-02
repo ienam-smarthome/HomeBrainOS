@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.10-alpha
+
+- Highlight selected On/Off buttons in green to match active device cards.
+- Highlight active thermostat setpoint controls in green and keep inactive controls dimmed.
+
 ## v0.7.9-alpha
 
 - Route `turn on heating in hallway` and similar phrases to Hallway thermostat/TRV devices only.
