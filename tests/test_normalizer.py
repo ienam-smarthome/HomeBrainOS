@@ -61,3 +61,36 @@ def test_light_sensor_is_not_controllable_light():
     d = normalise_device(raw)
     assert d['category'] == 'light_sensor'
     assert d['illuminance'] == 123.0
+
+
+def test_attribute_aliases_and_display_values():
+    raw = {
+        'id': '7',
+        'label': 'Bedroom 2 Sensor',
+        'attributes': [
+            {'name': 'relativeHumidity', 'displayValue': '55%'},
+            {'name': 'lux', 'currentValue': '42'},
+            {'name': 'PowerMeter', 'currentValue': '7.5'},
+        ],
+    }
+    d = normalise_device(raw)
+    assert d['humidity'] == 55.0
+    assert d['illuminance'] == 42.0
+    assert d['power'] == 7.5
+    assert d['attributes']['relativeHumidity'] == '55%'
+    assert d['attributes']['humidity'] == '55%'
+
+
+def test_capabilities_and_commands_are_preserved():
+    raw = {
+        'id': '8',
+        'label': 'Dehumidifier 2',
+        'capabilities': [{'name': 'Switch'}],
+        'commands': [{'command': 'on'}, {'command': 'off'}],
+        'currentStates': [{'name': 'Switch', 'value': 'off'}],
+    }
+    d = normalise_device(raw)
+    assert d['category'] == 'switch'
+    assert d['switch'] == 'off'
+    assert d['capabilities'] == ['Switch']
+    assert d['commands'] == ['off', 'on']

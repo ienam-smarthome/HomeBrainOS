@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.1-alpha
+
+- Normalize switch, sensor, thermostat, safety, and power attributes across Hubitat attribute shapes and casing.
+- Keep device capabilities and commands in the device model for better switchable-device detection.
+- Show richer attribute chips on dashboard switch/device cards.
+- Add room-level switch, motion, low-battery, and power details.
+
 ## v0.7.0-alpha
 
 - Add `/api/assistant` as the main smart-home assistant endpoint.

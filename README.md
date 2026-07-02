@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.0-alpha` assistant dashboard:
+`v0.7.1-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -15,6 +15,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Live dashboard and room APIs
 - Unified text/voice command engine
 - Assistant API with diagnostics and optional local Ollama answers
+- Switch, sensor, and device attribute normalization
 - Mobile web UI
 - CI validation
 - Release packaging workflow
@@ -42,7 +43,7 @@ refresh_seconds: 30
 
 - `v0.5.0-alpha` Device engine + SQLite cache
 - `v0.6.0-alpha` Live dashboard + rooms
-- `v0.7.0-alpha` Assistant diagnostics + safer control
+- `v0.7.1-alpha` Assistant diagnostics + richer device attributes
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 
