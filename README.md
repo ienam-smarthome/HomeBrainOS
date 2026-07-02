@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.8-alpha` assistant dashboard:
+`v0.7.9-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -23,6 +23,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Heating commands raise TRV setpoints above measured room temperature when needed
 - Heating-off commands lower TRV setpoints to a configurable off value
 - Dim inactive/off devices and highlight active/on rooms and devices
+- Room-targeted heating commands in both `hallway heating` and `heating in hallway` forms
 - Mobile web UI
 - CI validation
 - Release packaging workflow
@@ -58,6 +59,7 @@ refresh_seconds: 30
 - `v0.7.6-alpha` Heating commands raise setpoints above room temperature
 - `v0.7.7-alpha` Safer heating off and climate device filtering
 - `v0.7.8-alpha` Cleaner active/inactive dashboard states
+- `v0.7.9-alpha` Room-targeted heating intent parsing
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 

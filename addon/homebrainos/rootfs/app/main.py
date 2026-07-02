@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.8-alpha'
+APP_VERSION = '0.7.9-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -881,10 +881,10 @@ def run_command(text: str) -> dict[str, Any]:
     if 'which switches are on' in t or 'what switches are on' in t:
         switches = [d['label'] for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None')}
-    m_heat = re.search(r'^(turn on|switch on|enable|start|turn off|switch off|disable|stop)\s+(?:(.+?)\s+)?heating$', t)
+    m_heat = re.search(r'^(turn on|switch on|enable|start|turn off|switch off|disable|stop)\s+(?:(.+?)\s+)?heating(?:\s+(?:in|for)\s+(.+))?$', t)
     if m_heat:
         action = m_heat.group(1)
-        target = (m_heat.group(2) or 'home').replace('the ', '').replace('all ', '').strip() or 'home'
+        target = (m_heat.group(3) or m_heat.group(2) or 'home').replace('the ', '').replace('all ', '').strip() or 'home'
         mode = 'off' if any(word in action for word in ('off', 'disable', 'stop')) else 'heat'
         return set_heating_mode(mode, target)
     attr_terms = {

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.9-alpha
+
+- Route `turn on heating in hallway` and similar phrases to Hallway thermostat/TRV devices only.
+- Keep heating commands ahead of generic switch parsing so lights/cameras are not matched by mistake.
+
 ## v0.7.8-alpha
 
 - Show TRV setpoint buttons as simple `-` and `+` controls.
