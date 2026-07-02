@@ -20,7 +20,13 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Install on Home Assistant OS
 
-Copy `addon/homebrainos` to your Home Assistant `/addons/homebrainos` folder, reload the Add-on Store, configure options, then install/start the add-on.
+Add this repository URL in the Home Assistant Add-on Store:
+
+```text
+https://github.com/ienam-smarthome/HomeBrainOS
+```
+
+For local development, copy `homebrainos` to your Home Assistant `/addons/homebrainos` folder, reload the Add-on Store, configure options, then install/start the add-on.
 
 Required options:
 
