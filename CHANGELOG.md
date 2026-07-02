@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.4-alpha
+
+- Prune cached devices that no longer exist in Hubitat Maker API.
+- Add a clear-cache refresh endpoint and dashboard button for removing stale persisted devices.
+
 ## v0.6.3-alpha
 
 - Preserve last known switch states during Hubitat refreshes when Maker API omits switch values.

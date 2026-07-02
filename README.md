@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.6.3-alpha` smart dashboard:
+`v0.6.4-alpha` smart dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration

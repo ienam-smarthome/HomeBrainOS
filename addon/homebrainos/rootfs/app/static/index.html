@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.6.3</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.6.4</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -29,6 +29,7 @@
   <div class="card grid">
     <button class="secondary" onclick="quick('summary')">Summary</button>
     <button class="secondary" onclick="quick('refresh cache')">Refresh cache</button>
+    <button class="secondary" onclick="clearRefresh()">Clear cache</button>
     <button class="secondary" onclick="quick('hallway humidity')">Hallway humidity</button>
     <button class="secondary" onclick="quick('hallway temperature')">Hallway temperature</button>
     <button class="secondary" onclick="quick('which lights are on')">Which lights are on?</button>
@@ -89,6 +90,15 @@ async function deviceCommand(id, command){
     status();
   }catch(err){
     $('out').textContent='Command failed: '+err.message;
+  }
+}
+async function clearRefresh(){
+  try{
+    const j=await api('/api/cache/clear-refresh');
+    $('out').textContent=j.success?'Cache cleared and refreshed: '+j.devices+' devices':'Refresh failed: '+j.error;
+    status();
+  }catch(err){
+    $('out').textContent='Clear refresh failed: '+err.message;
   }
 }
 async function loadRooms(){

@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.6.3-alpha'
+APP_VERSION = '0.6.4-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -223,6 +223,20 @@ def upsert_devices(devices: list[dict[str, Any]]) -> None:
         conn.close()
 
 
+def prune_missing_devices(device_ids: set[str]) -> int:
+    conn = db()
+    try:
+        existing = [str(row['id']) for row in conn.execute('SELECT id FROM devices').fetchall()]
+        stale = [device_id for device_id in existing if device_id not in device_ids]
+        for device_id in stale:
+            conn.execute('DELETE FROM devices WHERE id=?', (device_id,))
+            conn.execute('DELETE FROM history WHERE device_id=?', (device_id,))
+        conn.commit()
+        return len(stale)
+    finally:
+        conn.close()
+
+
 def update_cached_switch(device_ids: list[str], switch: str) -> list[dict[str, Any]]:
     now = int(time.time())
     updated: list[dict[str, Any]] = []
@@ -258,6 +272,7 @@ def refresh_devices() -> int:
         raw = response.json()
         devices = [normalise_device(d) for d in raw]
         upsert_devices(devices)
+        prune_missing_devices({d['id'] for d in devices})
         LAST_REFRESH = time.time()
         LAST_ERROR = None
         return len(devices)
@@ -282,6 +297,16 @@ def count_devices() -> int:
     conn = db()
     try:
         return int(conn.execute('SELECT COUNT(*) c FROM devices').fetchone()['c'])
+    finally:
+        conn.close()
+
+
+def clear_cache() -> None:
+    conn = db()
+    try:
+        conn.execute('DELETE FROM history')
+        conn.execute('DELETE FROM devices')
+        conn.commit()
     finally:
         conn.close()
 
@@ -469,6 +494,13 @@ def api_status():
 
 @app.get('/api/refresh')
 def api_refresh():
+    count = refresh_devices()
+    return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
+
+
+@app.get('/api/cache/clear-refresh')
+def api_cache_clear_refresh():
+    clear_cache()
     count = refresh_devices()
     return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
 
