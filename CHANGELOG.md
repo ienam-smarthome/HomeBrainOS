@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.7-alpha
+
+- Exclude TRV battery/sensor child devices from heating commands.
+- Make `turn off heating` set thermostat mode off and lower high setpoints to the configured off value.
+- Add configurable `heating_on_delta` and `heating_off_setpoint` options.
+- Redact Maker API tokens from command error messages.
+
 ## v0.7.6-alpha
 
 - Make `turn on heating` raise each TRV heating setpoint above its measured room temperature when needed.

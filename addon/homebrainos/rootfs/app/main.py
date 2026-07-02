@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.6-alpha'
+APP_VERSION = '0.7.7-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -65,6 +65,8 @@ def load_config() -> dict[str, Any]:
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
         'ollama_model': os.getenv('OLLAMA_MODEL', 'llama3.2'),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
+        'heating_on_delta': float(os.getenv('HEATING_ON_DELTA', '1')),
+        'heating_off_setpoint': float(os.getenv('HEATING_OFF_SETPOINT', '12')),
     }
 
 
@@ -174,6 +176,12 @@ def state_text(value: Any) -> str:
 
 def is_state(value: Any, *states: str) -> bool:
     return state_text(value) in {state.lower() for state in states}
+
+
+def public_error(exc: Exception) -> str:
+    text = str(exc)
+    text = re.sub(r'access_token=[^&\s]+', 'access_token=REDACTED', text)
+    return text
 
 
 def attr_map(device: dict[str, Any]) -> dict[str, Any]:
@@ -648,8 +656,24 @@ def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [d for d in devices if is_switchable_device(d)]
 
 
+def is_climate_control_device(device: dict[str, Any]) -> bool:
+    label = normalise(device.get('label', ''))
+    sensor_words = ('battery', 'sensor', 'meter', 'lux', 'power')
+    has_climate_state = (
+        device.get('category') == 'thermostat'
+        or device.get('thermostatMode') is not None
+        or device.get('heatingSetpoint') is not None
+        or device.get('thermostatOperatingState') is not None
+    )
+    if not has_climate_state:
+        return False
+    if any(word in label for word in sensor_words) and device.get('category') != 'thermostat':
+        return False
+    return True
+
+
 def climate_control_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [d for d in devices if d.get('category') == 'thermostat' or 'trv' in normalise(d.get('label', ''))]
+    return [d for d in devices if is_climate_control_device(d)]
 
 
 def controllable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -672,7 +696,7 @@ def command_devices(devices: list[dict[str, Any]], command: str) -> dict[str, An
             maker_command(d['id'], command)
             changed.append(d['label'])
         except Exception as exc:
-            errors.append(f"{d['label']}: {exc}")
+            errors.append(f"{d['label']}: {public_error(exc)}")
     refresh_devices()
     if changed:
         updated = update_cached_switch([d['id'] for d in candidates if d['label'] in changed], command)
@@ -695,7 +719,7 @@ def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
     try:
         maker_command_value(device_id, 'setHeatingSetpoint', new_value)
     except Exception as exc:
-        return {'success': False, 'message': f"Setpoint command failed for {device['label']}: {exc}", 'device': device}
+        return {'success': False, 'message': f"Setpoint command failed for {device['label']}: {public_error(exc)}", 'device': device}
     refresh_devices()
     updated = update_cached_setpoint(device_id, new_value)
     return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}°", 'device': updated or device, 'setpoint': new_value}
@@ -709,29 +733,36 @@ def set_heating_mode(mode: str, target: str = 'home') -> dict[str, Any]:
     if not devices:
         return {'success': False, 'message': f'No heating devices found for {target}.'}
     command = 'heat' if mode == 'heat' else 'off'
+    on_delta = safe_float(CONFIG.get('heating_on_delta')) or 1
+    off_setpoint = safe_float(CONFIG.get('heating_off_setpoint')) or 12
     changed = []
     errors = []
     setpoints: list[str] = []
     for device in devices[:20]:
         try:
             maker_command_value(device['id'], 'setThermostatMode', command)
+            temperature = safe_float(device.get('temperature') or device.get('attributes', {}).get('temperature'))
+            current_setpoint = safe_float(device.get('heatingSetpoint') or device.get('attributes', {}).get('heatingSetpoint'))
             if command == 'heat':
-                temperature = safe_float(device.get('temperature') or device.get('attributes', {}).get('temperature'))
-                current_setpoint = safe_float(device.get('heatingSetpoint') or device.get('attributes', {}).get('heatingSetpoint'))
                 if temperature is not None and (current_setpoint is None or current_setpoint <= temperature):
-                    new_setpoint = round(temperature + 1, 1)
+                    new_setpoint = round(temperature + on_delta, 1)
                     maker_command_value(device['id'], 'setHeatingSetpoint', new_setpoint)
                     update_cached_setpoint(device['id'], new_setpoint)
                     setpoints.append(f"{device['label']}: {new_setpoint}°")
+            elif current_setpoint is None or current_setpoint > off_setpoint:
+                maker_command_value(device['id'], 'setHeatingSetpoint', off_setpoint)
+                update_cached_setpoint(device['id'], off_setpoint)
+                setpoints.append(f"{device['label']}: {off_setpoint:g}°")
             changed.append(device['label'])
         except Exception as exc:
-            errors.append(f"{device['label']}: {exc}")
+            errors.append(f"{device['label']}: {public_error(exc)}")
     refresh_devices()
     updated = update_cached_thermostat_mode([d['id'] for d in devices if d['label'] in changed], command)
     if changed:
         message = f"Heating turned {command} for:\n" + '\n'.join(changed)
         if setpoints:
-            message += '\n\nRaised setpoints above room temp:\n' + '\n'.join(setpoints)
+            heading = 'Raised setpoints above room temp:' if command == 'heat' else 'Lowered setpoints for heating off:'
+            message += f'\n\n{heading}\n' + '\n'.join(setpoints)
         if errors:
             message += '\n\nErrors:\n' + '\n'.join(errors)
         return {'success': True, 'message': message, 'changed': changed, 'errors': errors, 'devices': updated}
