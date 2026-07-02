@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.3-alpha
+
+- Reduce dashboard card noise by showing only the most useful attributes for each device type.
+- Hide verbose raw Hubitat attributes from cards while keeping them available through APIs.
+- Tighten controllable-device filtering for thermostat-like devices.
+
 ## v0.7.2-alpha
 
 - Automatically fetch Hubitat per-device detail records when the device list does not include usable attributes.

@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-APP_VERSION = '0.7.2-alpha'
+APP_VERSION = '0.7.3-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 ROOM_WORDS = [
@@ -574,8 +574,11 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
     category = device.get('category')
     sensor_categories = {'light_sensor', 'climate_sensor', 'motion_sensor', 'contact_sensor', 'presence_sensor', 'thermostat'}
     sensor_words = ('sensor', 'meter', 'lux', 'camera', 'cam', 'contact', 'motion', 'temperature', 'humidity')
-    explicit_switch = device.get('switch') is not None or 'switch' in caps or {'on', 'off'}.issubset(commands)
+    switch_capable = 'switch' in caps or category in ('light', 'switch', 'power_device')
+    explicit_switch = switch_capable or {'on', 'off'}.issubset(commands)
     if category in sensor_categories and not explicit_switch:
+        return False
+    if category == 'thermostat' and not switch_capable:
         return False
     if any(word in label for word in sensor_words) and not explicit_switch:
         return False

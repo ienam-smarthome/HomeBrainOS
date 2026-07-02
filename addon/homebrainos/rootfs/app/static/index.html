@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.2</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.3</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -60,19 +60,25 @@ function formatAttr(key, value){
 }
 function attrChips(device){
   const attrs=device.attributes||{};
-  const primary=['switch','level','temperature','humidity','illuminance','power','energy','battery','motion','contact','presence','lock','water','smoke','carbonMonoxide','tamper','acceleration','valve','windowShade','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint'];
+  const byCategory={
+    light:['switch','level','power','energy'],
+    switch:['switch','power','energy'],
+    power_device:['switch','power','energy'],
+    thermostat:['temperature','heatingSetpoint','thermostatMode','thermostatOperatingState','battery'],
+    climate_sensor:['temperature','humidity','battery'],
+    light_sensor:['illuminance','battery'],
+    motion_sensor:['motion','battery'],
+    contact_sensor:['contact','battery'],
+    presence_sensor:['presence','battery']
+  };
+  const primary=byCategory[device.category]||['switch','temperature','humidity','power','battery'];
   const chips=[];
   for(const key of primary){
     const value=device[key]??attrs[key];
     if(value!==undefined && value!==null && value!=='') chips.push(`<span class="attr">${formatAttr(key,value)}</span>`);
+    if(chips.length>=4) break;
   }
-  const used=new Set(primary);
-  for(const [key,value] of Object.entries(attrs)){
-    if(chips.length>=10) break;
-    if(used.has(key) || value===undefined || value===null || value==='') continue;
-    chips.push(`<span class="attr">${formatAttr(key,value)}</span>`);
-  }
-  return chips.length?`<div class="attrs">${chips.join('')}</div>`:'<div class="muted">No attributes reported</div>';
+  return chips.length?`<div class="attrs">${chips.join('')}</div>`:'';
 }
 function deviceCard(device){
   const rawState = String(device.switch??'unknown').toLowerCase();
