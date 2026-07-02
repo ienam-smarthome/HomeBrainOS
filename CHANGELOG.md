@@ -7,6 +7,7 @@
 - Harden Maker API URL generation for special characters in credentials.
 - Improve room API efficiency by avoiding repeated cache reads.
 - Improve Hubitat device state parsing for Maker API `currentStates`, dictionary attributes, and mixed-case values.
+- Add direct switch controls and clearer command feedback for matched and non-switchable devices.
 
 ## v0.5.0-alpha
 

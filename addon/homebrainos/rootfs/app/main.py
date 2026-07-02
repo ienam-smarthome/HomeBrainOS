@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import requests
 import uvicorn
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
 APP_VERSION = '0.6.0-alpha'
@@ -295,6 +295,27 @@ def find_devices(query: str, category: str | None = None) -> list[dict[str, Any]
     direct = [d for d in devices if q in normalise(d['label']) or q in normalise(d['name']) or q == normalise(d.get('room',''))]
     if direct:
         return direct
+    without_number = re.sub(r'\s+\d+$', '', q).strip()
+    if without_number and without_number != q:
+        direct = [
+            d for d in devices
+            if without_number in normalise(d['label'])
+            or without_number in normalise(d['name'])
+            or without_number == normalise(d.get('room',''))
+        ]
+        if direct:
+            return direct
+    query_words = set(q.split())
+    scored: list[tuple[int, dict[str, Any]]] = []
+    for d in devices:
+        haystack = ' '.join([normalise(d.get('label', '')), normalise(d.get('name', '')), normalise(d.get('room', ''))])
+        hay_words = set(haystack.split())
+        score = len(query_words & hay_words)
+        if score:
+            scored.append((score, d))
+    if scored:
+        best = max(score for score, _ in scored)
+        return [d for score, d in scored if score == best]
     labels = {normalise(d['label']): d for d in devices}
     match = get_close_matches(q, list(labels.keys()), n=1, cutoff=0.55)
     return [labels[match[0]]] if match else []
@@ -315,6 +336,33 @@ def maker_command(device_id: str, command: str) -> Any:
         return response.json()
     except Exception:
         return {'success': True}
+
+
+def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [d for d in devices if d.get('switch') is not None or d['category'] in ('light', 'switch', 'power_device')]
+
+
+def command_devices(devices: list[dict[str, Any]], command: str) -> dict[str, Any]:
+    candidates = switchable_devices(devices)[:10]
+    if not candidates:
+        labels = [d['label'] for d in devices[:5]]
+        suffix = '\nMatched: ' + '\n'.join(labels) if labels else ''
+        return {'success': False, 'message': 'No switchable devices found.' + suffix, 'matched': labels}
+    changed = []
+    errors = []
+    for d in candidates:
+        try:
+            maker_command(d['id'], command)
+            changed.append(d['label'])
+        except Exception as exc:
+            errors.append(f"{d['label']}: {exc}")
+    refresh_devices()
+    if changed:
+        message = f"Turned {command}:\n" + '\n'.join(changed)
+        if errors:
+            message += '\n\nErrors:\n' + '\n'.join(errors)
+        return {'success': True, 'message': message, 'changed': changed, 'errors': errors}
+    return {'success': False, 'message': 'Hubitat command failed:\n' + '\n'.join(errors), 'errors': errors}
 
 
 def answer_attribute(target: str, attr: str) -> dict[str, Any]:
@@ -357,23 +405,10 @@ def run_command(text: str) -> dict[str, Any]:
             room = target.replace('lights','').replace('light','').strip()
             devices = room_devices(room, 'light')
         else:
-            devices = find_devices(target)
+            devices = find_devices(target) or room_devices(re.sub(r'\s+\d+$', '', target).strip())
         if not devices:
             return {'success': False, 'message': f'Device not found: {target}'}
-        changed = []
-        errors = []
-        for d in devices[:10]:
-            if d.get('switch') is None:
-                continue
-            try:
-                maker_command(d['id'], command)
-                changed.append(d['label'])
-            except Exception as exc:
-                errors.append(f"{d['label']}: {exc}")
-        refresh_devices()
-        if changed:
-            return {'success': True, 'message': f"✅ Turned {command}:\n" + '\n'.join(changed), 'changed': changed, 'errors': errors}
-        return {'success': False, 'message': f'No switchable devices found for {target}', 'errors': errors}
+        return command_devices(devices, command)
     return {'success': False, 'message': f'I did not understand yet: {text}'}
 
 
@@ -417,6 +452,15 @@ def api_devices(category: str | None = None, room: str | None = None):
     return {'success': True, 'count': len(devices), 'devices': devices}
 
 
+@app.get('/api/switches')
+def api_switches(room: str | None = None):
+    devices = all_devices()
+    if room:
+        devices = [d for d in devices if normalise(room) in normalise(d.get('room',''))]
+    devices = switchable_devices(devices)
+    return {'success': True, 'count': len(devices), 'devices': devices}
+
+
 @app.get('/api/rooms')
 def api_rooms():
     devices = all_devices()
@@ -440,6 +484,16 @@ def api_rooms():
 def api_device(device_id: str):
     matches = [d for d in all_devices() if d['id'] == device_id]
     return {'success': bool(matches), 'device': matches[0] if matches else None}
+
+
+@app.get('/api/device/{device_id}/command/{command}')
+def api_device_command(device_id: str, command: str):
+    if command not in ('on', 'off'):
+        raise HTTPException(status_code=400, detail='Only on/off commands are supported.')
+    matches = [d for d in all_devices() if d['id'] == device_id]
+    if not matches:
+        raise HTTPException(status_code=404, detail='Device not found.')
+    return command_devices(matches, command)
 
 
 @app.get('/api/ask')
