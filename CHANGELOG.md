@@ -6,6 +6,7 @@
 - Add dashboard command support for refreshing the device cache.
 - Harden Maker API URL generation for special characters in credentials.
 - Improve room API efficiency by avoiding repeated cache reads.
+- Improve Hubitat device state parsing for Maker API `currentStates`, dictionary attributes, and mixed-case values.
 
 ## v0.5.0-alpha
 

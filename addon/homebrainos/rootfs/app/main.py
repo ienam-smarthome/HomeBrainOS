@@ -93,12 +93,31 @@ def safe_float(value: Any) -> float | None:
         return None
 
 
+def caps_text(device: dict[str, Any]) -> str:
+    return ' '.join(str(cap) for cap in device.get('capabilities', []) or []).lower()
+
+
+def state_text(value: Any) -> str:
+    return str(value or '').strip().lower()
+
+
+def is_state(value: Any, *states: str) -> bool:
+    return state_text(value) in {state.lower() for state in states}
+
+
 def attr_map(device: dict[str, Any]) -> dict[str, Any]:
     attrs: dict[str, Any] = {}
-    for item in device.get('attributes', []) or []:
-        name = item.get('name')
-        if name:
-            attrs[name] = item.get('currentValue')
+    sources = (device.get('attributes'), device.get('currentStates'), device.get('states'))
+    for source in sources:
+        if isinstance(source, dict):
+            attrs.update(source)
+            continue
+        for item in source or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name') or item.get('attribute')
+            if name:
+                attrs[str(name)] = item.get('currentValue', item.get('value'))
     return attrs
 
 
@@ -116,8 +135,15 @@ def infer_room(label: str) -> str:
 
 def classify(device: dict[str, Any], attrs: dict[str, Any]) -> str:
     label = (device.get('label') or device.get('name') or '').lower()
-    caps = ' '.join(device.get('capabilities', []) or []).lower()
-    if 'light' in label or 'dimmer' in label or 'switchlevel' in caps:
+    caps = caps_text(device)
+    if (
+        'light' in label
+        or 'bulb' in label
+        or 'dimmer' in label
+        or 'switchlevel' in caps
+        or 'colorcontrol' in caps
+        or 'colortemperature' in caps
+    ):
         return 'light'
     if 'thermostat' in caps or 'trv' in label or 'heatingsetpoint' in attrs:
         return 'thermostat'
@@ -227,14 +253,14 @@ def count_devices() -> int:
 
 def dashboard_summary() -> dict[str, Any]:
     devices = all_devices()
-    lights_on = [d for d in devices if d['category'] == 'light' and d.get('switch') == 'on']
-    switches_on = [d for d in devices if d['category'] in ('switch', 'power_device') and d.get('switch') == 'on']
+    lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
+    switches_on = [d for d in devices if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
     temps = [d['temperature'] for d in devices if isinstance(d.get('temperature'), (int, float))]
     hums = [d['humidity'] for d in devices if isinstance(d.get('humidity'), (int, float))]
     powers = [d['power'] for d in devices if isinstance(d.get('power'), (int, float))]
     low_batt = [d for d in devices if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20]
-    motion_active = [d for d in devices if d.get('motion') == 'active']
-    people_home = [d for d in devices if d.get('presence') == 'present']
+    motion_active = [d for d in devices if is_state(d.get('motion'), 'active')]
+    people_home = [d for d in devices if is_state(d.get('presence'), 'present')]
     return {
         'devices': len(devices),
         'lights_on': len(lights_on),
@@ -312,10 +338,10 @@ def run_command(text: str) -> dict[str, Any]:
         s = dashboard_summary()
         return {'success': True, 'message': f"🏠 Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}°C\nAverage humidity: {s['avg_humidity']}%\nPower total: {s['power_total']} W\nPeople home: {s['people_home']}\nLow batteries: {s['low_batteries']}"}
     if 'which lights are on' in t or 'what lights are on' in t:
-        lights = [d['label'] for d in all_devices() if d['category'] == 'light' and d.get('switch') == 'on']
+        lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None')}
     if 'which switches are on' in t or 'what switches are on' in t:
-        switches = [d['label'] for d in all_devices() if d['category'] in ('switch','power_device') and d.get('switch') == 'on']
+        switches = [d['label'] for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None')}
     for attr in ('humidity', 'temperature', 'power', 'battery', 'energy'):
         if attr in t or (attr == 'temperature' and 'temp' in t):
@@ -399,7 +425,7 @@ def api_rooms():
         room = d.get('room') or 'Unknown'
         rooms.setdefault(room, {'room': room, 'devices': 0, 'lights_on': 0, 'avg_temperature': None, 'avg_humidity': None})
         rooms[room]['devices'] += 1
-        if d['category'] == 'light' and d.get('switch') == 'on':
+        if d['category'] == 'light' and is_state(d.get('switch'), 'on'):
             rooms[room]['lights_on'] += 1
     for room in rooms.values():
         ds = [d for d in devices if (d.get('room') or 'Unknown') == room['room']]

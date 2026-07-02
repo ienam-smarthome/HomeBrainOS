@@ -17,10 +17,17 @@ def safe_float(value: Any) -> float | None:
 
 def attributes_to_map(device: dict[str, Any]) -> dict[str, Any]:
     attrs = {}
-    for item in device.get('attributes', []) or []:
-        name = item.get('name')
-        if name:
-            attrs[name] = item.get('currentValue')
+    sources = (device.get('attributes'), device.get('currentStates'), device.get('states'))
+    for source in sources:
+        if isinstance(source, dict):
+            attrs.update(source)
+            continue
+        for item in source or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name') or item.get('attribute')
+            if name:
+                attrs[str(name)] = item.get('currentValue', item.get('value'))
     return attrs
 
 
@@ -35,8 +42,15 @@ def infer_room(label: str) -> str:
 
 def classify_device(device: dict[str, Any], attrs: dict[str, Any]) -> str:
     label = (device.get('label') or device.get('name') or '').lower()
-    caps = ' '.join(device.get('capabilities', []) or []).lower()
-    if 'light' in label or 'dimmer' in label or 'switchlevel' in caps:
+    caps = ' '.join(str(cap) for cap in device.get('capabilities', []) or []).lower()
+    if (
+        'light' in label
+        or 'bulb' in label
+        or 'dimmer' in label
+        or 'switchlevel' in caps
+        or 'colorcontrol' in caps
+        or 'colortemperature' in caps
+    ):
         return 'light'
     if 'thermostat' in caps or 'trv' in label or 'heatingsetpoint' in attrs:
         return 'thermostat'

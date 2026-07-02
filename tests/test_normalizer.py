@@ -21,3 +21,31 @@ def test_light_category():
     d = normalise_device(raw)
     assert d['category'] == 'light'
     assert d['room'] == 'Bedroom 1'
+
+
+def test_current_states_value_shape():
+    raw = {
+        'id': '4',
+        'label': 'Kitchen Lamp',
+        'capabilities': ['SwitchLevel'],
+        'currentStates': [
+            {'name': 'switch', 'value': 'ON'},
+            {'name': 'temperature', 'value': '21.5'},
+        ],
+    }
+    d = normalise_device(raw)
+    assert d['category'] == 'light'
+    assert d['switch'] == 'ON'
+    assert d['temperature'] == 21.5
+
+
+def test_dict_attribute_shape():
+    raw = {
+        'id': '5',
+        'label': 'Hallway Sensor',
+        'attributes': {'humidity': '48%', 'motion': 'active'},
+    }
+    d = normalise_device(raw)
+    assert d['category'] == 'motion_sensor'
+    assert d['humidity'] == 48.0
+    assert d['motion'] == 'active'
