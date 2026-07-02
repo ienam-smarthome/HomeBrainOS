@@ -1,20 +1,14 @@
-# Python
 __pycache__/
 *.py[cod]
-.venv/
-venv/
 .env
-
-# HomeBrain local/private data
 *.db
 *.sqlite
 *.sqlite3
-/data/
-secrets.yaml
-options.json
-
-# OS/editor
+.cache/
+.cache_data/
+venv/
+.venv/
+dist/
+build/
 .DS_Store
-Thumbs.db
-.vscode/
-.idea/
+node_modules/
