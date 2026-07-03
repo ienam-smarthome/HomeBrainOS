@@ -154,6 +154,7 @@ def test_room_summary_distinguishes_sockets_from_lights_and_keeps_power():
     assert dehumidifier['lights_total'] == 0
     assert dehumidifier['sockets_total'] == 2
     assert dehumidifier['sockets_on'] == 1
+    assert dehumidifier['motion_total'] == 0
     assert dehumidifier['power_devices'] == 2
     assert dehumidifier['power_total'] == 12.4
     assert bedroom['lights_total'] == 1
@@ -208,6 +209,35 @@ def test_assistant_hub_health_reads_hub_info_html_labels():
     assert 'Last restart: 03Jul2026 14:42' in health['message']
     assert 'Uptime: 0d:0h:31m:46s' in health['message']
     assert 'Temperature: 46.2 °C' in health['message']
+
+
+def test_status_hub_health_summary_colours_cpu_and_memory():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 1.0 GB\nCPU Load/Load% : 0.8 / 20.0 %'}},
+    ]
+
+    summary = main.hub_health_summary()
+
+    assert summary['level'] == 'ok'
+    assert summary['cpu_load_percent'] == 20
+    assert summary['free_memory_mb'] == 1024
+    assert summary['label'] == 'Hub CPU 20% · Free 1.0 GB'
+
+
+def test_status_hub_health_summary_warns_on_low_memory_and_high_cpu():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 300 MB\nCPU Load/Load% : 0.8 / 65.0 %'}},
+    ]
+
+    assert main.hub_health_summary()['level'] == 'warning'
+
+    main.all_devices = lambda: [
+        {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 128 MB\nCPU Load/Load% : 0.8 / 85.0 %'}},
+    ]
+
+    assert main.hub_health_summary()['level'] == 'error'
 
 
 def test_room_summary_merges_compact_and_spaced_numbered_bedrooms():
@@ -266,3 +296,29 @@ def test_normalise_device_prefers_hubitat_room_assignment_over_label_inference()
 
     assert device['room'] == 'Office'
     assert nested['room'] == 'Kitchen'
+
+
+def test_room_summary_treats_app_and_multimedia_switches_as_sockets():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'a1', 'label': 'Server Switch', 'room': 'Apps', 'category': 'switch', 'switch': 'off'},
+        {'id': 'm1', 'label': 'TV Switch', 'room': 'Multimedia', 'category': 'switch', 'switch': 'on', 'power': 4},
+    ]
+
+    rooms = main.api_rooms()['rooms']
+    apps = next(room for room in rooms if room['room'] == 'Apps')
+    multimedia = next(room for room in rooms if room['room'] == 'Multimedia')
+
+    assert apps['sockets_total'] == 1
+    assert apps['sockets_on'] == 0
+    assert apps['motion_total'] == 0
+    assert multimedia['sockets_total'] == 1
+    assert multimedia['sockets_on'] == 1
+    assert multimedia['power_total'] == 4
+
+
+def test_dashboard_orders_rooms_before_collapsible_controllable_devices():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert html.index('<h2>Rooms</h2>') < html.index('<summary>Controllable Devices</summary>')
+    assert '<details class="card collapsible">' in html

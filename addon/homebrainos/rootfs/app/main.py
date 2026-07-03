@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.20-alpha'
+APP_VERSION = '0.7.22-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -880,16 +880,12 @@ def hub_metric(device: dict[str, Any], labels: tuple[str, ...], contains: tuple[
     return None
 
 
-def hub_health_answer() -> dict[str, Any]:
-    devices = all_devices()
-    hub = next((d for d in devices if 'hub info' in device_search_text(d)), None)
-    if not hub:
-        return {
-            'success': False,
-            'intent': 'hub_health',
-            'message': 'No Hub Info device found. Add or expose the Hub Info device from Hubitat, then refresh from Hubitat.',
-        }
-    metrics = {
+def hub_info_device() -> dict[str, Any] | None:
+    return next((d for d in all_devices() if 'hub info' in device_search_text(d)), None)
+
+
+def hub_health_metrics(hub: dict[str, Any]) -> dict[str, Any]:
+    return {
         'CPU load': hub_metric(hub, ('cpu', 'cpuLoad', 'cpuLoadLoad%', 'cpuPct', 'cpuPercent', 'cpu5Min', 'cpuLoad5Min'), ('cpu',)),
         'Free memory': hub_metric(hub, ('freeMemory', 'freeMemoryMb', 'freeMem', 'freeMemMb', 'memoryFree', 'availableMemory'), ('free', 'mem')),
         'DB size': hub_metric(hub, ('dbSize', 'databaseSize', 'database'), ('db', 'size')),
@@ -897,6 +893,69 @@ def hub_health_answer() -> dict[str, Any]:
         'Uptime': hub_metric(hub, ('uptime', 'hubUptime'), ('uptime',)),
         'Temperature': hub_metric(hub, ('temperature', 'hubTemperature'), ('temperature',)),
     }
+
+
+def number_values(value: Any) -> list[float]:
+    return [float(match) for match in re.findall(r'\d+(?:\.\d+)?', str(value or ''))]
+
+
+def cpu_percent(value: Any) -> float | None:
+    values = number_values(value)
+    if not values:
+        return None
+    return values[-1] if '/' in str(value) else values[0]
+
+
+def memory_mb(value: Any) -> float | None:
+    values = number_values(value)
+    if not values:
+        return None
+    amount = values[0]
+    text = str(value).lower()
+    if 'gb' in text:
+        return amount * 1024
+    if 'kb' in text:
+        return amount / 1024
+    return amount
+
+
+def hub_health_summary() -> dict[str, Any]:
+    hub = hub_info_device()
+    if not hub:
+        return {'available': False, 'level': 'unknown', 'label': 'Hub health unavailable'}
+    metrics = hub_health_metrics(hub)
+    cpu = cpu_percent(metrics.get('CPU load'))
+    free_mb = memory_mb(metrics.get('Free memory'))
+    level = 'ok'
+    if (cpu is not None and cpu >= 80) or (free_mb is not None and free_mb < 256):
+        level = 'error'
+    elif (cpu is not None and cpu >= 60) or (free_mb is not None and free_mb < 512):
+        level = 'warning'
+    parts = []
+    if cpu is not None:
+        parts.append(f"Hub CPU {cpu:g}%")
+    if metrics.get('Free memory') is not None:
+        parts.append(f"Free {metrics['Free memory']}")
+    label = ' · '.join(parts) if parts else 'Hub health available'
+    return {
+        'available': True,
+        'level': level,
+        'label': label,
+        'cpu_load_percent': cpu,
+        'free_memory_mb': free_mb,
+        'metrics': metrics,
+    }
+
+
+def hub_health_answer() -> dict[str, Any]:
+    hub = hub_info_device()
+    if not hub:
+        return {
+            'success': False,
+            'intent': 'hub_health',
+            'message': 'No Hub Info device found. Add or expose the Hub Info device from Hubitat, then refresh from Hubitat.',
+        }
+    metrics = hub_health_metrics(hub)
     lines = [f"{label}: {value}" for label, value in metrics.items() if value is not None]
     if not lines:
         available = ', '.join(sorted(str(k) for k in (hub.get('attributes') or {}).keys()))
@@ -1019,12 +1078,13 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
 def is_room_socket_device(device: dict[str, Any]) -> bool:
     if device.get('category') == 'light':
         return False
-    label = normalise(device.get('label') or device.get('name') or '')
-    socket_words = ('socket', 'plug', 'outlet', 'meter', 'power', 'energy')
-    appliance_words = ('appliance', 'dehumidifier', 'humidifier', 'purifier', 'fan', 'pc', 'mesh', 'fridge')
+    text = normalise(device_search_text(device))
+    socket_words = ('socket', 'plug', 'outlet', 'meter', 'power', 'energy', 'sockets')
+    appliance_words = ('app', 'apps', 'appliance', 'appliances', 'multimedia', 'dehumidifier', 'humidifier', 'purifier', 'fan', 'pc', 'mesh', 'fridge')
     return (
         device.get('category') == 'power_device'
-        or any(word in label for word in socket_words + appliance_words)
+        or isinstance(device.get('power'), (int, float))
+        or any(word in text for word in socket_words + appliance_words)
     )
 
 
@@ -1371,7 +1431,7 @@ async def startup() -> None:
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required()}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary()}
 
 
 @app.post('/api/refresh')
@@ -1428,6 +1488,7 @@ def api_rooms():
             'switches_on': 0,
             'sockets_total': 0,
             'sockets_on': 0,
+            'motion_total': 0,
             'motion_active': 0,
             'low_batteries': 0,
             'power_total': 0,
@@ -1448,8 +1509,10 @@ def api_rooms():
                 rooms[room]['switches_on'] += 1
                 if is_room_socket_device(d):
                     rooms[room]['sockets_on'] += 1
-        if is_state(d.get('motion'), 'active'):
-            rooms[room]['motion_active'] += 1
+        if d.get('motion') is not None:
+            rooms[room]['motion_total'] += 1
+            if is_state(d.get('motion'), 'active'):
+                rooms[room]['motion_active'] += 1
         if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20:
             rooms[room]['low_batteries'] += 1
         if isinstance(d.get('power'), (int, float)):

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.22-alpha
+
+- Show compact Hub health in the Online status pill.
+- Color the status pill amber/red for elevated Hub CPU load or low free memory.
+
+## v0.7.21-alpha
+
+- Hide room motion chips when a room has no motion sensors.
+- Label socket-like app/appliance/multimedia switch rooms as Sockets and keep power visible when available.
+- Move Rooms above Controllable Devices and make Controllable Devices collapsible.
+
 ## v0.7.20-alpha
 
 - Read Hub Info labels such as Free Mem, CPU Load/Load%, DB Size, Last Restart, Uptime, and Temperature.
