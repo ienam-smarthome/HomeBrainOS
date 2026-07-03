@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.14-alpha'
+APP_VERSION = '0.7.15-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -724,6 +724,72 @@ def device_diagnostics() -> dict[str, Any]:
     }
 
 
+def active_rooms_answer() -> dict[str, Any]:
+    rooms = [room for room in api_rooms()['rooms'] if room.get('motion_active') or room.get('lights_on')]
+    lines = [
+        f"{room['room']}: {room['lights_on']} lights on, {room['motion_active']} motion active"
+        for room in rooms
+    ]
+    return {
+        'success': True,
+        'intent': 'active_rooms',
+        'message': 'Active rooms:\n' + ('\n'.join(lines) if lines else 'None'),
+        'rooms': rooms,
+    }
+
+
+def cold_rooms_answer() -> dict[str, Any]:
+    rooms = [
+        room for room in api_rooms()['rooms']
+        if isinstance(room.get('avg_temperature'), (int, float)) and room['avg_temperature'] < 18
+    ]
+    lines = [f"{room['room']}: {room['avg_temperature']}C" for room in rooms]
+    return {
+        'success': True,
+        'intent': 'cold_rooms',
+        'message': 'Rooms below 18C:\n' + ('\n'.join(lines) if lines else 'None'),
+        'rooms': rooms,
+    }
+
+
+def heating_status_answer() -> dict[str, Any]:
+    devices = climate_control_devices(all_devices())
+    lines = []
+    for device in devices[:20]:
+        mode = device.get('thermostatMode') or device.get('attributes', {}).get('thermostatMode') or 'unknown'
+        temp = device.get('temperature') or device.get('attributes', {}).get('temperature')
+        setpoint = device.get('heatingSetpoint') or device.get('attributes', {}).get('heatingSetpoint')
+        detail = f"{device['label']}: mode {mode}"
+        if temp is not None:
+            detail += f", temp {temp}C"
+        if setpoint is not None:
+            detail += f", heat set {setpoint}C"
+        lines.append(detail)
+    return {
+        'success': True,
+        'intent': 'heating_status',
+        'message': 'Heating status:\n' + ('\n'.join(lines) if lines else 'No heating devices found'),
+        'devices': devices[:20],
+    }
+
+
+def device_health_answer() -> dict[str, Any]:
+    summary = dashboard_summary()
+    diagnostics = device_diagnostics()
+    low_battery = [format_summary_device(d, 'battery', '%') for d in summary['low_battery_devices']]
+    lines = [
+        f"Devices: {diagnostics['devices']}",
+        f"Unknown switch states: {diagnostics['unknown_switch_state']}",
+        f"Unknown rooms: {diagnostics['unknown_room']}",
+        f"Low batteries: {summary['low_batteries']}",
+    ]
+    if low_battery:
+        lines.append('Low battery devices:\n' + '\n'.join(low_battery))
+    if diagnostics['last_error']:
+        lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
+    return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
+
+
 def normalise(text: str) -> str:
     text = text.lower().strip()
     replacements = {
@@ -1013,6 +1079,14 @@ def assistant(text: str) -> dict[str, Any]:
                 "control switchable devices, refresh or clear the cache, list room devices, and run diagnostics."
             ),
         }
+    if 'room' in t and ('motion' in t or 'active' in t):
+        return active_rooms_answer()
+    if 'cold' in t and 'room' in t:
+        return cold_rooms_answer()
+    if 'heating status' in t or 'heating state' in t:
+        return heating_status_answer()
+    if 'device health' in t or 'home health' in t:
+        return device_health_answer()
     summary_answer = explain_summary_tile(t)
     if summary_answer:
         return summary_answer

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.15-alpha
+
+- Refine room tiles to focus on lights, motion, and available temperature/humidity readings.
+- Replace duplicated quick-action labels with clearer assistant shortcuts for status, health, active rooms, heating, and cold rooms.
+- Add assistant answers for active rooms, cold rooms, heating status, and device health shortcuts.
+
 ## v0.7.14-alpha
 
 - Simplify room summary cards with a cleaner stat grid.

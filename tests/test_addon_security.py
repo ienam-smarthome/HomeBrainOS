@@ -102,3 +102,32 @@ def test_fridge_meter_is_excluded_from_temperature_and_humidity_averages():
     assert summary['avg_humidity'] == 40
     assert kitchen['avg_temperature'] is None
     assert kitchen['avg_humidity'] is None
+
+
+def test_assistant_active_rooms_lists_rooms_not_motion_sensor_detail():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'm1', 'label': 'Kitchen Motion', 'room': 'Kitchen', 'category': 'motion_sensor', 'motion': 'active'},
+        {'id': 'm2', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'inactive'},
+        {'id': 'l1', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on'},
+    ]
+
+    active_rooms = main.assistant('which rooms have motion active')
+
+    assert active_rooms['intent'] == 'active_rooms'
+    assert 'Kitchen: 0 lights on, 1 motion active' in active_rooms['message']
+    assert 'Bedroom: 1 lights on, 0 motion active' in active_rooms['message']
+
+
+def test_assistant_device_health_reports_low_batteries():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'b1', 'label': 'Hallway Contact', 'room': 'Hallway', 'category': 'contact_sensor', 'battery': 12},
+        {'id': 's1', 'label': 'Lamp', 'room': 'Living Room', 'category': 'switch', 'switch': None},
+    ]
+
+    health = main.assistant('device health')
+
+    assert health['intent'] == 'device_health'
+    assert 'Low batteries: 1' in health['message']
+    assert 'Hallway Contact' in health['message']

@@ -4,12 +4,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HomeBrain OS</title>
   <style>
-    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.metric.summary-tile{cursor:pointer;transition:background .15s,box-shadow .15s,transform .15s}.metric.summary-tile:hover,.metric.summary-tile:focus{background:#3a3a3d;box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}.metric.summary-tile:active{transform:translateY(1px)}.metric a{color:#93c5fd;text-decoration:none}.mini{color:#b9b9bd;font-size:12px;line-height:1.3;margin-top:4px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}button:disabled{opacity:.45}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.error{background:#7f1d1d}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px;transition:opacity .15s,background .15s,box-shadow .15s}.device.active,.room.active{background:#292c2a;box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}.device.inactive,.room.inactive{opacity:.68}.room-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.room-name{font-weight:700}.room-count{color:#b9b9bd;font-size:13px;white-space:nowrap}.room-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:10px}.room-stat{background:#303033;border-radius:8px;padding:6px 8px;font-size:13px;line-height:1.2}.room.inactive .room-stat{background:#2c2c2f}.device.inactive .row button{background:#303033;color:#aaa}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.row button.selected{background:#15803d;color:#fff;box-shadow:inset 0 0 0 1px rgba(134,239,172,.35)}.row button.idle{background:#303033;color:#aaa}.state,.attr{display:inline-block;color:#fff;font-size:13px;border-radius:999px;padding:3px 8px;margin-top:6px}.state.on{background:#166534}.state.off{background:#555}.state.unknown{background:#7f1d1d}.attrs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;min-height:24px}.attr{background:#3a3a3d}.muted{color:#b9b9bd;font-size:14px}
+    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.metric.summary-tile{cursor:pointer;transition:background .15s,box-shadow .15s,transform .15s}.metric.summary-tile:hover,.metric.summary-tile:focus{background:#3a3a3d;box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}.metric.summary-tile:active{transform:translateY(1px)}.metric a{color:#93c5fd;text-decoration:none}.mini{color:#b9b9bd;font-size:12px;line-height:1.3;margin-top:4px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}button:disabled{opacity:.45}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.error{background:#7f1d1d}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px;transition:opacity .15s,background .15s,box-shadow .15s}.device.active,.room.active{background:#292c2a;box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}.device.inactive,.room.inactive{opacity:.68}.room-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.room-name{font-weight:700}.room-count{color:#b9b9bd;font-size:13px;white-space:nowrap}.room-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.room-signal{display:flex;align-items:center;gap:8px;background:#303033;border-radius:8px;padding:8px;min-height:38px}.room.inactive .room-signal{background:#2c2c2f}.room-icon{font-size:18px;line-height:1}.room-value{display:block;font-size:15px;font-weight:700;line-height:1.1}.room-label{display:block;color:#b9b9bd;font-size:11px;line-height:1.1;margin-top:2px}.motion-on .room-value{color:#86efac}.shortcut-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}.device.inactive .row button{background:#303033;color:#aaa}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.row button.selected{background:#15803d;color:#fff;box-shadow:inset 0 0 0 1px rgba(134,239,172,.35)}.row button.idle{background:#303033;color:#aaa}.state,.attr{display:inline-block;color:#fff;font-size:13px;border-radius:999px;padding:3px 8px;margin-top:6px}.state.on{background:#166534}.state.off{background:#555}.state.unknown{background:#7f1d1d}.attrs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;min-height:24px}.attr{background:#3a3a3d}.muted{color:#b9b9bd;font-size:14px}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.14</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.15</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which lights are on"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -26,15 +26,15 @@
     <button onclick="ask()">Ask</button>
     <button onclick="voice()">🎤 Speak</button>
   </div>
-  <div class="card grid">
-    <button class="secondary" onclick="quick('summary')">Summary</button>
-    <button class="secondary" onclick="quick('diagnostics')">Diagnostics</button>
-    <button class="secondary" onclick="quick('refresh cache')">Refresh cache</button>
-    <button class="secondary" onclick="clearRefresh()">Clear cache</button>
-    <button class="secondary" onclick="quick('hallway humidity')">Hallway humidity</button>
-    <button class="secondary" onclick="quick('hallway temperature')">Hallway temperature</button>
-    <button class="secondary" onclick="quick('which lights are on')">Which lights are on?</button>
-    <button class="secondary" onclick="quick('which switches are on')">Which switches are on?</button>
+  <div class="card grid shortcut-grid">
+    <button class="secondary" onclick="quick('summary')">Home status</button>
+    <button class="secondary" onclick="quick('diagnostics')">System health</button>
+    <button class="secondary" onclick="quick('refresh cache')">Refresh devices</button>
+    <button class="secondary" onclick="clearRefresh()">Clear device cache</button>
+    <button class="secondary" onclick="quick('which rooms have motion active')">Active rooms</button>
+    <button class="secondary" onclick="quick('heating status')">Heating status</button>
+    <button class="secondary" onclick="quick('which rooms are cold')">Cold rooms</button>
+    <button class="secondary" onclick="quick('device health')">Device health</button>
   </div>
   <div class="card"><h2>Controllable Devices</h2><div class="devices" id="devices">Loading devices...</div></div>
   <div class="card"><h2>Rooms</h2><div class="rooms" id="rooms">Loading rooms...</div></div>
@@ -66,11 +66,17 @@ function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }
 function roomCard(room){
-  const active=(room.lights_on||0)+(room.switches_on||0)+(room.motion_active||0)>0;
-  const temp=room.avg_temperature==null?'—':room.avg_temperature+'°';
-  const humidity=room.avg_humidity==null?'—':room.avg_humidity+'%';
-  const power=formatPower(room.power_total||0);
-  return `<div class="room ${active?'active':'inactive'}"><div class="room-head"><div class="room-name">${escapeHtml(room.room)}</div><div class="room-count">${room.devices} devices</div></div><div class="room-stats"><div class="room-stat">Lights ${room.lights_on||0}</div><div class="room-stat">Switches ${room.switches_on||0}</div><div class="room-stat">Temp ${temp}</div><div class="room-stat">Humidity ${humidity}</div><div class="room-stat">Power ${power}</div><div class="room-stat">Motion ${room.motion_active||0}</div><div class="room-stat">Battery ${room.low_batteries||0}</div></div></div>`;
+  const active=(room.lights_on||0)+(room.motion_active||0)>0;
+  const signals=[
+    roomSignal('💡', room.lights_on||0, 'lights on'),
+    roomSignal('🏃', room.motion_active?room.motion_active+' active':'clear', 'motion', room.motion_active?'motion-on':'')
+  ];
+  if(room.avg_temperature!=null) signals.push(roomSignal('🌡', room.avg_temperature+'°', 'temperature'));
+  if(room.avg_humidity!=null) signals.push(roomSignal('💧', room.avg_humidity+'%', 'humidity'));
+  return `<div class="room ${active?'active':'inactive'}"><div class="room-head"><div class="room-name">${escapeHtml(room.room)}</div><div class="room-count">${room.devices} devices</div></div><div class="room-stats">${signals.join('')}</div></div>`;
+}
+function roomSignal(icon, value, label, extraClass=''){
+  return `<div class="room-signal ${extraClass}"><span class="room-icon">${icon}</span><span><span class="room-value">${escapeHtml(value)}</span><span class="room-label">${escapeHtml(label)}</span></span></div>`;
 }
 function formatPower(value){
   const watts=Number(value)||0;
