@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.33-alpha
+
+- Stop any current spoken response when the mic button is pressed again.
+- Speak command confirmations directly, for example `Bedroom 1 Light turned on.`
+- Keep numbered commands such as `livingroom light 1` targeted to the specific device instead of all room lights.
+- Make heating on/off commands adjust heating setpoints only, without sending thermostat mode on/off commands to TRVs.
+
+## v0.7.32-alpha
+
+- Understand singular forms such as `what light is on` and `which switch is on`.
+- Keep text output headed as `Lights on` or `Switches on`, but speak only the direct answer.
+- Prefer room names for spoken light answers when available, for example `Bedroom 2.`
+
 ## v0.7.31-alpha
 
 - Add a sticky floating microphone button for quick voice input on mobile dashboards.

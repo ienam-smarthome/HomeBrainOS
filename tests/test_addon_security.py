@@ -88,6 +88,68 @@ def test_assistant_uses_natural_speech_units_for_summary_attributes():
     assert power['speech'] == 'Power is whole-house live power from Octopus Energy Live Meter: 319 watts.'
 
 
+def test_assistant_answers_singular_light_question_with_direct_speech():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Bedroom 2 Light', 'room': 'Bedroom 2', 'category': 'light', 'switch': 'on'},
+        {'id': 'l2', 'label': 'Hallway Light', 'room': 'Hallway', 'category': 'light', 'switch': 'off'},
+    ]
+
+    answer = main.assistant('what light is on')
+
+    assert answer['message'] == 'Lights on:\nBedroom 2 Light'
+    assert answer['speech'] == 'Bedroom 2.'
+
+
+def test_assistant_targets_numbered_light_device_and_speaks_confirmation():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Livingroom Light 1', 'name': 'Livingroom Light 1', 'room': 'Living Room', 'category': 'light', 'switch': 'off'},
+        {'id': 'l2', 'label': 'Livingroom Light 2', 'name': 'Livingroom Light 2', 'room': 'Living Room', 'category': 'light', 'switch': 'off'},
+    ]
+    commands = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_switch = lambda device_ids, switch: []
+
+    answer = main.assistant('turn on livingroom light 1')
+
+    assert commands == [('l1', 'on')]
+    assert answer['changed'] == ['Livingroom Light 1']
+    assert answer['speech'] == 'Livingroom Light 1 turned on.'
+
+
+def test_heating_commands_adjust_setpoints_without_thermostat_mode():
+    main = load_addon_main()
+    devices = [
+        {
+            'id': 'trv1',
+            'label': 'Hallway TRV',
+            'name': 'Hallway TRV',
+            'room': 'Hallway',
+            'category': 'thermostat',
+            'temperature': 20,
+            'heatingSetpoint': 19,
+        },
+    ]
+    main.all_devices = lambda: devices
+    commands = []
+    main.maker_command_value = lambda device_id, command, value: commands.append((device_id, command, value))
+    main.refresh_devices = lambda: None
+    main.update_cached_setpoint = lambda device_id, setpoint: None
+
+    on_answer = main.set_heating_mode('heat', 'hallway')
+    devices[0]['heatingSetpoint'] = 22
+    off_answer = main.set_heating_mode('off', 'hallway')
+
+    command_names = [command for _, command, _ in commands]
+    assert 'setThermostatMode' not in command_names
+    assert ('trv1', 'setHeatingSetpoint', 21) in commands
+    assert ('trv1', 'setHeatingSetpoint', 12) in commands
+    assert 'Heating setpoints raised' in on_answer['message']
+    assert 'Heating setpoints lowered' in off_answer['message']
+
+
 def test_assistant_lists_only_people_home():
     main = load_addon_main()
     main.all_devices = lambda: [

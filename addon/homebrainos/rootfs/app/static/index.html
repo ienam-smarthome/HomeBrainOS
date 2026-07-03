@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.31</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.33</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -322,7 +322,8 @@ async function ask(){
   }
 }
 function quick(t){$('q').value=t;ask()}
-function speak(t){ if('speechSynthesis' in window && t) speechSynthesis.speak(new SpeechSynthesisUtterance(t)); }
+function stopSpeaking(){ if('speechSynthesis' in window) speechSynthesis.cancel(); }
+function speak(t){ if('speechSynthesis' in window && t){ stopSpeaking(); speechSynthesis.speak(new SpeechSynthesisUtterance(t)); } }
 function setVoiceOverlay(open, hint){
   $('voiceOverlay').classList.toggle('show', open);
   if(hint) $('voiceHint').textContent=hint;
@@ -332,6 +333,7 @@ function setListening(active){
   $('voiceStart').textContent=active?'Listening...':'🎤 Tap to speak';
 }
 function voice(){
+  stopSpeaking();
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){alert('Voice not supported in this browser');return;}
   const r=new SR();

@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.31-alpha` assistant dashboard:
+`v0.7.33-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -41,6 +41,11 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Spoken assistant responses use natural units such as degrees, watts, percent, and kilowatt hours
 - Sticky floating microphone button for mobile voice input
 - Voice shortcut mode via `?voice=1` for home-screen shortcuts and Samsung routines
+- Singular light/switch questions such as `what light is on` are understood
+- Spoken light/switch answers are direct names without reading the text heading
+- Mic button cancels current speech before listening
+- Heating on/off commands adjust setpoints only and do not send thermostat mode off/on commands
+- Numbered device commands such as `livingroom light 1` stay targeted to that device
 - Assistant shortcuts for status, health, active rooms, heating, and cold rooms
 - Hub health shortcut reads CPU load, free memory, and uptime from the Hub Info device
 - Hub health also reads DB size, last restart, and temperature from Hub Info HTML/table output
@@ -125,6 +130,8 @@ When `api_token` is set, device commands, setpoint changes, cache refreshes, and
 - `v0.7.29-alpha` Mobile view options and no-signal room filtering
 - `v0.7.30-alpha` Natural spoken assistant units
 - `v0.7.31-alpha` Floating mic button and mobile voice shortcut mode
+- `v0.7.32-alpha` Direct spoken answers for singular light/switch questions
+- `v0.7.33-alpha` Safer voice commands and setpoint-only heating control
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 
