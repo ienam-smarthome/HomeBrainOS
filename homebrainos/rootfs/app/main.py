@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.22-alpha'
+APP_VERSION = '0.7.24-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -919,6 +919,12 @@ def memory_mb(value: Any) -> float | None:
     return amount
 
 
+def format_memory(value_mb: float) -> str:
+    if value_mb >= 1000:
+        return f"{value_mb / 1000:.2f}GB"
+    return f"{value_mb:g}MB"
+
+
 def hub_health_summary() -> dict[str, Any]:
     hub = hub_info_device()
     if not hub:
@@ -934,8 +940,8 @@ def hub_health_summary() -> dict[str, Any]:
     parts = []
     if cpu is not None:
         parts.append(f"Hub CPU {cpu:g}%")
-    if metrics.get('Free memory') is not None:
-        parts.append(f"Free {metrics['Free memory']}")
+    if free_mb is not None:
+        parts.append(f"Free {format_memory(free_mb)}")
     label = ' · '.join(parts) if parts else 'Hub health available'
     return {
         'available': True,
@@ -1125,11 +1131,22 @@ def climate_control_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any
     return [d for d in devices if is_climate_control_device(d)]
 
 
+def is_controllable_active(device: dict[str, Any]) -> bool:
+    if is_climate_control_device(device):
+        return 'heat' in normalise(device.get('thermostatOperatingState', ''))
+    return normalise(device.get('switch', '')) == 'on'
+
+
+def controllable_sort_key(device: dict[str, Any]) -> tuple[int, str]:
+    label = normalise(device.get('label') or device.get('name') or '')
+    return (0 if is_controllable_active(device) else 1, label)
+
+
 def controllable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     controls: dict[str, dict[str, Any]] = {}
     for device in switchable_devices(devices) + climate_control_devices(devices):
         controls[device['id']] = device
-    return sorted(controls.values(), key=lambda d: d.get('label', ''))
+    return sorted(controls.values(), key=controllable_sort_key)
 
 
 def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: bool = False) -> dict[str, Any]:

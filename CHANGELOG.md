@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.24-alpha
+
+- Sort controllable devices with active/on devices first, then alphabetically within each state.
+
+## v0.7.23-alpha
+
+- Format Hub free memory in the Online status pill as MB or GB, including numeric-only Hub Info values.
+
 ## v0.7.22-alpha
 
 - Show compact Hub health in the Online status pill.

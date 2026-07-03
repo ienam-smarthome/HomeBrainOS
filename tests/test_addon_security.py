@@ -214,15 +214,15 @@ def test_assistant_hub_health_reads_hub_info_html_labels():
 def test_status_hub_health_summary_colours_cpu_and_memory():
     main = load_addon_main()
     main.all_devices = lambda: [
-        {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 1.0 GB\nCPU Load/Load% : 0.8 / 20.0 %'}},
+        {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 1018.46\nCPU Load/Load% : 0.8 / 20.0 %'}},
     ]
 
     summary = main.hub_health_summary()
 
     assert summary['level'] == 'ok'
     assert summary['cpu_load_percent'] == 20
-    assert summary['free_memory_mb'] == 1024
-    assert summary['label'] == 'Hub CPU 20% · Free 1.0 GB'
+    assert summary['free_memory_mb'] == 1018.46
+    assert summary['label'] == 'Hub CPU 20% · Free 1.02GB'
 
 
 def test_status_hub_health_summary_warns_on_low_memory_and_high_cpu():
@@ -231,13 +231,29 @@ def test_status_hub_health_summary_warns_on_low_memory_and_high_cpu():
         {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 300 MB\nCPU Load/Load% : 0.8 / 65.0 %'}},
     ]
 
-    assert main.hub_health_summary()['level'] == 'warning'
+    summary = main.hub_health_summary()
+    assert summary['level'] == 'warning'
+    assert summary['label'] == 'Hub CPU 65% · Free 300MB'
 
     main.all_devices = lambda: [
         {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 128 MB\nCPU Load/Load% : 0.8 / 85.0 %'}},
     ]
 
     assert main.hub_health_summary()['level'] == 'error'
+
+
+def test_controllable_devices_sort_active_first_then_alphabetical():
+    main = load_addon_main()
+    devices = [
+        {'id': 'off-z', 'label': 'Zeta Socket', 'name': 'Zeta Socket', 'room': 'Room', 'category': 'power_device', 'switch': 'off'},
+        {'id': 'on-b', 'label': 'Bedroom Light', 'name': 'Bedroom Light', 'room': 'Room', 'category': 'light', 'switch': 'on'},
+        {'id': 'off-a', 'label': 'Air Purifier', 'name': 'Air Purifier', 'room': 'Room', 'category': 'switch', 'switch': 'off'},
+        {'id': 'on-a', 'label': 'Appliance Plug', 'name': 'Appliance Plug', 'room': 'Room', 'category': 'power_device', 'switch': 'on'},
+    ]
+
+    ordered = main.controllable_devices(devices)
+
+    assert [device['label'] for device in ordered] == ['Appliance Plug', 'Bedroom Light', 'Air Purifier', 'Zeta Socket']
 
 
 def test_room_summary_merges_compact_and_spaced_numbered_bedrooms():
