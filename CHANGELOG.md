@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.34-alpha
+
+- Add voice/text dimmer level commands such as `set bedroom 1 light to 30 percent`.
+- Ask for a more exact device name when a singular command matches multiple devices.
+- Keep plural or all-room wording such as `living room lights` as deliberate group control.
+- Add a backend API route for setting dimmable device levels.
+
 ## v0.7.33-alpha
 
 - Stop any current spoken response when the mic button is pressed again.

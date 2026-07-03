@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.33-alpha'
+APP_VERSION = '0.7.34-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -492,6 +492,33 @@ def update_cached_setpoint(device_id: str, setpoint: float) -> dict[str, Any] | 
         conn.execute(
             'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
             (device_id, 'heatingSetpoint', str(setpoint), now),
+        )
+        conn.commit()
+        return device
+    finally:
+        conn.close()
+
+
+def update_cached_level(device_id: str, level: int) -> dict[str, Any] | None:
+    now = int(time.time())
+    conn = db()
+    try:
+        row = conn.execute('SELECT json FROM devices WHERE id=?', (device_id,)).fetchone()
+        if not row:
+            return None
+        device = json.loads(row['json'])
+        device['level'] = level
+        device.setdefault('attributes', {})['level'] = level
+        if level > 0:
+            device['switch'] = 'on'
+            device['attributes']['switch'] = 'on'
+        conn.execute(
+            'UPDATE devices SET json=?, switch=?, updated_at=? WHERE id=?',
+            (json.dumps(device), device.get('switch'), now, device_id),
+        )
+        conn.execute(
+            'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
+            (device_id, 'level', str(level), now),
         )
         conn.commit()
         return device
@@ -1326,6 +1353,23 @@ def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [d for d in devices if is_switchable_device(d)]
 
 
+def is_level_device(device: dict[str, Any]) -> bool:
+    label = normalise(device.get('label', '') + ' ' + device.get('name', ''))
+    caps = caps_text(device)
+    commands = commands_text(device)
+    return (
+        device.get('level') is not None
+        or device.get('category') == 'light'
+        or 'setlevel' in commands
+        or 'switchlevel' in caps
+        or 'dimmer' in label
+    )
+
+
+def level_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [d for d in devices if is_level_device(d)]
+
+
 def is_climate_control_device(device: dict[str, Any]) -> bool:
     label = normalise(device.get('label', ''))
     sensor_words = ('battery', 'sensor', 'meter', 'lux', 'power')
@@ -1379,6 +1423,8 @@ def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: 
             ),
             'matched': [d['label'] for d in candidates[:20]],
         }
+    if len(candidates) > 1 and not explicit_bulk:
+        return disambiguation_response(candidates, 'control')
     changed = []
     errors = []
     for d in candidates:
@@ -1395,6 +1441,59 @@ def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: 
             message += '\n\nErrors:\n' + '\n'.join(errors)
         return {'success': True, 'message': message, 'speech': spoken_command_confirmation(changed, command), 'changed': changed, 'errors': errors, 'devices': updated}
     return {'success': False, 'message': 'Hubitat command failed:\n' + '\n'.join(errors), 'errors': errors}
+
+
+def disambiguation_response(devices: list[dict[str, Any]], action: str) -> dict[str, Any]:
+    labels = [d['label'] for d in devices[:8]]
+    return {
+        'success': False,
+        'intent': 'disambiguation',
+        'message': (
+            f'I found multiple devices to {action}:\n'
+            + '\n'.join(labels)
+            + '\nPlease say the exact device name, or use plural/all wording for a group.'
+        ),
+        'speech': f'I found multiple matches. Please say the exact device name.',
+        'matched': labels,
+    }
+
+
+def level_command_devices(devices: list[dict[str, Any]], level: int, explicit_bulk: bool = False) -> dict[str, Any]:
+    target_level = max(0, min(100, int(level)))
+    candidates = level_devices(devices)
+    if not candidates:
+        labels = [d['label'] for d in devices[:5]]
+        suffix = '\nMatched: ' + '\n'.join(labels) if labels else ''
+        return {'success': False, 'message': 'No dimmable devices found.' + suffix, 'matched': labels}
+    if len(candidates) > 1 and not explicit_bulk:
+        return disambiguation_response(candidates, 'set level for')
+    changed = []
+    errors = []
+    updated = []
+    for device in candidates[:50]:
+        try:
+            maker_command_value(device['id'], 'setLevel', target_level)
+            if target_level > 0 and is_switchable_device(device):
+                try:
+                    maker_command(device['id'], 'on')
+                except Exception:
+                    pass
+            changed.append(device['label'])
+        except Exception as exc:
+            errors.append(f"{device['label']}: {public_error(exc)}")
+    refresh_devices()
+    for device in candidates:
+        if device['label'] in changed:
+            cached = update_cached_level(device['id'], target_level)
+            if cached:
+                updated.append(cached)
+    if changed:
+        message = f"Set level to {target_level}%:\n" + '\n'.join(changed)
+        if errors:
+            message += '\n\nErrors:\n' + '\n'.join(errors)
+        speech = spoken_list([f'{label} set to {target_level} percent' for label in changed])
+        return {'success': True, 'message': message, 'speech': speech, 'changed': changed, 'errors': errors, 'devices': updated}
+    return {'success': False, 'message': 'Level command failed:\n' + '\n'.join(errors), 'errors': errors}
 
 
 def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
@@ -1627,6 +1726,44 @@ def run_command(text: str) -> dict[str, Any]:
         target = (m_heat.group(3) or m_heat.group(2) or 'home').replace('the ', '').replace('all ', '').strip() or 'home'
         mode = 'off' if any(word in action for word in ('off', 'disable', 'stop')) else 'heat'
         return set_heating_mode(mode, target)
+    m_level = re.search(r'^(?:set|change|adjust|dim)\s+(.+?)\s+(?:to|at)\s+(\d{1,3})\s*(?:%|percent)?$', t)
+    if not m_level:
+        m_level = re.search(r'^(?:set|change|adjust)\s+(.+?)\s+level\s+(?:to|at)?\s*(\d{1,3})\s*(?:%|percent)?$', t)
+    if m_level:
+        target, level_text = m_level.group(1).strip(), m_level.group(2)
+        target = target.replace(' level', '').replace('the ', '').strip()
+        explicit_bulk = bool(re.search(r'\b(all|lights|devices)\b', target))
+        if re.search(r'\b(all\s+)?(.+\s+)?lights$', target):
+            room = target.replace('lights', '').replace('light', '').replace('all ', '').strip()
+            devices = room_devices(room, 'light')
+            explicit_bulk = True
+        else:
+            devices = find_devices(target, 'light') or find_devices(target)
+        if not devices:
+            return {'success': False, 'message': f'Dimmable device not found: {target}'}
+        return level_command_devices(devices, int(level_text), explicit_bulk=explicit_bulk)
+    m_dim = re.search(r'^(?:dim|lower)\s+(.+)$', t)
+    m_bright = re.search(r'^(?:brighten|make)\s+(.+?)\s+(?:brighter|brighter lights?)$', t)
+    if m_dim or m_bright:
+        target = (m_dim.group(1) if m_dim else m_bright.group(1)).replace('the ', '').strip()
+        explicit_bulk = bool(re.search(r'\b(all|lights|devices)\b', target))
+        if re.search(r'\b(all\s+)?(.+\s+)?lights$', target):
+            room = target.replace('lights', '').replace('light', '').replace('all ', '').strip()
+            devices = room_devices(room, 'light')
+            explicit_bulk = True
+        else:
+            devices = find_devices(target, 'light') or find_devices(target)
+        if not devices:
+            return {'success': False, 'message': f'Dimmable device not found: {target}'}
+        dimmable = level_devices(devices)
+        if len(dimmable) > 1 and not explicit_bulk:
+            return disambiguation_response(dimmable, 'set level for')
+        current = safe_float((dimmable[0] if dimmable else devices[0]).get('level'))
+        if m_dim:
+            target_level = max(1, int((current if current is not None else 50) - 20))
+        else:
+            target_level = min(100, int((current if current is not None else 50) + 20))
+        return level_command_devices(devices, target_level, explicit_bulk=explicit_bulk)
     attr_terms = {
         'humidity': ('humidity',),
         'temperature': ('temperature', 'temp'),
@@ -1678,6 +1815,7 @@ def run_command(text: str) -> dict[str, Any]:
         elif re.search(r'\b(all\s+)?(.+\s+)?lights$', target):
             room = target.replace('lights','').replace('light','').replace('all ', '').strip()
             devices = room_devices(room, 'light')
+            explicit_bulk = True
         elif target.endswith(' light'):
             devices = find_devices(target, 'light')
             if not devices:
@@ -1838,6 +1976,17 @@ def api_device_setpoint(device_id: str, delta: float, request: Request):
     if delta not in (-1, 1):
         raise HTTPException(status_code=400, detail='Only -1 and +1 setpoint adjustments are supported.')
     return adjust_setpoint(device_id, delta)
+
+
+@app.post('/api/device/{device_id}/level/{level}')
+def api_device_level(device_id: str, level: int, request: Request):
+    require_api_token(request)
+    if level < 0 or level > 100:
+        raise HTTPException(status_code=400, detail='Level must be between 0 and 100.')
+    matches = [d for d in all_devices() if d['id'] == device_id]
+    if not matches:
+        raise HTTPException(status_code=404, detail='Device not found.')
+    return level_command_devices(matches, level)
 
 
 @app.post('/api/ask')

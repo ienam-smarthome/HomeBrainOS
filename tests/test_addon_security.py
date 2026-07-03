@@ -119,6 +119,63 @@ def test_assistant_targets_numbered_light_device_and_speaks_confirmation():
     assert answer['speech'] == 'Livingroom Light 1 turned on.'
 
 
+def test_assistant_asks_when_singular_light_target_is_ambiguous():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Livingroom Light 1', 'name': 'Livingroom Light 1', 'room': 'Living Room', 'category': 'light', 'switch': 'off'},
+        {'id': 'l2', 'label': 'Livingroom Light 2', 'name': 'Livingroom Light 2', 'room': 'Living Room', 'category': 'light', 'switch': 'off'},
+    ]
+    commands = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+
+    answer = main.assistant('turn on livingroom light')
+
+    assert answer['success'] is False
+    assert answer['intent'] == 'disambiguation'
+    assert commands == []
+    assert 'Livingroom Light 1' in answer['message']
+    assert 'Livingroom Light 2' in answer['message']
+
+
+def test_assistant_controls_plural_room_lights_as_group():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Livingroom Light 1', 'name': 'Livingroom Light 1', 'room': 'Living Room', 'category': 'light', 'switch': 'off'},
+        {'id': 'l2', 'label': 'Livingroom Light 2', 'name': 'Livingroom Light 2', 'room': 'Living Room', 'category': 'light', 'switch': 'off'},
+        {'id': 'h1', 'label': 'Hallway Light 1', 'name': 'Hallway Light 1', 'room': 'Hallway', 'category': 'light', 'switch': 'off'},
+    ]
+    commands = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_switch = lambda device_ids, switch: []
+
+    answer = main.assistant('turn on livingroom lights')
+
+    assert answer['success'] is True
+    assert commands == [('l1', 'on'), ('l2', 'on')]
+    assert answer['changed'] == ['Livingroom Light 1', 'Livingroom Light 2']
+
+
+def test_assistant_sets_light_level_with_percent_command():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Bedroom 1 Light', 'name': 'Bedroom 1 Light', 'room': 'Bedroom 1', 'category': 'light', 'switch': 'off', 'level': 10},
+    ]
+    values = []
+    switches = []
+    main.maker_command_value = lambda device_id, command, value: values.append((device_id, command, value))
+    main.maker_command = lambda device_id, command: switches.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_level = lambda device_id, level: {'id': device_id, 'level': level}
+
+    answer = main.assistant('set bedroom 1 light to 30 percent')
+
+    assert answer['success'] is True
+    assert values == [('l1', 'setLevel', 30)]
+    assert switches == [('l1', 'on')]
+    assert answer['speech'] == 'Bedroom 1 Light set to 30 percent.'
+
+
 def test_heating_commands_adjust_setpoints_without_thermostat_mode():
     main = load_addon_main()
     devices = [
