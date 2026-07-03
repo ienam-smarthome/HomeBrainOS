@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.25-alpha'
+APP_VERSION = '0.7.26-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1166,6 +1166,24 @@ def is_room_switch_device(device: dict[str, Any]) -> bool:
     )
 
 
+def is_room_motion_device(device: dict[str, Any]) -> bool:
+    return (
+        device.get('category') == 'motion_sensor'
+        or device.get('motion') is not None
+        or 'motionsensor' in caps_text(device)
+        or 'motion' in device.get('attributes', {})
+    )
+
+
+def is_room_presence_device(device: dict[str, Any]) -> bool:
+    return (
+        device.get('category') == 'presence_sensor'
+        or device.get('presence') is not None
+        or 'presencesensor' in caps_text(device)
+        or 'presence' in device.get('attributes', {})
+    )
+
+
 def switchable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [d for d in devices if is_switchable_device(d)]
 
@@ -1566,6 +1584,8 @@ def api_rooms():
             'sockets_on': 0,
             'motion_total': 0,
             'motion_active': 0,
+            'presence_total': 0,
+            'presence_present': 0,
             'low_batteries': 0,
             'power_total': 0,
             'power_devices': 0,
@@ -1585,10 +1605,14 @@ def api_rooms():
                 rooms[room]['switches_on'] += 1
                 if is_room_socket_device(d):
                     rooms[room]['sockets_on'] += 1
-        if d.get('motion') is not None:
+        if is_room_motion_device(d):
             rooms[room]['motion_total'] += 1
             if is_state(d.get('motion'), 'active'):
                 rooms[room]['motion_active'] += 1
+        if is_room_presence_device(d):
+            rooms[room]['presence_total'] += 1
+            if is_state(d.get('presence'), 'present') or is_state(d.get('presence'), 'home'):
+                rooms[room]['presence_present'] += 1
         if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20:
             rooms[room]['low_batteries'] += 1
         if isinstance(d.get('power'), (int, float)):

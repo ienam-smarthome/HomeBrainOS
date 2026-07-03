@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.25</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.26</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which lights are on"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -77,6 +77,7 @@ function roomCard(room){
     signals.push(roomSignal('🔌', value, label, room.switches_on?'motion-on':''));
   }
   if((room.motion_total||0)>0) signals.push(roomSignal('🏃', room.motion_active?room.motion_active+' active':'clear', 'motion', room.motion_active?'motion-on':''));
+  if((room.presence_total||0)>0) signals.push(roomSignal('👤', `${room.presence_present||0}/${room.presence_total}`, 'present', room.presence_present?'motion-on':''));
   if(room.avg_temperature!=null) signals.push(roomSignal('🌡', room.avg_temperature+'°', 'temperature'));
   if(room.avg_humidity!=null) signals.push(roomSignal('💧', room.avg_humidity+'%', 'humidity'));
   if((room.power_devices||0)>0) signals.push(roomSignal('⚡', formatPower(room.power_total||0), 'power'));

@@ -161,6 +161,41 @@ def test_room_summary_distinguishes_sockets_from_lights_and_keeps_power():
     assert bedroom['switches_total'] == 0
 
 
+def test_room_summary_shows_motion_capable_devices_with_missing_state():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'm1',
+            'label': 'Bedroom 3 Light Sensor',
+            'room': 'Bedroom 3',
+            'category': 'light_sensor',
+            'capabilities': ['MotionSensor', 'IlluminanceMeasurement'],
+            'attributes': {'motion': None, 'illuminance': 269},
+            'motion': None,
+        },
+        {'id': 'l1', 'label': 'Bedroom 3 Light', 'room': 'Bedroom 3', 'category': 'light', 'switch': 'off'},
+    ]
+
+    bedroom = next(room for room in main.api_rooms()['rooms'] if room['room'] == 'Bedroom 3')
+
+    assert bedroom['lights_total'] == 1
+    assert bedroom['motion_total'] == 1
+    assert bedroom['motion_active'] == 0
+
+
+def test_room_summary_shows_presence_rooms():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'p1', 'label': 'Enamul', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'present'},
+        {'id': 'p2', 'label': 'Samah', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'not present'},
+    ]
+
+    life360 = next(room for room in main.api_rooms()['rooms'] if room['room'] == 'Life360')
+
+    assert life360['presence_total'] == 2
+    assert life360['presence_present'] == 1
+
+
 def test_assistant_hub_health_reads_hub_info_device_metrics():
     main = load_addon_main()
     main.all_devices = lambda: [

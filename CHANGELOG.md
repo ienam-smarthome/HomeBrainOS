@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.26-alpha
+
+- Show room motion chips when a device is motion-capable even if its current motion value is missing.
+- Show presence counts for presence-only rooms such as Life360.
+
 ## v0.7.25-alpha
 
 - Prefer labelled Hub Info rows over raw attributes for CPU, memory, uptime, and restart values.
