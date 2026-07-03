@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.37-alpha
+
+- Replace the loose Ollama prompt with a structured AI context pack.
+- Include home summary, weather, hub health, diagnostics, active rooms, selected device facts, and optional hub log diagnostics in local AI context.
+- Keep deterministic device control ahead of AI and instruct Ollama not to claim it has sent commands.
+- Add protected `/api/ai/context` endpoint and dashboard shortcut for inspecting the local AI context.
+
 ## v0.7.36-alpha
 
 - Add visible selected/loading states for summary tiles, room tiles, and shortcut buttons.

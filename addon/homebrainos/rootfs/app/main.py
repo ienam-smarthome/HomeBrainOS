@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.36-alpha'
+APP_VERSION = '0.7.37-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -76,6 +76,8 @@ def load_config() -> dict[str, Any]:
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
         'ollama_model': os.getenv('OLLAMA_MODEL', 'llama3.2'),
+        'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '80')),
+        'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'true').lower() == 'true',
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
         'heating_on_delta': float(os.getenv('HEATING_ON_DELTA', '1')),
         'heating_off_setpoint': float(os.getenv('HEATING_OFF_SETPOINT', '12')),
@@ -1779,16 +1781,93 @@ def answer_attribute(target: str, attr: str) -> dict[str, Any]:
     return {'success': True, 'message': f"{d['label']} {attr} is {d[attr]}{unit}", 'speech': f"{d['label']} {attr} is {speech_value}.", 'device': d, 'attribute': attr, 'value': d[attr]}
 
 
+def ai_device_fact(device: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        'id', 'label', 'room', 'category', 'switch', 'level', 'temperature', 'humidity',
+        'power', 'energy', 'battery', 'motion', 'contact', 'presence',
+        'thermostatMode', 'thermostatOperatingState', 'heatingSetpoint',
+        'weatherSummaryLine',
+    )
+    fact = {key: device.get(key) for key in keys if device.get(key) not in (None, '', [], {})}
+    attrs = device.get('attributes') or {}
+    useful_attrs = {}
+    for key in ('weatherSummary', 'weatherSummaryLine', 'pressure', 'windSpeed', 'precipitationToday'):
+        if attrs.get(key) not in (None, '', [], {}) and key not in fact:
+            useful_attrs[key] = attrs[key]
+    if useful_attrs:
+        fact['attributes'] = useful_attrs
+    return fact
+
+
+def ai_context_pack(include_logs: bool | None = None) -> dict[str, Any]:
+    devices = all_devices()
+    device_limit = max(10, int(CONFIG.get('ollama_context_device_limit', 80)))
+    summary = dashboard_summary()
+    context: dict[str, Any] = {
+        'app': 'HomeBrain OS',
+        'version': APP_VERSION,
+        'safety': {
+            'control_policy': 'Deterministic HomeBrain commands handle device control before AI. AI should answer and advise only; do not claim to send device commands.',
+            'risky_actions': 'Ask the user to confirm broad or risky actions such as all-device changes, heating changes, or security-related actions.',
+        },
+        'summary': {
+            'devices': summary.get('devices'),
+            'lights_on': summary.get('lights_on'),
+            'switches_on': summary.get('switches_on'),
+            'avg_temperature': summary.get('avg_temperature'),
+            'avg_humidity': summary.get('avg_humidity'),
+            'power_total': summary.get('power_total'),
+            'power_source_label': summary.get('power_source_label'),
+            'people_home_names': summary.get('people_home_names'),
+            'low_batteries': summary.get('low_batteries'),
+            'motion_active': summary.get('motion_active'),
+        },
+        'weather': None,
+        'hub_health': hub_health_summary(),
+        'diagnostics': device_diagnostics(),
+        'active_rooms': active_rooms_answer().get('rooms', [])[:12],
+        'devices': [ai_device_fact(device) for device in sorted(devices, key=controllable_sort_key)[:device_limit]],
+        'allowed_direct_commands': [
+            'summary', 'weather', 'hub health', 'hub logs', 'device health',
+            'turn on/off exact device', 'turn on/off explicit room lights',
+            'set exact light level', 'increase/decrease room brightness',
+            'heating setpoint adjustments',
+        ],
+    }
+    weather = weather_device()
+    if weather:
+        context['weather'] = ai_device_fact(weather)
+    should_include_logs = CONFIG.get('ollama_include_hub_logs', True) if include_logs is None else include_logs
+    if should_include_logs:
+        try:
+            log_info = hub_logs_diagnostics(limit=40)
+            context['hub_logs'] = {
+                'total': log_info.get('total'),
+                'warnings': log_info.get('warnings'),
+                'errors': log_info.get('errors'),
+                'affected_devices': log_info.get('affected_devices'),
+                'recent_issues': [log.get('message') for log in log_info.get('problems', [])[:5]],
+            }
+        except Exception as exc:
+            context['hub_logs'] = {'available': False, 'error': public_error(exc)}
+    return context
+
+
+def ai_context_text(context: dict[str, Any]) -> str:
+    return json.dumps(context, ensure_ascii=True, indent=2)
+
+
 def ollama_answer(text: str) -> dict[str, Any] | None:
     if not CONFIG.get('ollama_enabled'):
         return None
-    devices = all_devices()[:80]
-    context = '\n'.join(device_line(d) for d in devices)
+    context = ai_context_pack()
     prompt = (
         'You are HomeBrain OS, a concise smart home assistant. '
-        'Answer using only the device facts below. Do not invent device states. '
-        'If asked to control devices, explain that control is handled by HomeBrain deterministic commands.\n\n'
-        f'Device facts:\n{context}\n\nUser: {text}\nAssistant:'
+        'Use only the JSON context below. Do not invent device states. '
+        'Device control is handled before you are called by deterministic HomeBrain commands. '
+        'If the user asks for a control action that was not already handled, explain the exact deterministic phrase they should use. '
+        'Keep answers short, practical, and suitable for being spoken aloud.\n\n'
+        f'Context JSON:\n{ai_context_text(context)}\n\nUser: {text}\nAssistant:'
     )
     try:
         response = requests.post(
@@ -1800,7 +1879,7 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         data = response.json()
         message = str(data.get('response') or '').strip()
         if message:
-            return {'success': True, 'message': message, 'intent': 'ollama_answer', 'source': 'ollama'}
+            return {'success': True, 'message': message, 'speech': message, 'intent': 'ollama_answer', 'source': 'ollama', 'context': context}
     except Exception as exc:
         return {'success': False, 'message': f'Ollama is enabled but did not answer: {exc}', 'intent': 'ollama_error'}
     return None
@@ -2060,6 +2139,12 @@ def api_status():
 @app.get('/api/hub/logs')
 def api_hub_logs():
     return {'success': True, **hub_logs_diagnostics()}
+
+
+@app.get('/api/ai/context')
+def api_ai_context(request: Request):
+    require_api_token(request)
+    return {'success': True, 'context': ai_context_pack()}
 
 
 @app.post('/api/refresh')

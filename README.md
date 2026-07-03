@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.36-alpha` assistant dashboard:
+`v0.7.37-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -53,6 +53,8 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Weather summaries from Hubitat weather devices such as Weather Open-Meteo
 - Recent Hubitat log diagnostics with token redaction and affected-device hints
 - Visible selected/loading feedback when tapping summary, room, and shortcut tiles
+- Structured local AI context pack for Ollama with summary, weather, hub health, diagnostics, active rooms, and device facts
+- Protected AI context inspection endpoint at `/api/ai/context`
 - Assistant shortcuts for status, health, active rooms, heating, and cold rooms
 - Hub health shortcut reads CPU load, free memory, and uptime from the Hub Info device
 - Hub health also reads DB size, last restart, and temperature from Hub Info HTML/table output
@@ -103,6 +105,16 @@ api_token: choose-a-local-dashboard-token
 
 When `api_token` is set, device commands, setpoint changes, cache refreshes, and assistant requests require the dashboard to send the token. The browser UI prompts once and stores it in local storage.
 
+Optional local AI:
+
+```yaml
+ollama_enabled: true
+ollama_base_url: http://your-ollama-host:11434
+ollama_model: llama3.2
+ollama_context_device_limit: 80
+ollama_include_hub_logs: true
+```
+
 ## Development roadmap
 
 - `v0.5.0-alpha` Device engine + SQLite cache
@@ -142,6 +154,7 @@ When `api_token` is set, device commands, setpoint changes, cache refreshes, and
 - `v0.7.34-alpha` Dimmable light level commands and ambiguity prompts
 - `v0.7.35-alpha` Weather summaries, hub log diagnostics, and room brightness commands
 - `v0.7.36-alpha` Clear tapped/loading feedback for dashboard tiles
+- `v0.7.37-alpha` Structured Ollama AI context pack and context inspection
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 

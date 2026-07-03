@@ -248,6 +248,59 @@ def test_hub_logs_diagnostics_summarizes_errors_and_redacts_tokens():
     assert 'access_token=REDACTED' in answer['message']
 
 
+def test_ai_context_pack_includes_summary_weather_and_safety_policy():
+    main = load_addon_main()
+    main.CONFIG['ollama_include_hub_logs'] = False
+    main.all_devices = lambda: [
+        {'id': 'w1', 'label': 'Weather Open-Meteo', 'room': 'Weather', 'category': 'weather', 'weatherSummaryLine': 'Clear, High 27C, Low 15C'},
+        {'id': 'l1', 'label': 'Hallway Light', 'room': 'Hallway', 'category': 'light', 'switch': 'on', 'level': 60},
+        {'id': 'p1', 'label': 'Octopus Energy Live Meter', 'room': 'Energy', 'category': 'power_device', 'power': 319},
+    ]
+
+    context = main.ai_context_pack()
+
+    assert context['summary']['lights_on'] == 1
+    assert context['summary']['power_source_label'] == 'Octopus Energy Live Meter'
+    assert context['weather']['label'] == 'Weather Open-Meteo'
+    assert 'AI should answer and advise only' in context['safety']['control_policy']
+    assert any(device['label'] == 'Hallway Light' for device in context['devices'])
+
+
+def test_ollama_answer_uses_structured_context_and_control_guardrails():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = True
+    main.CONFIG['ollama_include_hub_logs'] = False
+    main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
+    main.CONFIG['ollama_model'] = 'llama3.2'
+    main.all_devices = lambda: [
+        {'id': 'w1', 'label': 'Weather Open-Meteo', 'room': 'Weather', 'category': 'weather', 'weatherSummaryLine': 'Clear'},
+    ]
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {'response': 'The home looks stable.'}
+
+    def post(url, json, timeout=20):
+        captured['url'] = url
+        captured['json'] = json
+        return Response()
+
+    main.requests.post = post
+
+    answer = main.ollama_answer('anything unusual?')
+
+    prompt = captured['json']['prompt']
+    assert answer['intent'] == 'ollama_answer'
+    assert captured['url'] == 'http://ollama.local:11434/api/generate'
+    assert 'Context JSON' in prompt
+    assert '"weather"' in prompt
+    assert 'Device control is handled before you are called' in prompt
+    assert answer['speech'] == 'The home looks stable.'
+
+
 def test_heating_commands_adjust_setpoints_without_thermostat_mode():
     main = load_addon_main()
     devices = [

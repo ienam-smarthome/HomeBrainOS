@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.36</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.37</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -49,6 +49,7 @@
     <button class="secondary" onclick="quick('device health', this)">Device issues</button>
     <button class="secondary" onclick="quick('what is the weather', this)">Weather</button>
     <button class="secondary" onclick="quick('hub logs', this)">Hub logs</button>
+    <button class="secondary" onclick="showAiContext(event)">AI context</button>
   </div>
   <div class="card" id="roomsCard"><h2>Rooms</h2><div class="rooms" id="rooms">Loading rooms...</div></div>
   <details class="card collapsible"><summary>Controllable Devices</summary><div class="devices" id="devices">Loading devices...</div></details>
@@ -327,6 +328,19 @@ async function clearRefresh(event){
     status();
   }catch(err){
     setOutput('Clear refresh failed: '+err.message);
+  }finally{
+    finishActiveControl();
+  }
+}
+async function showAiContext(event){
+  const button=event&&event.target?event.target.closest('button'):null;
+  if(button) markActiveControl(button);
+  setOutput('Building AI context...');
+  try{
+    const j=await api('/api/ai/context');
+    setOutput(JSON.stringify(j.context||j,null,2));
+  }catch(err){
+    setOutput('AI context unavailable: '+err.message);
   }finally{
     finishActiveControl();
   }
