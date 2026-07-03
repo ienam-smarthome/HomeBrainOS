@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.38-alpha
+
+- Add deterministic exact heating setpoint commands such as `set hallway heating to 21`.
+- Add room active-state answers such as `what is on in hallway`.
+- Add timed switch commands such as `turn on desk fan for 10 minutes`, with server-side scheduled off timers.
+- Expose pending scheduled device timers through `/api/timers`.
+
 ## v0.7.37-alpha
 
 - Replace the loose Ollama prompt with a structured AI context pack.

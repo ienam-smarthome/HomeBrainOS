@@ -332,6 +332,85 @@ def test_heating_commands_adjust_setpoints_without_thermostat_mode():
     assert 'Heating setpoints lowered' in off_answer['message']
 
 
+def test_assistant_sets_room_heating_to_explicit_setpoint():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'trv1',
+            'label': 'Hallway TRV',
+            'name': 'Hallway TRV',
+            'room': 'Hallway',
+            'category': 'thermostat',
+            'temperature': 20,
+            'heatingSetpoint': 18,
+        },
+        {
+            'id': 'trv2',
+            'label': 'Bedroom 1 TRV',
+            'name': 'Bedroom 1 TRV',
+            'room': 'Bedroom 1',
+            'category': 'thermostat',
+            'temperature': 20,
+            'heatingSetpoint': 18,
+        },
+    ]
+    commands = []
+    main.maker_command_value = lambda device_id, command, value: commands.append((device_id, command, value))
+    main.refresh_devices = lambda: None
+    main.update_cached_setpoint = lambda device_id, setpoint: {'id': device_id, 'heatingSetpoint': setpoint}
+
+    answer = main.assistant('set hallway heating to 21')
+
+    assert answer['success'] is True
+    assert commands == [('trv1', 'setHeatingSetpoint', 21.0)]
+    assert answer['speech'] == 'Hallway TRV set to 21 degrees.'
+
+
+def test_assistant_reports_active_devices_in_named_room():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Hallway Light', 'room': 'Hallway', 'category': 'light', 'switch': 'on'},
+        {'id': 's1', 'label': 'Hallway Plug', 'room': 'Hallway', 'category': 'switch', 'switch': 'off'},
+        {
+            'id': 'trv1',
+            'label': 'Hallway TRV',
+            'room': 'Hallway',
+            'category': 'thermostat',
+            'thermostatOperatingState': 'heating',
+            'heatingSetpoint': 22,
+        },
+        {'id': 'b1', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on'},
+    ]
+
+    answer = main.assistant('what is on in hallway')
+
+    assert answer['intent'] == 'room_on_status'
+    assert 'Hallway Light' in answer['message']
+    assert 'Hallway TRV' in answer['message']
+    assert 'Bedroom Light' not in answer['message']
+    assert answer['speech'] == 'Hallway: Hallway Light and Hallway TRV.'
+
+
+def test_assistant_turns_device_on_for_duration_and_schedules_off():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'fan1', 'label': 'Desk Fan', 'name': 'Desk Fan', 'room': 'Office', 'category': 'switch', 'switch': 'off'},
+    ]
+    commands = []
+    timers = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_switch = lambda device_ids, switch: [{'id': device_id, 'switch': switch} for device_id in device_ids]
+    main.schedule_delayed_command = lambda device_ids, command, seconds, labels: timers.append((device_ids, command, seconds, labels)) or {'due_at': 123}
+
+    answer = main.assistant('turn on desk fan for 10 minutes')
+
+    assert answer['success'] is True
+    assert commands == [('fan1', 'on')]
+    assert timers == [(['fan1'], 'off', 600, ['Desk Fan'])]
+    assert 'Scheduled off in 10 minutes.' in answer['message']
+
+
 def test_assistant_lists_only_people_home():
     main = load_addon_main()
     main.all_devices = lambda: [

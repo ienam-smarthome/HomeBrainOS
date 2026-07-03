@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 from datetime import datetime
 from difflib import get_close_matches
@@ -19,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.37-alpha'
+APP_VERSION = '0.7.38-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -90,6 +91,7 @@ CONFIG = load_config()
 LAST_ERROR: str | None = None
 LAST_REFRESH: float | None = None
 LAST_DETAIL_ERRORS: list[str] = []
+PENDING_DEVICE_TIMERS: dict[str, dict[str, Any]] = {}
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
@@ -923,6 +925,32 @@ def heating_status_answer() -> dict[str, Any]:
     }
 
 
+def room_on_status_answer(room: str) -> dict[str, Any]:
+    devices = room_devices(room)
+    if not devices:
+        return {'success': False, 'intent': 'room_on_status', 'message': f'I found no devices in {room}.'}
+    lights = [d for d in devices if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
+    switches = [
+        d for d in devices
+        if d.get('category') != 'light'
+        and d.get('switch') is not None
+        and is_state(d.get('switch'), 'on')
+    ]
+    heating = [d for d in climate_control_devices(devices) if 'heat' in normalise(d.get('thermostatOperatingState', ''))]
+    lines = []
+    if lights:
+        lines.append('Lights on:\n' + '\n'.join(d['label'] for d in lights))
+    if switches:
+        lines.append('Switches on:\n' + '\n'.join(d['label'] for d in switches))
+    if heating:
+        lines.append('Heating active:\n' + '\n'.join(d['label'] for d in heating))
+    active = lights + switches + heating
+    room_name = canonical_room_name(room)
+    message = f'{room_name} active devices:\n' + ('\n\n'.join(lines) if lines else 'None')
+    speech = f"{room_name}: {spoken_list([d['label'] for d in active])}" if active else f'{room_name}: nothing is on.'
+    return {'success': True, 'intent': 'room_on_status', 'message': message, 'speech': speech, 'devices': active, 'room': room_name}
+
+
 def device_health_answer() -> dict[str, Any]:
     summary = dashboard_summary()
     diagnostics = device_diagnostics()
@@ -1624,6 +1652,95 @@ def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: 
     return {'success': False, 'message': 'Hubitat command failed:\n' + '\n'.join(errors), 'errors': errors}
 
 
+def resolve_switch_target(target: str) -> tuple[list[dict[str, Any]], bool, str | None]:
+    target = target.replace('the ', '').strip()
+    explicit_bulk = target in ('all lights', 'all light', 'all switches', 'all switch', 'all devices')
+    if target in ('lights', 'light', 'switches', 'switch', 'devices', 'device'):
+        return [], explicit_bulk, f"Please specify a room/device, or say 'all {target}' if you mean the whole home."
+    if target in ('all lights', 'all light'):
+        return [d for d in all_devices() if d.get('category') == 'light'], explicit_bulk, None
+    if target in ('all switches', 'all switch'):
+        return [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None], explicit_bulk, None
+    if target == 'all devices':
+        return switchable_devices(all_devices()), explicit_bulk, None
+    if re.search(r'\b(all\s+)?(.+\s+)?lights$', target):
+        room = target.replace('lights', '').replace('light', '').replace('all ', '').strip()
+        return room_devices(room, 'light'), True, None
+    if target.endswith(' light'):
+        devices = find_devices(target, 'light')
+        if not devices:
+            room = target.removesuffix(' light').strip()
+            devices = room_devices(room, 'light')
+        return devices, explicit_bulk, None
+    devices = find_devices(target)
+    if not devices and not re.search(r'\b(light|switch|plug|socket|dimmer|lamp)\s+\d+$', target):
+        devices = room_devices(target)
+    return devices, explicit_bulk, None
+
+
+def duration_seconds(amount: str, unit: str) -> int:
+    value = float(amount)
+    unit_n = normalise(unit)
+    if unit_n.startswith('sec'):
+        return max(1, int(value))
+    if unit_n.startswith('hour') or unit_n in ('hr', 'hrs'):
+        return max(1, int(value * 3600))
+    return max(1, int(value * 60))
+
+
+def duration_label(seconds: int) -> str:
+    if seconds % 3600 == 0 and seconds >= 3600:
+        hours = seconds // 3600
+        return f"{hours} hour" + ('' if hours == 1 else 's')
+    if seconds % 60 == 0 and seconds >= 60:
+        minutes = seconds // 60
+        return f"{minutes} minute" + ('' if minutes == 1 else 's')
+    return f"{seconds} second" + ('' if seconds == 1 else 's')
+
+
+def delayed_device_command(timer_id: str, device_ids: list[str], command: str) -> None:
+    try:
+        for device_id in device_ids:
+            try:
+                maker_command(device_id, command)
+            except Exception:
+                continue
+        refresh_devices()
+        update_cached_switch(device_ids, command)
+    finally:
+        PENDING_DEVICE_TIMERS.pop(timer_id, None)
+
+
+def schedule_delayed_command(device_ids: list[str], command: str, seconds: int, labels: list[str]) -> dict[str, Any]:
+    timer_id = f"{int(time.time())}-{'-'.join(device_ids)}-{command}"
+    timer = threading.Timer(seconds, delayed_device_command, args=(timer_id, device_ids, command))
+    timer.daemon = True
+    PENDING_DEVICE_TIMERS[timer_id] = {
+        'id': timer_id,
+        'device_ids': device_ids,
+        'labels': labels,
+        'command': command,
+        'due_at': time.time() + seconds,
+    }
+    timer.start()
+    return PENDING_DEVICE_TIMERS[timer_id]
+
+
+def timed_command_devices(devices: list[dict[str, Any]], command: str, seconds: int, explicit_bulk: bool = False) -> dict[str, Any]:
+    result = command_devices(devices, command, explicit_bulk=explicit_bulk)
+    if not result.get('success'):
+        return result
+    changed = result.get('changed', [])
+    device_ids = [d['id'] for d in switchable_devices(devices) if d['label'] in changed]
+    if command == 'on' and device_ids:
+        timer = schedule_delayed_command(device_ids, 'off', seconds, changed)
+        label = duration_label(seconds)
+        result['message'] += f"\n\nScheduled off in {label}."
+        result['speech'] = f"{spoken_command_confirmation(changed, command)} I will turn it off in {label}."
+        result['timer'] = timer
+    return result
+
+
 def disambiguation_response(devices: list[dict[str, Any]], action: str) -> dict[str, Any]:
     labels = [d['label'] for d in devices[:8]]
     return {
@@ -1693,6 +1810,42 @@ def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
     refresh_devices()
     updated = update_cached_setpoint(device_id, new_value)
     return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}°", 'device': updated or device, 'setpoint': new_value}
+
+
+def set_setpoint_devices(devices: list[dict[str, Any]], setpoint: float, explicit_bulk: bool = False) -> dict[str, Any]:
+    target_setpoint = round(float(setpoint), 1)
+    if target_setpoint < 5 or target_setpoint > 35:
+        return {'success': False, 'message': 'Heating setpoint must be between 5C and 35C.'}
+    candidates = climate_control_devices(devices)
+    if not candidates:
+        labels = [d['label'] for d in devices[:5]]
+        suffix = '\nMatched: ' + '\n'.join(labels) if labels else ''
+        return {'success': False, 'message': 'No heating devices found.' + suffix, 'matched': labels}
+    if len(candidates) > 1 and not explicit_bulk:
+        return disambiguation_response(candidates, 'set heating for')
+    changed = []
+    errors = []
+    updated = []
+    for device in candidates[:20]:
+        try:
+            maker_command_value(device['id'], 'setHeatingSetpoint', target_setpoint)
+            changed.append(device['label'])
+        except Exception as exc:
+            errors.append(f"{device['label']}: {public_error(exc)}")
+    refresh_devices()
+    for device in candidates:
+        if device['label'] in changed:
+            cached = update_cached_setpoint(device['id'], target_setpoint)
+            if cached:
+                updated.append(cached)
+    if changed:
+        setpoint_text = f'{target_setpoint:g}'
+        message = f"Heating setpoint set to {setpoint_text}C:\n" + '\n'.join(changed)
+        if errors:
+            message += '\n\nErrors:\n' + '\n'.join(errors)
+        speech = spoken_list([f'{label} set to {setpoint_text} degrees' for label in changed])
+        return {'success': True, 'message': message, 'speech': speech, 'changed': changed, 'errors': errors, 'devices': updated, 'setpoint': target_setpoint}
+    return {'success': False, 'message': 'Heating setpoint command failed:\n' + '\n'.join(errors), 'errors': errors}
 
 
 def set_heating_mode(mode: str, target: str = 'home') -> dict[str, Any]:
@@ -1831,7 +1984,8 @@ def ai_context_pack(include_logs: bool | None = None) -> dict[str, Any]:
             'summary', 'weather', 'hub health', 'hub logs', 'device health',
             'turn on/off exact device', 'turn on/off explicit room lights',
             'set exact light level', 'increase/decrease room brightness',
-            'heating setpoint adjustments',
+            'heating setpoint adjustments', 'set room heating to exact temperature',
+            'what is on in room', 'turn on device for timed duration',
         ],
     }
     weather = weather_device()
@@ -1893,7 +2047,8 @@ def assistant(text: str) -> dict[str, Any]:
             'intent': 'help',
             'message': (
                 "I can summarize the home, read weather, list lights or switches that are on, answer temperature/humidity/power/battery questions, "
-                "control switchable devices, adjust brightness, refresh or clear the cache, list room devices, read hub logs, and run diagnostics."
+                "control switchable devices, keep a device on for a timed duration, set heating temperatures, adjust brightness, "
+                "refresh or clear the cache, list room devices, read hub logs, and run diagnostics."
             ),
         }
     if 'weather' in t or 'forecast' in t:
@@ -1906,6 +2061,11 @@ def assistant(text: str) -> dict[str, Any]:
         return cold_rooms_answer()
     if 'heating status' in t or 'heating state' in t:
         return heating_status_answer()
+    m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:devices\s+)?(?:are\s+)?on\s+(?:in|inside)\s+(.+)$", t)
+    if not m_room_on:
+        m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:is\s+)?on\s+(?:in|inside)\s+(.+)$", t)
+    if m_room_on:
+        return room_on_status_answer(m_room_on.group(1).strip())
     if 'hub health' in t or 'hub info' in t or 'hubitat health' in t:
         return hub_health_answer()
     if 'device health' in t or 'home health' in t:
@@ -1974,6 +2134,11 @@ def run_command(text: str) -> dict[str, Any]:
             f"{s['low_batteries']} devices have low batteries. {s['motion_active']} motion sensors are active."
         )
         return {'success': True, 'message': f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\nWhole-house power: {s['power_display']} from {s['power_source_label']}\nPeople home: {s['people_home']}/{s['people_tracked']} ({people})\nLow batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}", 'speech': speech}
+    m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:devices\s+)?(?:are\s+)?on\s+(?:in|inside)\s+(.+)$", t)
+    if not m_room_on:
+        m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:is\s+)?on\s+(?:in|inside)\s+(.+)$", t)
+    if m_room_on:
+        return room_on_status_answer(m_room_on.group(1).strip())
     if re.search(r'\b(which|what)\s+lights?\s+(are|is)\s+on\b', t):
         lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         light_devices = [d for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
@@ -1982,6 +2147,20 @@ def run_command(text: str) -> dict[str, Any]:
         switch_devices = [d for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         switches = [d['label'] for d in switch_devices]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None'), 'speech': spoken_device_locations(switch_devices)}
+    m_setpoint = re.search(r'^(?:set|change|adjust)\s+(.+?)\s+(?:heating|heat|trv|thermostat|temperature|temp|setpoint)\s+(?:to|at)\s+(\d+(?:\.\d+)?)\s*(?:degrees?|c)?$', t)
+    if not m_setpoint:
+        m_setpoint = re.search(r'^(?:set|change|adjust)\s+(?:heating|heat|trv|thermostat|temperature|temp|setpoint)\s+(?:in|for)\s+(.+?)\s+(?:to|at)\s+(\d+(?:\.\d+)?)\s*(?:degrees?|c)?$', t)
+    if m_setpoint:
+        target = m_setpoint.group(1).replace('the ', '').strip()
+        value = float(m_setpoint.group(2))
+        explicit_bulk = target in ('home', 'house', 'all', 'all heating', 'heating', 'heat')
+        if explicit_bulk:
+            devices = climate_control_devices(all_devices())
+        else:
+            devices = climate_control_devices(room_devices(target)) or find_devices(target)
+        if not devices:
+            return {'success': False, 'message': f'Heating device not found: {target}'}
+        return set_setpoint_devices(devices, value, explicit_bulk=explicit_bulk)
     m_heat = re.search(r'^(turn on|switch on|enable|start|turn off|switch off|disable|stop)\s+(?:(.+?)\s+)?heating(?:\s+(?:in|for)\s+(.+))?$', t)
     if m_heat:
         action = m_heat.group(1)
@@ -2050,6 +2229,16 @@ def run_command(text: str) -> dict[str, Any]:
         current = sum(known_levels) / len(known_levels) if known_levels else 50
         target_level = min(100, int(current + 20)) if increase else max(1, int(current - 20))
         return level_command_devices(devices, target_level, explicit_bulk=explicit_bulk)
+    m_timed = re.search(r'^(?:turn on|switch on|keep|leave)\s+(.+?)\s+(?:on\s+)?for\s+(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)$', t)
+    if m_timed:
+        target = m_timed.group(1).replace(' on', '').replace('the ', '').strip()
+        seconds = duration_seconds(m_timed.group(2), m_timed.group(3))
+        devices, explicit_bulk, error = resolve_switch_target(target)
+        if error:
+            return {'success': False, 'message': error}
+        if not devices:
+            return {'success': False, 'message': f'Device not found: {target}'}
+        return timed_command_devices(devices, 'on', seconds, explicit_bulk=explicit_bulk)
     attr_terms = {
         'humidity': ('humidity',),
         'temperature': ('temperature', 'temp'),
@@ -2086,31 +2275,9 @@ def run_command(text: str) -> dict[str, Any]:
     if m:
         action, target = m.group(1), m.group(2).strip()
         command = 'on' if 'on' in action else 'off'
-        explicit_bulk = target in ('all lights', 'all light', 'all switches', 'all switch', 'all devices')
-        if target in ('lights', 'light', 'switches', 'switch', 'devices', 'device'):
-            return {
-                'success': False,
-                'message': f"Please specify a room/device, or say 'all {target}' if you mean the whole home.",
-            }
-        if target in ('all lights', 'all light'):
-            devices = [d for d in all_devices() if d.get('category') == 'light']
-        elif target in ('all switches', 'all switch'):
-            devices = [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None]
-        elif target == 'all devices':
-            devices = switchable_devices(all_devices())
-        elif re.search(r'\b(all\s+)?(.+\s+)?lights$', target):
-            room = target.replace('lights','').replace('light','').replace('all ', '').strip()
-            devices = room_devices(room, 'light')
-            explicit_bulk = True
-        elif target.endswith(' light'):
-            devices = find_devices(target, 'light')
-            if not devices:
-                room = target.removesuffix(' light').strip()
-                devices = room_devices(room, 'light')
-        else:
-            devices = find_devices(target)
-            if not devices and not re.search(r'\b(light|switch|plug|socket|dimmer|lamp)\s+\d+$', target):
-                devices = room_devices(target)
+        devices, explicit_bulk, error = resolve_switch_target(target)
+        if error:
+            return {'success': False, 'message': error}
         if not devices:
             return {'success': False, 'message': f'Device not found: {target}'}
         return command_devices(devices, command, explicit_bulk=explicit_bulk)
@@ -2134,6 +2301,19 @@ async def startup() -> None:
 @app.get('/api/status')
 def api_status():
     return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary()}
+
+
+@app.get('/api/timers')
+def api_timers(request: Request):
+    require_api_token(request)
+    now = time.time()
+    timers = []
+    for timer in PENDING_DEVICE_TIMERS.values():
+        timers.append({
+            **timer,
+            'seconds_remaining': max(0, int(timer.get('due_at', now) - now)),
+        })
+    return {'success': True, 'count': len(timers), 'timers': timers}
 
 
 @app.get('/api/hub/logs')
