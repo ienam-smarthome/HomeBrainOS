@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.36-alpha
+
+- Add visible selected/loading states for summary tiles, room tiles, and shortcut buttons.
+- Highlight the output panel while a tile response is active.
+- Show immediate `Running...` or room-loading text so taps feel responsive on mobile.
+
 ## v0.7.35-alpha
 
 - Add weather answers from Hubitat weather devices, preferring `weatherSummary`/`weatherSummaryLine`.

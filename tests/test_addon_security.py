@@ -692,3 +692,13 @@ def test_dashboard_has_mobile_voice_shortcut_controls():
     assert 'id="micFab"' in html
     assert 'id="voiceOverlay"' in html
     assert "get('voice')==='1'" in html
+
+
+def test_dashboard_tiles_have_visible_click_feedback():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert '.metric.summary-tile.selected,.room.selected' in html
+    assert '.metric.summary-tile.loading:after,.room.loading:after' in html
+    assert 'function markActiveControl' in html
+    assert "setOutput('Running: '+text+'...')" in html
+    assert "quick('summary', this)" in html

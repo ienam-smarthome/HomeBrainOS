@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.35-alpha` assistant dashboard:
+`v0.7.36-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -52,6 +52,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Backend level API for dimmable device controls
 - Weather summaries from Hubitat weather devices such as Weather Open-Meteo
 - Recent Hubitat log diagnostics with token redaction and affected-device hints
+- Visible selected/loading feedback when tapping summary, room, and shortcut tiles
 - Assistant shortcuts for status, health, active rooms, heating, and cold rooms
 - Hub health shortcut reads CPU load, free memory, and uptime from the Hub Info device
 - Hub health also reads DB size, last restart, and temperature from Hub Info HTML/table output
@@ -140,6 +141,7 @@ When `api_token` is set, device commands, setpoint changes, cache refreshes, and
 - `v0.7.33-alpha` Safer voice commands and setpoint-only heating control
 - `v0.7.34-alpha` Dimmable light level commands and ambiguity prompts
 - `v0.7.35-alpha` Weather summaries, hub log diagnostics, and room brightness commands
+- `v0.7.36-alpha` Clear tapped/loading feedback for dashboard tiles
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 
