@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.13-alpha'
+APP_VERSION = '0.7.14-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -542,10 +542,11 @@ def clear_cache() -> None:
 
 def dashboard_summary() -> dict[str, Any]:
     devices = all_devices()
+    environment_devices = [d for d in devices if not is_fridge_meter_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
     switches_on = [d for d in devices if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
-    temps = [d['temperature'] for d in devices if isinstance(d.get('temperature'), (int, float))]
-    hums = [d['humidity'] for d in devices if isinstance(d.get('humidity'), (int, float))]
+    temps = [d['temperature'] for d in environment_devices if isinstance(d.get('temperature'), (int, float))]
+    hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int, float))]
     power_devices = [d for d in devices if isinstance(d.get('power'), (int, float))]
     powers = [d['power'] for d in power_devices]
     power_source = select_power_source(power_devices)
@@ -581,6 +582,11 @@ def device_search_text(device: dict[str, Any]) -> str:
         str(device.get(key, '') or '').lower()
         for key in ('label', 'name', 'room', 'category')
     )
+
+
+def is_fridge_meter_device(device: dict[str, Any]) -> bool:
+    text = device_search_text(device)
+    return 'fridge' in text and 'meter' in text
 
 
 def select_power_source(power_devices: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -1219,8 +1225,9 @@ def api_rooms():
             rooms[room]['power_total'] = round(rooms[room]['power_total'] + d['power'], 1)
     for room in rooms.values():
         ds = [d for d in devices if (d.get('room') or 'Unknown') == room['room']]
-        temps = [d['temperature'] for d in ds if isinstance(d.get('temperature'), (int,float))]
-        hums = [d['humidity'] for d in ds if isinstance(d.get('humidity'), (int,float))]
+        environment_devices = [d for d in ds if not is_fridge_meter_device(d)]
+        temps = [d['temperature'] for d in environment_devices if isinstance(d.get('temperature'), (int,float))]
+        hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int,float))]
         room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None
         room['avg_humidity'] = round(sum(hums)/len(hums),1) if hums else None
     return {'success': True, 'rooms': sorted(rooms.values(), key=lambda x: x['room'])}

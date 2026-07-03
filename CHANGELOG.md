@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.14-alpha
+
+- Simplify room summary cards with a cleaner stat grid.
+- Exclude fridge meter readings from home and room average temperature/humidity.
+
 ## v0.7.13-alpha
 
 - Make dashboard summary tiles clickable so each tile opens its matching assistant explanation.

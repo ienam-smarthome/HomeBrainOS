@@ -85,3 +85,20 @@ def test_assistant_lists_only_people_home():
     assert 'Enamul' in people['message']
     assert 'Samah' not in people['message']
     assert 'Tahmid' not in people['message']
+
+
+def test_fridge_meter_is_excluded_from_temperature_and_humidity_averages():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'sensor', 'label': 'Hallway Sensor', 'room': 'Hallway', 'category': 'climate_sensor', 'temperature': 20, 'humidity': 40},
+        {'id': 'fridge', 'label': 'Fridge Meter', 'room': 'Kitchen', 'category': 'climate_sensor', 'temperature': 4, 'humidity': 80},
+    ]
+
+    summary = main.dashboard_summary()
+    rooms = main.api_rooms()['rooms']
+    kitchen = next(room for room in rooms if room['room'] == 'Kitchen')
+
+    assert summary['avg_temperature'] == 20
+    assert summary['avg_humidity'] == 40
+    assert kitchen['avg_temperature'] is None
+    assert kitchen['avg_humidity'] is None
