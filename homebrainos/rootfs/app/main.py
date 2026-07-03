@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.12-alpha'
+APP_VERSION = '0.7.13-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -552,13 +552,15 @@ def dashboard_summary() -> dict[str, Any]:
     people = household_people(devices)
     low_batt = [d for d in devices if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20]
     motion_active = [d for d in devices if is_state(d.get('motion'), 'active')]
+    power_total = round(power_source['power'], 1) if power_source else round(sum(powers), 1) if powers else 0
     return {
         'devices': len(devices),
         'lights_on': len(lights_on),
         'switches_on': len(switches_on),
         'avg_temperature': round(sum(temps) / len(temps), 1) if temps else None,
         'avg_humidity': round(sum(hums) / len(hums), 1) if hums else None,
-        'power_total': round(power_source['power'], 1) if power_source else round(sum(powers), 1) if powers else 0,
+        'power_total': power_total,
+        'power_display': format_power_value(power_total),
         'power_source': power_source,
         'power_source_label': power_source['label'] if power_source else 'Octopus meter',
         'power_is_whole_house': bool(power_source),
@@ -628,6 +630,18 @@ def summary_devices(devices: list[dict[str, Any]], attr: str | None = None) -> l
     return items
 
 
+def format_power_value(watts: Any) -> str:
+    value = safe_float(watts)
+    if value is None:
+        return '0W'
+    if value > 999:
+        kw = round(value / 1000, 1)
+        kw_text = f'{kw:g}'
+        return f'{kw_text}kW'
+    watts_text = f'{round(value):g}' if float(value).is_integer() else f'{value:g}'
+    return f'{watts_text}W'
+
+
 def format_summary_device(item: dict[str, Any], attr: str | None = None, unit: str = '') -> str:
     detail = ''
     if attr and item.get(attr) is not None:
@@ -656,21 +670,22 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
         return {'success': True, 'intent': 'summary_active_motion', 'message': message, 'devices': devices}
 
     if wants_people:
-        lines = [f"{p['name']}: {p['status']}" for p in summary['people']]
-        return {'success': True, 'intent': 'summary_people', 'message': 'People:\n' + '\n'.join(lines), 'people': summary['people']}
+        names = summary['people_home_names']
+        message = 'People home:\n' + ('\n'.join(names) if names else 'None')
+        return {'success': True, 'intent': 'summary_people_home', 'message': message, 'people_home': names}
 
     if wants_power:
         source = summary.get('power_source')
         if source:
-            message = f"Power is whole-house live power from {source['label']}: {summary['power_total']} W."
+            message = f"Power is whole-house live power from {source['label']}: {summary['power_display']}."
         else:
-            message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_total']} W."
+            message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_display']}."
         return {'success': True, 'intent': 'summary_power', 'message': message, 'power_source': source}
 
     if wants_tiles:
         message = (
             f"Summary tiles: {summary['lights_on']} lights on, {summary['switches_on']} switches on, "
-            f"{summary['power_total']} W whole-house power from {summary['power_source_label']}, "
+            f"{summary['power_display']} whole-house power from {summary['power_source_label']}, "
             f"{summary['people_home']} of {summary['people_tracked']} people home, "
             f"{summary['low_batteries']} low batteries, and {summary['motion_active']} active motion sensors."
         )
@@ -1044,7 +1059,7 @@ def run_command(text: str) -> dict[str, Any]:
     if t in ('summary', 'status', 'home summary'):
         s = dashboard_summary()
         people = ', '.join(s['people_home_names']) if s['people_home_names'] else 'None'
-        return {'success': True, 'message': f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\nWhole-house power: {s['power_total']} W from {s['power_source_label']}\nPeople home: {s['people_home']}/{s['people_tracked']} ({people})\nLow batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}"}
+        return {'success': True, 'message': f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\nWhole-house power: {s['power_display']} from {s['power_source_label']}\nPeople home: {s['people_home']}/{s['people_tracked']} ({people})\nLow batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}"}
     if 'which lights are on' in t or 'what lights are on' in t:
         lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None')}

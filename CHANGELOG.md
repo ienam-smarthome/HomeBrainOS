@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.13-alpha
+
+- Make dashboard summary tiles clickable so each tile opens its matching assistant explanation.
+- Show only people currently home in the People summary tile.
+- Display whole-house power in kW when the value is greater than 999W.
+
 ## v0.7.12-alpha
 
 - Link the dashboard power summary to the Octopus whole-house meter.

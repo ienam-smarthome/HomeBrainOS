@@ -39,7 +39,7 @@ def test_generic_room_targets_do_not_match_every_device():
 def test_summary_uses_octopus_power_and_named_people():
     main = load_addon_main()
     main.all_devices = lambda: [
-        {'id': 'p1', 'label': 'Octopus Energy Live Meter', 'room': 'Energy', 'category': 'power_device', 'power': 456.7},
+        {'id': 'p1', 'label': 'Octopus Energy Live Meter', 'room': 'Energy', 'category': 'power_device', 'power': 1456.7},
         {'id': 'p2', 'label': 'Kitchen Plug', 'room': 'Kitchen', 'category': 'switch', 'power': 12.3},
         {'id': 'e', 'label': 'Enamul Presence', 'room': 'People', 'category': 'presence_sensor', 'presence': 'present'},
         {'id': 's', 'label': 'Samah Presence', 'room': 'People', 'category': 'presence_sensor', 'presence': 'not present'},
@@ -47,7 +47,8 @@ def test_summary_uses_octopus_power_and_named_people():
 
     summary = main.dashboard_summary()
 
-    assert summary['power_total'] == 456.7
+    assert summary['power_total'] == 1456.7
+    assert summary['power_display'] == '1.5kW'
     assert summary['power_source_label'] == 'Octopus Energy Live Meter'
     assert summary['people_home'] == 1
     assert summary['people_tracked'] == 4
@@ -69,3 +70,18 @@ def test_assistant_explains_low_battery_and_motion_summary_tiles():
     assert 'Hallway Contact' in low_battery['message']
     assert 'Kitchen Motion' in motion['message']
     assert 'Octopus Energy Live Meter' in power['message']
+
+
+def test_assistant_lists_only_people_home():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'e', 'label': 'Enamul Presence', 'room': 'People', 'category': 'presence_sensor', 'presence': 'present'},
+        {'id': 's', 'label': 'Samah Presence', 'room': 'People', 'category': 'presence_sensor', 'presence': 'not present'},
+        {'id': 't', 'label': 'Tahmid Presence', 'room': 'People', 'category': 'presence_sensor', 'presence': 'away'},
+    ]
+
+    people = main.assistant('who is home')
+
+    assert 'Enamul' in people['message']
+    assert 'Samah' not in people['message']
+    assert 'Tahmid' not in people['message']
