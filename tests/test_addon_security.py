@@ -118,7 +118,7 @@ def test_assistant_active_rooms_lists_rooms_not_motion_sensor_detail():
     assert active_rooms['intent'] == 'active_rooms'
     assert 'Kitchen: 0 lights on, 0 switches on, 1 motion active' in active_rooms['message']
     assert 'Bedroom: 1 lights on, 0 switches on, 0 motion active' in active_rooms['message']
-    assert 'Dehumidifier: 0 lights on, 1 switches on, 0 motion active' in active_rooms['message']
+    assert 'Dehumidifier' not in active_rooms['message']
 
 
 def test_assistant_device_health_reports_low_batteries():
@@ -149,7 +149,7 @@ def test_room_summary_distinguishes_sockets_from_lights_and_keeps_power():
     dehumidifier = next(room for room in rooms if room['room'] == 'Dehumidifier')
     bedroom = next(room for room in rooms if room['room'] == 'Bedroom')
 
-    assert room_names.index('Bedroom') < room_names.index('Kitchen')
+    assert room_names[0] == 'Bedroom'
     assert room_names.index('Dehumidifier') < room_names.index('Kitchen')
     assert dehumidifier['lights_total'] == 0
     assert dehumidifier['sockets_total'] == 2
@@ -179,6 +179,37 @@ def test_assistant_hub_health_reads_hub_info_device_metrics():
     assert 'Free memory: 512 MB' in health['message']
 
 
+def test_assistant_hub_health_reads_hub_info_html_labels():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'hub',
+            'label': 'Hub Info',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {
+                'Html': '''
+                    Free Mem : 1.0 GB
+                    CPU Load/Load% : 0.8 / 20.0 %
+                    DB Size : 199 MB
+                    Last Restart : 03Jul2026 14:42
+                    Uptime : 0d:0h:31m:46s
+                    Temperature : 46.2 °C
+                ''',
+            },
+        },
+    ]
+
+    health = main.assistant('hub health')
+
+    assert 'Free memory: 1.0 GB' in health['message']
+    assert 'CPU load: 0.8 / 20.0 %' in health['message']
+    assert 'DB size: 199 MB' in health['message']
+    assert 'Last restart: 03Jul2026 14:42' in health['message']
+    assert 'Uptime: 0d:0h:31m:46s' in health['message']
+    assert 'Temperature: 46.2 °C' in health['message']
+
+
 def test_room_summary_merges_compact_and_spaced_numbered_bedrooms():
     main = load_addon_main()
     main.all_devices = lambda: [
@@ -199,3 +230,39 @@ def test_room_summary_merges_compact_and_spaced_numbered_bedrooms():
     assert bedroom_1['lights_on'] == 1
     assert bedroom_1['sockets_on'] == 1
     assert bedroom_2['devices'] == 2
+
+
+def test_room_summary_sorts_active_rooms_alphabetically_and_ignores_socket_activity():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'z1', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'active'},
+        {'id': 'a1', 'label': 'Bathroom Light', 'room': 'Bathroom', 'category': 'light', 'switch': 'on'},
+        {'id': 's1', 'label': 'Dehumidifier Socket', 'room': 'Dehumidifier', 'category': 'power_device', 'switch': 'on', 'power': 22},
+        {'id': 'k1', 'label': 'Kitchen Plug', 'room': 'Kitchen', 'category': 'switch', 'switch': 'off'},
+    ]
+
+    room_names = [room['room'] for room in main.api_rooms()['rooms']]
+
+    assert room_names == ['Bathroom', 'Hallway', 'Dehumidifier', 'Kitchen']
+
+
+def test_normalise_device_prefers_hubitat_room_assignment_over_label_inference():
+    main = load_addon_main()
+
+    device = main.normalise_device({
+        'id': '1',
+        'name': 'Bedroom 1 Plug',
+        'label': 'Bedroom 1 Plug',
+        'roomName': 'Office',
+        'attributes': {'switch': 'off'},
+    })
+    nested = main.normalise_device({
+        'id': '2',
+        'name': 'Hallway Sensor',
+        'label': 'Hallway Sensor',
+        'room': {'name': 'Kitchen'},
+        'attributes': {'motion': 'inactive'},
+    })
+
+    assert device['room'] == 'Office'
+    assert nested['room'] == 'Kitchen'

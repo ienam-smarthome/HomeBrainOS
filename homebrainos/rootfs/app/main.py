@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.18-alpha'
+APP_VERSION = '0.7.20-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -242,6 +242,10 @@ def attr_map(device: dict[str, Any]) -> dict[str, Any]:
 
 
 def canonical_room_name(room: Any) -> str:
+    if isinstance(room, dict):
+        for key in ('name', 'label', 'roomName', 'room_name'):
+            if room.get(key):
+                return canonical_room_name(room[key])
     text = normalise(str(room or 'Unknown'))
     if not text or text == 'unknown':
         return 'Unknown'
@@ -251,6 +255,17 @@ def canonical_room_name(room: Any) -> str:
     if text in ('livingroom', 'living room'):
         return 'Living Room'
     return text.title()
+
+
+def hubitat_room_name(device: dict[str, Any]) -> str | None:
+    for key in ('roomName', 'room_name', 'roomLabel', 'room_label', 'room'):
+        value = device.get(key)
+        if not value:
+            continue
+        room = canonical_room_name(value)
+        if room != 'Unknown':
+            return room
+    return None
 
 
 def infer_room(label: str) -> str:
@@ -305,11 +320,12 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
     label = str(device.get('label') or device.get('name') or f"Device {device.get('id')}")
     capabilities = list_names(device.get('capabilities'), ('name', 'capability', 'id'))
     commands = list_names(device.get('commands'), ('name', 'command'))
+    room = hubitat_room_name(device) or infer_room(label)
     return {
         'id': str(device.get('id')),
         'name': str(device.get('name') or label),
         'label': label,
-        'room': infer_room(label),
+        'room': room,
         'category': classify(device, attrs),
         'capabilities': capabilities,
         'commands': commands,
@@ -739,7 +755,7 @@ def device_diagnostics() -> dict[str, Any]:
 def active_rooms_answer() -> dict[str, Any]:
     rooms = [
         room for room in api_rooms()['rooms']
-        if room.get('motion_active') or room.get('lights_on') or room.get('switches_on')
+        if room.get('motion_active') or room.get('lights_on')
     ]
     lines = [
         f"{room['room']}: {room['lights_on']} lights on, {room['switches_on']} switches on, {room['motion_active']} motion active"
@@ -811,15 +827,56 @@ def metric_value(device: dict[str, Any], exact_names: tuple[str, ...], contains:
     for key, value in device.items():
         if key not in ('attributes', 'capabilities', 'commands'):
             attrs[key] = value
-    normalized = {re.sub(r'[^a-z0-9]', '', str(key).lower()): value for key, value in attrs.items()}
+    normalized = {compact_name(key): value for key, value in attrs.items()}
     for name in exact_names:
-        key = re.sub(r'[^a-z0-9]', '', name.lower())
+        key = compact_name(name)
         if key in normalized and normalized[key] is not None:
             return normalized[key]
     if contains:
         for key, value in normalized.items():
             if value is not None and all(part in key for part in contains):
                 return value
+    return None
+
+
+def hub_info_rows(device: dict[str, Any]) -> dict[str, str]:
+    attrs: dict[str, Any] = {}
+    attrs.update(device.get('attributes') or {})
+    for key, value in device.items():
+        if key not in ('attributes', 'capabilities', 'commands'):
+            attrs[key] = value
+    rows: dict[str, str] = {}
+    for value in attrs.values():
+        if not isinstance(value, str):
+            continue
+        text = value
+        if '<' in text and '>' in text:
+            text = re.sub(r'(?i)<br\s*/?>', '\n', text)
+            text = re.sub(r'(?i)</(?:tr|p|div|li)>', '\n', text)
+            text = re.sub(r'(?i)</t[dh]>\s*<t[dh][^>]*>', ' : ', text)
+            text = re.sub(r'<[^>]+>', ' ', text)
+        text = text.replace('&nbsp;', ' ')
+        for line in text.splitlines():
+            line = re.sub(r'\s+', ' ', line).strip()
+            match = re.match(r'^(.+?)\s*(?:[:=]| {2,})\s*(.+)$', line)
+            if match:
+                rows[compact_name(match.group(1))] = match.group(2).strip()
+    return rows
+
+
+def hub_metric(device: dict[str, Any], labels: tuple[str, ...], contains: tuple[str, ...] = ()) -> Any:
+    value = metric_value(device, labels, contains)
+    if value is not None:
+        return value
+    rows = hub_info_rows(device)
+    for label in labels:
+        key = compact_name(label)
+        if key in rows:
+            return rows[key]
+    if contains:
+        for key, row_value in rows.items():
+            if all(part in key for part in contains):
+                return row_value
     return None
 
 
@@ -833,10 +890,12 @@ def hub_health_answer() -> dict[str, Any]:
             'message': 'No Hub Info device found. Add or expose the Hub Info device from Hubitat, then refresh from Hubitat.',
         }
     metrics = {
-        'CPU load': metric_value(hub, ('cpu', 'cpuLoad', 'cpuPct', 'cpuPercent', 'cpu5Min', 'cpuLoad5Min'), ('cpu',)),
-        'Free memory': metric_value(hub, ('freeMemory', 'freeMemoryMb', 'freeMem', 'memoryFree', 'availableMemory'), ('free', 'mem')),
-        'Total memory': metric_value(hub, ('totalMemory', 'totalMemoryMb', 'memoryTotal'), ('total', 'mem')),
-        'Uptime': metric_value(hub, ('uptime', 'hubUptime'), ('uptime',)),
+        'CPU load': hub_metric(hub, ('cpu', 'cpuLoad', 'cpuLoadLoad%', 'cpuPct', 'cpuPercent', 'cpu5Min', 'cpuLoad5Min'), ('cpu',)),
+        'Free memory': hub_metric(hub, ('freeMemory', 'freeMemoryMb', 'freeMem', 'freeMemMb', 'memoryFree', 'availableMemory'), ('free', 'mem')),
+        'DB size': hub_metric(hub, ('dbSize', 'databaseSize', 'database'), ('db', 'size')),
+        'Last restart': hub_metric(hub, ('lastRestart', 'lastHubRestart'), ('last', 'restart')),
+        'Uptime': hub_metric(hub, ('uptime', 'hubUptime'), ('uptime',)),
+        'Temperature': hub_metric(hub, ('temperature', 'hubTemperature'), ('temperature',)),
     }
     lines = [f"{label}: {value}" for label, value in metrics.items() if value is not None]
     if not lines:
@@ -1403,9 +1462,9 @@ def api_rooms():
         hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int,float))]
         room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None
         room['avg_humidity'] = round(sum(hums)/len(hums),1) if hums else None
-    def room_sort_key(room: dict[str, Any]) -> tuple[int, int, str]:
-        active_score = int(room.get('lights_on') or 0) + int(room.get('switches_on') or 0) + int(room.get('motion_active') or 0)
-        return (0 if active_score else 1, -active_score, str(room['room']).lower())
+    def room_sort_key(room: dict[str, Any]) -> tuple[int, str]:
+        active_score = int(room.get('lights_on') or 0) + int(room.get('motion_active') or 0)
+        return (0 if active_score else 1, str(room['room']).lower())
 
     return {'success': True, 'rooms': sorted(rooms.values(), key=room_sort_key)}
 

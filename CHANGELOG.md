@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.20-alpha
+
+- Read Hub Info labels such as Free Mem, CPU Load/Load%, DB Size, Last Restart, Uptime, and Temperature.
+- Parse Hub Info metrics from structured attributes or the Hub Info HTML/text table.
+
+## v0.7.19-alpha
+
+- Prefer Hubitat room assignments over label-based room inference.
+- Sort active rooms alphabetically before inactive rooms.
+- Treat rooms as active only when a light is on or motion is active, not when only sockets/switches are on.
+
 ## v0.7.18-alpha
 
 - Merge compact numbered room names such as `Bedroom1` with spaced names such as `Bedroom 1`.
