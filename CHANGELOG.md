@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.28-alpha
+
+- Remove room-level presence chips because generic presence sensors do not reliably mean a person is in that room.
+- Keep household presence in the People summary tile and room details device lists.
+
 ## v0.7.27-alpha
 
 - Add clickable room tiles that show room explanations and the devices behind each tile.

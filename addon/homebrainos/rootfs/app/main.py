@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.27-alpha'
+APP_VERSION = '0.7.28-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1130,8 +1130,6 @@ def room_visible_signals(room: dict[str, Any]) -> list[str]:
         signals.append('sockets' if room.get('sockets_total') else 'switches')
     if room.get('motion_total'):
         signals.append('motion')
-    if room.get('presence_total'):
-        signals.append('presence')
     if room.get('avg_temperature') is not None:
         signals.append('temperature')
     if room.get('avg_humidity') is not None:
@@ -1163,13 +1161,11 @@ def room_explanation(summary: dict[str, Any], devices: list[dict[str, Any]]) -> 
     if signals:
         lines.append('Visible on tile: ' + ', '.join(signals) + '.')
     else:
-        lines.append('No tile signals yet. Devices are present, but none expose light, motion, presence, temperature, humidity, switch/socket, or power values that HomeBrainOS can summarize.')
+        lines.append('No tile signals yet. Devices are present, but none expose light, motion, temperature, humidity, switch/socket, or power values that HomeBrainOS can summarize.')
     if summary.get('lights_total'):
         lines.append(f"Lights: {summary['lights_on']} on / {summary['lights_total']} total.")
     if summary.get('motion_total'):
         lines.append(f"Motion: {summary['motion_active']} active / {summary['motion_total']} sensors.")
-    if summary.get('presence_total'):
-        lines.append(f"Presence: {summary['presence_present']} present / {summary['presence_total']} tracked.")
     if summary.get('sockets_total'):
         lines.append(f"Sockets: {summary['sockets_on']} on / {summary['sockets_total']} total.")
     elif summary.get('switches_total'):
@@ -1271,15 +1267,6 @@ def is_room_motion_device(device: dict[str, Any]) -> bool:
         or device.get('motion') is not None
         or 'motionsensor' in caps_text(device)
         or 'motion' in device.get('attributes', {})
-    )
-
-
-def is_room_presence_device(device: dict[str, Any]) -> bool:
-    return (
-        device.get('category') == 'presence_sensor'
-        or device.get('presence') is not None
-        or 'presencesensor' in caps_text(device)
-        or 'presence' in device.get('attributes', {})
     )
 
 
@@ -1686,8 +1673,6 @@ def api_rooms():
             'sockets_on': 0,
             'motion_total': 0,
             'motion_active': 0,
-            'presence_total': 0,
-            'presence_present': 0,
             'low_batteries': 0,
             'power_total': 0,
             'power_devices': 0,
@@ -1711,10 +1696,6 @@ def api_rooms():
             rooms[room]['motion_total'] += 1
             if is_state(d.get('motion'), 'active'):
                 rooms[room]['motion_active'] += 1
-        if is_room_presence_device(d):
-            rooms[room]['presence_total'] += 1
-            if is_state(d.get('presence'), 'present') or is_state(d.get('presence'), 'home'):
-                rooms[room]['presence_present'] += 1
         if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20:
             rooms[room]['low_batteries'] += 1
         if isinstance(d.get('power'), (int, float)):

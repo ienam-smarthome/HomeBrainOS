@@ -183,7 +183,7 @@ def test_room_summary_shows_motion_capable_devices_with_missing_state():
     assert bedroom['motion_active'] == 0
 
 
-def test_room_summary_shows_presence_rooms():
+def test_room_summary_does_not_show_presence_as_room_signal():
     main = load_addon_main()
     main.all_devices = lambda: [
         {'id': 'p1', 'label': 'Enamul', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'present'},
@@ -192,8 +192,8 @@ def test_room_summary_shows_presence_rooms():
 
     life360 = next(room for room in main.api_rooms()['rooms'] if room['room'] == 'Life360')
 
-    assert life360['presence_total'] == 2
-    assert life360['presence_present'] == 1
+    assert 'presence_total' not in life360
+    assert main.room_visible_signals(life360) == []
 
 
 def test_room_details_explain_visible_signals_and_devices():
@@ -243,7 +243,7 @@ def test_assistant_explains_named_room_tile():
 
     assert answer['intent'] == 'room_details'
     assert 'Life360: 1 devices.' in answer['message']
-    assert 'Visible on tile: presence.' in answer['message']
+    assert 'No tile signals yet.' in answer['message']
 
 
 def test_assistant_hub_health_reads_hub_info_device_metrics():
