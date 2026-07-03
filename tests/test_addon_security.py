@@ -176,6 +176,78 @@ def test_assistant_sets_light_level_with_percent_command():
     assert answer['speech'] == 'Bedroom 1 Light set to 30 percent.'
 
 
+def test_assistant_reads_weather_summary_from_weather_device():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'w1',
+            'label': 'Weather Open-Meteo',
+            'room': 'Weather',
+            'category': 'weather',
+            'weatherSummary': 'Weather summary for Lewisham, SE13 updated at 22:19. Clear with a high of 27C and a low of 15C. Current temperature is 23C.',
+            'attributes': {},
+        },
+    ]
+
+    answer = main.assistant("what's the weather")
+
+    assert answer['intent'] == 'weather'
+    assert 'Weather summary for Lewisham' in answer['message']
+    assert '27 degrees' in answer['speech']
+    assert 'S E 13' in answer['speech']
+
+
+def test_assistant_increases_room_brightness_for_room_lights():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'h1', 'label': 'Hallway Light 1', 'name': 'Hallway Light 1', 'room': 'Hallway', 'category': 'light', 'switch': 'on', 'level': 20},
+        {'id': 'h2', 'label': 'Hallway Light 2', 'name': 'Hallway Light 2', 'room': 'Hallway', 'category': 'light', 'switch': 'on', 'level': 40},
+        {'id': 'b1', 'label': 'Bedroom Light', 'name': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on', 'level': 10},
+    ]
+    values = []
+    switches = []
+    main.maker_command_value = lambda device_id, command, value: values.append((device_id, command, value))
+    main.maker_command = lambda device_id, command: switches.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_level = lambda device_id, level: {'id': device_id, 'level': level}
+
+    answer = main.assistant('increase brightness in hallway')
+
+    assert answer['success'] is True
+    assert values == [('h1', 'setLevel', 50), ('h2', 'setLevel', 50)]
+    assert switches == [('h1', 'on'), ('h2', 'on')]
+
+
+def test_hub_logs_diagnostics_summarizes_errors_and_redacts_tokens():
+    main = load_addon_main()
+    main.CONFIG['hubitat_base_url'] = 'http://hubitat.local'
+    main.CONFIG['hubitat_logs_path'] = '/logs/past'
+    main.CONFIG['maker_api_token'] = 'maker-secret'
+    main.all_devices = lambda: [
+        {'id': 'h1', 'label': 'Hallway Light 1', 'room': 'Hallway', 'category': 'light'},
+    ]
+
+    class Response:
+        text = ''
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return [
+                {'level': 'error', 'name': 'Hallway Light 1', 'message': 'Failed command access_token=maker-secret'},
+                {'level': 'info', 'message': 'Everything else is fine'},
+            ]
+
+    main.requests.get = lambda url, timeout=12: Response()
+
+    answer = main.assistant('hub logs')
+
+    assert answer['intent'] == 'hub_logs'
+    assert 'Errors: 1' in answer['message']
+    assert 'Hallway Light 1: 1' in answer['message']
+    assert 'maker-secret' not in answer['message']
+    assert 'access_token=REDACTED' in answer['message']
+
+
 def test_heating_commands_adjust_setpoints_without_thermostat_mode():
     main = load_addon_main()
     devices = [

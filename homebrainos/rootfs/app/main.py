@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.34-alpha'
+APP_VERSION = '0.7.35-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -29,7 +29,7 @@ ROOM_WORDS = [
     'kitchen', 'toilet', 'entrance', 'ventilation', 'dehumidifier', 'energy', 'sockets',
     'multimedia', 'office', 'internet', 'router'
 ]
-DEVICE_ATTRS = ['switch','level','temperature','humidity','illuminance','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint','lock','water','smoke','carbonMonoxide','tamper','acceleration','valve','windowShade']
+DEVICE_ATTRS = ['switch','level','temperature','humidity','illuminance','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint','lock','water','smoke','carbonMonoxide','tamper','acceleration','valve','windowShade','weatherSummary','weatherSummaryLine','pressure','windSpeed','wind_gust','windDirection','precipitationToday']
 ATTR_ALIASES = {
     'switch': {'switch', 'switchstate', 'state'},
     'level': {'level', 'switchlevel', 'dimmerlevel'},
@@ -54,6 +54,12 @@ ATTR_ALIASES = {
     'acceleration': {'acceleration'},
     'valve': {'valve'},
     'windowShade': {'windowshade', 'shade'},
+    'weatherSummary': {'weathersummary'},
+    'weatherSummaryLine': {'weathersummaryline'},
+    'windSpeed': {'windspeed'},
+    'wind_gust': {'windgust', 'wind_gust'},
+    'windDirection': {'winddirection'},
+    'precipitationToday': {'precipitationtoday'},
 }
 ALIAS_LOOKUP = {alias: canonical for canonical, aliases in ATTR_ALIASES.items() for alias in aliases}
 
@@ -73,6 +79,8 @@ def load_config() -> dict[str, Any]:
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
         'heating_on_delta': float(os.getenv('HEATING_ON_DELTA', '1')),
         'heating_off_setpoint': float(os.getenv('HEATING_OFF_SETPOINT', '12')),
+        'hubitat_logs_path': os.getenv('HUBITAT_LOGS_PATH', '/logs/past'),
+        'hubitat_logs_url': os.getenv('HUBITAT_LOGS_URL', ''),
     }
 
 
@@ -209,6 +217,16 @@ def public_error(exc: Exception) -> str:
     return redact_sensitive(exc)
 
 
+def hubitat_url(path_or_url: str) -> str:
+    value = str(path_or_url or '').strip()
+    if value.startswith(('http://', 'https://')):
+        return value
+    base = str(CONFIG.get('hubitat_base_url', '')).rstrip('/')
+    if not base:
+        raise RuntimeError('Hubitat base URL is not configured.')
+    return f"{base}/{value.lstrip('/')}"
+
+
 def api_token_required() -> bool:
     return bool(str(CONFIG.get('api_token', '') or '').strip())
 
@@ -286,6 +304,8 @@ def classify(device: dict[str, Any], attrs: dict[str, Any]) -> str:
     caps = caps_text(device)
     commands = commands_text(device)
     climate_attrs = ('thermostatMode', 'thermostatOperatingState', 'heatingSetpoint', 'coolingSetpoint')
+    if 'weather' in label or attrs.get('weatherSummary') is not None or attrs.get('weatherSummaryLine') is not None:
+        return 'weather'
     if 'battery' in label and not any(attrs.get(attr) is not None for attr in climate_attrs):
         return 'battery_sensor'
     if 'light sensor' in label or 'illuminance' in attrs or 'illuminance' in caps:
@@ -354,6 +374,13 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
         'acceleration': attrs.get('acceleration'),
         'valve': attrs.get('valve'),
         'windowShade': attrs.get('windowShade'),
+        'weatherSummary': attrs.get('weatherSummary'),
+        'weatherSummaryLine': attrs.get('weatherSummaryLine'),
+        'pressure': safe_float(attrs.get('pressure')),
+        'windSpeed': safe_float(attrs.get('windSpeed')),
+        'wind_gust': safe_float(attrs.get('wind_gust')),
+        'windDirection': safe_float(attrs.get('windDirection')),
+        'precipitationToday': safe_float(attrs.get('precipitationToday')),
     }
 
 
@@ -909,6 +936,158 @@ def device_health_answer() -> dict[str, Any]:
     if diagnostics['last_error']:
         lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
     return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
+
+
+def weather_device() -> dict[str, Any] | None:
+    devices = all_devices()
+    weather_devices = [
+        device for device in devices
+        if device.get('category') == 'weather'
+        or 'weather' in device_search_text(device)
+        or device.get('weatherSummary')
+        or device.get('weatherSummaryLine')
+        or (device.get('attributes') or {}).get('weatherSummary')
+        or (device.get('attributes') or {}).get('weatherSummaryLine')
+    ]
+    return weather_devices[0] if weather_devices else None
+
+
+def weather_speech(text: str) -> str:
+    speech = str(text or '').strip()
+    speech = re.sub(r'(\d+(?:\.\d+)?)C\b', r'\1 degrees', speech)
+    speech = re.sub(r'(\d+(?:\.\d+)?)mm\b', r'\1 millimetres', speech)
+    speech = re.sub(r'\b0\.00 millimetres\b', '0 millimetres', speech)
+    speech = speech.replace('SE13', 'S E 13')
+    return speech
+
+
+def weather_answer() -> dict[str, Any]:
+    device = weather_device()
+    if not device:
+        return {
+            'success': False,
+            'intent': 'weather',
+            'message': 'No weather device found. Add your Hubitat weather device to Maker API, then refresh from Hubitat.',
+        }
+    attrs = device.get('attributes') or {}
+    summary = device.get('weatherSummary') or attrs.get('weatherSummary')
+    line = device.get('weatherSummaryLine') or attrs.get('weatherSummaryLine')
+    if summary:
+        message = str(summary).strip()
+    elif line:
+        message = str(line).strip()
+    else:
+        parts = []
+        if device.get('temperature') is not None:
+            parts.append(f"Current temperature {device['temperature']}C")
+        if device.get('humidity') is not None:
+            parts.append(f"Humidity {device['humidity']}%")
+        if device.get('precipitationToday') is not None:
+            parts.append(f"Precipitation today {device['precipitationToday']}mm")
+        if device.get('windSpeed') is not None:
+            parts.append(f"Wind speed {device['windSpeed']}")
+        message = ', '.join(parts) if parts else f"{device['label']} has no weather summary yet."
+    return {
+        'success': True,
+        'intent': 'weather',
+        'message': message,
+        'speech': weather_speech(message),
+        'device': device,
+    }
+
+
+def log_source_url() -> str:
+    configured_url = str(CONFIG.get('hubitat_logs_url') or '').strip()
+    if configured_url:
+        return hubitat_url(configured_url)
+    return hubitat_url(str(CONFIG.get('hubitat_logs_path') or '/logs/past'))
+
+
+def normalize_log_entry(entry: Any) -> dict[str, str]:
+    if isinstance(entry, dict):
+        level = str(entry.get('level') or entry.get('type') or entry.get('severity') or '').strip()
+        name = str(entry.get('name') or entry.get('device') or entry.get('app') or '').strip()
+        message = str(entry.get('msg') or entry.get('message') or entry.get('description') or entry.get('text') or entry).strip()
+        timestamp = str(entry.get('time') or entry.get('date') or entry.get('timestamp') or '').strip()
+    else:
+        text = str(entry).strip()
+        match = re.match(r'^(?:(\S+\s+\S+)\s+)?(?:\[(\w+)\]|\b(debug|info|warn|warning|error)\b)?\s*(.*)$', text, re.I)
+        timestamp = (match.group(1) or '').strip() if match else ''
+        level = next((group for group in (match.group(2), match.group(3)) if group), '') if match else ''
+        name = ''
+        message = (match.group(4) or text).strip() if match else text
+    level = {'warning': 'warn'}.get(level.lower(), level.lower())
+    return {'time': timestamp, 'level': level or 'info', 'name': name, 'message': redact_sensitive(message)}
+
+
+def parse_logs_payload(payload: Any) -> list[dict[str, str]]:
+    if isinstance(payload, dict):
+        for key in ('logs', 'events', 'items', 'data'):
+            if isinstance(payload.get(key), list):
+                return [normalize_log_entry(item) for item in payload[key]]
+        return [normalize_log_entry(payload)]
+    if isinstance(payload, list):
+        return [normalize_log_entry(item) for item in payload]
+    text = str(payload or '')
+    return [normalize_log_entry(line) for line in text.splitlines() if line.strip()]
+
+
+def fetch_hub_logs(limit: int = 120) -> list[dict[str, str]]:
+    response = requests.get(log_source_url(), timeout=12)
+    response.raise_for_status()
+    try:
+        payload = response.json()
+    except Exception:
+        payload = response.text
+    return parse_logs_payload(payload)[:limit]
+
+
+def hub_logs_diagnostics(limit: int = 120) -> dict[str, Any]:
+    logs = fetch_hub_logs(limit)
+    problem_terms = ('error', 'warn', 'warning', 'exception', 'failed', 'timeout', 'not found')
+    problem_logs = [
+        log for log in logs
+        if log.get('level') in ('error', 'warn')
+        or any(term in log.get('message', '').lower() for term in problem_terms)
+    ]
+    labels = [device.get('label') or device.get('name') for device in all_devices()]
+    affected: dict[str, int] = {}
+    for log in problem_logs:
+        text = normalise(log.get('name', '') + ' ' + log.get('message', ''))
+        for label in labels:
+            if label and normalise(label) in text:
+                affected[label] = affected.get(label, 0) + 1
+    return {
+        'logs': logs,
+        'total': len(logs),
+        'problems': problem_logs,
+        'affected_devices': sorted(affected.items(), key=lambda item: item[1], reverse=True)[:8],
+        'errors': len([log for log in problem_logs if log.get('level') == 'error' or 'error' in log.get('message', '').lower()]),
+        'warnings': len([log for log in problem_logs if log.get('level') == 'warn' or 'warn' in log.get('message', '').lower()]),
+    }
+
+
+def hub_logs_answer() -> dict[str, Any]:
+    try:
+        diagnostics = hub_logs_diagnostics()
+    except Exception as exc:
+        hint = (
+            'Set hubitat_logs_path or hubitat_logs_url in the add-on options if your hub exposes logs at a different endpoint.'
+        )
+        return {'success': False, 'intent': 'hub_logs', 'message': f'Hub logs unavailable: {public_error(exc)}\n{hint}'}
+    lines = [
+        f"Hub logs checked: {diagnostics['total']} entries",
+        f"Warnings: {diagnostics['warnings']}",
+        f"Errors: {diagnostics['errors']}",
+    ]
+    if diagnostics['affected_devices']:
+        lines.append('Likely affected devices:\n' + '\n'.join(f"{label}: {count}" for label, count in diagnostics['affected_devices']))
+    if diagnostics['problems']:
+        lines.append('Recent issues:\n' + '\n'.join(log['message'] for log in diagnostics['problems'][:8]))
+    else:
+        lines.append('No warnings or errors found in the recent logs.')
+    speech = f"Hub logs checked. {diagnostics['warnings']} warnings and {diagnostics['errors']} errors found."
+    return {'success': True, 'intent': 'hub_logs', 'message': '\n'.join(lines), 'speech': speech, 'diagnostics': diagnostics}
 
 
 def metric_value(device: dict[str, Any], exact_names: tuple[str, ...], contains: tuple[str, ...] = ()) -> Any:
@@ -1634,10 +1813,14 @@ def assistant(text: str) -> dict[str, Any]:
             'success': True,
             'intent': 'help',
             'message': (
-                "I can summarize the home, list lights or switches that are on, answer temperature/humidity/power/battery questions, "
-                "control switchable devices, refresh or clear the cache, list room devices, and run diagnostics."
+                "I can summarize the home, read weather, list lights or switches that are on, answer temperature/humidity/power/battery questions, "
+                "control switchable devices, adjust brightness, refresh or clear the cache, list room devices, read hub logs, and run diagnostics."
             ),
         }
+    if 'weather' in t or 'forecast' in t:
+        return weather_answer()
+    if 'hub log' in t or 'hub logs' in t or 'recent logs' in t or 'log diagnostic' in t:
+        return hub_logs_answer()
     if 'room' in t and ('motion' in t or 'active' in t):
         return active_rooms_answer()
     if 'cold' in t and 'room' in t:
@@ -1764,6 +1947,30 @@ def run_command(text: str) -> dict[str, Any]:
         else:
             target_level = min(100, int((current if current is not None else 50) + 20))
         return level_command_devices(devices, target_level, explicit_bulk=explicit_bulk)
+    m_brightness = re.search(r'^(increase|raise|brighten|decrease|lower|dim)\s+(?:the\s+)?(?:brightness|light level)(?:\s+(?:in|for|of)\s+(.+))?$', t)
+    m_brightness_alt = None if m_brightness else re.search(r'^(increase|raise|brighten|decrease|lower|dim)\s+(.+?)\s+(?:brightness|light level)$', t)
+    if m_brightness or m_brightness_alt:
+        action = (m_brightness or m_brightness_alt).group(1)
+        target = ((m_brightness.group(2) if m_brightness else m_brightness_alt.group(2)) or 'all lights').replace('the ', '').strip()
+        increase = action in ('increase', 'raise', 'brighten')
+        explicit_bulk = True
+        if target in ('all lights', 'lights', ''):
+            devices = [d for d in all_devices() if d.get('category') == 'light']
+        else:
+            devices = room_devices(target, 'light')
+            if not devices:
+                devices = find_devices(target, 'light')
+                explicit_bulk = False
+        if not devices:
+            return {'success': False, 'message': f'Dimmable lights not found: {target}'}
+        dimmable = level_devices(devices)
+        if len(dimmable) > 1 and not explicit_bulk:
+            return disambiguation_response(dimmable, 'set level for')
+        levels = [safe_float(device.get('level')) for device in dimmable or devices]
+        known_levels = [level for level in levels if level is not None]
+        current = sum(known_levels) / len(known_levels) if known_levels else 50
+        target_level = min(100, int(current + 20)) if increase else max(1, int(current - 20))
+        return level_command_devices(devices, target_level, explicit_bulk=explicit_bulk)
     attr_terms = {
         'humidity': ('humidity',),
         'temperature': ('temperature', 'temp'),
@@ -1848,6 +2055,11 @@ async def startup() -> None:
 @app.get('/api/status')
 def api_status():
     return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary()}
+
+
+@app.get('/api/hub/logs')
+def api_hub_logs():
+    return {'success': True, **hub_logs_diagnostics()}
 
 
 @app.post('/api/refresh')

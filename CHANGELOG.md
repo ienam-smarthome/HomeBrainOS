@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.35-alpha
+
+- Add weather answers from Hubitat weather devices, preferring `weatherSummary`/`weatherSummaryLine`.
+- Add hub log diagnostics through a configurable Hubitat logs endpoint.
+- Redact Maker API tokens from fetched log diagnostics.
+- Add room brightness commands such as `increase brightness in hallway` and `decrease bedroom 2 brightness`.
+- Add Weather and Hub logs dashboard shortcuts.
+
 ## v0.7.34-alpha
 
 - Add voice/text dimmer level commands such as `set bedroom 1 light to 30 percent`.
