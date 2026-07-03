@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.17-alpha'
+APP_VERSION = '0.7.18-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -241,15 +241,27 @@ def attr_map(device: dict[str, Any]) -> dict[str, Any]:
     return attrs
 
 
+def canonical_room_name(room: Any) -> str:
+    text = normalise(str(room or 'Unknown'))
+    if not text or text == 'unknown':
+        return 'Unknown'
+    m = re.fullmatch(r'bedroom\s*([123])', text)
+    if m:
+        return f"Bedroom {m.group(1)}"
+    if text in ('livingroom', 'living room'):
+        return 'Living Room'
+    return text.title()
+
+
 def infer_room(label: str) -> str:
     text = normalise(label)
     for room in ROOM_WORDS:
         if room in text:
-            return 'Living Room' if room == 'livingroom' else room.title()
+            return canonical_room_name(room)
     # Common Hubitat labels like "01 Livingroom TRV" or "Bedroom 1 Meter"
     m = re.search(r'(bedroom\s*[123]|hallway|bathroom|living\s*room|livingroom|kitchen|toilet)', text)
     if m:
-        return m.group(1).replace('livingroom', 'living room').title()
+        return canonical_room_name(m.group(1))
     return 'Unknown'
 
 
@@ -1347,7 +1359,7 @@ def api_rooms():
     devices = all_devices()
     rooms: dict[str, dict[str, Any]] = {}
     for d in devices:
-        room = d.get('room') or 'Unknown'
+        room = canonical_room_name(d.get('room') or 'Unknown')
         rooms.setdefault(room, {
             'room': room,
             'devices': 0,
@@ -1385,7 +1397,7 @@ def api_rooms():
             rooms[room]['power_devices'] += 1
             rooms[room]['power_total'] = round(rooms[room]['power_total'] + d['power'], 1)
     for room in rooms.values():
-        ds = [d for d in devices if (d.get('room') or 'Unknown') == room['room']]
+        ds = [d for d in devices if canonical_room_name(d.get('room') or 'Unknown') == room['room']]
         environment_devices = [d for d in ds if not is_fridge_meter_device(d)]
         temps = [d['temperature'] for d in environment_devices if isinstance(d.get('temperature'), (int,float))]
         hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int,float))]

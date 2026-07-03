@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.18-alpha
+
+- Merge compact numbered room names such as `Bedroom1` with spaced names such as `Bedroom 1`.
+- Canonicalize cached room names in the rooms API so duplicate room tiles disappear without requiring a cache clear.
+
 ## v0.7.17-alpha
 
 - Add a Hub health assistant shortcut that reads CPU, memory, and uptime metrics from the Hub Info device.

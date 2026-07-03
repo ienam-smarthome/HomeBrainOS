@@ -177,3 +177,25 @@ def test_assistant_hub_health_reads_hub_info_device_metrics():
     assert health['intent'] == 'hub_health'
     assert 'CPU load: 12.5' in health['message']
     assert 'Free memory: 512 MB' in health['message']
+
+
+def test_room_summary_merges_compact_and_spaced_numbered_bedrooms():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'b1', 'label': 'Bedroom1 Socket', 'room': 'Bedroom1', 'category': 'power_device', 'switch': 'on', 'power': 6},
+        {'id': 'b2', 'label': 'Bedroom 1 Light', 'room': 'Bedroom 1', 'category': 'light', 'switch': 'on'},
+        {'id': 'b3', 'label': 'Bedroom2 Socket', 'room': 'Bedroom2', 'category': 'power_device', 'switch': 'off', 'power': 2},
+        {'id': 'b4', 'label': 'Bedroom 2 Sensor', 'room': 'Bedroom 2', 'category': 'climate_sensor', 'temperature': 21},
+    ]
+
+    rooms = main.api_rooms()['rooms']
+    names = [room['room'] for room in rooms]
+    bedroom_1 = next(room for room in rooms if room['room'] == 'Bedroom 1')
+    bedroom_2 = next(room for room in rooms if room['room'] == 'Bedroom 2')
+
+    assert 'Bedroom1' not in names
+    assert 'Bedroom2' not in names
+    assert bedroom_1['devices'] == 2
+    assert bedroom_1['lights_on'] == 1
+    assert bedroom_1['sockets_on'] == 1
+    assert bedroom_2['devices'] == 2
