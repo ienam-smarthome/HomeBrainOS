@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.15</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.17</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card grid">
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which lights are on"><div class="big" id="lights">0</div><div>Lights on</div></div>
@@ -28,13 +28,14 @@
   </div>
   <div class="card grid shortcut-grid">
     <button class="secondary" onclick="quick('summary')">Home status</button>
-    <button class="secondary" onclick="quick('diagnostics')">System health</button>
-    <button class="secondary" onclick="quick('refresh cache')">Refresh devices</button>
-    <button class="secondary" onclick="clearRefresh()">Clear device cache</button>
+    <button class="secondary" onclick="quick('diagnostics')">App diagnostics</button>
+    <button class="secondary" onclick="quick('hub health')">Hub health</button>
+    <button class="secondary" title="Update devices from Hubitat without deleting the local cache" onclick="quick('refresh cache')">Refresh from Hubitat</button>
+    <button class="secondary" title="Delete the local device cache, then rebuild it from Hubitat" onclick="clearRefresh()">Clear cache + reload</button>
     <button class="secondary" onclick="quick('which rooms have motion active')">Active rooms</button>
     <button class="secondary" onclick="quick('heating status')">Heating status</button>
     <button class="secondary" onclick="quick('which rooms are cold')">Cold rooms</button>
-    <button class="secondary" onclick="quick('device health')">Device health</button>
+    <button class="secondary" onclick="quick('device health')">Device issues</button>
   </div>
   <div class="card"><h2>Controllable Devices</h2><div class="devices" id="devices">Loading devices...</div></div>
   <div class="card"><h2>Rooms</h2><div class="rooms" id="rooms">Loading rooms...</div></div>
@@ -66,13 +67,19 @@ function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }
 function roomCard(room){
-  const active=(room.lights_on||0)+(room.motion_active||0)>0;
-  const signals=[
-    roomSignal('💡', room.lights_on||0, 'lights on'),
-    roomSignal('🏃', room.motion_active?room.motion_active+' active':'clear', 'motion', room.motion_active?'motion-on':'')
-  ];
+  const active=(room.lights_on||0)+(room.switches_on||0)+(room.motion_active||0)>0;
+  const signals=[];
+  if(room.lights_total>0) signals.push(roomSignal('💡', room.lights_on||0, 'lights on'));
+  if((room.switches_total||0)>0){
+    const socketCount=room.sockets_total||0;
+    const label=socketCount>0 ? 'sockets on' : 'switches on';
+    const value=socketCount>0 ? `${room.sockets_on||0}/${socketCount}` : `${room.switches_on||0}/${room.switches_total}`;
+    signals.push(roomSignal('🔌', value, label, room.switches_on?'motion-on':''));
+  }
+  signals.push(roomSignal('🏃', room.motion_active?room.motion_active+' active':'clear', 'motion', room.motion_active?'motion-on':''));
   if(room.avg_temperature!=null) signals.push(roomSignal('🌡', room.avg_temperature+'°', 'temperature'));
   if(room.avg_humidity!=null) signals.push(roomSignal('💧', room.avg_humidity+'%', 'humidity'));
+  if((room.power_devices||0)>0) signals.push(roomSignal('⚡', formatPower(room.power_total||0), 'power'));
   return `<div class="room ${active?'active':'inactive'}"><div class="room-head"><div class="room-name">${escapeHtml(room.room)}</div><div class="room-count">${room.devices} devices</div></div><div class="room-stats">${signals.join('')}</div></div>`;
 }
 function roomSignal(icon, value, label, extraClass=''){

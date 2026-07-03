@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.15-alpha` assistant dashboard:
+`v0.7.17-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -34,7 +34,11 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Cleaner, less crowded room summary cards
 - Fridge meter readings excluded from temperature and humidity averages
 - Room cards focus on lights, motion, and available temperature/humidity readings
+- Room cards show sockets/switches and power for appliances where available
 - Assistant shortcuts for status, health, active rooms, heating, and cold rooms
+- Hub health shortcut reads CPU load, free memory, and uptime from the Hub Info device
+- Clearer refresh/cache shortcut labels
+- Active rooms are sorted before inactive rooms
 - Mobile web UI
 - CI validation
 - Release packaging workflow
@@ -84,6 +88,8 @@ When `api_token` is set, device commands, setpoint changes, cache refreshes, and
 - `v0.7.13-alpha` Clickable summary tiles and kW power display
 - `v0.7.14-alpha` Cleaner room cards and fridge meter average exclusion
 - `v0.7.15-alpha` Focused room tiles and smarter assistant shortcuts
+- `v0.7.16-alpha` Socket/appliance room signals with power
+- `v0.7.17-alpha` Hub health and clearer refresh/cache actions
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 

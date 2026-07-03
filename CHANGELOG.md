@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.17-alpha
+
+- Add a Hub health assistant shortcut that reads CPU, memory, and uptime metrics from the Hub Info device.
+- Rename shortcut buttons to clarify app diagnostics, Hub health, device issues, refresh from Hubitat, and cache rebuild actions.
+- Sort rooms with active lights, switches, sockets, or motion before inactive rooms.
+
+## v0.7.16-alpha
+
+- Show room socket/switch counts instead of a misleading lights tile for socket/appliance-only rooms.
+- Add room power signals when power readings are available.
+- Count switched sockets/appliances in active-room assistant answers.
+
 ## v0.7.15-alpha
 
 - Refine room tiles to focus on lights, motion, and available temperature/humidity readings.

@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.15-alpha'
+APP_VERSION = '0.7.17-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -725,9 +725,12 @@ def device_diagnostics() -> dict[str, Any]:
 
 
 def active_rooms_answer() -> dict[str, Any]:
-    rooms = [room for room in api_rooms()['rooms'] if room.get('motion_active') or room.get('lights_on')]
+    rooms = [
+        room for room in api_rooms()['rooms']
+        if room.get('motion_active') or room.get('lights_on') or room.get('switches_on')
+    ]
     lines = [
-        f"{room['room']}: {room['lights_on']} lights on, {room['motion_active']} motion active"
+        f"{room['room']}: {room['lights_on']} lights on, {room['switches_on']} switches on, {room['motion_active']} motion active"
         for room in rooms
     ]
     return {
@@ -788,6 +791,49 @@ def device_health_answer() -> dict[str, Any]:
     if diagnostics['last_error']:
         lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
     return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
+
+
+def metric_value(device: dict[str, Any], exact_names: tuple[str, ...], contains: tuple[str, ...] = ()) -> Any:
+    attrs: dict[str, Any] = {}
+    attrs.update(device.get('attributes') or {})
+    for key, value in device.items():
+        if key not in ('attributes', 'capabilities', 'commands'):
+            attrs[key] = value
+    normalized = {re.sub(r'[^a-z0-9]', '', str(key).lower()): value for key, value in attrs.items()}
+    for name in exact_names:
+        key = re.sub(r'[^a-z0-9]', '', name.lower())
+        if key in normalized and normalized[key] is not None:
+            return normalized[key]
+    if contains:
+        for key, value in normalized.items():
+            if value is not None and all(part in key for part in contains):
+                return value
+    return None
+
+
+def hub_health_answer() -> dict[str, Any]:
+    devices = all_devices()
+    hub = next((d for d in devices if 'hub info' in device_search_text(d)), None)
+    if not hub:
+        return {
+            'success': False,
+            'intent': 'hub_health',
+            'message': 'No Hub Info device found. Add or expose the Hub Info device from Hubitat, then refresh from Hubitat.',
+        }
+    metrics = {
+        'CPU load': metric_value(hub, ('cpu', 'cpuLoad', 'cpuPct', 'cpuPercent', 'cpu5Min', 'cpuLoad5Min'), ('cpu',)),
+        'Free memory': metric_value(hub, ('freeMemory', 'freeMemoryMb', 'freeMem', 'memoryFree', 'availableMemory'), ('free', 'mem')),
+        'Total memory': metric_value(hub, ('totalMemory', 'totalMemoryMb', 'memoryTotal'), ('total', 'mem')),
+        'Uptime': metric_value(hub, ('uptime', 'hubUptime'), ('uptime',)),
+    }
+    lines = [f"{label}: {value}" for label, value in metrics.items() if value is not None]
+    if not lines:
+        available = ', '.join(sorted(str(k) for k in (hub.get('attributes') or {}).keys()))
+        detail = f" Available attributes: {available}" if available else ''
+        message = f"Hub Info was found, but CPU/free-memory attributes were not available.{detail}"
+    else:
+        message = f"Hub health from {hub.get('label') or hub.get('name') or 'Hub Info'}:\n" + '\n'.join(lines)
+    return {'success': True, 'intent': 'hub_health', 'message': message, 'device': hub, 'metrics': metrics}
 
 
 def normalise(text: str) -> str:
@@ -896,6 +942,31 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
         explicit_switch
         or category in ('light', 'switch', 'power_device')
         or any(word in label for word in controllable_words)
+    )
+
+
+def is_room_socket_device(device: dict[str, Any]) -> bool:
+    if device.get('category') == 'light':
+        return False
+    label = normalise(device.get('label') or device.get('name') or '')
+    socket_words = ('socket', 'plug', 'outlet', 'meter', 'power', 'energy')
+    appliance_words = ('appliance', 'dehumidifier', 'humidifier', 'purifier', 'fan', 'pc', 'mesh', 'fridge')
+    return (
+        device.get('category') == 'power_device'
+        or any(word in label for word in socket_words + appliance_words)
+    )
+
+
+def is_room_switch_device(device: dict[str, Any]) -> bool:
+    if device.get('category') == 'light':
+        return False
+    caps = caps_text(device)
+    commands = commands_text(device)
+    return (
+        device.get('switch') is not None
+        or device.get('category') == 'switch'
+        or 'switch' in caps
+        or {'on', 'off'}.issubset(commands)
     )
 
 
@@ -1085,6 +1156,8 @@ def assistant(text: str) -> dict[str, Any]:
         return cold_rooms_answer()
     if 'heating status' in t or 'heating state' in t:
         return heating_status_answer()
+    if 'hub health' in t or 'hub info' in t or 'hubitat health' in t:
+        return hub_health_answer()
     if 'device health' in t or 'home health' in t:
         return device_health_answer()
     summary_answer = explain_summary_tile(t)
@@ -1278,24 +1351,38 @@ def api_rooms():
         rooms.setdefault(room, {
             'room': room,
             'devices': 0,
+            'lights_total': 0,
             'lights_on': 0,
+            'switches_total': 0,
             'switches_on': 0,
+            'sockets_total': 0,
+            'sockets_on': 0,
             'motion_active': 0,
             'low_batteries': 0,
             'power_total': 0,
+            'power_devices': 0,
             'avg_temperature': None,
             'avg_humidity': None,
         })
         rooms[room]['devices'] += 1
-        if d['category'] == 'light' and is_state(d.get('switch'), 'on'):
-            rooms[room]['lights_on'] += 1
-        if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on'):
-            rooms[room]['switches_on'] += 1
+        if d['category'] == 'light':
+            rooms[room]['lights_total'] += 1
+            if is_state(d.get('switch'), 'on'):
+                rooms[room]['lights_on'] += 1
+        if is_room_switch_device(d):
+            rooms[room]['switches_total'] += 1
+            if is_room_socket_device(d):
+                rooms[room]['sockets_total'] += 1
+            if d.get('switch') is not None and is_state(d.get('switch'), 'on'):
+                rooms[room]['switches_on'] += 1
+                if is_room_socket_device(d):
+                    rooms[room]['sockets_on'] += 1
         if is_state(d.get('motion'), 'active'):
             rooms[room]['motion_active'] += 1
         if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20:
             rooms[room]['low_batteries'] += 1
         if isinstance(d.get('power'), (int, float)):
+            rooms[room]['power_devices'] += 1
             rooms[room]['power_total'] = round(rooms[room]['power_total'] + d['power'], 1)
     for room in rooms.values():
         ds = [d for d in devices if (d.get('room') or 'Unknown') == room['room']]
@@ -1304,7 +1391,11 @@ def api_rooms():
         hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int,float))]
         room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None
         room['avg_humidity'] = round(sum(hums)/len(hums),1) if hums else None
-    return {'success': True, 'rooms': sorted(rooms.values(), key=lambda x: x['room'])}
+    def room_sort_key(room: dict[str, Any]) -> tuple[int, int, str]:
+        active_score = int(room.get('lights_on') or 0) + int(room.get('switches_on') or 0) + int(room.get('motion_active') or 0)
+        return (0 if active_score else 1, -active_score, str(room['room']).lower())
+
+    return {'success': True, 'rooms': sorted(rooms.values(), key=room_sort_key)}
 
 
 @app.get('/api/device/{device_id}')
