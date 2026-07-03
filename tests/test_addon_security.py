@@ -34,3 +34,38 @@ def test_generic_room_targets_do_not_match_every_device():
     assert main.find_devices('') == []
     assert main.room_devices('', 'light') == []
     assert main.room_devices('all', 'light') == []
+
+
+def test_summary_uses_octopus_power_and_named_people():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'p1', 'label': 'Octopus Energy Live Meter', 'room': 'Energy', 'category': 'power_device', 'power': 456.7},
+        {'id': 'p2', 'label': 'Kitchen Plug', 'room': 'Kitchen', 'category': 'switch', 'power': 12.3},
+        {'id': 'e', 'label': 'Enamul Presence', 'room': 'People', 'category': 'presence_sensor', 'presence': 'present'},
+        {'id': 's', 'label': 'Samah Presence', 'room': 'People', 'category': 'presence_sensor', 'presence': 'not present'},
+    ]
+
+    summary = main.dashboard_summary()
+
+    assert summary['power_total'] == 456.7
+    assert summary['power_source_label'] == 'Octopus Energy Live Meter'
+    assert summary['people_home'] == 1
+    assert summary['people_tracked'] == 4
+    assert summary['people_home_names'] == ['Enamul']
+
+
+def test_assistant_explains_low_battery_and_motion_summary_tiles():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'b1', 'label': 'Hallway Contact', 'room': 'Hallway', 'category': 'contact_sensor', 'battery': 12},
+        {'id': 'm1', 'label': 'Kitchen Motion', 'room': 'Kitchen', 'category': 'motion_sensor', 'motion': 'active'},
+        {'id': 'p1', 'label': 'Octopus Energy Live Meter', 'room': 'Energy', 'category': 'power_device', 'power': 300},
+    ]
+
+    low_battery = main.assistant('which batteries are low')
+    motion = main.assistant('which motion sensors are active')
+    power = main.assistant('explain power tile')
+
+    assert 'Hallway Contact' in low_battery['message']
+    assert 'Kitchen Motion' in motion['message']
+    assert 'Octopus Energy Live Meter' in power['message']

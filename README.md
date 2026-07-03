@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.10-alpha` assistant dashboard:
+`v0.7.12-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -25,6 +25,9 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Dim inactive/off devices and highlight active/on rooms and devices
 - Room-targeted heating commands in both `hallway heating` and `heating in hallway` forms
 - Green selected-state buttons for active On/Off and heating controls
+- Whole-house power summary linked to the Octopus meter
+- Named people summary for Enamul, Samah, Tahmid, and Muhsena
+- Assistant explanations for summary tiles, low batteries, active motion, people, and Octopus power
 - Mobile web UI
 - CI validation
 - Release packaging workflow
@@ -70,6 +73,7 @@ When `api_token` is set, device commands, setpoint changes, cache refreshes, and
 - `v0.7.8-alpha` Cleaner active/inactive dashboard states
 - `v0.7.9-alpha` Room-targeted heating intent parsing
 - `v0.7.10-alpha` Green selected-state controls
+- `v0.7.12-alpha` Summary tile explanations and Octopus/named people tiles
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 

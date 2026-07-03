@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.12-alpha
+
+- Link the dashboard power summary to the Octopus whole-house meter.
+- Track Enamul, Samah, Tahmid, and Muhsena in the people summary tile.
+- Add assistant answers for summary tile details including low batteries, active motion sensors, people, and whole-house power.
+
 ## v0.7.10-alpha
 
 - Highlight selected On/Off buttons in green to match active device cards.
