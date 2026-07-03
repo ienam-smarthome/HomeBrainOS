@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.29-alpha
+
+- Add dashboard view options for summary tiles, shortcuts, rooms, inactive rooms, no-signal rooms, devices, and output.
+- Hide no-signal rooms such as Life360 by default while keeping them available from the view controls.
+- Hide inactive rooms by default to keep the Rooms panel focused on active rooms.
+- Tighten the mobile layout for Samsung S25 Ultra-sized browser viewing.
+
 ## v0.7.28-alpha
 
 - Remove room-level presence chips because generic presence sensors do not reliably mean a person is in that room.
