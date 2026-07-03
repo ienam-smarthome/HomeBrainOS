@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.31-alpha
+
+- Add a sticky floating microphone button for quick voice input on mobile dashboards.
+- Add `?voice=1` voice mode URL that opens a large tap-to-speak panel for home-screen shortcuts and Samsung routines.
+- Show listening/error state feedback while the browser speech recognizer is active.
+
 ## v0.7.30-alpha
 
 - Add separate assistant speech text so audio can sound natural while dashboard output stays compact.

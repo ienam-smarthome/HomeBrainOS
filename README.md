@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.30-alpha` assistant dashboard:
+`v0.7.31-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -39,6 +39,8 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - No-signal rooms such as Life360 are hidden by default
 - Mobile layout is tightened for Samsung S25 Ultra-sized screens
 - Spoken assistant responses use natural units such as degrees, watts, percent, and kilowatt hours
+- Sticky floating microphone button for mobile voice input
+- Voice shortcut mode via `?voice=1` for home-screen shortcuts and Samsung routines
 - Assistant shortcuts for status, health, active rooms, heating, and cold rooms
 - Hub health shortcut reads CPU load, free memory, and uptime from the Hub Info device
 - Hub health also reads DB size, last restart, and temperature from Hub Info HTML/table output
@@ -72,6 +74,14 @@ maker_api_app_id: "your-maker-api-app-id"
 maker_api_token: your-token-here
 refresh_seconds: 30
 ```
+
+Mobile voice shortcut:
+
+```text
+http://your-homebrain-host:8787/?voice=1
+```
+
+Android browsers require one tap before microphone access, so voice mode opens a large tap-to-speak panel.
 
 Optional hardening:
 
@@ -114,6 +124,7 @@ When `api_token` is set, device commands, setpoint changes, cache refreshes, and
 - `v0.7.28-alpha` Remove unreliable room-level presence chips
 - `v0.7.29-alpha` Mobile view options and no-signal room filtering
 - `v0.7.30-alpha` Natural spoken assistant units
+- `v0.7.31-alpha` Floating mic button and mobile voice shortcut mode
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 

@@ -493,3 +493,11 @@ def test_dashboard_orders_rooms_before_collapsible_controllable_devices():
 
     assert html.index('<h2>Rooms</h2>') < html.index('<summary>Controllable Devices</summary>')
     assert '<details class="card collapsible">' in html
+
+
+def test_dashboard_has_mobile_voice_shortcut_controls():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert 'id="micFab"' in html
+    assert 'id="voiceOverlay"' in html
+    assert "get('voice')==='1'" in html
