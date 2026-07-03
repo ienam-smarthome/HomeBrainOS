@@ -72,6 +72,22 @@ def test_assistant_explains_low_battery_and_motion_summary_tiles():
     assert 'Octopus Energy Live Meter' in power['message']
 
 
+def test_assistant_uses_natural_speech_units_for_summary_attributes():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 't1', 'label': 'Hallway Sensor', 'room': 'Hallway', 'category': 'climate_sensor', 'temperature': 28.4, 'humidity': 41},
+        {'id': 'p1', 'label': 'Octopus Energy Live Meter', 'room': 'Energy', 'category': 'power_device', 'power': 319},
+    ]
+
+    temperature = main.assistant('home temperature')
+    power = main.assistant('explain power tile')
+
+    assert temperature['message'] == 'Home temperature is 28.4C'
+    assert temperature['speech'] == 'Home temperature is 28.4 degrees.'
+    assert power['message'] == 'Power is whole-house live power from Octopus Energy Live Meter: 319W.'
+    assert power['speech'] == 'Power is whole-house live power from Octopus Energy Live Meter: 319 watts.'
+
+
 def test_assistant_lists_only_people_home():
     main = load_addon_main()
     main.all_devices = lambda: [

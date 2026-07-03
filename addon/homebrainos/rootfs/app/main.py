@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.29-alpha'
+APP_VERSION = '0.7.30-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -677,6 +677,34 @@ def format_power_value(watts: Any) -> str:
     return f'{watts_text}W'
 
 
+def spoken_number(value: Any) -> str:
+    if value in (None, ''):
+        return 'unknown'
+    numeric = safe_float(value)
+    if numeric is None:
+        return str(value)
+    return f'{numeric:g}'
+
+
+def spoken_degrees(value: Any) -> str:
+    return f'{spoken_number(value)} degrees'
+
+
+def spoken_percent(value: Any) -> str:
+    return f'{spoken_number(value)} percent'
+
+
+def spoken_power_value(watts: Any) -> str:
+    value = safe_float(watts)
+    if value is None:
+        return '0 watts'
+    if abs(value) > 999:
+        return f'{value / 1000:g} kilowatts'
+    amount = round(value)
+    unit = 'watt' if amount == 1 else 'watts'
+    return f'{amount:g} {unit}'
+
+
 def format_summary_device(item: dict[str, Any], attr: str | None = None, unit: str = '') -> str:
     detail = ''
     if attr and item.get(attr) is not None:
@@ -713,9 +741,11 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
         source = summary.get('power_source')
         if source:
             message = f"Power is whole-house live power from {source['label']}: {summary['power_display']}."
+            speech = f"Power is whole-house live power from {source['label']}: {spoken_power_value(summary['power_total'])}."
         else:
             message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_display']}."
-        return {'success': True, 'intent': 'summary_power', 'message': message, 'power_source': source}
+            speech = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {spoken_power_value(summary['power_total'])}."
+        return {'success': True, 'intent': 'summary_power', 'message': message, 'speech': speech, 'power_source': source}
 
     if wants_tiles:
         message = (
@@ -724,7 +754,13 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
             f"{summary['people_home']} of {summary['people_tracked']} people home, "
             f"{summary['low_batteries']} low batteries, and {summary['motion_active']} active motion sensors."
         )
-        return {'success': True, 'intent': 'summary_tiles', 'message': message, 'summary': summary}
+        speech = (
+            f"Summary tiles: {summary['lights_on']} lights on, {summary['switches_on']} switches on, "
+            f"{spoken_power_value(summary['power_total'])} whole-house power from {summary['power_source_label']}, "
+            f"{summary['people_home']} of {summary['people_tracked']} people home, "
+            f"{summary['low_batteries']} low batteries, and {summary['motion_active']} active motion sensors."
+        )
+        return {'success': True, 'intent': 'summary_tiles', 'message': message, 'speech': speech, 'summary': summary}
 
     return None
 
@@ -1413,14 +1449,32 @@ def answer_attribute(target: str, attr: str) -> dict[str, Any]:
         key = {'temperature': 'avg_temperature', 'humidity': 'avg_humidity', 'power': 'power_total'}.get(attr)
         if key and summary.get(key) is not None:
             unit = {'temperature': 'C', 'humidity': '%', 'power': 'W'}.get(attr, '')
-            return {'success': True, 'message': f"Home {attr} is {summary[key]}{unit}", 'attribute': attr, 'value': summary[key]}
+            speech_value = {
+                'temperature': spoken_degrees,
+                'humidity': spoken_percent,
+                'power': spoken_power_value,
+            }.get(attr, spoken_number)(summary[key])
+            if attr == 'power' and summary.get('power_source'):
+                speech = f"Power is whole-house live power from {summary['power_source_label']}: {speech_value}."
+            else:
+                speech = f"Home {attr} is {speech_value}."
+            return {'success': True, 'message': f"Home {attr} is {summary[key]}{unit}", 'speech': speech, 'attribute': attr, 'value': summary[key]}
     candidates = room_devices(target) or find_devices(target)
     candidates = [d for d in candidates if d.get(attr) is not None]
     if not candidates:
         return {'success': False, 'message': f'I could not find {attr} for {target}.'}
     d = candidates[0]
     unit = {'temperature': '°C', 'humidity': '%', 'power': 'W', 'battery': '%', 'energy': 'kWh', 'level': '%', 'illuminance': ' lux'}.get(attr, '')
-    return {'success': True, 'message': f"{d['label']} {attr} is {d[attr]}{unit}", 'device': d, 'attribute': attr, 'value': d[attr]}
+    speech_value = {
+        'temperature': spoken_degrees,
+        'humidity': spoken_percent,
+        'power': spoken_power_value,
+        'battery': spoken_percent,
+        'level': spoken_percent,
+        'illuminance': lambda value: f"{spoken_number(value)} lux",
+        'energy': lambda value: f"{spoken_number(value)} kilowatt hours",
+    }.get(attr, spoken_number)(d[attr])
+    return {'success': True, 'message': f"{d['label']} {attr} is {d[attr]}{unit}", 'speech': f"{d['label']} {attr} is {speech_value}.", 'device': d, 'attribute': attr, 'value': d[attr]}
 
 
 def ollama_answer(text: str) -> dict[str, Any] | None:
@@ -1526,7 +1580,15 @@ def run_command(text: str) -> dict[str, Any]:
     if t in ('summary', 'status', 'home summary'):
         s = dashboard_summary()
         people = ', '.join(s['people_home_names']) if s['people_home_names'] else 'None'
-        return {'success': True, 'message': f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\nWhole-house power: {s['power_display']} from {s['power_source_label']}\nPeople home: {s['people_home']}/{s['people_tracked']} ({people})\nLow batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}"}
+        speech = (
+            f"Home summary. {s['lights_on']} lights are on. {s['switches_on']} switches are on. "
+            f"Average temperature is {spoken_degrees(s['avg_temperature'])}. "
+            f"Average humidity is {spoken_percent(s['avg_humidity'])}. "
+            f"Power is whole-house live power from {s['power_source_label']}: {spoken_power_value(s['power_total'])}. "
+            f"{s['people_home']} of {s['people_tracked']} people are home. "
+            f"{s['low_batteries']} devices have low batteries. {s['motion_active']} motion sensors are active."
+        )
+        return {'success': True, 'message': f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\nWhole-house power: {s['power_display']} from {s['power_source_label']}\nPeople home: {s['people_home']}/{s['people_tracked']} ({people})\nLow batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}", 'speech': speech}
     if 'which lights are on' in t or 'what lights are on' in t:
         lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None')}

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.30-alpha
+
+- Add separate assistant speech text so audio can sound natural while dashboard output stays compact.
+- Speak home temperature as degrees, humidity as percent, power as watts/kilowatts, and energy as kilowatt hours.
+- Read Octopus whole-house power as natural audio, for example `Power is whole-house live power from Octopus Energy Live Meter: 319 watts.`
+
 ## v0.7.29-alpha
 
 - Add dashboard view options for summary tiles, shortcuts, rooms, inactive rooms, no-signal rooms, devices, and output.
