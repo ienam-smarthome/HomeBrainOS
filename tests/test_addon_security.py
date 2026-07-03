@@ -196,6 +196,56 @@ def test_room_summary_shows_presence_rooms():
     assert life360['presence_present'] == 1
 
 
+def test_room_details_explain_visible_signals_and_devices():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Bedroom 3 Light', 'room': 'Bedroom 3', 'category': 'light', 'switch': 'off'},
+        {
+            'id': 'm1',
+            'label': 'Bedroom 3 Motion',
+            'room': 'Bedroom 3',
+            'category': 'motion_sensor',
+            'capabilities': ['MotionSensor'],
+            'motion': None,
+            'attributes': {'motion': None},
+        },
+    ]
+
+    details = main.room_details_payload('Bedroom 3')
+
+    assert details['room']['lights_total'] == 1
+    assert details['room']['motion_total'] == 1
+    assert details['visible_signals'] == ['lights', 'motion']
+    assert 'Visible on tile: lights, motion.' in details['explanation']
+    assert [device['label'] for device in details['devices']] == ['Bedroom 3 Light', 'Bedroom 3 Motion']
+
+
+def test_room_details_explain_empty_signal_rooms():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'app1', 'label': 'Calendar App', 'room': 'Apps', 'category': 'device'},
+    ]
+
+    details = main.room_details_payload('Apps')
+
+    assert details['visible_signals'] == []
+    assert 'No tile signals yet.' in details['explanation']
+    assert details['devices'][0]['label'] == 'Calendar App'
+
+
+def test_assistant_explains_named_room_tile():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'p1', 'label': 'Enamul', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'present'},
+    ]
+
+    answer = main.assistant('explain Life360 room')
+
+    assert answer['intent'] == 'room_details'
+    assert 'Life360: 1 devices.' in answer['message']
+    assert 'Visible on tile: presence.' in answer['message']
+
+
 def test_assistant_hub_health_reads_hub_info_device_metrics():
     main = load_addon_main()
     main.all_devices = lambda: [

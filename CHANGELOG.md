@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.27-alpha
+
+- Add clickable room tiles that show room explanations and the devices behind each tile.
+- Add a room details API and assistant intent for explaining named rooms.
+- Show a fallback "No signals" tile chip when a room has devices but no summarizable signals.
+
 ## v0.7.26-alpha
 
 - Show room motion chips when a device is motion-capable even if its current motion value is missing.
