@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import time
+from datetime import datetime
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.24-alpha'
+APP_VERSION = '0.7.25-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -865,9 +866,6 @@ def hub_info_rows(device: dict[str, Any]) -> dict[str, str]:
 
 
 def hub_metric(device: dict[str, Any], labels: tuple[str, ...], contains: tuple[str, ...] = ()) -> Any:
-    value = metric_value(device, labels, contains)
-    if value is not None:
-        return value
     rows = hub_info_rows(device)
     for label in labels:
         key = compact_name(label)
@@ -877,6 +875,9 @@ def hub_metric(device: dict[str, Any], labels: tuple[str, ...], contains: tuple[
         for key, row_value in rows.items():
             if all(part in key for part in contains):
                 return row_value
+    value = metric_value(device, labels, contains)
+    if value is not None:
+        return value
     return None
 
 
@@ -913,16 +914,72 @@ def memory_mb(value: Any) -> float | None:
     amount = values[0]
     text = str(value).lower()
     if 'gb' in text:
-        return amount * 1024
+        return amount * 1000
     if 'kb' in text:
         return amount / 1024
+    if amount < 16:
+        return amount * 1000
     return amount
 
 
 def format_memory(value_mb: float) -> str:
     if value_mb >= 1000:
-        return f"{value_mb / 1000:.2f}GB"
+        gb = f"{value_mb / 1000:.2f}".rstrip('0').rstrip('.')
+        return f"{gb}GB"
     return f"{value_mb:g}MB"
+
+
+def format_uptime(value: Any) -> str:
+    text = str(value or '').strip()
+    if not text:
+        return text
+    if re.fullmatch(r'\d+(?:\.\d+)?', text):
+        total_seconds = int(float(text))
+        days, remainder = divmod(total_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        parts = []
+        if days:
+            parts.append(f"{days}d")
+        if hours or days:
+            parts.append(f"{hours}h")
+        if minutes or hours or days:
+            parts.append(f"{minutes}m")
+        parts.append(f"{seconds}s")
+        return ' '.join(parts)
+    match = re.fullmatch(r'(?:(\d+)d:)?(?:(\d+)h:)?(?:(\d+)m:)?(\d+)s', text)
+    if match:
+        days, hours, minutes, seconds = (int(part or 0) for part in match.groups())
+        return format_uptime(days * 86400 + hours * 3600 + minutes * 60 + seconds)
+    return text
+
+
+def format_restart(value: Any) -> str:
+    text = str(value or '').strip()
+    if not text:
+        return text
+    if re.fullmatch(r'\d+(?:\.\d+)?', text):
+        timestamp = float(text)
+        if timestamp > 10_000_000_000:
+            timestamp = timestamp / 1000
+        return datetime.fromtimestamp(timestamp).strftime('%d %b %Y %H:%M')
+    match = re.fullmatch(r'(\d{1,2})([A-Za-z]{3})(\d{4})\s+(\d{1,2}:\d{2})', text)
+    if match:
+        day, month, year, clock = match.groups()
+        return f"{int(day):02d} {month.title()} {year} {clock}"
+    return text
+
+
+def hub_health_display_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    display = dict(metrics)
+    free_mb = memory_mb(metrics.get('Free memory'))
+    if free_mb is not None:
+        display['Free memory'] = format_memory(free_mb)
+    if metrics.get('Last restart') is not None:
+        display['Last restart'] = format_restart(metrics.get('Last restart'))
+    if metrics.get('Uptime') is not None:
+        display['Uptime'] = format_uptime(metrics.get('Uptime'))
+    return display
 
 
 def hub_health_summary() -> dict[str, Any]:
@@ -950,6 +1007,7 @@ def hub_health_summary() -> dict[str, Any]:
         'cpu_load_percent': cpu,
         'free_memory_mb': free_mb,
         'metrics': metrics,
+        'display_metrics': hub_health_display_metrics(metrics),
     }
 
 
@@ -962,18 +1020,19 @@ def hub_health_answer() -> dict[str, Any]:
             'message': 'No Hub Info device found. Add or expose the Hub Info device from Hubitat, then refresh from Hubitat.',
         }
     metrics = hub_health_metrics(hub)
-    lines = [f"{label}: {value}" for label, value in metrics.items() if value is not None]
+    display_metrics = hub_health_display_metrics(metrics)
+    lines = [f"{label}: {value}" for label, value in display_metrics.items() if value is not None]
     if not lines:
         available = ', '.join(sorted(str(k) for k in (hub.get('attributes') or {}).keys()))
         detail = f" Available attributes: {available}" if available else ''
         message = f"Hub Info was found, but CPU/free-memory attributes were not available.{detail}"
     else:
         message = f"Hub health from {hub.get('label') or hub.get('name') or 'Hub Info'}:\n" + '\n'.join(lines)
-    return {'success': True, 'intent': 'hub_health', 'message': message, 'device': hub, 'metrics': metrics}
+    return {'success': True, 'intent': 'hub_health', 'message': message, 'device': hub, 'metrics': metrics, 'display_metrics': display_metrics}
 
 
-def normalise(text: str) -> str:
-    text = text.lower().strip()
+def normalise(text: Any) -> str:
+    text = str(text or '').lower().strip()
     replacements = {
         'turn of': 'turn off', 'switch of': 'switch off', 'the humidifier': 'dehumidifier',
         'de humidifier': 'dehumidifier', 'humidifier': 'dehumidifier', 'ligth': 'light',

@@ -177,7 +177,7 @@ def test_assistant_hub_health_reads_hub_info_device_metrics():
 
     assert health['intent'] == 'hub_health'
     assert 'CPU load: 12.5' in health['message']
-    assert 'Free memory: 512 MB' in health['message']
+    assert 'Free memory: 512MB' in health['message']
 
 
 def test_assistant_hub_health_reads_hub_info_html_labels():
@@ -203,26 +203,68 @@ def test_assistant_hub_health_reads_hub_info_html_labels():
 
     health = main.assistant('hub health')
 
-    assert 'Free memory: 1.0 GB' in health['message']
+    assert 'Free memory: 1GB' in health['message']
     assert 'CPU load: 0.8 / 20.0 %' in health['message']
     assert 'DB size: 199 MB' in health['message']
-    assert 'Last restart: 03Jul2026 14:42' in health['message']
-    assert 'Uptime: 0d:0h:31m:46s' in health['message']
+    assert 'Last restart: 03 Jul 2026 14:42' in health['message']
+    assert 'Uptime: 31m 46s' in health['message']
     assert 'Temperature: 46.2 °C' in health['message']
 
 
 def test_status_hub_health_summary_colours_cpu_and_memory():
     main = load_addon_main()
     main.all_devices = lambda: [
-        {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'Html': 'Free Mem : 1018.46\nCPU Load/Load% : 0.8 / 20.0 %'}},
+        {
+            'id': 'hub',
+            'label': 'Hub Info',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {
+                'freeMemory': 1.01,
+                'cpu': 16.75,
+                'Html': 'Free Mem : 1018.46 MB\nCPU Load/Load% : 0.88 / 22.0 %',
+            },
+        },
     ]
 
     summary = main.hub_health_summary()
 
     assert summary['level'] == 'ok'
-    assert summary['cpu_load_percent'] == 20
+    assert summary['cpu_load_percent'] == 22
     assert summary['free_memory_mb'] == 1018.46
-    assert summary['label'] == 'Hub CPU 20% · Free 1.02GB'
+    assert summary['label'] == 'Hub CPU 22% · Free 1.02GB'
+
+
+def test_status_hub_health_summary_treats_small_plain_memory_as_gb():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'hub', 'label': 'Hub Info', 'room': 'Hub', 'category': 'device', 'attributes': {'freeMemory': 1.01, 'cpu': 16.75}},
+    ]
+
+    summary = main.hub_health_summary()
+
+    assert summary['level'] == 'ok'
+    assert summary['free_memory_mb'] == 1010
+    assert summary['label'] == 'Hub CPU 16.75% · Free 1.01GB'
+
+
+def test_assistant_hub_health_formats_epoch_restart_and_uptime_seconds():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'hub',
+            'label': 'Hub Info',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {'lastRestart': 1783086156033, 'uptime': 4615, 'freeMemory': 1.01, 'cpu': 16.75},
+        },
+    ]
+
+    health = main.assistant('hub health')
+
+    assert 'Free memory: 1.01GB' in health['message']
+    assert 'Last restart: 03 Jul 2026' in health['message']
+    assert 'Uptime: 1h 16m 55s' in health['message']
 
 
 def test_status_hub_health_summary_warns_on_low_memory_and_high_cpu():
@@ -254,6 +296,18 @@ def test_controllable_devices_sort_active_first_then_alphabetical():
     ordered = main.controllable_devices(devices)
 
     assert [device['label'] for device in ordered] == ['Appliance Plug', 'Bedroom Light', 'Air Purifier', 'Zeta Socket']
+
+
+def test_controllable_devices_tolerates_null_switch_state():
+    main = load_addon_main()
+    devices = [
+        {'id': 'unknown', 'label': 'Unknown Socket', 'name': 'Unknown Socket', 'room': 'Room', 'category': 'switch', 'switch': None},
+        {'id': 'active', 'label': 'Active Light', 'name': 'Active Light', 'room': 'Room', 'category': 'light', 'switch': 'on'},
+    ]
+
+    ordered = main.controllable_devices(devices)
+
+    assert [device['label'] for device in ordered] == ['Active Light', 'Unknown Socket']
 
 
 def test_room_summary_merges_compact_and_spaced_numbered_bedrooms():

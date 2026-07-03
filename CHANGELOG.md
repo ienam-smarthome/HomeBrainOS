@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.25-alpha
+
+- Prefer labelled Hub Info rows over raw attributes for CPU, memory, uptime, and restart values.
+- Format Hub free memory, last restart, and uptime in readable units.
+- Fix controllable device loading when devices have unknown/null switch state.
+
 ## v0.7.24-alpha
 
 - Sort controllable devices with active/on devices first, then alphabetically within each state.
