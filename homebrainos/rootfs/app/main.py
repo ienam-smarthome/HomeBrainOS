@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import os
 import re
@@ -13,8 +14,9 @@ from urllib.parse import quote
 
 import requests
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 APP_VERSION = '0.7.10-alpha'
 CONFIG_PATH = Path('/data/options.json')
@@ -57,9 +59,10 @@ def load_config() -> dict[str, Any]:
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text())
     return {
-        'hubitat_base_url': os.getenv('HUBITAT_BASE_URL', 'http://192.168.1.239'),
-        'maker_api_app_id': os.getenv('MAKER_API_APP_ID', '4143'),
+        'hubitat_base_url': os.getenv('HUBITAT_BASE_URL', ''),
+        'maker_api_app_id': os.getenv('MAKER_API_APP_ID', ''),
         'maker_api_token': os.getenv('MAKER_API_TOKEN', ''),
+        'api_token': os.getenv('HOMEBRAIN_API_TOKEN', ''),
         'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '30')),
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
@@ -77,9 +80,16 @@ LAST_DETAIL_ERRORS: list[str] = []
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
+class AssistantRequest(BaseModel):
+    q: str
+
+
 def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA busy_timeout=5000')
+    conn.execute('PRAGMA foreign_keys=ON')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS devices (
             id TEXT PRIMARY KEY,
@@ -106,6 +116,8 @@ def db() -> sqlite3.Connection:
             created_at INTEGER NOT NULL
         )
     ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_room_category ON devices(room, category)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_history_device_created ON history(device_id, created_at)')
     return conn
 
 
@@ -113,6 +125,8 @@ def maker_url(path: str) -> str:
     base = str(CONFIG.get('hubitat_base_url', '')).rstrip('/')
     app_id = quote(str(CONFIG.get('maker_api_app_id', '')).strip(), safe='')
     token = quote(str(CONFIG.get('maker_api_token', '')).strip(), safe='')
+    if not base or not app_id or not token:
+        raise RuntimeError('Hubitat Maker API is not configured. Set hubitat_base_url, maker_api_app_id, and maker_api_token.')
     sep = '&' if '?' in path else '?'
     return f'{base}/apps/api/{app_id}/{path}{sep}access_token={token}'
 
@@ -178,10 +192,31 @@ def is_state(value: Any, *states: str) -> bool:
     return state_text(value) in {state.lower() for state in states}
 
 
-def public_error(exc: Exception) -> str:
-    text = str(exc)
-    text = re.sub(r'access_token=[^&\s]+', 'access_token=REDACTED', text)
+def redact_sensitive(value: Any) -> str:
+    text = str(value)
+    text = re.sub(r'access_token=[^&\s]+', 'access_token=REDACTED', text, flags=re.IGNORECASE)
+    for key in ('maker_api_token', 'api_token'):
+        secret = str(CONFIG.get(key, '') or '').strip()
+        if secret:
+            text = text.replace(secret, 'REDACTED')
     return text
+
+
+def public_error(exc: Exception) -> str:
+    return redact_sensitive(exc)
+
+
+def api_token_required() -> bool:
+    return bool(str(CONFIG.get('api_token', '') or '').strip())
+
+
+def require_api_token(request: Request) -> None:
+    expected = str(CONFIG.get('api_token', '') or '').strip()
+    if not expected:
+        return
+    supplied = request.headers.get('x-homebrain-token', '')
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail='Missing or invalid HomeBrain API token.')
 
 
 def attr_map(device: dict[str, Any]) -> dict[str, Any]:
@@ -332,7 +367,7 @@ def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]
                 raw_device = merge_raw_device(raw_device, detail)
                 detail_count += 1
             except Exception as exc:
-                detail_errors.append(f"{device['label']}: {exc}")
+                detail_errors.append(f"{device['label']}: {public_error(exc)}")
         enriched.append(raw_device)
     LAST_DETAIL_ERRORS = detail_errors[:10]
     return enriched
@@ -469,7 +504,7 @@ def refresh_devices() -> int:
         LAST_ERROR = None
         return len(devices)
     except Exception as exc:
-        LAST_ERROR = str(exc)
+        LAST_ERROR = public_error(exc)
         return count_devices()
 
 
@@ -565,6 +600,8 @@ def normalise(text: str) -> str:
 
 def find_devices(query: str, category: str | None = None) -> list[dict[str, Any]]:
     q = normalise(query)
+    if not q:
+        return []
     devices = all_devices()
     if category:
         devices = [d for d in devices if d['category'] == category]
@@ -599,6 +636,9 @@ def find_devices(query: str, category: str | None = None) -> list[dict[str, Any]
 
 def room_devices(room: str, category: str | None = None) -> list[dict[str, Any]]:
     room_n = normalise(room)
+    generic_targets = {'', 'all', 'any', 'home', 'house', 'everything', 'device', 'devices', 'light', 'lights', 'switch', 'switches'}
+    if room_n in generic_targets:
+        return []
     devices = [d for d in all_devices() if room_n in normalise(d.get('room','')) or room_n in normalise(d.get('label',''))]
     if category:
         devices = [d for d in devices if d['category'] == category]
@@ -686,12 +726,21 @@ def controllable_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(controls.values(), key=lambda d: d.get('label', ''))
 
 
-def command_devices(devices: list[dict[str, Any]], command: str) -> dict[str, Any]:
-    candidates = [d for d in switchable_devices(devices) if d.get('category') != 'thermostat'][:10]
+def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: bool = False) -> dict[str, Any]:
+    candidates = [d for d in switchable_devices(devices) if d.get('category') != 'thermostat']
     if not candidates:
         labels = [d['label'] for d in devices[:5]]
         suffix = '\nMatched: ' + '\n'.join(labels) if labels else ''
         return {'success': False, 'message': 'No switchable devices found.' + suffix, 'matched': labels}
+    max_devices = 50 if explicit_bulk else 10
+    if len(candidates) > max_devices:
+        return {
+            'success': False,
+            'message': (
+                f'Matched {len(candidates)} devices. Narrow the target or use an explicit all-room/all-device command.'
+            ),
+            'matched': [d['label'] for d in candidates[:20]],
+        }
     changed = []
     errors = []
     for d in candidates:
@@ -923,14 +972,26 @@ def run_command(text: str) -> dict[str, Any]:
     if m:
         action, target = m.group(1), m.group(2).strip()
         command = 'on' if 'on' in action else 'off'
-        if target.endswith('lights') or target.endswith('light'):
+        explicit_bulk = target in ('all lights', 'all light', 'all switches', 'all switch', 'all devices')
+        if target in ('lights', 'light', 'switches', 'switch', 'devices', 'device'):
+            return {
+                'success': False,
+                'message': f"Please specify a room/device, or say 'all {target}' if you mean the whole home.",
+            }
+        if target in ('all lights', 'all light'):
+            devices = [d for d in all_devices() if d.get('category') == 'light']
+        elif target in ('all switches', 'all switch'):
+            devices = [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None]
+        elif target == 'all devices':
+            devices = switchable_devices(all_devices())
+        elif target.endswith('lights') or target.endswith('light'):
             room = target.replace('lights','').replace('light','').strip()
             devices = room_devices(room, 'light')
         else:
             devices = find_devices(target) or room_devices(re.sub(r'\s+\d+$', '', target).strip())
         if not devices:
             return {'success': False, 'message': f'Device not found: {target}'}
-        return command_devices(devices, command)
+        return command_devices(devices, command, explicit_bulk=explicit_bulk)
     return {'success': False, 'message': f'I did not understand yet: {text}'}
 
 
@@ -950,17 +1011,19 @@ async def startup() -> None:
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required()}
 
 
-@app.get('/api/refresh')
-def api_refresh():
+@app.post('/api/refresh')
+def api_refresh(request: Request):
+    require_api_token(request)
     count = refresh_devices()
     return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
 
 
-@app.get('/api/cache/clear-refresh')
-def api_cache_clear_refresh():
+@app.post('/api/cache/clear-refresh')
+def api_cache_clear_refresh(request: Request):
+    require_api_token(request)
     clear_cache()
     count = refresh_devices()
     return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
@@ -1033,8 +1096,9 @@ def api_device(device_id: str):
     return {'success': bool(matches), 'device': matches[0] if matches else None}
 
 
-@app.get('/api/device/{device_id}/command/{command}')
-def api_device_command(device_id: str, command: str):
+@app.post('/api/device/{device_id}/command/{command}')
+def api_device_command(device_id: str, command: str, request: Request):
+    require_api_token(request)
     if command not in ('on', 'off'):
         raise HTTPException(status_code=400, detail='Only on/off commands are supported.')
     matches = [d for d in all_devices() if d['id'] == device_id]
@@ -1043,21 +1107,24 @@ def api_device_command(device_id: str, command: str):
     return command_devices(matches, command)
 
 
-@app.get('/api/device/{device_id}/setpoint/{delta}')
-def api_device_setpoint(device_id: str, delta: float):
+@app.post('/api/device/{device_id}/setpoint/{delta}')
+def api_device_setpoint(device_id: str, delta: float, request: Request):
+    require_api_token(request)
     if delta not in (-1, 1):
         raise HTTPException(status_code=400, detail='Only -1 and +1 setpoint adjustments are supported.')
     return adjust_setpoint(device_id, delta)
 
 
-@app.get('/api/ask')
-def api_ask(q: str = Query(...)):
-    return assistant(q)
+@app.post('/api/ask')
+def api_ask(payload: AssistantRequest, request: Request):
+    require_api_token(request)
+    return assistant(payload.q)
 
 
-@app.get('/api/assistant')
-def api_assistant(q: str = Query(...)):
-    return assistant(q)
+@app.post('/api/assistant')
+def api_assistant(payload: AssistantRequest, request: Request):
+    require_api_token(request)
+    return assistant(payload.q)
 
 
 @app.get('/', response_class=HTMLResponse)

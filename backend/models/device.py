@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any
 
 
@@ -7,7 +7,7 @@ class Device(BaseModel):
     name: str
     label: str
     category: str = 'device'
-    attributes: dict[str, Any] = {}
+    attributes: dict[str, Any] = Field(default_factory=dict)
     switch: str | None = None
     temperature: float | str | None = None
     humidity: float | str | None = None

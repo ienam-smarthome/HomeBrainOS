@@ -16,9 +16,10 @@ ports_description:
   8787/tcp: HomeBrain OS web UI
 webui: http://[HOST]:[PORT:8787]
 options:
-  hubitat_base_url: "http://192.168.1.239"
-  maker_api_app_id: "4143"
+  hubitat_base_url: ""
+  maker_api_app_id: ""
   maker_api_token: ""
+  api_token: ""
   refresh_seconds: 30
   ollama_enabled: false
   ollama_base_url: "http://homeassistant.local:11434"
@@ -30,6 +31,7 @@ schema:
   hubitat_base_url: str
   maker_api_app_id: str
   maker_api_token: password
+  api_token: password
   refresh_seconds: int
   ollama_enabled: bool
   ollama_base_url: str

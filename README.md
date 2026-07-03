@@ -42,11 +42,19 @@ For local development, copy `homebrainos` to your Home Assistant `/addons/homebr
 Required options:
 
 ```yaml
-hubitat_base_url: http://192.168.1.239
-maker_api_app_id: "4143"
+hubitat_base_url: http://your-hubitat-ip
+maker_api_app_id: "your-maker-api-app-id"
 maker_api_token: your-token-here
 refresh_seconds: 30
 ```
+
+Optional hardening:
+
+```yaml
+api_token: choose-a-local-dashboard-token
+```
+
+When `api_token` is set, device commands, setpoint changes, cache refreshes, and assistant requests require the dashboard to send the token. The browser UI prompts once and stores it in local storage.
 
 ## Development roadmap
 
