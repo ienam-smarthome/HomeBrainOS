@@ -830,7 +830,17 @@ def test_dashboard_tiles_have_visible_click_feedback():
     html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
 
     assert '.metric.summary-tile.selected,.room.selected' in html
-    assert '.metric.summary-tile.loading:after,.room.loading:after' in html
+    assert "content:'Loading'" not in html
+    assert '.metric.summary-tile.loading:after' not in html
     assert 'function markActiveControl' in html
     assert "setOutput('Running: '+text+'...')" in html
     assert "quick('summary', this)" in html
+
+
+def test_dashboard_has_persisted_audio_mute_toggle():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert 'id="audioMuted"' in html
+    assert 'homebrainos_audio_muted' in html
+    assert 'function setAudioMuted' in html
+    assert 'if(!audioMuted &&' in html

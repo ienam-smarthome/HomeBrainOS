@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.39-alpha
+
+- Add a persisted dashboard `Mute audio` toggle that cancels current speech and suppresses future spoken responses.
+- Keep microphone voice input available while audio output is muted.
+- Remove the visible `Loading` badge from clicked summary, room, and shortcut tiles while keeping selected-state feedback.
+
 ## v0.7.38-alpha
 
 - Add deterministic exact heating setpoint commands such as `set hallway heating to 21`.
