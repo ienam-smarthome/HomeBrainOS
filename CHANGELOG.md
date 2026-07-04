@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.47-alpha
+
+- Add cached Ollama health checks using `/api/tags` so HomeBrain skips local AI quickly when the PC is asleep or offline.
+- Expose local AI online/offline state in `/api/status`.
+- Add separate Ollama health timeout and cache options so offline checks stay fast without reducing answer generation time.
+
 ## v0.7.46-alpha
 
 - Raise the default Ollama response cap from 60 to 90 tokens so short AI summaries are less likely to stop mid-sentence.

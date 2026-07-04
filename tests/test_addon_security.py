@@ -280,6 +280,10 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     ]
     captured = {}
 
+    class HealthResponse:
+        def raise_for_status(self):
+            return None
+
     class Response:
         def raise_for_status(self):
             return None
@@ -292,6 +296,7 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
         captured['timeout'] = timeout
         return Response()
 
+    main.requests.get = lambda url, timeout=2: HealthResponse()
     main.requests.post = post
 
     answer = main.ollama_answer('anything unusual?')
@@ -310,6 +315,33 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     assert answer['speech'] == 'The home looks stable.'
 
 
+def test_ollama_answer_skips_fast_when_health_check_is_offline():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = True
+    main.CONFIG['ollama_base_url'] = 'http://offline.local:11434'
+    main.CONFIG['ollama_model'] = 'qwen2.5:3b'
+    main.CONFIG['ollama_health_timeout_seconds'] = 1
+    post_called = {'value': False}
+
+    def get(url, timeout=2):
+        raise RuntimeError('host unreachable')
+
+    def post(url, json, timeout=20):
+        post_called['value'] = True
+        raise AssertionError('generate should not be called when health is offline')
+
+    main.requests.get = get
+    main.requests.post = post
+
+    answer = main.ollama_answer('anything unusual?')
+
+    assert answer['intent'] == 'ollama_offline'
+    assert answer['success'] is False
+    assert 'Basic HomeBrain commands are still available' in answer['message']
+    assert answer['ollama']['online'] is False
+    assert post_called['value'] is False
+
+
 def test_ollama_answer_marks_truncated_responses():
     main = load_addon_main()
     main.CONFIG['ollama_enabled'] = True
@@ -320,12 +352,17 @@ def test_ollama_answer_marks_truncated_responses():
     main.CONFIG['ollama_num_predict'] = 90
     main.all_devices = lambda: []
 
+    class HealthResponse:
+        def raise_for_status(self):
+            return None
+
     class Response:
         def raise_for_status(self):
             return None
         def json(self):
             return {'response': 'The home looks stable but the living room', 'done_reason': 'length'}
 
+    main.requests.get = lambda url, timeout=2: HealthResponse()
     main.requests.post = lambda url, json, timeout=20: Response()
 
     answer = main.ollama_answer('summary')

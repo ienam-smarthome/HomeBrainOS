@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.46-alpha'
+APP_VERSION = '0.7.47-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -81,6 +81,8 @@ def load_config() -> dict[str, Any]:
         'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'false').lower() == 'true',
         'ollama_timeout_seconds': int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '75')),
         'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
+        'ollama_health_timeout_seconds': int(os.getenv('OLLAMA_HEALTH_TIMEOUT_SECONDS', '2')),
+        'ollama_health_cache_seconds': int(os.getenv('OLLAMA_HEALTH_CACHE_SECONDS', '60')),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '300')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '30')),
@@ -97,6 +99,7 @@ LAST_REFRESH: float | None = None
 LAST_DETAIL_ERRORS: list[str] = []
 PENDING_DEVICE_TIMERS: dict[str, dict[str, Any]] = {}
 ACTIVE_TIMER_THREADS: dict[str, threading.Timer] = {}
+OLLAMA_HEALTH: dict[str, Any] = {'checked_at': 0.0, 'online': None, 'message': 'Not checked', 'base_url': '', 'model': ''}
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
@@ -2210,9 +2213,51 @@ def clean_ollama_message(message: str, data: dict[str, Any]) -> tuple[str, bool]
     return text, truncated
 
 
+def ollama_base_url() -> str:
+    return str(CONFIG.get('ollama_base_url', '')).rstrip('/')
+
+
+def set_ollama_health(online: bool, message: str) -> dict[str, Any]:
+    OLLAMA_HEALTH.update({
+        'checked_at': time.time(),
+        'online': online,
+        'message': message,
+        'base_url': ollama_base_url(),
+        'model': CONFIG.get('ollama_model', 'qwen2.5:3b'),
+    })
+    return dict(OLLAMA_HEALTH)
+
+
+def ollama_health(force: bool = False) -> dict[str, Any]:
+    if not CONFIG.get('ollama_enabled'):
+        return {'checked_at': time.time(), 'online': False, 'message': 'Local AI is disabled', 'base_url': ollama_base_url(), 'model': CONFIG.get('ollama_model', 'qwen2.5:3b')}
+    base_url = ollama_base_url()
+    if not base_url:
+        return set_ollama_health(False, 'Local AI URL is not configured')
+    cache_seconds = max(5, int(CONFIG.get('ollama_health_cache_seconds', 60)))
+    if (
+        not force
+        and OLLAMA_HEALTH.get('base_url') == base_url
+        and OLLAMA_HEALTH.get('model') == CONFIG.get('ollama_model', 'qwen2.5:3b')
+        and OLLAMA_HEALTH.get('online') is not None
+        and time.time() - float(OLLAMA_HEALTH.get('checked_at') or 0) < cache_seconds
+    ):
+        return dict(OLLAMA_HEALTH)
+    try:
+        timeout = max(1, int(CONFIG.get('ollama_health_timeout_seconds', 2)))
+        response = requests.get(base_url + '/api/tags', timeout=timeout)
+        response.raise_for_status()
+        return set_ollama_health(True, 'Local AI is online')
+    except Exception as exc:
+        return set_ollama_health(False, f'Local AI is offline: {public_error(exc)}')
+
+
 def ollama_answer(text: str) -> dict[str, Any] | None:
     if not CONFIG.get('ollama_enabled'):
         return None
+    health = ollama_health()
+    if not health.get('online'):
+        return {'success': False, 'message': 'Local AI is offline. Basic HomeBrain commands are still available.', 'intent': 'ollama_offline', 'source': 'ollama', 'ollama': health}
     context = ai_context_pack()
     prompt = (
         'You are HomeBrain OS, a fast concise smart home assistant. '
@@ -2227,7 +2272,7 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         timeout = max(10, int(CONFIG.get('ollama_timeout_seconds', 75)))
         num_predict = max(32, int(CONFIG.get('ollama_num_predict', 120)))
         response = requests.post(
-            str(CONFIG.get('ollama_base_url', '')).rstrip('/') + '/api/generate',
+            ollama_base_url() + '/api/generate',
             json={
                 'model': CONFIG.get('ollama_model', 'qwen2.5:3b'),
                 'prompt': prompt,
@@ -2241,11 +2286,13 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
             timeout=timeout,
         )
         response.raise_for_status()
+        set_ollama_health(True, 'Local AI is online')
         data = response.json()
         message, truncated = clean_ollama_message(str(data.get('response') or ''), data)
         if message:
             return {'success': True, 'message': message, 'speech': message, 'intent': 'ollama_answer', 'source': 'ollama', 'context': context, 'truncated': truncated}
     except Exception as exc:
+        set_ollama_health(False, f'Local AI is offline: {public_error(exc)}')
         return {'success': False, 'message': f'Ollama is enabled but did not answer: {exc}', 'intent': 'ollama_error'}
     return None
 
@@ -2523,7 +2570,7 @@ async def startup() -> None:
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary()}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health()}
 
 
 @app.get('/api/timers')
