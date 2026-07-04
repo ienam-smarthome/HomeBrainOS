@@ -10,7 +10,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.49</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.50</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -451,6 +451,13 @@ function setStationStatus(text, active=false){
 function normaliseSpeech(text){
   return String(text||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
 }
+function stationIsArmed(){
+  return Date.now()<stationArmedUntil;
+}
+function stationListeningStatus(){
+  if(stationIsArmed()) return 'Wake phrase heard. Say the command now ...';
+  return 'Listening for: Hey HomeBrain ...';
+}
 function wakePhraseCommand(transcript){
   const spoken=normaliseSpeech(transcript).replace(/\bhome brain\b/g,'homebrain');
   const phrases=['hey homebrain','hi homebrain','hello homebrain','okay homebrain','ok homebrain','homebrain'];
@@ -466,11 +473,11 @@ function stationCommandFromTranscript(transcript){
   const wake=wakePhraseCommand(transcript);
   if(wake.heard){
     if(wake.command) return wake.command;
-    stationArmedUntil=Date.now()+10000;
+    stationArmedUntil=Date.now()+15000;
     setStationStatus('Wake phrase heard. Say the command now ...', true);
     return null;
   }
-  if(Date.now()<stationArmedUntil){
+  if(stationIsArmed()){
     stationArmedUntil=0;
     return normaliseSpeech(transcript);
   }
@@ -504,15 +511,19 @@ function startVoiceStation(){
     r.continuous=true;
     r.interimResults=false;
     r.maxAlternatives=1;
-    r.onstart=()=>{setListening(true);setStationStatus('Listening for: Hey HomeBrain ...', true);};
+    r.onstart=()=>{setListening(true);setStationStatus(stationListeningStatus(), true);};
     r.onerror=e=>{setStationStatus('Voice station microphone error: '+(e.error||'unknown'));};
-    r.onend=()=>{setListening(false);if(stationEnabled) stationRestart=setTimeout(startLoop,450);};
+    r.onend=()=>{setListening(stationIsArmed());if(stationEnabled) stationRestart=setTimeout(startLoop,450);};
     r.onresult=e=>{
       for(let i=e.resultIndex;i<e.results.length;i++){
         const transcript=e.results[i][0].transcript||'';
         const command=stationCommandFromTranscript(transcript);
         if(command===null) continue;
         if(!command){
+          if(stationIsArmed()){
+            setStationStatus('Wake phrase heard. Say the command now ...', true);
+            continue;
+          }
           setStationStatus('Heard "'+transcript+'". Waiting for Hey HomeBrain ...', true);
           continue;
         }

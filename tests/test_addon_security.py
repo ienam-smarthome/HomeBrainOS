@@ -1002,7 +1002,9 @@ def test_dashboard_has_voice_station_mode():
     assert 'function wakePhraseCommand' in html
     assert 'function stationCommandFromTranscript' in html
     assert 'Hey HomeBrain' in html
-    assert 'stationArmedUntil=Date.now()+10000' in html
+    assert 'function stationIsArmed' in html
+    assert 'function stationListeningStatus' in html
+    assert 'stationArmedUntil=Date.now()+15000' in html
     assert "urlParams.get('station')==='1'" in html
     assert 'r.continuous=true' in html
 

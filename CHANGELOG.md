@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.50-alpha
+
+- Keep voice station visibly armed after the wake phrase when mobile browsers restart speech recognition between phrases.
+- Extend the wake phrase command window from 10 seconds to 15 seconds for phone testing.
+- Avoid reverting the station status back to `Listening for Hey HomeBrain` while waiting for the follow-up command.
+
 ## v0.7.49-alpha
 
 - Improve voice station wake handling for phones where `Hey HomeBrain` and the command arrive as separate speech results.
