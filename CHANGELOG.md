@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.43-alpha
+
+- Add batched stale-device detail refreshes so important devices can update even when the Maker API device list returns stale or partial state.
+- Track per-device detail refresh timestamps in SQLite.
+- Add `device_detail_refresh_seconds` and `device_detail_refresh_batch` add-on options to balance freshness and Hubitat load.
+
 ## v0.7.42-alpha
 
 - Add delayed start commands such as `turn on hallway lights in 15 seconds`.

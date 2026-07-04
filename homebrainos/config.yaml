@@ -1,5 +1,5 @@
 name: HomeBrain OS
-version: "0.7.42-alpha"
+version: "0.7.43-alpha"
 slug: homebrainos
 description: HomeBrain OS live dashboard with SQLite device engine and Hubitat Maker API
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -27,6 +27,8 @@ options:
   ollama_context_device_limit: 80
   ollama_include_hub_logs: true
   device_detail_refresh_limit: 150
+  device_detail_refresh_seconds: 300
+  device_detail_refresh_batch: 30
   heating_on_delta: 1
   heating_off_setpoint: 12
   hubitat_logs_path: "/logs/past"
@@ -43,6 +45,8 @@ schema:
   ollama_context_device_limit: int
   ollama_include_hub_logs: bool
   device_detail_refresh_limit: int
+  device_detail_refresh_seconds: int
+  device_detail_refresh_batch: int
   heating_on_delta: float
   heating_off_setpoint: float
   hubitat_logs_path: str

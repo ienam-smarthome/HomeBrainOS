@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.42-alpha'
+APP_VERSION = '0.7.43-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -80,6 +80,8 @@ def load_config() -> dict[str, Any]:
         'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '80')),
         'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'true').lower() == 'true',
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
+        'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '300')),
+        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '30')),
         'heating_on_delta': float(os.getenv('HEATING_ON_DELTA', '1')),
         'heating_off_setpoint': float(os.getenv('HEATING_OFF_SETPOINT', '12')),
         'hubitat_logs_path': os.getenv('HUBITAT_LOGS_PATH', '/logs/past'),
@@ -120,9 +122,13 @@ def db() -> sqlite3.Connection:
             power REAL,
             energy REAL,
             battery REAL,
+            detail_refreshed_at INTEGER,
             updated_at INTEGER NOT NULL
         )
     ''')
+    columns = {row['name'] for row in conn.execute('PRAGMA table_info(devices)').fetchall()}
+    if 'detail_refreshed_at' not in columns:
+        conn.execute('ALTER TABLE devices ADD COLUMN detail_refreshed_at INTEGER')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -398,6 +404,7 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
         'wind_gust': safe_float(attrs.get('wind_gust')),
         'windDirection': safe_float(attrs.get('windDirection')),
         'precipitationToday': safe_float(attrs.get('precipitationToday')),
+        '_detail_refreshed_at': safe_float(device.get('_homebrain_detail_refreshed_at')),
     }
 
 
@@ -427,20 +434,51 @@ def needs_device_detail(raw_device: dict[str, Any], device: dict[str, Any]) -> b
     return False
 
 
+def cached_detail_refresh_times() -> dict[str, int]:
+    conn = db()
+    try:
+        rows = conn.execute('SELECT id, detail_refreshed_at FROM devices').fetchall()
+        return {str(row['id']): int(row['detail_refreshed_at']) for row in rows if row['detail_refreshed_at'] is not None}
+    finally:
+        conn.close()
+
+
+def should_refresh_device_detail(device: dict[str, Any], last_detail_at: int | None, now: int) -> bool:
+    seconds = max(0, int(CONFIG.get('device_detail_refresh_seconds', 300)))
+    if seconds <= 0:
+        return False
+    if last_detail_at and now - int(last_detail_at) < seconds:
+        return False
+    priority_categories = {
+        'light', 'switch', 'power_device', 'thermostat', 'climate_sensor',
+        'motion_sensor', 'presence_sensor', 'contact_sensor', 'weather',
+    }
+    return device.get('category') in priority_categories or is_switchable_device(device)
+
+
 def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     global LAST_DETAIL_ERRORS
     limit = max(0, int(CONFIG.get('device_detail_refresh_limit', 150)))
+    batch = max(0, int(CONFIG.get('device_detail_refresh_batch', 30)))
+    detail_times = cached_detail_refresh_times()
+    now = int(time.time())
     enriched: list[dict[str, Any]] = []
     detail_errors: list[str] = []
     detail_count = 0
+    stale_detail_count = 0
     for raw_device in raw_devices:
         device = normalise_device(raw_device)
-        should_fetch = detail_count < limit and needs_device_detail(raw_device, device)
+        incomplete = needs_device_detail(raw_device, device)
+        stale = should_refresh_device_detail(device, detail_times.get(str(device['id'])), now)
+        should_fetch = detail_count < limit and (incomplete or (stale and stale_detail_count < batch))
         if should_fetch:
             try:
                 detail = maker_get(f"devices/{quote(str(device['id']), safe='')}", timeout=8)
                 raw_device = merge_raw_device(raw_device, detail)
+                raw_device['_homebrain_detail_refreshed_at'] = now
                 detail_count += 1
+                if not incomplete:
+                    stale_detail_count += 1
             except Exception as exc:
                 detail_errors.append(f"{device['label']}: {public_error(exc)}")
         enriched.append(raw_device)
@@ -453,23 +491,24 @@ def upsert_devices(devices: list[dict[str, Any]]) -> None:
     conn = db()
     try:
         for d in devices:
-            old = conn.execute('SELECT json FROM devices WHERE id=?', (d['id'],)).fetchone()
+            old = conn.execute('SELECT json, detail_refreshed_at FROM devices WHERE id=?', (d['id'],)).fetchone()
+            detail_refreshed_at = int(d['_detail_refreshed_at']) if d.get('_detail_refreshed_at') is not None else (old['detail_refreshed_at'] if old else None)
             if old and d.get('switch') is None:
                 old_d = json.loads(old['json'])
                 if old_d.get('switch') is not None:
                     d['switch'] = old_d.get('switch')
                     d.setdefault('attributes', {})['switch'] = old_d.get('switch')
             conn.execute('''
-                INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,detail_refreshed_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, label=excluded.label, room=excluded.room, category=excluded.category,
                     json=excluded.json, switch=excluded.switch, temperature=excluded.temperature,
                     humidity=excluded.humidity, power=excluded.power, energy=excluded.energy,
-                    battery=excluded.battery, updated_at=excluded.updated_at
+                    battery=excluded.battery, detail_refreshed_at=excluded.detail_refreshed_at, updated_at=excluded.updated_at
             ''', (
                 d['id'], d['name'], d['label'], d['room'], d['category'], json.dumps(d),
-                d.get('switch'), d.get('temperature'), d.get('humidity'), d.get('power'), d.get('energy'), d.get('battery'), now
+                d.get('switch'), d.get('temperature'), d.get('humidity'), d.get('power'), d.get('energy'), d.get('battery'), detail_refreshed_at, now
             ))
             if old:
                 old_d = json.loads(old['json'])

@@ -861,6 +861,34 @@ def test_normalise_device_prefers_hubitat_room_assignment_over_label_inference()
     assert nested['room'] == 'Kitchen'
 
 
+def test_enrich_raw_devices_refreshes_stale_detail_batch():
+    main = load_addon_main()
+    now = int(main.time.time())
+    main.CONFIG['device_detail_refresh_seconds'] = 60
+    main.CONFIG['device_detail_refresh_batch'] = 1
+    main.CONFIG['device_detail_refresh_limit'] = 10
+    main.cached_detail_refresh_times = lambda: {'fresh': now, 'stale': now - 120}
+    calls = []
+
+    def fake_maker_get(path, timeout=20):
+        calls.append(path)
+        return {'id': 'stale', 'label': 'Stale Light', 'room': 'Hallway', 'attributes': {'switch': 'on'}}
+
+    main.maker_get = fake_maker_get
+
+    enriched = main.enrich_raw_devices([
+        {'id': 'fresh', 'label': 'Fresh Light', 'room': 'Hallway', 'attributes': {'switch': 'off'}},
+        {'id': 'stale', 'label': 'Stale Light', 'room': 'Hallway', 'attributes': {'switch': 'off'}},
+        {'id': 'later', 'label': 'Later Light', 'room': 'Hallway', 'attributes': {'switch': 'off'}},
+    ])
+    normalised = {device['id']: device for device in [main.normalise_device(raw) for raw in enriched]}
+
+    assert calls == ['devices/stale']
+    assert normalised['fresh']['switch'] == 'off'
+    assert normalised['stale']['switch'] == 'on'
+    assert normalised['later']['switch'] == 'off'
+
+
 def test_room_summary_treats_app_and_multimedia_switches_as_sockets():
     main = load_addon_main()
     main.all_devices = lambda: [
