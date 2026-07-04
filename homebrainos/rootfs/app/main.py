@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.44-alpha'
+APP_VERSION = '0.7.45-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -77,10 +77,10 @@ def load_config() -> dict[str, Any]:
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
         'ollama_model': os.getenv('OLLAMA_MODEL', 'qwen2.5:3b'),
-        'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '80')),
-        'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'true').lower() == 'true',
+        'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '35')),
+        'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'false').lower() == 'true',
         'ollama_timeout_seconds': int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '75')),
-        'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '120')),
+        'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '60')),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '300')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '30')),
@@ -2198,7 +2198,7 @@ def ai_context_pack(include_logs: bool | None = None) -> dict[str, Any]:
 
 
 def ai_context_text(context: dict[str, Any]) -> str:
-    return json.dumps(context, ensure_ascii=True, indent=2)
+    return json.dumps(context, ensure_ascii=True, separators=(',', ':'))
 
 
 def ollama_answer(text: str) -> dict[str, Any] | None:
@@ -2206,11 +2206,11 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         return None
     context = ai_context_pack()
     prompt = (
-        'You are HomeBrain OS, a concise smart home assistant. '
+        'You are HomeBrain OS, a fast concise smart home assistant. '
         'Use only the JSON context below. Do not invent device states. '
         'Device control is handled before you are called by deterministic HomeBrain commands. '
         'If the user asks for a control action that was not already handled, explain the exact deterministic phrase they should use. '
-        'Keep answers short, practical, and suitable for being spoken aloud.\n\n'
+        'Answer in at most 2 short sentences. No markdown headings or bullet lists unless the user asks for a list.\n\n'
         f'Context JSON:\n{ai_context_text(context)}\n\nUser: {text}\nAssistant:'
     )
     try:

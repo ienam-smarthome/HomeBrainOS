@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.45-alpha
+
+- Speed up local Ollama responses by sending compact JSON context instead of pretty-printed context.
+- Reduce default AI context device limit to 35 and disable hub logs by default.
+- Reduce default Ollama response cap to 60 tokens and instruct the model to answer in at most two short sentences.
+
 ## v0.7.44-alpha
 
 - Add configurable Ollama timeout and response length options for local LLMs that need longer than 20 seconds.

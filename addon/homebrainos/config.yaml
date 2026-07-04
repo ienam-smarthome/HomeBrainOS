@@ -1,5 +1,5 @@
 name: HomeBrain OS
-version: "0.7.44-alpha"
+version: "0.7.45-alpha"
 slug: homebrainos
 description: HomeBrain OS live dashboard with SQLite device engine and Hubitat Maker API
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -24,10 +24,10 @@ options:
   ollama_enabled: false
   ollama_base_url: "http://homeassistant.local:11434"
   ollama_model: "qwen2.5:3b"
-  ollama_context_device_limit: 80
-  ollama_include_hub_logs: true
+  ollama_context_device_limit: 35
+  ollama_include_hub_logs: false
   ollama_timeout_seconds: 75
-  ollama_num_predict: 120
+  ollama_num_predict: 60
   device_detail_refresh_limit: 150
   device_detail_refresh_seconds: 300
   device_detail_refresh_batch: 30

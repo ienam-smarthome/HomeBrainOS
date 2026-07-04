@@ -274,7 +274,7 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
     main.CONFIG['ollama_model'] = 'qwen2.5:3b'
     main.CONFIG['ollama_timeout_seconds'] = 75
-    main.CONFIG['ollama_num_predict'] = 120
+    main.CONFIG['ollama_num_predict'] = 60
     main.all_devices = lambda: [
         {'id': 'w1', 'label': 'Weather Open-Meteo', 'room': 'Weather', 'category': 'weather', 'weatherSummaryLine': 'Clear'},
     ]
@@ -301,9 +301,10 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     assert captured['url'] == 'http://ollama.local:11434/api/generate'
     assert captured['timeout'] == 75
     assert captured['json']['model'] == 'qwen2.5:3b'
-    assert captured['json']['options']['num_predict'] == 120
+    assert captured['json']['options']['num_predict'] == 60
     assert 'Context JSON' in prompt
     assert '"weather"' in prompt
+    assert '\n  "weather"' not in prompt
     assert 'Device control is handled before you are called' in prompt
     assert answer['speech'] == 'The home looks stable.'
 
