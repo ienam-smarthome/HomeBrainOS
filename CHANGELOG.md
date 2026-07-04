@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.46-alpha
+
+- Raise the default Ollama response cap from 60 to 90 tokens so short AI summaries are less likely to stop mid-sentence.
+- Update the Ollama prompt to prefer complete 1-2 sentence answers.
+- Add a truncation marker for length-limited Ollama responses so incomplete answers are visibly marked with an ellipsis.
+
 ## v0.7.45-alpha
 
 - Speed up local Ollama responses by sending compact JSON context instead of pretty-printed context.

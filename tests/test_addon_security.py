@@ -274,7 +274,7 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
     main.CONFIG['ollama_model'] = 'qwen2.5:3b'
     main.CONFIG['ollama_timeout_seconds'] = 75
-    main.CONFIG['ollama_num_predict'] = 60
+    main.CONFIG['ollama_num_predict'] = 90
     main.all_devices = lambda: [
         {'id': 'w1', 'label': 'Weather Open-Meteo', 'room': 'Weather', 'category': 'weather', 'weatherSummaryLine': 'Clear'},
     ]
@@ -301,12 +301,39 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     assert captured['url'] == 'http://ollama.local:11434/api/generate'
     assert captured['timeout'] == 75
     assert captured['json']['model'] == 'qwen2.5:3b'
-    assert captured['json']['options']['num_predict'] == 60
+    assert captured['json']['options']['num_predict'] == 90
     assert 'Context JSON' in prompt
     assert '"weather"' in prompt
     assert '\n  "weather"' not in prompt
     assert 'Device control is handled before you are called' in prompt
+    assert 'complete sentences' in prompt
     assert answer['speech'] == 'The home looks stable.'
+
+
+def test_ollama_answer_marks_truncated_responses():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = True
+    main.CONFIG['ollama_include_hub_logs'] = False
+    main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
+    main.CONFIG['ollama_model'] = 'qwen2.5:3b'
+    main.CONFIG['ollama_timeout_seconds'] = 75
+    main.CONFIG['ollama_num_predict'] = 90
+    main.all_devices = lambda: []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {'response': 'The home looks stable but the living room', 'done_reason': 'length'}
+
+    main.requests.post = lambda url, json, timeout=20: Response()
+
+    answer = main.ollama_answer('summary')
+
+    assert answer['intent'] == 'ollama_answer'
+    assert answer['truncated'] is True
+    assert answer['message'].endswith('...')
+    assert answer['speech'].endswith('...')
 
 
 def test_heating_commands_adjust_setpoints_without_thermostat_mode():

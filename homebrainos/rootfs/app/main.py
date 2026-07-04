@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.45-alpha'
+APP_VERSION = '0.7.46-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -80,7 +80,7 @@ def load_config() -> dict[str, Any]:
         'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '35')),
         'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'false').lower() == 'true',
         'ollama_timeout_seconds': int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '75')),
-        'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '60')),
+        'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '300')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '30')),
@@ -2201,6 +2201,15 @@ def ai_context_text(context: dict[str, Any]) -> str:
     return json.dumps(context, ensure_ascii=True, separators=(',', ':'))
 
 
+def clean_ollama_message(message: str, data: dict[str, Any]) -> tuple[str, bool]:
+    text = re.sub(r'\s+', ' ', str(message or '')).strip()
+    done_reason = str(data.get('done_reason') or '').lower()
+    truncated = done_reason in {'length', 'limit'} or bool(data.get('truncated'))
+    if truncated and text and text[-1] not in '.!?':
+        text = text.rstrip(' ,;:') + '...'
+    return text, truncated
+
+
 def ollama_answer(text: str) -> dict[str, Any] | None:
     if not CONFIG.get('ollama_enabled'):
         return None
@@ -2210,7 +2219,8 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         'Use only the JSON context below. Do not invent device states. '
         'Device control is handled before you are called by deterministic HomeBrain commands. '
         'If the user asks for a control action that was not already handled, explain the exact deterministic phrase they should use. '
-        'Answer in at most 2 short sentences. No markdown headings or bullet lists unless the user asks for a list.\n\n'
+        'Answer in one short paragraph of 1-2 complete sentences. Finish the final sentence before stopping. '
+        'No markdown headings or bullet lists unless the user asks for a list.\n\n'
         f'Context JSON:\n{ai_context_text(context)}\n\nUser: {text}\nAssistant:'
     )
     try:
@@ -2232,9 +2242,9 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         )
         response.raise_for_status()
         data = response.json()
-        message = str(data.get('response') or '').strip()
+        message, truncated = clean_ollama_message(str(data.get('response') or ''), data)
         if message:
-            return {'success': True, 'message': message, 'speech': message, 'intent': 'ollama_answer', 'source': 'ollama', 'context': context}
+            return {'success': True, 'message': message, 'speech': message, 'intent': 'ollama_answer', 'source': 'ollama', 'context': context, 'truncated': truncated}
     except Exception as exc:
         return {'success': False, 'message': f'Ollama is enabled but did not answer: {exc}', 'intent': 'ollama_error'}
     return None
