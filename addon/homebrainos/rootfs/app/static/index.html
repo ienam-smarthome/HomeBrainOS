@@ -10,7 +10,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.50</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.51</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -85,6 +85,7 @@ let stationEnabled = false;
 let stationRecognizer = null;
 let stationRestart = null;
 let stationArmedUntil = 0;
+let stationArmedTick = null;
 async function api(path, options={}){
   const headers = Object.assign({}, options.headers || {});
   if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
@@ -455,8 +456,32 @@ function stationIsArmed(){
   return Date.now()<stationArmedUntil;
 }
 function stationListeningStatus(){
-  if(stationIsArmed()) return 'Wake phrase heard. Say the command now ...';
+  if(stationIsArmed()){
+    const seconds=Math.max(1, Math.ceil((stationArmedUntil-Date.now())/1000));
+    return `Wake phrase heard. Say the command now ... ${seconds}s`;
+  }
   return 'Listening for: Hey HomeBrain ...';
+}
+function refreshStationStatus(){
+  if(stationEnabled) setStationStatus(stationListeningStatus(), true);
+}
+function clearStationArmed(){
+  stationArmedUntil=0;
+  clearInterval(stationArmedTick);
+  stationArmedTick=null;
+}
+function armVoiceStation(ms=15000){
+  stationArmedUntil=Date.now()+ms;
+  clearInterval(stationArmedTick);
+  stationArmedTick=setInterval(()=>{
+    if(!stationIsArmed()){
+      clearStationArmed();
+      refreshStationStatus();
+      return;
+    }
+    refreshStationStatus();
+  },1000);
+  refreshStationStatus();
 }
 function wakePhraseCommand(transcript){
   const spoken=normaliseSpeech(transcript).replace(/\bhome brain\b/g,'homebrain');
@@ -473,19 +498,18 @@ function stationCommandFromTranscript(transcript){
   const wake=wakePhraseCommand(transcript);
   if(wake.heard){
     if(wake.command) return wake.command;
-    stationArmedUntil=Date.now()+15000;
-    setStationStatus('Wake phrase heard. Say the command now ...', true);
+    armVoiceStation(15000);
     return null;
   }
   if(stationIsArmed()){
-    stationArmedUntil=0;
+    clearStationArmed();
     return normaliseSpeech(transcript);
   }
   return '';
 }
 function stopVoiceStation(){
   stationEnabled=false;
-  stationArmedUntil=0;
+  clearStationArmed();
   clearTimeout(stationRestart);
   stationRestart=null;
   if(stationRecognizer){
@@ -501,7 +525,7 @@ function startVoiceStation(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){alert('Voice station needs Chrome or Edge speech recognition');return;}
   stationEnabled=true;
-  stationArmedUntil=0;
+  clearStationArmed();
   setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain", then your command. You can pause briefly after the wake phrase.');
   const startLoop=()=>{
     if(!stationEnabled) return;
@@ -511,9 +535,12 @@ function startVoiceStation(){
     r.continuous=true;
     r.interimResults=false;
     r.maxAlternatives=1;
-    r.onstart=()=>{setListening(true);setStationStatus(stationListeningStatus(), true);};
-    r.onerror=e=>{setStationStatus('Voice station microphone error: '+(e.error||'unknown'));};
-    r.onend=()=>{setListening(stationIsArmed());if(stationEnabled) stationRestart=setTimeout(startLoop,450);};
+    r.onstart=()=>{setListening(true);refreshStationStatus();};
+    r.onerror=e=>{
+      if(['no-speech','aborted'].includes(e.error||'')){refreshStationStatus();return;}
+      setStationStatus('Voice station microphone error: '+(e.error||'unknown'));
+    };
+    r.onend=()=>{setListening(stationIsArmed());refreshStationStatus();if(stationEnabled) stationRestart=setTimeout(startLoop,450);};
     r.onresult=e=>{
       for(let i=e.resultIndex;i<e.results.length;i++){
         const transcript=e.results[i][0].transcript||'';

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.51-alpha
+
+- Add a visible 15-second command countdown after the voice station hears the wake phrase.
+- Keep station status refreshed from the armed countdown instead of transient browser speech-recognition events.
+- Suppress harmless `no-speech` and `aborted` events so mobile browser restarts do not look like failures.
+
 ## v0.7.50-alpha
 
 - Keep voice station visibly armed after the wake phrase when mobile browsers restart speech recognition between phrases.
