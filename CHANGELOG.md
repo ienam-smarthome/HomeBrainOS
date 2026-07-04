@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.40-alpha
+
+- Simplify room tile output into short room summaries with key counts and readings.
+- Replace raw per-device attribute dumps with compact active/device name lists.
+- Stop showing `Loading room details...` in the output panel when a room tile is tapped.
+
 ## v0.7.39-alpha
 
 - Add a persisted dashboard `Mute audio` toggle that cancels current speech and suppresses future spoken responses.

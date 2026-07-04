@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.39-alpha'
+APP_VERSION = '0.7.40-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1445,24 +1445,29 @@ def room_detail_device(device: dict[str, Any]) -> dict[str, Any]:
 
 def room_explanation(summary: dict[str, Any], devices: list[dict[str, Any]]) -> str:
     signals = room_visible_signals(summary)
-    lines = [f"{summary['room']}: {summary['devices']} devices."]
+    lines = [f"{summary['room']}: {summary['devices']} devices"]
     if signals:
-        lines.append('Visible on tile: ' + ', '.join(signals) + '.')
+        lines.append('Signals: ' + ', '.join(signals))
     else:
-        lines.append('No tile signals yet. Devices are present, but none expose light, motion, temperature, humidity, switch/socket, or power values that HomeBrainOS can summarize.')
+        lines.append('No summarized signals yet')
     if summary.get('lights_total'):
-        lines.append(f"Lights: {summary['lights_on']} on / {summary['lights_total']} total.")
+        lines.append(f"Lights: {summary['lights_on']} of {summary['lights_total']} on")
     if summary.get('motion_total'):
-        lines.append(f"Motion: {summary['motion_active']} active / {summary['motion_total']} sensors.")
+        lines.append(f"Motion: {summary['motion_active']} of {summary['motion_total']} active")
     if summary.get('sockets_total'):
-        lines.append(f"Sockets: {summary['sockets_on']} on / {summary['sockets_total']} total.")
+        lines.append(f"Sockets: {summary['sockets_on']} of {summary['sockets_total']} on")
     elif summary.get('switches_total'):
-        lines.append(f"Switches: {summary['switches_on']} on / {summary['switches_total']} total.")
+        lines.append(f"Switches: {summary['switches_on']} of {summary['switches_total']} on")
+    if summary.get('avg_temperature') is not None:
+        lines.append(f"Temperature: {summary['avg_temperature']}C")
+    if summary.get('avg_humidity') is not None:
+        lines.append(f"Humidity: {summary['avg_humidity']}%")
     if summary.get('power_devices'):
-        lines.append(f"Power: {format_power_value(summary.get('power_total'))} from {summary['power_devices']} devices.")
-    device_labels = ', '.join((d.get('label') or d.get('name') or 'Unknown device') for d in devices[:8])
+        lines.append(f"Power: {format_power_value(summary.get('power_total'))}")
+    device_labels = ', '.join((d.get('label') or d.get('name') or 'Unknown device') for d in devices[:6])
     if device_labels:
-        lines.append('Devices: ' + device_labels + ('.' if len(devices) <= 8 else f", plus {len(devices) - 8} more."))
+        suffix = '' if len(devices) <= 6 else f", +{len(devices) - 6} more"
+        lines.append('Includes: ' + device_labels + suffix)
     return '\n'.join(lines)
 
 

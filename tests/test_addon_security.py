@@ -555,7 +555,7 @@ def test_room_details_explain_visible_signals_and_devices():
     assert details['room']['lights_total'] == 1
     assert details['room']['motion_total'] == 1
     assert details['visible_signals'] == ['lights', 'motion']
-    assert 'Visible on tile: lights, motion.' in details['explanation']
+    assert 'Signals: lights, motion' in details['explanation']
     assert [device['label'] for device in details['devices']] == ['Bedroom 3 Light', 'Bedroom 3 Motion']
 
 
@@ -568,7 +568,7 @@ def test_room_details_explain_empty_signal_rooms():
     details = main.room_details_payload('Apps')
 
     assert details['visible_signals'] == []
-    assert 'No tile signals yet.' in details['explanation']
+    assert 'No summarized signals yet' in details['explanation']
     assert details['devices'][0]['label'] == 'Calendar App'
 
 
@@ -581,8 +581,8 @@ def test_assistant_explains_named_room_tile():
     answer = main.assistant('explain Life360 room')
 
     assert answer['intent'] == 'room_details'
-    assert 'Life360: 1 devices.' in answer['message']
-    assert 'No tile signals yet.' in answer['message']
+    assert 'Life360: 1 devices' in answer['message']
+    assert 'No summarized signals yet' in answer['message']
 
 
 def test_assistant_hub_health_reads_hub_info_device_metrics():
@@ -844,3 +844,14 @@ def test_dashboard_has_persisted_audio_mute_toggle():
     assert 'homebrainos_audio_muted' in html
     assert 'function setAudioMuted' in html
     assert 'if(!audioMuted &&' in html
+
+
+def test_dashboard_room_details_output_is_compact():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert 'function formatRoomDetails' in html
+    assert 'Active: ${active.slice' in html
+    assert 'Devices: ${names.slice' in html
+    assert '[${device.category}]' not in html
+    assert 'Object.entries(device.attributes' not in html
+    assert "setOutput('Loading '+roomName+' room details...')" not in html

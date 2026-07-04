@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.39-alpha` assistant dashboard:
+`v0.7.40-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -54,6 +54,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Recent Hubitat log diagnostics with token redaction and affected-device hints
 - Visible selected feedback when tapping summary, room, and shortcut tiles
 - Persisted mute-audio toggle for spoken assistant responses
+- Simplified room detail output without raw attribute dumps
 - Structured local AI context pack for Ollama with summary, weather, hub health, diagnostics, active rooms, and device facts
 - Protected AI context inspection endpoint at `/api/ai/context`
 - Exact heating setpoint commands such as `set hallway heating to 21`
@@ -162,6 +163,7 @@ ollama_include_hub_logs: true
 - `v0.7.37-alpha` Structured Ollama AI context pack and context inspection
 - `v0.7.38-alpha` Exact heating setpoints, room active-state answers, and timed device-on commands
 - `v0.7.39-alpha` Mute-audio toggle and quieter tile selection feedback
+- `v0.7.40-alpha` Simplified room detail output
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 

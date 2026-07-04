@@ -9,7 +9,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.39</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.40</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -202,20 +202,27 @@ function saveViewState(){
   localStorage.setItem('homebrainos_view_options', JSON.stringify(viewState));
 }
 function formatRoomDetails(detail){
-  const lines=[detail.explanation||'Room details unavailable'];
+  const room=detail.room||{};
   const devices=detail.devices||[];
-  if(devices.length){
-    lines.push('', 'Devices:');
-    for(const device of devices.slice(0,24)){
-      const attrs=Object.entries(device.attributes||{}).map(([key,value])=>`${key}=${value}`).join(', ');
-      lines.push(`- ${device.label} [${device.category}]${attrs?' - '+attrs:''}`);
-    }
-    if(devices.length>24) lines.push(`... ${devices.length-24} more`);
-  }
+  const lines=[`${room.room||'Room'}: ${room.devices||devices.length||0} devices`];
+  if(room.lights_total) lines.push(`Lights: ${room.lights_on||0} of ${room.lights_total} on`);
+  if(room.motion_total) lines.push(`Motion: ${room.motion_active||0} of ${room.motion_total} active`);
+  if(room.sockets_total) lines.push(`Sockets: ${room.sockets_on||0} of ${room.sockets_total} on`);
+  else if(room.switches_total) lines.push(`Switches: ${room.switches_on||0} of ${room.switches_total} on`);
+  if(room.avg_temperature!=null) lines.push(`Temperature: ${room.avg_temperature}°`);
+  if(room.avg_humidity!=null) lines.push(`Humidity: ${room.avg_humidity}%`);
+  if(room.power_devices) lines.push(`Power: ${formatPower(room.power_total||0)}`);
+  const active=devices.filter(device=>{
+    const attrs=device.attributes||{};
+    return attrs.switch==='on' || device.switch==='on' || attrs.motion==='active' || device.motion==='active' || attrs.thermostatOperatingState==='heating';
+  }).map(device=>device.label);
+  if(active.length) lines.push(`Active: ${active.slice(0,6).join(', ')}${active.length>6?', +'+(active.length-6)+' more':''}`);
+  const names=devices.map(device=>device.label).filter(Boolean);
+  if(names.length) lines.push(`Devices: ${names.slice(0,8).join(', ')}${names.length>8?', +'+(names.length-8)+' more':''}`);
+  if(lines.length===1 && detail.explanation) lines.push(detail.explanation);
   return lines.join('\n');
 }
 async function showRoomDetails(roomName){
-  setOutput('Loading '+roomName+' room details...');
   try{
     const detail=await api('/api/rooms/'+encodeURIComponent(roomName));
     setOutput(formatRoomDetails(detail));
