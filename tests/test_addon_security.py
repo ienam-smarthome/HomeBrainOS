@@ -994,6 +994,17 @@ def test_dashboard_has_mobile_voice_shortcut_controls():
     assert "get('voice')==='1'" in html
 
 
+def test_dashboard_has_voice_station_mode():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert 'id="stationStart"' in html
+    assert 'id="stationStop"' in html
+    assert 'function commandAfterWakePhrase' in html
+    assert 'Hey HomeBrain' in html
+    assert "urlParams.get('station')==='1'" in html
+    assert 'r.continuous=true' in html
+
+
 def test_dashboard_tiles_have_visible_click_feedback():
     html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
 

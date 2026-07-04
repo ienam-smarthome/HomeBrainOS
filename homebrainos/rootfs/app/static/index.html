@@ -5,11 +5,12 @@
   <title>HomeBrain OS</title>
   <style>
     body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.metric.summary-tile{cursor:pointer;transition:background .15s,box-shadow .15s,transform .15s}.metric.summary-tile:hover,.metric.summary-tile:focus{background:#3a3a3d;box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}.metric.summary-tile:active{transform:translateY(1px)}.metric.summary-tile.selected,.room.selected{background:#1f3128;box-shadow:inset 0 0 0 2px rgba(34,197,94,.85),0 0 0 1px rgba(34,197,94,.25)}.metric a{color:#93c5fd;text-decoration:none}.mini{color:#b9b9bd;font-size:12px;line-height:1.3;margin-top:4px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}.secondary.selected{background:#164e31;box-shadow:inset 0 0 0 2px rgba(34,197,94,.75)}button:disabled{opacity:.45}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px;max-height:38vh;overflow:auto;border:1px solid transparent}.output-active{border-color:rgba(34,197,94,.7);box-shadow:0 0 0 1px rgba(34,197,94,.25)}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.pill.warning{background:#92400e}.error{background:#7f1d1d}.view-card{padding:10px 12px}.view-controls{display:flex;flex-wrap:wrap;gap:8px}.view-toggle{display:inline-flex;align-items:center;gap:6px;background:#303033;color:#d7d7db;border-radius:999px;padding:8px 11px;font-size:13px;line-height:1;user-select:none}.view-toggle input{width:auto;margin:0;accent-color:#22c55e}.is-hidden{display:none!important}.timers{display:grid;gap:8px}.timer-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#262629;border-radius:12px;padding:10px 12px}.timer-meta{min-width:0}.timer-name{font-weight:700}.timer-sub{color:#b9b9bd;font-size:13px;margin-top:3px}.timer-cancel{width:auto;margin:0;padding:8px 12px;background:#333}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px;transition:opacity .15s,background .15s,box-shadow .15s}.room{cursor:pointer}.room:hover,.room:focus{box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}.device.active,.room.active{background:#292c2a;box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}.device.inactive,.room.inactive{opacity:.68}.room-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.room-name{font-weight:700}.room-count{color:#b9b9bd;font-size:13px;white-space:nowrap}.room-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.room-signal{display:flex;align-items:center;gap:8px;background:#303033;border-radius:8px;padding:8px;min-height:38px}.room.inactive .room-signal{background:#2c2c2f}.room-icon{font-size:18px;line-height:1}.room-value{display:block;font-size:15px;font-weight:700;line-height:1.1}.room-label{display:block;color:#b9b9bd;font-size:11px;line-height:1.1;margin-top:2px}.motion-on .room-value{color:#86efac}.shortcut-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}.collapsible summary{cursor:pointer;font-size:24px;font-weight:700;list-style:none}.collapsible summary::-webkit-details-marker{display:none}.collapsible summary:after{content:'Show';float:right;color:#b9b9bd;font-size:14px;font-weight:400;margin-top:8px}.collapsible[open] summary:after{content:'Hide'}.device.inactive .row button{background:#303033;color:#aaa}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.row button.selected{background:#15803d;color:#fff;box-shadow:inset 0 0 0 1px rgba(134,239,172,.35)}.row button.idle{background:#303033;color:#aaa}.state,.attr{display:inline-block;color:#fff;font-size:13px;border-radius:999px;padding:3px 8px;margin-top:6px}.state.on{background:#166534}.state.off{background:#555}.state.unknown{background:#7f1d1d}.attrs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;min-height:24px}.attr{background:#3a3a3d}.muted{color:#b9b9bd;font-size:14px}.mic-fab{position:fixed;right:18px;bottom:18px;z-index:5;width:64px;height:64px;margin:0;border-radius:50%;font-size:28px;background:#15803d;box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 0 0 1px rgba(134,239,172,.35)}.mic-fab.listening{background:#dc2626}.voice-overlay{position:fixed;inset:0;z-index:10;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);padding:22px}.voice-overlay.show{display:flex}.voice-panel{width:min(420px,100%);background:#1f1f21;border:1px solid #343438;border-radius:18px;padding:22px;text-align:center;box-shadow:0 18px 60px rgba(0,0,0,.55)}.voice-title{font-size:26px;font-weight:700;margin-bottom:8px}.voice-hint{color:#b9b9bd;line-height:1.4;margin-bottom:16px}.voice-start{height:86px;border-radius:18px;font-size:24px;background:#15803d}.voice-close{background:#333}@media(max-width:520px){.wrap{padding:10px 10px 86px;max-width:none}h1{font-size:24px;margin:8px 2px}.card{border-radius:12px;padding:10px;margin:8px 0}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{border-radius:10px;padding:10px;min-height:64px}.big{font-size:22px}.mini{font-size:11px}.view-card{position:sticky;top:0;z-index:2;background:#18181a;border:1px solid #29292d}.view-controls{gap:6px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.view-toggle{white-space:nowrap;padding:8px 10px}.shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rooms,.devices{grid-template-columns:1fr;gap:8px}.room-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.room-signal{padding:7px;min-height:34px}.room-value{font-size:14px}input,button{padding:12px;font-size:15px;margin:6px 0}.timer-row{align-items:flex-start}.timer-cancel{padding:8px 10px}pre{font-size:12px;max-height:28vh}.collapsible summary{font-size:20px}.mic-fab{right:14px;bottom:14px;width:68px;height:68px;font-size:30px}.voice-panel{border-radius:16px}.voice-start{height:92px}}
+    .station-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.station-start{background:#0f766e}.station-start.active{background:#dc2626}.station-status{margin-top:10px;padding:10px;border-radius:12px;background:#111;color:#d7d7db;font-size:13px;line-height:1.35;text-align:left}.station-status.active{border:1px solid rgba(34,197,94,.65);color:#fff}.wake-word{color:#86efac;font-weight:700}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.47</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.48</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -64,6 +65,11 @@
     <div class="voice-title">Speak to HomeBrain</div>
     <div class="voice-hint" id="voiceHint">Tap the microphone, then ask a smart-home question or command.</div>
     <button class="voice-start" id="voiceStart">🎤 Tap to speak</button>
+    <div class="station-row">
+      <button class="station-start" id="stationStart">Start voice station</button>
+      <button class="secondary" id="stationStop">Stop station</button>
+    </div>
+    <div class="station-status" id="stationStatus">Voice station waits for <span class="wake-word">Hey HomeBrain</span>, then runs the command after it.</div>
     <button class="voice-close" id="voiceClose">Close</button>
   </div>
 </div>
@@ -74,6 +80,10 @@ const viewDefaults = {summary:true, shortcuts:true, rooms:true, inactiveRooms:fa
 let viewState = Object.assign({}, viewDefaults, JSON.parse(localStorage.getItem('homebrainos_view_options') || '{}'));
 let audioMuted = localStorage.getItem('homebrainos_audio_muted') === 'true';
 let activeControl = null;
+const urlParams = new URLSearchParams(location.search);
+let stationEnabled = false;
+let stationRecognizer = null;
+let stationRestart = null;
 async function api(path, options={}){
   const headers = Object.assign({}, options.headers || {});
   if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
@@ -431,6 +441,72 @@ function setListening(active){
   $('micFab').classList.toggle('listening', active);
   $('voiceStart').textContent=active?(audioMuted?'Listening silently...':'Listening...'):'🎤 Tap to speak';
 }
+function setStationStatus(text, active=false){
+  $('stationStatus').textContent=text;
+  $('stationStatus').classList.toggle('active', active);
+  $('stationStart').classList.toggle('active', active);
+  $('stationStart').textContent=active?'Voice station running':'Start voice station';
+}
+function normaliseSpeech(text){
+  return String(text||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+}
+function commandAfterWakePhrase(transcript){
+  const spoken=normaliseSpeech(transcript).replace(/\bhome brain\b/g,'homebrain');
+  const phrases=['hey homebrain','hi homebrain','okay homebrain','ok homebrain','homebrain'];
+  for(const phrase of phrases){
+    const idx=spoken.indexOf(phrase);
+    if(idx>=0){
+      return spoken.slice(idx+phrase.length).replace(/^[,.\s]+/,'').trim();
+    }
+  }
+  return '';
+}
+function stopVoiceStation(){
+  stationEnabled=false;
+  clearTimeout(stationRestart);
+  stationRestart=null;
+  if(stationRecognizer){
+    stationRecognizer.onend=null;
+    try{stationRecognizer.stop();}catch(e){}
+  }
+  stationRecognizer=null;
+  setListening(false);
+  setStationStatus('Voice station stopped. Say Hey HomeBrain after starting it again.');
+}
+function startVoiceStation(){
+  stopSpeaking();
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert('Voice station needs Chrome or Edge speech recognition');return;}
+  stationEnabled=true;
+  setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain", then your command.');
+  const startLoop=()=>{
+    if(!stationEnabled) return;
+    const r=new SR();
+    stationRecognizer=r;
+    r.lang='en-GB';
+    r.continuous=true;
+    r.interimResults=false;
+    r.maxAlternatives=1;
+    r.onstart=()=>{setListening(true);setStationStatus('Listening for: Hey HomeBrain ...', true);};
+    r.onerror=e=>{setStationStatus('Voice station microphone error: '+(e.error||'unknown'));};
+    r.onend=()=>{setListening(false);if(stationEnabled) stationRestart=setTimeout(startLoop,450);};
+    r.onresult=e=>{
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const transcript=e.results[i][0].transcript||'';
+        const command=commandAfterWakePhrase(transcript);
+        if(!command){
+          setStationStatus('Heard "'+transcript+'". Waiting for Hey HomeBrain ...', true);
+          continue;
+        }
+        $('q').value=command;
+        setStationStatus('Running: '+command, true);
+        ask();
+      }
+    };
+    try{r.start();}catch(e){setStationStatus('Voice station could not start: '+e.message);}
+  };
+  startLoop();
+}
 function voice(){
   stopSpeaking();
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -452,10 +528,15 @@ function voice(){
 }
 $('micFab').addEventListener('click', voice);
 $('voiceStart').addEventListener('click', voice);
+$('stationStart').addEventListener('click', startVoiceStation);
+$('stationStop').addEventListener('click', stopVoiceStation);
 $('voiceClose').addEventListener('click', ()=>setVoiceOverlay(false));
 $('audioMuted').addEventListener('change', e=>setAudioMuted(e.target.checked));
 setAudioMuted(audioMuted);
-if(new URLSearchParams(location.search).get('voice')==='1'){
+if(urlParams.get('station')==='1'){
+  setVoiceOverlay(true,'Tap Start voice station once, then say "Hey HomeBrain" before each command.');
+}
+if(urlParams.get('voice')==='1'){
   setVoiceOverlay(true,'Tap the microphone to start. Browsers require one tap before using the mic.');
 }
 applyViewState(); status(); loadTimers(); setInterval(status,30000);

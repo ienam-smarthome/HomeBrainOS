@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.48-alpha
+
+- Add `?station=1` browser voice station mode for a dedicated HomeBrain display or GMKTec browser session.
+- Add a continuous speech-recognition loop that waits for `Hey HomeBrain` before sending a command.
+- Add voice station start/stop controls and status feedback in the voice overlay.
+
 ## v0.7.47-alpha
 
 - Add cached Ollama health checks using `/api/tags` so HomeBrain skips local AI quickly when the PC is asleep or offline.
