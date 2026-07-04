@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.41-alpha'
+APP_VERSION = '0.7.42-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1868,6 +1868,28 @@ def timed_command_devices(devices: list[dict[str, Any]], command: str, seconds: 
     return result
 
 
+def scheduled_command_devices(devices: list[dict[str, Any]], command: str, seconds: int, explicit_bulk: bool = False) -> dict[str, Any]:
+    candidates = [d for d in switchable_devices(devices) if d.get('category') != 'thermostat']
+    if not candidates:
+        labels = [d['label'] for d in devices[:5]]
+        suffix = '\nMatched: ' + '\n'.join(labels) if labels else ''
+        return {'success': False, 'message': 'No switchable devices found.' + suffix, 'matched': labels}
+    if len(candidates) > 1 and not explicit_bulk:
+        return disambiguation_response(candidates, 'schedule')
+    labels = [d['label'] for d in candidates]
+    timer = schedule_delayed_command([d['id'] for d in candidates], command, seconds, labels)
+    label = duration_label(seconds)
+    message = f"Scheduled {command} in {label}:\n" + '\n'.join(labels)
+    return {
+        'success': True,
+        'intent': 'scheduled_command',
+        'message': message,
+        'speech': f"{spoken_command_confirmation(labels, command)} scheduled in {label}.",
+        'changed': labels,
+        'timer': timer,
+    }
+
+
 def disambiguation_response(devices: list[dict[str, Any]], action: str) -> dict[str, Any]:
     labels = [d['label'] for d in devices[:8]]
     return {
@@ -2366,6 +2388,17 @@ def run_command(text: str) -> dict[str, Any]:
         if not devices:
             return {'success': False, 'message': f'Device not found: {target}'}
         return timed_command_devices(devices, 'on', seconds, explicit_bulk=explicit_bulk)
+    m_delayed = re.search(r'^(turn on|switch on|turn off|switch off)\s+(.+?)\s+in\s+(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)$', t)
+    if m_delayed:
+        action, target = m_delayed.group(1), m_delayed.group(2).replace('the ', '').strip()
+        command = 'on' if 'on' in action else 'off'
+        seconds = duration_seconds(m_delayed.group(3), m_delayed.group(4))
+        devices, explicit_bulk, error = resolve_switch_target(target)
+        if error:
+            return {'success': False, 'message': error}
+        if not devices:
+            return {'success': False, 'message': f'Device not found: {target}'}
+        return scheduled_command_devices(devices, command, seconds, explicit_bulk=explicit_bulk)
     attr_terms = {
         'humidity': ('humidity',),
         'temperature': ('temperature', 'temp'),

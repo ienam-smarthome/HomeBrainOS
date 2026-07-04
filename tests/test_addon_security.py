@@ -412,6 +412,27 @@ def test_assistant_turns_device_on_for_duration_and_schedules_off():
     assert 'Scheduled off in 10 minutes.' in answer['message']
 
 
+def test_assistant_schedules_room_lights_with_in_duration_phrase():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'h1', 'label': 'Hallway Light 1', 'name': 'Hallway Light 1', 'room': 'Hallway', 'category': 'light', 'switch': 'off'},
+        {'id': 'h2', 'label': 'Hallway Light 2', 'name': 'Hallway Light 2', 'room': 'Hallway', 'category': 'light', 'switch': 'off'},
+        {'id': 'b1', 'label': 'Bedroom Light', 'name': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'off'},
+    ]
+    commands = []
+    timers = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.schedule_delayed_command = lambda device_ids, command, seconds, labels: timers.append((device_ids, command, seconds, labels)) or {'due_at': 123}
+
+    answer = main.assistant('turn on hallway lights in 15 seconds')
+
+    assert answer['success'] is True
+    assert answer['intent'] == 'scheduled_command'
+    assert commands == []
+    assert timers == [(['h1', 'h2'], 'on', 15, ['Hallway Light 1', 'Hallway Light 2'])]
+    assert 'Scheduled on in 15 seconds' in answer['message']
+
+
 def test_scheduled_timers_are_persisted_and_cancelled():
     main = load_addon_main()
 

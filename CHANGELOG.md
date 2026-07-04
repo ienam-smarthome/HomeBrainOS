@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.42-alpha
+
+- Add delayed start commands such as `turn on hallway lights in 15 seconds`.
+- Treat plural room-light phrases as explicit group commands when scheduling delayed actions.
+- Keep `turn on X for 10 minutes` as immediate-on plus scheduled-off behavior.
+
 ## v0.7.41-alpha
 
 - Persist timed device commands in SQLite so scheduled actions survive browser reloads and add-on restarts.
