@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.48-alpha` assistant dashboard:
+`v0.7.49-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -110,7 +110,7 @@ Voice station mode:
 http://your-homebrain-host:8787/?station=1
 ```
 
-Open this on the GMKTec or a dedicated display, tap `Start voice station` once, then say commands such as `Hey HomeBrain, turn off the bedroom lights`.
+Open this on the GMKTec or a dedicated display, tap `Start voice station` once, then say commands such as `Hey HomeBrain, turn off the bedroom lights`. You can also say `Hey HomeBrain`, pause briefly, then say the command within 10 seconds.
 
 Optional hardening:
 
@@ -181,6 +181,7 @@ ollama_health_cache_seconds: 60
 - `v0.7.42-alpha` Delayed start commands such as `turn on hallway lights in 15 seconds`
 - `v0.7.43-alpha` Batched stale device detail refresh for devices that do not update reliably from Maker API lists
 - `v0.7.44-alpha` Longer Ollama timeout and shorter local-LLM answers for Home Assistant add-on use
+- `v0.7.49-alpha` Phone-friendly voice station wake phrase arming for separate wake and command phrases
 - `v0.7.48-alpha` Browser voice station mode with `Hey HomeBrain` wake phrase filtering
 - `v0.7.47-alpha` Cached Ollama health checks so local AI is skipped quickly when the PC is off
 - `v0.7.46-alpha` More complete local-LLM answers with a higher default token cap and truncation marker

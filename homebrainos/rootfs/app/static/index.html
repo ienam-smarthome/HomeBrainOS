@@ -10,7 +10,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.48</small></h1>
+  <h1>🏠 HomeBrain OS <small>v0.7.49</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -84,6 +84,7 @@ const urlParams = new URLSearchParams(location.search);
 let stationEnabled = false;
 let stationRecognizer = null;
 let stationRestart = null;
+let stationArmedUntil = 0;
 async function api(path, options={}){
   const headers = Object.assign({}, options.headers || {});
   if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
@@ -450,19 +451,34 @@ function setStationStatus(text, active=false){
 function normaliseSpeech(text){
   return String(text||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
 }
-function commandAfterWakePhrase(transcript){
+function wakePhraseCommand(transcript){
   const spoken=normaliseSpeech(transcript).replace(/\bhome brain\b/g,'homebrain');
-  const phrases=['hey homebrain','hi homebrain','okay homebrain','ok homebrain','homebrain'];
+  const phrases=['hey homebrain','hi homebrain','hello homebrain','okay homebrain','ok homebrain','homebrain'];
   for(const phrase of phrases){
     const idx=spoken.indexOf(phrase);
     if(idx>=0){
-      return spoken.slice(idx+phrase.length).replace(/^[,.\s]+/,'').trim();
+      return {heard:true, command:spoken.slice(idx+phrase.length).replace(/^[,.\s]+/,'').trim()};
     }
+  }
+  return {heard:false, command:''};
+}
+function stationCommandFromTranscript(transcript){
+  const wake=wakePhraseCommand(transcript);
+  if(wake.heard){
+    if(wake.command) return wake.command;
+    stationArmedUntil=Date.now()+10000;
+    setStationStatus('Wake phrase heard. Say the command now ...', true);
+    return null;
+  }
+  if(Date.now()<stationArmedUntil){
+    stationArmedUntil=0;
+    return normaliseSpeech(transcript);
   }
   return '';
 }
 function stopVoiceStation(){
   stationEnabled=false;
+  stationArmedUntil=0;
   clearTimeout(stationRestart);
   stationRestart=null;
   if(stationRecognizer){
@@ -478,7 +494,8 @@ function startVoiceStation(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){alert('Voice station needs Chrome or Edge speech recognition');return;}
   stationEnabled=true;
-  setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain", then your command.');
+  stationArmedUntil=0;
+  setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain", then your command. You can pause briefly after the wake phrase.');
   const startLoop=()=>{
     if(!stationEnabled) return;
     const r=new SR();
@@ -493,7 +510,8 @@ function startVoiceStation(){
     r.onresult=e=>{
       for(let i=e.resultIndex;i<e.results.length;i++){
         const transcript=e.results[i][0].transcript||'';
-        const command=commandAfterWakePhrase(transcript);
+        const command=stationCommandFromTranscript(transcript);
+        if(command===null) continue;
         if(!command){
           setStationStatus('Heard "'+transcript+'". Waiting for Hey HomeBrain ...', true);
           continue;

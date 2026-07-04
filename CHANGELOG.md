@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.49-alpha
+
+- Improve voice station wake handling for phones where `Hey HomeBrain` and the command arrive as separate speech results.
+- Add a 10-second armed window after the wake phrase so the next spoken phrase is treated as the command.
+- Add more wake phrase variants such as `Hello HomeBrain`.
+
 ## v0.7.48-alpha
 
 - Add `?station=1` browser voice station mode for a dedicated HomeBrain display or GMKTec browser session.
