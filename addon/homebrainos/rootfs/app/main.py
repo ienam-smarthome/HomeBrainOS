@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.40-alpha'
+APP_VERSION = '0.7.41-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -92,6 +92,7 @@ LAST_ERROR: str | None = None
 LAST_REFRESH: float | None = None
 LAST_DETAIL_ERRORS: list[str] = []
 PENDING_DEVICE_TIMERS: dict[str, dict[str, Any]] = {}
+ACTIVE_TIMER_THREADS: dict[str, threading.Timer] = {}
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
@@ -131,8 +132,20 @@ def db() -> sqlite3.Connection:
             created_at INTEGER NOT NULL
         )
     ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS device_timers (
+            id TEXT PRIMARY KEY,
+            device_ids TEXT NOT NULL,
+            labels TEXT NOT NULL,
+            command TEXT NOT NULL,
+            due_at REAL NOT NULL,
+            created_at REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending'
+        )
+    ''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_room_category ON devices(room, category)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_history_device_created ON history(device_id, created_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_device_timers_status_due ON device_timers(status, due_at)')
     return conn
 
 
@@ -1703,6 +1716,89 @@ def duration_label(seconds: int) -> str:
     return f"{seconds} second" + ('' if seconds == 1 else 's')
 
 
+def timer_payload(record: dict[str, Any], now: float | None = None) -> dict[str, Any]:
+    now = time.time() if now is None else now
+    due_at = float(record.get('due_at') or 0)
+    return {
+        'id': record.get('id'),
+        'device_ids': list(record.get('device_ids') or []),
+        'labels': list(record.get('labels') or []),
+        'command': record.get('command'),
+        'due_at': due_at,
+        'created_at': record.get('created_at'),
+        'seconds_remaining': max(0, int(due_at - now)),
+        'duration_remaining': duration_label(max(0, int(due_at - now))),
+    }
+
+
+def save_timer_record(record: dict[str, Any]) -> None:
+    conn = db()
+    try:
+        conn.execute(
+            '''
+            INSERT OR REPLACE INTO device_timers(id, device_ids, labels, command, due_at, created_at, status)
+            VALUES(?,?,?,?,?,?,?)
+            ''',
+            (
+                record['id'],
+                json.dumps(record['device_ids']),
+                json.dumps(record['labels']),
+                record['command'],
+                float(record['due_at']),
+                float(record.get('created_at') or time.time()),
+                record.get('status', 'pending'),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def pending_timer_records() -> list[dict[str, Any]]:
+    conn = db()
+    try:
+        rows = conn.execute(
+            "SELECT id, device_ids, labels, command, due_at, created_at FROM device_timers WHERE status='pending' ORDER BY due_at"
+        ).fetchall()
+    finally:
+        conn.close()
+    records = []
+    for row in rows:
+        records.append({
+            'id': row['id'],
+            'device_ids': json.loads(row['device_ids']),
+            'labels': json.loads(row['labels']),
+            'command': row['command'],
+            'due_at': row['due_at'],
+            'created_at': row['created_at'],
+        })
+    return records
+
+
+def mark_timer_status(timer_id: str, status: str) -> bool:
+    conn = db()
+    try:
+        cursor = conn.execute('UPDATE device_timers SET status=? WHERE id=? AND status=?', (status, timer_id, 'pending'))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def register_timer(record: dict[str, Any]) -> dict[str, Any]:
+    timer_id = str(record['id'])
+    existing = ACTIVE_TIMER_THREADS.pop(timer_id, None)
+    if existing:
+        existing.cancel()
+    seconds = max(1, int(float(record['due_at']) - time.time()))
+    timer = threading.Timer(seconds, delayed_device_command, args=(timer_id, record['device_ids'], record['command']))
+    timer.daemon = True
+    ACTIVE_TIMER_THREADS[timer_id] = timer
+    PENDING_DEVICE_TIMERS[timer_id] = timer_payload(record)
+    timer.start()
+    return PENDING_DEVICE_TIMERS[timer_id]
+
+
 def delayed_device_command(timer_id: str, device_ids: list[str], command: str) -> None:
     try:
         for device_id in device_ids:
@@ -1713,22 +1809,48 @@ def delayed_device_command(timer_id: str, device_ids: list[str], command: str) -
         refresh_devices()
         update_cached_switch(device_ids, command)
     finally:
+        mark_timer_status(timer_id, 'done')
+        ACTIVE_TIMER_THREADS.pop(timer_id, None)
         PENDING_DEVICE_TIMERS.pop(timer_id, None)
 
 
 def schedule_delayed_command(device_ids: list[str], command: str, seconds: int, labels: list[str]) -> dict[str, Any]:
-    timer_id = f"{int(time.time())}-{'-'.join(device_ids)}-{command}"
-    timer = threading.Timer(seconds, delayed_device_command, args=(timer_id, device_ids, command))
-    timer.daemon = True
-    PENDING_DEVICE_TIMERS[timer_id] = {
+    now = time.time()
+    timer_id = f"{int(now)}-{'-'.join(device_ids)}-{command}"
+    record = {
         'id': timer_id,
         'device_ids': device_ids,
         'labels': labels,
         'command': command,
-        'due_at': time.time() + seconds,
+        'due_at': now + seconds,
+        'created_at': now,
+        'status': 'pending',
     }
-    timer.start()
-    return PENDING_DEVICE_TIMERS[timer_id]
+    save_timer_record(record)
+    return register_timer(record)
+
+
+def restore_pending_timers() -> None:
+    now = time.time()
+    for record in pending_timer_records():
+        if float(record['due_at']) <= now:
+            threading.Thread(
+                target=delayed_device_command,
+                args=(record['id'], record['device_ids'], record['command']),
+                daemon=True,
+            ).start()
+        elif record['id'] not in ACTIVE_TIMER_THREADS:
+            register_timer(record)
+
+
+def cancel_timer(timer_id: str) -> dict[str, Any]:
+    timer = ACTIVE_TIMER_THREADS.pop(timer_id, None)
+    if timer:
+        timer.cancel()
+    PENDING_DEVICE_TIMERS.pop(timer_id, None)
+    if not mark_timer_status(timer_id, 'cancelled') and timer is None:
+        return {'success': False, 'message': 'Timer not found or already completed.'}
+    return {'success': True, 'message': 'Timer cancelled.'}
 
 
 def timed_command_devices(devices: list[dict[str, Any]], command: str, seconds: int, explicit_bulk: bool = False) -> dict[str, Any]:
@@ -2300,6 +2422,7 @@ async def refresh_loop() -> None:
 async def startup() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     refresh_devices()
+    restore_pending_timers()
     asyncio.create_task(refresh_loop())
 
 
@@ -2312,13 +2435,15 @@ def api_status():
 def api_timers(request: Request):
     require_api_token(request)
     now = time.time()
-    timers = []
-    for timer in PENDING_DEVICE_TIMERS.values():
-        timers.append({
-            **timer,
-            'seconds_remaining': max(0, int(timer.get('due_at', now) - now)),
-        })
+    restore_pending_timers()
+    timers = [timer_payload(record, now) for record in pending_timer_records()]
     return {'success': True, 'count': len(timers), 'timers': timers}
+
+
+@app.post('/api/timers/{timer_id}/cancel')
+def api_cancel_timer(timer_id: str, request: Request):
+    require_api_token(request)
+    return cancel_timer(timer_id)
 
 
 @app.get('/api/hub/logs')

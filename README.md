@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.40-alpha` assistant dashboard:
+`v0.7.41-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -164,6 +164,7 @@ ollama_include_hub_logs: true
 - `v0.7.38-alpha` Exact heating setpoints, room active-state answers, and timed device-on commands
 - `v0.7.39-alpha` Mute-audio toggle and quieter tile selection feedback
 - `v0.7.40-alpha` Simplified room detail output
+- `v0.7.41-alpha` Persistent scheduled device timers with dashboard cancel controls
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 

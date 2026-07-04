@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.41-alpha
+
+- Persist timed device commands in SQLite so scheduled actions survive browser reloads and add-on restarts.
+- Add a Scheduled dashboard panel with remaining time and cancel controls.
+- Restore pending timers on startup and expose timer list/cancel API endpoints.
+- Keep HomeBrain voice prompts silent while the audio mute toggle is enabled.
+
 ## v0.7.40-alpha
 
 - Simplify room tile output into short room summaries with key counts and readings.

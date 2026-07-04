@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 from pathlib import Path
 
 
@@ -409,6 +410,53 @@ def test_assistant_turns_device_on_for_duration_and_schedules_off():
     assert commands == [('fan1', 'on')]
     assert timers == [(['fan1'], 'off', 600, ['Desk Fan'])]
     assert 'Scheduled off in 10 minutes.' in answer['message']
+
+
+def test_scheduled_timers_are_persisted_and_cancelled():
+    main = load_addon_main()
+
+    class FakeTimer:
+        def __init__(self, seconds, function, args=()):
+            self.seconds = seconds
+            self.function = function
+            self.args = args
+            self.cancelled = False
+            self.started = False
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    original_timer = main.threading.Timer
+    original_db_path = main.DB_PATH
+    main.threading.Timer = FakeTimer
+    main.ACTIVE_TIMER_THREADS.clear()
+    main.PENDING_DEVICE_TIMERS.clear()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+
+            timer = main.schedule_delayed_command(['fan1'], 'off', 600, ['Desk Fan'])
+            records = main.pending_timer_records()
+
+            assert len(records) == 1
+            assert records[0]['id'] == timer['id']
+            assert records[0]['labels'] == ['Desk Fan']
+            assert records[0]['command'] == 'off'
+            assert main.ACTIVE_TIMER_THREADS[timer['id']].started is True
+
+            result = main.cancel_timer(timer['id'])
+
+            assert result['success'] is True
+            assert main.pending_timer_records() == []
+            assert timer['id'] not in main.PENDING_DEVICE_TIMERS
+    finally:
+        main.threading.Timer = original_timer
+        main.DB_PATH = original_db_path
+        main.ACTIVE_TIMER_THREADS.clear()
+        main.PENDING_DEVICE_TIMERS.clear()
 
 
 def test_assistant_lists_only_people_home():
@@ -844,6 +892,19 @@ def test_dashboard_has_persisted_audio_mute_toggle():
     assert 'homebrainos_audio_muted' in html
     assert 'function setAudioMuted' in html
     assert 'if(!audioMuted &&' in html
+    assert 'Listening silently...' in html
+    assert 'Audio responses are muted.' in html
+
+
+def test_dashboard_has_scheduled_timer_panel():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert 'id="timersCard"' in html
+    assert 'id="timers"' in html
+    assert 'function loadTimers' in html
+    assert '/api/timers' in html
+    assert '/cancel' in html
+    assert 'data-action="cancel-timer"' in html
 
 
 def test_dashboard_room_details_output_is_compact():
