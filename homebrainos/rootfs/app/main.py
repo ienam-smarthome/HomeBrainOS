@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.43-alpha'
+APP_VERSION = '0.7.44-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -76,9 +76,11 @@ def load_config() -> dict[str, Any]:
         'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '30')),
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
-        'ollama_model': os.getenv('OLLAMA_MODEL', 'llama3.2'),
+        'ollama_model': os.getenv('OLLAMA_MODEL', 'qwen2.5:3b'),
         'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '80')),
         'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'true').lower() == 'true',
+        'ollama_timeout_seconds': int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '75')),
+        'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '120')),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '300')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '30')),
@@ -2212,10 +2214,21 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         f'Context JSON:\n{ai_context_text(context)}\n\nUser: {text}\nAssistant:'
     )
     try:
+        timeout = max(10, int(CONFIG.get('ollama_timeout_seconds', 75)))
+        num_predict = max(32, int(CONFIG.get('ollama_num_predict', 120)))
         response = requests.post(
             str(CONFIG.get('ollama_base_url', '')).rstrip('/') + '/api/generate',
-            json={'model': CONFIG.get('ollama_model', 'llama3.2'), 'prompt': prompt, 'stream': False},
-            timeout=20,
+            json={
+                'model': CONFIG.get('ollama_model', 'qwen2.5:3b'),
+                'prompt': prompt,
+                'stream': False,
+                'options': {
+                    'num_predict': num_predict,
+                    'temperature': 0.2,
+                    'top_p': 0.8,
+                },
+            },
+            timeout=timeout,
         )
         response.raise_for_status()
         data = response.json()

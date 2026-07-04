@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.44-alpha
+
+- Add configurable Ollama timeout and response length options for local LLMs that need longer than 20 seconds.
+- Default local AI model to `qwen2.5:3b`, matching the recommended GMKTec M6 Ultra setup.
+- Send low-temperature, capped-length Ollama generation options to keep spoken answers concise.
+
 ## v0.7.43-alpha
 
 - Add batched stale-device detail refreshes so important devices can update even when the Maker API device list returns stale or partial state.

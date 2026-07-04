@@ -272,7 +272,9 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     main.CONFIG['ollama_enabled'] = True
     main.CONFIG['ollama_include_hub_logs'] = False
     main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
-    main.CONFIG['ollama_model'] = 'llama3.2'
+    main.CONFIG['ollama_model'] = 'qwen2.5:3b'
+    main.CONFIG['ollama_timeout_seconds'] = 75
+    main.CONFIG['ollama_num_predict'] = 120
     main.all_devices = lambda: [
         {'id': 'w1', 'label': 'Weather Open-Meteo', 'room': 'Weather', 'category': 'weather', 'weatherSummaryLine': 'Clear'},
     ]
@@ -287,6 +289,7 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     def post(url, json, timeout=20):
         captured['url'] = url
         captured['json'] = json
+        captured['timeout'] = timeout
         return Response()
 
     main.requests.post = post
@@ -296,6 +299,9 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     prompt = captured['json']['prompt']
     assert answer['intent'] == 'ollama_answer'
     assert captured['url'] == 'http://ollama.local:11434/api/generate'
+    assert captured['timeout'] == 75
+    assert captured['json']['model'] == 'qwen2.5:3b'
+    assert captured['json']['options']['num_predict'] == 120
     assert 'Context JSON' in prompt
     assert '"weather"' in prompt
     assert 'Device control is handled before you are called' in prompt

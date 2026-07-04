@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.43-alpha` assistant dashboard:
+`v0.7.44-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -167,6 +167,7 @@ ollama_include_hub_logs: true
 - `v0.7.41-alpha` Persistent scheduled device timers with dashboard cancel controls
 - `v0.7.42-alpha` Delayed start commands such as `turn on hallway lights in 15 seconds`
 - `v0.7.43-alpha` Batched stale device detail refresh for devices that do not update reliably from Maker API lists
+- `v0.7.44-alpha` Longer Ollama timeout and shorter local-LLM answers for Home Assistant add-on use
 - `v0.8.0-alpha` Deeper Ollama AI router
 - `v1.0.0-beta` Stable core
 
