@@ -120,6 +120,43 @@ def test_assistant_targets_numbered_light_device_and_speaks_confirmation():
     assert answer['speech'] == 'Livingroom Light 1 turned on.'
 
 
+def test_assistant_controls_device_with_voice_articles_and_punctuation_before_ai():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = True
+    main.all_devices = lambda: [
+        {'id': 'p1', 'label': 'Air Purifier', 'name': 'Air Purifier', 'room': 'Appliances', 'category': 'switch', 'switch': 'on'},
+    ]
+    commands = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_switch = lambda device_ids, switch: []
+    main.ollama_answer = lambda text: (_ for _ in ()).throw(AssertionError('Ollama should not handle deterministic device commands'))
+
+    answer = main.assistant('turn off the air purifier.')
+
+    assert commands == [('p1', 'off')]
+    assert answer['changed'] == ['Air Purifier']
+    assert answer['speech'] == 'Air Purifier turned off.'
+
+
+def test_assistant_controls_room_qualified_fuzzy_device_target():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'd1', 'label': 'Dehumidifier 1', 'name': 'Dehumidifier 1', 'room': 'Bathroom', 'category': 'switch', 'switch': 'off'},
+        {'id': 'd2', 'label': 'Dehumidifier 2', 'name': 'Dehumidifier 2', 'room': 'Bedroom', 'category': 'switch', 'switch': 'off'},
+    ]
+    commands = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_switch = lambda device_ids, switch: []
+
+    answer = main.assistant('turn on dehumidifer in the bathroom')
+
+    assert commands == [('d1', 'on')]
+    assert answer['changed'] == ['Dehumidifier 1']
+    assert answer['speech'] == 'Dehumidifier 1 turned on.'
+
+
 def test_assistant_asks_when_singular_light_target_is_ambiguous():
     main = load_addon_main()
     main.all_devices = lambda: [

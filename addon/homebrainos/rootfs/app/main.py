@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.51-alpha'
+APP_VERSION = '0.7.52-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1391,11 +1391,84 @@ def normalise(text: Any) -> str:
     replacements = {
         'turn of': 'turn off', 'switch of': 'switch off', 'the humidifier': 'dehumidifier',
         'de humidifier': 'dehumidifier', 'humidifier': 'dehumidifier', 'ligth': 'light',
-        'lite': 'light', 'livingroom': 'living room', 'one': '1', 'two': '2', 'three': '3'
+        'lite': 'light', 'livingroom': 'living room', 'one': '1', 'two': '2', 'three': '3',
+        'de humidifer': 'dehumidifier', 'dehumidifer': 'dehumidifier', 'purifer': 'purifier',
+        'purifyer': 'purifier', 'air purify': 'air purifier', 'bath room': 'bathroom',
     }
     for a, b in replacements.items():
         text = re.sub(rf'\b{re.escape(a)}\b', b, text)
+    text = re.sub(r'[^\w\s%-]', ' ', text)
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def command_target_text(text: str) -> str:
+    target = normalise(text)
+    target = re.sub(r'\b(?:please|can you|could you|would you)\b', ' ', target)
+    target = re.sub(r'\b(?:the|a|an|my)\b', ' ', target)
+    return re.sub(r'\s+', ' ', target).strip()
+
+
+def device_match_text(device: dict[str, Any]) -> str:
+    parts = [
+        device.get('label', ''),
+        device.get('name', ''),
+        device.get('room', ''),
+        device.get('category', ''),
+        ' '.join(device.get('capabilities', []) or []),
+        ' '.join(device.get('commands', []) or []),
+    ]
+    attrs = device.get('attributes') or {}
+    parts.extend(str(key) for key in attrs.keys())
+    if is_room_socket_device(device):
+        parts.append('socket plug appliance')
+    if is_level_device(device):
+        parts.append('dimmer brightness level')
+    if is_switchable_device(device):
+        parts.append('switch on off')
+    return command_target_text(' '.join(str(part or '') for part in parts))
+
+
+def targeted_devices(query: str, category: str | None = None, room: str | None = None) -> list[dict[str, Any]]:
+    q = command_target_text(query)
+    room_q = command_target_text(room or '')
+    if not q and not room_q:
+        return []
+    devices = all_devices()
+    if category:
+        devices = [d for d in devices if d['category'] == category]
+    if room_q:
+        room_matches = [
+            d for d in devices
+            if room_q in command_target_text(d.get('room', '')) or room_q in command_target_text(d.get('label', ''))
+        ]
+        if room_matches:
+            devices = room_matches
+    scored: list[tuple[int, dict[str, Any]]] = []
+    query_words = set(q.split())
+    for device in devices:
+        label = command_target_text(device.get('label', ''))
+        name = command_target_text(device.get('name', ''))
+        haystack = device_match_text(device)
+        score = 0
+        if q and (q == label or q == name):
+            score += 100
+        if q and (q in label or q in name):
+            score += 80
+        if q and q in haystack:
+            score += 45
+        if query_words:
+            score += 10 * len(query_words & set(haystack.split()))
+        if room_q:
+            score += 25
+        if score:
+            scored.append((score, device))
+    if not scored:
+        labels = {command_target_text(d.get('label', '')): d for d in devices}
+        match = get_close_matches(q, list(labels.keys()), n=1, cutoff=0.55)
+        return [labels[match[0]]] if match else []
+    scored.sort(key=lambda item: item[0], reverse=True)
+    best = scored[0][0]
+    return [device for score, device in scored if score == best]
 
 
 def find_devices(query: str, category: str | None = None) -> list[dict[str, Any]]:
@@ -1715,7 +1788,7 @@ def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: 
 
 
 def resolve_switch_target(target: str) -> tuple[list[dict[str, Any]], bool, str | None]:
-    target = target.replace('the ', '').strip()
+    target = command_target_text(target)
     explicit_bulk = target in ('all lights', 'all light', 'all switches', 'all switch', 'all devices')
     if target in ('lights', 'light', 'switches', 'switch', 'devices', 'device'):
         return [], explicit_bulk, f"Please specify a room/device, or say 'all {target}' if you mean the whole home."
@@ -1725,6 +1798,16 @@ def resolve_switch_target(target: str) -> tuple[list[dict[str, Any]], bool, str 
         return [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None], explicit_bulk, None
     if target == 'all devices':
         return switchable_devices(all_devices()), explicit_bulk, None
+    m_room_target = re.search(r'^(.+?)\s+(?:in|inside|for)\s+(.+)$', target)
+    if m_room_target:
+        device_target, room = m_room_target.group(1).strip(), m_room_target.group(2).strip()
+        plural_or_group = bool(re.search(r'\b(all|lights|switches|devices)\b', device_target))
+        category = 'light' if re.search(r'\blights?\b', device_target) else None
+        cleaned_target = device_target.replace('lights', '').replace('light', '').replace('switches', '').replace('switch', '').strip()
+        devices = targeted_devices(cleaned_target or device_target, category, room)
+        if not devices and category == 'light':
+            devices = room_devices(room, 'light')
+        return devices, plural_or_group or explicit_bulk, None
     if re.search(r'\b(all\s+)?(.+\s+)?lights$', target):
         room = target.replace('lights', '').replace('light', '').replace('all ', '').strip()
         return room_devices(room, 'light'), True, None
@@ -1734,7 +1817,7 @@ def resolve_switch_target(target: str) -> tuple[list[dict[str, Any]], bool, str 
             room = target.removesuffix(' light').strip()
             devices = room_devices(room, 'light')
         return devices, explicit_bulk, None
-    devices = find_devices(target)
+    devices = targeted_devices(target) or find_devices(target)
     if not devices and not re.search(r'\b(light|switch|plug|socket|dimmer|lamp)\s+\d+$', target):
         devices = room_devices(target)
     return devices, explicit_bulk, None

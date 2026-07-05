@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.52-alpha
+
+- Run deterministic HomeBrain commands before local AI fallback, even when Ollama is enabled but offline.
+- Improve voice command cleanup for punctuation, articles, and common recognition mistakes like `dehumidifer`.
+- Add room-aware fuzzy device targeting so commands such as `turn on dehumidifier in bathroom` can resolve the intended device.
+
 ## v0.7.51-alpha
 
 - Add a visible 15-second command countdown after the voice station hears the wake phrase.
