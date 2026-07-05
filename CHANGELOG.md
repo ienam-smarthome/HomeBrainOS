@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.56-alpha
+
+- Make active-room assistant answers practical by listing only active/on devices in each room.
+- Remove inactive/off counts from active-room output so rooms do not report noisy zero-state details.
+- Keep no-signal rooms such as Life360 out of active-room answers.
+
 ## v0.7.55-alpha
 
 - Add `/api/events` server-sent events for browser-side state change notifications.

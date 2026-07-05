@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.55-alpha'
+APP_VERSION = '0.7.56-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1047,19 +1047,36 @@ def device_diagnostics() -> dict[str, Any]:
 
 
 def active_rooms_answer() -> dict[str, Any]:
-    rooms = [
-        room for room in api_rooms()['rooms']
-        if room.get('motion_active') or room.get('lights_on')
-    ]
-    lines = [
-        f"{room['room']}: {room['lights_on']} lights on, {room['switches_on']} switches on, {room['motion_active']} motion active"
-        for room in rooms
-    ]
+    devices = all_devices()
+    by_room: dict[str, list[str]] = {}
+    active_devices: list[dict[str, Any]] = []
+    for device in devices:
+        label = str(device.get('label') or device.get('name') or '').strip()
+        if not label:
+            continue
+        active_label = ''
+        if is_state(device.get('switch'), 'on'):
+            active_label = f'{label} on'
+        elif is_state(device.get('motion'), 'active'):
+            active_label = f'{label} active'
+        elif 'heat' in normalise(device.get('thermostatOperatingState', '')):
+            active_label = f'{label} heating'
+        if not active_label:
+            continue
+        room = canonical_room_name(device.get('room') or 'Unknown')
+        if room in ('Unknown', 'Life360'):
+            continue
+        by_room.setdefault(room, []).append(active_label)
+        active_devices.append(device)
+    lines = [f"{room}: {', '.join(labels)}" for room, labels in sorted(by_room.items())]
+    rooms = [{'room': room, 'active_devices': labels, 'active_count': len(labels)} for room, labels in sorted(by_room.items())]
     return {
         'success': True,
         'intent': 'active_rooms',
         'message': 'Active rooms:\n' + ('\n'.join(lines) if lines else 'None'),
         'rooms': rooms,
+        'devices': active_devices,
+        'speech': spoken_list(lines) if lines else 'No active rooms.',
     }
 
 

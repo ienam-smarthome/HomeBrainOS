@@ -668,21 +668,27 @@ def test_fridge_meter_is_excluded_from_temperature_and_humidity_averages():
     assert kitchen['avg_humidity'] is None
 
 
-def test_assistant_active_rooms_lists_rooms_not_motion_sensor_detail():
+def test_assistant_active_rooms_lists_only_active_device_names():
     main = load_addon_main()
     main.all_devices = lambda: [
         {'id': 'm1', 'label': 'Kitchen Motion', 'room': 'Kitchen', 'category': 'motion_sensor', 'motion': 'active'},
         {'id': 'm2', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'inactive'},
         {'id': 'l1', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on'},
+        {'id': 'l2', 'label': 'Bedroom Lamp', 'room': 'Bedroom', 'category': 'light', 'switch': 'off'},
         {'id': 's1', 'label': 'Dehumidifier Socket', 'room': 'Dehumidifier', 'category': 'power_device', 'switch': 'on', 'power': 42},
+        {'id': 'p1', 'label': 'Enamul', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'present'},
     ]
 
     active_rooms = main.assistant('which rooms have motion active')
 
     assert active_rooms['intent'] == 'active_rooms'
-    assert 'Kitchen: 0 lights on, 0 switches on, 1 motion active' in active_rooms['message']
-    assert 'Bedroom: 1 lights on, 0 switches on, 0 motion active' in active_rooms['message']
-    assert 'Dehumidifier' not in active_rooms['message']
+    assert 'Kitchen: Kitchen Motion active' in active_rooms['message']
+    assert 'Bedroom: Bedroom Light on' in active_rooms['message']
+    assert 'Dehumidifier: Dehumidifier Socket on' in active_rooms['message']
+    assert '0 lights on' not in active_rooms['message']
+    assert 'Hallway Motion' not in active_rooms['message']
+    assert 'Bedroom Lamp' not in active_rooms['message']
+    assert 'Life360' not in active_rooms['message']
 
 
 def test_assistant_device_health_reports_low_batteries():
