@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.58-alpha'
+APP_VERSION = '0.7.59-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1104,14 +1104,14 @@ def stale_device_report() -> dict[str, Any]:
                 since = history_current_since(conn, device_id, 'motion', device.get('motion'), updated_at)
                 age = now - since
                 if age >= motion_seconds:
-                    motion.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': duration_label(age), 'state': 'motion active'})
+                    motion.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'motion active'})
             if device.get('category') == 'light' and is_state(device.get('switch'), 'on'):
                 since = history_current_since(conn, device_id, 'switch', device.get('switch'), updated_at)
                 age = now - since
                 if age >= light_seconds:
-                    lights.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': duration_label(age), 'state': 'light on'})
+                    lights.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'light on'})
             if updated_at and now - updated_at >= report_seconds:
-                not_reporting.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': now - updated_at, 'duration': duration_label(now - updated_at), 'state': 'not reporting'})
+                not_reporting.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': now - updated_at, 'duration': elapsed_duration_label(now - updated_at), 'state': 'not reporting'})
     finally:
         conn.close()
     issues = motion + lights + not_reporting
@@ -1131,14 +1131,21 @@ def stale_device_report() -> dict[str, Any]:
 def stale_devices_answer() -> dict[str, Any]:
     report = stale_device_report()
     lines = []
+    spoken = []
     if report['motion_active_too_long']:
-        lines.append('Motion active too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in report['motion_active_too_long'][:8]))
+        items = report['motion_active_too_long'][:8]
+        lines.append('Motion active too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
+        spoken.extend(f"{item['label']} motion active for {item['duration']}" for item in items)
     if report['lights_on_too_long']:
-        lines.append('Lights on too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in report['lights_on_too_long'][:8]))
+        items = report['lights_on_too_long'][:8]
+        lines.append('Lights on too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
+        spoken.extend(f"{item['label']} on for {item['duration']}" for item in items)
     if report['not_reporting']:
-        lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in report['not_reporting'][:8]))
+        items = report['not_reporting'][:8]
+        lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
+        spoken.extend(f"{item['label']} not reporting for {item['duration']}" for item in items)
     message = 'Stale device check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
-    speech = f"Stale device check found {report['issue_count']} possible issues." if report['issue_count'] else 'No stale device issues found.'
+    speech = f"Stale device check found {report['issue_count']} possible issues: {spoken_list(spoken)}" if spoken else 'No stale device issues found.'
     return {'success': True, 'intent': 'stale_devices', 'message': message, 'speech': speech, 'stale': report}
 
 
@@ -2087,6 +2094,29 @@ def duration_label(seconds: int) -> str:
         minutes = seconds // 60
         return f"{minutes} minute" + ('' if minutes == 1 else 's')
     return f"{seconds} second" + ('' if seconds == 1 else 's')
+
+
+def elapsed_duration_label(seconds: int) -> str:
+    seconds = max(0, int(seconds))
+    days, remainder = divmod(seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes = round(remainder / 60)
+    if minutes == 60:
+        hours += 1
+        minutes = 0
+    if hours == 24:
+        days += 1
+        hours = 0
+    parts = []
+    if days:
+        parts.append(f"{days} day" + ('' if days == 1 else 's'))
+    if hours:
+        parts.append(f"{hours} hour" + ('' if hours == 1 else 's'))
+    if minutes and not days:
+        parts.append(f"{minutes} minute" + ('' if minutes == 1 else 's'))
+    if not parts:
+        return 'less than 1 minute'
+    return ' '.join(parts[:2])
 
 
 def timer_payload(record: dict[str, Any], now: float | None = None) -> dict[str, Any]:

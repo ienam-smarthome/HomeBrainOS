@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.58-alpha` assistant dashboard:
+`v0.7.59-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -64,6 +64,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Active-room answers list only active/on device names instead of inactive/off counts
 - Room-on and room-detail answers use practical active-state phrases such as on, heating, open, unlocked, present, leak detected, and using power
 - Stale-device checks flag motion active too long, lights left on too long, and devices that have not reported recently
+- Stale-device answers show friendly hours/minutes and speak affected device names plus durations
 - Protected AI context inspection endpoint at `/api/ai/context`
 - Exact heating setpoint commands such as `set hallway heating to 21`
 - Room active-state questions such as `what is on in hallway`
@@ -196,6 +197,7 @@ ollama_health_cache_seconds: 60
 - `v0.7.56-alpha` Active rooms list only active/on device names
 - `v0.7.57-alpha` Room status answers reuse practical active-state phrases and avoid inactive device filler
 - `v0.7.58-alpha` Stale-device checks for stuck motion, lights left on, and quiet devices
+- `v0.7.59-alpha` Stale-device reports use friendly elapsed times and spoken device details
 - `v0.7.50-alpha` Voice station keeps the command window visible across mobile speech-recognition restarts
 - `v0.7.49-alpha` Phone-friendly voice station wake phrase arming for separate wake and command phrases
 - `v0.7.48-alpha` Browser voice station mode with `Hey HomeBrain` wake phrase filtering

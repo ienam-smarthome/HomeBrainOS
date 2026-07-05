@@ -226,9 +226,14 @@ def test_stale_device_report_flags_long_running_states():
         assert [item['label'] for item in report['motion_active_too_long']] == ['Hallway Motion']
         assert [item['label'] for item in report['lights_on_too_long']] == ['Bedroom Light']
         assert 'Bedroom Battery' in [item['label'] for item in report['not_reporting']]
+        assert report['motion_active_too_long'][0]['duration'] == '8 hours'
+        assert report['lights_on_too_long'][0]['duration'] == '8 hours'
         assert 'Fresh Light' not in answer['message']
         assert 'Motion active too long' in answer['message']
         assert 'Lights on too long' in answer['message']
+        assert 'Hallway Motion (Hallway) for 8 hours' in answer['message']
+        assert 'Bedroom Light on for 8 hours' in answer['speech']
+        assert 'Bedroom Battery not reporting for 8 hours' in answer['speech']
         assert answer['intent'] == 'stale_devices'
     finally:
         main.DB_PATH = original_db_path

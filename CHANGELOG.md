@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.59-alpha
+
+- Format stale-device durations as friendly hours/minutes instead of raw seconds.
+- Include affected device names and durations in spoken stale-device responses.
+
 ## v0.7.58-alpha
 
 - Add stale-device checks for motion sensors active too long, lights left on too long, and devices that have not reported recently.
