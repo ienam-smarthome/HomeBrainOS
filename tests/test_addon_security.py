@@ -178,16 +178,20 @@ def test_hubitat_event_updates_cached_device_attribute():
     main = load_addon_main()
     with tempfile.TemporaryDirectory() as tmp:
         main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        start_version = main.STATE_EVENT_VERSION
         main.upsert_devices([
             {'id': 'd1', 'name': 'Bathroom Light', 'label': 'Bathroom Light', 'room': 'Bathroom', 'category': 'light', 'switch': 'off', 'attributes': {'switch': 'off'}},
         ])
 
         result = main.record_hubitat_events({'deviceId': 'd1', 'name': 'switch', 'value': 'on', 'displayName': 'Bathroom Light'})
         device = main.all_devices()[0]
+        status = main.api_status()
 
     assert result['success'] is True
     assert result['events'] == 1
     assert result['updated'] == 1
+    assert main.STATE_EVENT_VERSION == start_version + 1
+    assert status['state_event_version'] == main.STATE_EVENT_VERSION
     assert device['switch'] == 'on'
     assert device['attributes']['switch'] == 'on'
 

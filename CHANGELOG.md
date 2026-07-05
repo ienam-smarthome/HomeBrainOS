@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.55-alpha
+
+- Add `/api/events` server-sent events for browser-side state change notifications.
+- Refresh summary pills, rooms, devices, and timers immediately when Hubitat pushed events update cached state.
+- Include a state event version in `/api/status` for event-driven refresh diagnostics.
+
 ## v0.7.54-alpha
 
 - Add a Hubitat Maker API event webhook at `/api/hubitat/events`.

@@ -86,6 +86,8 @@ let stationRecognizer = null;
 let stationRestart = null;
 let stationArmedUntil = 0;
 let stationArmedTick = null;
+let stateEvents = null;
+let eventRefreshTimer = null;
 async function api(path, options={}){
   const headers = Object.assign({}, options.headers || {});
   if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
@@ -344,6 +346,25 @@ async function status(){
     badge.className='pill error';
   }
 }
+function scheduleEventRefresh(){
+  if(eventRefreshTimer) return;
+  eventRefreshTimer=setTimeout(()=>{
+    eventRefreshTimer=null;
+    status();
+  },250);
+}
+function connectStateEvents(){
+  if(!window.EventSource) return;
+  if(stateEvents) stateEvents.close();
+  const tokenParam=apiToken?'?token='+encodeURIComponent(apiToken):'';
+  stateEvents=new EventSource('/api/events'+tokenParam);
+  stateEvents.addEventListener('state', scheduleEventRefresh);
+  stateEvents.onerror=()=>{
+    if(stateEvents) stateEvents.close();
+    stateEvents=null;
+    setTimeout(connectStateEvents,5000);
+  };
+}
 async function loadDevices(){
   try{
     const r=await api('/api/switches');
@@ -596,7 +617,7 @@ if(urlParams.get('station')==='1'){
 if(urlParams.get('voice')==='1'){
   setVoiceOverlay(true,'Tap the microphone to start. Browsers require one tap before using the mic.');
 }
-applyViewState(); status(); loadTimers(); setInterval(status,30000);
+applyViewState(); status(); loadTimers(); connectStateEvents(); setInterval(status,30000);
 </script>
 </body>
 </html>

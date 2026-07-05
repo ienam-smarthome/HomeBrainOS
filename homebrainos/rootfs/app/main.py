@@ -17,10 +17,10 @@ from urllib.parse import quote
 import requests
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.54-alpha'
+APP_VERSION = '0.7.55-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -98,6 +98,7 @@ LAST_ERROR: str | None = None
 LAST_REFRESH: float | None = None
 LAST_DETAIL_ERRORS: list[str] = []
 LAST_HUBITAT_EVENT: dict[str, Any] | None = None
+STATE_EVENT_VERSION = 0
 PENDING_DEVICE_TIMERS: dict[str, dict[str, Any]] = {}
 ACTIVE_TIMER_THREADS: dict[str, threading.Timer] = {}
 OLLAMA_HEALTH: dict[str, Any] = {'checked_at': 0.0, 'online': None, 'message': 'Not checked', 'base_url': '', 'model': ''}
@@ -724,7 +725,7 @@ def event_records_from_payload(payload: Any) -> list[dict[str, Any]]:
 
 
 def record_hubitat_events(payload: Any) -> dict[str, Any]:
-    global LAST_HUBITAT_EVENT
+    global LAST_HUBITAT_EVENT, STATE_EVENT_VERSION
     now = int(time.time())
     records = event_records_from_payload(payload)
     updated: list[dict[str, Any]] = []
@@ -748,6 +749,8 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         'updated': len(updated),
         'last': records[-1] if records else None,
     }
+    if records:
+        STATE_EVENT_VERSION += 1
     return {'success': True, 'events': len(records), 'updated': len(updated), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated}
 
 
@@ -2767,7 +2770,25 @@ async def startup() -> None:
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health()}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health()}
+
+
+@app.get('/api/events')
+async def api_events(request: Request):
+    require_event_token(request)
+
+    async def stream():
+        last_seen = STATE_EVENT_VERSION
+        yield f"event: hello\ndata: {json.dumps({'version': APP_VERSION, 'state_event_version': last_seen})}\n\n"
+        while True:
+            if await request.is_disconnected():
+                break
+            if STATE_EVENT_VERSION != last_seen:
+                last_seen = STATE_EVENT_VERSION
+                yield f"event: state\ndata: {json.dumps({'state_event_version': last_seen, 'last_hubitat_event': LAST_HUBITAT_EVENT})}\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(stream(), media_type='text/event-stream')
 
 
 @app.post('/api/hubitat/events')
