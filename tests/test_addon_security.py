@@ -157,6 +157,23 @@ def test_assistant_controls_room_qualified_fuzzy_device_target():
     assert answer['speech'] == 'Dehumidifier 1 turned on.'
 
 
+def test_assistant_ignores_trailing_voice_filler_in_device_target():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'd1', 'label': 'Dehumidifier 1', 'name': 'Dehumidifier 1', 'room': 'Bathroom', 'category': 'switch', 'switch': 'on'},
+    ]
+    commands = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.refresh_devices = lambda: None
+    main.update_cached_switch = lambda device_ids, switch: []
+
+    answer = main.assistant('turn off dehumidifier to')
+
+    assert commands == [('d1', 'off')]
+    assert answer['changed'] == ['Dehumidifier 1']
+    assert answer['speech'] == 'Dehumidifier 1 turned off.'
+
+
 def test_assistant_asks_when_singular_light_target_is_ambiguous():
     main = load_addon_main()
     main.all_devices = lambda: [

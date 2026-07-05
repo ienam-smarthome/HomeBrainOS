@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.53-alpha
+
+- Show the dashboard version from the running API so the Web UI header cannot get stuck on an old hardcoded version.
+- Ignore dangling voice-recognition filler words such as `to` at the end of device commands.
+- Add coverage for `turn off dehumidifier to` so noisy mobile transcripts still control the intended device.
+
 ## v0.7.52-alpha
 
 - Run deterministic HomeBrain commands before local AI fallback, even when Ollama is enabled but offline.

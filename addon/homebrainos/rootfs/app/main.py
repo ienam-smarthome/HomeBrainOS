@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.52-alpha'
+APP_VERSION = '0.7.53-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1405,6 +1405,7 @@ def command_target_text(text: str) -> str:
     target = normalise(text)
     target = re.sub(r'\b(?:please|can you|could you|would you)\b', ' ', target)
     target = re.sub(r'\b(?:the|a|an|my)\b', ' ', target)
+    target = re.sub(r'\b(?:to|too|for|in|on|off)\s*$', ' ', target)
     return re.sub(r'\s+', ' ', target).strip()
 
 

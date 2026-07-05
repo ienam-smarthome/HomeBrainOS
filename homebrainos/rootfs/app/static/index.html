@@ -10,7 +10,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>🏠 HomeBrain OS <small>v0.7.51</small></h1>
+  <h1>🏠 HomeBrain OS <small id="appVersion">v...</small></h1>
   <div class="card"><span class="pill" id="status">Checking...</span></div>
   <div class="card view-card">
     <div class="view-controls" id="viewControls">
@@ -326,6 +326,7 @@ async function status(){
   const badge=$('status');
   try{
     const s=await api('/api/status');
+    if(s.version) $('appVersion').textContent='v'+String(s.version).replace(/-alpha$/,'');
     const hub=s.hub_health&&s.hub_health.available?' · '+s.hub_health.label:'';
     badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices'+hub;
     badge.className=s.error?'pill error':(s.hub_health&&s.hub_health.level==='warning'?'pill warning':(s.hub_health&&s.hub_health.level==='error'?'pill error':'pill'));
