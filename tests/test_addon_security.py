@@ -542,10 +542,12 @@ def test_assistant_reports_active_devices_in_named_room():
     answer = main.assistant('what is on in hallway')
 
     assert answer['intent'] == 'room_on_status'
-    assert 'Hallway Light' in answer['message']
-    assert 'Hallway TRV' in answer['message']
+    assert 'Hallway active now:' in answer['message']
+    assert 'Hallway Light on' in answer['message']
+    assert 'Hallway TRV heating' in answer['message']
+    assert 'Hallway Plug' not in answer['message']
     assert 'Bedroom Light' not in answer['message']
-    assert answer['speech'] == 'Hallway: Hallway Light and Hallway TRV.'
+    assert answer['speech'] == 'Hallway: Hallway Light on and Hallway TRV heating.'
 
 
 def test_assistant_turns_device_on_for_duration_and_schedules_off():
@@ -673,7 +675,7 @@ def test_assistant_active_rooms_lists_only_active_device_names():
     main.all_devices = lambda: [
         {'id': 'm1', 'label': 'Kitchen Motion', 'room': 'Kitchen', 'category': 'motion_sensor', 'motion': 'active'},
         {'id': 'm2', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'inactive'},
-        {'id': 'l1', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on'},
+        {'id': 'l1', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on', 'level': 30},
         {'id': 'l2', 'label': 'Bedroom Lamp', 'room': 'Bedroom', 'category': 'light', 'switch': 'off'},
         {'id': 's1', 'label': 'Dehumidifier Socket', 'room': 'Dehumidifier', 'category': 'power_device', 'switch': 'on', 'power': 42},
         {'id': 'p1', 'label': 'Enamul', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'present'},
@@ -683,8 +685,8 @@ def test_assistant_active_rooms_lists_only_active_device_names():
 
     assert active_rooms['intent'] == 'active_rooms'
     assert 'Kitchen: Kitchen Motion active' in active_rooms['message']
-    assert 'Bedroom: Bedroom Light on' in active_rooms['message']
-    assert 'Dehumidifier: Dehumidifier Socket on' in active_rooms['message']
+    assert 'Bedroom: Bedroom Light on at 30%' in active_rooms['message']
+    assert 'Dehumidifier: Dehumidifier Socket on, using 42W' in active_rooms['message']
     assert '0 lights on' not in active_rooms['message']
     assert 'Hallway Motion' not in active_rooms['message']
     assert 'Bedroom Lamp' not in active_rooms['message']
@@ -786,6 +788,7 @@ def test_room_details_explain_visible_signals_and_devices():
     assert details['room']['lights_total'] == 1
     assert details['room']['motion_total'] == 1
     assert details['visible_signals'] == ['lights', 'motion']
+    assert 'Active now: none' in details['explanation']
     assert 'Signals: lights, motion' in details['explanation']
     assert [device['label'] for device in details['devices']] == ['Bedroom 3 Light', 'Bedroom 3 Motion']
 
@@ -799,6 +802,7 @@ def test_room_details_explain_empty_signal_rooms():
     details = main.room_details_payload('Apps')
 
     assert details['visible_signals'] == []
+    assert 'Active now: none' in details['explanation']
     assert 'No summarized signals yet' in details['explanation']
     assert details['devices'][0]['label'] == 'Calendar App'
 

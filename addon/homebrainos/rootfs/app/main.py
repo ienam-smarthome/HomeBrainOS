@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.56-alpha'
+APP_VERSION = '0.7.57-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1051,16 +1051,7 @@ def active_rooms_answer() -> dict[str, Any]:
     by_room: dict[str, list[str]] = {}
     active_devices: list[dict[str, Any]] = []
     for device in devices:
-        label = str(device.get('label') or device.get('name') or '').strip()
-        if not label:
-            continue
-        active_label = ''
-        if is_state(device.get('switch'), 'on'):
-            active_label = f'{label} on'
-        elif is_state(device.get('motion'), 'active'):
-            active_label = f'{label} active'
-        elif 'heat' in normalise(device.get('thermostatOperatingState', '')):
-            active_label = f'{label} heating'
+        active_label = active_device_phrase(device)
         if not active_label:
             continue
         room = canonical_room_name(device.get('room') or 'Unknown')
@@ -1078,6 +1069,35 @@ def active_rooms_answer() -> dict[str, Any]:
         'devices': active_devices,
         'speech': spoken_list(lines) if lines else 'No active rooms.',
     }
+
+
+def active_device_phrase(device: dict[str, Any]) -> str:
+    label = str(device.get('label') or device.get('name') or '').strip()
+    if not label:
+        return ''
+    level = safe_float(device.get('level'))
+    power = safe_float(device.get('power'))
+    if is_state(device.get('switch'), 'on'):
+        if device.get('category') == 'light' and level is not None:
+            return f'{label} on at {level:g}%'
+        if power is not None and power >= 1:
+            return f'{label} on, using {format_power_value(power)}'
+        return f'{label} on'
+    if is_state(device.get('motion'), 'active'):
+        return f'{label} active'
+    if is_state(device.get('contact'), 'open'):
+        return f'{label} open'
+    if is_state(device.get('lock'), 'unlocked'):
+        return f'{label} unlocked'
+    if is_state(device.get('water'), 'wet', 'detected'):
+        return f'{label} leak detected'
+    if is_state(device.get('presence'), 'present'):
+        return f'{label} present'
+    if 'heat' in normalise(device.get('thermostatOperatingState', '')):
+        return f'{label} heating'
+    if power is not None and power >= 3:
+        return f'{label} using {format_power_value(power)}'
+    return ''
 
 
 def cold_rooms_answer() -> dict[str, Any]:
@@ -1119,25 +1139,11 @@ def room_on_status_answer(room: str) -> dict[str, Any]:
     devices = room_devices(room)
     if not devices:
         return {'success': False, 'intent': 'room_on_status', 'message': f'I found no devices in {room}.'}
-    lights = [d for d in devices if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
-    switches = [
-        d for d in devices
-        if d.get('category') != 'light'
-        and d.get('switch') is not None
-        and is_state(d.get('switch'), 'on')
-    ]
-    heating = [d for d in climate_control_devices(devices) if 'heat' in normalise(d.get('thermostatOperatingState', ''))]
-    lines = []
-    if lights:
-        lines.append('Lights on:\n' + '\n'.join(d['label'] for d in lights))
-    if switches:
-        lines.append('Switches on:\n' + '\n'.join(d['label'] for d in switches))
-    if heating:
-        lines.append('Heating active:\n' + '\n'.join(d['label'] for d in heating))
-    active = lights + switches + heating
+    active = [d for d in devices if active_device_phrase(d)]
+    lines = [active_device_phrase(d) for d in active]
     room_name = canonical_room_name(room)
-    message = f'{room_name} active devices:\n' + ('\n\n'.join(lines) if lines else 'None')
-    speech = f"{room_name}: {spoken_list([d['label'] for d in active])}" if active else f'{room_name}: nothing is on.'
+    message = f'{room_name} active now:\n' + ('\n'.join(lines) if lines else 'Nothing active.')
+    speech = f"{room_name}: {spoken_list(lines)}" if active else f'{room_name}: nothing is active.'
     return {'success': True, 'intent': 'room_on_status', 'message': message, 'speech': speech, 'devices': active, 'room': room_name}
 
 
@@ -1710,6 +1716,12 @@ def room_detail_device(device: dict[str, Any]) -> dict[str, Any]:
 def room_explanation(summary: dict[str, Any], devices: list[dict[str, Any]]) -> str:
     signals = room_visible_signals(summary)
     lines = [f"{summary['room']}: {summary['devices']} devices"]
+    active = [active_device_phrase(device) for device in devices]
+    active = [item for item in active if item]
+    if active:
+        lines.append('Active now: ' + ', '.join(active[:8]) + ('' if len(active) <= 8 else f", +{len(active) - 8} more"))
+    else:
+        lines.append('Active now: none')
     if signals:
         lines.append('Signals: ' + ', '.join(signals))
     else:
@@ -1728,10 +1740,6 @@ def room_explanation(summary: dict[str, Any], devices: list[dict[str, Any]]) -> 
         lines.append(f"Humidity: {summary['avg_humidity']}%")
     if summary.get('power_devices'):
         lines.append(f"Power: {format_power_value(summary.get('power_total'))}")
-    device_labels = ', '.join((d.get('label') or d.get('name') or 'Unknown device') for d in devices[:6])
-    if device_labels:
-        suffix = '' if len(devices) <= 6 else f", +{len(devices) - 6} more"
-        lines.append('Includes: ' + device_labels + suffix)
     return '\n'.join(lines)
 
 

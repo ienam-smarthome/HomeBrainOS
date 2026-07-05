@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.57-alpha
+
+- Reuse one practical active-state formatter across active rooms, room status, and room detail answers.
+- Show useful active details such as light level, live power, heating, open contacts, unlocked locks, presence, and leak alerts.
+- Remove inactive device-name filler from room detail explanations.
+
 ## v0.7.56-alpha
 
 - Make active-room assistant answers practical by listing only active/on devices in each room.
