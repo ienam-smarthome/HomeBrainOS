@@ -196,6 +196,44 @@ def test_hubitat_event_updates_cached_device_attribute():
     assert device['attributes']['switch'] == 'on'
 
 
+def test_stale_device_report_flags_long_running_states():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            now = int(main.time.time())
+            old = now - 8 * 3600
+            main.CONFIG['stale_motion_active_minutes'] = 30
+            main.CONFIG['stale_light_on_hours'] = 4
+            main.CONFIG['stale_device_report_hours'] = 6
+            main.upsert_devices([
+                {'id': 'm1', 'name': 'Hallway Motion', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'active', 'attributes': {'motion': 'active'}},
+                {'id': 'l1', 'name': 'Bedroom Light', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on', 'attributes': {'switch': 'on'}},
+                {'id': 's1', 'name': 'Fresh Light', 'label': 'Fresh Light', 'room': 'Kitchen', 'category': 'light', 'switch': 'on', 'attributes': {'switch': 'on'}},
+                {'id': 'b1', 'name': 'Bedroom Battery', 'label': 'Bedroom Battery', 'room': 'Bedroom', 'category': 'battery_sensor', 'battery': 55, 'attributes': {'battery': 55}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('UPDATE devices SET updated_at=? WHERE id IN (?, ?, ?)', (old, 'm1', 'l1', 'b1'))
+                conn.commit()
+            finally:
+                conn.close()
+
+            report = main.stale_device_report()
+            answer = main.assistant('stale devices')
+
+        assert [item['label'] for item in report['motion_active_too_long']] == ['Hallway Motion']
+        assert [item['label'] for item in report['lights_on_too_long']] == ['Bedroom Light']
+        assert 'Bedroom Battery' in [item['label'] for item in report['not_reporting']]
+        assert 'Fresh Light' not in answer['message']
+        assert 'Motion active too long' in answer['message']
+        assert 'Lights on too long' in answer['message']
+        assert answer['intent'] == 'stale_devices'
+    finally:
+        main.DB_PATH = original_db_path
+
+
 def test_hubitat_event_parser_accepts_events_array():
     main = load_addon_main()
     events = main.event_records_from_payload({'events': [

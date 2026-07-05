@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.58-alpha
+
+- Add stale-device checks for motion sensors active too long, lights left on too long, and devices that have not reported recently.
+- Expose stale checks through assistant phrases such as `stale devices`, `lights left on`, and `not reporting`.
+- Add `/api/stale-devices` plus configurable stale thresholds in the add-on options.
+
 ## v0.7.57-alpha
 
 - Reuse one practical active-state formatter across active rooms, room status, and room detail answers.

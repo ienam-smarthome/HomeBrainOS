@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.57-alpha'
+APP_VERSION = '0.7.58-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -86,6 +86,9 @@ def load_config() -> dict[str, Any]:
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '300')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '30')),
+        'stale_motion_active_minutes': int(os.getenv('STALE_MOTION_ACTIVE_MINUTES', '30')),
+        'stale_light_on_hours': int(os.getenv('STALE_LIGHT_ON_HOURS', '4')),
+        'stale_device_report_hours': int(os.getenv('STALE_DEVICE_REPORT_HOURS', '24')),
         'heating_on_delta': float(os.getenv('HEATING_ON_DELTA', '1')),
         'heating_off_setpoint': float(os.getenv('HEATING_OFF_SETPOINT', '12')),
         'hubitat_logs_path': os.getenv('HUBITAT_LOGS_PATH', '/logs/past'),
@@ -1030,6 +1033,7 @@ def device_diagnostics() -> dict[str, Any]:
     temp_devices = [d for d in devices if isinstance(d.get('temperature'), (int, float))]
     humidity_devices = [d for d in devices if isinstance(d.get('humidity'), (int, float))]
     power_devices = [d for d in devices if isinstance(d.get('power'), (int, float))]
+    stale = stale_device_report()
     return {
         'devices': len(devices),
         'switchable': len(switchable),
@@ -1040,10 +1044,102 @@ def device_diagnostics() -> dict[str, Any]:
         'temperature_devices': len(temp_devices),
         'humidity_devices': len(humidity_devices),
         'power_devices': len(power_devices),
+        'stale_issues': stale['issue_count'],
+        'stale': stale,
         'last_error': LAST_ERROR,
         'detail_errors': LAST_DETAIL_ERRORS,
         'last_refresh': LAST_REFRESH,
     }
+
+
+def history_current_since(conn: sqlite3.Connection, device_id: str, attr: str, current_value: Any, fallback: int) -> int:
+    current_text = str(current_value)
+    row = conn.execute(
+        'SELECT created_at FROM history WHERE device_id=? AND attr=? AND value=? ORDER BY created_at DESC LIMIT 1',
+        (str(device_id), attr, current_text),
+    ).fetchone()
+    if row:
+        return int(row['created_at'])
+    row = conn.execute(
+        'SELECT created_at FROM history WHERE device_id=? AND attr=? ORDER BY created_at DESC LIMIT 1',
+        (str(device_id), attr),
+    ).fetchone()
+    if row:
+        return int(row['created_at'])
+    return fallback
+
+
+def stale_device_report() -> dict[str, Any]:
+    now = int(time.time())
+    motion_seconds = max(1, int(CONFIG.get('stale_motion_active_minutes', 30))) * 60
+    light_seconds = max(1, int(CONFIG.get('stale_light_on_hours', 4))) * 3600
+    report_seconds = max(1, int(CONFIG.get('stale_device_report_hours', 24))) * 3600
+    motion: list[dict[str, Any]] = []
+    lights: list[dict[str, Any]] = []
+    not_reporting: list[dict[str, Any]] = []
+    empty_report = {
+        'motion_active_too_long': motion,
+        'lights_on_too_long': lights,
+        'not_reporting': not_reporting,
+        'issue_count': 0,
+        'thresholds': {
+            'motion_active': duration_label(motion_seconds),
+            'light_on': duration_label(light_seconds),
+            'not_reporting': duration_label(report_seconds),
+        },
+    }
+    try:
+        conn = db()
+    except sqlite3.Error:
+        return empty_report
+    try:
+        rows = conn.execute('SELECT id, label, room, category, json, updated_at FROM devices ORDER BY label').fetchall()
+        for row in rows:
+            device = json.loads(row['json'])
+            device_id = str(row['id'])
+            updated_at = int(row['updated_at'] or 0)
+            label = device.get('label') or row['label'] or device_id
+            room = device.get('room') or row['room'] or 'Unknown'
+            if is_state(device.get('motion'), 'active'):
+                since = history_current_since(conn, device_id, 'motion', device.get('motion'), updated_at)
+                age = now - since
+                if age >= motion_seconds:
+                    motion.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': duration_label(age), 'state': 'motion active'})
+            if device.get('category') == 'light' and is_state(device.get('switch'), 'on'):
+                since = history_current_since(conn, device_id, 'switch', device.get('switch'), updated_at)
+                age = now - since
+                if age >= light_seconds:
+                    lights.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': duration_label(age), 'state': 'light on'})
+            if updated_at and now - updated_at >= report_seconds:
+                not_reporting.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': now - updated_at, 'duration': duration_label(now - updated_at), 'state': 'not reporting'})
+    finally:
+        conn.close()
+    issues = motion + lights + not_reporting
+    return {
+        'motion_active_too_long': motion,
+        'lights_on_too_long': lights,
+        'not_reporting': not_reporting,
+        'issue_count': len(issues),
+        'thresholds': {
+            'motion_active': duration_label(motion_seconds),
+            'light_on': duration_label(light_seconds),
+            'not_reporting': duration_label(report_seconds),
+        },
+    }
+
+
+def stale_devices_answer() -> dict[str, Any]:
+    report = stale_device_report()
+    lines = []
+    if report['motion_active_too_long']:
+        lines.append('Motion active too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in report['motion_active_too_long'][:8]))
+    if report['lights_on_too_long']:
+        lines.append('Lights on too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in report['lights_on_too_long'][:8]))
+    if report['not_reporting']:
+        lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in report['not_reporting'][:8]))
+    message = 'Stale device check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
+    speech = f"Stale device check found {report['issue_count']} possible issues." if report['issue_count'] else 'No stale device issues found.'
+    return {'success': True, 'intent': 'stale_devices', 'message': message, 'speech': speech, 'stale': report}
 
 
 def active_rooms_answer() -> dict[str, Any]:
@@ -1151,14 +1247,22 @@ def device_health_answer() -> dict[str, Any]:
     summary = dashboard_summary()
     diagnostics = device_diagnostics()
     low_battery = [format_summary_device(d, 'battery', '%') for d in summary['low_battery_devices']]
+    stale = diagnostics['stale']
     lines = [
         f"Devices: {diagnostics['devices']}",
         f"Unknown switch states: {diagnostics['unknown_switch_state']}",
         f"Unknown rooms: {diagnostics['unknown_room']}",
         f"Low batteries: {summary['low_batteries']}",
+        f"Stale issues: {stale['issue_count']}",
     ]
     if low_battery:
         lines.append('Low battery devices:\n' + '\n'.join(low_battery))
+    if stale['motion_active_too_long']:
+        lines.append('Motion active too long:\n' + '\n'.join(f"{item['label']} - {item['duration']}" for item in stale['motion_active_too_long'][:5]))
+    if stale['lights_on_too_long']:
+        lines.append('Lights on too long:\n' + '\n'.join(f"{item['label']} - {item['duration']}" for item in stale['lights_on_too_long'][:5]))
+    if stale['not_reporting']:
+        lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} - {item['duration']}" for item in stale['not_reporting'][:5]))
     if diagnostics['last_error']:
         lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
     return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
@@ -2531,7 +2635,7 @@ def assistant(text: str) -> dict[str, Any]:
             'message': (
                 "I can summarize the home, read weather, list lights or switches that are on, answer temperature/humidity/power/battery questions, "
                 "control switchable devices, keep a device on for a timed duration, set heating temperatures, adjust brightness, "
-                "refresh or clear the cache, list room devices, read hub logs, and run diagnostics."
+                "refresh or clear the cache, list room devices, read hub logs, check stale devices, and run diagnostics."
             ),
         }
     if 'weather' in t or 'forecast' in t:
@@ -2551,6 +2655,16 @@ def assistant(text: str) -> dict[str, Any]:
         return room_on_status_answer(m_room_on.group(1).strip())
     if 'hub health' in t or 'hub info' in t or 'hubitat health' in t:
         return hub_health_answer()
+    if (
+        'stale' in t
+        or 'stuck' in t
+        or 'left on' in t
+        or 'on too long' in t
+        or 'active too long' in t
+        or 'not reporting' in t
+        or 'offline device' in t
+    ):
+        return stale_devices_answer()
     if 'device health' in t or 'home health' in t:
         return device_health_answer()
     room_answer = room_details_answer(t)
@@ -2569,6 +2683,7 @@ def assistant(text: str) -> dict[str, Any]:
             f"Temperature sensors: {d['temperature_devices']}",
             f"Humidity sensors: {d['humidity_devices']}",
             f"Power sensors: {d['power_devices']}",
+            f"Stale issues: {d['stale_issues']}",
         ]
         if d['unknown_switch_examples']:
             lines.append('Unknown switch examples:\n' + '\n'.join(d['unknown_switch_examples']))
@@ -2854,6 +2969,11 @@ def api_cancel_timer(timer_id: str, request: Request):
 @app.get('/api/hub/logs')
 def api_hub_logs():
     return {'success': True, **hub_logs_diagnostics()}
+
+
+@app.get('/api/stale-devices')
+def api_stale_devices():
+    return {'success': True, **stale_device_report()}
 
 
 @app.get('/api/ai/context')
