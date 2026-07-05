@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.53-alpha` assistant dashboard:
+`v0.7.54-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -59,6 +59,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Structured local AI context pack for Ollama with summary, weather, hub health, diagnostics, active rooms, and device facts
 - Deterministic command-first routing so basic device commands still execute immediately when local AI is offline
 - Dashboard header version is read from the running API, and voice commands ignore dangling filler like `to`
+- Hubitat Maker API event webhook for immediate cache updates from pushed device events
 - Protected AI context inspection endpoint at `/api/ai/context`
 - Exact heating setpoint commands such as `set hallway heating to 21`
 - Room active-state questions such as `what is on in hallway`
@@ -186,6 +187,7 @@ ollama_health_cache_seconds: 60
 - `v0.7.51-alpha` Voice station shows a command countdown and suppresses harmless mobile no-speech resets
 - `v0.7.52-alpha` Voice cleanup and room-aware fuzzy device targeting before Ollama fallback
 - `v0.7.53-alpha` Dynamic Web UI version label and trailing voice-filler cleanup
+- `v0.7.54-alpha` Hubitat event webhook updates cached device state immediately
 - `v0.7.50-alpha` Voice station keeps the command window visible across mobile speech-recognition restarts
 - `v0.7.49-alpha` Phone-friendly voice station wake phrase arming for separate wake and command phrases
 - `v0.7.48-alpha` Browser voice station mode with `Hey HomeBrain` wake phrase filtering

@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.53-alpha'
+APP_VERSION = '0.7.54-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -97,6 +97,7 @@ CONFIG = load_config()
 LAST_ERROR: str | None = None
 LAST_REFRESH: float | None = None
 LAST_DETAIL_ERRORS: list[str] = []
+LAST_HUBITAT_EVENT: dict[str, Any] | None = None
 PENDING_DEVICE_TIMERS: dict[str, dict[str, Any]] = {}
 ACTIVE_TIMER_THREADS: dict[str, threading.Timer] = {}
 OLLAMA_HEALTH: dict[str, Any] = {'checked_at': 0.0, 'online': None, 'message': 'Not checked', 'base_url': '', 'model': ''}
@@ -154,9 +155,21 @@ def db() -> sqlite3.Connection:
             status TEXT NOT NULL DEFAULT 'pending'
         )
     ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS hubitat_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT,
+            label TEXT,
+            attr TEXT,
+            value TEXT,
+            raw TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    ''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_room_category ON devices(room, category)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_history_device_created ON history(device_id, created_at)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_device_timers_status_due ON device_timers(status, due_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_hubitat_events_created ON hubitat_events(created_at)')
     return conn
 
 
@@ -266,6 +279,19 @@ def require_api_token(request: Request) -> None:
     supplied = request.headers.get('x-homebrain-token', '')
     if not supplied or not hmac.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail='Missing or invalid HomeBrain API token.')
+
+
+def require_event_token(request: Request) -> None:
+    expected = str(CONFIG.get('api_token', '') or '').strip()
+    if not expected:
+        return
+    supplied = (
+        request.headers.get('x-homebrain-token', '')
+        or request.query_params.get('token', '')
+        or request.query_params.get('homebrain_token', '')
+    )
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail='Missing or invalid HomeBrain event token.')
 
 
 def attr_map(device: dict[str, Any]) -> dict[str, Any]:
@@ -636,6 +662,93 @@ def update_cached_thermostat_mode(device_ids: list[str], mode: str) -> list[dict
     finally:
         conn.close()
     return updated
+
+
+def update_cached_attribute(device_id: str, attr: str, value: Any, label: str | None = None) -> dict[str, Any] | None:
+    now = int(time.time())
+    attr = str(attr or '').strip()
+    if not device_id or not attr:
+        return None
+    conn = db()
+    try:
+        row = conn.execute('SELECT json, detail_refreshed_at FROM devices WHERE id=?', (str(device_id),)).fetchone()
+        if not row:
+            return None
+        device = json.loads(row['json'])
+        if label and not device.get('label'):
+            device['label'] = label
+        device.setdefault('attributes', {})[attr] = value
+        device[attr] = safe_float(value) if attr in ('temperature', 'humidity', 'illuminance', 'power', 'energy', 'battery', 'pressure', 'windSpeed', 'wind_gust', 'windDirection', 'precipitationToday') else value
+        normalized = normalise_device(device)
+        normalized['capabilities'] = device.get('capabilities', normalized.get('capabilities', []))
+        normalized['commands'] = device.get('commands', normalized.get('commands', []))
+        normalized['_detail_refreshed_at'] = row['detail_refreshed_at']
+        conn.execute('''
+            UPDATE devices SET json=?, category=?, switch=?, temperature=?, humidity=?, power=?, energy=?, battery=?, updated_at=?
+            WHERE id=?
+        ''', (
+            json.dumps(normalized), normalized.get('category'), normalized.get('switch'), normalized.get('temperature'),
+            normalized.get('humidity'), normalized.get('power'), normalized.get('energy'), normalized.get('battery'),
+            now, str(device_id)
+        ))
+        conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', (str(device_id), attr, str(value), now))
+        conn.commit()
+        return normalized
+    finally:
+        conn.close()
+
+
+def event_records_from_payload(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        events = payload
+    elif isinstance(payload, dict):
+        for key in ('events', 'content', 'items'):
+            if isinstance(payload.get(key), list):
+                events = payload[key]
+                break
+        else:
+            events = [payload]
+    else:
+        return []
+    records: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        device_id = event.get('deviceId') or event.get('device_id') or event.get('device') or event.get('id')
+        attr = event.get('name') or event.get('attribute') or event.get('attr')
+        value = event.get('value')
+        label = event.get('displayName') or event.get('label') or event.get('deviceLabel') or event.get('deviceName')
+        if device_id and attr:
+            records.append({'device_id': str(device_id), 'attr': str(attr), 'value': value, 'label': str(label) if label else None, 'raw': event})
+    return records
+
+
+def record_hubitat_events(payload: Any) -> dict[str, Any]:
+    global LAST_HUBITAT_EVENT
+    now = int(time.time())
+    records = event_records_from_payload(payload)
+    updated: list[dict[str, Any]] = []
+    conn = db()
+    try:
+        for event in records:
+            conn.execute(
+                'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
+                (event['device_id'], event.get('label'), event['attr'], str(event.get('value')), json.dumps(event['raw']), now),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    for event in records:
+        device = update_cached_attribute(event['device_id'], event['attr'], event.get('value'), event.get('label'))
+        if device:
+            updated.append(device)
+    LAST_HUBITAT_EVENT = {
+        'received_at': now,
+        'count': len(records),
+        'updated': len(updated),
+        'last': records[-1] if records else None,
+    }
+    return {'success': True, 'events': len(records), 'updated': len(updated), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated}
 
 
 def refresh_devices() -> int:
@@ -2654,7 +2767,27 @@ async def startup() -> None:
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health()}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health()}
+
+
+@app.post('/api/hubitat/events')
+async def api_hubitat_events(request: Request):
+    require_event_token(request)
+    content_type = request.headers.get('content-type', '')
+    try:
+        payload = await request.json()
+    except Exception:
+        body = (await request.body()).decode('utf-8', errors='replace').strip()
+        if 'application/x-www-form-urlencoded' in content_type:
+            payload = dict(request.query_params)
+            if body:
+                payload['body'] = body
+        else:
+            try:
+                payload = json.loads(body) if body else {}
+            except Exception:
+                payload = {'body': body}
+    return record_hubitat_events(payload)
 
 
 @app.get('/api/timers')

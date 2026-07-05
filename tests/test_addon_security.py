@@ -174,6 +174,33 @@ def test_assistant_ignores_trailing_voice_filler_in_device_target():
     assert answer['speech'] == 'Dehumidifier 1 turned off.'
 
 
+def test_hubitat_event_updates_cached_device_attribute():
+    main = load_addon_main()
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        main.upsert_devices([
+            {'id': 'd1', 'name': 'Bathroom Light', 'label': 'Bathroom Light', 'room': 'Bathroom', 'category': 'light', 'switch': 'off', 'attributes': {'switch': 'off'}},
+        ])
+
+        result = main.record_hubitat_events({'deviceId': 'd1', 'name': 'switch', 'value': 'on', 'displayName': 'Bathroom Light'})
+        device = main.all_devices()[0]
+
+    assert result['success'] is True
+    assert result['events'] == 1
+    assert result['updated'] == 1
+    assert device['switch'] == 'on'
+    assert device['attributes']['switch'] == 'on'
+
+
+def test_hubitat_event_parser_accepts_events_array():
+    main = load_addon_main()
+    events = main.event_records_from_payload({'events': [
+        {'device_id': 123, 'attribute': 'power', 'value': 42, 'label': 'Desk Plug'},
+    ]})
+
+    assert events == [{'device_id': '123', 'attr': 'power', 'value': 42, 'label': 'Desk Plug', 'raw': {'device_id': 123, 'attribute': 'power', 'value': 42, 'label': 'Desk Plug'}}]
+
+
 def test_assistant_asks_when_singular_light_target_is_ambiguous():
     main = load_addon_main()
     main.all_devices = lambda: [

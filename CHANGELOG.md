@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.54-alpha
+
+- Add a Hubitat Maker API event webhook at `/api/hubitat/events`.
+- Update the SQLite device cache immediately when pushed Hubitat events arrive.
+- Expose last received Hubitat event status through `/api/status` for refresh diagnostics.
+
 ## v0.7.53-alpha
 
 - Show the dashboard version from the running API so the Web UI header cannot get stuck on an old hardcoded version.
