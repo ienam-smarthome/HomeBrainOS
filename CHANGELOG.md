@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.60-alpha
+
+- Add deterministic answers for questions such as `how long has the TV been on` and `when did the TV turn on`.
+- Use the latest HomeBrain history or Hubitat event row for the current state instead of letting local AI guess.
+- Report the current state clearly when the requested state does not match, for example `TV is currently off, not on`.
+
 ## v0.7.59-alpha
 
 - Format stale-device durations as friendly hours/minutes instead of raw seconds.

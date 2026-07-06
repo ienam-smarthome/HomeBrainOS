@@ -239,6 +239,47 @@ def test_stale_device_report_flags_long_running_states():
         main.DB_PATH = original_db_path
 
 
+def test_device_state_duration_uses_latest_matching_state_change():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            now = int(main.time.time())
+            main.upsert_devices([
+                {'id': 'tv1', 'name': 'TV', 'label': 'TV', 'room': 'Multimedia', 'category': 'switch', 'switch': 'on', 'attributes': {'switch': 'on'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', ('tv1', 'switch', 'on', now - 5 * 86400))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'off', '{}', now - 1800))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'on', '{}', now - 960))
+                conn.commit()
+            finally:
+                conn.close()
+
+            answer = main.assistant('how long has the tv been on and from when')
+
+        assert answer['intent'] == 'device_state_duration'
+        assert 'TV has been on for 16 minutes' in answer['message']
+        assert '5 days' not in answer['message']
+        assert answer['speech'] == answer['message']
+    finally:
+        main.DB_PATH = original_db_path
+
+
+def test_device_state_duration_reports_current_state_mismatch():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'tv1', 'name': 'TV', 'label': 'TV', 'room': 'Multimedia', 'category': 'switch', 'switch': 'off', 'attributes': {'switch': 'off'}},
+    ]
+
+    answer = main.assistant('how long has the tv been on')
+
+    assert answer['intent'] == 'device_state_duration'
+    assert answer['message'] == 'TV is currently off, not on.'
+
+
 def test_hubitat_event_parser_accepts_events_array():
     main = load_addon_main()
     events = main.event_records_from_payload({'events': [
