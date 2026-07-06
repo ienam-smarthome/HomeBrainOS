@@ -1,3 +1,14 @@
+
+## v0.8.0-alpha - AI Device Health Monitor
+
+- Reworked stale device checks into a more practical device health monitor.
+- Fixed false stale alerts for Aqara FP1/FP2/FP300 and other mmWave/presence sensors that can legitimately stay active while a room is occupied.
+- Added a separate `occupied_long` section so long presence is shown as normal occupancy, not a stale fault.
+- Kept true PIR-style motion sensors under `Motion active too long`.
+- Preserved real not-reporting checks based on Hubitat activity/event timestamps.
+- Added configurable thresholds: `PRESENCE_OCCUPIED_INTERESTING_HOURS` and `CONTACT_OPEN_INTERESTING_HOURS`.
+- Updated device health answer into sections: healthy, needs attention, offline/not reporting, battery, actionable checks, and normal occupancy.
+
 # Changelog
 
 ## v0.7.64-alpha

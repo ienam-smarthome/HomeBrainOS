@@ -1438,3 +1438,35 @@ def test_dashboard_room_details_output_is_compact():
     assert '[${device.category}]' not in html
     assert 'Object.entries(device.attributes' not in html
     assert "setOutput('Loading '+roomName+' room details...')" not in html
+
+
+def test_v08_presence_style_motion_is_not_reported_as_stale_motion():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            now = int(main.time.time())
+            old = now - 3 * 3600
+            main.CONFIG['stale_motion_active_minutes'] = 30
+            main.CONFIG['presence_occupied_interesting_hours'] = 1
+            main.upsert_devices([
+                {'id': 'fp300', 'name': 'Bedroom 1 FP300', 'label': 'Bedroom 1 FP300', 'room': 'Bedroom 1', 'category': 'motion_sensor', 'motion': 'active', 'attributes': {'motion': 'active'}},
+                {'id': 'pir1', 'name': 'Hallway Motion', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'active', 'attributes': {'motion': 'active'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('UPDATE devices SET updated_at=? WHERE id IN (?, ?)', (old, 'fp300', 'pir1'))
+                conn.commit()
+            finally:
+                conn.close()
+
+            report = main.stale_device_report()
+            answer = main.assistant('stale devices')
+
+        assert [item['label'] for item in report['motion_active_too_long']] == ['Hallway Motion']
+        assert [item['label'] for item in report['occupied_long']] == ['Bedroom 1 FP300']
+        assert 'Normal occupancy, not stale' in answer['message']
+        assert 'Bedroom 1 FP300 (Bedroom 1) occupied for 3 hours' in answer['message']
+    finally:
+        main.DB_PATH = original_db_path

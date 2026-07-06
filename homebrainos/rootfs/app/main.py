@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.64-alpha'
+APP_VERSION = '0.8.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -90,6 +90,8 @@ def load_config() -> dict[str, Any]:
         'stale_motion_active_minutes': int(os.getenv('STALE_MOTION_ACTIVE_MINUTES', '30')),
         'stale_light_on_hours': int(os.getenv('STALE_LIGHT_ON_HOURS', '4')),
         'stale_device_report_hours': int(os.getenv('STALE_DEVICE_REPORT_HOURS', '24')),
+        'presence_occupied_interesting_hours': int(os.getenv('PRESENCE_OCCUPIED_INTERESTING_HOURS', '2')),
+        'contact_open_interesting_hours': int(os.getenv('CONTACT_OPEN_INTERESTING_HOURS', '6')),
         'heating_on_delta': float(os.getenv('HEATING_ON_DELTA', '1')),
         'heating_off_setpoint': float(os.getenv('HEATING_OFF_SETPOINT', '12')),
         'time_zone': os.getenv('TZ', os.getenv('TIME_ZONE', 'Europe/London')),
@@ -1126,6 +1128,29 @@ def history_current_since(conn: sqlite3.Connection, device_id: str, attr: str, c
     return fallback
 
 
+def is_presence_style_motion_device(device: dict[str, Any]) -> bool:
+    """Return True for mmWave/occupancy devices where long 'motion active' is normal.
+
+    Aqara FP1/FP2/FP300 and similar presence sensors often expose a Hubitat
+    motion attribute that remains active while a person is present. Treating
+    that as a stale PIR sensor creates false alarms in real rooms.
+    """
+    label = f"{device.get('label') or ''} {device.get('name') or ''}".lower()
+    category = str(device.get('category') or '').lower()
+    caps = ' '.join(device.get('capabilities') or []).lower()
+    attrs = device.get('attributes') or {}
+    if category == 'presence_sensor' or device.get('presence') is not None or 'presence' in attrs or 'presence' in caps:
+        return True
+    presence_words = ('fp1', 'fp2', 'fp300', 'presence', 'occupancy', 'occupied', 'mmwave', 'mm wave', 'radar')
+    return any(word in label or word in caps for word in presence_words)
+
+
+def stale_motion_exemption_reason(device: dict[str, Any]) -> str:
+    if is_presence_style_motion_device(device):
+        return 'presence/occupancy sensor; continuous active can be normal'
+    return ''
+
+
 def device_last_activity(conn: sqlite3.Connection, row: sqlite3.Row, device: dict[str, Any]) -> dict[str, Any]:
     candidates: list[tuple[int, str]] = []
     if row['last_activity_at'] is not None:
@@ -1146,18 +1171,22 @@ def stale_device_report() -> dict[str, Any]:
     motion_seconds = max(1, int(CONFIG.get('stale_motion_active_minutes', 30))) * 60
     light_seconds = max(1, int(CONFIG.get('stale_light_on_hours', 4))) * 3600
     report_seconds = max(1, int(CONFIG.get('stale_device_report_hours', 24))) * 3600
+    occupied_seconds = max(1, int(CONFIG.get('presence_occupied_interesting_hours', 2))) * 3600
     motion: list[dict[str, Any]] = []
     lights: list[dict[str, Any]] = []
     not_reporting: list[dict[str, Any]] = []
+    occupied: list[dict[str, Any]] = []
     empty_report = {
         'motion_active_too_long': motion,
         'lights_on_too_long': lights,
         'not_reporting': not_reporting,
+        'occupied_long': occupied,
         'issue_count': 0,
         'thresholds': {
             'motion_active': duration_label(motion_seconds),
             'light_on': duration_label(light_seconds),
             'not_reporting': duration_label(report_seconds),
+            'occupied_interesting': duration_label(occupied_seconds),
         },
     }
     try:
@@ -1175,7 +1204,10 @@ def stale_device_report() -> dict[str, Any]:
             if is_state(device.get('motion'), 'active'):
                 since = history_current_since(conn, device_id, 'motion', device.get('motion'), updated_at)
                 age = now - since
-                if age >= motion_seconds:
+                if is_presence_style_motion_device(device):
+                    if age >= occupied_seconds:
+                        occupied.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'occupied/active', 'reason': stale_motion_exemption_reason(device)})
+                elif age >= motion_seconds:
                     motion.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'motion active'})
             if device.get('category') == 'light' and is_state(device.get('switch'), 'on'):
                 since = history_current_since(conn, device_id, 'switch', device.get('switch'), updated_at)
@@ -1195,11 +1227,13 @@ def stale_device_report() -> dict[str, Any]:
         'motion_active_too_long': motion,
         'lights_on_too_long': lights,
         'not_reporting': not_reporting,
+        'occupied_long': occupied,
         'issue_count': len(issues),
         'thresholds': {
             'motion_active': duration_label(motion_seconds),
             'light_on': duration_label(light_seconds),
             'not_reporting': duration_label(report_seconds),
+            'occupied_interesting': duration_label(occupied_seconds),
         },
     }
 
@@ -1220,7 +1254,10 @@ def stale_devices_answer() -> dict[str, Any]:
         items = report['not_reporting'][:8]
         lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
         spoken.extend(f"{item['label']} not reporting for {item['duration']}" for item in items)
-    message = 'Stale device check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
+    if report.get('occupied_long'):
+        items = report['occupied_long'][:8]
+        lines.append('Normal occupancy, not stale:\n' + '\n'.join(f"{item['label']} ({item['room']}) occupied for {item['duration']}" for item in items))
+    message = 'Device health check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
     speech = f"Stale device check found {report['issue_count']} possible issues: {spoken_list(spoken)}" if spoken else 'No stale device issues found.'
     return {'success': True, 'intent': 'stale_devices', 'message': message, 'speech': speech, 'stale': report}
 
@@ -1624,27 +1661,31 @@ def room_on_status_answer(room: str) -> dict[str, Any]:
 def device_health_answer() -> dict[str, Any]:
     summary = dashboard_summary()
     diagnostics = device_diagnostics()
-    low_battery = [format_summary_device(d, 'battery', '%') for d in summary['low_battery_devices']]
     stale = diagnostics['stale']
+    low_battery_devices = summary['low_battery_devices'][:8]
+    healthy_count = max(0, diagnostics['devices'] - stale['issue_count'] - summary['low_batteries'])
     lines = [
-        f"Devices: {diagnostics['devices']}",
-        f"Unknown switch states: {diagnostics['unknown_switch_state']}",
-        f"Unknown rooms: {diagnostics['unknown_room']}",
+        'AI Device Health Monitor:',
+        f"🟢 Healthy: {healthy_count} devices",
+        f"🟡 Needs attention: {stale['issue_count'] + summary['low_batteries']} items",
         f"Low batteries: {summary['low_batteries']}",
-        f"Stale issues: {stale['issue_count']}",
     ]
-    if low_battery:
-        lines.append('Low battery devices:\n' + '\n'.join(low_battery))
-    if stale['motion_active_too_long']:
-        lines.append('Motion active too long:\n' + '\n'.join(f"{item['label']} - {item['duration']}" for item in stale['motion_active_too_long'][:5]))
-    if stale['lights_on_too_long']:
-        lines.append('Lights on too long:\n' + '\n'.join(f"{item['label']} - {item['duration']}" for item in stale['lights_on_too_long'][:5]))
     if stale['not_reporting']:
-        lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} - {item['duration']}" for item in stale['not_reporting'][:5]))
+        lines.append('🔴 Offline / not reporting:\n' + '\n'.join(f"• {item['label']} ({item['room']}) — {item['duration']}" for item in stale['not_reporting'][:8]))
+    if low_battery_devices:
+        lines.append('🟠 Battery:\n' + '\n'.join(f"• {format_summary_device(d, 'battery', '%')}" for d in low_battery_devices))
+    attention: list[str] = []
+    attention.extend(f"• {item['label']} motion active for {item['duration']}" for item in stale['motion_active_too_long'][:5])
+    attention.extend(f"• {item['label']} light on for {item['duration']}" for item in stale['lights_on_too_long'][:5])
+    if attention:
+        lines.append('🟡 Actionable checks:\n' + '\n'.join(attention))
+    if stale.get('occupied_long'):
+        lines.append('🔵 Normal occupancy, not stale:\n' + '\n'.join(f"• {item['label']} ({item['room']}) occupied for {item['duration']}" for item in stale['occupied_long'][:5]))
+    if diagnostics['unknown_switch_state'] or diagnostics['unknown_room']:
+        lines.append(f"Housekeeping: unknown switch states {diagnostics['unknown_switch_state']}, unknown rooms {diagnostics['unknown_room']}")
     if diagnostics['last_error']:
         lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
     return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
-
 
 def weather_device() -> dict[str, Any] | None:
     devices = all_devices()
