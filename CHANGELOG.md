@@ -1,4 +1,12 @@
 
+## v0.8.1-alpha
+
+- Added Home Health score with attention-first practical insights.
+- Added AI Energy Advisor for forgotten/always-on device checks and rough monthly cost estimates.
+- Added Home Timeline from Hubitat callbacks/history.
+- Added Daily Home Briefing combining health, environment, occupancy, power and priority actions.
+- Added API endpoints: `/api/home-health`, `/api/energy-advisor`, `/api/timeline`, `/api/daily-briefing`.
+
 ## v0.8.0-alpha - AI Device Health Monitor
 
 - Reworked stale device checks into a more practical device health monitor.

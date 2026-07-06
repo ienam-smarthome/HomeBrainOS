@@ -1687,6 +1687,178 @@ def device_health_answer() -> dict[str, Any]:
         lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
     return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
 
+
+# ---------------------------------------------------------------------------
+# HomeBrain v0.8 practical intelligence layer
+# ---------------------------------------------------------------------------
+
+def device_state_since_seconds(device: dict[str, Any], attr: str, default_seconds: int = 0) -> int:
+    state = state_since_for_device(device, attr)
+    if state and isinstance(state.get('duration_seconds'), int):
+        return int(state['duration_seconds'])
+    return default_seconds
+
+
+def switched_on_devices() -> list[dict[str, Any]]:
+    return [d for d in all_devices() if is_state(d.get('switch'), 'on')]
+
+
+def energy_waste_candidates() -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for d in switched_on_devices():
+        label = d.get('label') or d.get('name') or str(d.get('id'))
+        text = device_search_text(d)
+        power = safe_float(d.get('power'))
+        on_for = device_state_since_seconds(d, 'switch')
+        long_on = on_for >= 4 * 3600
+        high_power = power is not None and power >= 25
+        standby = power is not None and 2 <= power < 25 and on_for >= 8 * 3600
+        ignore = any(term in text for term in ('fridge', 'freezer', 'router', 'mesh', 'hub', 'server', 'octopus', 'meter'))
+        if ignore and not high_power:
+            continue
+        if not (long_on or high_power or standby):
+            continue
+        monthly_kwh = None
+        monthly_cost = None
+        if power is not None:
+            hours_per_month = 24 * 30 if standby else max(1, min(24, on_for / 3600)) * 30
+            monthly_kwh = round((power * hours_per_month) / 1000, 2)
+            monthly_cost = round(monthly_kwh * 0.25, 2)
+        reason = 'high power now' if high_power else 'low standby left on' if standby else 'on for a long time'
+        results.append({
+            'id': d.get('id'), 'label': label, 'room': d.get('room') or 'Unknown',
+            'power': power, 'power_display': format_power_value(power) if power is not None else 'unknown power',
+            'on_for_seconds': on_for, 'on_for': elapsed_duration_label(on_for) if on_for else 'unknown duration',
+            'estimated_monthly_kwh': monthly_kwh, 'estimated_monthly_cost_gbp': monthly_cost, 'reason': reason,
+        })
+    results.sort(key=lambda x: ((x.get('estimated_monthly_cost_gbp') or 0), x.get('on_for_seconds') or 0), reverse=True)
+    return results
+
+
+def energy_advisor_answer() -> dict[str, Any]:
+    summary = dashboard_summary()
+    candidates = energy_waste_candidates()
+    lines = ['AI Energy Advisor:', f"Whole-house power now: {summary['power_display']} from {summary['power_source_label']}"]
+    if not candidates:
+        lines.append('No obvious energy waste found from current device states.')
+    else:
+        lines.append('Worth checking:')
+        for item in candidates[:8]:
+            cost = f", about £{item['estimated_monthly_cost_gbp']}/month" if item.get('estimated_monthly_cost_gbp') is not None else ''
+            lines.append(f"• {item['label']} ({item['room']}) — {item['power_display']}, on for {item['on_for']}{cost} [{item['reason']}]")
+    return {'success': True, 'intent': 'energy_advisor', 'message': '\n'.join(lines), 'summary': summary, 'candidates': candidates}
+
+
+def recent_home_timeline(limit: int = 25, hours: int = 12) -> list[dict[str, Any]]:
+    cutoff = int(time.time()) - max(1, hours) * 3600
+    items: list[dict[str, Any]] = []
+    try:
+        conn = db()
+    except sqlite3.Error:
+        return items
+    try:
+        rows = conn.execute("""
+            SELECT device_id, label, attr, value, created_at, 'event' AS source
+            FROM hubitat_events
+            WHERE created_at >= ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (cutoff, limit * 2)).fetchall()
+        if not rows:
+            rows = conn.execute("""
+                SELECT h.device_id, d.label, h.attr, h.value, h.created_at, 'history' AS source
+                FROM history h LEFT JOIN devices d ON d.id=h.device_id
+                WHERE h.created_at >= ?
+                ORDER BY h.created_at DESC
+                LIMIT ?
+            """, (cutoff, limit * 2)).fetchall()
+        for row in rows:
+            label = row['label'] or row['device_id'] or 'Device'
+            attr = row['attr'] or 'event'
+            value = row['value'] or ''
+            if attr in ('temperature', 'humidity', 'battery', 'energy'):
+                continue
+            ts = int(row['created_at'])
+            items.append({'time': time.strftime('%H:%M', time.localtime(ts)), 'label': label, 'attr': attr, 'value': value, 'source': row['source'], 'created_at': ts, 'text': f"{time.strftime('%H:%M', time.localtime(ts))} — {label} {attr} {value}".strip()})
+            if len(items) >= limit:
+                break
+    finally:
+        conn.close()
+    return items
+
+
+def timeline_answer() -> dict[str, Any]:
+    items = recent_home_timeline()
+    lines = ['Home Timeline:']
+    lines.extend(item['text'] for item in items[:20])
+    if len(lines) == 1:
+        lines.append('No recent device events found. Make sure the Hubitat event callback is configured.')
+    return {'success': True, 'intent': 'home_timeline', 'message': '\n'.join(lines), 'events': items}
+
+
+def practical_home_insights() -> list[dict[str, Any]]:
+    insights: list[dict[str, Any]] = []
+    summary = dashboard_summary()
+    stale = stale_device_report()
+    if stale['not_reporting']:
+        insights.append({'level': 'critical', 'title': 'Devices not reporting', 'detail': f"{len(stale['not_reporting'])} device(s) have not reported recently.", 'items': stale['not_reporting'][:5]})
+    if summary['low_batteries']:
+        insights.append({'level': 'warning', 'title': 'Low batteries', 'detail': f"{summary['low_batteries']} device(s) need battery attention.", 'items': summary['low_battery_devices'][:5]})
+    if stale['motion_active_too_long']:
+        insights.append({'level': 'warning', 'title': 'Motion may be stuck', 'detail': f"{len(stale['motion_active_too_long'])} PIR motion sensor(s) active too long.", 'items': stale['motion_active_too_long'][:5]})
+    if stale['lights_on_too_long']:
+        insights.append({'level': 'info', 'title': 'Lights left on', 'detail': f"{len(stale['lights_on_too_long'])} light(s) have been on a long time.", 'items': stale['lights_on_too_long'][:5]})
+    energy = energy_waste_candidates()
+    if energy:
+        insights.append({'level': 'info', 'title': 'Energy saving opportunity', 'detail': f"{energy[0]['label']} is the top device worth checking.", 'items': energy[:5]})
+    return insights
+
+
+def home_health_answer() -> dict[str, Any]:
+    summary = dashboard_summary()
+    diagnostics = device_diagnostics()
+    insights = practical_home_insights()
+    penalty = 0
+    for item in insights:
+        penalty += {'critical': 12, 'warning': 7, 'info': 3}.get(item['level'], 1)
+    if diagnostics.get('last_error'):
+        penalty += 10
+    score = max(0, min(100, 100 - penalty))
+    status = '🟢 Home healthy' if score >= 90 else '🟡 Needs attention' if score >= 70 else '🔴 Needs action'
+    lines = [f'Home Health: {score}/100', status, f"Devices: {summary['devices']} · Power: {summary['power_display']} · People home: {summary['people_home']}/{summary['people_tracked']}"]
+    if insights:
+        lines.append('What needs attention:')
+        for insight in insights[:8]:
+            lines.append(f"• {insight['title']}: {insight['detail']}")
+    else:
+        lines.append('No obvious issues found.')
+    if stale_device_report().get('occupied_long'):
+        lines.append('Presence sensors showing long occupancy are treated as normal, not stale.')
+    return {'success': True, 'intent': 'home_health', 'message': '\n'.join(lines), 'score': score, 'summary': summary, 'diagnostics': diagnostics, 'insights': insights}
+
+
+def daily_briefing_answer() -> dict[str, Any]:
+    summary = dashboard_summary()
+    weather = weather_device()
+    health = home_health_answer()
+    energy = energy_waste_candidates()
+    lines = ['Daily Home Briefing:', f"Home health: {health['score']}/100"]
+    if summary['avg_temperature'] is not None:
+        lines.append(f"Inside: {summary['avg_temperature']}°C, humidity {summary['avg_humidity']}%")
+    else:
+        lines.append('Inside: no temperature summary available')
+    lines.extend([f"People home: {summary['people_home']}/{summary['people_tracked']}", f"Power now: {summary['power_display']}"])
+    if weather:
+        weather_text = weather.get('weatherSummaryLine') or weather.get('weatherSummary') or weather.get('label')
+        lines.append(f"Weather: {weather_text}")
+    insights = health.get('insights') or []
+    if insights:
+        lines.append('Today, check:')
+        lines.extend(f"• {i['title']} — {i['detail']}" for i in insights[:5])
+    if energy:
+        lines.append(f"Energy tip: check {energy[0]['label']} ({energy[0]['power_display']}).")
+    return {'success': True, 'intent': 'daily_briefing', 'message': '\n'.join(lines), 'summary': summary, 'health': health, 'energy': energy[:5]}
+
 def weather_device() -> dict[str, Any] | None:
     devices = all_devices()
     weather_devices = [
@@ -3088,7 +3260,7 @@ def assistant(text: str) -> dict[str, Any]:
             'message': (
                 "I can summarize the home, read weather, list lights or switches that are on, answer temperature/humidity/power/battery questions, "
                 "control switchable devices, keep a device on for a timed duration, set heating temperatures, adjust brightness, "
-                "refresh or clear the cache, list room devices, read hub logs, check stale devices, and run diagnostics."
+                "refresh or clear the cache, list room devices, read hub logs, check stale devices, run device health, home health, energy advisor, home timeline, daily briefing, and diagnostics."
             ),
         }
     if 'weather' in t or 'forecast' in t:
@@ -3108,6 +3280,14 @@ def assistant(text: str) -> dict[str, Any]:
         return room_on_status_answer(m_room_on.group(1).strip())
     if 'hub health' in t or 'hub info' in t or 'hubitat health' in t:
         return hub_health_answer()
+    if 'daily briefing' in t or 'morning briefing' in t or 'home briefing' in t:
+        return daily_briefing_answer()
+    if 'timeline' in t or 'history' in t or 'what happened' in t:
+        return timeline_answer()
+    if 'energy advisor' in t or 'energy insight' in t or 'electricity high' in t or 'wasting electricity' in t or 'energy waste' in t:
+        return energy_advisor_answer()
+    if 'home health' in t or 'house health' in t or 'what needs my attention' in t or 'needs attention' in t:
+        return home_health_answer()
     if (
         'stale' in t
         or 'stuck' in t
@@ -3118,7 +3298,7 @@ def assistant(text: str) -> dict[str, Any]:
         or 'offline device' in t
     ):
         return stale_devices_answer()
-    if 'device health' in t or 'home health' in t:
+    if 'device health' in t:
         return device_health_answer()
     room_answer = room_details_answer(t)
     if room_answer:
@@ -3447,6 +3627,26 @@ def api_hub_logs():
 @app.get('/api/stale-devices')
 def api_stale_devices():
     return {'success': True, **stale_device_report()}
+
+
+@app.get('/api/home-health')
+def api_home_health():
+    return home_health_answer()
+
+
+@app.get('/api/energy-advisor')
+def api_energy_advisor():
+    return energy_advisor_answer()
+
+
+@app.get('/api/timeline')
+def api_timeline():
+    return timeline_answer()
+
+
+@app.get('/api/daily-briefing')
+def api_daily_briefing():
+    return daily_briefing_answer()
 
 
 @app.get('/api/ai/context')
