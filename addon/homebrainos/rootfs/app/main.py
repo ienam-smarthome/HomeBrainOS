@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.0-alpha'
+APP_VERSION = '0.9.1-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -122,7 +122,12 @@ PERF_STATS: dict[str, Any] = {
     'event_updated_count': 0,
     'cache_write_count': 0,
     'last_refresh_reason': None,
+    'maker_get_count': 0,
+    'maker_get_error_count': 0,
+    'maker_get_last_path': None,
+    'maker_get_last_ms': None,
 }
+
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
@@ -195,6 +200,22 @@ def db() -> sqlite3.Connection:
     conn.execute('CREATE INDEX IF NOT EXISTS idx_history_device_created ON history(device_id, created_at)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_device_timers_status_due ON device_timers(status, due_at)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_hubitat_events_created ON hubitat_events(created_at)')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS performance_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reason TEXT NOT NULL,
+            devices INTEGER NOT NULL,
+            maker_get_count INTEGER NOT NULL,
+            maker_get_error_count INTEGER NOT NULL,
+            full_refresh_count INTEGER NOT NULL,
+            detail_fetch_count INTEGER NOT NULL,
+            event_count INTEGER NOT NULL,
+            calls_per_hour REAL NOT NULL,
+            json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_performance_snapshots_created ON performance_snapshots(created_at)')
     return conn
 
 
@@ -209,9 +230,19 @@ def maker_url(path: str) -> str:
 
 
 def maker_get(path: str, timeout: int = 20) -> Any:
-    response = requests.get(maker_url(path), timeout=timeout)
-    response.raise_for_status()
-    return response.json()
+    started = time.time()
+    try:
+        response = requests.get(maker_url(path), timeout=timeout)
+        response.raise_for_status()
+        PERF_STATS['maker_get_count'] = int(PERF_STATS.get('maker_get_count') or 0) + 1
+        PERF_STATS['maker_get_last_path'] = path
+        PERF_STATS['maker_get_last_ms'] = int((time.time() - started) * 1000)
+        return response.json()
+    except Exception:
+        PERF_STATS['maker_get_error_count'] = int(PERF_STATS.get('maker_get_error_count') or 0) + 1
+        PERF_STATS['maker_get_last_path'] = path
+        PERF_STATS['maker_get_last_ms'] = int((time.time() - started) * 1000)
+        raise
 
 
 def safe_float(value: Any) -> float | None:
@@ -2396,17 +2427,122 @@ def hub_info_device() -> dict[str, Any] | None:
 
 
 
-def performance_advisor_answer() -> dict[str, Any]:
+def current_performance_metrics() -> dict[str, Any]:
     now = time.time()
     uptime_seconds = max(1, int(now - float(PERF_STATS.get('started_at') or now)))
-    devices = count_devices()
     full_refresh_count = int(PERF_STATS.get('full_refresh_count') or 0)
-    skipped = int(PERF_STATS.get('full_refresh_skipped') or 0)
     detail_fetches = int(PERF_STATS.get('detail_fetch_count') or 0)
+    maker_get_count = int(PERF_STATS.get('maker_get_count') or 0)
+    maker_errors = int(PERF_STATS.get('maker_get_error_count') or 0)
     event_count = int(PERF_STATS.get('event_count') or 0)
-    updated = int(PERF_STATS.get('event_updated_count') or 0)
-    calls_per_hour = round((full_refresh_count + detail_fetches) * 3600 / uptime_seconds, 1)
-    event_rate = round(event_count * 3600 / uptime_seconds, 1)
+    calls_per_hour = round(maker_get_count * 3600 / uptime_seconds, 1)
+    legacy_calls_per_hour = round((full_refresh_count + detail_fetches) * 3600 / uptime_seconds, 1)
+    return {
+        'uptime_seconds': uptime_seconds,
+        'devices': count_devices(),
+        'maker_get_count': maker_get_count,
+        'maker_get_error_count': maker_errors,
+        'full_refresh_count': full_refresh_count,
+        'detail_fetch_count': detail_fetches,
+        'event_count': event_count,
+        'event_updated_count': int(PERF_STATS.get('event_updated_count') or 0),
+        'calls_per_hour': calls_per_hour,
+        'legacy_calls_per_hour': legacy_calls_per_hour,
+        'event_rate_per_hour': round(event_count * 3600 / uptime_seconds, 1),
+        'last_full_refresh_ms': PERF_STATS.get('full_refresh_last_ms'),
+        'last_maker_get_ms': PERF_STATS.get('maker_get_last_ms'),
+        'last_maker_path': PERF_STATS.get('maker_get_last_path'),
+        'last_refresh_age_seconds': int(now - LAST_REFRESH) if LAST_REFRESH else None,
+    }
+
+
+def save_performance_snapshot(reason: str) -> dict[str, Any]:
+    metrics = current_performance_metrics()
+    conn = db()
+    try:
+        conn.execute(
+            'INSERT INTO performance_snapshots(reason,devices,maker_get_count,maker_get_error_count,full_refresh_count,detail_fetch_count,event_count,calls_per_hour,json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+            (
+                reason,
+                metrics['devices'],
+                metrics['maker_get_count'],
+                metrics['maker_get_error_count'],
+                metrics['full_refresh_count'],
+                metrics['detail_fetch_count'],
+                metrics['event_count'],
+                metrics['calls_per_hour'],
+                json.dumps({'metrics': metrics, 'perf': PERF_STATS, 'config': {k: CONFIG.get(k) for k in ('refresh_seconds','min_full_refresh_seconds','device_detail_refresh_seconds','device_detail_refresh_batch','device_detail_refresh_limit')}}),
+                int(time.time()),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return metrics
+
+
+def recent_performance_snapshots(limit: int = 10) -> list[dict[str, Any]]:
+    conn = db()
+    try:
+        rows = conn.execute('SELECT * FROM performance_snapshots ORDER BY created_at DESC LIMIT ?', (limit,)).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def performance_baseline_answer(reason: str = 'manual') -> dict[str, Any]:
+    metrics = save_performance_snapshot(reason)
+    message = '\n'.join([
+        'Performance baseline saved.',
+        f"Devices cached: {metrics['devices']}",
+        f"Maker API calls since start: {metrics['maker_get_count']}",
+        f"Estimated Maker API calls/hour: {metrics['calls_per_hour']}",
+        f"Hubitat events/hour: {metrics['event_rate_per_hour']}",
+        'Compare this tomorrow after checking Hubitat App Stats.',
+    ])
+    return {'success': True, 'intent': 'performance_baseline', 'message': message, 'metrics': metrics, 'snapshots': recent_performance_snapshots(5)}
+
+
+def performance_compare_answer() -> dict[str, Any]:
+    current = current_performance_metrics()
+    snapshots = recent_performance_snapshots(10)
+    if not snapshots:
+        return performance_baseline_answer('auto-first-baseline')
+    baseline = snapshots[-1]
+    try:
+        base_json = json.loads(baseline['json'])
+        base_metrics = base_json.get('metrics') or {}
+    except Exception:
+        base_metrics = {}
+    base_calls = float(base_metrics.get('calls_per_hour') or baseline.get('calls_per_hour') or 0)
+    cur_calls = float(current.get('calls_per_hour') or 0)
+    change = round(((cur_calls - base_calls) / base_calls) * 100, 1) if base_calls else None
+    lines = [
+        'Performance comparison:',
+        f"Baseline calls/hour: {base_calls}",
+        f"Current calls/hour: {cur_calls}",
+    ]
+    if change is not None:
+        direction = 'lower' if change < 0 else 'higher'
+        lines.append(f"Change: {abs(change)}% {direction}")
+    lines.extend([
+        f"Current Maker API calls: {current['maker_get_count']}",
+        f"Current Hubitat events/hour: {current['event_rate_per_hour']}",
+        f"Snapshots stored: {len(snapshots)}",
+    ])
+    return {'success': True, 'intent': 'performance_compare', 'message': '\n'.join(lines), 'baseline': baseline, 'current': current, 'change_percent': change, 'snapshots': snapshots}
+
+def performance_advisor_answer() -> dict[str, Any]:
+    now = time.time()
+    metrics = current_performance_metrics()
+    devices = metrics['devices']
+    full_refresh_count = metrics['full_refresh_count']
+    skipped = int(PERF_STATS.get('full_refresh_skipped') or 0)
+    detail_fetches = metrics['detail_fetch_count']
+    event_count = metrics['event_count']
+    updated = metrics['event_updated_count']
+    calls_per_hour = metrics['calls_per_hour']
+    event_rate = metrics['event_rate_per_hour']
     last_age = int(now - LAST_REFRESH) if LAST_REFRESH else None
     warnings: list[str] = []
     if int(CONFIG.get('refresh_seconds', 120)) < 60:
@@ -2426,6 +2562,7 @@ def performance_advisor_answer() -> dict[str, Any]:
         f"Skipped refreshes: {skipped}",
         f"Detail fetches: {detail_fetches}",
         f"Hubitat events processed: {event_count} ({updated} cache updates)",
+        f"Actual Maker API GETs since start: {metrics['maker_get_count']}",
         f"Estimated Maker API calls/hour since start: {calls_per_hour}",
         f"Event rate/hour since start: {event_rate}",
     ]
@@ -2447,6 +2584,8 @@ def performance_advisor_answer() -> dict[str, Any]:
         'level': level,
         'warnings': warnings,
         'stats': PERF_STATS,
+        'metrics': metrics,
+        'snapshots': recent_performance_snapshots(5),
         'config': {
             'refresh_seconds': CONFIG.get('refresh_seconds'),
             'min_full_refresh_seconds': CONFIG.get('min_full_refresh_seconds'),
@@ -3660,6 +3799,10 @@ def assistant(text: str) -> dict[str, Any]:
         m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:is\s+)?on\s+(?:in|inside)\s+(.+)$", t)
     if m_room_on:
         return room_on_status_answer(m_room_on.group(1).strip())
+    if 'performance baseline' in t or 'save baseline' in t or 'baseline cpu' in t or 'baseline load' in t:
+        return performance_baseline_answer('assistant')
+    if 'compare performance' in t or 'performance compare' in t or 'compare cpu' in t or 'compare load' in t:
+        return performance_compare_answer()
     if 'performance' in t or 'cpu' in t or 'hub load' in t or 'maker api load' in t or 'busy time' in t:
         return performance_advisor_answer()
     if 'hub health' in t or 'hub info' in t or 'hubitat health' in t:
@@ -3950,12 +4093,14 @@ async def refresh_loop() -> None:
     while True:
         await asyncio.sleep(seconds)
         await asyncio.to_thread(refresh_devices, False, 'scheduled')
+        await asyncio.to_thread(save_performance_snapshot, 'scheduled')
 
 
 @app.on_event('startup')
 async def startup() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     refresh_devices(True, 'startup')
+    save_performance_snapshot('startup')
     restore_pending_timers()
     asyncio.create_task(refresh_loop())
 
@@ -4026,6 +4171,22 @@ def api_hub_logs():
 @app.get('/api/performance-advisor')
 def api_performance_advisor():
     return performance_advisor_answer()
+
+
+@app.post('/api/performance-baseline')
+def api_performance_baseline(request: Request):
+    require_api_token(request)
+    return performance_baseline_answer('api')
+
+
+@app.get('/api/performance-compare')
+def api_performance_compare():
+    return performance_compare_answer()
+
+
+@app.get('/api/performance-snapshots')
+def api_performance_snapshots():
+    return {'success': True, 'snapshots': recent_performance_snapshots(50)}
 
 
 @app.get('/api/stale-devices')
