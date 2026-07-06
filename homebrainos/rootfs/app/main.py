@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.63-alpha'
+APP_VERSION = '0.7.64-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -135,12 +135,15 @@ def db() -> sqlite3.Connection:
             energy REAL,
             battery REAL,
             detail_refreshed_at INTEGER,
+            last_activity_at INTEGER,
             updated_at INTEGER NOT NULL
         )
     ''')
     columns = {row['name'] for row in conn.execute('PRAGMA table_info(devices)').fetchall()}
     if 'detail_refreshed_at' not in columns:
         conn.execute('ALTER TABLE devices ADD COLUMN detail_refreshed_at INTEGER')
+    if 'last_activity_at' not in columns:
+        conn.execute('ALTER TABLE devices ADD COLUMN last_activity_at INTEGER')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,6 +205,55 @@ def safe_float(value: Any) -> float | None:
         return float(str(value).replace('%',''))
     except Exception:
         return None
+
+
+def safe_timestamp(value: Any) -> int | None:
+    try:
+        if value in (None, ''):
+            return None
+        if isinstance(value, (int, float)) or re.fullmatch(r'\d+(?:\.\d+)?', str(value).strip()):
+            ts = float(value)
+            if ts > 10_000_000_000:
+                ts = ts / 1000
+            if 946684800 <= ts <= time.time() + 86400:
+                return int(ts)
+            return None
+        text = str(value).strip().replace('Z', '+00:00')
+        text = re.sub(r'([+-]\d{2})(\d{2})$', r'\1:\2', text)
+        dt = datetime.fromisoformat(text)
+        return int(dt.timestamp())
+    except Exception:
+        return None
+
+
+def extract_last_activity_at(device: dict[str, Any]) -> int | None:
+    candidates: list[int] = []
+    top_level_keys = (
+        'lastActivity', 'last_activity', 'lastActivityAt', 'last_activity_at',
+        'lastUpdated', 'last_updated', 'lastUpdate', 'updated', 'updatedAt',
+        'date', 'timestamp', 'time'
+    )
+    for key in top_level_keys:
+        ts = safe_timestamp(device.get(key))
+        if ts:
+            candidates.append(ts)
+    for source in (device.get('attributes'), device.get('currentStates'), device.get('states')):
+        if isinstance(source, dict):
+            for value in source.values():
+                if isinstance(value, dict):
+                    for key in top_level_keys:
+                        ts = safe_timestamp(value.get(key))
+                        if ts:
+                            candidates.append(ts)
+            continue
+        for item in source or []:
+            if not isinstance(item, dict):
+                continue
+            for key in top_level_keys:
+                ts = safe_timestamp(item.get(key))
+                if ts:
+                    candidates.append(ts)
+    return max(candidates) if candidates else None
 
 
 def compact_name(value: Any) -> str:
@@ -442,6 +494,7 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
         'windDirection': safe_float(attrs.get('windDirection')),
         'precipitationToday': safe_float(attrs.get('precipitationToday')),
         '_detail_refreshed_at': safe_float(device.get('_homebrain_detail_refreshed_at')),
+        '_last_activity_at': extract_last_activity_at(device),
     }
 
 
@@ -528,24 +581,33 @@ def upsert_devices(devices: list[dict[str, Any]]) -> None:
     conn = db()
     try:
         for d in devices:
-            old = conn.execute('SELECT json, detail_refreshed_at FROM devices WHERE id=?', (d['id'],)).fetchone()
+            old = conn.execute('SELECT json, detail_refreshed_at, last_activity_at FROM devices WHERE id=?', (d['id'],)).fetchone()
             detail_refreshed_at = int(d['_detail_refreshed_at']) if d.get('_detail_refreshed_at') is not None else (old['detail_refreshed_at'] if old else None)
+            raw_activity_at = d.get('_last_activity_at') if d.get('_last_activity_at') is not None else extract_last_activity_at(d)
+            last_activity_at = int(raw_activity_at) if raw_activity_at is not None else (old['last_activity_at'] if old else None)
+            if old:
+                old_d = json.loads(old['json'])
+                watched_attrs = ('switch','temperature','humidity','power','energy','battery','motion','presence','contact','thermostatMode','thermostatOperatingState','heatingSetpoint')
+                if any(old_d.get(attr) != d.get(attr) for attr in watched_attrs):
+                    last_activity_at = now
+                    d['_last_activity_at'] = now
             if old and d.get('switch') is None:
                 old_d = json.loads(old['json'])
                 if old_d.get('switch') is not None:
                     d['switch'] = old_d.get('switch')
                     d.setdefault('attributes', {})['switch'] = old_d.get('switch')
             conn.execute('''
-                INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,detail_refreshed_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,detail_refreshed_at,last_activity_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, label=excluded.label, room=excluded.room, category=excluded.category,
                     json=excluded.json, switch=excluded.switch, temperature=excluded.temperature,
                     humidity=excluded.humidity, power=excluded.power, energy=excluded.energy,
-                    battery=excluded.battery, detail_refreshed_at=excluded.detail_refreshed_at, updated_at=excluded.updated_at
+                    battery=excluded.battery, detail_refreshed_at=excluded.detail_refreshed_at,
+                    last_activity_at=excluded.last_activity_at, updated_at=excluded.updated_at
             ''', (
                 d['id'], d['name'], d['label'], d['room'], d['category'], json.dumps(d),
-                d.get('switch'), d.get('temperature'), d.get('humidity'), d.get('power'), d.get('energy'), d.get('battery'), detail_refreshed_at, now
+                d.get('switch'), d.get('temperature'), d.get('humidity'), d.get('power'), d.get('energy'), d.get('battery'), detail_refreshed_at, last_activity_at, now
             ))
             if old:
                 old_d = json.loads(old['json'])
@@ -585,8 +647,8 @@ def update_cached_switch(device_ids: list[str], switch: str) -> list[dict[str, A
             device.setdefault('attributes', {})['switch'] = switch
             updated.append(device)
             conn.execute(
-                'UPDATE devices SET json=?, switch=?, updated_at=? WHERE id=?',
-                (json.dumps(device), switch, now, device_id),
+                'UPDATE devices SET json=?, switch=?, last_activity_at=?, updated_at=? WHERE id=?',
+                (json.dumps(device), switch, now, now, device_id),
             )
             conn.execute(
                 'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
@@ -608,7 +670,7 @@ def update_cached_setpoint(device_id: str, setpoint: float) -> dict[str, Any] | 
         device = json.loads(row['json'])
         device['heatingSetpoint'] = setpoint
         device.setdefault('attributes', {})['heatingSetpoint'] = setpoint
-        conn.execute('UPDATE devices SET json=?, updated_at=? WHERE id=?', (json.dumps(device), now, device_id))
+        conn.execute('UPDATE devices SET json=?, last_activity_at=?, updated_at=? WHERE id=?', (json.dumps(device), now, now, device_id))
         conn.execute(
             'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
             (device_id, 'heatingSetpoint', str(setpoint), now),
@@ -633,8 +695,8 @@ def update_cached_level(device_id: str, level: int) -> dict[str, Any] | None:
             device['switch'] = 'on'
             device['attributes']['switch'] = 'on'
         conn.execute(
-            'UPDATE devices SET json=?, switch=?, updated_at=? WHERE id=?',
-            (json.dumps(device), device.get('switch'), now, device_id),
+            'UPDATE devices SET json=?, switch=?, last_activity_at=?, updated_at=? WHERE id=?',
+            (json.dumps(device), device.get('switch'), now, now, device_id),
         )
         conn.execute(
             'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
@@ -659,7 +721,7 @@ def update_cached_thermostat_mode(device_ids: list[str], mode: str) -> list[dict
             device['thermostatMode'] = mode
             device.setdefault('attributes', {})['thermostatMode'] = mode
             updated.append(device)
-            conn.execute('UPDATE devices SET json=?, updated_at=? WHERE id=?', (json.dumps(device), now, device_id))
+            conn.execute('UPDATE devices SET json=?, last_activity_at=?, updated_at=? WHERE id=?', (json.dumps(device), now, now, device_id))
             conn.execute(
                 'INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)',
                 (device_id, 'thermostatMode', mode, now),
@@ -690,12 +752,12 @@ def update_cached_attribute(device_id: str, attr: str, value: Any, label: str | 
         normalized['commands'] = device.get('commands', normalized.get('commands', []))
         normalized['_detail_refreshed_at'] = row['detail_refreshed_at']
         conn.execute('''
-            UPDATE devices SET json=?, category=?, switch=?, temperature=?, humidity=?, power=?, energy=?, battery=?, updated_at=?
+            UPDATE devices SET json=?, category=?, switch=?, temperature=?, humidity=?, power=?, energy=?, battery=?, last_activity_at=?, updated_at=?
             WHERE id=?
         ''', (
             json.dumps(normalized), normalized.get('category'), normalized.get('switch'), normalized.get('temperature'),
             normalized.get('humidity'), normalized.get('power'), normalized.get('energy'), normalized.get('battery'),
-            now, str(device_id)
+            now, now, str(device_id)
         ))
         conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', (str(device_id), attr, str(value), now))
         conn.commit()
@@ -1055,20 +1117,28 @@ def device_diagnostics() -> dict[str, Any]:
 
 
 def history_current_since(conn: sqlite3.Connection, device_id: str, attr: str, current_value: Any, fallback: int) -> int:
-    current_text = str(current_value)
-    row = conn.execute(
-        'SELECT created_at FROM history WHERE device_id=? AND attr=? AND value=? ORDER BY created_at DESC LIMIT 1',
-        (str(device_id), attr, current_text),
-    ).fetchone()
-    if row:
-        return int(row['created_at'])
-    row = conn.execute(
-        'SELECT created_at FROM history WHERE device_id=? AND attr=? ORDER BY created_at DESC LIMIT 1',
-        (str(device_id), attr),
-    ).fetchone()
-    if row:
-        return int(row['created_at'])
+    rows = state_change_rows(conn, str(device_id), attr)
+    if not rows:
+        return fallback
+    latest = rows[0]
+    if is_state(latest['value'], str(current_value)):
+        return int(latest['created_at'])
     return fallback
+
+
+def device_last_activity(conn: sqlite3.Connection, row: sqlite3.Row, device: dict[str, Any]) -> dict[str, Any]:
+    candidates: list[tuple[int, str]] = []
+    if row['last_activity_at'] is not None:
+        candidates.append((int(row['last_activity_at']), 'hubitat attribute timestamp or value change'))
+    for event_row in conn.execute(
+        'SELECT created_at FROM hubitat_events WHERE device_id=? ORDER BY created_at DESC LIMIT 1',
+        (str(row['id']),),
+    ).fetchall():
+        candidates.append((int(event_row['created_at']), 'event callback'))
+    if candidates:
+        ts, source = max(candidates, key=lambda item: item[0])
+        return {'timestamp': ts, 'source': source, 'confidence': 'high'}
+    return {'timestamp': int(row['updated_at'] or 0), 'source': 'HomeBrain cache refresh only', 'confidence': 'low'}
 
 
 def stale_device_report() -> dict[str, Any]:
@@ -1095,7 +1165,7 @@ def stale_device_report() -> dict[str, Any]:
     except sqlite3.Error:
         return empty_report
     try:
-        rows = conn.execute('SELECT id, label, room, category, json, updated_at FROM devices ORDER BY label').fetchall()
+        rows = conn.execute('SELECT id, label, room, category, json, updated_at, last_activity_at FROM devices ORDER BY label').fetchall()
         for row in rows:
             device = json.loads(row['json'])
             device_id = str(row['id'])
@@ -1112,8 +1182,12 @@ def stale_device_report() -> dict[str, Any]:
                 age = now - since
                 if age >= light_seconds:
                     lights.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'light on'})
-            if updated_at and now - updated_at >= report_seconds:
-                not_reporting.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': now - updated_at, 'duration': elapsed_duration_label(now - updated_at), 'state': 'not reporting'})
+            activity = device_last_activity(conn, row, device)
+            activity_ts = int(activity.get('timestamp') or 0)
+            if activity_ts and activity.get('confidence') == 'high' and now - activity_ts >= report_seconds:
+                not_reporting.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': now - activity_ts, 'duration': elapsed_duration_label(now - activity_ts), 'state': 'not reporting', 'last_activity_source': activity.get('source'), 'confidence': activity.get('confidence')})
+            elif updated_at and now - updated_at >= report_seconds:
+                not_reporting.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': now - updated_at, 'duration': elapsed_duration_label(now - updated_at), 'state': 'cache not refreshed', 'last_activity_source': 'HomeBrain cache refresh only', 'confidence': 'low'})
     finally:
         conn.close()
     issues = motion + lights + not_reporting

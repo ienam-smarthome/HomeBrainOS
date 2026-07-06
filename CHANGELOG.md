@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.64-alpha
+
+- Fix stale-device detection so the app no longer treats HomeBrain cache refreshes as proof that a Hubitat device actually reported.
+- Track `last_activity_at` from Hubitat attribute timestamps, pushed Maker API events, and real value changes.
+- Make `not reporting` results show confidence/source and fall back to cache-age only when HomeBrain itself has not refreshed.
+
 ## v0.7.63-alpha
 
 - Add deterministic total state-time answers for questions such as `total time TV was on today`.

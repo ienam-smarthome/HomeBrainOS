@@ -240,6 +240,68 @@ def test_stale_device_report_flags_long_running_states():
         main.DB_PATH = original_db_path
 
 
+
+def test_stale_device_report_uses_real_activity_not_cache_refresh():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            now = int(main.time.time())
+            old_activity = now - 30 * 3600
+            main.CONFIG['stale_device_report_hours'] = 24
+            main.upsert_devices([
+                {
+                    'id': 'b1',
+                    'name': 'Bedroom Battery',
+                    'label': 'Bedroom Battery',
+                    'room': 'Bedroom',
+                    'category': 'battery_sensor',
+                    'battery': 55,
+                    'attributes': [{'name': 'battery', 'currentValue': 55, 'date': old_activity}],
+                },
+            ])
+            conn = main.db()
+            try:
+                conn.execute('UPDATE devices SET updated_at=? WHERE id=?', (now, 'b1'))
+                conn.commit()
+            finally:
+                conn.close()
+
+            report = main.stale_device_report()
+
+        assert [item['label'] for item in report['not_reporting']] == ['Bedroom Battery']
+        assert report['not_reporting'][0]['confidence'] == 'high'
+        assert report['not_reporting'][0]['last_activity_source'] == 'hubitat attribute timestamp or value change'
+    finally:
+        main.DB_PATH = original_db_path
+
+
+def test_stale_device_report_ignores_old_matching_state_if_newer_opposite_event_exists():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            now = int(main.time.time())
+            main.CONFIG['stale_motion_active_minutes'] = 30
+            main.upsert_devices([
+                {'id': 'm1', 'name': 'Hallway Motion', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'active', 'attributes': {'motion': 'active'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', ('m1', 'motion', 'active', now - 4 * 3600))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('m1', 'Hallway Motion', 'motion', 'inactive', '{}', now - 60))
+                conn.commit()
+            finally:
+                conn.close()
+
+            report = main.stale_device_report()
+
+        assert report['motion_active_too_long'] == []
+    finally:
+        main.DB_PATH = original_db_path
+
 def test_device_state_duration_uses_latest_matching_state_change():
     main = load_addon_main()
     original_db_path = main.DB_PATH
