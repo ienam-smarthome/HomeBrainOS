@@ -1191,6 +1191,107 @@ def device_diagnostics() -> dict[str, Any]:
     }
 
 
+
+def device_text(device: dict[str, Any]) -> str:
+    return normalise(f"{device.get('label') or ''} {device.get('name') or ''} {device.get('category') or ''}")
+
+
+def is_thermostat_like_device(device: dict[str, Any]) -> bool:
+    text = device_text(device)
+    caps = caps_text(device)
+    attrs = device.get('attributes') or {}
+    return (
+        device.get('category') == 'thermostat'
+        or 'thermostat' in caps
+        or 'thermostat' in text
+        or 'trv' in text
+        or any(key in attrs for key in ('thermostatMode', 'thermostatOperatingState', 'heatingSetpoint', 'coolingSetpoint'))
+    )
+
+
+def is_energy_meter_like_device(device: dict[str, Any]) -> bool:
+    text = device_text(device)
+    caps = caps_text(device)
+    attrs = device.get('attributes') or {}
+    energy_words = ('octopus', 'live meter', 'smart meter', 'energy meter', 'meter', 'export', 'import', 'electricity')
+    has_energy_signal = any(key in attrs for key in ('power', 'energy', 'powerSource', 'voltage', 'amperage')) or any(word in caps for word in ('powermeter', 'energymeter'))
+    has_switch_state = attrs.get('switch') is not None or 'switch' in caps
+    return has_energy_signal and any(word in text for word in energy_words) and not has_switch_state
+
+
+def is_read_only_or_helper_device(device: dict[str, Any]) -> bool:
+    text = device_text(device)
+    return (
+        is_thermostat_like_device(device)
+        or is_energy_meter_like_device(device)
+        or any(word in text for word in ('weather', 'battery', 'sensor only', 'helper', 'bridge'))
+    )
+
+
+def device_intelligence_profile(device: dict[str, Any]) -> dict[str, Any]:
+    """Classify devices into practical profiles used by health checks and AI answers.
+
+    Hubitat/Maker API can expose commands that are not useful for HomeBrain's
+    switch dashboard. For example TRVs may have on/off commands, and an energy
+    meter may be commandable by a driver, but neither should be treated as a
+    switch with a missing on/off state. This profile is intentionally pragmatic:
+    it favours reducing false-positive housekeeping alerts over exposing every
+    raw capability.
+    """
+    text = device_text(device)
+    attrs = device.get('attributes') or {}
+    caps = caps_text(device)
+    commands = commands_text(device)
+    room = device.get('room') or 'Unknown'
+    profile = 'device'
+    confidence = 0.55
+    dashboard = 'general'
+    ignore_checks: list[str] = []
+    reasons: list[str] = []
+
+    if is_thermostat_like_device(device):
+        profile, confidence, dashboard = 'thermostat_trv' if 'trv' in text else 'thermostat', 0.98, 'heating'
+        ignore_checks.extend(['unknown_switch_state', 'motion_active_too_long'])
+        reasons.append('Thermostat/TRV devices can expose commands without being dashboard switches.')
+    elif is_energy_meter_like_device(device):
+        profile, confidence, dashboard = 'energy_meter', 0.95, 'energy'
+        ignore_checks.append('unknown_switch_state')
+        reasons.append('Read-only energy meters should be tracked for power/energy, not switch state.')
+    elif device.get('category') == 'light' or 'switchlevel' in caps or 'colorcontrol' in caps:
+        profile, confidence, dashboard = 'light', 0.95, 'lighting'
+    elif 'switch' in attrs or 'switch' in caps or any(word in text for word in ('plug', 'socket', 'outlet')):
+        profile, confidence, dashboard = 'smart_plug_or_switch', 0.86, 'switches'
+    elif 'contact' in attrs or 'contactsensor' in caps or 'door' in text or 'window' in text:
+        profile, confidence, dashboard = 'contact_sensor', 0.9, 'security'
+    elif is_presence_style_motion_device(device):
+        profile, confidence, dashboard = 'presence_sensor', 0.96, 'occupancy'
+        ignore_checks.append('motion_active_too_long')
+    elif 'motion' in attrs or 'motionsensor' in caps:
+        profile, confidence, dashboard = 'motion_sensor', 0.87, 'occupancy'
+    elif 'temperature' in attrs or 'humidity' in attrs:
+        profile, confidence, dashboard = 'climate_sensor', 0.82, 'climate'
+    elif 'battery' in attrs or 'battery' in text:
+        profile, confidence, dashboard = 'battery_sensor', 0.78, 'maintenance'
+
+    suggested_room = suggested_room_from_label(device)
+    room_confidence = 0.0
+    if room != 'Unknown':
+        suggested_room = room
+        room_confidence = 1.0
+    elif suggested_room:
+        room_confidence = 0.96 if any(word in text for word in ('fridge', 'kitchen', 'bedroom', 'hallway', 'bathroom', 'living')) else 0.75
+
+    return {
+        'profile': profile,
+        'confidence': round(confidence, 2),
+        'dashboard': dashboard,
+        'ignore_checks': sorted(set(ignore_checks)),
+        'suggested_room': suggested_room,
+        'room_confidence': round(room_confidence, 2),
+        'reasons': reasons,
+        'commands_are_control': profile in ('light', 'smart_plug_or_switch'),
+    }
+
 def list_capabilities(device: dict[str, Any]) -> list[str]:
     return [str(c) for c in (device.get('capabilities') or []) if str(c).strip()]
 
@@ -1266,10 +1367,24 @@ def device_inspector_report() -> dict[str, Any]:
     devices = all_devices()
     switchable = switchable_devices(devices)
     unknown_switches: list[dict[str, Any]] = []
+    auto_excluded_switches: list[dict[str, Any]] = []
+    classifications: list[dict[str, Any]] = []
+    for device in devices:
+        intel = device_intelligence_profile(device)
+        if intel.get('confidence', 0) >= 0.8 or intel.get('ignore_checks') or intel.get('suggested_room'):
+            base = device_issue_base(device, 'Classified by HomeBrain device intelligence.', 'Use this profile to drive health checks and dashboards.', 'info')
+            base['intelligence'] = intel
+            classifications.append(base)
+        if 'unknown_switch_state' in intel.get('ignore_checks', []) and ({'on', 'off'}.issubset(set(commands_text(device).split())) or device.get('switch') is None):
+            base = device_issue_base(device, intel.get('reasons', ['Excluded by device profile.'])[0] if intel.get('reasons') else 'Excluded by device profile.', 'No action needed unless this device is actually a controllable switch.', 'info')
+            base['intelligence'] = intel
+            auto_excluded_switches.append(base)
     for device in switchable:
         if device.get('switch') is None:
             reason, suggestion, severity = unknown_switch_reason(device)
-            unknown_switches.append(device_issue_base(device, reason, suggestion, severity))
+            item = device_issue_base(device, reason, suggestion, severity)
+            item['intelligence'] = device_intelligence_profile(device)
+            unknown_switches.append(item)
 
     unknown_rooms: list[dict[str, Any]] = []
     for device in devices:
@@ -1279,6 +1394,7 @@ def device_inspector_report() -> dict[str, Any]:
             item = device_issue_base(device, 'Device has no recognised room assignment.', suggestion, 'info')
             if suggested:
                 item['suggested_room'] = suggested
+            item['intelligence'] = device_intelligence_profile(device)
             unknown_rooms.append(item)
 
     labels: dict[str, list[dict[str, Any]]] = {}
@@ -1320,9 +1436,13 @@ def device_inspector_report() -> dict[str, Any]:
             'duplicate_names': len(duplicates),
             'generic_or_unknown_devices': len(generic_devices),
             'missing_capability_details': len(missing_capability_devices),
+            'auto_excluded_switch_false_positives': len(auto_excluded_switches),
+            'classified_devices': len(classifications),
         },
         'unknown_switch_states': unknown_switches,
         'unknown_rooms': unknown_rooms,
+        'auto_excluded_switch_false_positives': auto_excluded_switches[:30],
+        'classifications': classifications[:50],
         'duplicate_names': duplicates,
         'generic_or_unknown_devices': generic_devices[:30],
         'missing_capability_details': missing_capability_devices[:30],
@@ -1339,7 +1459,13 @@ def device_inspector_answer() -> dict[str, Any]:
         f"Duplicate names: {summary['duplicate_names']}",
         f"Generic/unknown devices: {summary['generic_or_unknown_devices']}",
         f"Missing capability details: {summary['missing_capability_details']}",
+        f"Auto-excluded false positives: {summary['auto_excluded_switch_false_positives']}",
     ]
+    if report.get('auto_excluded_switch_false_positives'):
+        lines.append('\nAuto-excluded from unknown switch checks:')
+        for item in report['auto_excluded_switch_false_positives'][:8]:
+            profile = item.get('intelligence', {}).get('profile', 'device')
+            lines.append(f"• {item['label']} — {profile}; {item['reason']}")
     if report['unknown_switch_states']:
         lines.append('\nUnknown switch states:')
         for item in report['unknown_switch_states'][:10]:
@@ -1353,7 +1479,7 @@ def device_inspector_answer() -> dict[str, Any]:
         lines.append('\nDuplicate names:')
         for group in report['duplicate_names'][:5]:
             lines.append(f"• {group['label']} — {group['count']} devices")
-    lines.append('\nFix priority: unknown switch states first, then unknown rooms. These two have the biggest impact on AI answers and dashboard accuracy.')
+    lines.append('\nFix priority: only investigate remaining unknown switch states after auto-exclusions, then assign unknown rooms. TRVs and energy meters are now ignored automatically for switch-state checks.')
     return {'success': True, 'intent': 'device_inspector', 'message': '\n'.join(lines), **report}
 
 
@@ -3175,22 +3301,22 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
     caps = ' '.join(device.get('capabilities', []) or []).lower()
     commands = {str(command).lower() for command in device.get('commands', []) or []}
     category = device.get('category')
-    sensor_categories = {'light_sensor', 'climate_sensor', 'motion_sensor', 'contact_sensor', 'presence_sensor', 'thermostat'}
-    sensor_words = ('sensor', 'meter', 'lux', 'camera', 'cam', 'contact', 'motion', 'temperature', 'humidity')
-    switch_capable = 'switch' in caps or category in ('light', 'switch', 'power_device')
-    explicit_switch = switch_capable or {'on', 'off'}.issubset(commands)
-    if category in sensor_categories and not explicit_switch:
+    intelligence = device_intelligence_profile(device)
+    if 'unknown_switch_state' in intelligence.get('ignore_checks', []):
         return False
-    if category == 'thermostat' and not switch_capable:
+    sensor_categories = {'light_sensor', 'climate_sensor', 'motion_sensor', 'contact_sensor', 'presence_sensor', 'thermostat', 'battery_sensor'}
+    sensor_words = ('sensor', 'meter', 'lux', 'camera', 'cam', 'contact', 'motion', 'temperature', 'humidity')
+    # Power meters are not switches unless they expose a real switch capability/state
+    # or are clearly named like a plug/socket/outlet. This prevents Octopus/energy
+    # meters from appearing as broken switch devices.
+    switch_capable = 'switch' in caps or category in ('light', 'switch')
+    smart_plug_word = any(word in label for word in ('plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier'))
+    explicit_switch = switch_capable or {'on', 'off'}.issubset(commands) or (category == 'power_device' and smart_plug_word)
+    if category in sensor_categories and not explicit_switch:
         return False
     if any(word in label for word in sensor_words) and not explicit_switch:
         return False
-    controllable_words = ('light', 'dimmer', 'plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier')
-    return (
-        explicit_switch
-        or category in ('light', 'switch', 'power_device')
-        or any(word in label for word in controllable_words)
-    )
+    return explicit_switch or any(word in label for word in ('light', 'dimmer', 'plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier'))
 
 
 def is_room_socket_device(device: dict[str, Any]) -> bool:
@@ -3965,7 +4091,7 @@ def assistant(text: str) -> dict[str, Any]:
         m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:is\s+)?on\s+(?:in|inside)\s+(.+)$", t)
     if m_room_on:
         return room_on_status_answer(m_room_on.group(1).strip())
-    if ('unknown switch' in t or 'unknown room' in t or 'what are the unknowns' in t or 'device inspector' in t or 'housekeeping' in t or 'unassigned device' in t or 'duplicate device' in t):
+    if ('unknown switch' in t or 'unknown room' in t or 'what are the unknowns' in t or 'device inspector' in t or 'housekeeping' in t or 'unassigned device' in t or 'duplicate device' in t or 'device intelligence' in t or 'device classifier' in t or 'ai device classifier' in t):
         return device_inspector_answer()
     if 'performance baseline' in t or 'save baseline' in t or 'baseline cpu' in t or 'baseline load' in t:
         return performance_baseline_answer('assistant')
@@ -4356,6 +4482,12 @@ def api_performance_compare():
 def api_performance_snapshots():
     return {'success': True, 'snapshots': recent_performance_snapshots(50)}
 
+
+
+@app.get('/api/device-intelligence')
+def api_device_intelligence():
+    report = device_inspector_report()
+    return {'success': True, 'summary': report['summary'], 'classifications': report['classifications'], 'auto_excluded_switch_false_positives': report['auto_excluded_switch_false_positives']}
 
 
 @app.get('/api/device-inspector')

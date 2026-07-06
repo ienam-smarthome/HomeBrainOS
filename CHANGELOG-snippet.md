@@ -1,11 +1,18 @@
-## v0.9.2-alpha - Device Inspector & Actionable Housekeeping
+## v0.9.3-alpha - AI Device Intelligence & False Positive Reduction
 
-Added Device Inspector to make housekeeping counts actionable. HomeBrain can now list unknown switch-state devices, unassigned room devices, duplicate names, generic devices, and devices with weak capability data. Added `/api/device-inspector` and natural-language support for questions like “what are the unknowns?”.
+### Added
+- AI Device Intelligence profiles for thermostats/TRVs, energy meters, lights, smart plugs, contact sensors, motion sensors, presence sensors, climate sensors, and battery sensors.
+- `/api/device-intelligence` for classification output, confidence scores, dashboard groups, suggested rooms, and ignored checks.
+- Auto-exclusion list showing devices deliberately ignored for invalid switch-state checks.
 
-## v0.9.1-alpha - Performance Baseline & Tomorrow Review Pack
+### Improved
+- TRVs are no longer treated as broken switches when they expose on/off commands without a switch state.
+- Octopus/energy meter style devices are classified as read-only energy meters instead of controllable switches.
+- Device Inspector now separates genuine switch issues from expected non-switch devices.
+- Unknown room items now include intelligence metadata and stronger suggested-room confidence.
 
-- Added persistent performance snapshots so HomeBrain can compare load over time.
-- Added actual Maker API GET counters, error counters and last-call timing.
-- Added `/api/performance-baseline`, `/api/performance-compare`, and `/api/performance-snapshots`.
-- Added assistant prompts for "save performance baseline" and "compare performance".
-- Saved startup and scheduled performance snapshots for next-day CPU review.
+### Practical impact
+- Reduces false positives in housekeeping and AI answers.
+- Leaves real issues such as smart sockets with missing switch state visible for investigation.
+- Provides a stronger foundation for learning mode and one-click device mapping later.
+
