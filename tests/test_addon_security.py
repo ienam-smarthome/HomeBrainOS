@@ -340,6 +340,78 @@ def test_display_since_uses_configured_london_timezone():
         main.CONFIG['time_zone'] = original_tz
 
 
+def test_device_total_state_duration_answers_today_for_exact_tv():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    original_time = main.time.time
+    original_tz = main.CONFIG.get('time_zone')
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            main.CONFIG['time_zone'] = 'Europe/London'
+            main.time.time = lambda: datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc).timestamp()
+            main.upsert_devices([
+                {'id': 'pc1', 'name': 'Computer', 'label': 'Computer', 'room': 'Multimedia', 'category': 'switch', 'switch': 'off', 'attributes': {'switch': 'off'}},
+                {'id': 'tv1', 'name': 'TV', 'label': 'TV', 'room': 'Multimedia', 'category': 'switch', 'switch': 'off', 'attributes': {'switch': 'off'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('pc1', 'Computer', 'switch', 'on', '{}', int(datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'off', '{}', int(datetime(2026, 7, 5, 22, 0, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'on', '{}', int(datetime(2026, 7, 6, 16, 49, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'off', '{}', int(datetime(2026, 7, 6, 17, 50, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'on', '{}', int(datetime(2026, 7, 6, 18, 10, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'off', '{}', int(datetime(2026, 7, 6, 18, 20, tzinfo=timezone.utc).timestamp())))
+                conn.commit()
+            finally:
+                conn.close()
+
+            answer = main.assistant('total time tv was on today?')
+
+        assert answer['intent'] == 'device_total_state_duration'
+        assert answer['device']['label'] == 'TV'
+        assert answer['total_seconds'] == 4260
+        assert answer['message'] == 'TV was on for 1 hour 11 minutes today.'
+        assert answer['speech'] == answer['message']
+        assert 'Computer' not in answer['message']
+    finally:
+        main.DB_PATH = original_db_path
+        main.time.time = original_time
+        main.CONFIG['time_zone'] = original_tz
+
+
+def test_device_total_state_duration_clips_session_from_before_midnight():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    original_time = main.time.time
+    original_tz = main.CONFIG.get('time_zone')
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            main.CONFIG['time_zone'] = 'Europe/London'
+            main.time.time = lambda: datetime(2026, 7, 6, 8, 0, tzinfo=timezone.utc).timestamp()
+            main.upsert_devices([
+                {'id': 'tv1', 'name': 'TV', 'label': 'TV', 'room': 'Multimedia', 'category': 'switch', 'switch': 'off', 'attributes': {'switch': 'off'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'on', '{}', int(datetime(2026, 7, 5, 22, 30, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'off', '{}', int(datetime(2026, 7, 5, 23, 30, tzinfo=timezone.utc).timestamp())))
+                conn.commit()
+            finally:
+                conn.close()
+
+            answer = main.assistant('how long was the tv on today')
+
+        assert answer['intent'] == 'device_total_state_duration'
+        assert answer['total_seconds'] == 1800
+        assert answer['message'] == 'TV was on for 30 minutes today.'
+    finally:
+        main.DB_PATH = original_db_path
+        main.time.time = original_time
+        main.CONFIG['time_zone'] = original_tz
+
+
 def test_device_state_duration_reports_current_state_mismatch():
     main = load_addon_main()
     main.all_devices = lambda: [

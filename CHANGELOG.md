@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.63-alpha
+
+- Add deterministic total state-time answers for questions such as `total time TV was on today`.
+- Clip totals to the configured local day, including sessions that started before midnight.
+- Keep total-time questions out of Ollama fallback so exact labels such as `TV` are not confused with related multimedia devices.
+
 ## v0.7.62-alpha
 
 - Add a `time_zone` add-on option, defaulting to `Europe/London`.

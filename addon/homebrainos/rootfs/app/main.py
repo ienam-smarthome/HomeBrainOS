@@ -8,7 +8,7 @@ import re
 import sqlite3
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.62-alpha'
+APP_VERSION = '0.7.63-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1268,6 +1268,133 @@ def display_time_range(start: int, end: int | None) -> str:
         return f'since {start_text}'
     end_text = display_since(end)
     return f'from {start_text} to {end_text}'
+
+
+def state_name_to_attr(state: str) -> str:
+    if state in ('active', 'inactive'):
+        return 'motion'
+    if state in ('open', 'closed'):
+        return 'contact'
+    if state in ('locked', 'unlocked'):
+        return 'lock'
+    return 'switch'
+
+
+def state_window(period: str) -> tuple[int, int, str]:
+    now_ts = int(time.time())
+    now_dt = local_datetime(now_ts)
+    period = normalise(period or 'today')
+    if period in ('yesterday',):
+        today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_dt = today_start - timedelta(days=1)
+        return int(start_dt.timestamp()), int(today_start.timestamp()), 'yesterday'
+    if period in ('last 24 hours', 'past 24 hours', '24 hours'):
+        return max(0, now_ts - 86400), now_ts, 'in the last 24 hours'
+    start_dt = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(start_dt.timestamp()), now_ts, 'today'
+
+
+def state_sessions_in_window(
+    device: dict[str, Any],
+    attr: str,
+    expected_state: str,
+    start_ts: int,
+    end_ts: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    try:
+        conn = db()
+    except sqlite3.Error:
+        return [], False
+    try:
+        rows = state_change_rows(conn, str(device.get('id')), attr)
+    finally:
+        conn.close()
+    if not rows:
+        return [], False
+
+    rows_asc = sorted(rows, key=lambda item: item['created_at'])
+    active_start: int | None = None
+    has_relevant_history = False
+    for row in rows_asc:
+        ts = int(row['created_at'])
+        if ts >= start_ts:
+            break
+        has_relevant_history = True
+        active_start = start_ts if is_state(row['value'], expected_state) else None
+
+    sessions: list[dict[str, Any]] = []
+    for row in rows_asc:
+        ts = int(row['created_at'])
+        if ts < start_ts:
+            continue
+        if ts > end_ts:
+            break
+        has_relevant_history = True
+        if is_state(row['value'], expected_state):
+            if active_start is None:
+                active_start = ts
+        elif active_start is not None:
+            sessions.append({
+                'start': active_start,
+                'end': ts,
+                'duration_seconds': max(0, ts - active_start),
+                'ongoing': False,
+            })
+            active_start = None
+
+    if active_start is not None:
+        sessions.append({
+            'start': active_start,
+            'end': end_ts,
+            'duration_seconds': max(0, end_ts - active_start),
+            'ongoing': True,
+        })
+    return sessions, has_relevant_history
+
+
+def device_total_state_duration_answer(
+    target: str,
+    attr: str = 'switch',
+    expected_state: str = 'on',
+    period: str = 'today',
+) -> dict[str, Any]:
+    devices = find_devices(target)
+    devices = [device for device in devices if device.get(attr) is not None]
+    if not devices:
+        return {'success': False, 'intent': 'device_total_state_duration', 'message': f'I found no device state history for {target}.'}
+    if len(devices) > 1:
+        return disambiguation_response(devices, 'check total state duration for')
+
+    device = devices[0]
+    start_ts, end_ts, period_label = state_window(period)
+    sessions, has_history = state_sessions_in_window(device, attr, expected_state, start_ts, end_ts)
+    total_seconds = sum(int(session['duration_seconds']) for session in sessions)
+    if total_seconds <= 0:
+        if not has_history:
+            message = f"I do not have enough {device['label']} {attr} history to calculate {period_label}."
+        else:
+            message = f"{device['label']} was not {expected_state} {period_label}."
+        return {
+            'success': True,
+            'intent': 'device_total_state_duration',
+            'message': message,
+            'speech': message,
+            'device': device,
+            'sessions': sessions,
+            'total_seconds': total_seconds,
+        }
+
+    duration = elapsed_duration_label(total_seconds)
+    message = f"{device['label']} was {expected_state} for {duration} {period_label}."
+    return {
+        'success': True,
+        'intent': 'device_total_state_duration',
+        'message': message,
+        'speech': message,
+        'device': device,
+        'sessions': sessions,
+        'total_seconds': total_seconds,
+    }
 
 
 def device_state_duration_answer(target: str, attr: str = 'switch', expected_state: str | None = None) -> dict[str, Any]:
@@ -2943,20 +3070,26 @@ def run_command(text: str) -> dict[str, Any]:
             f"{s['low_batteries']} devices have low batteries. {s['motion_active']} motion sensors are active."
         )
         return {'success': True, 'message': f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\nWhole-house power: {s['power_display']} from {s['power_source_label']}\nPeople home: {s['people_home']}/{s['people_tracked']} ({people})\nLow batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}", 'speech': speech}
+    m_total_state_duration = re.search(r'^(?:total time|how much time)\s+(?:has\s+)?(?:the\s+)?(.+?)\s+(?:was|has been|been)\s+(on|off|active|inactive|open|closed|locked|unlocked)\s+(today|yesterday|last 24 hours|past 24 hours)(?:\?)?$', t)
+    if not m_total_state_duration:
+        m_total_state_duration = re.search(r'^how long\s+(?:was|has)\s+(?:the\s+)?(.+?)\s+(?:been\s+)?(on|off|active|inactive|open|closed|locked|unlocked)\s+(today|yesterday|last 24 hours|past 24 hours)(?:\?)?$', t)
+    if m_total_state_duration:
+        target = m_total_state_duration.group(1).strip()
+        state = m_total_state_duration.group(2)
+        period = m_total_state_duration.group(3)
+        return device_total_state_duration_answer(target, state_name_to_attr(state), state, period)
     m_last_state_duration = re.search(r'^(?:how long was|how long has|when was)\s+(?:the\s+)?(.+?)\s+last\s+(on|off|active|inactive|open|closed|locked|unlocked)(?:\s+for)?(?:\s+.*)?$', t)
     if m_last_state_duration:
         target = m_last_state_duration.group(1).strip()
         state = m_last_state_duration.group(2)
-        attr = 'motion' if state in ('active', 'inactive') else 'contact' if state in ('open', 'closed') else 'lock' if state in ('locked', 'unlocked') else 'switch'
-        return device_last_state_duration_answer(target, attr, state)
+        return device_last_state_duration_answer(target, state_name_to_attr(state), state)
     m_state_duration = re.search(r'^(?:how long has|how long is)\s+(?:the\s+)?(.+?)\s+(?:been\s+)?(on|off|active|inactive|open|closed|locked|unlocked)(?:\s+.*)?$', t)
     if not m_state_duration:
         m_state_duration = re.search(r'^(?:when did|from when did)\s+(?:the\s+)?(.+?)\s+(?:turn|switch|go|get|become)\s+(on|off|active|inactive|open|closed|locked|unlocked)(?:\s+.*)?$', t)
     if m_state_duration:
         target = m_state_duration.group(1).strip()
         state = m_state_duration.group(2)
-        attr = 'motion' if state in ('active', 'inactive') else 'contact' if state in ('open', 'closed') else 'lock' if state in ('locked', 'unlocked') else 'switch'
-        return device_state_duration_answer(target, attr, state)
+        return device_state_duration_answer(target, state_name_to_attr(state), state)
     m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:devices\s+)?(?:are\s+)?on\s+(?:in|inside)\s+(.+)$", t)
     if not m_room_on:
         m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:is\s+)?on\s+(?:in|inside)\s+(.+)$", t)
