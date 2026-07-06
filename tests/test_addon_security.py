@@ -268,6 +268,62 @@ def test_device_state_duration_uses_latest_matching_state_change():
         main.DB_PATH = original_db_path
 
 
+def test_device_state_duration_prefers_exact_tv_label_over_computer():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            now = int(main.time.time())
+            main.upsert_devices([
+                {'id': 'pc1', 'name': 'Computer', 'label': 'Computer', 'room': 'Multimedia', 'category': 'switch', 'switch': 'on', 'attributes': {'switch': 'on'}},
+                {'id': 'tv1', 'name': 'TV', 'label': 'TV', 'room': 'Multimedia', 'category': 'switch', 'switch': 'on', 'attributes': {'switch': 'on'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('pc1', 'Computer', 'switch', 'on', '{}', now - 4 * 3600))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'on', '{}', now - 600))
+                conn.commit()
+            finally:
+                conn.close()
+
+            answer = main.assistant('how long has the tv been on')
+
+        assert answer['intent'] == 'device_state_duration'
+        assert answer['device']['label'] == 'TV'
+        assert 'TV has been on for 10 minutes' in answer['message']
+        assert 'Computer' not in answer['message']
+    finally:
+        main.DB_PATH = original_db_path
+
+
+def test_device_last_state_duration_answers_completed_session():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            now = int(main.time.time())
+            main.upsert_devices([
+                {'id': 'tv1', 'name': 'TV', 'label': 'TV', 'room': 'Multimedia', 'category': 'switch', 'switch': 'off', 'attributes': {'switch': 'off'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'on', '{}', now - 1800))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('tv1', 'TV', 'switch', 'off', '{}', now - 1140))
+                conn.commit()
+            finally:
+                conn.close()
+
+            answer = main.assistant('how long was the tv last on for')
+
+        assert answer['intent'] == 'device_state_duration'
+        assert answer['device']['label'] == 'TV'
+        assert 'TV was last on for 11 minutes' in answer['message']
+    finally:
+        main.DB_PATH = original_db_path
+
+
 def test_device_state_duration_reports_current_state_mismatch():
     main = load_addon_main()
     main.all_devices = lambda: [

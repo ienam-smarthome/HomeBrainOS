@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.61-alpha
+
+- Prefer exact device labels for state-duration questions so `TV` does not match broader multimedia devices.
+- Add deterministic last-state session answers for questions such as `how long was the TV last on for`.
+- Keep these answers out of local AI fallback so HomeBrain does not guess the wrong device.
+
 ## v0.7.60-alpha
 
 - Add deterministic answers for questions such as `how long has the TV been on` and `when did the TV turn on`.
