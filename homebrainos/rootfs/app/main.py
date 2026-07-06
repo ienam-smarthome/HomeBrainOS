@@ -1859,6 +1859,149 @@ def daily_briefing_answer() -> dict[str, Any]:
         lines.append(f"Energy tip: check {energy[0]['label']} ({energy[0]['power_display']}).")
     return {'success': True, 'intent': 'daily_briefing', 'message': '\n'.join(lines), 'summary': summary, 'health': health, 'energy': energy[:5]}
 
+
+def explain_home_question_answer(text: str) -> dict[str, Any] | None:
+    """Deterministic "why" answers for common real-life home questions.
+
+    This is intentionally rule-based so HomeBrain can explain the home even when
+    the local LLM is disabled or slow.
+    """
+    t = normalise(text)
+    devices = all_devices()
+    lines: list[str] = []
+    intent = 'ai_explain'
+
+    if 'fan' in t or 'humidity' in t or 'bathroom' in t:
+        humid = sorted(
+            [d for d in devices if isinstance(d.get('humidity'), (int, float))],
+            key=lambda d: float(d.get('humidity') or 0),
+            reverse=True,
+        )[:5]
+        fans = [d for d in devices if 'fan' in device_search_text(d) or 'ventilation' in device_search_text(d)]
+        if humid or fans:
+            lines.append('Bathroom / humidity explanation:')
+            for d in humid[:3]:
+                lines.append(f"• {d.get('label')}: humidity {d.get('humidity')}%")
+            for d in fans[:3]:
+                state = d.get('switch') or d.get('motion') or 'unknown'
+                lines.append(f"• {d.get('label')}: {state}")
+            lines.append('Check whether humidity is above your fan threshold or whether a manual/timer boost is still running.')
+
+    if 'electricity' in t or 'energy' in t or 'power' in t or 'cost' in t:
+        energy = energy_waste_candidates()
+        summary = dashboard_summary()
+        lines.append(f"Energy explanation: whole-house power is {summary['power_display']} from {summary['power_source_label']}.")
+        if energy:
+            lines.append('Top contributors worth checking:')
+            lines.extend(f"• {item['label']} — {item['power_display']}, on for {item['on_for']}" for item in energy[:5])
+        else:
+            power_devices = sorted([d for d in devices if isinstance(d.get('power'), (int, float))], key=lambda d: d.get('power') or 0, reverse=True)[:5]
+            if power_devices:
+                lines.append('Highest live power devices:')
+                lines.extend(f"• {d.get('label')} — {format_power_value(d.get('power'))}" for d in power_devices)
+
+    if 'heating' in t or 'cold' in t or 'temperature' in t:
+        cold = sorted([d for d in devices if isinstance(d.get('temperature'), (int, float))], key=lambda d: d.get('temperature') or 99)[:5]
+        thermostats = [d for d in devices if d.get('category') == 'thermostat' or d.get('heatingSetpoint') is not None]
+        lines.append('Heating / temperature explanation:')
+        for d in cold[:5]:
+            lines.append(f"• {d.get('label')}: {d.get('temperature')}°C")
+        for d in thermostats[:5]:
+            sp = d.get('heatingSetpoint')
+            mode = d.get('thermostatMode') or 'unknown mode'
+            state = d.get('thermostatOperatingState') or 'unknown state'
+            lines.append(f"• {d.get('label')}: set {sp}°C, {mode}, {state}")
+
+    if 'stale' in t or 'offline' in t or 'not reporting' in t:
+        stale = stale_device_report()
+        lines.append('Device health explanation:')
+        if stale['not_reporting']:
+            lines.extend(f"• {i['label']}: no real activity for {i['duration']} ({i.get('confidence','unknown')} confidence)" for i in stale['not_reporting'][:5])
+        if stale['occupied_long']:
+            lines.extend(f"• {i['label']}: occupied for {i['duration']} — normal for presence/mmWave sensors, not stale" for i in stale['occupied_long'][:5])
+        if not stale['not_reporting'] and not stale['occupied_long']:
+            lines.append('No obvious offline or incorrectly-stale device issue found.')
+
+    if not lines:
+        return None
+    return {'success': True, 'intent': intent, 'message': '\n'.join(lines), 'speech': ' '.join(line.lstrip('• ') for line in lines[:6])}
+
+
+def room_intelligence_answer(text: str) -> dict[str, Any] | None:
+    t = normalise(text)
+    if not any(word in t for word in ('room summary', 'summarise room', 'summarize room', 'room health', 'room status', 'explain room')):
+        return None
+    matched = None
+    for room in api_rooms()['rooms']:
+        if normalise(room['room']) in t:
+            matched = room['room']
+            break
+    if not matched:
+        return {'success': False, 'intent': 'room_intelligence', 'message': 'Tell me which room, for example: room summary living room.'}
+    payload = room_details_payload(matched)
+    devices = exact_room_devices(payload['room']['room'])
+    occupied = [d for d in devices if is_state(d.get('motion'), 'active') or is_state(d.get('presence'), 'present')]
+    lights_on = [d for d in devices if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
+    power = sum(float(d.get('power') or 0) for d in devices if isinstance(d.get('power'), (int, float)))
+    temps = [d.get('temperature') for d in devices if isinstance(d.get('temperature'), (int, float))]
+    hums = [d.get('humidity') for d in devices if isinstance(d.get('humidity'), (int, float))]
+    lines = [f"{payload['room']['room']} summary:"]
+    lines.append('Occupied' if occupied else 'No current occupancy detected')
+    if temps:
+        lines.append(f"Temperature: {round(sum(temps)/len(temps), 1)}°C")
+    if hums:
+        lines.append(f"Humidity: {round(sum(hums)/len(hums), 1)}%")
+    lines.append(f"Lights on: {len(lights_on)}")
+    if power:
+        lines.append(f"Power now: {format_power_value(power)}")
+    attention = []
+    for d in devices:
+        if isinstance(d.get('battery'), (int, float)) and d.get('battery') <= 20:
+            attention.append(f"{d.get('label')} battery {d.get('battery')}%")
+    if attention:
+        lines.append('Needs attention: ' + '; '.join(attention[:5]))
+    else:
+        lines.append('No obvious room issues found.')
+    return {'success': True, 'intent': 'room_intelligence', 'message': '\n'.join(lines), 'room': payload['room'], 'devices': payload['devices']}
+
+
+def what_changed_answer() -> dict[str, Any]:
+    items = recent_home_timeline(limit=40, hours=24)
+    if not items:
+        return {'success': True, 'intent': 'what_changed', 'message': 'No changes found in the last 24 hours. Check the Hubitat event callback if this looks wrong.', 'events': []}
+    grouped: dict[str, int] = {}
+    for item in items:
+        key = str(item.get('label') or 'Device')
+        grouped[key] = grouped.get(key, 0) + 1
+    top = sorted(grouped.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    lines = ['What changed in the last 24 hours:', f"{len(items)} recent events recorded."]
+    lines.append('Most active devices:')
+    lines.extend(f"• {name}: {count} events" for name, count in top)
+    lines.append('Latest events:')
+    lines.extend('• ' + item['text'] for item in items[:8])
+    return {'success': True, 'intent': 'what_changed', 'message': '\n'.join(lines), 'events': items, 'top_devices': top}
+
+
+def recommendations_answer() -> dict[str, Any]:
+    insights = practical_home_insights()
+    recs: list[str] = []
+    for insight in insights:
+        title = insight.get('title', '')
+        if title == 'Devices not reporting':
+            recs.append('Check power/battery and Zigbee/MQTT connectivity for the devices not reporting.')
+        elif title == 'Low batteries':
+            recs.append('Replace low batteries before automations become unreliable.')
+        elif title == 'Motion may be stuck':
+            recs.append('Check PIR sensors that show active too long; they may be stuck, aimed badly, or exposed to heat movement.')
+        elif title == 'Lights left on':
+            recs.append('Turn off lights left on for a long time or add an auto-off rule for that room.')
+        elif title == 'Energy saving opportunity':
+            recs.append('Review devices left on with measurable power draw, especially standby loads overnight.')
+    if not recs:
+        recs.append('No urgent recommendations. Next useful improvement is to add more event callbacks so HomeBrain can build better history.')
+    lines = ['Recommended actions:'] + [f'• {r}' for r in recs[:8]]
+    return {'success': True, 'intent': 'recommendations', 'message': '\n'.join(lines), 'insights': insights, 'recommendations': recs}
+
 def weather_device() -> dict[str, Any] | None:
     devices = all_devices()
     weather_devices = [
@@ -3300,12 +3443,22 @@ def assistant(text: str) -> dict[str, Any]:
         return stale_devices_answer()
     if 'device health' in t:
         return device_health_answer()
+    if 'what changed' in t or 'changed today' in t or 'changed since yesterday' in t:
+        return what_changed_answer()
+    if 'recommend' in t or 'suggest action' in t or 'what should i do' in t:
+        return recommendations_answer()
+    room_intel = room_intelligence_answer(t)
+    if room_intel:
+        return room_intel
     room_answer = room_details_answer(t)
     if room_answer:
         return room_answer
     summary_answer = explain_summary_tile(t)
     if summary_answer:
         return summary_answer
+    explain_answer = explain_home_question_answer(text) if 'why' in t or 'explain' in t else None
+    if explain_answer:
+        return explain_answer
     if any(word in t for word in ('diagnostic', 'diagnostics', 'problem', 'problems', 'why', 'unknown', 'missing')):
         d = device_diagnostics()
         lines = [
@@ -3647,6 +3800,21 @@ def api_timeline():
 @app.get('/api/daily-briefing')
 def api_daily_briefing():
     return daily_briefing_answer()
+
+
+@app.get('/api/what-changed')
+def api_what_changed():
+    return what_changed_answer()
+
+
+@app.get('/api/recommendations')
+def api_recommendations():
+    return recommendations_answer()
+
+
+@app.get('/api/room-intelligence/{room}')
+def api_room_intelligence(room: str):
+    return room_intelligence_answer('room summary ' + room)
 
 
 @app.get('/api/ai/context')

@@ -1,3 +1,11 @@
+## v0.8.2-alpha
+
+- Added deterministic AI Explain answers for humidity/fan, energy, heating/cold rooms, and stale/offline device questions.
+- Added room intelligence summaries for real-life room checks: occupancy, temperature, humidity, lights, power, and low batteries.
+- Added "what changed" 24-hour timeline summary with most active devices.
+- Added recommendations endpoint that turns Home Health insights into practical actions.
+- Added APIs: `/api/what-changed`, `/api/recommendations`, and `/api/room-intelligence/{room}`.
+
 
 ## v0.8.1-alpha
 
