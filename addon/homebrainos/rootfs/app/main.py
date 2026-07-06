@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.1-alpha'
+APP_VERSION = '0.9.2-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1191,6 +1191,172 @@ def device_diagnostics() -> dict[str, Any]:
     }
 
 
+def list_capabilities(device: dict[str, Any]) -> list[str]:
+    return [str(c) for c in (device.get('capabilities') or []) if str(c).strip()]
+
+
+def list_commands(device: dict[str, Any]) -> list[str]:
+    return [str(c) for c in (device.get('commands') or []) if str(c).strip()]
+
+
+def device_issue_base(device: dict[str, Any], reason: str, suggestion: str, severity: str = 'info') -> dict[str, Any]:
+    attrs = device.get('attributes') or {}
+    return {
+        'id': device.get('id'),
+        'label': device.get('label') or device.get('name') or str(device.get('id') or 'Unknown device'),
+        'name': device.get('name'),
+        'room': device.get('room') or 'Unknown',
+        'category': device.get('category') or 'unknown',
+        'reason': reason,
+        'suggestion': suggestion,
+        'severity': severity,
+        'switch': device.get('switch'),
+        'battery': device.get('battery'),
+        'power': device.get('power'),
+        'capabilities': list_capabilities(device)[:12],
+        'commands': list_commands(device)[:12],
+        'attribute_names': sorted(str(k) for k in attrs.keys())[:20] if isinstance(attrs, dict) else [],
+    }
+
+
+def unknown_switch_reason(device: dict[str, Any]) -> tuple[str, str, str]:
+    caps = caps_text(device)
+    commands = commands_text(device)
+    attrs = device.get('attributes') or {}
+    if 'switch' not in attrs and 'switch' not in caps:
+        return (
+            'HomeBrain thinks this is controllable, but Hubitat did not expose a current switch attribute.',
+            'Check the Hubitat driver/capabilities. If it is not controllable, add it to an ignore/helper list; if it is controllable, refresh/re-save the device in Hubitat.',
+            'warning',
+        )
+    if {'on', 'off'}.issubset(set(commands.split())) and device.get('switch') is None:
+        return (
+            'Device has on/off commands but no current on/off state in the cached Maker API payload.',
+            'Operate the device once or refresh details so HomeBrain can learn its first state. If it stays unknown, the driver may not publish switch state.',
+            'warning',
+        )
+    return (
+        'Switch state is missing or null even though the device appears switchable.',
+        'Refresh device details and check the Hubitat device page Current States section.',
+        'warning',
+    )
+
+
+def suggested_room_from_label(device: dict[str, Any]) -> str | None:
+    text = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+    candidates = [
+        ('Bedroom 1', ('bedroom 1', 'bedroom1', 'bed 1')),
+        ('Bedroom 2', ('bedroom 2', 'bedroom2', 'bed 2')),
+        ('Bedroom 3', ('bedroom 3', 'bedroom3', 'bed 3')),
+        ('Living Room', ('living room', 'livingroom', 'lounge')),
+        ('Bathroom', ('bathroom', 'bath')),
+        ('Hallway', ('hallway', 'hall')),
+        ('Kitchen', ('kitchen',)),
+        ('Toilet', ('toilet', 'wc')),
+        ('Internet', ('router', 'wifi', 'internet', 'mesh')),
+        ('Energy', ('octopus', 'energy', 'electricity', 'meter')),
+    ]
+    for room, words in candidates:
+        if any(word in text for word in words):
+            return room
+    return None
+
+
+def device_inspector_report() -> dict[str, Any]:
+    devices = all_devices()
+    switchable = switchable_devices(devices)
+    unknown_switches: list[dict[str, Any]] = []
+    for device in switchable:
+        if device.get('switch') is None:
+            reason, suggestion, severity = unknown_switch_reason(device)
+            unknown_switches.append(device_issue_base(device, reason, suggestion, severity))
+
+    unknown_rooms: list[dict[str, Any]] = []
+    for device in devices:
+        if (device.get('room') or 'Unknown') == 'Unknown':
+            suggested = suggested_room_from_label(device)
+            suggestion = f'Assign this device to {suggested} in Hubitat/HomeBrain room mapping.' if suggested else 'Assign a room in Hubitat or add a HomeBrain room override.'
+            item = device_issue_base(device, 'Device has no recognised room assignment.', suggestion, 'info')
+            if suggested:
+                item['suggested_room'] = suggested
+            unknown_rooms.append(item)
+
+    labels: dict[str, list[dict[str, Any]]] = {}
+    for device in devices:
+        key = normalise(device.get('label') or device.get('name') or '')
+        if key:
+            labels.setdefault(key, []).append(device)
+    duplicates = []
+    for group in labels.values():
+        if len(group) > 1:
+            duplicates.append({
+                'label': group[0].get('label') or group[0].get('name'),
+                'count': len(group),
+                'devices': [device_issue_base(d, 'Duplicate label/name can make voice and AI targeting ambiguous.', 'Rename one device or add a room-specific alias.', 'info') for d in group],
+            })
+    duplicates.sort(key=lambda item: (-int(item['count']), str(item['label'] or '')))
+
+    generic_devices = []
+    generic_words = ('device', 'unknown', 'generic', 'thing')
+    for device in devices:
+        label_text = normalise(device.get('label') or device.get('name') or '')
+        category = str(device.get('category') or '').lower()
+        if category in ('unknown', '') or any(word in label_text.split() for word in generic_words):
+            generic_devices.append(device_issue_base(device, 'Generic name/category makes AI understanding less reliable.', 'Rename it with room + purpose, e.g. “Bedroom 1 Lamp” or “Kitchen Door Sensor”.', 'info'))
+
+    missing_capability_devices = []
+    for device in devices:
+        caps = list_capabilities(device)
+        attrs = device.get('attributes') or {}
+        if not caps and isinstance(attrs, dict) and len(attrs) <= 1:
+            missing_capability_devices.append(device_issue_base(device, 'Device exposes very little capability/attribute information.', 'Refresh details. If still limited, check the Hubitat driver or exclude helper/bridge devices from health checks.', 'info'))
+
+    return {
+        'success': True,
+        'devices': len(devices),
+        'summary': {
+            'unknown_switch_states': len(unknown_switches),
+            'unknown_rooms': len(unknown_rooms),
+            'duplicate_names': len(duplicates),
+            'generic_or_unknown_devices': len(generic_devices),
+            'missing_capability_details': len(missing_capability_devices),
+        },
+        'unknown_switch_states': unknown_switches,
+        'unknown_rooms': unknown_rooms,
+        'duplicate_names': duplicates,
+        'generic_or_unknown_devices': generic_devices[:30],
+        'missing_capability_details': missing_capability_devices[:30],
+    }
+
+
+def device_inspector_answer() -> dict[str, Any]:
+    report = device_inspector_report()
+    summary = report['summary']
+    lines = [
+        'Device Inspector:',
+        f"Unknown switch states: {summary['unknown_switch_states']}",
+        f"Unknown rooms: {summary['unknown_rooms']}",
+        f"Duplicate names: {summary['duplicate_names']}",
+        f"Generic/unknown devices: {summary['generic_or_unknown_devices']}",
+        f"Missing capability details: {summary['missing_capability_details']}",
+    ]
+    if report['unknown_switch_states']:
+        lines.append('\nUnknown switch states:')
+        for item in report['unknown_switch_states'][:10]:
+            lines.append(f"• {item['label']} ({item['room']}) — {item['reason']}")
+    if report['unknown_rooms']:
+        lines.append('\nUnknown rooms:')
+        for item in report['unknown_rooms'][:10]:
+            suggested = f" Suggested: {item['suggested_room']}." if item.get('suggested_room') else ''
+            lines.append(f"• {item['label']} — {item['reason']}{suggested}")
+    if report['duplicate_names']:
+        lines.append('\nDuplicate names:')
+        for group in report['duplicate_names'][:5]:
+            lines.append(f"• {group['label']} — {group['count']} devices")
+    lines.append('\nFix priority: unknown switch states first, then unknown rooms. These two have the biggest impact on AI answers and dashboard accuracy.')
+    return {'success': True, 'intent': 'device_inspector', 'message': '\n'.join(lines), **report}
+
+
 def history_current_since(conn: sqlite3.Connection, device_id: str, attr: str, current_value: Any, fallback: int) -> int:
     rows = state_change_rows(conn, str(device_id), attr)
     if not rows:
@@ -1755,7 +1921,7 @@ def device_health_answer() -> dict[str, Any]:
     if stale.get('occupied_long'):
         lines.append('🔵 Normal occupancy, not stale:\n' + '\n'.join(f"• {item['label']} ({item['room']}) occupied for {item['duration']}" for item in stale['occupied_long'][:5]))
     if diagnostics['unknown_switch_state'] or diagnostics['unknown_room']:
-        lines.append(f"Housekeeping: unknown switch states {diagnostics['unknown_switch_state']}, unknown rooms {diagnostics['unknown_room']}")
+        lines.append(f"Housekeeping: unknown switch states {diagnostics['unknown_switch_state']}, unknown rooms {diagnostics['unknown_room']} — ask 'what are the unknowns' for the device list.")
     if diagnostics['last_error']:
         lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
     return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
@@ -3799,6 +3965,8 @@ def assistant(text: str) -> dict[str, Any]:
         m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:is\s+)?on\s+(?:in|inside)\s+(.+)$", t)
     if m_room_on:
         return room_on_status_answer(m_room_on.group(1).strip())
+    if ('unknown switch' in t or 'unknown room' in t or 'what are the unknowns' in t or 'device inspector' in t or 'housekeeping' in t or 'unassigned device' in t or 'duplicate device' in t):
+        return device_inspector_answer()
     if 'performance baseline' in t or 'save baseline' in t or 'baseline cpu' in t or 'baseline load' in t:
         return performance_baseline_answer('assistant')
     if 'compare performance' in t or 'performance compare' in t or 'compare cpu' in t or 'compare load' in t:
@@ -4188,6 +4356,11 @@ def api_performance_compare():
 def api_performance_snapshots():
     return {'success': True, 'snapshots': recent_performance_snapshots(50)}
 
+
+
+@app.get('/api/device-inspector')
+def api_device_inspector():
+    return device_inspector_answer()
 
 @app.get('/api/stale-devices')
 def api_stale_devices():
