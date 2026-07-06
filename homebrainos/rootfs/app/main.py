@@ -13,6 +13,7 @@ from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import uvicorn
@@ -20,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.7.61-alpha'
+APP_VERSION = '0.7.62-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -91,6 +92,7 @@ def load_config() -> dict[str, Any]:
         'stale_device_report_hours': int(os.getenv('STALE_DEVICE_REPORT_HOURS', '24')),
         'heating_on_delta': float(os.getenv('HEATING_ON_DELTA', '1')),
         'heating_off_setpoint': float(os.getenv('HEATING_OFF_SETPOINT', '12')),
+        'time_zone': os.getenv('TZ', os.getenv('TIME_ZONE', 'Europe/London')),
         'hubitat_logs_path': os.getenv('HUBITAT_LOGS_PATH', '/logs/past'),
         'hubitat_logs_url': os.getenv('HUBITAT_LOGS_URL', ''),
     }
@@ -1230,13 +1232,34 @@ def last_state_session_for_device(device: dict[str, Any], attr: str, expected_st
     return sessions[-1] if sessions else None
 
 
+def local_timezone() -> ZoneInfo | None:
+    name = str(CONFIG.get('time_zone') or os.getenv('TZ') or 'Europe/London').strip()
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        return None
+
+
+def local_datetime(timestamp: int | float) -> datetime:
+    tz = local_timezone()
+    if tz:
+        return datetime.fromtimestamp(float(timestamp), tz)
+    return datetime.fromtimestamp(float(timestamp))
+
+
+def format_clock_time(dt: datetime) -> str:
+    return dt.strftime('%I:%M %p').lstrip('0').lower()
+
+
 def display_since(timestamp: int) -> str:
-    dt = datetime.fromtimestamp(int(timestamp))
-    now = datetime.fromtimestamp(time.time())
-    time_text = dt.strftime('%I:%M %p').lstrip('0').lower()
+    dt = local_datetime(int(timestamp))
+    now = local_datetime(time.time())
+    time_text = format_clock_time(dt)
     if dt.date() == now.date():
         return f'{time_text} today'
-    return dt.strftime('%-I:%M %p on %d %B %Y').lower() if os.name != 'nt' else dt.strftime('%#I:%M %p on %d %B %Y').lower()
+    return f"{time_text} on {dt.strftime('%d %B %Y')}"
 
 
 def display_time_range(start: int, end: int | None) -> str:
@@ -1714,7 +1737,7 @@ def format_restart(value: Any) -> str:
         timestamp = float(text)
         if timestamp > 10_000_000_000:
             timestamp = timestamp / 1000
-        return datetime.fromtimestamp(timestamp).strftime('%d %b %Y %H:%M')
+        return local_datetime(timestamp).strftime('%d %b %Y %H:%M')
     match = re.fullmatch(r'(\d{1,2})([A-Za-z]{3})(\d{4})\s+(\d{1,2}:\d{2})', text)
     if match:
         day, month, year, clock = match.groups()

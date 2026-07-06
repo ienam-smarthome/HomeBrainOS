@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.62-alpha
+
+- Add a `time_zone` add-on option, defaulting to `Europe/London`.
+- Format state-duration and session timestamps in the configured local timezone so HomeBrain matches Hubitat/browser time.
+- Use the same local timezone helper for Hub Info restart timestamps.
+
 ## v0.7.61-alpha
 
 - Prefer exact device labels for state-duration questions so `TV` does not match broader multimedia devices.

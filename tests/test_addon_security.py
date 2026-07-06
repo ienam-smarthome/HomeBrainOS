@@ -1,5 +1,6 @@
 import importlib.util
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -322,6 +323,21 @@ def test_device_last_state_duration_answers_completed_session():
         assert 'TV was last on for 11 minutes' in answer['message']
     finally:
         main.DB_PATH = original_db_path
+
+
+def test_display_since_uses_configured_london_timezone():
+    main = load_addon_main()
+    original_time = main.time.time
+    original_tz = main.CONFIG.get('time_zone')
+    try:
+        main.CONFIG['time_zone'] = 'Europe/London'
+        event_time = datetime(2026, 7, 6, 16, 49, tzinfo=timezone.utc).timestamp()
+        main.time.time = lambda: datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc).timestamp()
+
+        assert main.display_since(int(event_time)) == '5:49 pm today'
+    finally:
+        main.time.time = original_time
+        main.CONFIG['time_zone'] = original_tz
 
 
 def test_device_state_duration_reports_current_state_mismatch():

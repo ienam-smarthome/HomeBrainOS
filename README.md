@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.61-alpha` assistant dashboard:
+`v0.7.62-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -68,6 +68,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Deterministic state-duration answers for questions like `how long has the TV been on`
 - Exact device labels such as `TV` are preferred over broader multimedia/context matches
 - Last-state session answers such as `how long was the TV last on for`
+- Configurable local time zone for event/session answers, defaulting to Europe/London
 - Protected AI context inspection endpoint at `/api/ai/context`
 - Exact heating setpoint commands such as `set hallway heating to 21`
 - Room active-state questions such as `what is on in hallway`
@@ -203,6 +204,7 @@ ollama_health_cache_seconds: 60
 - `v0.7.59-alpha` Stale-device reports use friendly elapsed times and spoken device details
 - `v0.7.60-alpha` Deterministic state-duration answers use latest HomeBrain/Hubitat state changes
 - `v0.7.61-alpha` Exact device targeting for state-duration questions and last-on session answers
+- `v0.7.62-alpha` State-duration/session answers display times in the configured local timezone
 - `v0.7.50-alpha` Voice station keeps the command window visible across mobile speech-recognition restarts
 - `v0.7.49-alpha` Phone-friendly voice station wake phrase arming for separate wake and command phrases
 - `v0.7.48-alpha` Browser voice station mode with `Hey HomeBrain` wake phrase filtering
