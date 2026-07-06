@@ -1,6 +1,7 @@
-## v0.8.1-alpha
+## v0.8.3-alpha
 
-- Home Health score: one quick answer for what needs attention.
-- Energy Advisor: highlights devices that may be wasting electricity.
-- Home Timeline: recent meaningful Hubitat events/history.
-- Daily Briefing: health, temperature, humidity, occupancy, power and top actions.
+- Added Automation Health / Self-Check outcome verification.
+- Added deterministic checks for bathroom fan/humidity behaviour, device reporting monitor, and energy waste monitor.
+- Added `/api/automation-health` and `/api/automation-explain/{name}`.
+- Assistant now answers: “did the fan work today?”, “which automations failed?”, and “automation health”.
+

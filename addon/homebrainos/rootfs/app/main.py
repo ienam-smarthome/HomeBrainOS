@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.8.0-alpha'
+APP_VERSION = '0.8.3-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2002,6 +2002,142 @@ def recommendations_answer() -> dict[str, Any]:
     lines = ['Recommended actions:'] + [f'• {r}' for r in recs[:8]]
     return {'success': True, 'intent': 'recommendations', 'message': '\n'.join(lines), 'insights': insights, 'recommendations': recs}
 
+
+def recent_device_events_for(device_ids: list[str], hours: int = 24, limit: int = 200) -> list[dict[str, Any]]:
+    """Return recent Hubitat callback events for a set of device ids."""
+    ids = [str(i) for i in device_ids if i is not None]
+    if not ids:
+        return []
+    cutoff = int(time.time()) - max(1, hours) * 3600
+    placeholders = ','.join('?' for _ in ids)
+    try:
+        conn = db()
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(f"""
+            SELECT device_id, label, attr, value, created_at
+            FROM hubitat_events
+            WHERE created_at >= ? AND device_id IN ({placeholders})
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, [cutoff, *ids, limit]).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def numeric_event_values(events: list[dict[str, Any]], attr: str) -> list[tuple[int, float]]:
+    values: list[tuple[int, float]] = []
+    for event in events:
+        if str(event.get('attr') or '').lower() != attr.lower():
+            continue
+        try:
+            values.append((int(event.get('created_at') or 0), float(event.get('value'))))
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def automation_health_answer() -> dict[str, Any]:
+    """Self-check common automations by verifying the expected outcome happened.
+
+    This is deliberately practical and deterministic: it does not need cloud AI.
+    It checks for evidence from Hubitat callback events and current device state.
+    """
+    devices = all_devices()
+    now = int(time.time())
+    fan_devices = [d for d in devices if 'fan' in device_search_text(d) or 'ventilation' in device_search_text(d) or 'boost' in device_search_text(d)]
+    humidity_devices = [d for d in devices if isinstance(d.get('humidity'), (int, float)) and ('bathroom' in normalise(d.get('room') or '') or 'bathroom' in device_search_text(d) or 'humidity' in device_search_text(d))]
+    checks: list[dict[str, Any]] = []
+
+    # Bathroom / humidity fan outcome verification.
+    if fan_devices or humidity_devices:
+        fan_ids = [str(d.get('id')) for d in fan_devices]
+        humidity_ids = [str(d.get('id')) for d in humidity_devices]
+        fan_events = recent_device_events_for(fan_ids, hours=24, limit=120)
+        humidity_events = recent_device_events_for(humidity_ids, hours=24, limit=160)
+        humid_values: list[tuple[int, float]] = []
+        for d in humidity_devices:
+            if isinstance(d.get('humidity'), (int, float)):
+                humid_values.append((now, float(d.get('humidity'))))
+        humid_values.extend(numeric_event_values(humidity_events, 'humidity'))
+        max_humidity = max((v for _, v in humid_values), default=None)
+        current_humidity = max((float(d.get('humidity')) for d in humidity_devices if isinstance(d.get('humidity'), (int, float))), default=None)
+        fan_on_events = [e for e in fan_events if str(e.get('attr') or '').lower() == 'switch' and is_state(e.get('value'), 'on')]
+        fan_off_events = [e for e in fan_events if str(e.get('attr') or '').lower() == 'switch' and is_state(e.get('value'), 'off')]
+        fan_current_on = any(is_state(d.get('switch'), 'on') for d in fan_devices)
+        status = 'unknown'
+        detail = 'Not enough event history yet to fully verify the fan automation. Make sure the Hubitat event callback is enabled.'
+        recommendation = 'Ask again after a fan cycle, or trigger the bathroom fan manually and check it is recorded in the timeline.'
+        if max_humidity is not None and max_humidity >= 70:
+            if fan_on_events or fan_current_on:
+                if current_humidity is not None and max_humidity - current_humidity >= 5:
+                    status = 'success'
+                    detail = f'Humidity reached {round(max_humidity,1)}% and the fan was seen ON; humidity is now {round(current_humidity,1)}%.'
+                    recommendation = 'Fan outcome looks good.'
+                else:
+                    status = 'warning'
+                    detail = f'Humidity reached {round(max_humidity,1)}% and the fan was seen ON, but humidity has not clearly dropped yet.'
+                    recommendation = 'Check whether the fan needs longer, the threshold is too low, or ventilation needs cleaning.'
+            else:
+                status = 'critical'
+                detail = f'Humidity reached {round(max_humidity,1)}%, but no fan ON confirmation was found in recent events.'
+                recommendation = 'Check SwitchBot/Fan switch reliability and Maker API event callback.'
+        elif fan_on_events or fan_off_events:
+            status = 'success'
+            detail = f'Fan activity was recorded today: {len(fan_on_events)} ON event(s), {len(fan_off_events)} OFF event(s).'
+            recommendation = 'Command/result feedback is being recorded.'
+        checks.append({'name': 'Bathroom fan humidity automation', 'status': status, 'detail': detail, 'recommendation': recommendation, 'devices': [d.get('label') for d in fan_devices[:5] + humidity_devices[:5]]})
+
+    # Device health self-check: tells whether the monitoring automation itself has evidence.
+    stale = stale_device_report()
+    if stale.get('not_reporting'):
+        checks.append({'name': 'Device reporting monitor', 'status': 'warning', 'detail': f"{len(stale['not_reporting'])} device(s) have no recent real activity.", 'recommendation': 'Check batteries, Zigbee mesh, MQTT broker, and whether those devices are included in Maker API.', 'devices': [i['label'] for i in stale['not_reporting'][:8]]})
+    else:
+        checks.append({'name': 'Device reporting monitor', 'status': 'success', 'detail': 'No not-reporting devices found by the health engine.', 'recommendation': 'Device health monitor looks clear.', 'devices': []})
+
+    # Energy advisor self-check: verifies it can identify measurable loads.
+    energy = energy_waste_candidates()
+    if energy:
+        checks.append({'name': 'Energy waste monitor', 'status': 'warning', 'detail': f"{len(energy)} device(s) look worth checking for standby or long-running power draw.", 'recommendation': 'Review top loads and add auto-off rules where practical.', 'devices': [i['label'] for i in energy[:8]]})
+    else:
+        powered = [d for d in devices if isinstance(d.get('power'), (int, float))]
+        checks.append({'name': 'Energy waste monitor', 'status': 'success' if powered else 'unknown', 'detail': 'No obvious energy waste found.' if powered else 'No power meter data found, so energy automation cannot be verified.', 'recommendation': 'Add power-reporting devices to Maker API for stronger energy checks.', 'devices': [d.get('label') for d in powered[:8]]})
+
+    score = 100
+    score -= 30 * sum(1 for c in checks if c['status'] == 'critical')
+    score -= 12 * sum(1 for c in checks if c['status'] == 'warning')
+    score -= 5 * sum(1 for c in checks if c['status'] == 'unknown')
+    score = max(0, score)
+    lines = ['Automation Health:', f'Score: {score}/100']
+    for check in checks:
+        icon = {'success': '✅', 'warning': '⚠️', 'critical': '🔴', 'unknown': 'ℹ️'}.get(check['status'], '•')
+        lines.append(f"{icon} {check['name']}: {check['detail']}")
+        if check.get('recommendation'):
+            lines.append(f"   Action: {check['recommendation']}")
+    return {'success': True, 'intent': 'automation_health', 'score': score, 'message': '\n'.join(lines), 'checks': checks}
+
+
+def automation_explain_answer(text: str) -> dict[str, Any] | None:
+    t = normalise(text)
+    if not any(word in t for word in ('automation', 'fan work', 'did the fan', 'fan failed', 'actions successful', 'which automations failed', 'outcome')):
+        return None
+    health = automation_health_answer()
+    if 'fan' in t:
+        checks = [c for c in health['checks'] if 'fan' in normalise(c.get('name') or '')]
+    elif 'failed' in t:
+        checks = [c for c in health['checks'] if c.get('status') in ('critical', 'warning')]
+    else:
+        checks = health['checks']
+    if not checks:
+        return {'success': True, 'intent': 'automation_explain', 'message': 'No matching automation issue found.', 'checks': []}
+    lines = ['Automation explanation:']
+    for c in checks:
+        lines.append(f"• {c['name']}: {c['detail']}")
+        lines.append(f"  Next: {c['recommendation']}")
+    return {'success': True, 'intent': 'automation_explain', 'message': '\n'.join(lines), 'checks': checks}
+
 def weather_device() -> dict[str, Any] | None:
     devices = all_devices()
     weather_devices = [
@@ -3403,7 +3539,7 @@ def assistant(text: str) -> dict[str, Any]:
             'message': (
                 "I can summarize the home, read weather, list lights or switches that are on, answer temperature/humidity/power/battery questions, "
                 "control switchable devices, keep a device on for a timed duration, set heating temperatures, adjust brightness, "
-                "refresh or clear the cache, list room devices, read hub logs, check stale devices, run device health, home health, energy advisor, home timeline, daily briefing, and diagnostics."
+                "refresh or clear the cache, list room devices, read hub logs, check stale devices, run device health, automation health, home health, energy advisor, home timeline, daily briefing, and diagnostics."
             ),
         }
     if 'weather' in t or 'forecast' in t:
@@ -3425,6 +3561,8 @@ def assistant(text: str) -> dict[str, Any]:
         return hub_health_answer()
     if 'daily briefing' in t or 'morning briefing' in t or 'home briefing' in t:
         return daily_briefing_answer()
+    if 'automation health' in t or 'automation self check' in t or 'automation self-check' in t or 'which automations failed' in t or 'did the fan work' in t:
+        return automation_health_answer()
     if 'timeline' in t or 'history' in t or 'what happened' in t:
         return timeline_answer()
     if 'energy advisor' in t or 'energy insight' in t or 'electricity high' in t or 'wasting electricity' in t or 'energy waste' in t:
@@ -3456,6 +3594,9 @@ def assistant(text: str) -> dict[str, Any]:
     summary_answer = explain_summary_tile(t)
     if summary_answer:
         return summary_answer
+    automation_explain = automation_explain_answer(text) if ('automation' in t or 'fan work' in t or 'which automations failed' in t or 'did the fan' in t) else None
+    if automation_explain:
+        return automation_explain
     explain_answer = explain_home_question_answer(text) if 'why' in t or 'explain' in t else None
     if explain_answer:
         return explain_answer
@@ -3810,6 +3951,17 @@ def api_what_changed():
 @app.get('/api/recommendations')
 def api_recommendations():
     return recommendations_answer()
+
+
+@app.get('/api/automation-health')
+def api_automation_health():
+    return automation_health_answer()
+
+
+@app.get('/api/automation-explain/{name}')
+def api_automation_explain(name: str):
+    answer = automation_explain_answer('automation ' + name)
+    return answer or automation_health_answer()
 
 
 @app.get('/api/room-intelligence/{room}')
