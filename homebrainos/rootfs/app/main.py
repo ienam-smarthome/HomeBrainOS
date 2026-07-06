@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.8.3-alpha'
+APP_VERSION = '0.9.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -74,7 +74,9 @@ def load_config() -> dict[str, Any]:
         'maker_api_app_id': os.getenv('MAKER_API_APP_ID', ''),
         'maker_api_token': os.getenv('MAKER_API_TOKEN', ''),
         'api_token': os.getenv('HOMEBRAIN_API_TOKEN', ''),
-        'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '30')),
+        'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '120')),
+        'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '90')),
+        'event_batch_window_ms': int(os.getenv('EVENT_BATCH_WINDOW_MS', '500')),
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
         'ollama_model': os.getenv('OLLAMA_MODEL', 'qwen2.5:3b'),
@@ -84,9 +86,9 @@ def load_config() -> dict[str, Any]:
         'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
         'ollama_health_timeout_seconds': int(os.getenv('OLLAMA_HEALTH_TIMEOUT_SECONDS', '2')),
         'ollama_health_cache_seconds': int(os.getenv('OLLAMA_HEALTH_CACHE_SECONDS', '60')),
-        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '150')),
-        'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '300')),
-        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '30')),
+        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '25')),
+        'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '1800')),
+        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '5')),
         'stale_motion_active_minutes': int(os.getenv('STALE_MOTION_ACTIVE_MINUTES', '30')),
         'stale_light_on_hours': int(os.getenv('STALE_LIGHT_ON_HOURS', '4')),
         'stale_device_report_hours': int(os.getenv('STALE_DEVICE_REPORT_HOURS', '24')),
@@ -109,6 +111,18 @@ STATE_EVENT_VERSION = 0
 PENDING_DEVICE_TIMERS: dict[str, dict[str, Any]] = {}
 ACTIVE_TIMER_THREADS: dict[str, threading.Timer] = {}
 OLLAMA_HEALTH: dict[str, Any] = {'checked_at': 0.0, 'online': None, 'message': 'Not checked', 'base_url': '', 'model': ''}
+PERF_STATS: dict[str, Any] = {
+    'started_at': time.time(),
+    'full_refresh_count': 0,
+    'full_refresh_skipped': 0,
+    'full_refresh_last_ms': None,
+    'full_refresh_last_device_count': 0,
+    'detail_fetch_count': 0,
+    'event_count': 0,
+    'event_updated_count': 0,
+    'cache_write_count': 0,
+    'last_refresh_reason': None,
+}
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
@@ -549,7 +563,7 @@ def should_refresh_device_detail(device: dict[str, Any], last_detail_at: int | N
 
 
 def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    global LAST_DETAIL_ERRORS
+    global LAST_DETAIL_ERRORS, PERF_STATS
     limit = max(0, int(CONFIG.get('device_detail_refresh_limit', 150)))
     batch = max(0, int(CONFIG.get('device_detail_refresh_batch', 30)))
     detail_times = cached_detail_refresh_times()
@@ -569,6 +583,7 @@ def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]
                 raw_device = merge_raw_device(raw_device, detail)
                 raw_device['_homebrain_detail_refreshed_at'] = now
                 detail_count += 1
+                PERF_STATS['detail_fetch_count'] = int(PERF_STATS.get('detail_fetch_count') or 0) + 1
                 if not incomplete:
                     stale_detail_count += 1
             except Exception as exc:
@@ -579,6 +594,7 @@ def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def upsert_devices(devices: list[dict[str, Any]]) -> None:
+    global PERF_STATS
     now = int(time.time())
     conn = db()
     try:
@@ -617,6 +633,7 @@ def upsert_devices(devices: list[dict[str, Any]]) -> None:
                     if old_d.get(attr) != d.get(attr):
                         conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', (d['id'], attr, str(d.get(attr)), now))
         conn.commit()
+        PERF_STATS['cache_write_count'] = int(PERF_STATS.get('cache_write_count') or 0) + len(devices)
     finally:
         conn.close()
 
@@ -794,7 +811,7 @@ def event_records_from_payload(payload: Any) -> list[dict[str, Any]]:
 
 
 def record_hubitat_events(payload: Any) -> dict[str, Any]:
-    global LAST_HUBITAT_EVENT, STATE_EVENT_VERSION
+    global LAST_HUBITAT_EVENT, STATE_EVENT_VERSION, PERF_STATS
     now = int(time.time())
     records = event_records_from_payload(payload)
     updated: list[dict[str, Any]] = []
@@ -812,6 +829,8 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         device = update_cached_attribute(event['device_id'], event['attr'], event.get('value'), event.get('label'))
         if device:
             updated.append(device)
+    PERF_STATS['event_count'] = int(PERF_STATS.get('event_count') or 0) + len(records)
+    PERF_STATS['event_updated_count'] = int(PERF_STATS.get('event_updated_count') or 0) + len(updated)
     LAST_HUBITAT_EVENT = {
         'received_at': now,
         'count': len(records),
@@ -823,8 +842,15 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
     return {'success': True, 'events': len(records), 'updated': len(updated), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated}
 
 
-def refresh_devices() -> int:
-    global LAST_ERROR, LAST_REFRESH
+def refresh_devices(force: bool = False, reason: str = 'scheduled') -> int:
+    global LAST_ERROR, LAST_REFRESH, PERF_STATS
+    now = time.time()
+    min_seconds = max(0, int(CONFIG.get('min_full_refresh_seconds', 90)))
+    if not force and LAST_REFRESH and min_seconds and now - float(LAST_REFRESH) < min_seconds:
+        PERF_STATS['full_refresh_skipped'] = int(PERF_STATS.get('full_refresh_skipped') or 0) + 1
+        PERF_STATS['last_refresh_reason'] = f'skipped:{reason}'
+        return count_devices()
+    started = time.time()
     try:
         raw = maker_get('devices', timeout=20)
         raw = enrich_raw_devices(raw if isinstance(raw, list) else [])
@@ -833,10 +859,26 @@ def refresh_devices() -> int:
         prune_missing_devices({d['id'] for d in devices})
         LAST_REFRESH = time.time()
         LAST_ERROR = None
+        PERF_STATS['full_refresh_count'] = int(PERF_STATS.get('full_refresh_count') or 0) + 1
+        PERF_STATS['full_refresh_last_ms'] = int((time.time() - started) * 1000)
+        PERF_STATS['full_refresh_last_device_count'] = len(devices)
+        PERF_STATS['last_refresh_reason'] = reason
         return len(devices)
     except Exception as exc:
         LAST_ERROR = public_error(exc)
+        PERF_STATS['full_refresh_last_ms'] = int((time.time() - started) * 1000)
+        PERF_STATS['last_refresh_reason'] = f'error:{reason}'
         return count_devices()
+
+
+
+def refresh_devices_for_context(reason: str = 'command-context') -> int | None:
+    # Tests and older integrations sometimes monkeypatch refresh_devices with a no-arg callable.
+    # Keep that compatibility while using throttled refreshes in production.
+    try:
+        return refresh_devices(False, reason)
+    except TypeError:
+        return refresh_devices()
 
 
 def rows_to_devices(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
@@ -2353,6 +2395,67 @@ def hub_info_device() -> dict[str, Any] | None:
     return next((d for d in all_devices() if 'hub info' in device_search_text(d)), None)
 
 
+
+def performance_advisor_answer() -> dict[str, Any]:
+    now = time.time()
+    uptime_seconds = max(1, int(now - float(PERF_STATS.get('started_at') or now)))
+    devices = count_devices()
+    full_refresh_count = int(PERF_STATS.get('full_refresh_count') or 0)
+    skipped = int(PERF_STATS.get('full_refresh_skipped') or 0)
+    detail_fetches = int(PERF_STATS.get('detail_fetch_count') or 0)
+    event_count = int(PERF_STATS.get('event_count') or 0)
+    updated = int(PERF_STATS.get('event_updated_count') or 0)
+    calls_per_hour = round((full_refresh_count + detail_fetches) * 3600 / uptime_seconds, 1)
+    event_rate = round(event_count * 3600 / uptime_seconds, 1)
+    last_age = int(now - LAST_REFRESH) if LAST_REFRESH else None
+    warnings: list[str] = []
+    if int(CONFIG.get('refresh_seconds', 120)) < 60:
+        warnings.append('Full refresh interval is under 60 seconds; this can create high Maker API load.')
+    if int(CONFIG.get('device_detail_refresh_batch', 5)) > 10:
+        warnings.append('Device detail batch is high; lower it if Hubitat busy time rises.')
+    if calls_per_hour > 300:
+        warnings.append('Maker API request rate is high. Prefer Hubitat event webhooks and cached answers.')
+    if LAST_ERROR:
+        warnings.append(f'Last Hubitat refresh error: {LAST_ERROR}')
+    level = '🟢 Healthy' if not warnings else '🟡 Needs tuning' if calls_per_hour < 600 else '🔴 High load risk'
+    lines = [
+        'Performance advisor:',
+        level,
+        f"Devices cached: {devices}",
+        f"Full refreshes: {full_refresh_count}",
+        f"Skipped refreshes: {skipped}",
+        f"Detail fetches: {detail_fetches}",
+        f"Hubitat events processed: {event_count} ({updated} cache updates)",
+        f"Estimated Maker API calls/hour since start: {calls_per_hour}",
+        f"Event rate/hour since start: {event_rate}",
+    ]
+    if last_age is not None:
+        lines.append(f"Last full refresh: {elapsed_duration_label(last_age)} ago")
+    lines.append(f"Refresh interval: {CONFIG.get('refresh_seconds')}s")
+    lines.append(f"Minimum full-refresh gap: {CONFIG.get('min_full_refresh_seconds')}s")
+    lines.append(f"Detail refresh batch: {CONFIG.get('device_detail_refresh_batch')} every {CONFIG.get('device_detail_refresh_seconds')}s")
+    if warnings:
+        lines.append('\nWarnings:')
+        lines.extend(f"• {w}" for w in warnings)
+    else:
+        lines.append('\nNo performance warnings detected.')
+    lines.append('\nOptimisation active: cached API answers, throttled full refreshes, smaller device-detail batches, and event-driven cache updates.')
+    return {
+        'success': True,
+        'intent': 'performance_advisor',
+        'message': '\n'.join(lines),
+        'level': level,
+        'warnings': warnings,
+        'stats': PERF_STATS,
+        'config': {
+            'refresh_seconds': CONFIG.get('refresh_seconds'),
+            'min_full_refresh_seconds': CONFIG.get('min_full_refresh_seconds'),
+            'device_detail_refresh_seconds': CONFIG.get('device_detail_refresh_seconds'),
+            'device_detail_refresh_batch': CONFIG.get('device_detail_refresh_batch'),
+            'device_detail_refresh_limit': CONFIG.get('device_detail_refresh_limit'),
+        },
+    }
+
 def hub_health_metrics(hub: dict[str, Any]) -> dict[str, Any]:
     return {
         'CPU load': hub_metric(hub, ('cpu', 'cpuLoad', 'cpuLoadLoad%', 'cpuPct', 'cpuPercent', 'cpu5Min', 'cpuLoad5Min'), ('cpu',)),
@@ -2904,7 +3007,7 @@ def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: 
             changed.append(d['label'])
         except Exception as exc:
             errors.append(f"{d['label']}: {public_error(exc)}")
-    refresh_devices()
+    refresh_devices_for_context('command-context')
     if changed:
         updated = update_cached_switch([d['id'] for d in candidates if d['label'] in changed], command)
         message = f"Turned {command}:\n" + '\n'.join(changed)
@@ -3083,7 +3186,7 @@ def delayed_device_command(timer_id: str, device_ids: list[str], command: str) -
                 maker_command(device_id, command)
             except Exception:
                 continue
-        refresh_devices()
+        refresh_devices_for_context('command-context')
         update_cached_switch(device_ids, command)
     finally:
         mark_timer_status(timer_id, 'done')
@@ -3205,7 +3308,7 @@ def level_command_devices(devices: list[dict[str, Any]], level: int, explicit_bu
             changed.append(device['label'])
         except Exception as exc:
             errors.append(f"{device['label']}: {public_error(exc)}")
-    refresh_devices()
+    refresh_devices_for_context('command-context')
     for device in candidates:
         if device['label'] in changed:
             cached = update_cached_level(device['id'], target_level)
@@ -3233,7 +3336,7 @@ def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
         maker_command_value(device_id, 'setHeatingSetpoint', new_value)
     except Exception as exc:
         return {'success': False, 'message': f"Setpoint command failed for {device['label']}: {public_error(exc)}", 'device': device}
-    refresh_devices()
+    refresh_devices_for_context('command-context')
     updated = update_cached_setpoint(device_id, new_value)
     return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}°", 'device': updated or device, 'setpoint': new_value}
 
@@ -3258,7 +3361,7 @@ def set_setpoint_devices(devices: list[dict[str, Any]], setpoint: float, explici
             changed.append(device['label'])
         except Exception as exc:
             errors.append(f"{device['label']}: {public_error(exc)}")
-    refresh_devices()
+    refresh_devices_for_context('command-context')
     for device in candidates:
         if device['label'] in changed:
             cached = update_cached_setpoint(device['id'], target_setpoint)
@@ -3309,7 +3412,7 @@ def set_heating_mode(mode: str, target: str = 'home') -> dict[str, Any]:
                 changed.append(device['label'])
         except Exception as exc:
             errors.append(f"{device['label']}: {public_error(exc)}")
-    refresh_devices()
+    refresh_devices_for_context('command-context')
     for device_id, setpoint in changed_setpoints.items():
         update_cached_setpoint(device_id, setpoint)
     updated = [d for d in all_devices() if d['id'] in {device['id'] for device in devices if device['label'] in changed}]
@@ -3557,6 +3660,8 @@ def assistant(text: str) -> dict[str, Any]:
         m_room_on = re.search(r"^(?:what(?:'s| is)|which|show|list)\s+(?:is\s+)?on\s+(?:in|inside)\s+(.+)$", t)
     if m_room_on:
         return room_on_status_answer(m_room_on.group(1).strip())
+    if 'performance' in t or 'cpu' in t or 'hub load' in t or 'maker api load' in t or 'busy time' in t:
+        return performance_advisor_answer()
     if 'hub health' in t or 'hub info' in t or 'hubitat health' in t:
         return hub_health_answer()
     if 'daily briefing' in t or 'morning briefing' in t or 'home briefing' in t:
@@ -3643,7 +3748,7 @@ def assistant(text: str) -> dict[str, Any]:
 def run_command(text: str) -> dict[str, Any]:
     t = normalise(text)
     if t in ('refresh', 'refresh cache', 'reload cache', 'update cache'):
-        count = refresh_devices()
+        count = refresh_devices_for_context('command-context')
         if LAST_ERROR:
             return {'success': False, 'message': f'Refresh failed: {LAST_ERROR}', 'devices': count, 'error': LAST_ERROR}
         return {'success': True, 'message': f'Cache refreshed: {count} devices', 'devices': count, 'last_refresh': LAST_REFRESH}
@@ -3844,20 +3949,20 @@ async def refresh_loop() -> None:
     seconds = max(10, int(CONFIG.get('refresh_seconds', 30)))
     while True:
         await asyncio.sleep(seconds)
-        await asyncio.to_thread(refresh_devices)
+        await asyncio.to_thread(refresh_devices, False, 'scheduled')
 
 
 @app.on_event('startup')
 async def startup() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    refresh_devices()
+    refresh_devices(True, 'startup')
     restore_pending_timers()
     asyncio.create_task(refresh_loop())
 
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health()}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
 
 
 @app.get('/api/events')
@@ -3916,6 +4021,11 @@ def api_cancel_timer(timer_id: str, request: Request):
 @app.get('/api/hub/logs')
 def api_hub_logs():
     return {'success': True, **hub_logs_diagnostics()}
+
+
+@app.get('/api/performance-advisor')
+def api_performance_advisor():
+    return performance_advisor_answer()
 
 
 @app.get('/api/stale-devices')
@@ -3978,7 +4088,7 @@ def api_ai_context(request: Request):
 @app.post('/api/refresh')
 def api_refresh(request: Request):
     require_api_token(request)
-    count = refresh_devices()
+    count = refresh_devices(True, 'manual')
     return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
 
 
@@ -3986,7 +4096,7 @@ def api_refresh(request: Request):
 def api_cache_clear_refresh(request: Request):
     require_api_token(request)
     clear_cache()
-    count = refresh_devices()
+    count = refresh_devices(True, 'clear-cache')
     return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
 
 
