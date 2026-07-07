@@ -4,6 +4,12 @@
 - Adds on-duration, room activity context, and suggestions for lights left on without recent activity.
 - Treats power-only child devices such as socket power meters as sensors, reducing false unknown switch states.
 
+## v1.2.0-alpha - Intent + Entity Parser
+
+- Added natural room/entity resolution for questions like "how long has Bedroom two light been on today".
+- Resolves spoken/typed variants such as "bedroom two", "bedroom to", "second bedroom", "BR2" style room intent before device matching.
+- Duration queries now filter by room first, then device type, reducing false multi-device disambiguation.
+
 ## v1.0.1-alpha - Event Diagnostics
 
 - Added `/api/event-diagnostics` with event stream health, last 20 events, UI relevance counts, SSE payload counts, and stale-event warning.

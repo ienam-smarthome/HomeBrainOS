@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.1.0-alpha'
+APP_VERSION = '1.2.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2181,7 +2181,7 @@ def device_total_state_duration_answer(
     expected_state: str = 'on',
     period: str = 'today',
 ) -> dict[str, Any]:
-    devices = find_devices(target)
+    devices = intent_devices(target, attr)
     devices = [device for device in devices if device.get(attr) is not None]
     if not devices:
         return {'success': False, 'intent': 'device_total_state_duration', 'message': f'I found no device state history for {target}.'}
@@ -2221,7 +2221,7 @@ def device_total_state_duration_answer(
 
 
 def device_state_duration_answer(target: str, attr: str = 'switch', expected_state: str | None = None) -> dict[str, Any]:
-    devices = find_devices(target)
+    devices = intent_devices(target, attr)
     devices = [device for device in devices if device.get(attr) is not None]
     if not devices:
         return {'success': False, 'intent': 'device_state_duration', 'message': f'I found no device state history for {target}.'}
@@ -2247,7 +2247,7 @@ def device_state_duration_answer(target: str, attr: str = 'switch', expected_sta
 
 
 def device_last_state_duration_answer(target: str, attr: str = 'switch', expected_state: str = 'on') -> dict[str, Any]:
-    devices = find_devices(target)
+    devices = intent_devices(target, attr)
     devices = [device for device in devices if device.get(attr) is not None]
     if not devices:
         return {'success': False, 'intent': 'device_state_duration', 'message': f'I found no device state history for {target}.'}
@@ -3497,7 +3497,7 @@ def normalise(text: Any) -> str:
         'de humidifier': 'dehumidifier', 'humidifier': 'dehumidifier', 'ligth': 'light',
         'lite': 'light', 'livingroom': 'living room', 'one': '1', 'two': '2', 'three': '3',
         'de humidifer': 'dehumidifier', 'dehumidifer': 'dehumidifier', 'purifer': 'purifier',
-        'purifyer': 'purifier', 'air purify': 'air purifier', 'bath room': 'bathroom',
+        'purifyer': 'purifier', 'air purify': 'air purifier', 'bath room': 'bathroom', 'bedroom too': 'bedroom 2', 'bed room too': 'bedroom 2',
     }
     for a, b in replacements.items():
         text = re.sub(rf'\b{re.escape(a)}\b', b, text)
@@ -3575,6 +3575,85 @@ def targeted_devices(query: str, category: str | None = None, room: str | None =
     best = scored[0][0]
     return [device for score, device in scored if score == best]
 
+
+
+def spoken_number_room_variants(text: str) -> str:
+    t = normalise(text)
+    # Common speech/typing ambiguity: "bedroom to light" should usually mean Bedroom 2 Light.
+    t = re.sub(r'\bbed\s*room\s+(?:to|too|two|second|2)\b', 'bedroom 2', t)
+    t = re.sub(r'\bbedroom\s+(?:to|too|two|second|2)\b', 'bedroom 2', t)
+    t = re.sub(r'\bbed\s*room\s+(?:one|first|1)\b', 'bedroom 1', t)
+    t = re.sub(r'\bbedroom\s+(?:one|first|1)\b', 'bedroom 1', t)
+    t = re.sub(r'\bbed\s*room\s+(?:three|third|3)\b', 'bedroom 3', t)
+    t = re.sub(r'\bbedroom\s+(?:three|third|3)\b', 'bedroom 3', t)
+    return t
+
+
+def extract_room_intent(query: str) -> str | None:
+    q = spoken_number_room_variants(query)
+    patterns = [
+        (r'\bbedroom\s*1\b', 'Bedroom 1'),
+        (r'\bbedroom\s*2\b', 'Bedroom 2'),
+        (r'\bbedroom\s*3\b', 'Bedroom 3'),
+        (r'\bsecond\s+bedroom\b', 'Bedroom 2'),
+        (r'\bfirst\s+bedroom\b', 'Bedroom 1'),
+        (r'\bthird\s+bedroom\b', 'Bedroom 3'),
+        (r'\bliving\s+room\b', 'Living Room'),
+        (r'\blivingroom\b', 'Living Room'),
+        (r'\bkitchen\b', 'Kitchen'),
+        (r'\bbathroom\b', 'Bathroom'),
+        (r'\bhallway\b', 'Hallway'),
+        (r'\btoilet\b', 'Toilet'),
+    ]
+    for pattern, room in patterns:
+        if re.search(pattern, q):
+            return room
+    return None
+
+
+def extract_category_intent(query: str, attr: str | None = None) -> str | None:
+    q = spoken_number_room_variants(query)
+    if re.search(r'\blights?\b|\blamps?\b|\bbulbs?\b', q):
+        return 'light'
+    if re.search(r'\b(?:plug|socket|switch|appliance)\b', q):
+        return 'switch'
+    if re.search(r'\b(?:motion|presence|occupancy)\b', q):
+        return 'motion_sensor'
+    if re.search(r'\b(?:door|window|contact)\b', q):
+        return 'contact_sensor'
+    if attr == 'switch':
+        return None
+    return None
+
+
+def intent_devices(query: str, attr: str | None = None, category: str | None = None) -> list[dict[str, Any]]:
+    """Resolve natural phrases like 'bedroom two light' before generic device matching.
+
+    This resolves room first, then device type, so Bedroom 2 Light is not confused
+    with Bedroom 1/2/3 lights when the user says 'bedroom two light'.
+    """
+    q = spoken_number_room_variants(query)
+    room = extract_room_intent(q)
+    category_hint = category or extract_category_intent(q, attr)
+    if room:
+        devices = room_devices(room, category_hint)
+        if attr:
+            devices = [d for d in devices if d.get(attr) is not None]
+        if devices:
+            # Prefer exact device type matches inside the resolved room.
+            if category_hint == 'light':
+                lights = [d for d in devices if d.get('category') == 'light' or 'light' in normalise(d.get('label','')) or 'lamp' in normalise(d.get('label',''))]
+                if lights:
+                    return lights
+            return devices
+    # If speech produced 'bedroom to light', try again as 'bedroom 2 light'.
+    if q != normalise(query):
+        matches = find_devices(q, category_hint)
+        if attr:
+            matches = [d for d in matches if d.get(attr) is not None]
+        if matches:
+            return matches
+    return find_devices(query, category_hint)
 
 def find_devices(query: str, category: str | None = None) -> list[dict[str, Any]]:
     q = normalise(query)
