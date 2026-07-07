@@ -1,3 +1,10 @@
+
+## v1.4.1-alpha - Energy Advisor Totals
+
+- Energy Advisor now reports energy and cost used today so far from the Octopus/whole-house meter.
+- Energy Advisor now reports yesterday's energy and cost where available.
+- Falls back to parsing Octopus display summary attributes when direct yesterday attributes are not exposed.
+
 ## v1.1.0-alpha - Smart Home Intelligence
 
 - Added deterministic intelligence for questions like `why are 3 lights on?` so HomeBrain explains the active lights instead of falling back to generic diagnostics.

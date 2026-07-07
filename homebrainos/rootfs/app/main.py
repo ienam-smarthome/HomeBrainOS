@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.4.0-alpha'
+APP_VERSION = '1.4.1-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2563,10 +2563,99 @@ def energy_waste_candidates() -> list[dict[str, Any]]:
     return results
 
 
+def first_attr_value(device: dict[str, Any], names: tuple[str, ...]) -> Any:
+    attrs = device.get('attributes') or {}
+    lookup = {compact_name(k): v for k, v in attrs.items()}
+    for name in names:
+        if name in attrs and attrs.get(name) is not None:
+            return attrs.get(name)
+        compact = compact_name(name)
+        if compact in lookup and lookup[compact] is not None:
+            return lookup[compact]
+    return None
+
+
+def parse_kwh_cost_text(text: Any, marker: str) -> tuple[float | None, float | None]:
+    if text is None:
+        return None, None
+    value = str(text)
+    marker_re = r'(?:^|[|,;\s])' + re.escape(marker) + r'\s*:?\s*'
+    pattern = marker_re + r'(?P<kwh>[0-9]+(?:\.[0-9]+)?)\s*kWh(?:\s*\(?£?(?P<cost>[0-9]+(?:\.[0-9]+)?)\)?)?'
+    match = re.search(pattern, value, flags=re.IGNORECASE)
+    if not match:
+        return None, None
+    return safe_float(match.group('kwh')), safe_float(match.group('cost'))
+
+
+def energy_usage_from_meter() -> dict[str, Any]:
+    devices = all_devices()
+    meter = None
+    for device in devices:
+        text = device_search_text(device)
+        if any(term in text for term in POWER_SOURCE_TERMS) or 'octopus live meter' in text:
+            meter = device
+            break
+    if not meter:
+        return {'available': False, 'source': None, 'today': {}, 'yesterday': {}}
+    attrs = meter.get('attributes') or {}
+    today_kwh = safe_float(first_attr_value(meter, (
+        'energyToday', 'todayEnergy', 'importToday', 'electricityToday', 'todayKwh', 'todayKWh'
+    )))
+    today_cost = safe_float(first_attr_value(meter, (
+        'costTodayEnergy', 'displayCostToday', 'costToday', 'todayCost', 'electricityCostToday'
+    )))
+    yesterday_kwh = safe_float(first_attr_value(meter, (
+        'energyYesterday', 'yesterdayEnergy', 'importYesterday', 'electricityYesterday', 'yesterdayKwh', 'yesterdayKWh'
+    )))
+    yesterday_cost = safe_float(first_attr_value(meter, (
+        'costYesterdayEnergy', 'displayCostYesterday', 'costYesterday', 'yesterdayCost', 'electricityCostYesterday'
+    )))
+    summary_text = first_attr_value(meter, ('displaySummary', 'displaySummaryCompact', 'summary'))
+    display_today = first_attr_value(meter, ('displayToday', 'todayDisplay'))
+    display_yesterday = first_attr_value(meter, ('displayYesterday', 'yesterdayDisplay'))
+    parsed_today = parse_kwh_cost_text(summary_text, 'T')
+    parsed_yesterday = parse_kwh_cost_text(summary_text, 'Y')
+    if today_kwh is None or today_cost is None:
+        dt_kwh, dt_cost = parse_kwh_cost_text(display_today, '')
+        today_kwh = today_kwh if today_kwh is not None else (parsed_today[0] if parsed_today[0] is not None else dt_kwh)
+        today_cost = today_cost if today_cost is not None else (parsed_today[1] if parsed_today[1] is not None else dt_cost)
+    if yesterday_kwh is None or yesterday_cost is None:
+        dy_kwh, dy_cost = parse_kwh_cost_text(display_yesterday, '')
+        yesterday_kwh = yesterday_kwh if yesterday_kwh is not None else (parsed_yesterday[0] if parsed_yesterday[0] is not None else dy_kwh)
+        yesterday_cost = yesterday_cost if yesterday_cost is not None else (parsed_yesterday[1] if parsed_yesterday[1] is not None else dy_cost)
+    return {
+        'available': True,
+        'source': {'id': meter.get('id'), 'label': meter.get('label') or meter.get('name') or 'Energy meter'},
+        'today': {'kwh': today_kwh, 'cost_gbp': today_cost},
+        'yesterday': {'kwh': yesterday_kwh, 'cost_gbp': yesterday_cost},
+        'raw_summary': summary_text,
+        'attributes_seen': sorted(str(k) for k in attrs.keys()),
+    }
+
+
+def format_energy_day(label: str, day: dict[str, Any]) -> str:
+    kwh = day.get('kwh')
+    cost = day.get('cost_gbp')
+    parts = []
+    if kwh is not None:
+        parts.append(f"{round(float(kwh), 2):.2f} kWh")
+    if cost is not None:
+        parts.append(f"£{round(float(cost), 2):.2f}")
+    return f"{label}: " + (' / '.join(parts) if parts else 'not available from the meter yet')
+
+
 def energy_advisor_answer() -> dict[str, Any]:
     summary = dashboard_summary()
+    usage = energy_usage_from_meter()
     candidates = energy_waste_candidates()
     lines = ['AI Energy Advisor:', f"Whole-house power now: {summary['power_display']} from {summary['power_source_label']}"]
+    if usage.get('available'):
+        source = usage.get('source') or {}
+        lines.append(f"Meter: {source.get('label', 'Energy meter')}")
+        lines.append(format_energy_day('Used today so far', usage.get('today') or {}))
+        lines.append(format_energy_day('Used yesterday', usage.get('yesterday') or {}))
+    else:
+        lines.append('Energy totals: no Octopus/whole-house meter found.')
     if not candidates:
         lines.append('No obvious energy waste found from current device states.')
     else:
@@ -2574,7 +2663,7 @@ def energy_advisor_answer() -> dict[str, Any]:
         for item in candidates[:8]:
             cost = f", about £{item['estimated_monthly_cost_gbp']}/month" if item.get('estimated_monthly_cost_gbp') is not None else ''
             lines.append(f"• {item['label']} ({item['room']}) — {item['power_display']}, on for {item['on_for']}{cost} [{item['reason']}]")
-    return {'success': True, 'intent': 'energy_advisor', 'message': '\n'.join(lines), 'summary': summary, 'candidates': candidates}
+    return {'success': True, 'intent': 'energy_advisor', 'message': '\n'.join(lines), 'summary': summary, 'usage': usage, 'candidates': candidates}
 
 
 def recent_home_timeline(limit: int = 25, hours: int = 12) -> list[dict[str, Any]]:
