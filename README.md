@@ -6,7 +6,7 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 
 ## Current status
 
-`v0.7.63-alpha` assistant dashboard:
+`v1.1.0-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration
@@ -14,7 +14,8 @@ HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API,
 - Device normalisation and room inference
 - Live dashboard and room APIs
 - Unified text/voice command engine
-- Assistant API with diagnostics and optional local Ollama answers
+- Assistant API with diagnostics, live event intelligence, and optional local Ollama answers
+- Smart Home Intelligence answers for natural questions such as “why are 3 lights on?”
 - Switch, sensor, and device attribute normalization
 - Automatic Hubitat per-device state refresh when list data is incomplete
 - Glanceable dashboard cards with noisy raw attributes hidden

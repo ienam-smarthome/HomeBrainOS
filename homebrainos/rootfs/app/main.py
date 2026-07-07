@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.0.1-alpha'
+APP_VERSION = '1.1.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2572,6 +2572,116 @@ def daily_briefing_answer() -> dict[str, Any]:
     return {'success': True, 'intent': 'daily_briefing', 'message': '\n'.join(lines), 'summary': summary, 'health': health, 'energy': energy[:5]}
 
 
+
+def active_light_explanation_answer(text: str) -> dict[str, Any] | None:
+    """Explain why the lights-on summary says what it says.
+
+    This avoids falling through to generic diagnostics for natural questions like
+    "why are 3 lights on?" and gives a human answer using live state, room
+    activity, and event history.
+    """
+    t = normalise(text)
+    if 'light' not in t or not any(word in t for word in ('why', 'explain')):
+        return None
+
+    devices = all_devices()
+    lights_on = [d for d in devices if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
+    lights_on.sort(key=lambda d: (canonical_room_name(d.get('room') or 'Unknown').lower(), str(d.get('label') or '').lower()))
+    if not lights_on:
+        msg = 'No lights are currently on.'
+        return {'success': True, 'intent': 'explain_lights_on', 'message': msg, 'speech': msg, 'devices': []}
+
+    number_match = re.search(r'\b(\d+)\s+lights?\b', t)
+    expected_count = int(number_match.group(1)) if number_match else None
+    count_note = ''
+    if expected_count is not None and expected_count != len(lights_on):
+        count_note = f" The live event cache now shows {len(lights_on)}, not {expected_count}."
+
+    lines = [f"{len(lights_on)} light" + ('' if len(lights_on) == 1 else 's') + f" are currently on.{count_note}"]
+    lines.append('')
+    lines.append('Lights on:')
+
+    suggestions: list[str] = []
+    for light in lights_on[:12]:
+        label = str(light.get('label') or light.get('name') or light.get('id'))
+        room = canonical_room_name(light.get('room') or 'Unknown')
+        since = state_since_for_device(light, 'switch')
+        since_text = ''
+        long_on = False
+        if since:
+            duration = elapsed_duration_label(since['duration_seconds'])
+            since_text = f' — on for {duration}'
+            long_on = int(since['duration_seconds']) >= 2 * 3600
+        activity = room_activity_reason(room, devices)
+        reason = activity or 'no recent room activity found in the event cache'
+        lines.append(f"• {label}" + (f" ({room})" if room != 'Unknown' else '') + f"{since_text} — {reason}.")
+        if long_on and not activity:
+            suggestions.append(f"{label} has been on for {elapsed_duration_label(since['duration_seconds'])} with no recent room activity; consider turning it off or adding an auto-off rule.")
+
+    if len(lights_on) > 12:
+        lines.append(f"• {len(lights_on) - 12} more lights not shown.")
+    if suggestions:
+        lines.append('')
+        lines.append('Suggestion:')
+        lines.extend(f"• {s}" for s in suggestions[:3])
+    else:
+        lines.append('')
+        lines.append('No obvious problem found. These lights look explainable from current state or recent room activity.')
+
+    speech = f"{len(lights_on)} lights are on: " + ', '.join(str(d.get('label') or d.get('name')) for d in lights_on[:5]) + '.'
+    return {'success': True, 'intent': 'explain_lights_on', 'message': '\n'.join(lines), 'speech': speech, 'devices': lights_on, 'suggestions': suggestions}
+
+
+def room_activity_reason(room: str, devices: list[dict[str, Any]], minutes: int = 20) -> str | None:
+    if not room or room == 'Unknown':
+        return None
+    room_norm = canonical_room_name(room)
+    now = int(time.time())
+    candidates = [d for d in devices if canonical_room_name(d.get('room') or 'Unknown') == room_norm]
+    # Current active motion/presence is the strongest explanation.
+    for d in candidates:
+        if is_state(d.get('motion'), 'active') or is_state(d.get('presence'), 'present'):
+            label = str(d.get('label') or d.get('name') or 'room sensor')
+            return f'{label} shows activity now'
+    # If the room is currently idle, use recent events to explain whether the
+    # light likely came from recent occupancy.
+    cutoff = now - max(1, minutes) * 60
+    ids = [str(d.get('id')) for d in candidates if d.get('id')]
+    if not ids:
+        return None
+    try:
+        conn = db()
+        placeholders = ','.join('?' for _ in ids)
+        rows = conn.execute(
+            f"""
+            SELECT device_id, label, attr, value, created_at
+            FROM hubitat_events
+            WHERE device_id IN ({placeholders})
+              AND attr IN ('motion','presence','contact')
+              AND created_at >= ?
+            ORDER BY created_at DESC
+            LIMIT 5
+            """,
+            (*ids, cutoff),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    for row in rows:
+        attr = str(row['attr'])
+        value = str(row['value'])
+        label = str(row['label'] or row['device_id'] or 'room sensor')
+        age = elapsed_duration_label(now - int(row['created_at']))
+        if (attr == 'motion' and value == 'active') or (attr == 'presence' and value == 'present'):
+            return f'{label} reported {value} {age} ago'
+        if attr == 'contact' and value in {'open', 'closed'}:
+            return f'{label} was {value} {age} ago'
+    return None
+
 def explain_home_question_answer(text: str) -> dict[str, Any] | None:
     """Deterministic "why" answers for common real-life home questions.
 
@@ -3657,6 +3767,9 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
     # or are clearly named like a plug/socket/outlet. This prevents Octopus/energy
     # meters from appearing as broken switch devices.
     switch_capable = 'switch' in caps or category in ('light', 'switch')
+    power_child_sensor = category == 'power_device' and 'power' in label and not switch_capable and device.get('switch') is None
+    if power_child_sensor:
+        return False
     smart_plug_word = any(word in label for word in ('plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier'))
     explicit_switch = switch_capable or {'on', 'off'}.issubset(commands) or (category == 'power_device' and smart_plug_word)
     if category in sensor_categories and not explicit_switch:
@@ -4486,6 +4599,9 @@ def assistant(text: str) -> dict[str, Any]:
     automation_explain = automation_explain_answer(text) if ('automation' in t or 'fan work' in t or 'which automations failed' in t or 'did the fan' in t) else None
     if automation_explain:
         return automation_explain
+    light_explain = active_light_explanation_answer(text) if ('light' in t and ('why' in t or 'explain' in t)) else None
+    if light_explain:
+        return light_explain
     explain_answer = explain_home_question_answer(text) if 'why' in t or 'explain' in t else None
     if explain_answer:
         return explain_answer
