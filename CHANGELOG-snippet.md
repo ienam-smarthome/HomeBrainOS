@@ -1,9 +1,6 @@
-## v1.2.0-alpha - Intent + Entity Parser
+### 1.4.0-alpha
 
-- Natural room/entity resolution for Bedroom 2 / bedroom two / bedroom to.
-- Duration questions now resolve room first, then device type.
-- Improves answers like: "how long has bedroom two light been on today".
-
-
-### 1.3.0-alpha
-- HomeBrain Language Engine: duration/history queries such as “lights on time today”.
+Smart Home Dashboard shortcuts:
+- Daily-use shortcut layout.
+- Light hours, Attention, Energy, Family, Timeline, and AI insights shortcuts.
+- Developer tools moved out of the main shortcut grid.

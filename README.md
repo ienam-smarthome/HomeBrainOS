@@ -240,3 +240,8 @@ Use `/api/event-diagnostics` to confirm Hubitat events, UI-relevant events, igno
 
 ### 1.3.0-alpha
 - HomeBrain Language Engine: duration/history queries such as “lights on time today”.
+
+
+### 1.4.0-alpha
+
+Smart Home Dashboard shortcuts: the main page now prioritises everyday questions such as what's happening, attention needed, lights, light hours, energy, heating, family, timeline, and AI insights. Developer/maintenance tools are grouped separately.

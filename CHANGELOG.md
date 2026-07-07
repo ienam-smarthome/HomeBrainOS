@@ -151,6 +151,12 @@ Reduce Hubitat busy time and excessive Maker API method calls while keeping Home
 
 # Changelog
 
+## 1.4.0-alpha - Smart Home Dashboard Shortcuts
+
+- Replaced developer-first shortcut buttons with daily-use smart-home shortcuts.
+- Added one-tap access for What's happening, Attention, Lights, Light hours, Energy, Heating, Family, Timeline, AI insights, Active rooms, Cold rooms, and Weather.
+- Moved maintenance actions such as Refresh from Hubitat, Clear cache, Hub logs, Event diagnostics, and AI context into a Developer tools section.
+
 ## 1.3.0-alpha - HomeBrain Language Engine
 - Added deterministic natural language intent classification for duration/history queries.
 - Fixed “lights on time today” so it reports light-on hours instead of control help.

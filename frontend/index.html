@@ -1,1 +1,683 @@
-<!-- Frontend source is currently bundled into addon/homebrainos/rootfs/app/static/index.html -->
+<!doctype html>
+<html data-app-version="APP_VERSION">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HomeBrain OS</title>
+  <style>
+    body{margin:0;background:#0b0b0c;color:#fff;font-family:Arial,Helvetica,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}.card{background:#1f1f21;border-radius:18px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#303033;border-radius:14px;padding:14px}.metric.summary-tile{cursor:pointer;transition:background .15s,box-shadow .15s,transform .15s}.metric.summary-tile:hover,.metric.summary-tile:focus{background:#3a3a3d;box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}.metric.summary-tile:active{transform:translateY(1px)}.metric.summary-tile.selected,.room.selected{background:#1f3128;box-shadow:inset 0 0 0 2px rgba(34,197,94,.85),0 0 0 1px rgba(34,197,94,.25)}.metric a{color:#93c5fd;text-decoration:none}.mini{color:#b9b9bd;font-size:12px;line-height:1.3;margin-top:4px}.big{font-size:28px;font-weight:700}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}button{background:#2f7df6;color:white}.secondary{background:#333}.secondary.selected{background:#164e31;box-shadow:inset 0 0 0 2px rgba(34,197,94,.75)}button:disabled{opacity:.45}pre{white-space:pre-wrap;background:#000;padding:14px;border-radius:12px;max-height:38vh;overflow:auto;border:1px solid transparent}.output-active{border-color:rgba(34,197,94,.7);box-shadow:0 0 0 1px rgba(34,197,94,.25)}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534}.pill.warning{background:#92400e}.error{background:#7f1d1d}.view-card{padding:10px 12px}.view-controls{display:flex;flex-wrap:wrap;gap:8px}.view-toggle{display:inline-flex;align-items:center;gap:6px;background:#303033;color:#d7d7db;border-radius:999px;padding:8px 11px;font-size:13px;line-height:1;user-select:none}.view-toggle input{width:auto;margin:0;accent-color:#22c55e}.is-hidden{display:none!important}.timers{display:grid;gap:8px}.timer-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#262629;border-radius:12px;padding:10px 12px}.timer-meta{min-width:0}.timer-name{font-weight:700}.timer-sub{color:#b9b9bd;font-size:13px;margin-top:3px}.timer-cancel{width:auto;margin:0;padding:8px 12px;background:#333}.rooms,.devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.room,.device{background:#262629;border-radius:14px;padding:12px;transition:opacity .15s,background .15s,box-shadow .15s}.room{cursor:pointer}.room:hover,.room:focus{box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}.device.active,.room.active{background:#292c2a;box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}.device.inactive,.room.inactive{opacity:.68}.room-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.room-name{font-weight:700}.room-count{color:#b9b9bd;font-size:13px;white-space:nowrap}.room-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.room-signal{display:flex;align-items:center;gap:8px;background:#303033;border-radius:8px;padding:8px;min-height:38px}.room.inactive .room-signal{background:#2c2c2f}.room-icon{font-size:18px;line-height:1}.room-value{display:block;font-size:15px;font-weight:700;line-height:1.1}.room-label{display:block;color:#b9b9bd;font-size:11px;line-height:1.1;margin-top:2px}.motion-on .room-value{color:#86efac}.shortcut-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}.shortcut-note{grid-column:1/-1;color:#b9b9bd;font-size:13px;margin:0 0 4px}.tools-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:10px}.tools summary{cursor:pointer;color:#b9b9bd;font-weight:700;margin-bottom:8px}.collapsible summary{cursor:pointer;font-size:24px;font-weight:700;list-style:none}.collapsible summary::-webkit-details-marker{display:none}.collapsible summary:after{content:'Show';float:right;color:#b9b9bd;font-size:14px;font-weight:400;margin-top:8px}.collapsible[open] summary:after{content:'Hide'}.device.inactive .row button{background:#303033;color:#aaa}.row{display:flex;gap:8px}.row button{padding:10px;margin:8px 0}.row button.selected{background:#15803d;color:#fff;box-shadow:inset 0 0 0 1px rgba(134,239,172,.35)}.row button.idle{background:#303033;color:#aaa}.state,.attr{display:inline-block;color:#fff;font-size:13px;border-radius:999px;padding:3px 8px;margin-top:6px}.state.on{background:#166534}.state.off{background:#555}.state.unknown{background:#7f1d1d}.attrs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;min-height:24px}.attr{background:#3a3a3d}.muted{color:#b9b9bd;font-size:14px}.mic-fab{position:fixed;right:18px;bottom:18px;z-index:5;width:64px;height:64px;margin:0;border-radius:50%;font-size:28px;background:#15803d;box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 0 0 1px rgba(134,239,172,.35)}.mic-fab.listening{background:#dc2626}.voice-overlay{position:fixed;inset:0;z-index:10;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);padding:22px}.voice-overlay.show{display:flex}.voice-panel{width:min(420px,100%);background:#1f1f21;border:1px solid #343438;border-radius:18px;padding:22px;text-align:center;box-shadow:0 18px 60px rgba(0,0,0,.55)}.voice-title{font-size:26px;font-weight:700;margin-bottom:8px}.voice-hint{color:#b9b9bd;line-height:1.4;margin-bottom:16px}.voice-start{height:86px;border-radius:18px;font-size:24px;background:#15803d}.voice-close{background:#333}@media(max-width:520px){.wrap{padding:10px 10px 86px;max-width:none}h1{font-size:24px;margin:8px 2px}.card{border-radius:12px;padding:10px;margin:8px 0}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{border-radius:10px;padding:10px;min-height:64px}.big{font-size:22px}.mini{font-size:11px}.view-card{position:sticky;top:0;z-index:2;background:#18181a;border:1px solid #29292d}.view-controls{gap:6px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.view-toggle{white-space:nowrap;padding:8px 10px}.shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rooms,.devices{grid-template-columns:1fr;gap:8px}.room-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.room-signal{padding:7px;min-height:34px}.room-value{font-size:14px}input,button{padding:12px;font-size:15px;margin:6px 0}.timer-row{align-items:flex-start}.timer-cancel{padding:8px 10px}pre{font-size:12px;max-height:28vh}.collapsible summary{font-size:20px}.mic-fab{right:14px;bottom:14px;width:68px;height:68px;font-size:30px}.voice-panel{border-radius:16px}.voice-start{height:92px}}
+    .station-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.station-start{background:#0f766e}.station-start.active{background:#dc2626}.station-status{margin-top:10px;padding:10px;border-radius:12px;background:#111;color:#d7d7db;font-size:13px;line-height:1.35;text-align:left}.station-status.active{border:1px solid rgba(34,197,94,.65);color:#fff}.wake-word{color:#86efac;font-weight:700}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏠 HomeBrain OS <small id="appVersion">v...</small></h1>
+  <div class="card"><span class="pill" id="status">Checking...</span></div>
+  <div class="card view-card">
+    <div class="view-controls" id="viewControls">
+      <label class="view-toggle"><input type="checkbox" data-view="summary"> Summary</label>
+      <label class="view-toggle"><input type="checkbox" data-view="shortcuts"> Shortcuts</label>
+      <label class="view-toggle"><input type="checkbox" data-view="rooms"> Rooms</label>
+      <label class="view-toggle"><input type="checkbox" data-view="inactiveRooms"> Inactive rooms</label>
+      <label class="view-toggle"><input type="checkbox" data-view="emptyRooms"> No-signal rooms</label>
+      <label class="view-toggle"><input type="checkbox" data-view="devices"> Devices</label>
+      <label class="view-toggle"><input type="checkbox" data-view="timers"> Timers</label>
+      <label class="view-toggle"><input type="checkbox" data-view="output"> Output</label>
+      <label class="view-toggle"><input type="checkbox" id="audioMuted"> Mute audio</label>
+    </div>
+  </div>
+  <div class="card grid" id="summaryCard">
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which lights are on"><div class="big" id="lights">0</div><div>Lights on</div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="home temperature"><div class="big" id="temp">—°</div><div>Avg temp</div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="home humidity"><div class="big" id="hum">—%</div><div>Avg humidity</div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="explain power tile"><div class="big" id="power">0W</div><div>Whole-house power</div><div class="mini"><a href="#" id="powerSource">Octopus meter</a></div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which switches are on"><div class="big" id="switches">0</div><div>Switches on</div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="who is home"><div class="big" id="people">0/4</div><div>People home</div><div class="mini" id="peopleNames">No one home</div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which batteries are low"><div class="big" id="batt">0</div><div>Low batteries</div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which motion sensors are active"><div class="big" id="motion">0</div><div>Motion active</div></div>
+  </div>
+  <div class="card">
+    <input id="q" placeholder="Ask HomeBrain...">
+    <button onclick="ask()">Ask</button>
+    <button onclick="voice()">🎤 Speak</button>
+  </div>
+  <div class="card grid shortcut-grid" id="shortcutsCard">
+    <div class="shortcut-note">Smart shortcuts for everyday use</div>
+    <button class="secondary" onclick="quick('summary', this)">🏠 What's happening?</button>
+    <button class="secondary" onclick="quick('what needs attention', this)">⚠️ Attention</button>
+    <button class="secondary" onclick="quick('which lights are on', this)">💡 Lights</button>
+    <button class="secondary" onclick="quick('lights on time today', this)">⏱️ Light hours</button>
+    <button class="secondary" onclick="quick('energy advisor', this)">⚡ Energy</button>
+    <button class="secondary" onclick="quick('heating status', this)">🌡️ Heating</button>
+    <button class="secondary" onclick="quick('who is home', this)">👤 Family</button>
+    <button class="secondary" onclick="quick('what happened today', this)">📜 Timeline</button>
+    <button class="secondary" onclick="quick('anything unusual', this)">🧠 AI insights</button>
+    <button class="secondary" onclick="quick('which rooms have motion active', this)">🏃 Active rooms</button>
+    <button class="secondary" onclick="quick('which rooms are cold', this)">❄️ Cold rooms</button>
+    <button class="secondary" onclick="quick('what is the weather', this)">🌦️ Weather</button>
+    <details class="tools" style="grid-column:1/-1">
+      <summary>Developer tools</summary>
+      <div class="grid tools-grid">
+        <button class="secondary" onclick="quick('hub health', this)">Hub health</button>
+        <button class="secondary" onclick="quick('event diagnostics', this)">Event diagnostics</button>
+        <button class="secondary" onclick="quick('diagnostics', this)">App diagnostics</button>
+        <button class="secondary" onclick="quick('hub logs', this)">Hub logs</button>
+        <button class="secondary" title="Update devices from Hubitat without deleting the local cache" onclick="quick('refresh cache', this)">Refresh from Hubitat</button>
+        <button class="secondary" title="Delete the local device cache, then rebuild it from Hubitat" onclick="clearRefresh(event)">Clear cache + reload</button>
+        <button class="secondary" onclick="showAiContext(event)">AI context</button>
+      </div>
+    </details>
+  </div>
+  <div class="card" id="timersCard"><h2>Scheduled</h2><div class="timers" id="timers">No scheduled actions</div></div>
+  <div class="card" id="roomsCard"><h2>Rooms</h2><div class="rooms" id="rooms">Loading rooms...</div></div>
+  <details class="card collapsible"><summary>Controllable Devices</summary><div class="devices" id="devices">Loading devices...</div></details>
+  <pre id="out">Ready</pre>
+</div>
+<button class="mic-fab" id="micFab" title="Speak to HomeBrain" aria-label="Speak to HomeBrain">🎤</button>
+<div class="voice-overlay" id="voiceOverlay">
+  <div class="voice-panel">
+    <div class="voice-title">Speak to HomeBrain</div>
+    <div class="voice-hint" id="voiceHint">Tap the microphone, then ask a smart-home question or command.</div>
+    <button class="voice-start" id="voiceStart">🎤 Tap to speak</button>
+    <div class="station-row">
+      <button class="station-start" id="stationStart">Start voice station</button>
+      <button class="secondary" id="stationStop">Stop station</button>
+    </div>
+    <div class="station-status" id="stationStatus">Voice station waits for <span class="wake-word">Hey HomeBrain</span>, then runs the command after it.</div>
+    <button class="voice-close" id="voiceClose">Close</button>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let apiToken = localStorage.getItem('homebrainos_api_token') || '';
+const viewDefaults = {summary:true, shortcuts:true, rooms:true, inactiveRooms:false, emptyRooms:false, devices:true, timers:true, output:true};
+let viewState = Object.assign({}, viewDefaults, JSON.parse(localStorage.getItem('homebrainos_view_options') || '{}'));
+let audioMuted = localStorage.getItem('homebrainos_audio_muted') === 'true';
+let activeControl = null;
+const urlParams = new URLSearchParams(location.search);
+let stationEnabled = false;
+let stationRecognizer = null;
+let stationRestart = null;
+let stationArmedUntil = 0;
+let stationArmedTick = null;
+let stateEvents = null;
+let eventRefreshTimer = null;
+let lastSummaryCacheVersion = null;
+let liveConnected = false;
+let liveFallbackTimer = null;
+async function api(path, options={}){
+  const headers = Object.assign({}, options.headers || {});
+  if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
+  if(options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const response = await fetch(path, Object.assign({}, options, {headers}));
+  if(response.status === 401){
+    const token = prompt('HomeBrain API token');
+    if(token){
+      apiToken = token;
+      localStorage.setItem('homebrainos_api_token', token);
+      return api(path, options);
+    }
+  }
+  if(!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+async function postApi(path, body){
+  return api(path, {method:'POST', body: body === undefined ? undefined : JSON.stringify(body)});
+}
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+function clearActiveControl(){
+  document.querySelectorAll('.summary-tile.selected,.room.selected,.shortcut-grid button.selected').forEach(el=>el.classList.remove('selected'));
+}
+function markActiveControl(el){
+  if(!el) return;
+  clearActiveControl();
+  activeControl = el;
+  el.classList.add('selected');
+}
+function finishActiveControl(){
+  activeControl = null;
+}
+function setOutput(text, active=true){
+  $('out').textContent=text;
+  $('out').classList.toggle('output-active', active);
+}
+function roomIsActive(room){
+  return (room.lights_on||0)+(room.switches_on||0)+(room.motion_active||0)>0;
+}
+function roomHasSignals(room){
+  return (room.lights_total||0)>0 || (room.switches_total||0)>0 || (room.motion_total||0)>0 || (room.power_devices||0)>0 || room.avg_temperature!=null || room.avg_humidity!=null;
+}
+function roomCard(room){
+  const active=roomIsActive(room);
+  const signals=[];
+  if(room.lights_total>0) signals.push(roomSignal('💡', room.lights_on||0, 'lights on'));
+  if((room.switches_total||0)>0){
+    const socketCount=room.sockets_total||0;
+    const label=socketCount>0 ? 'Sockets' : 'Switches';
+    const value=socketCount>0 ? `${room.sockets_on||0}/${socketCount}` : `${room.switches_on||0}/${room.switches_total}`;
+    signals.push(roomSignal('🔌', value, label, room.switches_on?'motion-on':''));
+  }
+  if((room.motion_total||0)>0) signals.push(roomSignal('🏃', room.motion_active?room.motion_active+' active':'clear', 'motion', room.motion_active?'motion-on':''));
+  if(room.avg_temperature!=null) signals.push(roomSignal('🌡', room.avg_temperature+'°', 'temperature'));
+  if(room.avg_humidity!=null) signals.push(roomSignal('💧', room.avg_humidity+'%', 'humidity'));
+  if((room.power_devices||0)>0) signals.push(roomSignal('⚡', formatPower(room.power_total||0), 'power'));
+  if(!signals.length) signals.push(roomSignal('…', 'No signals', 'click for details'));
+  return `<div class="room ${active?'active':'inactive'}" role="button" tabindex="0" data-room="${escapeHtml(room.room)}"><div class="room-head"><div class="room-name">${escapeHtml(room.room)}</div><div class="room-count">${room.devices} devices</div></div><div class="room-stats">${signals.join('')}</div></div>`;
+}
+function roomSignal(icon, value, label, extraClass=''){
+  return `<div class="room-signal ${extraClass}"><span class="room-icon">${icon}</span><span><span class="room-value">${escapeHtml(value)}</span><span class="room-label">${escapeHtml(label)}</span></span></div>`;
+}
+function formatPower(value){
+  const watts=Number(value)||0;
+  return Math.abs(watts)>999 ? (watts/1000).toFixed(1).replace(/\.0$/,'')+'kW' : watts+'W';
+}
+function formatAttr(key, value){
+  const labels={level:'Level',temperature:'Temp',humidity:'Humidity',illuminance:'Lux',power:'Power',energy:'Energy',battery:'Battery',motion:'Motion',contact:'Contact',presence:'Presence',lock:'Lock',water:'Water',smoke:'Smoke',carbonMonoxide:'CO',tamper:'Tamper',acceleration:'Accel',valve:'Valve',windowShade:'Shade',thermostatMode:'Mode',thermostatOperatingState:'Operating',heatingSetpoint:'Heat set',coolingSetpoint:'Cool set',weatherSummaryLine:'Summary',precipitationToday:'Rain today',pressure:'Pressure',windSpeed:'Wind',wind_gust:'Gust'};
+  const units={level:'%',temperature:'°',humidity:'%',illuminance:' lx',power:'W',energy:' kWh',battery:'%',heatingSetpoint:'°',coolingSetpoint:'°',precipitationToday:'mm'};
+  return `${labels[key]||key}: ${escapeHtml(value)}${units[key]||''}`;
+}
+function attrChips(device){
+  const attrs=device.attributes||{};
+  const byCategory={
+    light:['switch','level','power','energy'],
+    switch:['switch','power','energy'],
+    power_device:['switch','power','energy'],
+    thermostat:['temperature','heatingSetpoint','thermostatMode','thermostatOperatingState','battery'],
+    weather:['weatherSummaryLine','temperature','humidity','precipitationToday'],
+    climate_sensor:['temperature','humidity','battery'],
+    light_sensor:['illuminance','battery'],
+    motion_sensor:['motion','battery'],
+    contact_sensor:['contact','battery'],
+    presence_sensor:['presence','battery']
+  };
+  const primary=byCategory[device.category]||['switch','temperature','humidity','power','battery'];
+  const chips=[];
+  for(const key of primary){
+    const value=device[key]??attrs[key];
+    if(value!==undefined && value!==null && value!=='') chips.push(`<span class="attr">${formatAttr(key,value)}</span>`);
+    if(chips.length>=4) break;
+  }
+  return chips.length?`<div class="attrs">${chips.join('')}</div>`:'';
+}
+function isThermostat(device){
+  return device.category==='thermostat' || String(device.label||'').toLowerCase().includes('trv');
+}
+function controls(device, rawState){
+  const id=escapeHtml(device.id);
+  if(isThermostat(device)){
+    const setpoint=device.heatingSetpoint??(device.attributes||{}).heatingSetpoint??'—';
+    const heating=String(device.thermostatOperatingState||'').toLowerCase().includes('heat');
+    return `<div class="row"><button class="secondary ${heating?'idle':'selected'}" data-action="setpoint" data-device-id="${id}" data-delta="-1">-</button><button disabled class="${heating?'selected':'idle'}">${escapeHtml(setpoint)}°</button><button class="${heating?'selected':'idle'}" data-action="setpoint" data-device-id="${id}" data-delta="1">+</button></div>`;
+  }
+  return `<div class="row"><button class="${rawState==='on'?'selected':'idle'}" data-action="command" data-device-id="${id}" data-command="on" ${rawState==='on'?'disabled':''}>On</button><button class="${rawState==='off'?'selected':'idle'}" data-action="command" data-device-id="${id}" data-command="off" ${rawState==='off'?'disabled':''}>Off</button></div>`;
+}
+function deviceCard(device){
+  const rawState = String(device.switch??'unknown').toLowerCase();
+  const stateClass = rawState==='on'?'on':rawState==='off'?'off':'unknown';
+  const badge=isThermostat(device)?'climate':rawState;
+  const badgeClass=isThermostat(device)?'off':stateClass;
+  const active=isThermostat(device)?String(device.thermostatOperatingState||'').toLowerCase().includes('heat'):rawState==='on';
+  return `<div class="device ${active?'active':'inactive'}"><b>${escapeHtml(device.label)}</b><br><span class="state ${badgeClass}">${escapeHtml(badge)}</span> <span class="muted">${escapeHtml(device.category||'device')} · ${escapeHtml(device.room||'Unknown')}</span>${attrChips(device)}${controls(device,rawState)}</div>`;
+}
+function applyViewState(){
+  for(const input of document.querySelectorAll('#viewControls input[data-view]')){
+    input.checked = !!viewState[input.dataset.view];
+  }
+  $('summaryCard').classList.toggle('is-hidden', !viewState.summary);
+  $('shortcutsCard').classList.toggle('is-hidden', !viewState.shortcuts);
+  $('roomsCard').classList.toggle('is-hidden', !viewState.rooms);
+  document.querySelector('.collapsible').classList.toggle('is-hidden', !viewState.devices);
+  $('timersCard').classList.toggle('is-hidden', !viewState.timers);
+  $('out').classList.toggle('is-hidden', !viewState.output);
+}
+function timerCard(timer){
+  const labels=(timer.labels||[]).join(', ')||'Device';
+  const command=timer.command==='off'?'turn off':timer.command;
+  const remaining=timer.duration_remaining||'soon';
+  return `<div class="timer-row" data-timer-id="${escapeHtml(timer.id)}"><div class="timer-meta"><div class="timer-name">${escapeHtml(labels)}</div><div class="timer-sub">${escapeHtml(command)} in ${escapeHtml(remaining)}</div></div><button class="timer-cancel" data-action="cancel-timer" data-timer-id="${escapeHtml(timer.id)}">Cancel</button></div>`;
+}
+async function loadTimers(){
+  try{
+    const r=await api('/api/timers');
+    const timers=r.timers||[];
+    $('timers').innerHTML=timers.length?timers.map(timerCard).join(''):'No scheduled actions';
+  }catch(err){
+    $('timers').textContent='Scheduled actions unavailable';
+  }
+}
+async function cancelTimer(id){
+  try{
+    const j=await postApi('/api/timers/'+encodeURIComponent(id)+'/cancel');
+    setOutput(j.message||'Timer cancelled');
+    loadTimers();
+  }catch(err){
+    setOutput('Cancel failed: '+err.message);
+  }
+}
+function saveViewState(){
+  localStorage.setItem('homebrainos_view_options', JSON.stringify(viewState));
+}
+function formatRoomDetails(detail){
+  const room=detail.room||{};
+  const devices=detail.devices||[];
+  const lines=[`${room.room||'Room'}: ${room.devices||devices.length||0} devices`];
+  if(room.lights_total) lines.push(`Lights: ${room.lights_on||0} of ${room.lights_total} on`);
+  if(room.motion_total) lines.push(`Motion: ${room.motion_active||0} of ${room.motion_total} active`);
+  if(room.sockets_total) lines.push(`Sockets: ${room.sockets_on||0} of ${room.sockets_total} on`);
+  else if(room.switches_total) lines.push(`Switches: ${room.switches_on||0} of ${room.switches_total} on`);
+  if(room.avg_temperature!=null) lines.push(`Temperature: ${room.avg_temperature}°`);
+  if(room.avg_humidity!=null) lines.push(`Humidity: ${room.avg_humidity}%`);
+  if(room.power_devices) lines.push(`Power: ${formatPower(room.power_total||0)}`);
+  const active=devices.filter(device=>{
+    const attrs=device.attributes||{};
+    return attrs.switch==='on' || device.switch==='on' || attrs.motion==='active' || device.motion==='active' || attrs.thermostatOperatingState==='heating';
+  }).map(device=>device.label);
+  if(active.length) lines.push(`Active: ${active.slice(0,6).join(', ')}${active.length>6?', +'+(active.length-6)+' more':''}`);
+  const names=devices.map(device=>device.label).filter(Boolean);
+  if(names.length) lines.push(`Devices: ${names.slice(0,8).join(', ')}${names.length>8?', +'+(names.length-8)+' more':''}`);
+  if(lines.length===1 && detail.explanation) lines.push(detail.explanation);
+  return lines.join('\n');
+}
+async function showRoomDetails(roomName){
+  try{
+    const detail=await api('/api/rooms/'+encodeURIComponent(roomName));
+    setOutput(formatRoomDetails(detail));
+  }catch(err){
+    setOutput('Room details unavailable: '+err.message);
+  }finally{
+    finishActiveControl();
+  }
+}
+$('rooms').addEventListener('click', event => {
+  const room = event.target.closest('.room[data-room]');
+  if(room){
+    markActiveControl(room);
+    showRoomDetails(room.dataset.room);
+  }
+});
+$('rooms').addEventListener('keydown', event => {
+  if(event.key !== 'Enter' && event.key !== ' ') return;
+  const room = event.target.closest('.room[data-room]');
+  if(room){
+    event.preventDefault();
+    markActiveControl(room);
+    showRoomDetails(room.dataset.room);
+  }
+});
+$('devices').addEventListener('click', event => {
+  const button = event.target.closest('button[data-action]');
+  if(!button) return;
+  if(button.dataset.action === 'command') deviceCommand(button.dataset.deviceId, button.dataset.command);
+  if(button.dataset.action === 'setpoint') setpoint(button.dataset.deviceId, Number(button.dataset.delta));
+});
+$('powerSource').addEventListener('click', event => {
+  event.preventDefault();
+  quick('explain power tile');
+});
+$('timers').addEventListener('click', event => {
+  const button = event.target.closest('button[data-action="cancel-timer"]');
+  if(button) cancelTimer(button.dataset.timerId);
+});
+$('viewControls').addEventListener('change', event => {
+  const input = event.target.closest('input[data-view]');
+  if(!input) return;
+  viewState[input.dataset.view] = input.checked;
+  saveViewState();
+  applyViewState();
+  if(input.dataset.view === 'inactiveRooms' || input.dataset.view === 'emptyRooms') loadRooms();
+});
+document.querySelectorAll('.summary-tile').forEach(tile => {
+  const run = () => quick(tile.dataset.summaryQuery || 'explain summary tiles', tile);
+  tile.addEventListener('click', event => {
+    if(event.target.tagName === 'A') return;
+    run();
+  });
+  tile.addEventListener('keydown', event => {
+    if(event.key === 'Enter' || event.key === ' '){
+      event.preventDefault();
+      run();
+    }
+  });
+});
+function applyDashboard(d){
+  if(!d) return;
+  $('lights').textContent=d.lights_on; $('switches').textContent=d.switches_on; $('batt').textContent=d.low_batteries;
+  $('people').textContent=(d.people_home??0)+'/'+(d.people_tracked??4); $('motion').textContent=d.motion_active;
+  $('peopleNames').textContent=(d.people_home_names||[]).join(', ') || 'No one home';
+  $('powerSource').textContent=d.power_source_label||'Octopus meter';
+  $('temp').textContent=(d.avg_temperature??'—')+'°'; $('hum').textContent=(d.avg_humidity??'—')+'%'; $('power').textContent=d.power_display||(d.power_total+'W');
+  if(d.summary_cache && d.summary_cache.version!=null) lastSummaryCacheVersion=d.summary_cache.version;
+}
+function setLiveStatus(connected){
+  liveConnected=connected;
+  const badge=$('status');
+  if(!badge) return;
+  badge.dataset.live=connected?'1':'0';
+  if(connected && !badge.textContent.includes('Live')) badge.textContent=badge.textContent+' · Live';
+}
+function scheduleFallbackPoll(){
+  if(liveFallbackTimer) clearTimeout(liveFallbackTimer);
+  liveFallbackTimer=setTimeout(()=>{
+    liveFallbackTimer=null;
+    if(!liveConnected) status();
+  },30000);
+}
+async function status(){
+  const badge=$('status');
+  try{
+    const s=await api('/api/status');
+    if(s.version) $('appVersion').textContent='v'+String(s.version); else { const embedded=document.documentElement.dataset.appVersion; if(embedded && embedded!=='APP_VERSION') $('appVersion').textContent='v'+embedded; }
+    const hub=s.hub_health&&s.hub_health.available?' · '+s.hub_health.label:'';
+    badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices'+hub;
+    badge.className=s.error?'pill error':(s.hub_health&&s.hub_health.level==='warning'?'pill warning':(s.hub_health&&s.hub_health.level==='error'?'pill error':'pill'));
+    const d=await api('/api/dashboard');
+    applyDashboard(d);
+    loadRooms();
+    loadDevices();
+    loadTimers();
+  }catch(err){
+    badge.textContent='API offline: '+err.message;
+    badge.className='pill error';
+  }
+}
+function handleStateEvent(event){
+  try{
+    const payload=JSON.parse(event.data||'{}');
+    if(payload.summary_cache_version!=null && payload.summary_cache_version===lastSummaryCacheVersion && event.type!=='hello') return;
+    if(payload.dashboard) applyDashboard(payload.dashboard);
+    setLiveStatus(true);
+    if(eventRefreshTimer) clearTimeout(eventRefreshTimer);
+    eventRefreshTimer=setTimeout(()=>{
+      eventRefreshTimer=null;
+      if(viewState.rooms) loadRooms();
+      if(viewState.devices) loadDevices();
+    },350);
+  }catch(err){
+    scheduleEventRefresh();
+  }
+}
+function handlePingEvent(){
+  setLiveStatus(true);
+}
+function scheduleEventRefresh(){
+  if(eventRefreshTimer) return;
+  eventRefreshTimer=setTimeout(()=>{
+    eventRefreshTimer=null;
+    api('/api/dashboard').then(applyDashboard).catch(()=>{});
+  },250);
+}
+function connectStateEvents(){
+  if(!window.EventSource){ scheduleFallbackPoll(); return; }
+  if(stateEvents) stateEvents.close();
+  const tokenParam=apiToken?'?token='+encodeURIComponent(apiToken):'';
+  stateEvents=new EventSource('/api/events'+tokenParam);
+  stateEvents.onopen=()=>setLiveStatus(true);
+  stateEvents.addEventListener('hello', handleStateEvent);
+  stateEvents.addEventListener('state', handleStateEvent);
+  stateEvents.addEventListener('ping', handlePingEvent);
+  stateEvents.onmessage=handleStateEvent;
+  stateEvents.onerror=()=>{
+    setLiveStatus(false);
+    if(stateEvents) stateEvents.close();
+    stateEvents=null;
+    scheduleFallbackPoll();
+    setTimeout(connectStateEvents,5000);
+  };
+}
+async function loadDevices(){
+  try{
+    const r=await api('/api/switches');
+    $('devices').innerHTML=(r.devices||[]).slice(0,24).map(deviceCard).join('') || 'No switchable devices found';
+  }catch(err){
+    $('devices').textContent='Devices unavailable';
+  }
+}
+async function deviceCommand(id, command){
+  try{
+    const j=await postApi('/api/device/'+encodeURIComponent(id)+'/command/'+encodeURIComponent(command));
+    setOutput(j.message||JSON.stringify(j,null,2));
+    if(j.devices) $('devices').innerHTML=j.devices.slice(0,24).map(deviceCard).join('');
+    loadTimers();
+    status();
+  }catch(err){
+    setOutput('Command failed: '+err.message);
+  }
+}
+async function setpoint(id, delta){
+  try{
+    const j=await postApi('/api/device/'+encodeURIComponent(id)+'/setpoint/'+encodeURIComponent(delta));
+    setOutput(j.message||JSON.stringify(j,null,2));
+    status();
+  }catch(err){
+    setOutput('Setpoint failed: '+err.message);
+  }
+}
+async function clearRefresh(event){
+  const button=event&&event.target?event.target.closest('button'):null;
+  if(button) markActiveControl(button);
+  setOutput('Clearing cache and refreshing from Hubitat...');
+  try{
+    const j=await postApi('/api/cache/clear-refresh');
+    setOutput(j.success?'Cache cleared and refreshed: '+j.devices+' devices':'Refresh failed: '+j.error);
+    status();
+  }catch(err){
+    setOutput('Clear refresh failed: '+err.message);
+  }finally{
+    finishActiveControl();
+  }
+}
+async function showAiContext(event){
+  const button=event&&event.target?event.target.closest('button'):null;
+  if(button) markActiveControl(button);
+  setOutput('Building AI context...');
+  try{
+    const j=await api('/api/ai/context');
+    setOutput(JSON.stringify(j.context||j,null,2));
+  }catch(err){
+    setOutput('AI context unavailable: '+err.message);
+  }finally{
+    finishActiveControl();
+  }
+}
+async function loadRooms(){
+  try{
+    const r=await api('/api/rooms');
+    let rooms=(r.rooms||[]).filter(x=>x.room!=='Unknown');
+    if(!viewState.emptyRooms) rooms=rooms.filter(roomHasSignals);
+    if(!viewState.inactiveRooms) rooms=rooms.filter(roomIsActive);
+    const limit=(viewState.inactiveRooms || viewState.emptyRooms) ? 24 : 12;
+    $('rooms').innerHTML=rooms.slice(0,limit).map(roomCard).join('') || 'No rooms match current view';
+  }catch(err){
+    $('rooms').textContent='Rooms unavailable';
+  }
+}
+async function ask(){
+  const text=$('q').value.trim(); if(!text) return;
+  setOutput('Running: '+text+'...');
+  try{
+    const j=await postApi('/api/assistant', {q:text});
+    setOutput(j.message||JSON.stringify(j,null,2));
+    speak(j.speech||j.message||'Done');
+    loadTimers();
+    status();
+  }catch(err){
+    setOutput('Request failed: '+err.message);
+  }finally{
+    finishActiveControl();
+  }
+}
+function quick(t, source){$('q').value=t;if(source) markActiveControl(source);ask()}
+function stopSpeaking(){ if('speechSynthesis' in window) speechSynthesis.cancel(); }
+function setAudioMuted(muted){
+  audioMuted = muted;
+  localStorage.setItem('homebrainos_audio_muted', String(audioMuted));
+  const toggle=$('audioMuted');
+  if(toggle) toggle.checked=audioMuted;
+  if(audioMuted) stopSpeaking();
+}
+function speak(t){ if(!audioMuted && 'speechSynthesis' in window && t){ stopSpeaking(); speechSynthesis.speak(new SpeechSynthesisUtterance(t)); } }
+function setVoiceOverlay(open, hint){
+  $('voiceOverlay').classList.toggle('show', open);
+  if(hint) $('voiceHint').textContent=hint;
+}
+function setListening(active){
+  $('micFab').classList.toggle('listening', active);
+  $('voiceStart').textContent=active?(audioMuted?'Listening silently...':'Listening...'):'🎤 Tap to speak';
+}
+function setStationStatus(text, active=false){
+  $('stationStatus').textContent=text;
+  $('stationStatus').classList.toggle('active', active);
+  $('stationStart').classList.toggle('active', active);
+  $('stationStart').textContent=active?'Voice station running':'Start voice station';
+}
+function normaliseSpeech(text){
+  return String(text||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+}
+function stationIsArmed(){
+  return Date.now()<stationArmedUntil;
+}
+function stationListeningStatus(){
+  if(stationIsArmed()){
+    const seconds=Math.max(1, Math.ceil((stationArmedUntil-Date.now())/1000));
+    return `Wake phrase heard. Say the command now ... ${seconds}s`;
+  }
+  return 'Listening for: Hey HomeBrain ...';
+}
+function refreshStationStatus(){
+  if(stationEnabled) setStationStatus(stationListeningStatus(), true);
+}
+function clearStationArmed(){
+  stationArmedUntil=0;
+  clearInterval(stationArmedTick);
+  stationArmedTick=null;
+}
+function armVoiceStation(ms=15000){
+  stationArmedUntil=Date.now()+ms;
+  clearInterval(stationArmedTick);
+  stationArmedTick=setInterval(()=>{
+    if(!stationIsArmed()){
+      clearStationArmed();
+      refreshStationStatus();
+      return;
+    }
+    refreshStationStatus();
+  },1000);
+  refreshStationStatus();
+}
+function wakePhraseCommand(transcript){
+  const spoken=normaliseSpeech(transcript).replace(/\bhome brain\b/g,'homebrain');
+  const phrases=['hey homebrain','hi homebrain','hello homebrain','okay homebrain','ok homebrain','homebrain'];
+  for(const phrase of phrases){
+    const idx=spoken.indexOf(phrase);
+    if(idx>=0){
+      return {heard:true, command:spoken.slice(idx+phrase.length).replace(/^[,.\s]+/,'').trim()};
+    }
+  }
+  return {heard:false, command:''};
+}
+function stationCommandFromTranscript(transcript){
+  const wake=wakePhraseCommand(transcript);
+  if(wake.heard){
+    if(wake.command) return wake.command;
+    armVoiceStation(15000);
+    return null;
+  }
+  if(stationIsArmed()){
+    clearStationArmed();
+    return normaliseSpeech(transcript);
+  }
+  return '';
+}
+function stopVoiceStation(){
+  stationEnabled=false;
+  clearStationArmed();
+  clearTimeout(stationRestart);
+  stationRestart=null;
+  if(stationRecognizer){
+    stationRecognizer.onend=null;
+    try{stationRecognizer.stop();}catch(e){}
+  }
+  stationRecognizer=null;
+  setListening(false);
+  setStationStatus('Voice station stopped. Say Hey HomeBrain after starting it again.');
+}
+function startVoiceStation(){
+  stopSpeaking();
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert('Voice station needs Chrome or Edge speech recognition');return;}
+  stationEnabled=true;
+  clearStationArmed();
+  setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain", then your command. You can pause briefly after the wake phrase.');
+  const startLoop=()=>{
+    if(!stationEnabled) return;
+    const r=new SR();
+    stationRecognizer=r;
+    r.lang='en-GB';
+    r.continuous=true;
+    r.interimResults=false;
+    r.maxAlternatives=1;
+    r.onstart=()=>{setListening(true);refreshStationStatus();};
+    r.onerror=e=>{
+      if(['no-speech','aborted'].includes(e.error||'')){refreshStationStatus();return;}
+      setStationStatus('Voice station microphone error: '+(e.error||'unknown'));
+    };
+    r.onend=()=>{setListening(stationIsArmed());refreshStationStatus();if(stationEnabled) stationRestart=setTimeout(startLoop,450);};
+    r.onresult=e=>{
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const transcript=e.results[i][0].transcript||'';
+        const command=stationCommandFromTranscript(transcript);
+        if(command===null) continue;
+        if(!command){
+          if(stationIsArmed()){
+            setStationStatus('Wake phrase heard. Say the command now ...', true);
+            continue;
+          }
+          setStationStatus('Heard "'+transcript+'". Waiting for Hey HomeBrain ...', true);
+          continue;
+        }
+        $('q').value=command;
+        setStationStatus('Running: '+command, true);
+        ask();
+      }
+    };
+    try{r.start();}catch(e){setStationStatus('Voice station could not start: '+e.message);}
+  };
+  startLoop();
+}
+function voice(){
+  stopSpeaking();
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert('Voice not supported in this browser');return;}
+  const r=new SR();
+  r.lang='en-GB';
+  r.interimResults=false;
+  r.maxAlternatives=1;
+  r.onstart=()=>{setListening(true);setVoiceOverlay(true,audioMuted?'Listening now. Audio responses are muted.':'Listening now. Speak naturally.');};
+  r.onerror=e=>{setListening(false);setVoiceOverlay(true,'Microphone error: '+(e.error||'unknown'));};
+  r.onend=()=>setListening(false);
+  r.onresult=e=>{
+    const transcript=e.results[0][0].transcript;
+    $('q').value=transcript;
+    setVoiceOverlay(false);
+    ask();
+  };
+  r.start();
+}
+$('micFab').addEventListener('click', voice);
+$('voiceStart').addEventListener('click', voice);
+$('stationStart').addEventListener('click', startVoiceStation);
+$('stationStop').addEventListener('click', stopVoiceStation);
+$('voiceClose').addEventListener('click', ()=>setVoiceOverlay(false));
+$('audioMuted').addEventListener('change', e=>setAudioMuted(e.target.checked));
+setAudioMuted(audioMuted);
+if(urlParams.get('station')==='1'){
+  setVoiceOverlay(true,'Tap Start voice station once, then say "Hey HomeBrain" before each command.');
+}
+if(urlParams.get('voice')==='1'){
+  setVoiceOverlay(true,'Tap the microphone to start. Browsers require one tap before using the mic.');
+}
+applyViewState(); status(); loadTimers(); connectStateEvents(); setInterval(status,30000);
+</script>
+</body>
+</html>
