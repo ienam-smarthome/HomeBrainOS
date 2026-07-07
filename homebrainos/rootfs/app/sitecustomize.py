@@ -66,8 +66,6 @@ def _set_route(app: Any, path: str, endpoint: Callable[..., Any], methods: set[s
             continue
         route.endpoint = endpoint
         route.name = getattr(endpoint, '__name__', route.name)
-        # Starlette caches the ASGI app wrapper when the route is created.
-        # Rebuild it so the existing path points at the new endpoint.
         try:
             from starlette.routing import request_response
             route.app = request_response(endpoint)
@@ -100,7 +98,7 @@ def _energy_recommendation(consumers: list[dict[str, Any]], candidates: list[dic
         first = candidates[0]
         label = first.get('label', 'the top device')
         reason = first.get('reason', 'it may be wasting energy')
-        return f'Check {label} first — {reason}.'
+        return f'Check {label} first - {reason}.'
     if consumers:
         first = consumers[0]
         if first.get('power', 0) >= 1000:
@@ -147,7 +145,7 @@ def natural_energy_advisor(main: Any) -> dict[str, Any]:
         lines.append('Energy totals are not available yet because I could not find the Octopus or whole-house meter.')
     if consumers:
         lines.append('Largest current consumers:')
-        lines.extend(f"• {item['label']} ({item['room']}) — {item['power_display']}" for item in consumers[:5])
+        lines.extend(f"- {item['label']} ({item['room']}) - {item['power_display']}" for item in consumers[:5])
     else:
         lines.append('No live power consumers above 1 watt are currently visible.')
     lines.append('Recommendation: ' + _energy_recommendation(consumers, candidates))
@@ -155,7 +153,7 @@ def natural_energy_advisor(main: Any) -> dict[str, Any]:
         'success': True,
         'intent': 'energy_advisor',
         'message': '\n'.join(lines),
-        'speech': ' '.join(line.lstrip('• ') for line in lines[:5]),
+        'speech': ' '.join(line.lstrip('- ') for line in lines[:5]),
         'summary': summary,
         'usage': usage,
         'current_consumers': consumers,
@@ -175,20 +173,21 @@ def natural_home_health(main: Any) -> dict[str, Any]:
     not_reporting = len(stale.get('not_reporting') or [])
     if not_reporting:
         deductions.append(f'{not_reporting} device' + ('' if not_reporting == 1 else 's') + ' not reporting normally')
-    if diagnostics.get('unknown_room'):
-        deductions.append(f"{diagnostics.get('unknown_room')} device" + ('' if diagnostics.get('unknown_room') == 1 else 's') + ' without a clear room')
+    unknown_rooms = int(diagnostics.get('unknown_room') or 0)
+    if unknown_rooms:
+        deductions.append(f'{unknown_rooms} device' + ('' if unknown_rooms == 1 else 's') + ' without a clear room')
     if diagnostics.get('last_error'):
         deductions.append('last Hubitat refresh has an error')
-    score = max(0, 100 - low_battery * 5 - not_reporting * 8 - int(diagnostics.get('unknown_room') or 0) * 2 - (10 if diagnostics.get('last_error') else 0))
+    score = max(0, 100 - low_battery * 5 - not_reporting * 8 - unknown_rooms * 2 - (10 if diagnostics.get('last_error') else 0))
     lines = ['Home health', f'Overall health score: {score}/100.']
     if deductions:
         lines.append('Main deductions:')
-        lines.extend('• ' + item for item in deductions[:8])
+        lines.extend('- ' + item for item in deductions[:8])
     else:
         lines.append('No major health deductions found.')
     if stale.get('not_reporting'):
         lines.append('Devices to check first:')
-        lines.extend(f"• {item.get('label')} — {item.get('duration')}" for item in stale['not_reporting'][:5])
+        lines.extend(f"- {item.get('label')} - {item.get('duration')}" for item in stale['not_reporting'][:5])
     rec = 'Replace low batteries first.' if low_battery else 'Keep monitoring event stream and stale devices.' if not_reporting else 'No immediate action needed.'
     lines.append('Recommendation: ' + rec)
     return {'success': True, 'intent': 'home_health', 'message': '\n'.join(lines), 'score': score, 'deductions': deductions, 'summary': summary, 'diagnostics': diagnostics, 'stale': stale, 'formatter': 'v1.5-natural'}
@@ -208,15 +207,46 @@ def natural_daily_briefing(main: Any) -> dict[str, Any]:
         alerts.append(f"{len(stale['not_reporting'])} devices not reporting normally")
     if not alerts:
         alerts.append('No urgent alerts')
+    today = energy.get('usage', {}).get('today') or {}
+    today_energy = f"{_fmt_kwh(today.get('kwh'))}, {_fmt_money(today.get('cost_gbp'))}" if today else 'daily total not available yet'
+    recommendation = energy.get('message', '').split('Recommendation: ')[-1].split('\n')[0] if 'Recommendation: ' in energy.get('message', '') else 'Check Home Health if anything looks wrong.'
     lines = [
         'Daily briefing',
         f'Occupancy: {occupancy}.',
         f"Lights on: {_fmt_count('light', int(summary.get('lights_on') or 0))}.",
-        f"Energy today: {_fmt_power(summary.get('power_total'))} right now; " + (energy.get('usage', {}).get('today') and f"{_fmt_kwh(energy['usage']['today'].get('kwh'))}, {_fmt_money(energy['usage']['today'].get('cost_gbp'))}" or 'daily total not available yet') + '.',
+        f"Energy today: {_fmt_power(summary.get('power_total'))} right now; {today_energy}.",
         'Alerts: ' + '; '.join(alerts[:3]) + '.',
-        'Recommendation: ' + (energy.get('message', '').split('Recommendation: ')[-1].split('\n')[0] if 'Recommendation: ' in energy.get('message', '') else 'Check Home Health if anything looks wrong.'),
+        'Recommendation: ' + recommendation,
     ]
     return {'success': True, 'intent': 'daily_briefing', 'message': '\n'.join(lines), 'summary': summary, 'energy': energy, 'health': health, 'alerts': alerts, 'formatter': 'v1.5-natural'}
+
+
+def natural_home_context(main: Any) -> dict[str, Any]:
+    summary = main.dashboard_summary()
+    health = natural_home_health(main)
+    energy = natural_energy_advisor(main)
+    rooms = main.api_rooms().get('rooms', [])
+    active_rooms = [room for room in rooms if int(room.get('lights_on') or 0) or int(room.get('motion_active') or 0)]
+    timeline = main.recent_home_timeline(limit=12, hours=12)
+    recommendations = main.recommendations_answer()
+    return {
+        'success': True,
+        'version': getattr(main, 'APP_VERSION', '1.5.0-alpha'),
+        'generated_at': int(time.time()),
+        'summary': summary,
+        'occupancy': {
+            'people_home': summary.get('people_home'),
+            'people_tracked': summary.get('people_tracked'),
+            'people_home_names': summary.get('people_home_names') or [],
+            'active_rooms': active_rooms[:10],
+        },
+        'energy': energy,
+        'health': health,
+        'alerts': health.get('deductions') or [],
+        'recommendations': recommendations.get('recommendations') or [],
+        'timeline': timeline,
+        'context_source': 'cached-event-state',
+    }
 
 
 def natural_format_endpoint(value: float, kind: str = 'power') -> dict[str, Any]:
@@ -235,7 +265,7 @@ def natural_format_endpoint(value: float, kind: str = 'power') -> dict[str, Any]
 def _spent_today_answer(main: Any) -> dict[str, Any]:
     usage = main.energy_usage_from_meter()
     if not usage.get('available'):
-        return {'success': False, 'intent': 'energy_spend_today', 'message': 'I cannot see today’s energy cost yet because the meter totals are not available.'}
+        return {'success': False, 'intent': 'energy_spend_today', 'message': 'I cannot see today energy cost yet because the meter totals are not available.'}
     today = usage.get('today') or {}
     return {'success': True, 'intent': 'energy_spend_today', 'message': f"You have spent {_fmt_money(today.get('cost_gbp'))} on electricity today so far, using {_fmt_kwh(today.get('kwh'))}.", 'usage': usage}
 
@@ -249,7 +279,7 @@ def _anything_unusual_answer(main: Any) -> dict[str, Any]:
         issues.append(f"{consumers[0]['label']} is using {_fmt_power(consumers[0]['power'])}")
     if not issues:
         return {'success': True, 'intent': 'anything_unusual', 'message': 'Nothing unusual stands out right now. Home health and energy usage look normal from the data I can see.'}
-    lines = ['Things that look unusual:', *('• ' + item for item in issues[:6])]
+    lines = ['Things that look unusual:', *('- ' + item for item in issues[:6])]
     return {'success': True, 'intent': 'anything_unusual', 'message': '\n'.join(lines), 'issues': issues}
 
 
@@ -265,6 +295,7 @@ def patch(main: Any) -> bool:
     main.energy_advisor_answer = lambda: natural_energy_advisor(main)
     main.home_health_answer = lambda: natural_home_health(main)
     main.daily_briefing_answer = lambda: natural_daily_briefing(main)
+    main.home_context_answer = lambda: natural_home_context(main)
 
     original_assistant = getattr(main, 'assistant', None)
     if callable(original_assistant):
@@ -283,6 +314,9 @@ def patch(main: Any) -> bool:
     _set_route(app, '/api/home-health', lambda: natural_home_health(main), {'GET'})
     _set_route(app, '/api/daily-briefing', lambda: natural_daily_briefing(main), {'GET'})
     try:
+        app.add_api_route('/api/home-context', lambda: natural_home_context(main), methods=['GET'])
+        app.add_api_route('/api/briefing', lambda: natural_daily_briefing(main), methods=['GET'])
+        app.add_api_route('/api/home-health-score', lambda: natural_home_health(main), methods=['GET'])
         app.add_api_route('/api/natural-format', natural_format_endpoint, methods=['GET'])
     except Exception:
         pass
