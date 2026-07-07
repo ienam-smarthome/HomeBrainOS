@@ -219,3 +219,9 @@ ollama_health_cache_seconds: 60
 ## Security
 
 Never commit Maker API tokens, local IP credentials, `.env` files, or database/cache files containing personal home data.
+
+### v0.9.7 Event-driven state engine
+
+HomeBrainOS now serves dashboard and AI state answers from its SQLite/event cache by default instead of forcing Maker API refreshes on every dashboard poll. Automatic live sync is disabled by default to reduce Hubitat load; use **Refresh from Hubitat** or `/api/state-sync` for manual resynchronisation if Hubitat events are not configured.
+
+Recommended Hubitat setup: configure Maker API event POST/callback to `http://<homebrain-host>:8787/api/hubitat/events` so HomeBrain receives device state changes and updates the dashboard via server-sent events.

@@ -1,3 +1,13 @@
+
+## v0.9.7-alpha - Event-driven state engine
+
+- Disabled automatic dashboard-triggered live Maker API detail sync by default.
+- Dashboard and AI questions now read from the shared SQLite/event cache.
+- `/api/switches` no longer forces a full state refresh.
+- `which lights are on` and `which switches are on` no longer fetch per-device details unless manual sync is used.
+- Added lower default refresh frequency and explicit live sync controls to reduce Hubitat busy time.
+- Manual resync remains available through the Refresh button and `/api/state-sync`.
+
 ## v0.9.6-alpha - Reliable Live State Sync
 
 - Added targeted live switch/light state refresh using Maker API device detail endpoints.

@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.6-alpha'
+APP_VERSION = '0.9.7-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -74,12 +74,13 @@ def load_config() -> dict[str, Any]:
         'maker_api_app_id': os.getenv('MAKER_API_APP_ID', ''),
         'maker_api_token': os.getenv('MAKER_API_TOKEN', ''),
         'api_token': os.getenv('HOMEBRAIN_API_TOKEN', ''),
-        'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '120')),
+        'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '300')),
         'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '90')),
-        'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '20')),
-        'live_switch_sync_seconds': int(os.getenv('LIVE_SWITCH_SYNC_SECONDS', '3')),
-        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '40')),
+        'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '120')),
+        'live_switch_sync_seconds': int(os.getenv('LIVE_SWITCH_SYNC_SECONDS', '60')),
+        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '12')),
         'event_batch_window_ms': int(os.getenv('EVENT_BATCH_WINDOW_MS', '500')),
+        'auto_live_sync_enabled': os.getenv('AUTO_LIVE_SYNC_ENABLED', 'false').lower() == 'true',
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
         'ollama_model': os.getenv('OLLAMA_MODEL', 'qwen2.5:3b'),
@@ -1046,6 +1047,10 @@ def live_switch_state_sync(reason: str = 'live-switch-state', categories: set[st
     global LAST_LIVE_SWITCH_SYNC, STATE_EVENT_VERSION
     if not maker_configured():
         return {'synced': False, 'reason': 'maker-not-configured'}
+    if not force and not bool(CONFIG.get('auto_live_sync_enabled', False)):
+        PERF_STATS['live_switch_sync_skipped'] = int(PERF_STATS.get('live_switch_sync_skipped') or 0) + 1
+        PERF_STATS['live_switch_sync_last_reason'] = f'skipped:auto-disabled:{reason}'
+        return {'synced': False, 'reason': 'auto-live-sync-disabled', 'event_callback_seen': bool(LAST_HUBITAT_EVENT)}
     now = time.time()
     min_age = max(0, int(CONFIG.get('live_switch_sync_seconds', 3)))
     if not force and LAST_LIVE_SWITCH_SYNC and min_age and now - LAST_LIVE_SWITCH_SYNC < min_age:
@@ -1095,8 +1100,8 @@ def clear_cache() -> None:
         conn.close()
 
 
-def dashboard_summary(live: bool = True) -> dict[str, Any]:
-    sync_result = live_switch_state_sync('dashboard', categories={'light','switch','power_device'}) if live else {'synced': False, 'reason': 'disabled'}
+def dashboard_summary(live: bool = False) -> dict[str, Any]:
+    sync_result = live_switch_state_sync('dashboard', categories={'light','switch','power_device'}, force=False) if live and CONFIG.get('auto_live_sync_enabled') else {'synced': False, 'reason': 'event-cache'}
     devices = all_devices()
     environment_devices = [d for d in devices if not is_fridge_meter_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
@@ -4384,12 +4389,12 @@ def run_command(text: str) -> dict[str, Any]:
     if m_room_on:
         return room_on_status_answer(m_room_on.group(1).strip())
     if re.search(r'\b(which|what)\s+lights?\s+(are|is)\s+on\b', t):
-        live_switch_state_sync('question-lights-on', categories={'light'}, force=True)
+        sync_info = live_switch_state_sync('question-lights-on', categories={'light'}, force=False)
         lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         light_devices = [d for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None'), 'speech': spoken_device_locations(light_devices)}
     if re.search(r'\b(which|what)\s+switch(es)?\s+(are|is)\s+on\b', t):
-        live_switch_state_sync('question-switches-on', categories={'switch','power_device'}, force=True)
+        sync_info = live_switch_state_sync('question-switches-on', categories={'switch','power_device'}, force=False)
         switch_devices = [d for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         switches = [d['label'] for d in switch_devices]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None'), 'speech': spoken_device_locations(switch_devices)}
@@ -4747,7 +4752,7 @@ def api_cache_clear_refresh(request: Request):
 
 @app.get('/api/dashboard')
 def api_dashboard():
-    return {'success': True, **dashboard_summary()}
+    return {'success': True, **dashboard_summary(live=False)}
 
 
 @app.get('/api/devices')
@@ -4762,7 +4767,7 @@ def api_devices(category: str | None = None, room: str | None = None):
 
 @app.get('/api/switches')
 def api_switches(room: str | None = None):
-    sync_live_states('api-switches')
+    # v0.9.7: serve cached/event-driven state. Manual refresh remains available via /api/state-sync.
     devices = all_devices()
     if room:
         devices = [d for d in devices if normalise(room) in normalise(d.get('room',''))]
