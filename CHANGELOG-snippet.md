@@ -3,3 +3,7 @@
 - Natural room/entity resolution for Bedroom 2 / bedroom two / bedroom to.
 - Duration questions now resolve room first, then device type.
 - Improves answers like: "how long has bedroom two light been on today".
+
+
+### 1.3.0-alpha
+- HomeBrain Language Engine: duration/history queries such as “lights on time today”.

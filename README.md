@@ -236,3 +236,7 @@ HomeBrain now uses the Hubitat event stream to update dashboard summary pills li
 ### Event diagnostics
 
 Use `/api/event-diagnostics` to confirm Hubitat events, UI-relevant events, ignored noisy events, SSE clients, and recent processed events.
+
+
+### 1.3.0-alpha
+- HomeBrain Language Engine: duration/history queries such as “lights on time today”.

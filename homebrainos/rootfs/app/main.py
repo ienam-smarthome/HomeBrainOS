@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.2.0-alpha'
+APP_VERSION = '1.3.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2174,6 +2174,122 @@ def state_sessions_in_window(
         })
     return sessions, has_relevant_history
 
+
+
+
+def period_from_text(text: str) -> str:
+    t = normalise(text)
+    if 'yesterday' in t:
+        return 'yesterday'
+    if 'last 24' in t or 'past 24' in t or '24 hours' in t:
+        return 'last 24 hours'
+    return 'today'
+
+
+def period_words(period: str) -> str:
+    if period == 'yesterday':
+        return 'yesterday'
+    if period in ('last 24 hours', 'past 24 hours'):
+        return 'in the last 24 hours'
+    return 'today'
+
+
+def state_usage_summary(devices: list[dict[str, Any]], attr: str = 'switch', expected_state: str = 'on', period: str = 'today', title: str = 'Usage') -> dict[str, Any]:
+    start_ts, end_ts, period_label = state_window(period)
+    rows: list[dict[str, Any]] = []
+    total_seconds = 0
+    for device in devices:
+        if device.get(attr) is None:
+            continue
+        sessions, has_history = state_sessions_in_window(device, attr, expected_state, start_ts, end_ts)
+        seconds = sum(int(session['duration_seconds']) for session in sessions)
+        if seconds <= 0 and not has_history:
+            continue
+        total_seconds += seconds
+        since = state_since_for_device(device, attr) if is_state(device.get(attr), expected_state) else None
+        rows.append({
+            'device': device,
+            'label': device.get('label') or device.get('name') or device.get('id'),
+            'room': canonical_room_name(device.get('room') or 'Unknown'),
+            'seconds': seconds,
+            'duration': elapsed_duration_label(seconds) if seconds > 0 else '0 minutes',
+            'currently_on': is_state(device.get(attr), expected_state),
+            'on_for': elapsed_duration_label(since['duration_seconds']) if since and isinstance(since.get('duration_seconds'), int) else None,
+            'sessions': sessions,
+        })
+    rows.sort(key=lambda item: item['seconds'], reverse=True)
+    current = [row for row in rows if row['currently_on']]
+    period_text = period_words(period)
+    if not rows:
+        message = f'I do not have enough {title.lower()} history for {period_text} yet.'
+        return {'success': True, 'intent': 'state_usage_summary', 'message': message, 'speech': message, 'devices': devices, 'items': []}
+    lines = [f'{title} {period_text}:']
+    shown = 0
+    for row in rows:
+        if row['seconds'] <= 0 and shown >= 5:
+            continue
+        current_text = f" — currently on for {row['on_for']}" if row.get('on_for') else ''
+        room_text = f" ({row['room']})" if row.get('room') and row['room'] != 'Unknown' else ''
+        lines.append(f"• {row['label']}{room_text}: {row['duration']}{current_text}")
+        shown += 1
+        if shown >= 10:
+            break
+    lines.append(f"Total {title.lower()}: {elapsed_duration_label(total_seconds) if total_seconds > 0 else '0 minutes'}.")
+    lines.append(f"Currently on: {len(current)}.")
+    speech = f"{title} {period_text}. Total {elapsed_duration_label(total_seconds) if total_seconds > 0 else '0 minutes'}. {len(current)} currently on."
+    return {'success': True, 'intent': 'state_usage_summary', 'message': '\n'.join(lines), 'speech': speech, 'items': rows, 'total_seconds': total_seconds, 'currently_on': current}
+
+
+def parse_homebrain_language(text: str) -> dict[str, Any] | None:
+    """Small deterministic NLU layer before command matching.
+
+    It classifies ambiguous phrases such as "lights on time today" as duration/history,
+    not as a timed control command. This keeps natural questions from falling through
+    to switch-control help.
+    """
+    t = spoken_number_room_variants(text)
+    period = period_from_text(t)
+    duration_words = bool(re.search(r'\b(time|hours?|runtime|run time|duration|how long|usage|used|on time)\b', t))
+    ranking_words = bool(re.search(r'\b(longest|most|top|highest)\b', t))
+    asks_duration = duration_words or ranking_words
+    is_questionish = asks_duration or re.search(r'\b(how much|how many|which|what)\b', t)
+    mentions_light = bool(re.search(r'\b(lights?|lamps?|lighting)\b', t))
+    mentions_switch = bool(re.search(r'\b(switches?|sockets?|plugs?)\b', t))
+    room = extract_room_intent(t)
+
+    if is_questionish and asks_duration and mentions_light and 'turn on' not in t and 'switch on' not in t:
+        if room:
+            devices = room_devices(room, 'light')
+            title = f'{room} light-on time'
+        else:
+            devices = [d for d in all_devices() if d.get('category') == 'light']
+            title = 'Light-on time'
+        return state_usage_summary(devices, 'switch', 'on', period, title)
+
+    if is_questionish and asks_duration and mentions_switch and 'turn on' not in t and 'switch on' not in t:
+        if room:
+            devices = [d for d in room_devices(room) if d.get('category') != 'light' and d.get('switch') is not None]
+            title = f'{room} switch-on time'
+        else:
+            devices = [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None]
+            title = 'Switch-on time'
+        return state_usage_summary(devices, 'switch', 'on', period, title)
+
+    # Natural single-device duration: "bedroom two light on time today".
+    if asks_duration and re.search(r'\b(on|off|active|inactive|open|closed|locked|unlocked)\b', t):
+        m = re.search(r'(.+?)\s+(on|off|active|inactive|open|closed|locked|unlocked)\s+(?:time|hours?|runtime|duration|usage|today|yesterday|last 24 hours|past 24 hours)', t)
+        if m:
+            target = m.group(1).strip()
+            state = m.group(2)
+            return device_total_state_duration_answer(target, state_name_to_attr(state), state, period)
+    return None
+
+
+def natural_language_answer(text: str) -> dict[str, Any] | None:
+    answer = parse_homebrain_language(text)
+    if answer:
+        answer.setdefault('source', 'homebrain_language_engine')
+    return answer
 
 def device_total_state_duration_answer(
     target: str,
@@ -4672,6 +4788,9 @@ def assistant(text: str) -> dict[str, Any]:
     room_answer = room_details_answer(t)
     if room_answer:
         return room_answer
+    nlu_answer = natural_language_answer(text)
+    if nlu_answer:
+        return nlu_answer
     summary_answer = explain_summary_tile(t)
     if summary_answer:
         return summary_answer
@@ -4743,6 +4862,9 @@ def run_command(text: str) -> dict[str, Any]:
             f"{s['low_batteries']} devices have low batteries. {s['motion_active']} motion sensors are active."
         )
         return {'success': True, 'message': f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\nAverage temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\nWhole-house power: {s['power_display']} from {s['power_source_label']}\nPeople home: {s['people_home']}/{s['people_tracked']} ({people})\nLow batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}", 'speech': speech}
+    nlu_answer = natural_language_answer(text)
+    if nlu_answer:
+        return nlu_answer
     m_total_state_duration = re.search(r'^(?:total time|how much time)\s+(?:has\s+)?(?:the\s+)?(.+?)\s+(?:was|has been|been)\s+(on|off|active|inactive|open|closed|locked|unlocked)\s+(today|yesterday|last 24 hours|past 24 hours)(?:\?)?$', t)
     if not m_total_state_duration:
         m_total_state_duration = re.search(r'^how long\s+(?:was|has)\s+(?:the\s+)?(.+?)\s+(?:been\s+)?(on|off|active|inactive|open|closed|locked|unlocked)\s+(today|yesterday|last 24 hours|past 24 hours)(?:\?)?$', t)

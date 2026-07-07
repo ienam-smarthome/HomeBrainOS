@@ -151,6 +151,12 @@ Reduce Hubitat busy time and excessive Maker API method calls while keeping Home
 
 # Changelog
 
+## 1.3.0-alpha - HomeBrain Language Engine
+- Added deterministic natural language intent classification for duration/history queries.
+- Fixed “lights on time today” so it reports light-on hours instead of control help.
+- Added all-lights and room-specific lighting usage summaries for today, yesterday, and last 24 hours.
+
+
 ## v0.7.64-alpha
 
 - Fix stale-device detection so the app no longer treats HomeBrain cache refreshes as proof that a Hubitat device actually reported.
