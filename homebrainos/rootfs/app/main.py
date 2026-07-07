@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.4.1-alpha'
+APP_VERSION = '1.4.2-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -142,7 +142,10 @@ PERF_STATS: dict[str, Any] = {
     'summary_rebuild_count': 0,
     'summary_rebuild_last_ms': None,
     'summary_event_push_count': 0,
+    'summary_event_debounce_count': 0,
+    'event_small_change_ignored_count': 0,
 }
+LAST_SUMMARY_EVENT_REBUILD = 0.0
 SUMMARY_CACHE: dict[str, Any] | None = None
 SUMMARY_CACHE_VERSION = 0
 SUMMARY_CACHE_LAST_REBUILD: float | None = None
@@ -938,9 +941,50 @@ NOISY_EVENT_ATTRS = {
 }
 
 
-def event_affects_dashboard(event: dict[str, Any]) -> bool:
+POWER_UI_MIN_DELTA_W = 5.0
+DEMAND_UI_MIN_DELTA_KW = 0.05
+TEMP_UI_MIN_DELTA_C = 0.2
+HUMIDITY_UI_MIN_DELTA_PERCENT = 1.0
+SUMMARY_EVENT_DEBOUNCE_SECONDS = 1.5
+CRITICAL_UI_ATTRS = {'switch', 'motion', 'presence', 'contact', 'lock', 'thermostatOperatingState'}
+
+
+def numeric_attr_value(device: dict[str, Any] | None, attr: str) -> float | None:
+    if not device:
+        return None
+    attrs = device.get('attributes') or {}
+    value = attrs.get(attr)
+    if value is None:
+        value = device.get(attr)
+    return safe_float(value)
+
+
+def small_change_event(event: dict[str, Any], previous_device: dict[str, Any] | None) -> bool:
+    attr = canonical_attr(event.get('attr'))
+    value = safe_float(event.get('value'))
+    if value is None:
+        return False
+    previous = numeric_attr_value(previous_device, attr)
+    if previous is None:
+        return False
+    delta = abs(value - previous)
+    if attr == 'power' and delta < POWER_UI_MIN_DELTA_W:
+        return True
+    if attr == 'demand' and delta < DEMAND_UI_MIN_DELTA_KW:
+        return True
+    if attr == 'temperature' and delta < TEMP_UI_MIN_DELTA_C:
+        return True
+    if attr == 'humidity' and delta < HUMIDITY_UI_MIN_DELTA_PERCENT:
+        return True
+    return False
+
+
+def event_affects_dashboard(event: dict[str, Any], previous_device: dict[str, Any] | None = None) -> bool:
     attr = canonical_attr(event.get('attr'))
     if attr in NOISY_EVENT_ATTRS:
+        return False
+    if small_change_event(event, previous_device):
+        PERF_STATS['event_small_change_ignored_count'] = int(PERF_STATS.get('event_small_change_ignored_count') or 0) + 1
         return False
     if attr in DASHBOARD_EVENT_ATTRS:
         return True
@@ -950,6 +994,21 @@ def event_affects_dashboard(event: dict[str, Any]) -> bool:
     text = compact_name(attr)
     return text in {compact_name(item) for item in DASHBOARD_EVENT_ATTRS}
 
+
+def should_rebuild_summary_for_events(ui_records: list[dict[str, Any]], now: int) -> bool:
+    global LAST_SUMMARY_EVENT_REBUILD
+    if not ui_records:
+        return False
+    attrs = {canonical_attr(event.get('attr')) for event in ui_records}
+    if attrs & CRITICAL_UI_ATTRS:
+        LAST_SUMMARY_EVENT_REBUILD = time.time()
+        return True
+    current = time.time()
+    if current - float(LAST_SUMMARY_EVENT_REBUILD or 0.0) >= SUMMARY_EVENT_DEBOUNCE_SECONDS:
+        LAST_SUMMARY_EVENT_REBUILD = current
+        return True
+    PERF_STATS['summary_event_debounce_count'] = int(PERF_STATS.get('summary_event_debounce_count') or 0) + 1
+    return False
 
 
 def remember_event_diagnostics(records: list[dict[str, Any]], ui_records: list[dict[str, Any]], updated_count: int, now: int) -> None:
@@ -1001,6 +1060,13 @@ def event_diagnostics_payload() -> dict[str, Any]:
         'event_filter': {
             'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS),
             'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS),
+            'thresholds': {
+                'power_w': POWER_UI_MIN_DELTA_W,
+                'demand_kw': DEMAND_UI_MIN_DELTA_KW,
+                'temperature_c': TEMP_UI_MIN_DELTA_C,
+                'humidity_percent': HUMIDITY_UI_MIN_DELTA_PERCENT,
+                'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS,
+            },
         },
         'recent_events': list(reversed(EVENT_HISTORY[-20:])),
     }
@@ -1020,11 +1086,14 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         conn.commit()
     finally:
         conn.close()
+    previous_devices: dict[str, dict[str, Any] | None] = {}
     for event in records:
+        matches = [d for d in all_devices() if str(d.get('id')) == str(event['device_id'])]
+        previous_devices[str(event['device_id'])] = matches[0] if matches else None
         device = update_cached_attribute(event['device_id'], event['attr'], event.get('value'), event.get('label'))
         if device:
             updated.append(device)
-    ui_records = [event for event in records if event_affects_dashboard(event)]
+    ui_records = [event for event in records if event_affects_dashboard(event, previous_devices.get(str(event['device_id'])))]
     remember_event_diagnostics(records, ui_records, len(updated), now)
     PERF_STATS['event_count'] = int(PERF_STATS.get('event_count') or 0) + len(records)
     PERF_STATS['event_updated_count'] = int(PERF_STATS.get('event_updated_count') or 0) + len(updated)
@@ -1040,7 +1109,7 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
     summary = None
     if records:
         STATE_EVENT_VERSION += len(records)
-    if ui_records:
+    if should_rebuild_summary_for_events(ui_records, now):
         summary = rebuild_summary_cache('hubitat-event')
         PERF_STATS['summary_event_push_count'] = int(PERF_STATS.get('summary_event_push_count') or 0) + 1
     return {'success': True, 'events': len(records), 'updated': len(updated), 'ui_relevant': len(ui_records), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated, 'dashboard': summary}
@@ -5162,7 +5231,7 @@ def api_version():
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS)}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS), 'thresholds': {'power_w': POWER_UI_MIN_DELTA_W, 'demand_kw': DEMAND_UI_MIN_DELTA_KW, 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS}}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
 
 
 @app.get('/api/event-diagnostics')
