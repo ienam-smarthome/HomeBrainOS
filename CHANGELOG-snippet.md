@@ -1,3 +1,15 @@
+## v0.9.5-alpha - Live State Sync Fix
+
+### Fixed
+- Added throttled live-state synchronisation for dashboard tiles and state-sensitive questions.
+- `which lights are on`, `which switches are on`, `/api/dashboard`, and `/api/switches` now refresh Maker API state before answering when the cache is older than `STATE_SYNC_SECONDS`.
+- Added `/api/state-sync` for manual state verification.
+- Added performance counters for state sync attempts and skips.
+
+### Why
+- Without a Hubitat event callback, light/switch states could remain stale in the SQLite cache until the next full refresh.
+- This release keeps the CPU optimisations but avoids misleading live-state answers.
+
 ## v0.9.4-alpha - Version Sync & Frontend Cache Fix
 
 ### Fixed

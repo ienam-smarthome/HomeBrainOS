@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.4-alpha'
+APP_VERSION = '0.9.5-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -76,6 +76,7 @@ def load_config() -> dict[str, Any]:
         'api_token': os.getenv('HOMEBRAIN_API_TOKEN', ''),
         'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '120')),
         'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '90')),
+        'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '20')),
         'event_batch_window_ms': int(os.getenv('EVENT_BATCH_WINDOW_MS', '500')),
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
@@ -126,6 +127,10 @@ PERF_STATS: dict[str, Any] = {
     'maker_get_error_count': 0,
     'maker_get_last_path': None,
     'maker_get_last_ms': None,
+    'state_sync_count': 0,
+    'state_sync_skipped': 0,
+    'state_sync_last_reason': None,
+    'state_sync_last_ms': None,
 }
 
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
@@ -932,6 +937,49 @@ def count_devices() -> int:
         conn.close()
 
 
+
+def maker_configured() -> bool:
+    return bool(str(CONFIG.get('hubitat_base_url', '')).strip() and str(CONFIG.get('maker_api_app_id', '')).strip() and str(CONFIG.get('maker_api_token', '')).strip())
+
+
+def state_sync_needed(max_age_seconds: int | None = None) -> bool:
+    """Return True when cached device states are too old for a live-state answer.
+
+    Hubitat event callbacks keep the cache live when configured. If callbacks are
+    missing or delayed, state-sensitive UI tiles and questions can otherwise show
+    old switch/light states until the next full refresh. This guard performs a
+    throttled Maker API refresh only for state-sensitive paths.
+    """
+    if not maker_configured():
+        return False
+    age = max(0, int(max_age_seconds if max_age_seconds is not None else CONFIG.get('state_sync_seconds', 20)))
+    if age <= 0:
+        return False
+    now = time.time()
+    if LAST_REFRESH is None:
+        return True
+    return now - float(LAST_REFRESH) >= age
+
+
+def sync_live_states(reason: str = 'live-state') -> dict[str, Any]:
+    """Throttle-protected live state sync for dashboard and state questions."""
+    global PERF_STATS
+    if not state_sync_needed():
+        PERF_STATS['state_sync_skipped'] = int(PERF_STATS.get('state_sync_skipped') or 0) + 1
+        PERF_STATS['state_sync_last_reason'] = f'skipped:{reason}'
+        return {'synced': False, 'reason': 'fresh', 'last_refresh': LAST_REFRESH}
+    started = time.time()
+    try:
+        count = refresh_devices(True, reason)
+    except TypeError:
+        # Compatibility for tests/older integrations that monkeypatch refresh_devices with no args.
+        count = refresh_devices()
+    elapsed_ms = int((time.time() - started) * 1000)
+    PERF_STATS['state_sync_count'] = int(PERF_STATS.get('state_sync_count') or 0) + 1
+    PERF_STATS['state_sync_last_reason'] = reason
+    PERF_STATS['state_sync_last_ms'] = elapsed_ms
+    return {'synced': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH, 'elapsed_ms': elapsed_ms}
+
 def clear_cache() -> None:
     conn = db()
     try:
@@ -942,7 +990,8 @@ def clear_cache() -> None:
         conn.close()
 
 
-def dashboard_summary() -> dict[str, Any]:
+def dashboard_summary(live: bool = True) -> dict[str, Any]:
+    sync_result = sync_live_states('dashboard') if live else {'synced': False, 'reason': 'disabled'}
     devices = all_devices()
     environment_devices = [d for d in devices if not is_fridge_meter_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
@@ -976,6 +1025,9 @@ def dashboard_summary() -> dict[str, Any]:
         'people_home_names': [p['name'] for p in people if p['status'] == 'present'],
         'people': people,
         'last_refresh': LAST_REFRESH,
+        'state_sync': sync_result,
+        'event_callback_seen': bool(LAST_HUBITAT_EVENT),
+        'last_hubitat_event': LAST_HUBITAT_EVENT,
     }
 
 
@@ -4227,10 +4279,12 @@ def run_command(text: str) -> dict[str, Any]:
     if m_room_on:
         return room_on_status_answer(m_room_on.group(1).strip())
     if re.search(r'\b(which|what)\s+lights?\s+(are|is)\s+on\b', t):
+        sync_live_states('question-lights-on')
         lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         light_devices = [d for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None'), 'speech': spoken_device_locations(light_devices)}
     if re.search(r'\b(which|what)\s+switch(es)?\s+(are|is)\s+on\b', t):
+        sync_live_states('question-switches-on')
         switch_devices = [d for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         switches = [d['label'] for d in switch_devices]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None'), 'speech': spoken_device_locations(switch_devices)}
@@ -4563,6 +4617,12 @@ def api_refresh(request: Request):
     return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
 
 
+@app.post('/api/state-sync')
+def api_state_sync(request: Request):
+    require_api_token(request)
+    return {'success': True, **sync_live_states('manual-state-sync')}
+
+
 @app.post('/api/cache/clear-refresh')
 def api_cache_clear_refresh(request: Request):
     require_api_token(request)
@@ -4588,6 +4648,7 @@ def api_devices(category: str | None = None, room: str | None = None):
 
 @app.get('/api/switches')
 def api_switches(room: str | None = None):
+    sync_live_states('api-switches')
     devices = all_devices()
     if room:
         devices = [d for d in devices if normalise(room) in normalise(d.get('room',''))]
