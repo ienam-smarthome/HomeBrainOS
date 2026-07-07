@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.0.0-alpha'
+APP_VERSION = '1.0.1-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -147,6 +147,17 @@ SUMMARY_CACHE: dict[str, Any] | None = None
 SUMMARY_CACHE_VERSION = 0
 SUMMARY_CACHE_LAST_REBUILD: float | None = None
 SSE_CLIENTS = 0
+EVENT_HISTORY: list[dict[str, Any]] = []
+UI_STATS: dict[str, Any] = {
+    'events_received': 0,
+    'events_updated': 0,
+    'events_ui_relevant': 0,
+    'events_ignored_for_ui': 0,
+    'sse_payloads_sent': 0,
+    'last_event_at': None,
+    'last_ui_event_at': None,
+    'last_sse_push_at': None,
+}
 LAST_LIVE_SWITCH_SYNC = 0.0
 
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
@@ -940,6 +951,60 @@ def event_affects_dashboard(event: dict[str, Any]) -> bool:
     return text in {compact_name(item) for item in DASHBOARD_EVENT_ATTRS}
 
 
+
+def remember_event_diagnostics(records: list[dict[str, Any]], ui_records: list[dict[str, Any]], updated_count: int, now: int) -> None:
+    global EVENT_HISTORY, UI_STATS
+    ui_keys = {(event.get('device_id'), event.get('attr'), str(event.get('value'))) for event in ui_records}
+    for event in records:
+        is_ui = (event.get('device_id'), event.get('attr'), str(event.get('value'))) in ui_keys
+        EVENT_HISTORY.append({
+            'received_at': now,
+            'device_id': event.get('device_id'),
+            'attr': event.get('attr'),
+            'value': event.get('value'),
+            'label': event.get('label'),
+            'ui_relevant': is_ui,
+        })
+    EVENT_HISTORY = EVENT_HISTORY[-50:]
+    UI_STATS['events_received'] = int(UI_STATS.get('events_received') or 0) + len(records)
+    UI_STATS['events_updated'] = int(UI_STATS.get('events_updated') or 0) + updated_count
+    UI_STATS['events_ui_relevant'] = int(UI_STATS.get('events_ui_relevant') or 0) + len(ui_records)
+    UI_STATS['events_ignored_for_ui'] = int(UI_STATS.get('events_ignored_for_ui') or 0) + max(0, len(records) - len(ui_records))
+    if records:
+        UI_STATS['last_event_at'] = now
+    if ui_records:
+        UI_STATS['last_ui_event_at'] = now
+
+
+def event_diagnostics_payload() -> dict[str, Any]:
+    now = time.time()
+    last_event_at = UI_STATS.get('last_event_at')
+    age = None if not last_event_at else round(now - float(last_event_at), 1)
+    event_warning = bool(last_event_at and age is not None and age > 300)
+    return {
+        'success': True,
+        'version': APP_VERSION,
+        'event_stream': {
+            'status': 'warning' if event_warning else ('online' if last_event_at else 'waiting'),
+            'last_event_age_seconds': age,
+            'last_hubitat_event': LAST_HUBITAT_EVENT,
+            'state_event_version': STATE_EVENT_VERSION,
+            'sse_clients': SSE_CLIENTS,
+            'warning': 'No Hubitat events received for more than 5 minutes.' if event_warning else None,
+        },
+        'summary_cache': {
+            'version': SUMMARY_CACHE_VERSION,
+            'last_rebuild': SUMMARY_CACHE_LAST_REBUILD,
+            'available': SUMMARY_CACHE is not None,
+        },
+        'ui_stats': dict(UI_STATS),
+        'event_filter': {
+            'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS),
+            'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS),
+        },
+        'recent_events': list(reversed(EVENT_HISTORY[-20:])),
+    }
+
 def record_hubitat_events(payload: Any) -> dict[str, Any]:
     global LAST_HUBITAT_EVENT, STATE_EVENT_VERSION, PERF_STATS
     now = int(time.time())
@@ -960,6 +1025,7 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         if device:
             updated.append(device)
     ui_records = [event for event in records if event_affects_dashboard(event)]
+    remember_event_diagnostics(records, ui_records, len(updated), now)
     PERF_STATS['event_count'] = int(PERF_STATS.get('event_count') or 0) + len(records)
     PERF_STATS['event_updated_count'] = int(PERF_STATS.get('event_updated_count') or 0) + len(updated)
     PERF_STATS['event_ui_relevant_count'] = int(PERF_STATS.get('event_ui_relevant_count') or 0) + len(ui_records)
@@ -4690,7 +4756,12 @@ def api_version():
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS)}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS)}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
+
+
+@app.get('/api/event-diagnostics')
+def api_event_diagnostics():
+    return event_diagnostics_payload()
 
 
 @app.get('/api/events')
@@ -4706,6 +4777,8 @@ async def api_events(request: Request):
         last_heartbeat = time.time()
         try:
             hello_payload = {'version': APP_VERSION, 'state_event_version': last_state_seen, 'dashboard': dashboard_summary(live=False), 'summary_cache_version': last_summary_seen, 'live': True}
+            UI_STATS['sse_payloads_sent'] = int(UI_STATS.get('sse_payloads_sent') or 0) + 1
+            UI_STATS['last_sse_push_at'] = time.time()
             yield f"event: hello\ndata: {json.dumps(hello_payload)}\n\n"
             while True:
                 if await request.is_disconnected():
@@ -4720,10 +4793,14 @@ async def api_events(request: Request):
                         'summary_cache_version': last_summary_seen,
                         'live': True,
                     }
+                    UI_STATS['sse_payloads_sent'] = int(UI_STATS.get('sse_payloads_sent') or 0) + 1
+                    UI_STATS['last_sse_push_at'] = time.time()
                     yield f"event: state\ndata: {json.dumps(payload)}\n\n"
                 elif time.time() - last_heartbeat >= 25:
                     last_heartbeat = time.time()
                     payload = {'state_event_version': STATE_EVENT_VERSION, 'summary_cache_version': SUMMARY_CACHE_VERSION, 'live': True}
+                    UI_STATS['sse_payloads_sent'] = int(UI_STATS.get('sse_payloads_sent') or 0) + 1
+                    UI_STATS['last_sse_push_at'] = time.time()
                     yield f"event: ping\ndata: {json.dumps(payload)}\n\n"
                 await asyncio.sleep(0.2)
         finally:
