@@ -324,6 +324,14 @@ document.querySelectorAll('.summary-tile').forEach(tile => {
     }
   });
 });
+function applyDashboard(d){
+  if(!d) return;
+  $('lights').textContent=d.lights_on; $('switches').textContent=d.switches_on; $('batt').textContent=d.low_batteries;
+  $('people').textContent=(d.people_home??0)+'/'+(d.people_tracked??4); $('motion').textContent=d.motion_active;
+  $('peopleNames').textContent=(d.people_home_names||[]).join(', ') || 'No one home';
+  $('powerSource').textContent=d.power_source_label||'Octopus meter';
+  $('temp').textContent=(d.avg_temperature??'—')+'°'; $('hum').textContent=(d.avg_humidity??'—')+'%'; $('power').textContent=d.power_display||(d.power_total+'W');
+}
 async function status(){
   const badge=$('status');
   try{
@@ -333,17 +341,27 @@ async function status(){
     badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices'+hub;
     badge.className=s.error?'pill error':(s.hub_health&&s.hub_health.level==='warning'?'pill warning':(s.hub_health&&s.hub_health.level==='error'?'pill error':'pill'));
     const d=await api('/api/dashboard');
-    $('lights').textContent=d.lights_on; $('switches').textContent=d.switches_on; $('batt').textContent=d.low_batteries;
-    $('people').textContent=(d.people_home??0)+'/'+(d.people_tracked??4); $('motion').textContent=d.motion_active;
-    $('peopleNames').textContent=(d.people_home_names||[]).join(', ') || 'No one home';
-    $('powerSource').textContent=d.power_source_label||'Octopus meter';
-    $('temp').textContent=(d.avg_temperature??'—')+'°'; $('hum').textContent=(d.avg_humidity??'—')+'%'; $('power').textContent=d.power_display||(d.power_total+'W');
+    applyDashboard(d);
     loadRooms();
     loadDevices();
     loadTimers();
   }catch(err){
     badge.textContent='API offline: '+err.message;
     badge.className='pill error';
+  }
+}
+function handleStateEvent(event){
+  try{
+    const payload=JSON.parse(event.data||'{}');
+    if(payload.dashboard) applyDashboard(payload.dashboard);
+    if(eventRefreshTimer) clearTimeout(eventRefreshTimer);
+    eventRefreshTimer=setTimeout(()=>{
+      eventRefreshTimer=null;
+      loadRooms();
+      loadDevices();
+    },250);
+  }catch(err){
+    scheduleEventRefresh();
   }
 }
 function scheduleEventRefresh(){
@@ -358,7 +376,8 @@ function connectStateEvents(){
   if(stateEvents) stateEvents.close();
   const tokenParam=apiToken?'?token='+encodeURIComponent(apiToken):'';
   stateEvents=new EventSource('/api/events'+tokenParam);
-  stateEvents.addEventListener('state', scheduleEventRefresh);
+  stateEvents.addEventListener('hello', handleStateEvent);
+  stateEvents.addEventListener('state', handleStateEvent);
   stateEvents.onerror=()=>{
     if(stateEvents) stateEvents.close();
     stateEvents=null;

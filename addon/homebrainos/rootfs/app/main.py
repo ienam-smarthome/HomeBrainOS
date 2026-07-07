@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.8-alpha'
+APP_VERSION = '0.9.9-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -139,7 +139,14 @@ PERF_STATS: dict[str, Any] = {
     'live_switch_sync_last_ms': None,
     'live_switch_sync_last_reason': None,
     'live_switch_sync_last_devices': 0,
+    'summary_rebuild_count': 0,
+    'summary_rebuild_last_ms': None,
+    'summary_event_push_count': 0,
 }
+SUMMARY_CACHE: dict[str, Any] | None = None
+SUMMARY_CACHE_VERSION = 0
+SUMMARY_CACHE_LAST_REBUILD: float | None = None
+SSE_CLIENTS = 0
 LAST_LIVE_SWITCH_SYNC = 0.0
 
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
@@ -936,9 +943,12 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         'updated': len(updated),
         'last': records[-1] if records else None,
     }
+    summary = None
     if records:
         STATE_EVENT_VERSION += 1
-    return {'success': True, 'events': len(records), 'updated': len(updated), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated}
+        summary = rebuild_summary_cache('hubitat-event')
+        PERF_STATS['summary_event_push_count'] = int(PERF_STATS.get('summary_event_push_count') or 0) + 1
+    return {'success': True, 'events': len(records), 'updated': len(updated), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated, 'dashboard': summary}
 
 
 def refresh_devices(force: bool = False, reason: str = 'scheduled') -> int:
@@ -1154,8 +1164,34 @@ def clear_cache() -> None:
         conn.close()
 
 
+def rebuild_summary_cache(reason: str = 'manual') -> dict[str, Any]:
+    global SUMMARY_CACHE, SUMMARY_CACHE_VERSION, SUMMARY_CACHE_LAST_REBUILD, PERF_STATS
+    started = time.time()
+    summary = compute_dashboard_summary({'synced': False, 'reason': reason})
+    SUMMARY_CACHE_VERSION += 1
+    SUMMARY_CACHE_LAST_REBUILD = time.time()
+    summary['summary_cache'] = {
+        'version': SUMMARY_CACHE_VERSION,
+        'last_rebuild': SUMMARY_CACHE_LAST_REBUILD,
+        'reason': reason,
+        'dirty': False,
+    }
+    SUMMARY_CACHE = summary
+    PERF_STATS['summary_rebuild_count'] = int(PERF_STATS.get('summary_rebuild_count') or 0) + 1
+    PERF_STATS['summary_rebuild_last_ms'] = int((time.time() - started) * 1000)
+    return summary
+
+
 def dashboard_summary(live: bool = False) -> dict[str, Any]:
-    sync_result = live_switch_state_sync('dashboard', categories={'light','switch','power_device'}, force=False) if live and CONFIG.get('auto_live_sync_enabled') else {'synced': False, 'reason': 'event-cache'}
+    if live and CONFIG.get('auto_live_sync_enabled'):
+        sync_result = live_switch_state_sync('dashboard', categories={'light','switch','power_device'}, force=False)
+        return compute_dashboard_summary(sync_result)
+    if SUMMARY_CACHE is not None:
+        return dict(SUMMARY_CACHE)
+    return rebuild_summary_cache('cache-miss')
+
+
+def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     devices = all_devices()
     environment_devices = [d for d in devices if not is_fridge_meter_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
@@ -4612,6 +4648,7 @@ async def refresh_loop() -> None:
 async def startup() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     refresh_devices(True, 'startup')
+    rebuild_summary_cache('startup')
     save_performance_snapshot('startup')
     restore_pending_timers()
     asyncio.create_task(refresh_loop())
@@ -4624,23 +4661,36 @@ def api_version():
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
 
 
 @app.get('/api/events')
 async def api_events(request: Request):
+    global SSE_CLIENTS
     require_event_token(request)
 
     async def stream():
+        global SSE_CLIENTS
+        SSE_CLIENTS += 1
         last_seen = STATE_EVENT_VERSION
-        yield f"event: hello\ndata: {json.dumps({'version': APP_VERSION, 'state_event_version': last_seen})}\n\n"
-        while True:
-            if await request.is_disconnected():
-                break
-            if STATE_EVENT_VERSION != last_seen:
-                last_seen = STATE_EVENT_VERSION
-                yield f"event: state\ndata: {json.dumps({'state_event_version': last_seen, 'last_hubitat_event': LAST_HUBITAT_EVENT})}\n\n"
-            await asyncio.sleep(0.5)
+        try:
+            hello_payload = {'version': APP_VERSION, 'state_event_version': last_seen, 'dashboard': dashboard_summary(live=False), 'summary_cache_version': SUMMARY_CACHE_VERSION}
+            yield f"event: hello\ndata: {json.dumps(hello_payload)}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                if STATE_EVENT_VERSION != last_seen:
+                    last_seen = STATE_EVENT_VERSION
+                    payload = {
+                        'state_event_version': last_seen,
+                        'last_hubitat_event': LAST_HUBITAT_EVENT,
+                        'dashboard': dashboard_summary(live=False),
+                        'summary_cache_version': SUMMARY_CACHE_VERSION,
+                    }
+                    yield f"event: state\ndata: {json.dumps(payload)}\n\n"
+                await asyncio.sleep(0.25)
+        finally:
+            SSE_CLIENTS = max(0, SSE_CLIENTS - 1)
 
     return StreamingResponse(stream(), media_type='text/event-stream')
 
