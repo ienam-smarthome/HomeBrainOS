@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.5-alpha'
+APP_VERSION = '0.9.6-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -77,6 +77,8 @@ def load_config() -> dict[str, Any]:
         'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '120')),
         'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '90')),
         'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '20')),
+        'live_switch_sync_seconds': int(os.getenv('LIVE_SWITCH_SYNC_SECONDS', '3')),
+        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '40')),
         'event_batch_window_ms': int(os.getenv('EVENT_BATCH_WINDOW_MS', '500')),
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
@@ -131,7 +133,13 @@ PERF_STATS: dict[str, Any] = {
     'state_sync_skipped': 0,
     'state_sync_last_reason': None,
     'state_sync_last_ms': None,
+    'live_switch_sync_count': 0,
+    'live_switch_sync_skipped': 0,
+    'live_switch_sync_last_ms': None,
+    'live_switch_sync_last_reason': None,
+    'live_switch_sync_last_devices': 0,
 }
+LAST_LIVE_SWITCH_SYNC = 0.0
 
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
@@ -980,6 +988,103 @@ def sync_live_states(reason: str = 'live-state') -> dict[str, Any]:
     PERF_STATS['state_sync_last_ms'] = elapsed_ms
     return {'synced': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH, 'elapsed_ms': elapsed_ms}
 
+
+def fetch_live_device_detail(device_id: str) -> dict[str, Any] | None:
+    """Fetch one device detail from Maker API and return a normalised live snapshot."""
+    try:
+        raw = maker_get(f"devices/{quote(str(device_id), safe='')}", timeout=6)
+        if isinstance(raw, list):
+            raw = raw[0] if raw and isinstance(raw[0], dict) else None
+        if not isinstance(raw, dict):
+            return None
+        raw['_homebrain_detail_refreshed_at'] = int(time.time())
+        return normalise_device(raw)
+    except Exception as exc:
+        PERF_STATS['live_switch_sync_last_error'] = public_error(exc)
+        return None
+
+
+def update_cached_device_snapshot(device: dict[str, Any]) -> None:
+    """Merge a fresh normalised device snapshot into the SQLite cache."""
+    now = int(time.time())
+    conn = db()
+    try:
+        old = conn.execute('SELECT json, detail_refreshed_at FROM devices WHERE id=?', (device['id'],)).fetchone()
+        if old:
+            old_d = json.loads(old['json'])
+            for key in ('room', 'category', 'capabilities', 'commands'):
+                if not device.get(key) and old_d.get(key):
+                    device[key] = old_d.get(key)
+            detail_refreshed_at = int(device.get('_detail_refreshed_at') or old['detail_refreshed_at'] or now)
+        else:
+            detail_refreshed_at = int(device.get('_detail_refreshed_at') or now)
+        conn.execute("""
+            INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,detail_refreshed_at,last_activity_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, label=excluded.label, room=excluded.room, category=excluded.category,
+                json=excluded.json, switch=excluded.switch, temperature=excluded.temperature,
+                humidity=excluded.humidity, power=excluded.power, energy=excluded.energy,
+                battery=excluded.battery, detail_refreshed_at=excluded.detail_refreshed_at,
+                last_activity_at=excluded.last_activity_at, updated_at=excluded.updated_at
+        """, (
+            device['id'], device['name'], device['label'], device.get('room'), device.get('category') or 'device', json.dumps(device),
+            device.get('switch'), device.get('temperature'), device.get('humidity'), device.get('power'), device.get('energy'), device.get('battery'), detail_refreshed_at, now, now
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def live_switch_state_sync(reason: str = 'live-switch-state', categories: set[str] | None = None, force: bool = False) -> dict[str, Any]:
+    """Refresh current on/off state for lights and switchable devices.
+
+    Maker API /devices can be stale or incomplete on some hubs/drivers. For state-sensitive
+    answers such as which lights are on, fetch the current detail endpoint only for relevant
+    devices. This is throttled and capped to avoid recreating high hub CPU load.
+    """
+    global LAST_LIVE_SWITCH_SYNC, STATE_EVENT_VERSION
+    if not maker_configured():
+        return {'synced': False, 'reason': 'maker-not-configured'}
+    now = time.time()
+    min_age = max(0, int(CONFIG.get('live_switch_sync_seconds', 3)))
+    if not force and LAST_LIVE_SWITCH_SYNC and min_age and now - LAST_LIVE_SWITCH_SYNC < min_age:
+        PERF_STATS['live_switch_sync_skipped'] = int(PERF_STATS.get('live_switch_sync_skipped') or 0) + 1
+        PERF_STATS['live_switch_sync_last_reason'] = f'skipped:{reason}'
+        return {'synced': False, 'reason': 'fresh', 'last_live_switch_sync': LAST_LIVE_SWITCH_SYNC}
+    selected = []
+    for d in all_devices():
+        if categories and d.get('category') not in categories:
+            continue
+        if d.get('category') in {'light', 'switch', 'power_device'} or is_switchable_device(d):
+            selected.append(d)
+    limit = max(1, int(CONFIG.get('live_switch_sync_limit', 40)))
+    selected = selected[:limit]
+    started = time.time()
+    changed = 0
+    updated = 0
+    for d in selected:
+        fresh = fetch_live_device_detail(str(d.get('id')))
+        if not fresh:
+            continue
+        old_switch = d.get('switch')
+        if fresh.get('switch') is None and old_switch is not None:
+            fresh['switch'] = old_switch
+            fresh.setdefault('attributes', {})['switch'] = old_switch
+        if fresh.get('switch') != old_switch:
+            changed += 1
+        update_cached_device_snapshot(fresh)
+        updated += 1
+    LAST_LIVE_SWITCH_SYNC = time.time()
+    if changed:
+        STATE_EVENT_VERSION += 1
+    elapsed_ms = int((time.time() - started) * 1000)
+    PERF_STATS['live_switch_sync_count'] = int(PERF_STATS.get('live_switch_sync_count') or 0) + 1
+    PERF_STATS['live_switch_sync_last_ms'] = elapsed_ms
+    PERF_STATS['live_switch_sync_last_reason'] = reason
+    PERF_STATS['live_switch_sync_last_devices'] = updated
+    return {'synced': True, 'updated': updated, 'changed': changed, 'elapsed_ms': elapsed_ms, 'last_live_switch_sync': LAST_LIVE_SWITCH_SYNC}
+
 def clear_cache() -> None:
     conn = db()
     try:
@@ -991,7 +1096,7 @@ def clear_cache() -> None:
 
 
 def dashboard_summary(live: bool = True) -> dict[str, Any]:
-    sync_result = sync_live_states('dashboard') if live else {'synced': False, 'reason': 'disabled'}
+    sync_result = live_switch_state_sync('dashboard', categories={'light','switch','power_device'}) if live else {'synced': False, 'reason': 'disabled'}
     devices = all_devices()
     environment_devices = [d for d in devices if not is_fridge_meter_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
@@ -4279,12 +4384,12 @@ def run_command(text: str) -> dict[str, Any]:
     if m_room_on:
         return room_on_status_answer(m_room_on.group(1).strip())
     if re.search(r'\b(which|what)\s+lights?\s+(are|is)\s+on\b', t):
-        sync_live_states('question-lights-on')
+        live_switch_state_sync('question-lights-on', categories={'light'}, force=True)
         lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         light_devices = [d for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None'), 'speech': spoken_device_locations(light_devices)}
     if re.search(r'\b(which|what)\s+switch(es)?\s+(are|is)\s+on\b', t):
-        sync_live_states('question-switches-on')
+        live_switch_state_sync('question-switches-on', categories={'switch','power_device'}, force=True)
         switch_devices = [d for d in all_devices() if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
         switches = [d['label'] for d in switch_devices]
         return {'success': True, 'message': 'Switches on:\n' + ('\n'.join(switches) if switches else 'None'), 'speech': spoken_device_locations(switch_devices)}
@@ -4617,10 +4722,19 @@ def api_refresh(request: Request):
     return {'success': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH}
 
 
+@app.get('/api/state-sync')
+def api_state_sync_get(request: Request):
+    require_api_token(request)
+    detail = live_switch_state_sync('manual-state-sync-get', categories={'light','switch','power_device'}, force=True)
+    return {'success': True, 'switch_sync': detail}
+
+
 @app.post('/api/state-sync')
 def api_state_sync(request: Request):
     require_api_token(request)
-    return {'success': True, **sync_live_states('manual-state-sync')}
+    result = sync_live_states('manual-state-sync')
+    detail = live_switch_state_sync('manual-state-sync', categories={'light','switch','power_device'}, force=True)
+    return {'success': True, 'full_sync': result, 'switch_sync': detail}
 
 
 @app.post('/api/cache/clear-refresh')
