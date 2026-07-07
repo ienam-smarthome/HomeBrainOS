@@ -70,8 +70,8 @@ schema:
   device_detail_refresh_seconds: int
   device_detail_refresh_batch: int
   stale_motion_active_minutes: int
-  stale_light_on_hours: 4
-  stale_device_report_hours: 24
+  stale_light_on_hours: int
+  stale_device_report_hours: int
   heating_on_delta: float
   heating_off_setpoint: float
   time_zone: str
