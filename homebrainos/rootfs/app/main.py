@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.7-alpha'
+APP_VERSION = '0.9.8-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -830,28 +830,82 @@ def update_cached_attribute(device_id: str, attr: str, value: Any, label: str | 
         conn.close()
 
 
-def event_records_from_payload(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        events = payload
-    elif isinstance(payload, dict):
-        for key in ('events', 'content', 'items'):
-            if isinstance(payload.get(key), list):
-                events = payload[key]
-                break
+def flatten_form_values(values: dict[str, Any]) -> dict[str, Any]:
+    flattened: dict[str, Any] = {}
+    for key, value in values.items():
+        if isinstance(value, list):
+            flattened[key] = value[0] if value else None
         else:
-            events = [payload]
-    else:
-        return []
+            flattened[key] = value
+    return flattened
+
+
+def parse_event_text(text: str) -> Any:
+    text = str(text or '').strip()
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    parsed = parse_qs(text, keep_blank_values=True)
+    if parsed:
+        flattened = flatten_form_values(parsed)
+        # Some clients POST a single nested JSON value, e.g. body={...} or content={...}.
+        for key in ('body', 'payload', 'event', 'events', 'content'):
+            value = flattened.get(key)
+            if isinstance(value, str) and value.strip().startswith(('{', '[')):
+                try:
+                    return json.loads(value)
+                except Exception:
+                    continue
+        return flattened
+    return {'body': text}
+
+
+def expand_event_payload(payload: Any) -> list[Any]:
+    if isinstance(payload, str):
+        return expand_event_payload(parse_event_text(payload))
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        expanded: list[Any] = []
+        for key in ('events', 'content', 'items', 'data'):
+            value = payload.get(key)
+            if isinstance(value, str):
+                value = parse_event_text(value)
+            if isinstance(value, list):
+                expanded.extend(value)
+            elif isinstance(value, dict):
+                expanded.append(value)
+        # Maker API may be received as a form body wrapped by api_hubitat_events.
+        body = payload.get('body') or payload.get('payload') or payload.get('event')
+        if isinstance(body, str) and body.strip():
+            expanded.extend(expand_event_payload(parse_event_text(body)))
+        if expanded:
+            return expanded
+        return [payload]
+    return []
+
+
+def event_records_from_payload(payload: Any) -> list[dict[str, Any]]:
+    events = expand_event_payload(payload)
     records: list[dict[str, Any]] = []
     for event in events:
+        if isinstance(event, str):
+            for nested in expand_event_payload(event):
+                if isinstance(nested, dict):
+                    events.append(nested)
+            continue
         if not isinstance(event, dict):
             continue
+        event = flatten_form_values(event)
         device_id = event.get('deviceId') or event.get('device_id') or event.get('device') or event.get('id')
         attr = event.get('name') or event.get('attribute') or event.get('attr')
         value = event.get('value')
         label = event.get('displayName') or event.get('label') or event.get('deviceLabel') or event.get('deviceName')
         if device_id and attr:
-            records.append({'device_id': str(device_id), 'attr': str(attr), 'value': value, 'label': str(label) if label else None, 'raw': event})
+            records.append({'device_id': str(device_id), 'attr': canonical_attr(attr), 'value': value, 'label': str(label) if label else None, 'raw': event})
     return records
 
 

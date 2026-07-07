@@ -1470,3 +1470,39 @@ def test_v08_presence_style_motion_is_not_reported_as_stale_motion():
         assert 'Bedroom 1 FP300 (Bedroom 1) occupied for 3 hours' in answer['message']
     finally:
         main.DB_PATH = original_db_path
+
+
+def test_maker_api_event_parser_accepts_json_event_shape():
+    main = load_addon_main()
+    records = main.event_records_from_payload({
+        'name': 'switch',
+        'value': 'on',
+        'displayName': 'Livingroom Light 1',
+        'deviceId': '1234',
+    })
+
+    assert records == [{
+        'device_id': '1234',
+        'attr': 'switch',
+        'value': 'on',
+        'label': 'Livingroom Light 1',
+        'raw': {
+            'name': 'switch',
+            'value': 'on',
+            'displayName': 'Livingroom Light 1',
+            'deviceId': '1234',
+        },
+    }]
+
+
+def test_maker_api_event_parser_accepts_form_encoded_body():
+    main = load_addon_main()
+    records = main.event_records_from_payload({
+        'body': 'name=motion&value=active&displayName=Kitchen+Linptech&deviceId=5386'
+    })
+
+    assert len(records) == 1
+    assert records[0]['device_id'] == '5386'
+    assert records[0]['attr'] == 'motion'
+    assert records[0]['value'] == 'active'
+    assert records[0]['label'] == 'Kitchen Linptech'
