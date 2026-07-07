@@ -225,3 +225,8 @@ Never commit Maker API tokens, local IP credentials, `.env` files, or database/c
 HomeBrainOS now serves dashboard and AI state answers from its SQLite/event cache by default instead of forcing Maker API refreshes on every dashboard poll. Automatic live sync is disabled by default to reduce Hubitat load; use **Refresh from Hubitat** or `/api/state-sync` for manual resynchronisation if Hubitat events are not configured.
 
 Recommended Hubitat setup: configure Maker API event POST/callback to `http://<homebrain-host>:8787/api/hubitat/events` so HomeBrain receives device state changes and updates the dashboard via server-sent events.
+
+
+### v1.0.0-alpha UI Live Push + Event Filtering
+
+HomeBrain now uses the Hubitat event stream to update dashboard summary pills live, while filtering noisy non-dashboard attributes from UI pushes.

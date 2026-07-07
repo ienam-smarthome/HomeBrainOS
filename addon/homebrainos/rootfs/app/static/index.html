@@ -88,6 +88,9 @@ let stationArmedUntil = 0;
 let stationArmedTick = null;
 let stateEvents = null;
 let eventRefreshTimer = null;
+let lastSummaryCacheVersion = null;
+let liveConnected = false;
+let liveFallbackTimer = null;
 async function api(path, options={}){
   const headers = Object.assign({}, options.headers || {});
   if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
@@ -331,6 +334,21 @@ function applyDashboard(d){
   $('peopleNames').textContent=(d.people_home_names||[]).join(', ') || 'No one home';
   $('powerSource').textContent=d.power_source_label||'Octopus meter';
   $('temp').textContent=(d.avg_temperature??'—')+'°'; $('hum').textContent=(d.avg_humidity??'—')+'%'; $('power').textContent=d.power_display||(d.power_total+'W');
+  if(d.summary_cache && d.summary_cache.version!=null) lastSummaryCacheVersion=d.summary_cache.version;
+}
+function setLiveStatus(connected){
+  liveConnected=connected;
+  const badge=$('status');
+  if(!badge) return;
+  badge.dataset.live=connected?'1':'0';
+  if(connected && !badge.textContent.includes('Live')) badge.textContent=badge.textContent+' · Live';
+}
+function scheduleFallbackPoll(){
+  if(liveFallbackTimer) clearTimeout(liveFallbackTimer);
+  liveFallbackTimer=setTimeout(()=>{
+    liveFallbackTimer=null;
+    if(!liveConnected) status();
+  },30000);
 }
 async function status(){
   const badge=$('status');
@@ -353,34 +371,44 @@ async function status(){
 function handleStateEvent(event){
   try{
     const payload=JSON.parse(event.data||'{}');
+    if(payload.summary_cache_version!=null && payload.summary_cache_version===lastSummaryCacheVersion && event.type!=='hello') return;
     if(payload.dashboard) applyDashboard(payload.dashboard);
+    setLiveStatus(true);
     if(eventRefreshTimer) clearTimeout(eventRefreshTimer);
     eventRefreshTimer=setTimeout(()=>{
       eventRefreshTimer=null;
-      loadRooms();
-      loadDevices();
-    },250);
+      if(viewState.rooms) loadRooms();
+      if(viewState.devices) loadDevices();
+    },350);
   }catch(err){
     scheduleEventRefresh();
   }
+}
+function handlePingEvent(){
+  setLiveStatus(true);
 }
 function scheduleEventRefresh(){
   if(eventRefreshTimer) return;
   eventRefreshTimer=setTimeout(()=>{
     eventRefreshTimer=null;
-    status();
+    api('/api/dashboard').then(applyDashboard).catch(()=>{});
   },250);
 }
 function connectStateEvents(){
-  if(!window.EventSource) return;
+  if(!window.EventSource){ scheduleFallbackPoll(); return; }
   if(stateEvents) stateEvents.close();
   const tokenParam=apiToken?'?token='+encodeURIComponent(apiToken):'';
   stateEvents=new EventSource('/api/events'+tokenParam);
+  stateEvents.onopen=()=>setLiveStatus(true);
   stateEvents.addEventListener('hello', handleStateEvent);
   stateEvents.addEventListener('state', handleStateEvent);
+  stateEvents.addEventListener('ping', handlePingEvent);
+  stateEvents.onmessage=handleStateEvent;
   stateEvents.onerror=()=>{
+    setLiveStatus(false);
     if(stateEvents) stateEvents.close();
     stateEvents=null;
+    scheduleFallbackPoll();
     setTimeout(connectStateEvents,5000);
   };
 }

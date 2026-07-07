@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.9-alpha'
+APP_VERSION = '1.0.0-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -916,6 +916,30 @@ def event_records_from_payload(payload: Any) -> list[dict[str, Any]]:
     return records
 
 
+DASHBOARD_EVENT_ATTRS = {
+    'switch', 'motion', 'presence', 'battery', 'power', 'demand', 'energy', 'energyToday',
+    'temperature', 'humidity', 'thermostatOperatingState', 'thermostatMode', 'heatingSetpoint',
+}
+NOISY_EVENT_ATTRS = {
+    'rssi', 'voltage', 'amperage', 'dataAgeSeconds', 'lastSeen', 'lastTelemetry',
+    'displaySummary', 'displaySummaryCompact', 'displayToday', 'displayPower', 'displayMini',
+    'displayCostToday', 'costTodayEnergy', 'illuminance',
+}
+
+
+def event_affects_dashboard(event: dict[str, Any]) -> bool:
+    attr = canonical_attr(event.get('attr'))
+    if attr in NOISY_EVENT_ATTRS:
+        return False
+    if attr in DASHBOARD_EVENT_ATTRS:
+        return True
+    # Unknown switch/motion-like events should still wake the dashboard, but
+    # random display/helper attributes should not. This keeps live UI responsive
+    # without flooding the browser for RSSI, voltage, lux, and display text spam.
+    text = compact_name(attr)
+    return text in {compact_name(item) for item in DASHBOARD_EVENT_ATTRS}
+
+
 def record_hubitat_events(payload: Any) -> dict[str, Any]:
     global LAST_HUBITAT_EVENT, STATE_EVENT_VERSION, PERF_STATS
     now = int(time.time())
@@ -935,20 +959,25 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         device = update_cached_attribute(event['device_id'], event['attr'], event.get('value'), event.get('label'))
         if device:
             updated.append(device)
+    ui_records = [event for event in records if event_affects_dashboard(event)]
     PERF_STATS['event_count'] = int(PERF_STATS.get('event_count') or 0) + len(records)
     PERF_STATS['event_updated_count'] = int(PERF_STATS.get('event_updated_count') or 0) + len(updated)
+    PERF_STATS['event_ui_relevant_count'] = int(PERF_STATS.get('event_ui_relevant_count') or 0) + len(ui_records)
     LAST_HUBITAT_EVENT = {
         'received_at': now,
         'count': len(records),
         'updated': len(updated),
+        'ui_relevant': len(ui_records),
         'last': records[-1] if records else None,
+        'last_ui': ui_records[-1] if ui_records else None,
     }
     summary = None
     if records:
-        STATE_EVENT_VERSION += 1
+        STATE_EVENT_VERSION += len(records)
+    if ui_records:
         summary = rebuild_summary_cache('hubitat-event')
         PERF_STATS['summary_event_push_count'] = int(PERF_STATS.get('summary_event_push_count') or 0) + 1
-    return {'success': True, 'events': len(records), 'updated': len(updated), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated, 'dashboard': summary}
+    return {'success': True, 'events': len(records), 'updated': len(updated), 'ui_relevant': len(ui_records), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated, 'dashboard': summary}
 
 
 def refresh_devices(force: bool = False, reason: str = 'scheduled') -> int:
@@ -4661,7 +4690,7 @@ def api_version():
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
+    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS)}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
 
 
 @app.get('/api/events')
@@ -4672,23 +4701,31 @@ async def api_events(request: Request):
     async def stream():
         global SSE_CLIENTS
         SSE_CLIENTS += 1
-        last_seen = STATE_EVENT_VERSION
+        last_summary_seen = SUMMARY_CACHE_VERSION
+        last_state_seen = STATE_EVENT_VERSION
+        last_heartbeat = time.time()
         try:
-            hello_payload = {'version': APP_VERSION, 'state_event_version': last_seen, 'dashboard': dashboard_summary(live=False), 'summary_cache_version': SUMMARY_CACHE_VERSION}
+            hello_payload = {'version': APP_VERSION, 'state_event_version': last_state_seen, 'dashboard': dashboard_summary(live=False), 'summary_cache_version': last_summary_seen, 'live': True}
             yield f"event: hello\ndata: {json.dumps(hello_payload)}\n\n"
             while True:
                 if await request.is_disconnected():
                     break
-                if STATE_EVENT_VERSION != last_seen:
-                    last_seen = STATE_EVENT_VERSION
+                if SUMMARY_CACHE_VERSION != last_summary_seen:
+                    last_summary_seen = SUMMARY_CACHE_VERSION
+                    last_state_seen = STATE_EVENT_VERSION
                     payload = {
-                        'state_event_version': last_seen,
+                        'state_event_version': last_state_seen,
                         'last_hubitat_event': LAST_HUBITAT_EVENT,
                         'dashboard': dashboard_summary(live=False),
-                        'summary_cache_version': SUMMARY_CACHE_VERSION,
+                        'summary_cache_version': last_summary_seen,
+                        'live': True,
                     }
                     yield f"event: state\ndata: {json.dumps(payload)}\n\n"
-                await asyncio.sleep(0.25)
+                elif time.time() - last_heartbeat >= 25:
+                    last_heartbeat = time.time()
+                    payload = {'state_event_version': STATE_EVENT_VERSION, 'summary_cache_version': SUMMARY_CACHE_VERSION, 'live': True}
+                    yield f"event: ping\ndata: {json.dumps(payload)}\n\n"
+                await asyncio.sleep(0.2)
         finally:
             SSE_CLIENTS = max(0, SSE_CLIENTS - 1)
 

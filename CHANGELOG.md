@@ -1,4 +1,12 @@
 
+## v1.0.0-alpha - UI Live Push + Event Filtering
+
+- Applied event-stream dashboard updates immediately in the browser.
+- Added summary-cache-driven SSE updates so noisy events do not flood the UI.
+- Filtered noisy Maker API event attributes such as RSSI, voltage, dataAgeSeconds, lastSeen, display text, and lux from UI pushes.
+- Kept important live dashboard updates for switch, motion, presence, power, demand, energy, temperature, humidity, battery, and heating state.
+
+
 ## v0.9.7-alpha - Event-driven state engine
 
 - Disabled automatic dashboard-triggered live Maker API detail sync by default.
