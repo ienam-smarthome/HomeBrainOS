@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html data-app-version="APP_VERSION">
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HomeBrain OS</title>
@@ -328,7 +328,7 @@ async function status(){
   const badge=$('status');
   try{
     const s=await api('/api/status');
-    if(s.version) $('appVersion').textContent='v'+String(s.version).replace(/-alpha$/,'');
+    if(s.version) $('appVersion').textContent='v'+String(s.version); else { const embedded=document.documentElement.dataset.appVersion; if(embedded && embedded!=='APP_VERSION') $('appVersion').textContent='v'+embedded; }
     const hub=s.hub_health&&s.hub_health.available?' · '+s.hub_health.label:'';
     badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices'+hub;
     badge.className=s.error?'pill error':(s.hub_health&&s.hub_health.level==='warning'?'pill warning':(s.hub_health&&s.hub_health.level==='error'?'pill error':'pill'));

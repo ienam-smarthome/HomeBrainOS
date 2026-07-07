@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '0.9.2-alpha'
+APP_VERSION = '0.9.4-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -4399,6 +4399,11 @@ async def startup() -> None:
     asyncio.create_task(refresh_loop())
 
 
+@app.get('/api/version')
+def api_version():
+    return {'app': 'HomeBrain OS', 'version': APP_VERSION}
+
+
 @app.get('/api/status')
 def api_status():
     return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
@@ -4704,7 +4709,16 @@ def api_assistant(payload: AssistantRequest, request: Request):
 
 @app.get('/', response_class=HTMLResponse)
 def index():
-    return Path('/app/static/index.html').read_text()
+    html = Path('/app/static/index.html').read_text()
+    html = html.replace('data-app-version="APP_VERSION"', f'data-app-version="{APP_VERSION}"')
+    return HTMLResponse(
+        content=html,
+        headers={
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        },
+    )
 
 
 if __name__ == '__main__':
