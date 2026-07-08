@@ -129,6 +129,33 @@ def test_yesterday_energy_question_returns_yesterday_only_answer_with_total_cost
     assert 'Fridge' not in answer['message']
 
 
+def test_energy_now_question_returns_current_power_only():
+    module = load_natural_intelligence()
+    answer = module.build_intelligence_answer(FakeMain(), 'what is using the most electricity now')
+
+    assert answer['intent'] == 'energy_now'
+    assert 'Whole-house power now is 418 watts from Octopus Live Meter.' in answer['message']
+    assert 'Fridge is using 89 watts' in answer['message']
+    assert 'TV is using 86 watts' in answer['message']
+    assert 'Used today' not in answer['message']
+    assert 'Used yesterday' not in answer['message']
+    assert 'Worth checking' not in answer['message']
+
+
+def test_compare_today_with_yesterday_returns_comparison_only():
+    module = load_natural_intelligence()
+    answer = module.build_intelligence_answer(FakeMain(), 'compare today with yesterday')
+
+    assert answer['intent'] == 'energy_compare'
+    assert answer['message'] == (
+        'Today so far: 5.3 kilowatt-hours. '
+        'Yesterday: 11.5 kilowatt-hours. '
+        'Total cost is £1.51 lower than yesterday.'
+    )
+    assert 'Worth checking' not in answer['message']
+    assert 'Fridge' not in answer['message']
+
+
 def test_energy_advisor_question_still_returns_full_report():
     module = load_natural_intelligence()
     answer = module.build_intelligence_answer(FakeMain(), 'energy advisor')
@@ -163,11 +190,11 @@ def test_dashboard_ask_uses_local_insight_before_ai_fallback_for_energy():
     fake = FakeMain()
 
     module.register(fake)
-    answer = fake.assistant('how much electricity did I use yesterday')
+    answer = fake.assistant('what is using the most electricity now')
 
     assert answer['local_first'] is True
-    assert answer['intent'] == 'energy_yesterday'
-    assert 'Yesterday you used 11.5 kilowatt-hours' in answer['message']
+    assert answer['intent'] == 'energy_now'
+    assert 'Top current users' in answer['message']
     assert fake.fallback_called is False
 
 
@@ -195,5 +222,5 @@ def test_register_adds_stable_endpoint_aliases_once():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.4-alpha'
-    assert fake.app.version == '1.6.4-alpha'
+    assert fake.APP_VERSION == '1.6.5-alpha'
+    assert fake.app.version == '1.6.5-alpha'
