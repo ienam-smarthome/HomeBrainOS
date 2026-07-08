@@ -4,7 +4,13 @@ import re
 import time
 from typing import Any, Callable
 
-VERSION = '1.6.0-alpha'
+VERSION = '1.6.1-alpha'
+LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
+COMMAND_PREFIXES = (
+    'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
+    'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ',
+    'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ',
+)
 
 
 def _safe_call(func: Callable[..., Any] | None, *args: Any, fallback: Any = None, **kwargs: Any) -> Any:
@@ -162,6 +168,17 @@ def _intent(query: str) -> str:
     return 'home_context'
 
 
+def _is_command_like(query: str) -> bool:
+    q = _normalise(query)
+    return any(q.startswith(prefix) for prefix in COMMAND_PREFIXES)
+
+
+def should_answer_locally(query: str) -> bool:
+    if _is_command_like(query):
+        return False
+    return _intent(query) in LOCAL_FIRST_INTENTS
+
+
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     if not isinstance(summary, dict):
@@ -284,10 +301,28 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
     return context | {'query': query, 'message': message}
 
 
+def wrap_assistant(app_module: Any) -> None:
+    existing = getattr(app_module, 'assistant', None)
+    if not callable(existing) or getattr(existing, '_homebrain_local_first', False):
+        return
+
+    def local_first_assistant(query: str) -> dict[str, Any]:
+        if should_answer_locally(query):
+            answer = build_intelligence_answer(app_module, query)
+            answer.setdefault('success', True)
+            answer['local_first'] = True
+            return answer
+        return existing(query)
+
+    local_first_assistant._homebrain_local_first = True  # type: ignore[attr-defined]
+    app_module.assistant = local_first_assistant
+
+
 def register(app_module: Any) -> Any:
     app_module.APP_VERSION = VERSION
     app = app_module.app
     app.version = VERSION
+    wrap_assistant(app_module)
 
     if not _route_exists(app, '/api/home-context'):
         def api_home_context() -> dict[str, Any]:
