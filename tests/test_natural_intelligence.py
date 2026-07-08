@@ -27,6 +27,11 @@ class FakeMain:
     def __init__(self):
         self.app = FakeApp()
         self.APP_VERSION = 'old'
+        self.fallback_called = False
+
+    def assistant(self, query):
+        self.fallback_called = True
+        return {'success': False, 'message': 'Local AI is offline. Basic HomeBrain commands are still available.'}
 
     def dashboard_summary(self, live=False):
         return {
@@ -117,6 +122,30 @@ def test_light_hours_question_does_not_get_misread_as_command():
     assert answer['lights_on'] == ['Livingroom Light 1']
 
 
+def test_dashboard_ask_uses_local_insight_before_ai_fallback_for_energy():
+    module = load_natural_intelligence()
+    fake = FakeMain()
+
+    module.register(fake)
+    answer = fake.assistant('how much electricity have I used today')
+
+    assert answer['local_first'] is True
+    assert answer['intent'] == 'energy'
+    assert '418 watts' in answer['message']
+    assert fake.fallback_called is False
+
+
+def test_dashboard_ask_still_falls_back_for_commands():
+    module = load_natural_intelligence()
+    fake = FakeMain()
+
+    module.register(fake)
+    answer = fake.assistant('turn off hallway light')
+
+    assert answer['message'].startswith('Local AI is offline')
+    assert fake.fallback_called is True
+
+
 def test_register_adds_stable_endpoint_aliases_once():
     module = load_natural_intelligence()
     fake = FakeMain()
@@ -130,5 +159,5 @@ def test_register_adds_stable_endpoint_aliases_once():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.0-alpha'
-    assert fake.app.version == '1.6.0-alpha'
+    assert fake.APP_VERSION == '1.6.1-alpha'
+    assert fake.app.version == '1.6.1-alpha'
