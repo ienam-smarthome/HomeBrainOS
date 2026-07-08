@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.6.6-alpha'
+VERSION = '1.6.7-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = (
     'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
@@ -132,6 +133,121 @@ def _current_lights_on(app_module: Any) -> list[dict[str, Any]]:
         [d for d in devices if isinstance(d, dict) and _is_light_device(d) and _is_on(_attrs(d).get('switch'))],
         key=_device_label,
     )
+
+
+def _all_light_devices(app_module: Any) -> list[dict[str, Any]]:
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    if not isinstance(devices, list):
+        return []
+    return sorted([d for d in devices if isinstance(d, dict) and _is_light_device(d)], key=_device_label)
+
+
+def _light_query_targets(app_module: Any, query: str) -> list[dict[str, Any]]:
+    lights = _all_light_devices(app_module)
+    q = _normalise(query)
+    target_text = q
+    for word in ('lights', 'light', 'on', 'time', 'today', 'how', 'long', 'has', 'have', 'been', 'for', 'hours', 'hour', 'duration'):
+        target_text = re.sub(rf'\b{word}\b', ' ', target_text)
+    target_text = re.sub(r'\s+', ' ', target_text).strip()
+    if not target_text or target_text in {'all', 'all the'}:
+        return lights
+    matches = []
+    compact_target = _normalise_key(target_text)
+    for device in lights:
+        label = _normalise(_device_label(device))
+        room = _normalise(device.get('room'))
+        compact_label = _normalise_key(label)
+        compact_room = _normalise_key(room)
+        if target_text in label or target_text in room or compact_target in compact_label or (compact_room and compact_target in compact_room):
+            matches.append(device)
+    return matches or lights
+
+
+def _period_start_timestamp(period: str = 'today') -> int:
+    now = datetime.now()
+    start = datetime(now.year, now.month, now.day)
+    if period == 'yesterday':
+        start -= timedelta(days=1)
+    return int(start.timestamp())
+
+
+def _format_duration(seconds: int) -> str:
+    seconds = max(0, int(seconds))
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    if hours and minutes:
+        return f'{hours} hour{"s" if hours != 1 else ""} {minutes} minute{"s" if minutes != 1 else ""}'
+    if hours:
+        return f'{hours} hour{"s" if hours != 1 else ""}'
+    return f'{minutes} minute{"s" if minutes != 1 else ""}'
+
+
+def _device_switch_events(app_module: Any, device_id: str, start: int, end: int) -> tuple[str | None, list[tuple[int, str]]]:
+    db_func = getattr(app_module, 'db', None)
+    if not callable(db_func):
+        return None, []
+    conn = db_func()
+    try:
+        before = conn.execute(
+            "SELECT value FROM hubitat_events WHERE device_id=? AND attr='switch' AND created_at < ? ORDER BY created_at DESC LIMIT 1",
+            (str(device_id), start),
+        ).fetchone()
+        rows = conn.execute(
+            "SELECT created_at, value FROM hubitat_events WHERE device_id=? AND attr='switch' AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC",
+            (str(device_id), start, end),
+        ).fetchall()
+    finally:
+        conn.close()
+    before_value = None
+    if before is not None:
+        before_value = before['value'] if hasattr(before, 'keys') else before[0]
+    events: list[tuple[int, str]] = []
+    for row in rows:
+        created = row['created_at'] if hasattr(row, 'keys') else row[0]
+        value = row['value'] if hasattr(row, 'keys') else row[1]
+        events.append((int(created), str(value)))
+    return str(before_value) if before_value is not None else None, events
+
+
+def _light_on_seconds(app_module: Any, device: dict[str, Any], start: int, end: int) -> int:
+    before_state, events = _device_switch_events(app_module, str(device.get('id')), start, end)
+    state_on = _is_on(before_state) if before_state is not None else _is_on(_attrs(device).get('switch'))
+    last = start
+    total = 0
+    for created, value in events:
+        created = max(start, min(end, int(created)))
+        if state_on and created > last:
+            total += created - last
+        state_on = _is_on(value)
+        last = created
+    if state_on and end > last:
+        total += end - last
+    return total
+
+
+def _light_hours_history_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    if 'today' not in _normalise(query):
+        return None
+    targets = _light_query_targets(app_module, query)
+    if not targets:
+        return {'success': False, 'message': 'I could not find any light devices to check.'}
+    start = _period_start_timestamp('today')
+    end = int(time.time())
+    rows = []
+    for device in targets[:20]:
+        seconds = _light_on_seconds(app_module, device, start, end)
+        currently = 'currently on' if _is_on(_attrs(device).get('switch')) else 'currently off'
+        if seconds > 0 or len(targets) <= 5 or currently == 'currently on':
+            rows.append({'label': _device_label(device), 'seconds': seconds, 'duration': _format_duration(seconds), 'currently': currently})
+    if not rows:
+        return {'success': True, 'intent': 'light_hours', 'message': 'No light-on time recorded today for the matched lights.', 'lights': []}
+    rows.sort(key=lambda item: item['seconds'], reverse=True)
+    total = sum(int(item['seconds']) for item in rows)
+    lines = [f"• {item['label']}: {item['duration']} ({item['currently']})" for item in rows]
+    message = "Today's light-on time:\n" + '\n'.join(lines)
+    if len(rows) > 1:
+        message += f"\nTotal across listed lights: {_format_duration(total)}."
+    return {'success': True, 'intent': 'light_hours', 'message': message, 'lights': rows, 'period': 'today'}
 
 
 def _top_power_consumers(app_module: Any, limit: int = 5, *, include_aggregates: bool = False) -> list[dict[str, Any]]:
@@ -369,6 +485,9 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
         delegated = _safe_call(delegate, query, fallback=None) if delegate else None
         if isinstance(delegated, dict) and delegated.get('message'):
             return {'success': True, 'intent': intent, 'query': query, 'message': naturalise_units(delegated['message']), 'answer': delegated}
+        history = _light_hours_history_answer(app_module, query)
+        if isinstance(history, dict) and history.get('message'):
+            return history | {'query': query}
         lights = _current_lights_on(app_module)
         names = ', '.join(_device_label(device) for device in lights[:8]) or 'none currently on'
         return {'success': True, 'intent': intent, 'query': query, 'message': 'I can see which lights are currently on, but exact light-hours need event history. Currently on: ' + names + '.', 'lights_on': [_device_label(device) for device in lights]}
