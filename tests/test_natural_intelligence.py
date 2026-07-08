@@ -34,12 +34,7 @@ class FakeMain:
         return {'success': False, 'message': 'Local AI is offline. Basic HomeBrain commands are still available.'}
 
     def dashboard_summary(self, live=False):
-        return {
-            'live': live,
-            'occupancy': {'summary': 'Everyone is home'},
-            'lights': {'on': 3},
-            'rooms': ['Living Room'],
-        }
+        return {'live': live, 'occupancy': {'summary': 'Everyone is home'}, 'lights': {'on': 3}, 'rooms': ['Living Room']}
 
     def home_health_answer(self):
         return {'success': True, 'score': 96, 'message': 'Everything looks normal.'}
@@ -65,7 +60,7 @@ class FakeMain:
 
     def all_devices(self):
         return [
-            {'label': 'Octopus Live Meter', 'category': 'energy', 'attributes': {'displayCostToday': '2.08'}},
+            {'label': 'Octopus Live Meter', 'category': 'energy', 'attributes': {'displayCostToday': '2.08', 'displayCostYesterday': '3.59'}},
             {'label': 'TV', 'category': 'multimedia', 'attributes': {'power': '86'}},
             {'label': 'Fridge', 'category': 'appliances', 'attributes': {'power': 89}},
             {'label': 'Livingroom Light 1', 'category': 'light', 'attributes': {'switch': 'on', 'power': 7}},
@@ -90,9 +85,7 @@ def test_natural_unit_formatters():
 
 def test_home_context_facade_uses_existing_app_functions():
     module = load_natural_intelligence()
-    fake = FakeMain()
-
-    context = module.build_home_context(fake)
+    context = module.build_home_context(FakeMain())
 
     assert context['success'] is True
     assert context['intent'] == 'home_context'
@@ -109,13 +102,29 @@ def test_simple_today_energy_question_returns_today_only_answer_with_total_cost(
     answer = module.build_intelligence_answer(FakeMain(), 'how much electricity have I used today')
 
     assert answer['intent'] == 'energy_today'
-    assert answer['today_only'] is True
+    assert answer['period_only'] is True
     assert answer['message'] == (
         'Today so far you have used 5.3 kilowatt-hours. '
-        'Energy cost is about £1.48. '
-        'Total cost including standing charge is £2.08.'
+        'Energy cost was about £1.48. '
+        'Total cost including standing charge was £2.08.'
     )
     assert 'yesterday' not in answer['message'].lower()
+    assert 'worth checking' not in answer['message'].lower()
+    assert 'Fridge' not in answer['message']
+
+
+def test_yesterday_energy_question_returns_yesterday_only_answer_with_total_cost():
+    module = load_natural_intelligence()
+    answer = module.build_intelligence_answer(FakeMain(), 'how much electricity did I use yesterday')
+
+    assert answer['intent'] == 'energy_yesterday'
+    assert answer['period_only'] is True
+    assert answer['message'] == (
+        'Yesterday you used 11.5 kilowatt-hours. '
+        'Energy cost was about £3.18. '
+        'Total cost including standing charge was £3.59.'
+    )
+    assert 'today' not in answer['message'].lower()
     assert 'worth checking' not in answer['message'].lower()
     assert 'Fridge' not in answer['message']
 
@@ -154,15 +163,11 @@ def test_dashboard_ask_uses_local_insight_before_ai_fallback_for_energy():
     fake = FakeMain()
 
     module.register(fake)
-    answer = fake.assistant('how much electricity have I used today')
+    answer = fake.assistant('how much electricity did I use yesterday')
 
     assert answer['local_first'] is True
-    assert answer['intent'] == 'energy_today'
-    assert answer['message'] == (
-        'Today so far you have used 5.3 kilowatt-hours. '
-        'Energy cost is about £1.48. '
-        'Total cost including standing charge is £2.08.'
-    )
+    assert answer['intent'] == 'energy_yesterday'
+    assert 'Yesterday you used 11.5 kilowatt-hours' in answer['message']
     assert fake.fallback_called is False
 
 
@@ -190,5 +195,5 @@ def test_register_adds_stable_endpoint_aliases_once():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.3-alpha'
-    assert fake.app.version == '1.6.3-alpha'
+    assert fake.APP_VERSION == '1.6.4-alpha'
+    assert fake.app.version == '1.6.4-alpha'
