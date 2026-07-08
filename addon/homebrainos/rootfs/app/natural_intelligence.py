@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.6.7-alpha'
+VERSION = '1.6.8-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 
@@ -118,7 +118,7 @@ def _current_lights_on(app_module: Any) -> list[dict[str, Any]]:
 def _light_query_targets(app_module: Any, query: str) -> list[dict[str, Any]]:
     lights = _all_light_devices(app_module)
     target_text = _normalise(query)
-    for word in ('lights', 'light', 'on', 'time', 'today', 'how', 'long', 'has', 'have', 'been', 'for', 'hours', 'hour', 'duration'):
+    for word in ('lights', 'light', 'on', 'time', 'today', 'yesterday', 'how', 'long', 'has', 'have', 'been', 'for', 'hours', 'hour', 'duration'):
         target_text = re.sub(rf'\b{word}\b', ' ', target_text)
     target_text = re.sub(r'\s+', ' ', target_text).strip()
     if not target_text or target_text in {'all', 'all the'}:
@@ -133,12 +133,20 @@ def _light_query_targets(app_module: Any, query: str) -> list[dict[str, Any]]:
     return matches or lights
 
 
+def _period_from_query(query: str) -> str:
+    return 'yesterday' if 'yesterday' in _normalise(query) else 'today'
+
+
 def _period_start_timestamp(period: str = 'today') -> int:
     now = datetime.now()
     start = datetime(now.year, now.month, now.day)
     if period == 'yesterday':
         start -= timedelta(days=1)
     return int(start.timestamp())
+
+
+def _period_end_timestamp(period: str = 'today') -> int:
+    return _period_start_timestamp('today') if period == 'yesterday' else int(time.time())
 
 
 def _format_duration(seconds: int) -> str:
@@ -187,26 +195,29 @@ def _light_on_seconds(app_module: Any, device: dict[str, Any], start: int, end: 
 
 
 def _light_hours_history_answer(app_module: Any, query: str) -> dict[str, Any] | None:
-    if 'today' not in _normalise(query):
+    q = _normalise(query)
+    if 'today' not in q and 'yesterday' not in q:
         return None
+    period = _period_from_query(query)
     targets = _light_query_targets(app_module, query)
     if not targets:
         return {'success': False, 'message': 'I could not find any light devices to check.'}
-    start, end = _period_start_timestamp('today'), int(time.time())
+    start, end = _period_start_timestamp(period), _period_end_timestamp(period)
     rows = []
     for device in targets[:20]:
         seconds = _light_on_seconds(app_module, device, start, end)
         currently = 'currently on' if _is_on(_attrs(device).get('switch')) else 'currently off'
-        if seconds > 0 or len(targets) <= 5 or currently == 'currently on':
+        if seconds > 0 or len(targets) <= 5 or (period == 'today' and currently == 'currently on'):
             rows.append({'label': _device_label(device), 'seconds': seconds, 'duration': _format_duration(seconds), 'currently': currently})
+    period_label = "Yesterday's" if period == 'yesterday' else "Today's"
     if not rows:
-        return {'success': True, 'intent': 'light_hours', 'message': 'No light-on time recorded today for the matched lights.', 'lights': []}
+        return {'success': True, 'intent': 'light_hours', 'message': f'No light-on time recorded {period} for the matched lights.', 'lights': [], 'period': period}
     rows.sort(key=lambda item: item['seconds'], reverse=True)
-    lines = [f"• {item['label']}: {item['duration']} ({item['currently']})" for item in rows]
-    message = "Today's light-on time:\n" + '\n'.join(lines)
+    lines = [f"• {item['label']}: {item['duration']}" + (f" ({item['currently']})" if period == 'today' else '') for item in rows]
+    message = f"{period_label} light-on time:\n" + '\n'.join(lines)
     if len(rows) > 1:
         message += f"\nTotal across listed lights: {_format_duration(sum(int(item['seconds']) for item in rows))}."
-    return {'success': True, 'intent': 'light_hours', 'message': message, 'lights': rows, 'period': 'today'}
+    return {'success': True, 'intent': 'light_hours', 'message': message, 'lights': rows, 'period': period}
 
 
 def _top_power_consumers(app_module: Any, limit: int = 5, *, include_aggregates: bool = False) -> list[dict[str, Any]]:
@@ -237,7 +248,7 @@ def _intent(query: str) -> str:
         return 'energy'
     if 'light' in q and any(word in q for word in ('why', 'because', 'reason')):
         return 'why_lights'
-    if 'light' in q and any(word in q for word in ('hour', 'hours', 'time', 'long', 'today', 'duration')):
+    if 'light' in q and any(word in q for word in ('hour', 'hours', 'time', 'long', 'today', 'yesterday', 'duration')):
         return 'light_hours'
     if any(word in q for word in ('unusual', 'attention', 'problem', 'issue', 'wrong')):
         return 'attention'
