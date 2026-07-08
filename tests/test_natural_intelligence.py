@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sqlite3
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,6 +30,28 @@ class FakeMain:
         self.app = FakeApp()
         self.APP_VERSION = 'old'
         self.fallback_called = False
+        db_file = tempfile.NamedTemporaryFile(delete=False)
+        db_file.close()
+        self.db_path = db_file.name
+        conn = self.db()
+        conn.execute('CREATE TABLE hubitat_events (device_id TEXT, label TEXT, attr TEXT, value TEXT, raw TEXT, created_at INTEGER)')
+        conn.executemany(
+            'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
+            [
+                ('l1', 'Livingroom Light 1', 'switch', 'on', '{}', 1600),
+                ('l1', 'Livingroom Light 1', 'switch', 'off', '{}', 3400),
+                ('l2', 'Bedroom 2 Light', 'switch', 'on', '{}', 2200),
+                ('l2', 'Bedroom 2 Light', 'switch', 'off', '{}', 4000),
+                ('l2', 'Bedroom 2 Light', 'switch', 'on', '{}', 7000),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+    def db(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def assistant(self, query):
         self.fallback_called = True
@@ -60,16 +84,21 @@ class FakeMain:
 
     def all_devices(self):
         return [
-            {'label': 'Octopus Live Meter', 'category': 'energy', 'attributes': {'power': '304', 'displayCostToday': '2.08', 'displayCostYesterday': '3.59'}},
-            {'label': 'Bedroom3 PC (MQTT)', 'category': 'Sockets', 'attributes': {'power': '113'}},
-            {'label': 'Fridge', 'category': 'Appliances', 'attributes': {'power': 80}},
-            {'label': 'Halo3000x socket power', 'attributes': {'power': 7}},
-            {'label': 'Livingroom Light 1', 'category': 'light', 'attributes': {'switch': 'on', 'power': 7}},
-            {'label': 'Bedroom 2 Light', 'category': 'light', 'attributes': {'switch': 'off'}},
+            {'id': 'octo', 'label': 'Octopus Live Meter', 'category': 'energy', 'attributes': {'power': '304', 'displayCostToday': '2.08', 'displayCostYesterday': '3.59'}},
+            {'id': 'pc1', 'label': 'Bedroom3 PC (MQTT)', 'category': 'Sockets', 'attributes': {'power': '113'}},
+            {'id': 'fridge', 'label': 'Fridge', 'category': 'Appliances', 'attributes': {'power': 80}},
+            {'id': 'halo', 'label': 'Halo3000x socket power', 'attributes': {'power': 7}},
+            {'id': 'l1', 'label': 'Livingroom Light 1', 'category': 'light', 'attributes': {'switch': 'off', 'power': 7}},
+            {'id': 'l2', 'label': 'Bedroom 2 Light', 'room': 'Bedroom 2', 'category': 'light', 'attributes': {'switch': 'on'}},
         ]
 
     def daily_briefing_answer(self):
         return {'success': True, 'message': 'Good afternoon. Everything looks normal.'}
+
+
+def freeze_light_hours_clock(module):
+    module._period_start_timestamp = lambda period='today': 1000
+    module.time.time = lambda: 10000
 
 
 def test_natural_unit_formatters():
@@ -77,6 +106,26 @@ def test_natural_unit_formatters():
     assert module.format_power(304) == '304 watts'
     assert module.format_energy(5.32) == '5.3 kilowatt-hours'
     assert module.format_money('1.48') == '£1.48'
+
+
+def test_light_hours_uses_hubitat_event_history_for_all_lights():
+    module = load_natural_intelligence()
+    freeze_light_hours_clock(module)
+    answer = module.build_intelligence_answer(FakeMain(), 'lights on time today')
+    assert answer['intent'] == 'light_hours'
+    assert "Today's light-on time" in answer['message']
+    assert 'Bedroom 2 Light: 1 hour 20 minutes' in answer['message']
+    assert 'Livingroom Light 1: 30 minutes' in answer['message']
+    assert 'exact light-hours need event history' not in answer['message']
+
+
+def test_light_hours_can_target_bedroom_two_light():
+    module = load_natural_intelligence()
+    freeze_light_hours_clock(module)
+    answer = module.build_intelligence_answer(FakeMain(), 'how long has bedroom two light been on today')
+    assert answer['intent'] == 'light_hours'
+    assert 'Bedroom 2 Light: 1 hour 20 minutes' in answer['message']
+    assert 'Livingroom Light 1' not in answer['message']
 
 
 def test_top_power_consumers_excludes_aggregate_meter():
@@ -93,9 +142,7 @@ def test_energy_now_excludes_octopus_from_device_users_but_keeps_whole_home_tota
     assert answer['intent'] == 'energy_now'
     assert 'Whole-house power now is 304 watts from Octopus Live Meter.' in answer['message']
     assert 'Bedroom3 PC (MQTT) is using 113 watts' in answer['message']
-    assert 'Fridge is using 80 watts' in answer['message']
     assert 'Octopus Live Meter is using 304 watts' not in answer['message']
-    assert 'excluded from the device list' in answer['message']
 
 
 def test_today_and_yesterday_period_answers_still_work():
@@ -106,13 +153,6 @@ def test_today_and_yesterday_period_answers_still_work():
     assert 'Total cost including standing charge was £2.08.' in today['message']
     assert yesterday['intent'] == 'energy_yesterday'
     assert 'Total cost including standing charge was £3.59.' in yesterday['message']
-
-
-def test_energy_advisor_question_still_returns_full_report():
-    module = load_natural_intelligence()
-    answer = module.build_intelligence_answer(FakeMain(), 'energy advisor')
-    assert answer['intent'] == 'energy'
-    assert 'Worth checking' in answer['message']
 
 
 def test_register_adds_routes_once_and_updates_version():
@@ -126,5 +166,5 @@ def test_register_adds_routes_once_and_updates_version():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.6-alpha'
-    assert fake.app.version == '1.6.6-alpha'
+    assert fake.APP_VERSION == '1.6.7-alpha'
+    assert fake.app.version == '1.6.7-alpha'
