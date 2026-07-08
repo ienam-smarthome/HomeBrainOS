@@ -65,6 +65,7 @@ class FakeMain:
 
     def all_devices(self):
         return [
+            {'label': 'Octopus Live Meter', 'category': 'energy', 'attributes': {'displayCostToday': '2.08'}},
             {'label': 'TV', 'category': 'multimedia', 'attributes': {'power': '86'}},
             {'label': 'Fridge', 'category': 'appliances', 'attributes': {'power': 89}},
             {'label': 'Livingroom Light 1', 'category': 'light', 'attributes': {'switch': 'on', 'power': 7}},
@@ -103,13 +104,17 @@ def test_home_context_facade_uses_existing_app_functions():
     assert context['top_power_consumers'][0]['power'] == '89 watts'
 
 
-def test_simple_today_energy_question_returns_today_only_answer():
+def test_simple_today_energy_question_returns_today_only_answer_with_total_cost():
     module = load_natural_intelligence()
     answer = module.build_intelligence_answer(FakeMain(), 'how much electricity have I used today')
 
     assert answer['intent'] == 'energy_today'
     assert answer['today_only'] is True
-    assert answer['message'] == 'Today so far you have used 5.3 kilowatt-hours costing £1.48.'
+    assert answer['message'] == (
+        'Today so far you have used 5.3 kilowatt-hours. '
+        'Energy cost is about £1.48. '
+        'Total cost including standing charge is £2.08.'
+    )
     assert 'yesterday' not in answer['message'].lower()
     assert 'worth checking' not in answer['message'].lower()
     assert 'Fridge' not in answer['message']
@@ -153,7 +158,11 @@ def test_dashboard_ask_uses_local_insight_before_ai_fallback_for_energy():
 
     assert answer['local_first'] is True
     assert answer['intent'] == 'energy_today'
-    assert answer['message'] == 'Today so far you have used 5.3 kilowatt-hours costing £1.48.'
+    assert answer['message'] == (
+        'Today so far you have used 5.3 kilowatt-hours. '
+        'Energy cost is about £1.48. '
+        'Total cost including standing charge is £2.08.'
+    )
     assert fake.fallback_called is False
 
 
@@ -181,5 +190,5 @@ def test_register_adds_stable_endpoint_aliases_once():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.2-alpha'
-    assert fake.app.version == '1.6.2-alpha'
+    assert fake.APP_VERSION == '1.6.3-alpha'
+    assert fake.app.version == '1.6.3-alpha'

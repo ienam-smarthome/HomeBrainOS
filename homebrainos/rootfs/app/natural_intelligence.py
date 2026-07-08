@@ -4,7 +4,7 @@ import re
 import time
 from typing import Any, Callable
 
-VERSION = '1.6.2-alpha'
+VERSION = '1.6.3-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = (
     'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
@@ -68,6 +68,10 @@ def _normalise(text: Any) -> str:
     value = value.replace('yeseterday', 'yesterday').replace('kilowatts', 'kilowatt-hours')
     value = re.sub(r'[^a-z0-9£\s.-]', ' ', value)
     return re.sub(r'\s+', ' ', value).strip()
+
+
+def _normalise_key(text: Any) -> str:
+    return re.sub(r'[^a-z0-9]', '', str(text or '').lower())
 
 
 def naturalise_units(message: Any) -> str:
@@ -189,13 +193,58 @@ def _is_today_only_energy_query(query: str) -> bool:
     return any(term in q for term in ('used today', 'use today', 'spent today', 'cost today', 'today so far', 'have i used today', 'have we used today'))
 
 
-def _today_energy_only_message(answer: Any) -> str:
+def _pick_attr(attrs: dict[str, Any], names: set[str]) -> Any:
+    normalised = {_normalise_key(key): value for key, value in attrs.items()}
+    for name in names:
+        if name in normalised:
+            return normalised[name]
+    return None
+
+
+def _octopus_today_total_cost(app_module: Any) -> float | None:
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    if not isinstance(devices, list):
+        return None
+    cost_keys = {'displaycosttoday', 'costtoday', 'todaycost', 'electricitycosttoday'}
+    fallback_keys = {'displaycost'}
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        label = _device_label(device).lower()
+        if 'octopus' not in label and 'live meter' not in label:
+            continue
+        attrs = _attrs(device)
+        value = _pick_attr(attrs, cost_keys)
+        if value is None:
+            value = _pick_attr(attrs, fallback_keys)
+        total = _safe_float(value)
+        if total is not None:
+            return total
+    return None
+
+
+def _today_energy_only_message(answer: Any, app_module: Any | None = None) -> str:
     message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
+    total_cost = _octopus_today_total_cost(app_module) if app_module is not None else None
     for raw_line in message.splitlines():
         line = raw_line.strip().strip('•').strip()
-        if line.lower().startswith('used today'):
-            detail = line.split(':', 1)[1].strip() if ':' in line else line
+        if not line.lower().startswith('used today'):
+            continue
+        detail = line.split(':', 1)[1].strip() if ':' in line else line
+        match = re.search(r'(.+?)\s+costing\s+(£?\d+(?:\.\d+)?)', detail, flags=re.IGNORECASE)
+        if not match:
             return f'Today so far you have used {detail}.'
+        usage = match.group(1).strip()
+        energy_cost = format_money(match.group(2))
+        if total_cost is None:
+            return f'Today so far you have used {usage}, costing {energy_cost}.'
+        if abs(total_cost - (_safe_float(energy_cost) or 0.0)) < 0.01:
+            return f'Today so far you have used {usage}, costing {format_money(total_cost)}.'
+        return (
+            f'Today so far you have used {usage}. '
+            f'Energy cost is about {energy_cost}. '
+            f'Total cost including standing charge is {format_money(total_cost)}.'
+        )
     return message
 
 
@@ -276,7 +325,7 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
     if intent == 'energy':
         answer = _safe_call(getattr(app_module, 'energy_advisor_answer', None), fallback={})
         if _is_today_only_energy_query(query):
-            message = _today_energy_only_message(answer)
+            message = _today_energy_only_message(answer, app_module)
             return {'success': True, 'intent': 'energy_today', 'query': query, 'message': message, 'answer': answer, 'today_only': True}
         message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
         return {'success': True, 'intent': intent, 'query': query, 'message': message, 'answer': answer, 'top_power_consumers': _top_power_consumers(app_module)}
