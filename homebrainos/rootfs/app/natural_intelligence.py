@@ -7,11 +7,7 @@ from typing import Any, Callable
 
 VERSION = '1.6.7-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
-COMMAND_PREFIXES = (
-    'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
-    'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ',
-    'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ',
-)
+COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 
 
 def _safe_call(func: Callable[..., Any] | None, *args: Any, fallback: Any = None, **kwargs: Any) -> Any:
@@ -24,15 +20,10 @@ def _safe_call(func: Callable[..., Any] | None, *args: Any, fallback: Any = None
 
 
 def _safe_float(value: Any) -> float | None:
-    if value is None:
-        return None
     try:
-        if isinstance(value, str):
-            cleaned = value.replace(',', '').replace('£', '').strip()
-            if not cleaned:
-                return None
-            return float(cleaned)
-        return float(value)
+        if value in (None, ''):
+            return None
+        return float(str(value).replace(',', '').replace('£', '').strip())
     except (TypeError, ValueError):
         return None
 
@@ -51,21 +42,18 @@ def format_energy(value: Any) -> str:
     if kwh is None:
         return 'not available'
     amount = f"{kwh:.1f}".rstrip('0').rstrip('.')
-    unit = 'kilowatt-hour' if round(kwh, 1) == 1 else 'kilowatt-hours'
-    return f'{amount} {unit}'
+    return f"{amount} {'kilowatt-hour' if round(kwh, 1) == 1 else 'kilowatt-hours'}"
 
 
 def format_money(value: Any) -> str:
     amount = _safe_float(value)
-    if amount is None:
-        return 'not available'
-    return f'£{amount:.2f}'
+    return 'not available' if amount is None else f'£{amount:.2f}'
 
 
 def _normalise(text: Any) -> str:
     value = str(text or '').lower()
-    value = value.replace('bedroom too', 'bedroom 2').replace('bed room too', 'bedroom 2')
-    value = value.replace('yeseterday', 'yesterday').replace('kilowatts', 'kilowatt-hours')
+    for old, new in {'bedroom too': 'bedroom 2', 'bed room too': 'bedroom 2', 'bedroom two': 'bedroom 2', 'bed room two': 'bedroom 2', 'yeseterday': 'yesterday', 'kilowatts': 'kilowatt-hours'}.items():
+        value = value.replace(old, new)
     value = re.sub(r'[^a-z0-9£\s.-]', ' ', value)
     return re.sub(r'\s+', ' ', value).strip()
 
@@ -103,19 +91,12 @@ def _is_on(value: Any) -> bool:
 
 def _device_text(device: dict[str, Any]) -> str:
     attrs = _attrs(device)
-    return ' '.join(str(part or '') for part in [
-        device.get('label'), device.get('name'), device.get('room'), device.get('category'),
-        ' '.join(device.get('capabilities') or []), ' '.join(attrs.keys()),
-    ]).lower()
+    return ' '.join(str(part or '') for part in [device.get('label'), device.get('name'), device.get('room'), device.get('category'), ' '.join(device.get('capabilities') or []), ' '.join(attrs.keys())]).lower()
 
 
 def _is_aggregate_energy_meter(device: dict[str, Any]) -> bool:
     text = _device_text(device)
-    aggregate_terms = (
-        'octopus live meter', 'live meter', 'whole-house', 'whole house', 'whole-home', 'whole home',
-        'smart meter', 'electricity meter', 'meter total', 'home total', 'house total', 'aggregate',
-    )
-    if any(term in text for term in aggregate_terms):
+    if any(term in text for term in ('octopus live meter', 'live meter', 'whole-house', 'whole house', 'whole-home', 'whole home', 'smart meter', 'electricity meter', 'meter total', 'home total', 'house total', 'aggregate')):
         return True
     return 'octopus' in text and any(term in text for term in ('meter', 'import', 'export', 'tariff', 'rate'))
 
@@ -125,40 +106,29 @@ def _is_light_device(device: dict[str, Any]) -> bool:
     return 'light' in text or 'bulb' in text or device.get('category') == 'light'
 
 
-def _current_lights_on(app_module: Any) -> list[dict[str, Any]]:
-    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
-    if not isinstance(devices, list):
-        return []
-    return sorted(
-        [d for d in devices if isinstance(d, dict) and _is_light_device(d) and _is_on(_attrs(d).get('switch'))],
-        key=_device_label,
-    )
-
-
 def _all_light_devices(app_module: Any) -> list[dict[str, Any]]:
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
-    if not isinstance(devices, list):
-        return []
-    return sorted([d for d in devices if isinstance(d, dict) and _is_light_device(d)], key=_device_label)
+    return sorted([d for d in devices if isinstance(d, dict) and _is_light_device(d)], key=_device_label) if isinstance(devices, list) else []
+
+
+def _current_lights_on(app_module: Any) -> list[dict[str, Any]]:
+    return [d for d in _all_light_devices(app_module) if _is_on(_attrs(d).get('switch'))]
 
 
 def _light_query_targets(app_module: Any, query: str) -> list[dict[str, Any]]:
     lights = _all_light_devices(app_module)
-    q = _normalise(query)
-    target_text = q
+    target_text = _normalise(query)
     for word in ('lights', 'light', 'on', 'time', 'today', 'how', 'long', 'has', 'have', 'been', 'for', 'hours', 'hour', 'duration'):
         target_text = re.sub(rf'\b{word}\b', ' ', target_text)
     target_text = re.sub(r'\s+', ' ', target_text).strip()
     if not target_text or target_text in {'all', 'all the'}:
         return lights
-    matches = []
     compact_target = _normalise_key(target_text)
+    matches = []
     for device in lights:
         label = _normalise(_device_label(device))
         room = _normalise(device.get('room'))
-        compact_label = _normalise_key(label)
-        compact_room = _normalise_key(room)
-        if target_text in label or target_text in room or compact_target in compact_label or (compact_room and compact_target in compact_room):
+        if target_text in label or target_text in room or compact_target in _normalise_key(label) or (room and compact_target in _normalise_key(room)):
             matches.append(device)
     return matches or lights
 
@@ -173,8 +143,7 @@ def _period_start_timestamp(period: str = 'today') -> int:
 
 def _format_duration(seconds: int) -> str:
     seconds = max(0, int(seconds))
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
+    hours, minutes = seconds // 3600, (seconds % 3600) // 60
     if hours and minutes:
         return f'{hours} hour{"s" if hours != 1 else ""} {minutes} minute{"s" if minutes != 1 else ""}'
     if hours:
@@ -188,20 +157,12 @@ def _device_switch_events(app_module: Any, device_id: str, start: int, end: int)
         return None, []
     conn = db_func()
     try:
-        before = conn.execute(
-            "SELECT value FROM hubitat_events WHERE device_id=? AND attr='switch' AND created_at < ? ORDER BY created_at DESC LIMIT 1",
-            (str(device_id), start),
-        ).fetchone()
-        rows = conn.execute(
-            "SELECT created_at, value FROM hubitat_events WHERE device_id=? AND attr='switch' AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC",
-            (str(device_id), start, end),
-        ).fetchall()
+        before = conn.execute("SELECT value FROM hubitat_events WHERE device_id=? AND attr='switch' AND created_at < ? ORDER BY created_at DESC LIMIT 1", (str(device_id), start)).fetchone()
+        rows = conn.execute("SELECT created_at, value FROM hubitat_events WHERE device_id=? AND attr='switch' AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC", (str(device_id), start, end)).fetchall()
     finally:
         conn.close()
-    before_value = None
-    if before is not None:
-        before_value = before['value'] if hasattr(before, 'keys') else before[0]
-    events: list[tuple[int, str]] = []
+    before_value = before['value'] if before is not None and hasattr(before, 'keys') else (before[0] if before is not None else None)
+    events = []
     for row in rows:
         created = row['created_at'] if hasattr(row, 'keys') else row[0]
         value = row['value'] if hasattr(row, 'keys') else row[1]
@@ -211,7 +172,8 @@ def _device_switch_events(app_module: Any, device_id: str, start: int, end: int)
 
 def _light_on_seconds(app_module: Any, device: dict[str, Any], start: int, end: int) -> int:
     before_state, events = _device_switch_events(app_module, str(device.get('id')), start, end)
-    state_on = _is_on(before_state) if before_state is not None else _is_on(_attrs(device).get('switch'))
+    # If we have events today but no pre-midnight state, assume OFF until the first ON event.
+    state_on = _is_on(before_state) if before_state is not None else (_is_on(_attrs(device).get('switch')) if not events else False)
     last = start
     total = 0
     for created, value in events:
@@ -231,8 +193,7 @@ def _light_hours_history_answer(app_module: Any, query: str) -> dict[str, Any] |
     targets = _light_query_targets(app_module, query)
     if not targets:
         return {'success': False, 'message': 'I could not find any light devices to check.'}
-    start = _period_start_timestamp('today')
-    end = int(time.time())
+    start, end = _period_start_timestamp('today'), int(time.time())
     rows = []
     for device in targets[:20]:
         seconds = _light_on_seconds(app_module, device, start, end)
@@ -242,11 +203,10 @@ def _light_hours_history_answer(app_module: Any, query: str) -> dict[str, Any] |
     if not rows:
         return {'success': True, 'intent': 'light_hours', 'message': 'No light-on time recorded today for the matched lights.', 'lights': []}
     rows.sort(key=lambda item: item['seconds'], reverse=True)
-    total = sum(int(item['seconds']) for item in rows)
     lines = [f"• {item['label']}: {item['duration']} ({item['currently']})" for item in rows]
     message = "Today's light-on time:\n" + '\n'.join(lines)
     if len(rows) > 1:
-        message += f"\nTotal across listed lights: {_format_duration(total)}."
+        message += f"\nTotal across listed lights: {_format_duration(sum(int(item['seconds']) for item in rows))}."
     return {'success': True, 'intent': 'light_hours', 'message': message, 'lights': rows, 'period': 'today'}
 
 
@@ -254,24 +214,18 @@ def _top_power_consumers(app_module: Any, limit: int = 5, *, include_aggregates:
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
     if not isinstance(devices, list):
         return []
-    consumers: list[dict[str, Any]] = []
+    consumers = []
     for device in devices:
-        if not isinstance(device, dict):
-            continue
-        if not include_aggregates and _is_aggregate_energy_meter(device):
+        if not isinstance(device, dict) or (not include_aggregates and _is_aggregate_energy_meter(device)):
             continue
         watts = _safe_float(_attrs(device).get('power'))
-        if watts is None or watts <= 0:
-            continue
-        consumers.append({'label': _device_label(device), 'watts': watts, 'power': format_power(watts)})
-    consumers.sort(key=lambda item: item['watts'], reverse=True)
-    return consumers[:limit]
+        if watts is not None and watts > 0:
+            consumers.append({'label': _device_label(device), 'watts': watts, 'power': format_power(watts)})
+    return sorted(consumers, key=lambda item: item['watts'], reverse=True)[:limit]
 
 
 def _answer_message(answer: Any, fallback: str = '') -> str:
-    if isinstance(answer, dict):
-        return str(answer.get('message') or answer.get('speech') or fallback)
-    return str(answer or fallback)
+    return str(answer.get('message') or answer.get('speech') or fallback) if isinstance(answer, dict) else str(answer or fallback)
 
 
 def _intent(query: str) -> str:
@@ -295,35 +249,25 @@ def _intent(query: str) -> str:
     return 'home_context'
 
 
-def _is_command_like(query: str) -> bool:
-    q = _normalise(query)
-    return any(q.startswith(prefix) for prefix in COMMAND_PREFIXES)
-
-
 def should_answer_locally(query: str) -> bool:
-    return not _is_command_like(query) and _intent(query) in LOCAL_FIRST_INTENTS
+    q = _normalise(query)
+    return not any(q.startswith(prefix) for prefix in COMMAND_PREFIXES) and _intent(query) in LOCAL_FIRST_INTENTS
 
 
 def _is_period_energy_query(query: str, period: str) -> bool:
     q = _normalise(query)
     if _intent(q) != 'energy' or period not in q:
         return False
-    other_period = 'yesterday' if period == 'today' else 'today'
-    comparison_terms = ('compare', 'comparison', 'versus', 'vs', 'advisor', 'worth checking', 'using now', 'right now', 'currently')
-    if other_period in q or any(term in q for term in comparison_terms):
+    other = 'yesterday' if period == 'today' else 'today'
+    if other in q or any(term in q for term in ('compare', 'comparison', 'versus', 'vs', 'advisor', 'worth checking', 'using now', 'right now', 'currently')):
         return False
-    terms = (
-        ('used today', 'use today', 'spent today', 'cost today', 'today so far', 'have i used today', 'have we used today')
-        if period == 'today'
-        else ('used yesterday', 'use yesterday', 'spent yesterday', 'cost yesterday', 'did i use yesterday', 'did we use yesterday')
-    )
+    terms = ('used today', 'use today', 'spent today', 'cost today', 'today so far', 'have i used today', 'have we used today') if period == 'today' else ('used yesterday', 'use yesterday', 'spent yesterday', 'cost yesterday', 'did i use yesterday', 'did we use yesterday')
     return any(term in q for term in terms)
 
 
 def _is_energy_now_query(query: str) -> bool:
     q = _normalise(query)
-    now_terms = ('now', 'right now', 'currently', 'at the moment', 'using the most', 'highest', 'top')
-    return _intent(q) == 'energy' and any(term in q for term in now_terms) and any(term in q for term in ('using', 'power', 'electricity', 'watts', 'consumer', 'consuming'))
+    return _intent(q) == 'energy' and any(term in q for term in ('now', 'right now', 'currently', 'at the moment', 'using the most', 'highest', 'top')) and any(term in q for term in ('using', 'power', 'electricity', 'watts', 'consumer', 'consuming'))
 
 
 def _is_energy_compare_query(query: str) -> bool:
@@ -341,15 +285,14 @@ def _pick_attr(attrs: dict[str, Any], names: set[str]) -> Any:
 
 def _octopus_total_cost(app_module: Any, period: str) -> float | None:
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    keys = {'displaycosttoday', 'costtoday', 'todaycost', 'electricitycosttoday'} if period == 'today' else {'displaycostyesterday', 'costyesterday', 'yesterdaycost', 'electricitycostyesterday'}
     if not isinstance(devices, list):
         return None
-    cost_keys = {'displaycosttoday', 'costtoday', 'todaycost', 'electricitycosttoday'} if period == 'today' else {'displaycostyesterday', 'costyesterday', 'yesterdaycost', 'electricitycostyesterday'}
     for device in devices:
-        if not isinstance(device, dict) or not _is_aggregate_energy_meter(device):
-            continue
-        total = _safe_float(_pick_attr(_attrs(device), cost_keys))
-        if total is not None:
-            return total
+        if isinstance(device, dict) and _is_aggregate_energy_meter(device):
+            total = _safe_float(_pick_attr(_attrs(device), keys))
+            if total is not None:
+                return total
     return None
 
 
@@ -357,11 +300,10 @@ def _period_line(message: str, period: str) -> tuple[str, str] | None:
     prefix = 'used today' if period == 'today' else 'used yesterday'
     for raw_line in message.splitlines():
         line = raw_line.strip().strip('•').strip()
-        if not line.lower().startswith(prefix):
-            continue
-        detail = line.split(':', 1)[1].strip() if ':' in line else line
-        match = re.search(r'(.+?)\s+costing\s+(£?\d+(?:\.\d+)?)', detail, flags=re.IGNORECASE)
-        return (match.group(1).strip(), format_money(match.group(2))) if match else (detail, '')
+        if line.lower().startswith(prefix):
+            detail = line.split(':', 1)[1].strip() if ':' in line else line
+            match = re.search(r'(.+?)\s+costing\s+(£?\d+(?:\.\d+)?)', detail, flags=re.IGNORECASE)
+            return (match.group(1).strip(), format_money(match.group(2))) if match else (detail, '')
     return None
 
 
@@ -382,8 +324,7 @@ def _period_energy_message(answer: Any, period: str, app_module: Any | None = No
 
 def _energy_compare_message(answer: Any, app_module: Any | None = None) -> str:
     message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
-    today = _period_line(message, 'today')
-    yesterday = _period_line(message, 'yesterday')
+    today, yesterday = _period_line(message, 'today'), _period_line(message, 'yesterday')
     if today is None or yesterday is None:
         return message
     today_cost = _octopus_total_cost(app_module, 'today') if app_module is not None else None
@@ -391,64 +332,38 @@ def _energy_compare_message(answer: Any, app_module: Any | None = None) -> str:
     cost_phrase = ''
     if today_cost is not None and yesterday_cost is not None:
         diff = today_cost - yesterday_cost
-        if abs(diff) < 0.01:
-            cost_phrase = ' Total cost is about the same as yesterday.'
-        elif diff > 0:
-            cost_phrase = f' Total cost is {format_money(abs(diff))} higher than yesterday.'
-        else:
-            cost_phrase = f' Total cost is {format_money(abs(diff))} lower than yesterday.'
+        cost_phrase = ' Total cost is about the same as yesterday.' if abs(diff) < 0.01 else f' Total cost is {format_money(abs(diff))} {"higher" if diff > 0 else "lower"} than yesterday.'
     return f'Today so far: {today[0]}. Yesterday: {yesterday[0]}.{cost_phrase}'
 
 
 def _energy_now_message(answer: Any, app_module: Any) -> str:
     message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
-    whole_home = None
-    for raw_line in message.splitlines():
-        line = raw_line.strip()
-        if line.lower().startswith('whole-house power now'):
-            whole_home = line.split(':', 1)[1].strip() if ':' in line else line
-            break
+    whole_home = next((line.split(':', 1)[1].strip() for line in message.splitlines() if line.strip().lower().startswith('whole-house power now') and ':' in line), None)
     parts = []
     if whole_home:
         parts.append(f'Whole-house power now is {whole_home}.')
     top = _top_power_consumers(app_module, 5)
     if top:
-        device_text = '; '.join(f"{item['label']} is using {item['power']}" for item in top)
-        parts.append(f'Top measured device loads: {device_text}.')
+        parts.append('Top measured device loads: ' + '; '.join(f"{item['label']} is using {item['power']}" for item in top) + '.')
     if whole_home:
         parts.append('Note: Octopus Live Meter is the whole-house total, so it is excluded from the device list.')
-    if not parts:
-        return 'I cannot see any live power usage right now.'
-    return ' '.join(parts)
+    return ' '.join(parts) if parts else 'I cannot see any live power usage right now.'
 
 
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
-    if not isinstance(summary, dict):
-        summary = {}
+    summary = summary if isinstance(summary, dict) else {}
     health = _safe_call(getattr(app_module, 'home_health_answer', None), fallback={})
-    if not isinstance(health, dict):
-        health = {}
+    health = health if isinstance(health, dict) else {}
     energy = _safe_call(getattr(app_module, 'energy_advisor_answer', None), fallback={})
-    if not isinstance(energy, dict):
-        energy = {}
-    timeline = _safe_call(getattr(app_module, 'recent_home_timeline', None), 12, 12, fallback=[])
-    if not isinstance(timeline, list):
-        timeline = []
-    recommendations = _safe_call(getattr(app_module, 'recommendations_answer', None), fallback={})
-    if not isinstance(recommendations, dict):
-        recommendations = {}
-    return {'success': True, 'intent': 'home_context', 'version': VERSION, 'generated_at': int(time.time()), 'dashboard': summary, 'occupancy': summary.get('occupancy') or summary.get('people') or {}, 'lights': summary.get('lights') or {}, 'rooms': summary.get('rooms') or [], 'energy': energy, 'health': health, 'timeline': timeline, 'recommendations': recommendations, 'top_power_consumers': _top_power_consumers(app_module)}
+    energy = energy if isinstance(energy, dict) else {}
+    return {'success': True, 'intent': 'home_context', 'version': VERSION, 'generated_at': int(time.time()), 'dashboard': summary, 'occupancy': summary.get('occupancy') or summary.get('people') or {}, 'lights': summary.get('lights') or {}, 'rooms': summary.get('rooms') or [], 'energy': energy, 'health': health, 'timeline': _safe_call(getattr(app_module, 'recent_home_timeline', None), 12, 12, fallback=[]), 'recommendations': _safe_call(getattr(app_module, 'recommendations_answer', None), fallback={}), 'top_power_consumers': _top_power_consumers(app_module)}
 
 
 def build_briefing(app_module: Any) -> dict[str, Any]:
     briefing = _safe_call(getattr(app_module, 'daily_briefing_answer', None), fallback={})
-    if not isinstance(briefing, dict):
-        briefing = {}
-    briefing.setdefault('success', True)
-    briefing.setdefault('intent', 'briefing')
-    briefing.setdefault('version', VERSION)
-    briefing['alias_for'] = '/api/daily-briefing'
+    briefing = briefing if isinstance(briefing, dict) else {}
+    briefing.setdefault('success', True); briefing.setdefault('intent', 'briefing'); briefing.setdefault('version', VERSION); briefing['alias_for'] = '/api/daily-briefing'
     if briefing.get('message'):
         briefing['message'] = naturalise_units(briefing['message'])
     return briefing
@@ -456,8 +371,7 @@ def build_briefing(app_module: Any) -> dict[str, Any]:
 
 def build_home_health_score(app_module: Any) -> dict[str, Any]:
     health = _safe_call(getattr(app_module, 'home_health_answer', None), fallback={})
-    if not isinstance(health, dict):
-        health = {}
+    health = health if isinstance(health, dict) else {}
     score = health.get('score') or health.get('health_score') or (100 if health.get('success') else 0)
     return {'success': True, 'intent': 'home_health_score', 'version': VERSION, 'score': score, 'message': naturalise_units(health.get('message') or health.get('speech') or 'Home health score is available.'), 'deductions': health.get('deductions') or health.get('issues') or [], 'health': health}
 
@@ -476,8 +390,7 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
             return {'success': True, 'intent': 'energy_now', 'query': query, 'message': _energy_now_message(answer, app_module), 'answer': answer, 'top_power_consumers': _top_power_consumers(app_module)}
         return {'success': True, 'intent': intent, 'query': query, 'message': naturalise_units(_answer_message(answer, 'Energy information is not available yet.')), 'answer': answer, 'top_power_consumers': _top_power_consumers(app_module)}
     if intent == 'why_lights':
-        lights = _current_lights_on(app_module)
-        names = ', '.join(_device_label(device) for device in lights)
+        lights = _current_lights_on(app_module); names = ', '.join(_device_label(device) for device in lights)
         message = f"{len(lights)} light{' is' if len(lights) == 1 else 's are'} on because these devices currently report as on: {names}." if lights else 'I cannot see any lights currently reporting as on. If the dashboard still shows lights on, run a live refresh from Hubitat.'
         return {'success': True, 'intent': intent, 'query': query, 'message': message, 'lights_on': [_device_label(device) for device in lights]}
     if intent == 'light_hours':
@@ -488,21 +401,16 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
         history = _light_hours_history_answer(app_module, query)
         if isinstance(history, dict) and history.get('message'):
             return history | {'query': query}
-        lights = _current_lights_on(app_module)
-        names = ', '.join(_device_label(device) for device in lights[:8]) or 'none currently on'
+        lights = _current_lights_on(app_module); names = ', '.join(_device_label(device) for device in lights[:8]) or 'none currently on'
         return {'success': True, 'intent': intent, 'query': query, 'message': 'I can see which lights are currently on, but exact light-hours need event history. Currently on: ' + names + '.', 'lights_on': [_device_label(device) for device in lights]}
     if intent == 'attention':
-        health = build_home_health_score(app_module)
-        recs = _safe_call(getattr(app_module, 'recommendations_answer', None), fallback={})
-        rec_msg = _answer_message(recs, '')
-        message = health['message'] + (f"\n{rec_msg}" if rec_msg else '')
-        return {'success': True, 'intent': intent, 'query': query, 'message': naturalise_units(message), 'health': health, 'recommendations': recs}
+        health = build_home_health_score(app_module); recs = _safe_call(getattr(app_module, 'recommendations_answer', None), fallback={}); rec_msg = _answer_message(recs, '')
+        return {'success': True, 'intent': intent, 'query': query, 'message': naturalise_units(health['message'] + (f"\n{rec_msg}" if rec_msg else '')), 'health': health, 'recommendations': recs}
     if intent == 'health':
         return build_home_health_score(app_module) | {'query': query}
     if intent == 'briefing':
         return build_briefing(app_module) | {'query': query}
-    context = build_home_context(app_module)
-    return context | {'query': query, 'message': 'Home context is ready.'}
+    return build_home_context(app_module) | {'query': query, 'message': 'Home context is ready.'}
 
 
 def wrap_assistant(app_module: Any) -> None:
@@ -511,10 +419,7 @@ def wrap_assistant(app_module: Any) -> None:
         return
     def local_first_assistant(query: str) -> dict[str, Any]:
         if should_answer_locally(query):
-            answer = build_intelligence_answer(app_module, query)
-            answer.setdefault('success', True)
-            answer['local_first'] = True
-            return answer
+            answer = build_intelligence_answer(app_module, query); answer.setdefault('success', True); answer['local_first'] = True; return answer
         return existing(query)
     local_first_assistant._homebrain_local_first = True  # type: ignore[attr-defined]
     app_module.assistant = local_first_assistant
@@ -522,9 +427,7 @@ def wrap_assistant(app_module: Any) -> None:
 
 def register(app_module: Any) -> Any:
     app_module.APP_VERSION = VERSION
-    app = app_module.app
-    app.version = VERSION
-    wrap_assistant(app_module)
+    app = app_module.app; app.version = VERSION; wrap_assistant(app_module)
     if not _route_exists(app, '/api/home-context'):
         app.add_api_route('/api/home-context', lambda: build_home_context(app_module), methods=['GET'])
     if not _route_exists(app, '/api/briefing'):
