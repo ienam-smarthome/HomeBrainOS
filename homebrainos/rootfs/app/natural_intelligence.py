@@ -4,7 +4,7 @@ import re
 import time
 from typing import Any, Callable
 
-VERSION = '1.6.1-alpha'
+VERSION = '1.6.2-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = (
     'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
@@ -179,6 +179,26 @@ def should_answer_locally(query: str) -> bool:
     return _intent(query) in LOCAL_FIRST_INTENTS
 
 
+def _is_today_only_energy_query(query: str) -> bool:
+    q = _normalise(query)
+    if _intent(q) != 'energy' or 'today' not in q:
+        return False
+    comparison_terms = ('yesterday', 'compare', 'comparison', 'versus', 'vs', 'advisor', 'worth checking', 'using now', 'right now', 'currently')
+    if any(term in q for term in comparison_terms):
+        return False
+    return any(term in q for term in ('used today', 'use today', 'spent today', 'cost today', 'today so far', 'have i used today', 'have we used today'))
+
+
+def _today_energy_only_message(answer: Any) -> str:
+    message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
+    for raw_line in message.splitlines():
+        line = raw_line.strip().strip('•').strip()
+        if line.lower().startswith('used today'):
+            detail = line.split(':', 1)[1].strip() if ':' in line else line
+            return f'Today so far you have used {detail}.'
+    return message
+
+
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     if not isinstance(summary, dict):
@@ -255,6 +275,9 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
 
     if intent == 'energy':
         answer = _safe_call(getattr(app_module, 'energy_advisor_answer', None), fallback={})
+        if _is_today_only_energy_query(query):
+            message = _today_energy_only_message(answer)
+            return {'success': True, 'intent': 'energy_today', 'query': query, 'message': message, 'answer': answer, 'today_only': True}
         message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
         return {'success': True, 'intent': intent, 'query': query, 'message': message, 'answer': answer, 'top_power_consumers': _top_power_consumers(app_module)}
 
