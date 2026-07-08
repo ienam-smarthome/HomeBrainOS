@@ -46,7 +46,7 @@ class FakeMain:
                 'AI Energy Advisor:\n'
                 'Whole-house power now: 418W from Octopus Live Meter\n'
                 'Used today so far: 5.32 kWh costing £1.48\n'
-                'Used yesterday: 11.45 kWh costing £3.18\n'
+                'Used yesterday: 11.46 kWh costing £3.18\n'
                 'Worth checking:\n'
                 '• Fridge — 89W, on for unknown duration'
             ),
