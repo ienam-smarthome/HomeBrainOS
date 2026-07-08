@@ -38,6 +38,10 @@ class FakeMain:
         conn.executemany(
             'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
             [
+                ('l1', 'Livingroom Light 1', 'switch', 'on', '{}', -1000),
+                ('l1', 'Livingroom Light 1', 'switch', 'off', '{}', 800),
+                ('l2', 'Bedroom 2 Light', 'switch', 'on', '{}', -50000),
+                ('l2', 'Bedroom 2 Light', 'switch', 'off', '{}', -46400),
                 ('l1', 'Livingroom Light 1', 'switch', 'on', '{}', 1600),
                 ('l1', 'Livingroom Light 1', 'switch', 'off', '{}', 3400),
                 ('l2', 'Bedroom 2 Light', 'switch', 'on', '{}', 2200),
@@ -97,7 +101,7 @@ class FakeMain:
 
 
 def freeze_light_hours_clock(module):
-    module._period_start_timestamp = lambda period='today': 1000
+    module._period_start_timestamp = lambda period='today': 1000 if period == 'today' else -85400
     module.time.time = lambda: 10000
 
 
@@ -125,6 +129,28 @@ def test_light_hours_can_target_bedroom_two_light():
     answer = module.build_intelligence_answer(FakeMain(), 'how long has bedroom two light been on today')
     assert answer['intent'] == 'light_hours'
     assert 'Bedroom 2 Light: 1 hour 20 minutes' in answer['message']
+    assert 'Livingroom Light 1' not in answer['message']
+
+
+def test_light_hours_can_answer_yesterday():
+    module = load_natural_intelligence()
+    freeze_light_hours_clock(module)
+    answer = module.build_intelligence_answer(FakeMain(), 'lights on time yesterday')
+    assert answer['intent'] == 'light_hours'
+    assert answer['period'] == 'yesterday'
+    assert "Yesterday's light-on time" in answer['message']
+    assert 'Bedroom 2 Light: 1 hour' in answer['message']
+    assert 'Livingroom Light 1: 30 minutes' in answer['message']
+    assert 'currently on' not in answer['message']
+
+
+def test_light_hours_can_target_yesterday_bedroom_two():
+    module = load_natural_intelligence()
+    freeze_light_hours_clock(module)
+    answer = module.build_intelligence_answer(FakeMain(), 'bedroom two light on time yesterday')
+    assert answer['intent'] == 'light_hours'
+    assert answer['period'] == 'yesterday'
+    assert 'Bedroom 2 Light: 1 hour' in answer['message']
     assert 'Livingroom Light 1' not in answer['message']
 
 
@@ -166,5 +192,5 @@ def test_register_adds_routes_once_and_updates_version():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.7-alpha'
-    assert fake.app.version == '1.6.7-alpha'
+    assert fake.APP_VERSION == '1.6.8-alpha'
+    assert fake.app.version == '1.6.8-alpha'
