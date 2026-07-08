@@ -45,7 +45,17 @@ class FakeMain:
         return {'success': True, 'score': 96, 'message': 'Everything looks normal.'}
 
     def energy_advisor_answer(self):
-        return {'success': True, 'message': 'Your home is using 418W and 5.32 kWh today.'}
+        return {
+            'success': True,
+            'message': (
+                'AI Energy Advisor:\n'
+                'Whole-house power now: 418W from Octopus Live Meter\n'
+                'Used today so far: 5.32 kWh costing £1.48\n'
+                'Used yesterday: 11.45 kWh costing £3.18\n'
+                'Worth checking:\n'
+                '• Fridge — 89W, on for unknown duration'
+            ),
+        }
 
     def recent_home_timeline(self, limit, hours):
         return [{'label': 'Kitchen motion', 'limit': limit, 'hours': hours}]
@@ -88,18 +98,30 @@ def test_home_context_facade_uses_existing_app_functions():
     assert context['occupancy']['summary'] == 'Everyone is home'
     assert context['lights']['on'] == 3
     assert context['health']['score'] == 96
-    assert context['energy']['message'] == 'Your home is using 418W and 5.32 kWh today.'
+    assert 'Used today so far' in context['energy']['message']
     assert context['top_power_consumers'][0]['label'] == 'Fridge'
     assert context['top_power_consumers'][0]['power'] == '89 watts'
 
 
-def test_insight_routes_energy_questions_to_energy_advisor_with_natural_units():
+def test_simple_today_energy_question_returns_today_only_answer():
     module = load_natural_intelligence()
     answer = module.build_intelligence_answer(FakeMain(), 'how much electricity have I used today')
 
+    assert answer['intent'] == 'energy_today'
+    assert answer['today_only'] is True
+    assert answer['message'] == 'Today so far you have used 5.3 kilowatt-hours costing £1.48.'
+    assert 'yesterday' not in answer['message'].lower()
+    assert 'worth checking' not in answer['message'].lower()
+    assert 'Fridge' not in answer['message']
+
+
+def test_energy_advisor_question_still_returns_full_report():
+    module = load_natural_intelligence()
+    answer = module.build_intelligence_answer(FakeMain(), 'energy advisor')
+
     assert answer['intent'] == 'energy'
-    assert '418 watts' in answer['message']
-    assert '5.3 kilowatt-hours' in answer['message']
+    assert 'Used yesterday' in answer['message']
+    assert 'Worth checking' in answer['message']
     assert answer['top_power_consumers'][0]['label'] == 'Fridge'
 
 
@@ -130,8 +152,8 @@ def test_dashboard_ask_uses_local_insight_before_ai_fallback_for_energy():
     answer = fake.assistant('how much electricity have I used today')
 
     assert answer['local_first'] is True
-    assert answer['intent'] == 'energy'
-    assert '418 watts' in answer['message']
+    assert answer['intent'] == 'energy_today'
+    assert answer['message'] == 'Today so far you have used 5.3 kilowatt-hours costing £1.48.'
     assert fake.fallback_called is False
 
 
@@ -159,5 +181,5 @@ def test_register_adds_stable_endpoint_aliases_once():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.1-alpha'
-    assert fake.app.version == '1.6.1-alpha'
+    assert fake.APP_VERSION == '1.6.2-alpha'
+    assert fake.app.version == '1.6.2-alpha'
