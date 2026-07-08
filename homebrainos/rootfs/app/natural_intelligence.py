@@ -4,7 +4,7 @@ import re
 import time
 from typing import Any, Callable
 
-VERSION = '1.6.3-alpha'
+VERSION = '1.6.4-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = (
     'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
@@ -120,12 +120,11 @@ def _current_lights_on(app_module: Any) -> list[dict[str, Any]]:
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
     if not isinstance(devices, list):
         return []
-    lights: list[dict[str, Any]] = []
+    lights = []
     for device in devices:
         if not isinstance(device, dict) or not _is_light_device(device):
             continue
-        attrs = _attrs(device)
-        if _is_on(attrs.get('switch')):
+        if _is_on(_attrs(device).get('switch')):
             lights.append(device)
     return sorted(lights, key=_device_label)
 
@@ -134,12 +133,11 @@ def _top_power_consumers(app_module: Any, limit: int = 5) -> list[dict[str, Any]
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
     if not isinstance(devices, list):
         return []
-    consumers: list[dict[str, Any]] = []
+    consumers = []
     for device in devices:
         if not isinstance(device, dict):
             continue
-        attrs = _attrs(device)
-        watts = _safe_float(attrs.get('power'))
+        watts = _safe_float(_attrs(device).get('power'))
         if watts is None or watts <= 0:
             continue
         consumers.append({'label': _device_label(device), 'watts': watts, 'power': format_power(watts)})
@@ -183,14 +181,19 @@ def should_answer_locally(query: str) -> bool:
     return _intent(query) in LOCAL_FIRST_INTENTS
 
 
-def _is_today_only_energy_query(query: str) -> bool:
+def _is_period_energy_query(query: str, period: str) -> bool:
     q = _normalise(query)
-    if _intent(q) != 'energy' or 'today' not in q:
+    if _intent(q) != 'energy' or period not in q:
         return False
-    comparison_terms = ('yesterday', 'compare', 'comparison', 'versus', 'vs', 'advisor', 'worth checking', 'using now', 'right now', 'currently')
-    if any(term in q for term in comparison_terms):
+    comparison_terms = ('compare', 'comparison', 'versus', 'vs', 'advisor', 'worth checking', 'using now', 'right now', 'currently')
+    other_period = 'yesterday' if period == 'today' else 'today'
+    if other_period in q or any(term in q for term in comparison_terms):
         return False
-    return any(term in q for term in ('used today', 'use today', 'spent today', 'cost today', 'today so far', 'have i used today', 'have we used today'))
+    if period == 'today':
+        terms = ('used today', 'use today', 'spent today', 'cost today', 'today so far', 'have i used today', 'have we used today')
+    else:
+        terms = ('used yesterday', 'use yesterday', 'spent yesterday', 'cost yesterday', 'did i use yesterday', 'did we use yesterday')
+    return any(term in q for term in terms)
 
 
 def _pick_attr(attrs: dict[str, Any], names: set[str]) -> Any:
@@ -201,49 +204,49 @@ def _pick_attr(attrs: dict[str, Any], names: set[str]) -> Any:
     return None
 
 
-def _octopus_today_total_cost(app_module: Any) -> float | None:
+def _octopus_total_cost(app_module: Any, period: str) -> float | None:
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
     if not isinstance(devices, list):
         return None
-    cost_keys = {'displaycosttoday', 'costtoday', 'todaycost', 'electricitycosttoday'}
-    fallback_keys = {'displaycost'}
+    if period == 'today':
+        cost_keys = {'displaycosttoday', 'costtoday', 'todaycost', 'electricitycosttoday'}
+    else:
+        cost_keys = {'displaycostyesterday', 'costyesterday', 'yesterdaycost', 'electricitycostyesterday'}
     for device in devices:
         if not isinstance(device, dict):
             continue
         label = _device_label(device).lower()
         if 'octopus' not in label and 'live meter' not in label:
             continue
-        attrs = _attrs(device)
-        value = _pick_attr(attrs, cost_keys)
-        if value is None:
-            value = _pick_attr(attrs, fallback_keys)
-        total = _safe_float(value)
+        total = _safe_float(_pick_attr(_attrs(device), cost_keys))
         if total is not None:
             return total
     return None
 
 
-def _today_energy_only_message(answer: Any, app_module: Any | None = None) -> str:
+def _period_energy_message(answer: Any, period: str, app_module: Any | None = None) -> str:
     message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
-    total_cost = _octopus_today_total_cost(app_module) if app_module is not None else None
+    total_cost = _octopus_total_cost(app_module, period) if app_module is not None else None
+    prefix = 'used today' if period == 'today' else 'used yesterday'
+    intro = 'Today so far you have used' if period == 'today' else 'Yesterday you used'
     for raw_line in message.splitlines():
         line = raw_line.strip().strip('•').strip()
-        if not line.lower().startswith('used today'):
+        if not line.lower().startswith(prefix):
             continue
         detail = line.split(':', 1)[1].strip() if ':' in line else line
         match = re.search(r'(.+?)\s+costing\s+(£?\d+(?:\.\d+)?)', detail, flags=re.IGNORECASE)
         if not match:
-            return f'Today so far you have used {detail}.'
+            return f'{intro} {detail}.'
         usage = match.group(1).strip()
         energy_cost = format_money(match.group(2))
         if total_cost is None:
-            return f'Today so far you have used {usage}, costing {energy_cost}.'
+            return f'{intro} {usage}, costing {energy_cost}.'
         if abs(total_cost - (_safe_float(energy_cost) or 0.0)) < 0.01:
-            return f'Today so far you have used {usage}, costing {format_money(total_cost)}.'
+            return f'{intro} {usage}, costing {format_money(total_cost)}.'
         return (
-            f'Today so far you have used {usage}. '
-            f'Energy cost is about {energy_cost}. '
-            f'Total cost including standing charge is {format_money(total_cost)}.'
+            f'{intro} {usage}. '
+            f'Energy cost was about {energy_cost}. '
+            f'Total cost including standing charge was {format_money(total_cost)}.'
         )
     return message
 
@@ -252,23 +255,18 @@ def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     if not isinstance(summary, dict):
         summary = {}
-
     health = _safe_call(getattr(app_module, 'home_health_answer', None), fallback={})
     if not isinstance(health, dict):
         health = {}
-
     energy = _safe_call(getattr(app_module, 'energy_advisor_answer', None), fallback={})
     if not isinstance(energy, dict):
         energy = {}
-
     timeline = _safe_call(getattr(app_module, 'recent_home_timeline', None), 12, 12, fallback=[])
     if not isinstance(timeline, list):
         timeline = []
-
     recommendations = _safe_call(getattr(app_module, 'recommendations_answer', None), fallback={})
     if not isinstance(recommendations, dict):
         recommendations = {}
-
     return {
         'success': True,
         'intent': 'home_context',
@@ -321,12 +319,14 @@ def build_home_health_score(app_module: Any) -> dict[str, Any]:
 
 def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any]:
     intent = _intent(query)
-
     if intent == 'energy':
         answer = _safe_call(getattr(app_module, 'energy_advisor_answer', None), fallback={})
-        if _is_today_only_energy_query(query):
-            message = _today_energy_only_message(answer, app_module)
-            return {'success': True, 'intent': 'energy_today', 'query': query, 'message': message, 'answer': answer, 'today_only': True}
+        if _is_period_energy_query(query, 'today'):
+            message = _period_energy_message(answer, 'today', app_module)
+            return {'success': True, 'intent': 'energy_today', 'query': query, 'message': message, 'answer': answer, 'period_only': True}
+        if _is_period_energy_query(query, 'yesterday'):
+            message = _period_energy_message(answer, 'yesterday', app_module)
+            return {'success': True, 'intent': 'energy_yesterday', 'query': query, 'message': message, 'answer': answer, 'period_only': True}
         message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
         return {'success': True, 'intent': intent, 'query': query, 'message': message, 'answer': answer, 'top_power_consumers': _top_power_consumers(app_module)}
 
@@ -357,13 +357,10 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
         if rec_msg:
             message = f"{message}\n{rec_msg}"
         return {'success': True, 'intent': intent, 'query': query, 'message': naturalise_units(message), 'health': health, 'recommendations': recs}
-
     if intent == 'health':
         return build_home_health_score(app_module) | {'query': query}
-
     if intent == 'briefing':
         return build_briefing(app_module) | {'query': query}
-
     context = build_home_context(app_module)
     lights = context.get('lights') or {}
     occupancy = context.get('occupancy') or {}
@@ -395,35 +392,24 @@ def register(app_module: Any) -> Any:
     app = app_module.app
     app.version = VERSION
     wrap_assistant(app_module)
-
     if not _route_exists(app, '/api/home-context'):
         def api_home_context() -> dict[str, Any]:
             return build_home_context(app_module)
-
         app.add_api_route('/api/home-context', api_home_context, methods=['GET'])
-
     if not _route_exists(app, '/api/briefing'):
         def api_briefing() -> dict[str, Any]:
             return build_briefing(app_module)
-
         app.add_api_route('/api/briefing', api_briefing, methods=['GET'])
-
     if not _route_exists(app, '/api/home-health-score'):
         def api_home_health_score() -> dict[str, Any]:
             return build_home_health_score(app_module)
-
         app.add_api_route('/api/home-health-score', api_home_health_score, methods=['GET'])
-
     if not _route_exists(app, '/api/insight'):
         def api_insight(q: str = '') -> dict[str, Any]:
             return build_intelligence_answer(app_module, q)
-
         app.add_api_route('/api/insight', api_insight, methods=['GET'])
-
     if not _route_exists(app, '/api/why'):
         def api_why(q: str = '') -> dict[str, Any]:
             return build_intelligence_answer(app_module, q or 'why')
-
         app.add_api_route('/api/why', api_why, methods=['GET'])
-
     return app
