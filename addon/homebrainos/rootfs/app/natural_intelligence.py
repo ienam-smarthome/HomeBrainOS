@@ -4,7 +4,7 @@ import re
 import time
 from typing import Any, Callable
 
-VERSION = '1.6.4-alpha'
+VERSION = '1.6.5-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = (
     'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
@@ -157,6 +157,8 @@ def _intent(query: str) -> str:
         return 'briefing'
     if any(word in q for word in ('electric', 'energy', 'power', 'cost', 'spent', 'kwh', 'kilowatt')):
         return 'energy'
+    if 'today' in q and 'yesterday' in q and any(word in q for word in ('compare', 'comparison', 'versus', 'vs')):
+        return 'energy'
     if 'light' in q and any(word in q for word in ('why', 'because', 'reason')):
         return 'why_lights'
     if 'light' in q and any(word in q for word in ('hour', 'hours', 'time', 'long', 'today', 'duration')):
@@ -196,6 +198,19 @@ def _is_period_energy_query(query: str, period: str) -> bool:
     return any(term in q for term in terms)
 
 
+def _is_energy_now_query(query: str) -> bool:
+    q = _normalise(query)
+    if _intent(q) != 'energy':
+        return False
+    now_terms = ('now', 'right now', 'currently', 'at the moment', 'using the most', 'highest', 'top')
+    return any(term in q for term in now_terms) and any(term in q for term in ('using', 'power', 'electricity', 'watts', 'consumer', 'consuming'))
+
+
+def _is_energy_compare_query(query: str) -> bool:
+    q = _normalise(query)
+    return _intent(q) == 'energy' and 'today' in q and 'yesterday' in q and any(term in q for term in ('compare', 'comparison', 'versus', 'vs', 'more', 'less'))
+
+
 def _pick_attr(attrs: dict[str, Any], names: set[str]) -> Any:
     normalised = {_normalise_key(key): value for key, value in attrs.items()}
     for name in names:
@@ -224,31 +239,79 @@ def _octopus_total_cost(app_module: Any, period: str) -> float | None:
     return None
 
 
-def _period_energy_message(answer: Any, period: str, app_module: Any | None = None) -> str:
-    message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
-    total_cost = _octopus_total_cost(app_module, period) if app_module is not None else None
+def _period_line(message: str, period: str) -> tuple[str, str] | None:
     prefix = 'used today' if period == 'today' else 'used yesterday'
-    intro = 'Today so far you have used' if period == 'today' else 'Yesterday you used'
     for raw_line in message.splitlines():
         line = raw_line.strip().strip('•').strip()
         if not line.lower().startswith(prefix):
             continue
         detail = line.split(':', 1)[1].strip() if ':' in line else line
         match = re.search(r'(.+?)\s+costing\s+(£?\d+(?:\.\d+)?)', detail, flags=re.IGNORECASE)
-        if not match:
-            return f'{intro} {detail}.'
-        usage = match.group(1).strip()
-        energy_cost = format_money(match.group(2))
-        if total_cost is None:
-            return f'{intro} {usage}, costing {energy_cost}.'
-        if abs(total_cost - (_safe_float(energy_cost) or 0.0)) < 0.01:
-            return f'{intro} {usage}, costing {format_money(total_cost)}.'
-        return (
-            f'{intro} {usage}. '
-            f'Energy cost was about {energy_cost}. '
-            f'Total cost including standing charge was {format_money(total_cost)}.'
-        )
-    return message
+        if match:
+            return match.group(1).strip(), format_money(match.group(2))
+        return detail, ''
+    return None
+
+
+def _period_energy_message(answer: Any, period: str, app_module: Any | None = None) -> str:
+    message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
+    total_cost = _octopus_total_cost(app_module, period) if app_module is not None else None
+    found = _period_line(message, period)
+    if found is None:
+        return message
+    usage, energy_cost = found
+    intro = 'Today so far you have used' if period == 'today' else 'Yesterday you used'
+    if not energy_cost:
+        return f'{intro} {usage}.'
+    if total_cost is None:
+        return f'{intro} {usage}, costing {energy_cost}.'
+    if abs(total_cost - (_safe_float(energy_cost) or 0.0)) < 0.01:
+        return f'{intro} {usage}, costing {format_money(total_cost)}.'
+    return (
+        f'{intro} {usage}. '
+        f'Energy cost was about {energy_cost}. '
+        f'Total cost including standing charge was {format_money(total_cost)}.'
+    )
+
+
+def _energy_compare_message(answer: Any, app_module: Any | None = None) -> str:
+    message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
+    today = _period_line(message, 'today')
+    yesterday = _period_line(message, 'yesterday')
+    if today is None or yesterday is None:
+        return message
+    today_cost = _octopus_total_cost(app_module, 'today') if app_module is not None else None
+    yesterday_cost = _octopus_total_cost(app_module, 'yesterday') if app_module is not None else None
+    cost_phrase = ''
+    if today_cost is not None and yesterday_cost is not None:
+        diff = today_cost - yesterday_cost
+        if abs(diff) < 0.01:
+            cost_phrase = ' Total cost is about the same as yesterday.'
+        elif diff > 0:
+            cost_phrase = f' Total cost is {format_money(abs(diff))} higher than yesterday.'
+        else:
+            cost_phrase = f' Total cost is {format_money(abs(diff))} lower than yesterday.'
+    return f'Today so far: {today[0]}. Yesterday: {yesterday[0]}.{cost_phrase}'
+
+
+def _energy_now_message(answer: Any, app_module: Any) -> str:
+    message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
+    whole_home = None
+    for raw_line in message.splitlines():
+        line = raw_line.strip()
+        if line.lower().startswith('whole-house power now'):
+            whole_home = line.split(':', 1)[1].strip() if ':' in line else line
+            break
+    parts = []
+    if whole_home:
+        parts.append(f'Whole-house power now is {whole_home}.')
+    top = _top_power_consumers(app_module, 5)
+    if top:
+        device_text = '; '.join(f"{item['label']} is using {item['power']}" for item in top)
+        parts.append(f'Top current users: {device_text}.')
+    if not parts:
+        return 'I cannot see any live power usage right now.'
+    return ' '.join(parts)
 
 
 def build_home_context(app_module: Any) -> dict[str, Any]:
@@ -327,6 +390,12 @@ def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any
         if _is_period_energy_query(query, 'yesterday'):
             message = _period_energy_message(answer, 'yesterday', app_module)
             return {'success': True, 'intent': 'energy_yesterday', 'query': query, 'message': message, 'answer': answer, 'period_only': True}
+        if _is_energy_compare_query(query):
+            message = _energy_compare_message(answer, app_module)
+            return {'success': True, 'intent': 'energy_compare', 'query': query, 'message': message, 'answer': answer}
+        if _is_energy_now_query(query):
+            message = _energy_now_message(answer, app_module)
+            return {'success': True, 'intent': 'energy_now', 'query': query, 'message': message, 'answer': answer, 'top_power_consumers': _top_power_consumers(app_module)}
         message = naturalise_units(_answer_message(answer, 'Energy information is not available yet.'))
         return {'success': True, 'intent': intent, 'query': query, 'message': message, 'answer': answer, 'top_power_consumers': _top_power_consumers(app_module)}
 
