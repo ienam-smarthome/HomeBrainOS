@@ -8,6 +8,7 @@ from typing import Any, Callable
 VERSION = '1.6.8-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
+NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
 
 
 def _safe_call(func: Callable[..., Any] | None, *args: Any, fallback: Any = None, **kwargs: Any) -> Any:
@@ -52,14 +53,20 @@ def format_money(value: Any) -> str:
 
 def _normalise(text: Any) -> str:
     value = str(text or '').lower()
-    for old, new in {'bedroom too': 'bedroom 2', 'bed room too': 'bedroom 2', 'bedroom two': 'bedroom 2', 'bed room two': 'bedroom 2', 'yeseterday': 'yesterday', 'kilowatts': 'kilowatt-hours'}.items():
+    replacements = {
+        'bedroom too': 'bedroom 2', 'bed room too': 'bedroom 2', 'bedroom two': 'bedroom 2', 'bed room two': 'bedroom 2',
+        'yeseterday': 'yesterday', 'kilowatts': 'kilowatt-hours',
+        'humidify': 'dehumidifier', 'dehumidify': 'dehumidifier', 'de humidifier': 'dehumidifier', 'humidifier': 'dehumidifier',
+    }
+    for old, new in replacements.items():
         value = value.replace(old, new)
+    value = re.sub(r'\b(one|two|too|to|three|four)\b', lambda m: NUMBER_WORDS.get(m.group(1), m.group(1)), value)
     value = re.sub(r'[^a-z0-9£\s.-]', ' ', value)
     return re.sub(r'\s+', ' ', value).strip()
 
 
 def _normalise_key(text: Any) -> str:
-    return re.sub(r'[^a-z0-9]', '', str(text or '').lower())
+    return re.sub(r'[^a-z0-9]', '', _normalise(text))
 
 
 def naturalise_units(message: Any) -> str:
@@ -360,6 +367,48 @@ def _energy_now_message(answer: Any, app_module: Any) -> str:
     return ' '.join(parts) if parts else 'I cannot see any live power usage right now.'
 
 
+def _is_switchable(device: dict[str, Any]) -> bool:
+    attrs = _attrs(device)
+    caps = ' '.join(str(c) for c in (device.get('capabilities') or [])).lower()
+    commands = {str(c).lower() for c in (device.get('commands') or [])}
+    return attrs.get('switch') is not None or device.get('category') in ('light', 'switch', 'power_device') or 'switch' in caps or 'on' in commands or 'off' in commands
+
+
+def _voice_dehumidifier_command(app_module: Any, query: str) -> dict[str, Any] | None:
+    q = _normalise(query)
+    match = re.match(r'^(?:turn|switch)\s+(on|off)\s+(?:the\s+)?(.+)$', q)
+    if not match or 'dehumidifier' not in match.group(2):
+        return None
+    command, target = match.group(1), match.group(2)
+    requested_numbers = set(re.findall(r'\b\d+\b', target))
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    if not isinstance(devices, list):
+        return None
+    candidates = []
+    for device in devices:
+        if not isinstance(device, dict) or not _is_switchable(device):
+            continue
+        label = _normalise(_device_label(device))
+        if 'dehumidifier' not in label:
+            continue
+        label_numbers = set(re.findall(r'\b\d+\b', label))
+        if requested_numbers and not requested_numbers.intersection(label_numbers):
+            continue
+        candidates.append(device)
+    if len(candidates) != 1:
+        return None
+    controller = getattr(app_module, 'command_devices', None)
+    if not callable(controller):
+        return {'success': False, 'intent': 'voice_device_command', 'message': f'I understood {_device_label(candidates[0])}, but device control is unavailable.'}
+    result = controller(candidates, command)
+    if isinstance(result, dict):
+        result.setdefault('intent', 'voice_device_command')
+        result.setdefault('resolved_device', _device_label(candidates[0]))
+        result['voice_alias'] = query
+        return result
+    return {'success': True, 'intent': 'voice_device_command', 'message': f'{_device_label(candidates[0])} turned {command}.', 'result': result}
+
+
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     summary = summary if isinstance(summary, dict) else {}
@@ -428,6 +477,11 @@ def wrap_assistant(app_module: Any) -> None:
     if not callable(existing) or getattr(existing, '_homebrain_local_first', False):
         return
     def local_first_assistant(query: str) -> dict[str, Any]:
+        voice_command = _voice_dehumidifier_command(app_module, query)
+        if voice_command:
+            voice_command.setdefault('success', True)
+            voice_command['local_first'] = True
+            return voice_command
         if should_answer_locally(query):
             answer = build_intelligence_answer(app_module, query); answer.setdefault('success', True); answer['local_first'] = True; return answer
         return existing(query)
