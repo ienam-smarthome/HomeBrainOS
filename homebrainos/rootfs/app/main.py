@@ -5624,8 +5624,83 @@ def recent_changes_answer() -> dict[str, Any]:
     }
 
 
+def _room_device_match(device: dict[str, Any], room_query: str) -> bool:
+    q = normalise(room_query or '')
+    if not q:
+        return False
+    room = normalise(device.get('room') or '')
+    label = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+    compact_q = compact_name(q)
+    return (
+        q == room
+        or q in room
+        or q in label
+        or compact_q in compact_name(room)
+        or compact_q in compact_name(label)
+    )
+
+
+def _room_climate_answer(room_query: str, attr: str) -> dict[str, Any] | None:
+    devices = all_devices()
+    matches = []
+    for device in devices:
+        if not _room_device_match(device, room_query):
+            continue
+        value = device.get(attr)
+        if value is None:
+            value = device_attr_value(device, attr)
+        numeric = safe_float(value)
+        if numeric is not None:
+            matches.append((device, numeric))
+
+    if not matches:
+        return None
+
+    # Prefer device labels that look like room meters/sensors, otherwise first match.
+    matches.sort(
+        key=lambda item: (
+            0 if any(word in normalise(item[0].get('label') or item[0].get('name') or '') for word in ('meter', 'sensor')) else 1,
+            str(item[0].get('label') or item[0].get('name') or ''),
+        )
+    )
+    device, value = matches[0]
+    label = device.get('label') or device.get('name') or room_query
+    room = device.get('room') or room_query.title()
+
+    if attr == 'humidity':
+        display = f'{value:g}%'
+        word = 'humidity'
+    elif attr == 'temperature':
+        display = f'{value:g}°C'
+        word = 'temperature'
+    else:
+        display = f'{value:g}'
+        word = attr
+
+    return {
+        'success': True,
+        'intent': f'room_{word}',
+        'message': f'{room} {word}: {display} ({label})',
+        'speech': f'{room} {word} is {display}.',
+        'device': label,
+        'room': room,
+        'value': value,
+        'attribute': attr,
+    }
+
+
 def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     hint = assistant_intent_hint(question)
+    q = normalise(question or '')
+
+    m = re.search(r'(.+?)\s+(humidity|temperature|temp)$', q)
+    if m:
+        room_query = m.group(1).strip()
+        attr = 'temperature' if m.group(2) in ('temperature', 'temp') else 'humidity'
+        climate = _room_climate_answer(room_query, attr)
+        if climate:
+            return climate
+
 
     if hint == 'capability_help':
         return capability_help_answer()
