@@ -192,5 +192,5 @@ def test_register_adds_routes_once_and_updates_version():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == '1.6.8-alpha'
-    assert fake.app.version == '1.6.8-alpha'
+    assert fake.APP_VERSION == '1.7.1-alpha'
+    assert fake.app.version == '1.7.1-alpha'
