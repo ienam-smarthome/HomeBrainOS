@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import hmac
@@ -1834,7 +1834,7 @@ def device_inspector_report() -> dict[str, Any]:
         label_text = normalise(device.get('label') or device.get('name') or '')
         category = str(device.get('category') or '').lower()
         if category in ('unknown', '') or any(word in label_text.split() for word in generic_words):
-            generic_devices.append(device_issue_base(device, 'Generic name/category makes AI understanding less reliable.', 'Rename it with room + purpose, e.g. “Bedroom 1 Lamp” or “Kitchen Door Sensor”.', 'info'))
+            generic_devices.append(device_issue_base(device, 'Generic name/category makes AI understanding less reliable.', 'Rename it with room + purpose, e.g. â€œBedroom 1 Lampâ€ or â€œKitchen Door Sensorâ€.', 'info'))
 
     missing_capability_devices = []
     for device in devices:
@@ -1883,20 +1883,20 @@ def device_inspector_answer() -> dict[str, Any]:
         lines.append('\nAuto-excluded from unknown switch checks:')
         for item in report['auto_excluded_switch_false_positives'][:8]:
             profile = item.get('intelligence', {}).get('profile', 'device')
-            lines.append(f"• {item['label']} — {profile}; {item['reason']}")
+            lines.append(f"â€¢ {item['label']} â€” {profile}; {item['reason']}")
     if report['unknown_switch_states']:
         lines.append('\nUnknown switch states:')
         for item in report['unknown_switch_states'][:10]:
-            lines.append(f"• {item['label']} ({item['room']}) — {item['reason']}")
+            lines.append(f"â€¢ {item['label']} ({item['room']}) â€” {item['reason']}")
     if report['unknown_rooms']:
         lines.append('\nUnknown rooms:')
         for item in report['unknown_rooms'][:10]:
             suggested = f" Suggested: {item['suggested_room']}." if item.get('suggested_room') else ''
-            lines.append(f"• {item['label']} — {item['reason']}{suggested}")
+            lines.append(f"â€¢ {item['label']} â€” {item['reason']}{suggested}")
     if report['duplicate_names']:
         lines.append('\nDuplicate names:')
         for group in report['duplicate_names'][:5]:
-            lines.append(f"• {group['label']} — {group['count']} devices")
+            lines.append(f"â€¢ {group['label']} â€” {group['count']} devices")
     lines.append('\nFix priority: only investigate remaining unknown switch states after auto-exclusions, then assign unknown rooms. TRVs and energy meters are now ignored automatically for switch-state checks.')
     return {'success': True, 'intent': 'device_inspector', 'message': '\n'.join(lines), **report}
 
@@ -2180,6 +2180,7 @@ def stale_device_report() -> dict[str, Any]:
     }
 
 
+
 def _strip_html_report(value: Any) -> str:
     text = str(value or '')
     text = text.replace('<br/>', '\n').replace('<br>', '\n').replace('</div>', '\n').replace('</p>', '\n')
@@ -2195,6 +2196,37 @@ def _strip_html_report(value: Any) -> str:
     return '\n'.join(line for line in lines if line)
 
 
+def _extract_report_section(report: str, heading: str) -> list[str]:
+    lines = [line.strip() for line in str(report or '').replace('\r', '\n').split('\n')]
+    wanted = heading.upper()
+    headings = ('[OFFLINE]', '[LOW BATTERY]', '[NO CHANGE]', '[INFO]', '[OK]')
+    captured: list[str] = []
+    active = False
+    for line in lines:
+        if not line:
+            continue
+        upper = line.upper()
+        if upper.startswith(wanted):
+            active = True
+            continue
+        if active and any(upper.startswith(h) for h in headings):
+            break
+        if active:
+            captured.append(line)
+    return captured
+
+
+def _question_health_scope(question: str | None = None) -> str:
+    q = normalise(question or '')
+    if any(word in q for word in ('offline', 'off line', 'not online')):
+        return 'offline'
+    if any(word in q for word in ('low battery', 'battery low', 'battery devices', 'batteries')):
+        return 'low_battery'
+    if any(word in q for word in ('motion no change', 'no change', 'motion unchanged', 'stuck motion')):
+        return 'motion'
+    return 'full'
+
+
 def _int_attr(device: dict[str, Any], *names: str) -> int:
     value = device_attr_value(device, *names)
     try:
@@ -2203,12 +2235,7 @@ def _int_attr(device: dict[str, Any], *names: str) -> int:
         return 0
 
 
-def device_status_report_display_answer() -> dict[str, Any] | None:
-    """Read the Device Status Report Display virtual device if present.
-
-    This device is fed by the Hubitat Device Status Notifier app and is more
-    reliable for healthStatus/offline detection than Maker API per-device cache.
-    """
+def device_status_report_display_answer(question: str | None = None) -> dict[str, Any] | None:
     candidates = []
     for device in all_devices():
         text = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
@@ -2241,28 +2268,54 @@ def device_status_report_display_answer() -> dict[str, Any] | None:
         or ''
     )
     report = _strip_html_report(report_raw)
-
     if issue_count <= 0 and not report:
         return None
 
-    lines = [
-        'Device health check from Device Status Notifier:',
-        f'Offline: {offline}',
-        f'Low battery: {low}',
-        f'Motion no-change: {motion}',
-    ]
-    if report:
-        lines.append('')
-        lines.append(report)
+    scope = _question_health_scope(question)
+    offline_rows = _extract_report_section(report, '[OFFLINE]')
+    low_rows = _extract_report_section(report, '[LOW BATTERY]')
+    motion_rows = _extract_report_section(report, '[NO CHANGE]')
 
-    speech_parts = []
-    if offline:
-        speech_parts.append(f'{offline} offline')
-    if low:
-        speech_parts.append(f'{low} low battery')
-    if motion:
-        speech_parts.append(f'{motion} motion no-change')
-    speech = 'Device Status Notifier reports ' + ', '.join(speech_parts) if speech_parts else 'No device status issues found.'
+    if scope == 'offline':
+        lines = [f'Offline devices: {offline}']
+        lines.extend(offline_rows if offline_rows else ['None'])
+        speech = f'{offline} offline devices found.' if offline else 'No offline devices found.'
+    elif scope == 'low_battery':
+        lines = [f'Low battery devices: {low}']
+        lines.extend(low_rows if low_rows else ['None'])
+        speech = f'{low} low battery devices found.' if low else 'No low battery devices found.'
+    elif scope == 'motion':
+        lines = [f'Motion no-change devices: {motion}']
+        lines.extend(motion_rows if motion_rows else ['None'])
+        speech = f'{motion} motion no-change devices found.' if motion else 'No motion no-change devices found.'
+    else:
+        lines = [
+            'Device health check from Device Status Notifier:',
+            f'Offline: {offline}',
+            f'Low battery: {low}',
+            f'Motion no-change: {motion}',
+        ]
+        if offline_rows:
+            lines.append('')
+            lines.append('Offline devices:')
+            lines.extend(offline_rows)
+        if low_rows:
+            lines.append('')
+            lines.append('Low battery devices:')
+            lines.extend(low_rows)
+        if motion_rows:
+            lines.append('')
+            lines.append('Motion no-change devices:')
+            lines.extend(motion_rows)
+
+        speech_parts = []
+        if offline:
+            speech_parts.append(f'{offline} offline')
+        if low:
+            speech_parts.append(f'{low} low battery')
+        if motion:
+            speech_parts.append(f'{motion} motion no-change')
+        speech = 'Device Status Notifier reports ' + ', '.join(speech_parts) if speech_parts else 'No device status issues found.'
 
     return {
         'success': True,
@@ -2280,8 +2333,8 @@ def device_status_report_display_answer() -> dict[str, Any] | None:
     }
 
 
-def stale_devices_answer() -> dict[str, Any]:
-    report_display = device_status_report_display_answer()
+def stale_devices_answer(question: str | None = None) -> dict[str, Any]:
+    report_display = device_status_report_display_answer(question)
     if report_display:
         return report_display
     refresh_health_device_details('stale-devices-answer')
@@ -2599,9 +2652,9 @@ def state_usage_summary(devices: list[dict[str, Any]], attr: str = 'switch', exp
     for row in rows:
         if row['seconds'] <= 0 and shown >= 5:
             continue
-        current_text = f" — currently on for {row['on_for']}" if row.get('on_for') else ''
+        current_text = f" â€” currently on for {row['on_for']}" if row.get('on_for') else ''
         room_text = f" ({row['room']})" if row.get('room') and row['room'] != 'Unknown' else ''
-        lines.append(f"• {row['label']}{room_text}: {row['duration']}{current_text}")
+        lines.append(f"â€¢ {row['label']}{room_text}: {row['duration']}{current_text}")
         shown += 1
         if shown >= 10:
             break
@@ -2865,23 +2918,23 @@ def device_health_answer() -> dict[str, Any]:
     healthy_count = max(0, diagnostics['devices'] - stale['issue_count'] - summary['low_batteries'])
     lines = [
         'AI Device Health Monitor:',
-        f"🟢 Healthy: {healthy_count} devices",
-        f"🟡 Needs attention: {stale['issue_count'] + summary['low_batteries']} items",
+        f"ðŸŸ¢ Healthy: {healthy_count} devices",
+        f"ðŸŸ¡ Needs attention: {stale['issue_count'] + summary['low_batteries']} items",
         f"Low batteries: {summary['low_batteries']}",
     ]
     if stale['not_reporting']:
-        lines.append('🔴 Offline / not reporting:\n' + '\n'.join(f"• {item['label']} ({item['room']}) — {item['duration']}" for item in stale['not_reporting'][:8]))
+        lines.append('ðŸ”´ Offline / not reporting:\n' + '\n'.join(f"â€¢ {item['label']} ({item['room']}) â€” {item['duration']}" for item in stale['not_reporting'][:8]))
     if low_battery_devices:
-        lines.append('🟠 Battery:\n' + '\n'.join(f"• {format_summary_device(d, 'battery', '%')}" for d in low_battery_devices))
+        lines.append('ðŸŸ  Battery:\n' + '\n'.join(f"â€¢ {format_summary_device(d, 'battery', '%')}" for d in low_battery_devices))
     attention: list[str] = []
-    attention.extend(f"• {item['label']} motion active for {item['duration']}" for item in stale['motion_active_too_long'][:5])
-    attention.extend(f"• {item['label']} light on for {item['duration']}" for item in stale['lights_on_too_long'][:5])
+    attention.extend(f"â€¢ {item['label']} motion active for {item['duration']}" for item in stale['motion_active_too_long'][:5])
+    attention.extend(f"â€¢ {item['label']} light on for {item['duration']}" for item in stale['lights_on_too_long'][:5])
     if attention:
-        lines.append('🟡 Actionable checks:\n' + '\n'.join(attention))
+        lines.append('ðŸŸ¡ Actionable checks:\n' + '\n'.join(attention))
     if stale.get('occupied_long'):
-        lines.append('🔵 Normal occupancy, not stale:\n' + '\n'.join(f"• {item['label']} ({item['room']}) occupied for {item['duration']}" for item in stale['occupied_long'][:5]))
+        lines.append('ðŸ”µ Normal occupancy, not stale:\n' + '\n'.join(f"â€¢ {item['label']} ({item['room']}) occupied for {item['duration']}" for item in stale['occupied_long'][:5]))
     if diagnostics['unknown_switch_state'] or diagnostics['unknown_room']:
-        lines.append(f"Housekeeping: unknown switch states {diagnostics['unknown_switch_state']}, unknown rooms {diagnostics['unknown_room']} — ask 'what are the unknowns' for the device list.")
+        lines.append(f"Housekeeping: unknown switch states {diagnostics['unknown_switch_state']}, unknown rooms {diagnostics['unknown_room']} â€” ask 'what are the unknowns' for the device list.")
     if diagnostics['last_error']:
         lines.append(f"Last Hubitat error: {diagnostics['last_error']}")
     return {'success': True, 'intent': 'device_health', 'message': '\n'.join(lines), 'summary': summary, 'diagnostics': diagnostics}
@@ -2951,7 +3004,7 @@ def parse_kwh_cost_text(text: Any, marker: str) -> tuple[float | None, float | N
         return None, None
     value = str(text)
     marker_re = r'(?:^|[|,;\s])' + re.escape(marker) + r'\s*:?\s*'
-    pattern = marker_re + r'(?P<kwh>[0-9]+(?:\.[0-9]+)?)\s*kWh(?:\s*\(?£?(?P<cost>[0-9]+(?:\.[0-9]+)?)\)?)?'
+    pattern = marker_re + r'(?P<kwh>[0-9]+(?:\.[0-9]+)?)\s*kWh(?:\s*\(?Â£?(?P<cost>[0-9]+(?:\.[0-9]+)?)\)?)?'
     match = re.search(pattern, value, flags=re.IGNORECASE)
     if not match:
         return None, None
@@ -3011,7 +3064,7 @@ def format_energy_day(label: str, day: dict[str, Any]) -> str:
     if kwh is not None:
         parts.append(f"{round(float(kwh), 2):.2f} kWh")
     if cost is not None:
-        parts.append(f"£{round(float(cost), 2):.2f}")
+        parts.append(f"Â£{round(float(cost), 2):.2f}")
     return f"{label}: " + (' / '.join(parts) if parts else 'not available from the meter yet')
 
 
@@ -3032,8 +3085,8 @@ def energy_advisor_answer() -> dict[str, Any]:
     else:
         lines.append('Worth checking:')
         for item in candidates[:8]:
-            cost = f", about £{item['estimated_monthly_cost_gbp']}/month" if item.get('estimated_monthly_cost_gbp') is not None else ''
-            lines.append(f"• {item['label']} ({item['room']}) — {item['power_display']}, on for {item['on_for']}{cost} [{item['reason']}]")
+            cost = f", about Â£{item['estimated_monthly_cost_gbp']}/month" if item.get('estimated_monthly_cost_gbp') is not None else ''
+            lines.append(f"â€¢ {item['label']} ({item['room']}) â€” {item['power_display']}, on for {item['on_for']}{cost} [{item['reason']}]")
     return {'success': True, 'intent': 'energy_advisor', 'message': '\n'.join(lines), 'summary': summary, 'usage': usage, 'candidates': candidates}
 
 
@@ -3067,7 +3120,7 @@ def recent_home_timeline(limit: int = 25, hours: int = 12) -> list[dict[str, Any
             if attr in ('temperature', 'humidity', 'battery', 'energy'):
                 continue
             ts = int(row['created_at'])
-            items.append({'time': time.strftime('%H:%M', time.localtime(ts)), 'label': label, 'attr': attr, 'value': value, 'source': row['source'], 'created_at': ts, 'text': f"{time.strftime('%H:%M', time.localtime(ts))} — {label} {attr} {value}".strip()})
+            items.append({'time': time.strftime('%H:%M', time.localtime(ts)), 'label': label, 'attr': attr, 'value': value, 'source': row['source'], 'created_at': ts, 'text': f"{time.strftime('%H:%M', time.localtime(ts))} â€” {label} {attr} {value}".strip()})
             if len(items) >= limit:
                 break
     finally:
@@ -3112,12 +3165,12 @@ def home_health_answer() -> dict[str, Any]:
     if diagnostics.get('last_error'):
         penalty += 10
     score = max(0, min(100, 100 - penalty))
-    status = '🟢 Home healthy' if score >= 90 else '🟡 Needs attention' if score >= 70 else '🔴 Needs action'
+    status = 'ðŸŸ¢ Home healthy' if score >= 90 else 'ðŸŸ¡ Needs attention' if score >= 70 else 'ðŸ”´ Needs action'
     lines = [f'Home Health: {score}/100', status, f"Devices: {summary['devices']} · Power: {summary['power_display']} · People home: {summary['people_home']}/{summary['people_tracked']}"]
     if insights:
         lines.append('What needs attention:')
         for insight in insights[:8]:
-            lines.append(f"• {insight['title']}: {insight['detail']}")
+            lines.append(f"â€¢ {insight['title']}: {insight['detail']}")
     else:
         lines.append('No obvious issues found.')
     if stale_device_report().get('occupied_long'):
@@ -3132,7 +3185,7 @@ def daily_briefing_answer() -> dict[str, Any]:
     energy = energy_waste_candidates()
     lines = ['Daily Home Briefing:', f"Home health: {health['score']}/100"]
     if summary['avg_temperature'] is not None:
-        lines.append(f"Inside: {summary['avg_temperature']}°C, humidity {summary['avg_humidity']}%")
+        lines.append(f"Inside: {summary['avg_temperature']}Â°C, humidity {summary['avg_humidity']}%")
     else:
         lines.append('Inside: no temperature summary available')
     lines.extend([f"People home: {summary['people_home']}/{summary['people_tracked']}", f"Power now: {summary['power_display']}"])
@@ -3142,7 +3195,7 @@ def daily_briefing_answer() -> dict[str, Any]:
     insights = health.get('insights') or []
     if insights:
         lines.append('Today, check:')
-        lines.extend(f"• {i['title']} — {i['detail']}" for i in insights[:5])
+        lines.extend(f"â€¢ {i['title']} â€” {i['detail']}" for i in insights[:5])
     if energy:
         lines.append(f"Energy tip: check {energy[0]['label']} ({energy[0]['power_display']}).")
     return {'success': True, 'intent': 'daily_briefing', 'message': '\n'.join(lines), 'summary': summary, 'health': health, 'energy': energy[:5]}
@@ -3186,20 +3239,20 @@ def active_light_explanation_answer(text: str) -> dict[str, Any] | None:
         long_on = False
         if since:
             duration = elapsed_duration_label(since['duration_seconds'])
-            since_text = f' — on for {duration}'
+            since_text = f' â€” on for {duration}'
             long_on = int(since['duration_seconds']) >= 2 * 3600
         activity = room_activity_reason(room, devices)
         reason = activity or 'no recent room activity found in the event cache'
-        lines.append(f"• {label}" + (f" ({room})" if room != 'Unknown' else '') + f"{since_text} — {reason}.")
+        lines.append(f"â€¢ {label}" + (f" ({room})" if room != 'Unknown' else '') + f"{since_text} â€” {reason}.")
         if long_on and not activity:
             suggestions.append(f"{label} has been on for {elapsed_duration_label(since['duration_seconds'])} with no recent room activity; consider turning it off or adding an auto-off rule.")
 
     if len(lights_on) > 12:
-        lines.append(f"• {len(lights_on) - 12} more lights not shown.")
+        lines.append(f"â€¢ {len(lights_on) - 12} more lights not shown.")
     if suggestions:
         lines.append('')
         lines.append('Suggestion:')
-        lines.extend(f"• {s}" for s in suggestions[:3])
+        lines.extend(f"â€¢ {s}" for s in suggestions[:3])
     else:
         lines.append('')
         lines.append('No obvious problem found. These lights look explainable from current state or recent room activity.')
@@ -3279,10 +3332,10 @@ def explain_home_question_answer(text: str) -> dict[str, Any] | None:
         if humid or fans:
             lines.append('Bathroom / humidity explanation:')
             for d in humid[:3]:
-                lines.append(f"• {d.get('label')}: humidity {d.get('humidity')}%")
+                lines.append(f"â€¢ {d.get('label')}: humidity {d.get('humidity')}%")
             for d in fans[:3]:
                 state = d.get('switch') or d.get('motion') or 'unknown'
-                lines.append(f"• {d.get('label')}: {state}")
+                lines.append(f"â€¢ {d.get('label')}: {state}")
             lines.append('Check whether humidity is above your fan threshold or whether a manual/timer boost is still running.')
 
     if 'electricity' in t or 'energy' in t or 'power' in t or 'cost' in t:
@@ -3291,38 +3344,38 @@ def explain_home_question_answer(text: str) -> dict[str, Any] | None:
         lines.append(f"Energy explanation: whole-house power is {summary['power_display']} from {summary['power_source_label']}.")
         if energy:
             lines.append('Top contributors worth checking:')
-            lines.extend(f"• {item['label']} — {item['power_display']}, on for {item['on_for']}" for item in energy[:5])
+            lines.extend(f"â€¢ {item['label']} â€” {item['power_display']}, on for {item['on_for']}" for item in energy[:5])
         else:
             power_devices = sorted([d for d in devices if isinstance(d.get('power'), (int, float))], key=lambda d: d.get('power') or 0, reverse=True)[:5]
             if power_devices:
                 lines.append('Highest live power devices:')
-                lines.extend(f"• {d.get('label')} — {format_power_value(d.get('power'))}" for d in power_devices)
+                lines.extend(f"â€¢ {d.get('label')} â€” {format_power_value(d.get('power'))}" for d in power_devices)
 
     if 'heating' in t or 'cold' in t or 'temperature' in t:
         cold = sorted([d for d in devices if isinstance(d.get('temperature'), (int, float))], key=lambda d: d.get('temperature') or 99)[:5]
         thermostats = [d for d in devices if d.get('category') == 'thermostat' or d.get('heatingSetpoint') is not None]
         lines.append('Heating / temperature explanation:')
         for d in cold[:5]:
-            lines.append(f"• {d.get('label')}: {d.get('temperature')}°C")
+            lines.append(f"â€¢ {d.get('label')}: {d.get('temperature')}Â°C")
         for d in thermostats[:5]:
             sp = d.get('heatingSetpoint')
             mode = d.get('thermostatMode') or 'unknown mode'
             state = d.get('thermostatOperatingState') or 'unknown state'
-            lines.append(f"• {d.get('label')}: set {sp}°C, {mode}, {state}")
+            lines.append(f"â€¢ {d.get('label')}: set {sp}Â°C, {mode}, {state}")
 
     if 'stale' in t or 'offline' in t or 'not reporting' in t:
         stale = stale_device_report()
         lines.append('Device health explanation:')
         if stale['not_reporting']:
-            lines.extend(f"• {i['label']}: no real activity for {i['duration']} ({i.get('confidence','unknown')} confidence)" for i in stale['not_reporting'][:5])
+            lines.extend(f"â€¢ {i['label']}: no real activity for {i['duration']} ({i.get('confidence','unknown')} confidence)" for i in stale['not_reporting'][:5])
         if stale['occupied_long']:
-            lines.extend(f"• {i['label']}: occupied for {i['duration']} — normal for presence/mmWave sensors, not stale" for i in stale['occupied_long'][:5])
+            lines.extend(f"â€¢ {i['label']}: occupied for {i['duration']} â€” normal for presence/mmWave sensors, not stale" for i in stale['occupied_long'][:5])
         if not stale['not_reporting'] and not stale['occupied_long']:
             lines.append('No obvious offline or incorrectly-stale device issue found.')
 
     if not lines:
         return None
-    return {'success': True, 'intent': intent, 'message': '\n'.join(lines), 'speech': ' '.join(line.lstrip('• ') for line in lines[:6])}
+    return {'success': True, 'intent': intent, 'message': '\n'.join(lines), 'speech': ' '.join(line.lstrip('â€¢ ') for line in lines[:6])}
 
 
 def room_intelligence_answer(text: str) -> dict[str, Any] | None:
@@ -3346,7 +3399,7 @@ def room_intelligence_answer(text: str) -> dict[str, Any] | None:
     lines = [f"{payload['room']['room']} summary:"]
     lines.append('Occupied' if occupied else 'No current occupancy detected')
     if temps:
-        lines.append(f"Temperature: {round(sum(temps)/len(temps), 1)}°C")
+        lines.append(f"Temperature: {round(sum(temps)/len(temps), 1)}Â°C")
     if hums:
         lines.append(f"Humidity: {round(sum(hums)/len(hums), 1)}%")
     lines.append(f"Lights on: {len(lights_on)}")
@@ -3374,9 +3427,9 @@ def what_changed_answer() -> dict[str, Any]:
     top = sorted(grouped.items(), key=lambda kv: kv[1], reverse=True)[:5]
     lines = ['What changed in the last 24 hours:', f"{len(items)} recent events recorded."]
     lines.append('Most active devices:')
-    lines.extend(f"• {name}: {count} events" for name, count in top)
+    lines.extend(f"â€¢ {name}: {count} events" for name, count in top)
     lines.append('Latest events:')
-    lines.extend('• ' + item['text'] for item in items[:8])
+    lines.extend('â€¢ ' + item['text'] for item in items[:8])
     return {'success': True, 'intent': 'what_changed', 'message': '\n'.join(lines), 'events': items, 'top_devices': top}
 
 
@@ -3397,7 +3450,7 @@ def recommendations_answer() -> dict[str, Any]:
             recs.append('Review devices left on with measurable power draw, especially standby loads overnight.')
     if not recs:
         recs.append('No urgent recommendations. Next useful improvement is to add more event callbacks so HomeBrain can build better history.')
-    lines = ['Recommended actions:'] + [f'• {r}' for r in recs[:8]]
+    lines = ['Recommended actions:'] + [f'â€¢ {r}' for r in recs[:8]]
     return {'success': True, 'intent': 'recommendations', 'message': '\n'.join(lines), 'insights': insights, 'recommendations': recs}
 
 
@@ -3510,7 +3563,7 @@ def automation_health_answer() -> dict[str, Any]:
     score = max(0, score)
     lines = ['Automation Health:', f'Score: {score}/100']
     for check in checks:
-        icon = {'success': '✅', 'warning': '⚠️', 'critical': '🔴', 'unknown': 'ℹ️'}.get(check['status'], '•')
+        icon = {'success': 'âœ…', 'warning': 'âš ï¸', 'critical': 'ðŸ”´', 'unknown': 'â„¹ï¸'}.get(check['status'], 'â€¢')
         lines.append(f"{icon} {check['name']}: {check['detail']}")
         if check.get('recommendation'):
             lines.append(f"   Action: {check['recommendation']}")
@@ -3532,7 +3585,7 @@ def automation_explain_answer(text: str) -> dict[str, Any] | None:
         return {'success': True, 'intent': 'automation_explain', 'message': 'No matching automation issue found.', 'checks': []}
     lines = ['Automation explanation:']
     for c in checks:
-        lines.append(f"• {c['name']}: {c['detail']}")
+        lines.append(f"â€¢ {c['name']}: {c['detail']}")
         lines.append(f"  Next: {c['recommendation']}")
     return {'success': True, 'intent': 'automation_explain', 'message': '\n'.join(lines), 'checks': checks}
 
@@ -3878,7 +3931,7 @@ def performance_advisor_answer() -> dict[str, Any]:
         warnings.append('Maker API request rate is high. Prefer Hubitat event webhooks and cached answers.')
     if LAST_ERROR:
         warnings.append(f'Last Hubitat refresh error: {LAST_ERROR}')
-    level = '🟢 Healthy' if not warnings else '🟡 Needs tuning' if calls_per_hour < 600 else '🔴 High load risk'
+    level = 'ðŸŸ¢ Healthy' if not warnings else 'ðŸŸ¡ Needs tuning' if calls_per_hour < 600 else 'ðŸ”´ High load risk'
     lines = [
         'Performance advisor:',
         level,
@@ -3898,7 +3951,7 @@ def performance_advisor_answer() -> dict[str, Any]:
     lines.append(f"Detail refresh batch: {CONFIG.get('device_detail_refresh_batch')} every {CONFIG.get('device_detail_refresh_seconds')}s")
     if warnings:
         lines.append('\nWarnings:')
-        lines.extend(f"• {w}" for w in warnings)
+        lines.extend(f"â€¢ {w}" for w in warnings)
     else:
         lines.append('\nNo performance warnings detected.')
     lines.append('\nOptimisation active: cached API answers, throttled full refreshes, smaller device-detail batches, and event-driven cache updates.')
@@ -4884,7 +4937,7 @@ def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
         return {'success': False, 'message': f"Setpoint command failed for {device['label']}: {public_error(exc)}", 'device': device}
     refresh_devices_for_context('command-context')
     updated = update_cached_setpoint(device_id, new_value)
-    return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}°", 'device': updated or device, 'setpoint': new_value}
+    return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}Â°", 'device': updated or device, 'setpoint': new_value}
 
 
 def set_setpoint_devices(devices: list[dict[str, Any]], setpoint: float, explicit_bulk: bool = False) -> dict[str, Any]:
@@ -4947,12 +5000,12 @@ def set_heating_mode(mode: str, target: str = 'home') -> dict[str, Any]:
                 if current_setpoint is None or current_setpoint < target_setpoint:
                     maker_command_value(device['id'], 'setHeatingSetpoint', target_setpoint)
                     changed_setpoints[device['id']] = target_setpoint
-                    setpoints.append(f"{device['label']}: {target_setpoint}°")
+                    setpoints.append(f"{device['label']}: {target_setpoint}Â°")
                 changed.append(device['label'])
             elif current_setpoint is None or current_setpoint > off_setpoint:
                 maker_command_value(device['id'], 'setHeatingSetpoint', off_setpoint)
                 changed_setpoints[device['id']] = off_setpoint
-                setpoints.append(f"{device['label']}: {off_setpoint:g}°")
+                setpoints.append(f"{device['label']}: {off_setpoint:g}Â°")
                 changed.append(device['label'])
             else:
                 changed.append(device['label'])
@@ -4996,7 +5049,7 @@ def answer_attribute(target: str, attr: str) -> dict[str, Any]:
     if not candidates:
         return {'success': False, 'message': f'I could not find {attr} for {target}.'}
     d = candidates[0]
-    unit = {'temperature': '°C', 'humidity': '%', 'power': 'W', 'battery': '%', 'energy': 'kWh', 'level': '%', 'illuminance': ' lux'}.get(attr, '')
+    unit = {'temperature': 'Â°C', 'humidity': '%', 'power': 'W', 'battery': '%', 'energy': 'kWh', 'level': '%', 'illuminance': ' lux'}.get(attr, '')
     speech_value = {
         'temperature': spoken_degrees,
         'humidity': spoken_percent,
@@ -5235,7 +5288,7 @@ def assistant(text: str) -> dict[str, Any]:
         or 'not reporting' in t
         or 'offline device' in t
     ):
-        return stale_devices_answer()
+        return stale_devices_answer(text)
     if 'device health' in t:
         return device_health_answer()
     if 'what changed' in t or 'changed today' in t or 'changed since yesterday' in t:
@@ -5898,3 +5951,5 @@ def index():
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=8787)
+
+

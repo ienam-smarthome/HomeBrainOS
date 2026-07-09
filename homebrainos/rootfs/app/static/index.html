@@ -56,14 +56,14 @@
     <button class="secondary" onclick="quick('which rooms are cold', this)">❄️ Cold rooms</button>
     <button class="secondary" onclick="quick('what is the weather', this)">🌦️ Weather</button>
     <details class="tools" style="grid-column:1/-1">
-      <summary>Developer tools</summary>
+      <summary>Diagnostics & Maintenance</summary>
       <div class="grid tools-grid">
-        <button class="secondary" onclick="quick('hub health', this)">Hub health</button>
-        <button class="secondary" onclick="quick('event diagnostics', this)">Event diagnostics</button>
-        <button class="secondary" onclick="quick('diagnostics', this)">App diagnostics</button>
-        <button class="secondary" onclick="quick('hub logs', this)">Hub logs</button>
-        <button class="secondary" title="Update devices from Hubitat without deleting the local cache" onclick="quick('refresh cache', this)">Refresh from Hubitat</button>
-        <button class="secondary" title="Delete the local device cache, then rebuild it from Hubitat" onclick="clearRefresh(event)">Clear cache + reload</button>
+        <button class="secondary" onclick="quick('hub health', this)">Hub status</button>
+        <button class="secondary" onclick="quick('event diagnostics', this)">Device events</button>
+        <button class="secondary" onclick="quick('diagnostics', this)">Device diagnostics</button>
+        <button class="secondary" onclick="quick('hub logs', this)">Logs</button>
+        <button class="secondary" title="Update devices from Hubitat without deleting the local cache" onclick="quick('refresh cache', this)">Refresh devices</button>
+        <button class="secondary" title="Delete the local device cache, then rebuild it from Hubitat" onclick="clearRefresh(event)">Rebuild cache</button>
         <button class="secondary" onclick="showAiContext(event)">AI context</button>
       </div>
     </details>
