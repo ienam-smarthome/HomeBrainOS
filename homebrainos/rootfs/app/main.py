@@ -5735,39 +5735,48 @@ def _smart_match_score(device: dict[str, Any], subject: str, attr: str) -> int:
     label_c = compact_name(label)
     room_c = compact_name(room)
 
-    score = 0
+    match_score = 0
 
+    # First prove that the requested subject matches this device/room.
     if subject_n == room:
-        score += 90
+        match_score += 120
     elif subject_n in room or room in subject_n:
-        score += 60
+        match_score += 80
     elif subject_c and subject_c in room_c:
-        score += 70
+        match_score += 90
 
     if subject_n == label:
-        score += 100
+        match_score += 130
     elif subject_n in label:
-        score += 80
+        match_score += 100
     elif subject_c and subject_c in label_c:
-        score += 85
+        match_score += 110
 
     # Split words allow "bathroom humidity" to match "BathroomMeter".
     for word in subject_n.split():
         if len(word) < 3:
             continue
+        word_c = compact_name(word)
         if word in label:
-            score += 25
+            match_score += 30
         if word in room:
-            score += 25
-        if compact_name(word) in label_c:
-            score += 20
+            match_score += 30
+        if word_c and word_c in label_c:
+            match_score += 25
+        if word_c and word_c in room_c:
+            match_score += 25
 
-    # Prefer devices that actually expose the requested attribute.
+    # Critical: do not match random sensors just because they expose the attribute.
+    if match_score <= 0:
+        return 0
+
     value = device.get(attr)
     if value is None:
         value = device_attr_value(device, attr)
-    if value is not None:
-        score += 100
+    if value is None:
+        return 0
+
+    score = match_score + 100
 
     text = label + ' ' + room + ' ' + normalise(device.get('category') or '')
     if attr in ('humidity', 'temperature') and any(w in text for w in ('meter', 'sensor', 'climate')):
@@ -5853,7 +5862,7 @@ def smart_device_value_answer(question: str) -> dict[str, Any] | None:
     return {
         'success': True,
         'intent': 'smart_device_value',
-        'message': f'{label} {attr}: {display}\nRoom: {room}',
+        'message': f'{attr.title()}: {display}\nDevice: {label}\nRoom: {room}',
         'speech': f'{label} {attr} is {display}.',
         'device': label,
         'room': room,
