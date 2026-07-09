@@ -5872,8 +5872,163 @@ def smart_device_value_answer(question: str) -> dict[str, Any] | None:
     }
 
 
+def direct_value_lookup_answer(question: str) -> dict[str, Any] | None:
+    q = normalise(question or '').strip()
+
+    # Do not steal control, list, summary, or tile questions.
+    if (
+        not q
+        or q.startswith(('turn ', 'switch ', 'set ', 'dim ', 'brighten ', 'increase ', 'decrease '))
+        or q.startswith(('which ', 'show ', 'list ', 'home '))
+        or ' tile' in q
+        or 'explain ' in q
+        or 'rooms have motion' in q
+        or 'motion sensors' in q
+    ):
+        return None
+
+    attr_aliases = {
+        'humidity': ('humidity', 'humid'),
+        'temperature': ('temperature', 'temp'),
+        'battery': ('battery', 'batteries'),
+        'power': ('power', 'watts', 'watt'),
+        'energy': ('energy', 'kwh'),
+        'contact': ('contact', 'door', 'window'),
+        'motion': ('motion', 'movement'),
+        'switch': ('switch', 'state', 'status'),
+    }
+
+    requested_attr = None
+    for attr, words in attr_aliases.items():
+        if any(re.search(rf'\b{re.escape(word)}\b', q) for word in words):
+            requested_attr = attr
+            break
+
+    if not requested_attr:
+        return None
+
+    subject = q
+    for word in attr_aliases[requested_attr]:
+        subject = re.sub(rf'\b{re.escape(word)}\b', ' ', subject)
+    subject = re.sub(r'\b(what|whats|what is|the|is|are|of|for|in|inside|current|now|please|check|read|get|show|me)\b', ' ', subject)
+    subject = re.sub(r'\s+', ' ', subject).strip()
+
+    if not subject or subject in {'home', 'house', 'room', 'rooms', 'device', 'devices', 'sensor', 'sensors'}:
+        return None
+
+    subject_c = compact_name(subject)
+    matches = []
+
+    for device in all_devices():
+        label = str(device.get('label') or device.get('name') or str(device.get('id') or '')).strip()
+        room = str(device.get('room') or '').strip()
+        hay = normalise(f'{label} {room}')
+        hay_c = compact_name(hay)
+
+        subject_match = (
+            subject in hay
+            or subject_c in hay_c
+            or any(len(w) >= 3 and compact_name(w) in hay_c for w in subject.split())
+        )
+
+        if not subject_match:
+            continue
+
+        value = device.get(requested_attr)
+        if value is None:
+            value = device_attr_value(device, requested_attr)
+
+        # Extra case-insensitive/raw-attribute fallback.
+        if value is None:
+            attrs = device_attribute_map(device)
+            for key, raw in attrs.items():
+                if compact_name(key) == compact_name(requested_attr):
+                    value = raw
+                    break
+
+        if value is None:
+            continue
+
+        score = 0
+        label_n = normalise(label)
+        room_n = normalise(room)
+        label_c = compact_name(label)
+        room_c = compact_name(room)
+
+        if subject == label_n:
+            score += 200
+        elif subject_c == label_c:
+            score += 190
+        elif subject_c in label_c:
+            score += 160
+        elif subject in label_n:
+            score += 150
+
+        if subject == room_n:
+            score += 170
+        elif subject_c == room_c:
+            score += 160
+        elif subject_c in room_c:
+            score += 150
+        elif subject in room_n:
+            score += 140
+
+        for word in subject.split():
+            wc = compact_name(word)
+            if len(wc) >= 3 and wc in label_c:
+                score += 40
+            if len(wc) >= 3 and wc in room_c:
+                score += 40
+
+        text = normalise(f'{label} {room} {device.get("category") or ""}')
+        if requested_attr in ('humidity', 'temperature') and any(w in text for w in ('meter', 'sensor', 'climate')):
+            score += 30
+
+        matches.append((score, device, value))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: item[0], reverse=True)
+    score, device, value = matches[0]
+
+    label = device.get('label') or device.get('name') or str(device.get('id'))
+    room = device.get('room') or 'Unknown'
+
+    if requested_attr in ('humidity', 'battery'):
+        num = safe_float(value)
+        display = f'{num:g}%' if num is not None else str(value)
+    elif requested_attr == 'temperature':
+        num = safe_float(value)
+        display = f'{num:g}°C' if num is not None else str(value)
+    elif requested_attr == 'power':
+        num = safe_float(value)
+        display = f'{num:g}W' if num is not None else str(value)
+    elif requested_attr == 'energy':
+        num = safe_float(value)
+        display = f'{num:g}kWh' if num is not None else str(value)
+    else:
+        display = str(value)
+
+    return {
+        'success': True,
+        'intent': 'direct_value_lookup',
+        'message': f'{requested_attr.title()}: {display}\nDevice: {label}\nRoom: {room}',
+        'speech': f'{label} {requested_attr} is {display}.',
+        'device': label,
+        'room': room,
+        'attribute': requested_attr,
+        'value': value,
+        'match_score': score,
+    }
+
+
 def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     hint = assistant_intent_hint(question)
+
+    direct_value = direct_value_lookup_answer(question)
+    if direct_value:
+        return direct_value
 
     smart_value = smart_device_value_answer(question)
     if smart_value:
