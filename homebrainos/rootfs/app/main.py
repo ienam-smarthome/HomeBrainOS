@@ -2400,6 +2400,101 @@ def device_status_report_display_answer(question: str | None = None) -> dict[str
     }
 
 
+def _status_report_rows() -> dict[str, list[str]]:
+    report_answer = device_status_report_display_answer('device health')
+    if not report_answer:
+        return {'offline': [], 'low_battery': [], 'motion': []}
+    report = ((report_answer.get('stale') or {}).get('report') or '')
+    return {
+        'offline': _extract_report_section(report, '[OFFLINE]'),
+        'low_battery': _extract_report_section(report, '[LOW BATTERY]'),
+        'motion': _extract_report_section(report, '[NO CHANGE]'),
+    }
+
+
+def _report_row_keywords(row: str) -> set[str]:
+    name = _device_name_from_report_row(row)
+    text = normalise(name)
+    words = {w for w in re.split(r'[^a-z0-9]+', text) if len(w) >= 3}
+    return words
+
+
+def _device_issue_lookup_answer(question: str) -> dict[str, Any] | None:
+    q = normalise(question)
+    if not any(word in q for word in ('check', 'status', 'wrong', 'offline', 'battery', 'issue', 'problem', 'why')):
+        return None
+
+    rows = _status_report_rows()
+    all_rows: list[tuple[str, str]] = []
+    all_rows.extend(('offline', row) for row in rows.get('offline', []))
+    all_rows.extend(('low_battery', row) for row in rows.get('low_battery', []))
+    all_rows.extend(('motion', row) for row in rows.get('motion', []))
+
+    if not all_rows:
+        return None
+
+    q_words = {w for w in re.split(r'[^a-z0-9]+', q) if len(w) >= 3}
+    ignored = {
+        'check', 'status', 'wrong', 'offline', 'battery', 'issue', 'issues',
+        'problem', 'problems', 'device', 'devices', 'what', 'why', 'with',
+        'the', 'has', 'have', 'low', 'urgent'
+    }
+    q_words = q_words - ignored
+
+    best: tuple[int, str, str] | None = None
+    for section, row in all_rows:
+        row_words = _report_row_keywords(row)
+        score = len(q_words & row_words)
+        name = normalise(_device_name_from_report_row(row))
+        if name and name in q:
+            score += 5
+        if score > 0 and (best is None or score > best[0]):
+            best = (score, section, row)
+
+    if best is None:
+        return None
+
+    _, section, row = best
+    advice = _health_advice_for_row(row, section)
+    name = _device_name_from_report_row(row)
+
+    if section == 'offline':
+        status = 'offline'
+    elif section == 'low_battery':
+        status = 'low battery'
+    else:
+        status = 'stale/no-change'
+
+    message = f'{name}: {status}\n{_clean_report_row(row)}\n\nRecommended action:\n{advice}'
+    return {
+        'success': True,
+        'intent': 'device_issue_lookup',
+        'message': message,
+        'speech': advice,
+        'device': name,
+        'status': status,
+        'source_row': row,
+    }
+
+
+def battery_replacement_list_answer() -> dict[str, Any] | None:
+    rows = _status_report_rows().get('low_battery', [])
+    if not rows:
+        return None
+
+    lines = ['Battery replacement list:']
+    for idx, row in enumerate(rows[:12], start=1):
+        lines.append(f'{idx}. {_clean_report_row(row)}')
+
+    return {
+        'success': True,
+        'intent': 'battery_replacement_list',
+        'message': '\n'.join(lines),
+        'speech': f'{len(rows)} devices need battery attention.',
+        'count': len(rows),
+    }
+
+
 def stale_devices_answer(question: str | None = None) -> dict[str, Any]:
     report_display = device_status_report_display_answer(question)
     if report_display:
@@ -5344,6 +5439,20 @@ def assistant(text: str) -> dict[str, Any]:
         return timeline_answer()
     if 'energy advisor' in t or 'energy insight' in t or 'electricity high' in t or 'wasting electricity' in t or 'energy waste' in t:
         return energy_advisor_answer()
+    if (
+        'battery replacement list' in t
+        or 'replace batteries' in t
+        or 'which batteries' in t
+        or 'batteries need replacing' in t
+    ):
+        battery_list = battery_replacement_list_answer()
+        if battery_list:
+            return battery_list
+
+    issue_lookup = _device_issue_lookup_answer(text)
+    if issue_lookup:
+        return issue_lookup
+
     if (
         'fix first' in t
         or 'urgent device' in t
