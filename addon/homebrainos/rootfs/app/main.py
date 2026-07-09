@@ -5689,8 +5689,186 @@ def _room_climate_answer(room_query: str, attr: str) -> dict[str, Any] | None:
     }
 
 
+ASSISTANT_ATTR_WORDS = {
+    'humidity': ('humidity', 'humid'),
+    'temperature': ('temperature', 'temp', 'cold', 'warm'),
+    'battery': ('battery', 'batteries'),
+    'power': ('power', 'watts', 'watt', 'w'),
+    'energy': ('energy', 'kwh'),
+    'motion': ('motion', 'movement'),
+    'contact': ('contact', 'door', 'window', 'open', 'closed'),
+    'switch': ('switch', 'state', 'status', 'on', 'off'),
+}
+
+
+def _assistant_requested_attr(question: str) -> str | None:
+    q = normalise(question or '')
+    for attr, words in ASSISTANT_ATTR_WORDS.items():
+        if any(word in q for word in words):
+            return attr
+    return None
+
+
+def _assistant_subject_text(question: str, attr: str | None) -> str:
+    q = normalise(question or '')
+    remove_words = {
+        'what', 'whats', 'what is', 'show', 'tell', 'me', 'the', 'is', 'are',
+        'current', 'now', 'please', 'status', 'of', 'for', 'in', 'inside',
+        'check', 'get', 'read', 'value'
+    }
+    if attr:
+        for word in ASSISTANT_ATTR_WORDS.get(attr, (attr,)):
+            q = q.replace(word, ' ')
+    for word in sorted(remove_words, key=len, reverse=True):
+        q = re.sub(rf'\b{re.escape(word)}\b', ' ', q)
+    return re.sub(r'\s+', ' ', q).strip()
+
+
+def _smart_match_score(device: dict[str, Any], subject: str, attr: str) -> int:
+    if not subject:
+        return 0
+
+    subject_n = normalise(subject)
+    subject_c = compact_name(subject_n)
+    label = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+    room = normalise(device.get('room') or '')
+    label_c = compact_name(label)
+    room_c = compact_name(room)
+
+    score = 0
+
+    if subject_n == room:
+        score += 90
+    elif subject_n in room or room in subject_n:
+        score += 60
+    elif subject_c and subject_c in room_c:
+        score += 70
+
+    if subject_n == label:
+        score += 100
+    elif subject_n in label:
+        score += 80
+    elif subject_c and subject_c in label_c:
+        score += 85
+
+    # Split words allow "bathroom humidity" to match "BathroomMeter".
+    for word in subject_n.split():
+        if len(word) < 3:
+            continue
+        if word in label:
+            score += 25
+        if word in room:
+            score += 25
+        if compact_name(word) in label_c:
+            score += 20
+
+    # Prefer devices that actually expose the requested attribute.
+    value = device.get(attr)
+    if value is None:
+        value = device_attr_value(device, attr)
+    if value is not None:
+        score += 100
+
+    text = label + ' ' + room + ' ' + normalise(device.get('category') or '')
+    if attr in ('humidity', 'temperature') and any(w in text for w in ('meter', 'sensor', 'climate')):
+        score += 30
+    if attr == 'battery' and ('battery' in text or device.get('battery') is not None):
+        score += 30
+    if attr == 'power' and any(w in text for w in ('plug', 'socket', 'meter', 'power')):
+        score += 25
+    if attr == 'contact' and any(w in text for w in ('door', 'window', 'contact')):
+        score += 25
+
+    return score
+
+
+def _format_attr_value(attr: str, value: Any) -> str:
+    if attr in ('humidity', 'battery'):
+        num = safe_float(value)
+        return f'{num:g}%' if num is not None else str(value)
+    if attr == 'temperature':
+        num = safe_float(value)
+        return f'{num:g}°C' if num is not None else str(value)
+    if attr == 'power':
+        num = safe_float(value)
+        return f'{num:g}W' if num is not None else str(value)
+    if attr == 'energy':
+        num = safe_float(value)
+        return f'{num:g}kWh' if num is not None else str(value)
+    return str(value)
+
+
+def smart_device_value_answer(question: str) -> dict[str, Any] | None:
+    q = normalise(question or '')
+
+    # Do not steal existing deterministic intents.
+    if (
+        q.startswith(('turn ', 'switch ', 'set ', 'dim ', 'brighten ', 'increase ', 'decrease '))
+        or 'explain ' in q
+        or ' tile' in q
+        or q.startswith('home ')
+        or q.startswith('which ')
+        or q.startswith('show ')
+        or q.startswith('list ')
+        or 'rooms have motion' in q
+        or 'motion sensors' in q
+    ):
+        return None
+
+    attr = _assistant_requested_attr(question)
+    if not attr:
+        return None
+
+    subject = _assistant_subject_text(question, attr)
+    if not subject:
+        return None
+
+    # Require a real subject, not generic summary words.
+    if subject in {'home', 'house', 'summary', 'tile', 'tiles', 'devices', 'device', 'sensors', 'sensor', 'rooms', 'room'}:
+        return None
+
+    candidates = []
+    for device in all_devices():
+        value = device.get(attr)
+        if value is None:
+            value = device_attr_value(device, attr)
+        if value is None:
+            continue
+        score = _smart_match_score(device, subject, attr)
+        if score > 0:
+            candidates.append((score, device, value))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    score, device, value = candidates[0]
+    if score < 80:
+        return None
+
+    label = device.get('label') or device.get('name') or str(device.get('id'))
+    room = device.get('room') or 'Unknown'
+    display = _format_attr_value(attr, value)
+
+    return {
+        'success': True,
+        'intent': 'smart_device_value',
+        'message': f'{label} {attr}: {display}\nRoom: {room}',
+        'speech': f'{label} {attr} is {display}.',
+        'device': label,
+        'room': room,
+        'attribute': attr,
+        'value': value,
+        'match_score': score,
+    }
+
+
 def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     hint = assistant_intent_hint(question)
+
+    smart_value = smart_device_value_answer(question)
+    if smart_value:
+        return smart_value
     q = normalise(question or '')
 
     m = re.search(r'(.+?)\s+(humidity|temperature|temp)$', q)
