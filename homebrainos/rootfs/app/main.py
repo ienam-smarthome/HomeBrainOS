@@ -2169,7 +2169,17 @@ def stale_devices_answer() -> dict[str, Any]:
     if report.get('occupied_long'):
         items = report['occupied_long'][:8]
         lines.append('Normal occupancy, not stale:\n' + '\n'.join(f"{item['label']} ({item['room']}) occupied for {item['duration']}" for item in items))
-    message = 'Device health check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
+    if not lines and report.get('issue_count'):
+        fallback_items = []
+        for section in ('offline', 'motion_active', 'lights_on', 'not_reporting'):
+            for item in report.get(section, [])[:8]:
+                reason = ', '.join(item.get('reasons') or [item.get('state') or section])
+                fallback_items.append(f"{item.get('label')} ({item.get('room')}) - {reason}")
+        if fallback_items:
+            lines.append('Detected issues:\\n' + '\\n'.join(fallback_items))
+            spoken.extend(fallback_items)
+
+    message = 'Device health check:\\n' + ('\\n\\n'.join(lines) if lines else 'No stale device issues found.')
     speech = f"Stale device check found {report['issue_count']} possible issues: {spoken_list(spoken)}" if spoken else 'No stale device issues found.'
     return {'success': True, 'intent': 'stale_devices', 'message': message, 'speech': speech, 'stale': report}
 
