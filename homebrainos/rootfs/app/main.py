@@ -2218,11 +2218,13 @@ def _extract_report_section(report: str, heading: str) -> list[str]:
 
 def _question_health_scope(question: str | None = None) -> str:
     q = normalise(question or '')
+    if any(word in q for word in ('fix first', 'priority', 'priorities', 'urgent', 'attention', 'what should i fix', 'what needs fixing', 'most important')):
+        return 'priority'
     if any(word in q for word in ('offline', 'off line', 'not online')):
         return 'offline'
     if any(word in q for word in ('low battery', 'battery low', 'battery devices', 'batteries')):
         return 'low_battery'
-    if any(word in q for word in ('motion no change', 'no change', 'motion unchanged', 'stuck motion')):
+    if any(word in q for word in ('stale', 'motion no change', 'no change', 'motion unchanged', 'stuck motion', 'not changed')):
         return 'motion'
     return 'full'
 
@@ -2233,6 +2235,67 @@ def _int_attr(device: dict[str, Any], *names: str) -> int:
         return int(float(str(value).strip()))
     except Exception:
         return 0
+
+
+def _clean_report_row(row: str) -> str:
+    text = str(row or '').strip()
+    text = text.replace('🔴', '').replace('🪫', '').replace('⚠️', '').replace('⚠', '').strip()
+    return re.sub(r'\s+', ' ', text)
+
+
+def _device_name_from_report_row(row: str) -> str:
+    text = _clean_report_row(row)
+    if ' - ' in text:
+        return text.split(' - ', 1)[0].strip()
+    return text.strip()
+
+
+def _health_advice_for_row(row: str, section: str) -> str:
+    name = _device_name_from_report_row(row)
+    row_l = normalise(row)
+    name_l = normalise(name)
+
+    if section == 'offline':
+        if any(word in name_l for word in ('roborock', 'vacuum')):
+            return f'{name} is offline - check the dock power, Wi-Fi, and whether the Roborock app can see it.'
+        if any(word in name_l for word in ('tuya', 'remote', 'button')):
+            return f'{name} is offline - press the button once, then check Zigbee mesh and battery contacts.'
+        if any(word in name_l for word in ('switchbot',)):
+            return f'{name} is offline - check SwitchBot/Bluetooth reachability and the battery.'
+        return f'{name} is offline - check power, network/mesh connection, and whether Hubitat can refresh the device.'
+
+    if section == 'low_battery':
+        battery = ''
+        m = re.search(r'(\d+(?:\.\d+)?)\s*%\s*battery', row_l)
+        if m:
+            battery = f" ({m.group(1)}%)"
+        return f'{name} battery is low{battery} - replace batteries soon.'
+
+    if section == 'motion':
+        if any(word in name_l for word in ('fp1', 'fp2', 'fp300', 'presence', 'aqara hi-p', 'hi-p', 'mmwave', 'occupancy')):
+            return f'{name} has not changed recently - likely normal for a presence/mmWave sensor, but check if the room is actually empty.'
+        return f'{name} has not changed recently - check whether the sensor is stuck, blocked, or no longer reporting.'
+
+    return f'{name} needs checking.'
+
+
+def _health_priority_lines(offline_rows: list[str], low_rows: list[str], motion_rows: list[str]) -> list[str]:
+    priorities: list[str] = []
+    for row in offline_rows:
+        priorities.append(_health_advice_for_row(row, 'offline'))
+    for row in low_rows:
+        priorities.append(_health_advice_for_row(row, 'low_battery'))
+    for row in motion_rows:
+        priorities.append(_health_advice_for_row(row, 'motion'))
+
+    if not priorities:
+        return ['No urgent device issues found.']
+
+    lines = ['Top device issues to fix first:']
+    for idx, item in enumerate(priorities[:8], start=1):
+        lines.append(f'{idx}. {item}')
+    return lines
+
 
 
 def device_status_report_display_answer(question: str | None = None) -> dict[str, Any] | None:
@@ -2276,7 +2339,10 @@ def device_status_report_display_answer(question: str | None = None) -> dict[str
     low_rows = _extract_report_section(report, '[LOW BATTERY]')
     motion_rows = _extract_report_section(report, '[NO CHANGE]')
 
-    if scope == 'offline':
+    if scope == 'priority':
+        lines = _health_priority_lines(offline_rows, low_rows, motion_rows)
+        speech = lines[0] if len(lines) == 1 else f'{len(lines) - 1} priority device issues found.'
+    elif scope == 'offline':
         lines = [f'Offline devices: {offline}']
         lines.extend(offline_rows if offline_rows else ['None'])
         speech = f'{offline} offline devices found.' if offline else 'No offline devices found.'
@@ -2394,7 +2460,7 @@ def stale_devices_answer(question: str | None = None) -> dict[str, Any]:
             lines.append('Detected issues:\n' + '\n'.join(fallback_items))
             spoken.extend(fallback_items)
 
-    message = 'Device health check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
+    message = ('\n\n'.join(lines) if lines else 'No stale device issues found.') if _question_health_scope(question) != 'full' else 'Device health check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
     speech = f"Stale device check found {report['issue_count']} possible issues: {spoken_list(spoken)}" if spoken else 'No stale device issues found.'
     return {'success': True, 'intent': 'stale_devices', 'message': message, 'speech': speech, 'stale': report}
 
@@ -5280,6 +5346,16 @@ def assistant(text: str) -> dict[str, Any]:
     if 'home health' in t or 'house health' in t or 'what needs my attention' in t or 'needs attention' in t:
         return home_health_answer()
     if (
+        'fix first' in t
+        or 'urgent device' in t
+        or 'device priorit' in t
+        or 'health priorit' in t
+        or 'what should i fix' in t
+        or 'what needs fixing' in t
+        or 'needs my attention' in t
+    ):
+        return stale_devices_answer(text)
+    if (
         'stale' in t
         or 'stuck' in t
         or 'left on' in t
@@ -5287,6 +5363,8 @@ def assistant(text: str) -> dict[str, Any]:
         or 'active too long' in t
         or 'not reporting' in t
         or 'offline device' in t
+        or 'offline devices' in t
+        or 'low battery' in t
     ):
         return stale_devices_answer(text)
     if 'device health' in t:
