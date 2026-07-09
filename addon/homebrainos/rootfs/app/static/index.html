@@ -668,7 +668,7 @@ function startVoiceStation(){
     };
     r.onend=()=>{
       setListening(false);
-      refreshStationStatus();
+      if(!stationRunningCommand) refreshStationStatus();
       if(stationEnabled && !stationRunningCommand) stationRestart=setTimeout(startLoop,900);
     };
     r.onresult=e=>{
@@ -700,7 +700,7 @@ function startVoiceStation(){
         });
         break;
       }
-      if(heardFinal) refreshStationStatus();
+      if(!heardFinal) refreshStationStatus();
     };
     try{r.start();}catch(e){
       setStationStatus('Voice station could not start: '+e.message);
