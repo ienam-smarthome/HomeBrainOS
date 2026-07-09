@@ -5946,6 +5946,23 @@ def direct_value_lookup_answer(question: str) -> dict[str, Any] | None:
                     value = raw
                     break
 
+        # If the summary cache has the device but not the attribute, fetch live detail.
+        if value is None and device.get('id'):
+            fresh = fetch_live_device_detail(str(device.get('id')))
+            if fresh:
+                update_cached_device_snapshot(fresh)
+                value = fresh.get(requested_attr)
+                if value is None:
+                    value = device_attr_value(fresh, requested_attr)
+                if value is None:
+                    fresh_attrs = device_attribute_map(fresh)
+                    for key, raw in fresh_attrs.items():
+                        if compact_name(key) == compact_name(requested_attr):
+                            value = raw
+                            break
+                if value is not None:
+                    device = fresh
+
         if value is None:
             continue
 
