@@ -2985,21 +2985,21 @@ def device_health_answer() -> dict[str, Any]:
     healthy_count = max(0, diagnostics['devices'] - stale['issue_count'] - summary['low_batteries'])
     lines = [
         'AI Device Health Monitor:',
-        f"ðŸŸ¢ Healthy: {healthy_count} devices",
-        f"ðŸŸ¡ Needs attention: {stale['issue_count'] + summary['low_batteries']} items",
+        f" Healthy: {healthy_count} devices",
+        f" Needs attention: {stale['issue_count'] + summary['low_batteries']} items",
         f"Low batteries: {summary['low_batteries']}",
     ]
     if stale['not_reporting']:
         lines.append('- Offline / not reporting:\n' + '\n'.join(f"- {item['label']} ({item['room']}) - {item['duration']}" for item in stale['not_reporting'][:8]))
     if low_battery_devices:
-        lines.append('ðŸŸ  Battery:\n' + '\n'.join(f"- {format_summary_device(d, 'battery', '%')}" for d in low_battery_devices))
+        lines.append('  Battery:\n' + '\n'.join(f"- {format_summary_device(d, 'battery', '%')}" for d in low_battery_devices))
     attention: list[str] = []
     attention.extend(f"- {item['label']} motion active for {item['duration']}" for item in stale['motion_active_too_long'][:5])
     attention.extend(f"- {item['label']} light on for {item['duration']}" for item in stale['lights_on_too_long'][:5])
     if attention:
-        lines.append('ðŸŸ¡ Actionable checks:\n' + '\n'.join(attention))
+        lines.append(' Actionable checks:\n' + '\n'.join(attention))
     if stale.get('occupied_long'):
-        lines.append('ðŸ”µ Normal occupancy, not stale:\n' + '\n'.join(f"- {item['label']} ({item['room']}) occupied for {item['duration']}" for item in stale['occupied_long'][:5]))
+        lines.append(' Normal occupancy, not stale:\n' + '\n'.join(f"- {item['label']} ({item['room']}) occupied for {item['duration']}" for item in stale['occupied_long'][:5]))
     if diagnostics['unknown_switch_state'] or diagnostics['unknown_room']:
         lines.append(f"Housekeeping: unknown switch states {diagnostics['unknown_switch_state']}, unknown rooms {diagnostics['unknown_room']} - ask 'what are the unknowns' for the device list.")
     if diagnostics['last_error']:
@@ -3232,7 +3232,7 @@ def home_health_answer() -> dict[str, Any]:
     if diagnostics.get('last_error'):
         penalty += 10
     score = max(0, min(100, 100 - penalty))
-    status = 'ðŸŸ¢ Home healthy' if score >= 90 else 'ðŸŸ¡ Needs attention' if score >= 70 else '- Needs action'
+    status = ' Home healthy' if score >= 90 else ' Needs attention' if score >= 70 else '- Needs action'
     lines = [f'Home Health: {score}/100', status, f"Devices: {summary['devices']} · Power: {summary['power_display']} · People home: {summary['people_home']}/{summary['people_tracked']}"]
     if insights:
         lines.append('What needs attention:')
@@ -3630,7 +3630,7 @@ def automation_health_answer() -> dict[str, Any]:
     score = max(0, score)
     lines = ['Automation Health:', f'Score: {score}/100']
     for check in checks:
-        icon = {'success': 'âœ…', 'warning': '- ï¸', 'critical': '-', 'unknown': 'â„¹ï¸'}.get(check['status'], '-')
+        icon = {'success': '', 'warning': '- ï¸', 'critical': '-', 'unknown': 'â„¹ï¸'}.get(check['status'], '-')
         lines.append(f"{icon} {check['name']}: {check['detail']}")
         if check.get('recommendation'):
             lines.append(f"   Action: {check['recommendation']}")
@@ -3998,7 +3998,7 @@ def performance_advisor_answer() -> dict[str, Any]:
         warnings.append('Maker API request rate is high. Prefer Hubitat event webhooks and cached answers.')
     if LAST_ERROR:
         warnings.append(f'Last Hubitat refresh error: {LAST_ERROR}')
-    level = 'ðŸŸ¢ Healthy' if not warnings else 'ðŸŸ¡ Needs tuning' if calls_per_hour < 600 else '- High load risk'
+    level = ' Healthy' if not warnings else ' Needs tuning' if calls_per_hour < 600 else '- High load risk'
     lines = [
         'Performance advisor:',
         level,
@@ -5367,6 +5367,21 @@ def assistant(text: str) -> dict[str, Any]:
             report_display['intent'] = 'device_health'
             return report_display
         return device_health_answer()
+    if (
+        'urgent device issues' in t
+        or 'urgent device issue' in t
+        or 'urgent devices' in t
+        or 'device issues' in t
+        or 'device issue' in t
+        or 'what should i fix first' in t
+        or 'what should i fix' in t
+        or 'what needs fixing' in t
+        or 'fix first' in t
+        or 'device priority' in t
+        or 'device priorities' in t
+        or 'health priority' in t
+    ):
+        return stale_devices_answer(text)
     if 'home health' in t or 'house health' in t or 'what needs my attention' in t or 'needs attention' in t:
         return home_health_answer()
     if (
