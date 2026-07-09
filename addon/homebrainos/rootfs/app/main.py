@@ -5394,8 +5394,285 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
     return None
 
 
+def assistant_suggestions_for_intent(intent: str) -> list[str]:
+    if intent in ('device_health', 'stale_devices', 'device_issue_lookup', 'battery_replacement_list'):
+        return [
+            'what should I fix first?',
+            'offline devices',
+            'low battery devices',
+            'what is using power?',
+        ]
+    if intent in ('power_saving_advisor', 'summary_power'):
+        return [
+            'what can I turn off?',
+            'device health',
+            'home health',
+        ]
+    if intent in ('recent_changes', 'timeline'):
+        return [
+            'what needs attention?',
+            'device health',
+            'which lights are on?',
+        ]
+    return [
+        'home health',
+        'device health',
+        'what can I ask?',
+    ]
+
+
+def with_suggestions(answer: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(answer, dict):
+        return answer
+    intent = str(answer.get('intent') or '')
+    answer.setdefault('suggestions', assistant_suggestions_for_intent(intent))
+    return answer
+
+
+def assistant_intent_hint(question: str) -> str:
+    q = normalise(question or '')
+
+    if q in ('help', 'what can you do', 'commands', 'what can i ask', 'what should i ask'):
+        return 'capability_help'
+
+    if any(phrase in q for phrase in (
+        'what is wrong with',
+        "what's wrong with",
+        'problem with',
+        'issue with',
+        'status of',
+        'check ',
+        'why is',
+    )):
+        return 'device_lookup'
+
+    if any(phrase in q for phrase in (
+        'battery replacement list',
+        'replace batteries',
+        'which batteries',
+        'batteries need replacing',
+    )):
+        return 'battery_list'
+
+    if any(phrase in q for phrase in (
+        'what should i fix first',
+        'what should i fix',
+        'fix first',
+        'urgent device issue',
+        'urgent device issues',
+        'device priorities',
+        'device priority',
+        'what needs fixing',
+    )):
+        return 'device_priority'
+
+    if any(phrase in q for phrase in (
+        'device health',
+        'device status',
+        'device report',
+        'device check',
+        'offline devices',
+        'low battery devices',
+        'stale devices',
+    )):
+        return 'device_health'
+
+    if any(phrase in q for phrase in (
+        'what is using power',
+        'what uses power',
+        'power usage',
+        'what can i turn off',
+        'energy saving',
+        'save electricity',
+        'standby loads',
+    )):
+        return 'power_saving'
+
+    if any(phrase in q for phrase in (
+        'what changed recently',
+        'recent changes',
+        'what happened recently',
+        'recent activity',
+        'home timeline',
+    )):
+        return 'recent_changes'
+
+    if q in ('home health', 'house health', 'is the house okay', 'is home okay', 'what needs attention'):
+        return 'home_health'
+
+    return 'normal'
+
+
+def capability_help_answer() -> dict[str, Any]:
+    message = """You can ask HomeBrain things like:
+
+Home status:
+- home health
+- summarise the home
+- is the house okay?
+
+Device health:
+- device health
+- what should I fix first?
+- offline devices
+- low battery devices
+- stale devices
+- what is wrong with Fridge Door?
+- why is Tuya Remote offline?
+- check Livingroom TRV
+
+Power:
+- what is using power?
+- what can I turn off?
+- energy saving
+
+Rooms and devices:
+- which lights are on?
+- what is on in Bedroom 3?
+- hallway temperature
+- bathroom humidity
+
+Activity:
+- what changed recently?
+- recent activity
+- home timeline"""
+    return {
+        'success': True,
+        'intent': 'capability_help',
+        'message': message,
+        'speech': 'You can ask about home health, device issues, power usage, rooms, and recent activity.',
+    }
+
+
+def power_saving_advisor_answer() -> dict[str, Any]:
+    devices = all_devices()
+    power_devices = []
+    for device in devices:
+        power = safe_float(device.get('power'))
+        if power is not None and power > 0:
+            power_devices.append({
+                'label': device.get('label') or device.get('name') or str(device.get('id')),
+                'room': device.get('room') or 'Unknown',
+                'power': power,
+                'switch': device.get('switch'),
+            })
+
+    power_devices.sort(key=lambda item: item['power'], reverse=True)
+    if not power_devices:
+        return {
+            'success': True,
+            'intent': 'power_saving_advisor',
+            'message': 'No live power-using devices found.',
+            'speech': 'No live power-using devices found.',
+        }
+
+    lines = ['Top power use right now:']
+    for idx, item in enumerate(power_devices[:8], start=1):
+        action = ''
+        if str(item.get('switch') or '').lower() == 'on':
+            action = ' - can be turned off if not needed'
+        lines.append(f"{idx}. {item['label']} ({item['room']}) - {item['power']:.0f}W{action}")
+
+    return {
+        'success': True,
+        'intent': 'power_saving_advisor',
+        'message': '\n'.join(lines),
+        'speech': f"The top power user is {power_devices[0]['label']} at {power_devices[0]['power']:.0f} watts.",
+        'devices': power_devices[:8],
+    }
+
+
+def recent_changes_answer() -> dict[str, Any]:
+    try:
+        conn = db()
+    except sqlite3.Error:
+        return {
+            'success': False,
+            'intent': 'recent_changes',
+            'message': 'Recent changes are not available because the database could not be opened.',
+        }
+
+    try:
+        rows = conn.execute(
+            'SELECT device_id, attr, value, created_at FROM history ORDER BY created_at DESC LIMIT 12'
+        ).fetchall()
+        devices = {str(d.get('id')): d for d in all_devices()}
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            'success': True,
+            'intent': 'recent_changes',
+            'message': 'No recent device changes found.',
+            'speech': 'No recent device changes found.',
+        }
+
+    lines = ['Recent device changes:']
+    now = int(time.time())
+    for row in rows:
+        device = devices.get(str(row['device_id']), {})
+        label = device.get('label') or device.get('name') or str(row['device_id'])
+        age = elapsed_duration_label(max(0, now - int(row['created_at'])))
+        lines.append(f"- {label}: {row['attr']} became {row['value']} {age} ago")
+
+    return {
+        'success': True,
+        'intent': 'recent_changes',
+        'message': '\n'.join(lines),
+        'speech': f'{len(rows)} recent device changes found.',
+    }
+
+
+def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
+    hint = assistant_intent_hint(question)
+
+    if hint == 'capability_help':
+        return capability_help_answer()
+
+    if hint == 'battery_list':
+        battery_list = battery_replacement_list_answer()
+        if battery_list:
+            return battery_list
+
+    if hint == 'device_lookup':
+        issue_lookup = _device_issue_lookup_answer(question)
+        if issue_lookup:
+            return issue_lookup
+
+    if hint == 'device_priority':
+        return stale_devices_answer(question)
+
+    if hint == 'device_health':
+        q = normalise(question)
+        report_display = device_status_report_display_answer(question)
+        if report_display:
+            if 'device health' in q or 'device status' in q or 'device report' in q or 'device check' in q:
+                report_display['intent'] = 'device_health'
+            return report_display
+        if 'device health' in q:
+            return with_suggestions(device_health_answer())
+        return stale_devices_answer(question)
+
+    if hint == 'power_saving':
+        return power_saving_advisor_answer()
+
+    if hint == 'recent_changes':
+        return recent_changes_answer()
+
+    if hint == 'home_health':
+        return with_suggestions(home_health_answer())
+
+    return None
+
+
 def assistant(text: str) -> dict[str, Any]:
     t = normalise(text)
+
+    preflight = assistant_preflight_answer(text)
+    if preflight:
+        return with_suggestions(preflight)
+
     # Early device issue lookup - must run before home health / AI fallback.
     if any(phrase in t for phrase in (
         'what is wrong with',
@@ -5426,9 +5703,9 @@ def assistant(text: str) -> dict[str, Any]:
             ),
         }
     if 'weather' in t or 'forecast' in t:
-        return weather_answer()
+        return with_suggestions(weather_answer())
     if 'hub log' in t or 'hub logs' in t or 'recent logs' in t or 'log diagnostic' in t:
-        return hub_logs_answer()
+        return with_suggestions(hub_logs_answer())
     if 'room' in t and ('motion' in t or 'active' in t):
         return active_rooms_answer()
     if 'cold' in t and 'room' in t:
@@ -5455,9 +5732,9 @@ def assistant(text: str) -> dict[str, Any]:
     if 'automation health' in t or 'automation self check' in t or 'automation self-check' in t or 'which automations failed' in t or 'did the fan work' in t:
         return automation_health_answer()
     if 'timeline' in t or 'history' in t or 'what happened' in t:
-        return timeline_answer()
+        return with_suggestions(timeline_answer())
     if 'energy advisor' in t or 'energy insight' in t or 'electricity high' in t or 'wasting electricity' in t or 'energy waste' in t:
-        return energy_advisor_answer()
+        return with_suggestions(energy_advisor_answer())
     if (
         'battery replacement list' in t
         or 'replace batteries' in t
@@ -5483,7 +5760,7 @@ def assistant(text: str) -> dict[str, Any]:
         or 'what should i fix' in t
         or 'what needs fixing' in t
     ):
-        return stale_devices_answer(text)
+        return with_suggestions(stale_devices_answer(text))
     if (
         'device health' in t
         or 'device status' in t
@@ -5494,7 +5771,7 @@ def assistant(text: str) -> dict[str, Any]:
         if report_display:
             report_display['intent'] = 'device_health'
             return report_display
-        return device_health_answer()
+        return with_suggestions(device_health_answer())
     if (
         'urgent device issues' in t
         or 'urgent device issue' in t
@@ -5509,9 +5786,9 @@ def assistant(text: str) -> dict[str, Any]:
         or 'device priorities' in t
         or 'health priority' in t
     ):
-        return stale_devices_answer(text)
+        return with_suggestions(stale_devices_answer(text))
     if 'home health' in t or 'house health' in t or 'what needs my attention' in t or 'needs attention' in t:
-        return home_health_answer()
+        return with_suggestions(home_health_answer())
     if (
         'stale' in t
         or 'stuck' in t
@@ -5523,9 +5800,9 @@ def assistant(text: str) -> dict[str, Any]:
         or 'offline devices' in t
         or 'low battery' in t
     ):
-        return stale_devices_answer(text)
+        return with_suggestions(stale_devices_answer(text))
     if 'device health' in t:
-        return device_health_answer()
+        return with_suggestions(device_health_answer())
     if 'what changed' in t or 'changed today' in t or 'changed since yesterday' in t:
         return what_changed_answer()
     if 'recommend' in t or 'suggest action' in t or 'what should i do' in t:
@@ -5953,17 +6230,17 @@ def api_stale_devices():
 
 @app.get('/api/home-health')
 def api_home_health():
-    return home_health_answer()
+    return with_suggestions(home_health_answer())
 
 
 @app.get('/api/energy-advisor')
 def api_energy_advisor():
-    return energy_advisor_answer()
+    return with_suggestions(energy_advisor_answer())
 
 
 @app.get('/api/timeline')
 def api_timeline():
-    return timeline_answer()
+    return with_suggestions(timeline_answer())
 
 
 @app.get('/api/daily-briefing')
