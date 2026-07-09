@@ -6023,8 +6023,81 @@ def direct_value_lookup_answer(question: str) -> dict[str, Any] | None:
     }
 
 
+def find_device_answer(question: str) -> dict[str, Any] | None:
+    q = normalise(question or '')
+    if not (
+        q.startswith('find ')
+        or q.startswith('search ')
+        or q.startswith('show ')
+        or q.startswith('list ')
+        or q.startswith('debug ')
+    ):
+        return None
+
+    subject = q
+    for word in ('find', 'search', 'show', 'list', 'debug', 'device', 'devices'):
+        subject = re.sub(rf'\b{word}\b', ' ', subject)
+    subject = re.sub(r'\s+', ' ', subject).strip()
+
+    if not subject:
+        return None
+
+    subject_c = compact_name(subject)
+    matches = []
+
+    for device in all_devices():
+        label = device.get('label') or device.get('name') or str(device.get('id'))
+        room = device.get('room') or 'Unknown'
+        hay = normalise(f'{label} {room} {device.get("category") or ""}')
+        hay_c = compact_name(hay)
+
+        if subject in hay or subject_c in hay_c:
+            attrs = device_attribute_map(device)
+            interesting = []
+            for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'motion', 'contact', 'switch', 'networkStatus', 'ipAddress'):
+                value = device.get(attr)
+                if value is None:
+                    value = device_attr_value(device, attr)
+                if value is not None:
+                    interesting.append(f'{attr}={value}')
+
+            matches.append({
+                'label': label,
+                'room': room,
+                'category': device.get('category') or 'device',
+                'attrs': interesting,
+                'attribute_names': sorted(str(k) for k in attrs.keys())[:20],
+            })
+
+    if not matches:
+        return {
+            'success': True,
+            'intent': 'find_device',
+            'message': f'I could not find any HomeBrain cached device matching "{subject}".\n\nCheck that the device is selected in Maker API and then press Rebuild cache / Clear cache + reload.',
+            'speech': f'I could not find a device matching {subject}.',
+            'matches': [],
+        }
+
+    lines = [f'Devices matching "{subject}":']
+    for item in matches[:12]:
+        attr_text = ', '.join(item['attrs']) if item['attrs'] else 'no common values cached'
+        lines.append(f"- {item['label']} | room: {item['room']} | type: {item['category']} | {attr_text}")
+
+    return {
+        'success': True,
+        'intent': 'find_device',
+        'message': '\n'.join(lines),
+        'speech': f'I found {len(matches)} matching devices.',
+        'matches': matches,
+    }
+
+
 def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     hint = assistant_intent_hint(question)
+
+    finder = find_device_answer(question)
+    if finder:
+        return finder
 
     direct_value = direct_value_lookup_answer(question)
     if direct_value:
