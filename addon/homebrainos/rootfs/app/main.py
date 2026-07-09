@@ -953,6 +953,8 @@ def numeric_attr_value(device: dict[str, Any] | None, attr: str) -> float | None
     if not device:
         return None
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     value = attrs.get(attr)
     if value is None:
         value = device.get(attr)
@@ -1616,6 +1618,8 @@ def is_thermostat_like_device(device: dict[str, Any]) -> bool:
     text = device_text(device)
     caps = caps_text(device)
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     return (
         device.get('category') == 'thermostat'
         or 'thermostat' in caps
@@ -1629,6 +1633,8 @@ def is_energy_meter_like_device(device: dict[str, Any]) -> bool:
     text = device_text(device)
     caps = caps_text(device)
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     energy_words = ('octopus', 'live meter', 'smart meter', 'energy meter', 'meter', 'export', 'import', 'electricity')
     has_energy_signal = any(key in attrs for key in ('power', 'energy', 'powerSource', 'voltage', 'amperage')) or any(word in caps for word in ('powermeter', 'energymeter'))
     has_switch_state = attrs.get('switch') is not None or 'switch' in caps
@@ -1656,6 +1662,8 @@ def device_intelligence_profile(device: dict[str, Any]) -> dict[str, Any]:
     """
     text = device_text(device)
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     caps = caps_text(device)
     commands = commands_text(device)
     room = device.get('room') or 'Unknown'
@@ -1718,6 +1726,8 @@ def list_commands(device: dict[str, Any]) -> list[str]:
 
 def device_issue_base(device: dict[str, Any], reason: str, suggestion: str, severity: str = 'info') -> dict[str, Any]:
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     return {
         'id': device.get('id'),
         'label': device.get('label') or device.get('name') or str(device.get('id') or 'Unknown device'),
@@ -1740,6 +1750,8 @@ def unknown_switch_reason(device: dict[str, Any]) -> tuple[str, str, str]:
     caps = caps_text(device)
     commands = commands_text(device)
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     if 'switch' not in attrs and 'switch' not in caps:
         return (
             'HomeBrain thinks this is controllable, but Hubitat did not expose a current switch attribute.',
@@ -1840,6 +1852,8 @@ def device_inspector_report() -> dict[str, Any]:
     for device in devices:
         caps = list_capabilities(device)
         attrs = device.get('attributes') or {}
+        if not isinstance(attrs, dict):
+            attrs = {}
         if not caps and isinstance(attrs, dict) and len(attrs) <= 1:
             missing_capability_devices.append(device_issue_base(device, 'Device exposes very little capability/attribute information.', 'Refresh details. If still limited, check the Hubitat driver or exclude helper/bridge devices from health checks.', 'info'))
 
@@ -1920,6 +1934,8 @@ def is_presence_style_motion_device(device: dict[str, Any]) -> bool:
     category = str(device.get('category') or '').lower()
     caps = ' '.join(device.get('capabilities') or []).lower()
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     if category == 'presence_sensor' or device.get('presence') is not None or 'presence' in attrs or 'presence' in caps:
         return True
     presence_words = ('fp1', 'fp2', 'fp300', 'presence', 'occupancy', 'occupied', 'mmwave', 'mm wave', 'radar')
@@ -1956,10 +1972,12 @@ def stale_device_report() -> dict[str, Any]:
     motion: list[dict[str, Any]] = []
     lights: list[dict[str, Any]] = []
     not_reporting: list[dict[str, Any]] = []
+    offline: list[dict[str, Any]] = []
     occupied: list[dict[str, Any]] = []
     empty_report = {
         'motion_active_too_long': motion,
         'lights_on_too_long': lights,
+        'offline': offline,
         'not_reporting': not_reporting,
         'occupied_long': occupied,
         'issue_count': 0,
@@ -1995,6 +2013,33 @@ def stale_device_report() -> dict[str, Any]:
                 age = now - since
                 if age >= light_seconds:
                     lights.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'light on'})
+            attrs = device.get('attributes') or {}
+            if not isinstance(attrs, dict):
+                attrs = {}
+            health_status = str(attrs.get('healthStatus') or device.get('healthStatus') or '').strip().lower()
+            rtt = str(attrs.get('rtt') or device.get('rtt') or '').strip().lower()
+            status_value = str(attrs.get('status') or device.get('status') or '').strip().lower()
+
+            offline_reasons = []
+            if health_status in {'offline', 'unavailable'}:
+                offline_reasons.append(f'healthStatus: {health_status}')
+            if rtt in {'timeout', 'timed out'}:
+                offline_reasons.append(f'rtt: {rtt}')
+            if status_value in {'offline', 'unavailable', 'unknown'}:
+                offline_reasons.append(f'status: {status_value}')
+
+            if offline_reasons:
+                offline.append({
+                    'id': device_id,
+                    'label': label,
+                    'room': room,
+                    'age_seconds': 0,
+                    'duration': 'now',
+                    'state': 'offline',
+                    'reasons': offline_reasons,
+                    'battery': device.get('battery') or attrs.get('battery'),
+                })
+
             activity = device_last_activity(conn, row, device)
             activity_ts = int(activity.get('timestamp') or 0)
             if activity_ts and activity.get('confidence') == 'high' and now - activity_ts >= report_seconds:
@@ -2003,7 +2048,7 @@ def stale_device_report() -> dict[str, Any]:
                 not_reporting.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': now - updated_at, 'duration': elapsed_duration_label(now - updated_at), 'state': 'cache not refreshed', 'last_activity_source': 'HomeBrain cache refresh only', 'confidence': 'low'})
     finally:
         conn.close()
-    issues = motion + lights + not_reporting
+    issues = offline + motion + lights + not_reporting
     return {
         'motion_active_too_long': motion,
         'lights_on_too_long': lights,
@@ -2031,6 +2076,14 @@ def stale_devices_answer() -> dict[str, Any]:
         items = report['lights_on_too_long'][:8]
         lines.append('Lights on too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
         spoken.extend(f"{item['label']} on for {item['duration']}" for item in items)
+    if report.get('offline'):
+        items = report['offline'][:8]
+        lines.append('Offline devices:\n' + '\n'.join(
+            f"{item['label']} ({item['room']}) - {', '.join(item.get('reasons') or ['offline'])}"
+            for item in items
+        ))
+        spoken.extend(f"{item['label']} is offline" for item in items)
+
     if report['not_reporting']:
         items = report['not_reporting'][:8]
         lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
@@ -2634,6 +2687,8 @@ def energy_waste_candidates() -> list[dict[str, Any]]:
 
 def first_attr_value(device: dict[str, Any], names: tuple[str, ...]) -> Any:
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     lookup = {compact_name(k): v for k, v in attrs.items()}
     for name in names:
         if name in attrs and attrs.get(name) is not None:
@@ -3266,6 +3321,8 @@ def weather_answer() -> dict[str, Any]:
             'message': 'No weather device found. Add your Hubitat weather device to Maker API, then refresh from Hubitat.',
         }
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     summary = device.get('weatherSummary') or attrs.get('weatherSummary')
     line = device.get('weatherSummaryLine') or attrs.get('weatherSummaryLine')
     if summary:
@@ -3797,6 +3854,8 @@ def device_match_text(device: dict[str, Any]) -> str:
         ' '.join(device.get('commands', []) or []),
     ]
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     parts.extend(str(key) for key in attrs.keys())
     if is_room_socket_device(device):
         parts.append('socket plug appliance')
@@ -4716,6 +4775,8 @@ def ai_device_fact(device: dict[str, Any]) -> dict[str, Any]:
     )
     fact = {key: device.get(key) for key in keys if device.get(key) not in (None, '', [], {})}
     attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
     useful_attrs = {}
     for key in ('weatherSummary', 'weatherSummaryLine', 'pressure', 'windSpeed', 'precipitationToday'):
         if attrs.get(key) not in (None, '', [], {}) and key not in fact:
