@@ -952,9 +952,7 @@ CRITICAL_UI_ATTRS = {'switch', 'motion', 'presence', 'contact', 'lock', 'thermos
 def numeric_attr_value(device: dict[str, Any] | None, attr: str) -> float | None:
     if not device:
         return None
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     value = attrs.get(attr)
     if value is None:
         value = device.get(attr)
@@ -1617,9 +1615,7 @@ def device_text(device: dict[str, Any]) -> str:
 def is_thermostat_like_device(device: dict[str, Any]) -> bool:
     text = device_text(device)
     caps = caps_text(device)
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     return (
         device.get('category') == 'thermostat'
         or 'thermostat' in caps
@@ -1632,9 +1628,7 @@ def is_thermostat_like_device(device: dict[str, Any]) -> bool:
 def is_energy_meter_like_device(device: dict[str, Any]) -> bool:
     text = device_text(device)
     caps = caps_text(device)
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     energy_words = ('octopus', 'live meter', 'smart meter', 'energy meter', 'meter', 'export', 'import', 'electricity')
     has_energy_signal = any(key in attrs for key in ('power', 'energy', 'powerSource', 'voltage', 'amperage')) or any(word in caps for word in ('powermeter', 'energymeter'))
     has_switch_state = attrs.get('switch') is not None or 'switch' in caps
@@ -1661,9 +1655,7 @@ def device_intelligence_profile(device: dict[str, Any]) -> dict[str, Any]:
     raw capability.
     """
     text = device_text(device)
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     caps = caps_text(device)
     commands = commands_text(device)
     room = device.get('room') or 'Unknown'
@@ -1725,9 +1717,7 @@ def list_commands(device: dict[str, Any]) -> list[str]:
 
 
 def device_issue_base(device: dict[str, Any], reason: str, suggestion: str, severity: str = 'info') -> dict[str, Any]:
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     return {
         'id': device.get('id'),
         'label': device.get('label') or device.get('name') or str(device.get('id') or 'Unknown device'),
@@ -1749,9 +1739,7 @@ def device_issue_base(device: dict[str, Any], reason: str, suggestion: str, seve
 def unknown_switch_reason(device: dict[str, Any]) -> tuple[str, str, str]:
     caps = caps_text(device)
     commands = commands_text(device)
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     if 'switch' not in attrs and 'switch' not in caps:
         return (
             'HomeBrain thinks this is controllable, but Hubitat did not expose a current switch attribute.',
@@ -1933,9 +1921,7 @@ def is_presence_style_motion_device(device: dict[str, Any]) -> bool:
     label = f"{device.get('label') or ''} {device.get('name') or ''}".lower()
     category = str(device.get('category') or '').lower()
     caps = ' '.join(device.get('capabilities') or []).lower()
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     if category == 'presence_sensor' or device.get('presence') is not None or 'presence' in attrs or 'presence' in caps:
         return True
     presence_words = ('fp1', 'fp2', 'fp300', 'presence', 'occupancy', 'occupied', 'mmwave', 'mm wave', 'radar')
@@ -1963,17 +1949,72 @@ def device_last_activity(conn: sqlite3.Connection, row: sqlite3.Row, device: dic
     return {'timestamp': int(row['updated_at'] or 0), 'source': 'HomeBrain cache refresh only', 'confidence': 'low'}
 
 
-def is_health_detail_candidate(device: dict[str, Any]) -> bool:
+def device_attribute_map(device: dict[str, Any] | None) -> dict[str, Any]:
+    """Return Hubitat attributes as a simple name->value map.
+
+    Maker API payloads can expose attributes either as:
+      - {"healthStatus": "offline"}
+      - [{"name": "healthStatus", "currentValue": "offline"}]
+      - [{"name": "healthStatus", "value": "offline"}]
+    """
+    if not isinstance(device, dict):
+        return {}
+
     attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    if isinstance(attrs, dict):
+        return attrs
+
+    mapped: dict[str, Any] = {}
+    if isinstance(attrs, list):
+        for item in attrs:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name') or item.get('attribute') or item.get('key')
+            if not name:
+                continue
+            if 'currentValue' in item:
+                value = item.get('currentValue')
+            elif 'value' in item:
+                value = item.get('value')
+            elif 'current_value' in item:
+                value = item.get('current_value')
+            else:
+                value = None
+            mapped[str(name)] = value
+    return mapped
+
+
+def device_attr_value(device: dict[str, Any] | None, *names: str) -> Any:
+    if not isinstance(device, dict):
+        return None
+    attrs = device_attribute_map(device)
+    lowered = {str(k).lower(): v for k, v in attrs.items()}
+
+    for name in names:
+        if not name:
+            continue
+        if name in attrs:
+            return attrs.get(name)
+        low = str(name).lower()
+        if low in lowered:
+            return lowered.get(low)
+        if name in device:
+            return device.get(name)
+        if low in {str(k).lower(): k for k in device.keys()}:
+            original = {str(k).lower(): k for k in device.keys()}[low]
+            return device.get(original)
+    return None
+
+
+def is_health_detail_candidate(device: dict[str, Any]) -> bool:
+    attrs = device_attribute_map(device)
 
     text = device_text(device)
     category = str(device.get('category') or '').lower()
     caps = caps_text(device)
     commands = commands_text(device)
 
-    if any(str(key).lower() in {'healthstatus', 'rtt', 'status'} for key in attrs.keys()):
+    if any(str(key).lower() in {'healthstatus', 'health_status', 'rtt', 'status'} for key in attrs.keys()):
         return True
     if device.get('battery') is not None or attrs.get('battery') is not None:
         return True
@@ -2090,12 +2131,10 @@ def stale_device_report() -> dict[str, Any]:
                 age = now - since
                 if age >= light_seconds:
                     lights.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'light on'})
-            attrs = device.get('attributes') or {}
-            if not isinstance(attrs, dict):
-                attrs = {}
-            health_status = str(attrs.get('healthStatus') or device.get('healthStatus') or '').strip().lower()
-            rtt = str(attrs.get('rtt') or device.get('rtt') or '').strip().lower()
-            status_value = str(attrs.get('status') or device.get('status') or '').strip().lower()
+            attrs = device_attribute_map(device)
+            health_status = str(device_attr_value(device, 'healthStatus', 'health_status') or '').strip().lower()
+            rtt = str(device_attr_value(device, 'rtt', 'RTT') or '').strip().lower()
+            status_value = str(device_attr_value(device, 'status', 'Status') or '').strip().lower()
 
             offline_reasons = []
             if health_status in {'offline', 'unavailable'}:
@@ -2114,7 +2153,7 @@ def stale_device_report() -> dict[str, Any]:
                     'duration': 'now',
                     'state': 'offline',
                     'reasons': offline_reasons,
-                    'battery': device.get('battery') or attrs.get('battery'),
+                    'battery': device.get('battery') or device_attr_value(device, 'battery'),
                 })
 
             activity = device_last_activity(conn, row, device)
@@ -2793,9 +2832,7 @@ def energy_waste_candidates() -> list[dict[str, Any]]:
 
 
 def first_attr_value(device: dict[str, Any], names: tuple[str, ...]) -> Any:
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     lookup = {compact_name(k): v for k, v in attrs.items()}
     for name in names:
         if name in attrs and attrs.get(name) is not None:
@@ -3427,9 +3464,7 @@ def weather_answer() -> dict[str, Any]:
             'intent': 'weather',
             'message': 'No weather device found. Add your Hubitat weather device to Maker API, then refresh from Hubitat.',
         }
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     summary = device.get('weatherSummary') or attrs.get('weatherSummary')
     line = device.get('weatherSummaryLine') or attrs.get('weatherSummaryLine')
     if summary:
@@ -3960,9 +3995,7 @@ def device_match_text(device: dict[str, Any]) -> str:
         ' '.join(device.get('capabilities', []) or []),
         ' '.join(device.get('commands', []) or []),
     ]
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     parts.extend(str(key) for key in attrs.keys())
     if is_room_socket_device(device):
         parts.append('socket plug appliance')
@@ -4881,9 +4914,7 @@ def ai_device_fact(device: dict[str, Any]) -> dict[str, Any]:
         'weatherSummaryLine',
     )
     fact = {key: device.get(key) for key in keys if device.get(key) not in (None, '', [], {})}
-    attrs = device.get('attributes') or {}
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = device_attribute_map(device)
     useful_attrs = {}
     for key in ('weatherSummary', 'weatherSummaryLine', 'pressure', 'windSpeed', 'precipitationToday'):
         if attrs.get(key) not in (None, '', [], {}) and key not in fact:
