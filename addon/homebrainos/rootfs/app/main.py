@@ -5396,6 +5396,26 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
 
 def assistant(text: str) -> dict[str, Any]:
     t = normalise(text)
+    # Device-specific issue lookup must run before generic home-health routing.
+    if (
+        'what is wrong with' in t
+        or "what's wrong with" in t
+        or 'why is' in t
+        or 'check device' in t
+        or 'check fridge' in t
+        or 'check door' in t
+        or 'check roborock' in t
+        or 'check tuya' in t
+        or 'check trv' in t
+        or 'fridge door' in t
+        or 'livingroom trv' in t
+        or 'roborock' in t
+        or 'tuya remote' in t
+    ):
+        issue_lookup = _device_issue_lookup_answer(text)
+        if issue_lookup:
+            return issue_lookup
+
     if t in ('help', 'what can you do', 'commands'):
         return {
             'success': True,
