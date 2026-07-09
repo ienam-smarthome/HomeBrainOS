@@ -1,0 +1,46 @@
+name: Temporary fix PR15 CI version alignment
+
+on:
+  push:
+    branches:
+      - fix/voice-station-command-capture
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/voice-station-command-capture
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Align versions for PR15
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          replacements = {
+              "VERSION = '1.6.8-alpha'": "VERSION = '1.7.1-alpha'",
+              "fake.APP_VERSION == '1.6.8-alpha'": "fake.APP_VERSION == '1.7.1-alpha'",
+              "fake.app.version == '1.6.8-alpha'": "fake.app.version == '1.7.1-alpha'",
+          }
+          for path in [
+              Path('homebrainos/rootfs/app/natural_intelligence.py'),
+              Path('addon/homebrainos/rootfs/app/natural_intelligence.py'),
+              Path('tests/test_natural_intelligence.py'),
+          ]:
+              text = path.read_text()
+              for old, new in replacements.items():
+                  text = text.replace(old, new)
+              path.write_text(text)
+          PY
+      - name: Remove temporary workflow and commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/_temporary_fix_pr15_ci.yml
+          git add homebrainos/rootfs/app/natural_intelligence.py addon/homebrainos/rootfs/app/natural_intelligence.py tests/test_natural_intelligence.py
+          git commit -m "Align runtime version for voice station release"
+          git push origin HEAD:fix/voice-station-command-capture
