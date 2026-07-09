@@ -2180,7 +2180,110 @@ def stale_device_report() -> dict[str, Any]:
     }
 
 
+def _strip_html_report(value: Any) -> str:
+    text = str(value or '')
+    text = text.replace('<br/>', '\n').replace('<br>', '\n').replace('</div>', '\n').replace('</p>', '\n')
+    text = re.sub(r'<[^>]+>', '', text)
+    text = (
+        text.replace('&nbsp;', ' ')
+            .replace('&amp;', '&')
+            .replace('&lt;', '<')
+            .replace('&gt;', '>')
+            .replace('&quot;', '"')
+    )
+    lines = [line.strip() for line in text.replace('\r', '\n').split('\n')]
+    return '\n'.join(line for line in lines if line)
+
+
+def _int_attr(device: dict[str, Any], *names: str) -> int:
+    value = device_attr_value(device, *names)
+    try:
+        return int(float(str(value).strip()))
+    except Exception:
+        return 0
+
+
+def device_status_report_display_answer() -> dict[str, Any] | None:
+    """Read the Device Status Report Display virtual device if present.
+
+    This device is fed by the Hubitat Device Status Notifier app and is more
+    reliable for healthStatus/offline detection than Maker API per-device cache.
+    """
+    candidates = []
+    for device in all_devices():
+        text = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+        attrs = device_attribute_map(device)
+        attr_names = {str(k).lower() for k in attrs.keys()}
+        if (
+            'device status report' in text
+            or 'reporthtml' in attr_names
+            or 'report_html' in attr_names
+            or 'offlinecount' in attr_names
+            or 'lowbatterycount' in attr_names
+            or 'motionalertcount' in attr_names
+        ):
+            candidates.append(device)
+
+    if not candidates:
+        return None
+
+    device = candidates[0]
+    offline = _int_attr(device, 'offlineCount', 'offline_count', 'Offline Count')
+    low = _int_attr(device, 'lowBatteryCount', 'low_battery_count', 'Low Battery Count')
+    motion = _int_attr(device, 'motionAlertCount', 'motionCount', 'motion_alert_count', 'Motion Alert Count')
+    issue_count = _int_attr(device, 'issueCount', 'issue_count')
+    if issue_count <= 0:
+        issue_count = offline + low + motion
+
+    report_raw = (
+        device_attr_value(device, 'reportText', 'reportHtml', 'report_html', 'Report Html', 'currentReport', 'deviceStatusReport')
+        or device_attr_value(device, 'statusSummary', 'overallStatus', 'Overall Status')
+        or ''
+    )
+    report = _strip_html_report(report_raw)
+
+    if issue_count <= 0 and not report:
+        return None
+
+    lines = [
+        'Device health check from Device Status Notifier:',
+        f'Offline: {offline}',
+        f'Low battery: {low}',
+        f'Motion no-change: {motion}',
+    ]
+    if report:
+        lines.append('')
+        lines.append(report)
+
+    speech_parts = []
+    if offline:
+        speech_parts.append(f'{offline} offline')
+    if low:
+        speech_parts.append(f'{low} low battery')
+    if motion:
+        speech_parts.append(f'{motion} motion no-change')
+    speech = 'Device Status Notifier reports ' + ', '.join(speech_parts) if speech_parts else 'No device status issues found.'
+
+    return {
+        'success': True,
+        'intent': 'stale_devices',
+        'message': '\n'.join(lines),
+        'speech': speech,
+        'stale': {
+            'issue_count': issue_count,
+            'offline_count': offline,
+            'low_battery_count': low,
+            'motion_count': motion,
+            'source': device.get('label') or device.get('name'),
+            'report': report,
+        },
+    }
+
+
 def stale_devices_answer() -> dict[str, Any]:
+    report_display = device_status_report_display_answer()
+    if report_display:
+        return report_display
     refresh_health_device_details('stale-devices-answer')
     report = stale_device_report()
     lines: list[str] = []
