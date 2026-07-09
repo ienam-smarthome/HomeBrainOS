@@ -1390,7 +1390,7 @@ def test_dashboard_has_voice_station_mode():
     assert 'function stationIsArmed' in html
     assert 'function stationListeningStatus' in html
     assert 'function armVoiceStation' in html
-    assert 'armVoiceStation(15000)' in html
+    assert 'armVoiceStation(18000)' in html
     assert "['no-speech','aborted'].includes" in html
     assert "urlParams.get('station')==='1'" in html
     assert 'r.continuous=true' in html
