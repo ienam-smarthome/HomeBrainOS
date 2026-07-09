@@ -1963,6 +1963,83 @@ def device_last_activity(conn: sqlite3.Connection, row: sqlite3.Row, device: dic
     return {'timestamp': int(row['updated_at'] or 0), 'source': 'HomeBrain cache refresh only', 'confidence': 'low'}
 
 
+def is_health_detail_candidate(device: dict[str, Any]) -> bool:
+    attrs = device.get('attributes') or {}
+    if not isinstance(attrs, dict):
+        attrs = {}
+
+    text = device_text(device)
+    category = str(device.get('category') or '').lower()
+    caps = caps_text(device)
+    commands = commands_text(device)
+
+    if any(str(key).lower() in {'healthstatus', 'rtt', 'status'} for key in attrs.keys()):
+        return True
+    if device.get('battery') is not None or attrs.get('battery') is not None:
+        return True
+
+    candidate_words = (
+        'remote', 'button', 'contact', 'motion', 'sensor', 'tuya', 'aqara',
+        'zigbee', 'switchbot', 'lock', 'leak', 'water', 'temperature', 'humidity'
+    )
+    if any(word in text for word in candidate_words):
+        return True
+    if category in {'button', 'sensor', 'contact_sensor', 'motion_sensor', 'presence_sensor'}:
+        return True
+    if any(word in caps for word in ('battery', 'pushablebutton', 'button', 'contact', 'motion', 'sensor')):
+        return True
+    if any(word in commands for word in ('push', 'hold', 'doubletap')):
+        return True
+
+    return False
+
+
+def refresh_health_device_details(reason: str = 'health-check') -> dict[str, Any]:
+    """Refresh selected device details before health checks.
+
+    Maker API /devices can miss current-state fields like healthStatus and rtt.
+    Device detail endpoints usually include those fields, so refresh a capped
+    set of likely battery/button/sensor devices before answering offline checks.
+    """
+    if not maker_configured():
+        return {'success': False, 'reason': 'maker-not-configured', 'updated': 0}
+
+    try:
+        limit = max(1, int(CONFIG.get('health_detail_refresh_limit', 30)))
+    except Exception:
+        limit = 30
+
+    candidates = [device for device in all_devices() if is_health_detail_candidate(device)]
+    updated = 0
+    failed = 0
+
+    for device in candidates[:limit]:
+        device_id = device.get('id')
+        if not device_id:
+            continue
+        fresh = fetch_live_device_detail(str(device_id))
+        if fresh:
+            update_cached_device_snapshot(fresh)
+            updated += 1
+        else:
+            failed += 1
+
+    PERF_STATS['health_detail_refresh_last_reason'] = reason
+    PERF_STATS['health_detail_refresh_last_candidates'] = len(candidates)
+    PERF_STATS['health_detail_refresh_last_updated'] = updated
+    PERF_STATS['health_detail_refresh_last_failed'] = failed
+    PERF_STATS['health_detail_refresh_last_limit'] = limit
+
+    return {
+        'success': True,
+        'reason': reason,
+        'candidates': len(candidates),
+        'updated': updated,
+        'failed': failed,
+        'limit': limit,
+    }
+
+
 def stale_device_report() -> dict[str, Any]:
     now = int(time.time())
     motion_seconds = max(1, int(CONFIG.get('stale_motion_active_minutes', 30))) * 60
@@ -2065,6 +2142,7 @@ def stale_device_report() -> dict[str, Any]:
 
 
 def stale_devices_answer() -> dict[str, Any]:
+    refresh_health_device_details('stale-devices-answer')
     report = stale_device_report()
     lines = []
     spoken = []
