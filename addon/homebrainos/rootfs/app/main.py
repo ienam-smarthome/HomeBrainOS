@@ -2144,16 +2144,9 @@ def stale_device_report() -> dict[str, Any]:
 def stale_devices_answer() -> dict[str, Any]:
     refresh_health_device_details('stale-devices-answer')
     report = stale_device_report()
-    lines = []
-    spoken = []
-    if report['motion_active_too_long']:
-        items = report['motion_active_too_long'][:8]
-        lines.append('Motion active too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
-        spoken.extend(f"{item['label']} motion active for {item['duration']}" for item in items)
-    if report['lights_on_too_long']:
-        items = report['lights_on_too_long'][:8]
-        lines.append('Lights on too long:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
-        spoken.extend(f"{item['label']} on for {item['duration']}" for item in items)
+    lines: list[str] = []
+    spoken: list[str] = []
+
     if report.get('offline'):
         items = report['offline'][:8]
         lines.append('Offline devices:\n' + '\n'.join(
@@ -2162,27 +2155,53 @@ def stale_devices_answer() -> dict[str, Any]:
         ))
         spoken.extend(f"{item['label']} is offline" for item in items)
 
-    if report['not_reporting']:
+    motion_items = (report.get('motion_active_too_long') or report.get('motion') or [])
+    if motion_items:
+        items = motion_items[:8]
+        lines.append('Motion active too long:\n' + '\n'.join(
+            f"{item['label']} ({item['room']}) for {item['duration']}"
+            for item in items
+        ))
+        spoken.extend(f"{item['label']} motion active for {item['duration']}" for item in items)
+
+    light_items = (report.get('lights_on_too_long') or report.get('lights') or [])
+    if light_items:
+        items = light_items[:8]
+        lines.append('Lights on too long:\n' + '\n'.join(
+            f"{item['label']} ({item['room']}) for {item['duration']}"
+            for item in items
+        ))
+        spoken.extend(f"{item['label']} on for {item['duration']}" for item in items)
+
+    if report.get('not_reporting'):
         items = report['not_reporting'][:8]
-        lines.append('Not reporting recently:\n' + '\n'.join(f"{item['label']} ({item['room']}) for {item['duration']}" for item in items))
+        lines.append('Not reporting recently:\n' + '\n'.join(
+            f"{item['label']} ({item['room']}) for {item['duration']}"
+            for item in items
+        ))
         spoken.extend(f"{item['label']} not reporting for {item['duration']}" for item in items)
-    if report.get('occupied_long'):
-        items = report['occupied_long'][:8]
-        lines.append('Normal occupancy, not stale:\n' + '\n'.join(f"{item['label']} ({item['room']}) occupied for {item['duration']}" for item in items))
+
+    occupied_items = (report.get('occupied_long') or report.get('occupied') or [])
+    if occupied_items:
+        items = occupied_items[:8]
+        lines.append('Normal occupancy, not stale:\n' + '\n'.join(
+            f"{item['label']} ({item['room']}) occupied for {item['duration']}"
+            for item in items
+        ))
+
     if not lines and report.get('issue_count'):
         fallback_items = []
-        for section in ('offline', 'motion_active', 'lights_on', 'not_reporting'):
+        for section in ('offline', 'motion_active_too_long', 'motion', 'lights_on_too_long', 'lights', 'not_reporting'):
             for item in report.get(section, [])[:8]:
                 reason = ', '.join(item.get('reasons') or [item.get('state') or section])
                 fallback_items.append(f"{item.get('label')} ({item.get('room')}) - {reason}")
         if fallback_items:
-            lines.append('Detected issues:\\n' + '\\n'.join(fallback_items))
+            lines.append('Detected issues:\n' + '\n'.join(fallback_items))
             spoken.extend(fallback_items)
 
-    message = 'Device health check:\\n' + ('\\n\\n'.join(lines) if lines else 'No stale device issues found.')
+    message = 'Device health check:\n' + ('\n\n'.join(lines) if lines else 'No stale device issues found.')
     speech = f"Stale device check found {report['issue_count']} possible issues: {spoken_list(spoken)}" if spoken else 'No stale device issues found.'
     return {'success': True, 'intent': 'stale_devices', 'message': message, 'speech': speech, 'stale': report}
-
 
 def state_change_rows(conn: sqlite3.Connection, device_id: str, attr: str) -> list[dict[str, Any]]:
     rows = []
