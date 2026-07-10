@@ -24,7 +24,7 @@ def _safe_float(value: Any) -> float | None:
     try:
         if value in (None, ''):
             return None
-        return float(str(value).replace(',', '').replace('£', '').strip())
+        return float(str(value).replace(',', '').replace('£', '').replace('\u00c2£', '').strip())
     except (TypeError, ValueError):
         return None
 
@@ -71,6 +71,7 @@ def _normalise_key(text: Any) -> str:
 
 def naturalise_units(message: Any) -> str:
     text = str(message or '')
+    text = text.replace('\u00c2£', '£').replace('\u00c2°C', '°C').replace('\u00c2°', '°')
     text = re.sub(r'(?<![A-Za-z])(\d+(?:\.\d+)?)\s*W\b', lambda m: format_power(m.group(1)), text)
     text = re.sub(r'(?<![A-Za-z])(\d+(?:\.\d+)?)\s*kWh\b', lambda m: format_energy(m.group(1)), text, flags=re.IGNORECASE)
     return text.replace(' / £', ' costing £').replace('£/month', 'per month')
@@ -409,6 +410,17 @@ def _voice_dehumidifier_command(app_module: Any, query: str) -> dict[str, Any] |
     return {'success': True, 'intent': 'voice_device_command', 'message': f'{_device_label(candidates[0])} turned {command}.', 'result': result}
 
 
+def _room_status_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    delegate = getattr(app_module, 'room_status_answer', None)
+    answer = _safe_call(delegate, query, fallback=None) if callable(delegate) else None
+    if isinstance(answer, dict) and answer.get('message'):
+        answer = dict(answer)
+        answer['message'] = naturalise_units(answer['message'])
+        answer.setdefault('intent', 'room_status')
+        return answer
+    return None
+
+
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     summary = summary if isinstance(summary, dict) else {}
@@ -482,6 +494,11 @@ def wrap_assistant(app_module: Any) -> None:
             voice_command.setdefault('success', True)
             voice_command['local_first'] = True
             return voice_command
+        room_status = _room_status_answer(app_module, query)
+        if room_status:
+            room_status.setdefault('success', True)
+            room_status['local_first'] = True
+            return room_status
         if should_answer_locally(query):
             answer = build_intelligence_answer(app_module, query); answer.setdefault('success', True); answer['local_first'] = True; return answer
         return existing(query)

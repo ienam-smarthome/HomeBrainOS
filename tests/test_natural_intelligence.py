@@ -99,6 +99,15 @@ class FakeMain:
     def daily_briefing_answer(self):
         return {'success': True, 'message': 'Good afternoon. Everything looks normal.'}
 
+    def room_status_answer(self, query):
+        if query == 'bathroom status':
+            return {
+                'success': True,
+                'intent': 'room_status',
+                'message': 'Bathroom status:\nTemperature: 29.7\u00c2°C (Bathroom meter)\nHumidity: 56% (Bathroom meter)',
+            }
+        return None
+
 
 def freeze_light_hours_clock(module):
     module._period_start_timestamp = lambda period='today': 1000 if period == 'today' else -85400
@@ -110,6 +119,20 @@ def test_natural_unit_formatters():
     assert module.format_power(304) == '304 watts'
     assert module.format_energy(5.32) == '5.3 kilowatt-hours'
     assert module.format_money('1.48') == '£1.48'
+    assert module.naturalise_units('Used today: 5.6 kWh / \u00c2£1.55') == 'Used today: 5.6 kilowatt-hours costing £1.55'
+    assert module.naturalise_units('Inside: 29.7\u00c2°C') == 'Inside: 29.7°C'
+
+
+def test_local_first_routes_room_status_before_daily_briefing():
+    module = load_natural_intelligence()
+    fake = FakeMain()
+    module.register(fake)
+    answer = fake.assistant('bathroom status')
+    assert answer['intent'] == 'room_status'
+    assert answer['local_first'] is True
+    assert 'Bathroom status:' in answer['message']
+    assert 'Temperature: 29.7°C' in answer['message']
+    assert 'Daily Home Briefing' not in answer['message']
 
 
 def test_light_hours_uses_hubitat_event_history_for_all_lights():

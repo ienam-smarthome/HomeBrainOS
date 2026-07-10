@@ -1834,7 +1834,7 @@ def device_inspector_report() -> dict[str, Any]:
         label_text = normalise(device.get('label') or device.get('name') or '')
         category = str(device.get('category') or '').lower()
         if category in ('unknown', '') or any(word in label_text.split() for word in generic_words):
-            generic_devices.append(device_issue_base(device, 'Generic name/category makes AI understanding less reliable.', 'Rename it with room + purpose, e.g. â€œBedroom 1 Lampâ€ or â€œKitchen Door Sensorâ€.', 'info'))
+            generic_devices.append(device_issue_base(device, 'Generic name/category makes AI understanding less reliable.', 'Rename it with room + purpose, e.g. "Bedroom 1 Lamp" or "Kitchen Door Sensor".', 'info'))
 
     missing_capability_devices = []
     for device in devices:
@@ -3166,7 +3166,7 @@ def parse_kwh_cost_text(text: Any, marker: str) -> tuple[float | None, float | N
         return None, None
     value = str(text)
     marker_re = r'(?:^|[|,;\s])' + re.escape(marker) + r'\s*:?\s*'
-    pattern = marker_re + r'(?P<kwh>[0-9]+(?:\.[0-9]+)?)\s*kWh(?:\s*\(?Â£?(?P<cost>[0-9]+(?:\.[0-9]+)?)\)?)?'
+    pattern = marker_re + r'(?P<kwh>[0-9]+(?:\.[0-9]+)?)\s*kWh(?:\s*\(?(?:£|\u00c2£)?(?P<cost>[0-9]+(?:\.[0-9]+)?)\)?)?'
     match = re.search(pattern, value, flags=re.IGNORECASE)
     if not match:
         return None, None
@@ -3226,7 +3226,7 @@ def format_energy_day(label: str, day: dict[str, Any]) -> str:
     if kwh is not None:
         parts.append(f"{round(float(kwh), 2):.2f} kWh")
     if cost is not None:
-        parts.append(f"Â£{round(float(cost), 2):.2f}")
+        parts.append(f"£{round(float(cost), 2):.2f}")
     return f"{label}: " + (' / '.join(parts) if parts else 'not available from the meter yet')
 
 
@@ -3247,7 +3247,7 @@ def energy_advisor_answer() -> dict[str, Any]:
     else:
         lines.append('Worth checking:')
         for item in candidates[:8]:
-            cost = f", about Â£{item['estimated_monthly_cost_gbp']}/month" if item.get('estimated_monthly_cost_gbp') is not None else ''
+            cost = f", about £{item['estimated_monthly_cost_gbp']}/month" if item.get('estimated_monthly_cost_gbp') is not None else ''
             lines.append(f"- {item['label']} ({item['room']}) - {item['power_display']}, on for {item['on_for']}{cost} [{item['reason']}]")
     return {'success': True, 'intent': 'energy_advisor', 'message': '\n'.join(lines), 'summary': summary, 'usage': usage, 'candidates': candidates}
 
@@ -3347,7 +3347,7 @@ def daily_briefing_answer() -> dict[str, Any]:
     energy = energy_waste_candidates()
     lines = ['Daily Home Briefing:', f"Home health: {health['score']}/100"]
     if summary['avg_temperature'] is not None:
-        lines.append(f"Inside: {summary['avg_temperature']}Â°C, humidity {summary['avg_humidity']}%")
+        lines.append(f"Inside: {summary['avg_temperature']}°C, humidity {summary['avg_humidity']}%")
     else:
         lines.append('Inside: no temperature summary available')
     lines.extend([f"People home: {summary['people_home']}/{summary['people_tracked']}", f"Power now: {summary['power_display']}"])
@@ -3518,12 +3518,12 @@ def explain_home_question_answer(text: str) -> dict[str, Any] | None:
         thermostats = [d for d in devices if d.get('category') == 'thermostat' or d.get('heatingSetpoint') is not None]
         lines.append('Heating / temperature explanation:')
         for d in cold[:5]:
-            lines.append(f"- {d.get('label')}: {d.get('temperature')}Â°C")
+            lines.append(f"- {d.get('label')}: {d.get('temperature')}°C")
         for d in thermostats[:5]:
             sp = d.get('heatingSetpoint')
             mode = d.get('thermostatMode') or 'unknown mode'
             state = d.get('thermostatOperatingState') or 'unknown state'
-            lines.append(f"- {d.get('label')}: set {sp}Â°C, {mode}, {state}")
+            lines.append(f"- {d.get('label')}: set {sp}°C, {mode}, {state}")
 
     if 'stale' in t or 'offline' in t or 'not reporting' in t:
         stale = stale_device_report()
@@ -3561,7 +3561,7 @@ def room_intelligence_answer(text: str) -> dict[str, Any] | None:
     lines = [f"{payload['room']['room']} summary:"]
     lines.append('Occupied' if occupied else 'No current occupancy detected')
     if temps:
-        lines.append(f"Temperature: {round(sum(temps)/len(temps), 1)}Â°C")
+        lines.append(f"Temperature: {round(sum(temps)/len(temps), 1)}°C")
     if hums:
         lines.append(f"Humidity: {round(sum(hums)/len(hums), 1)}%")
     lines.append(f"Lights on: {len(lights_on)}")
@@ -3725,7 +3725,7 @@ def automation_health_answer() -> dict[str, Any]:
     score = max(0, score)
     lines = ['Automation Health:', f'Score: {score}/100']
     for check in checks:
-        icon = {'success': '', 'warning': '- ï¸', 'critical': '-', 'unknown': 'â„¹ï¸'}.get(check['status'], '-')
+        icon = {'success': '', 'warning': '-', 'critical': '-', 'unknown': 'i'}.get(check['status'], '-')
         lines.append(f"{icon} {check['name']}: {check['detail']}")
         if check.get('recommendation'):
             lines.append(f"   Action: {check['recommendation']}")
@@ -5099,7 +5099,7 @@ def adjust_setpoint(device_id: str, delta: float) -> dict[str, Any]:
         return {'success': False, 'message': f"Setpoint command failed for {device['label']}: {public_error(exc)}", 'device': device}
     refresh_devices_for_context('command-context')
     updated = update_cached_setpoint(device_id, new_value)
-    return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}Â°", 'device': updated or device, 'setpoint': new_value}
+    return {'success': True, 'message': f"{device['label']} heating setpoint set to {new_value}°", 'device': updated or device, 'setpoint': new_value}
 
 
 def set_setpoint_devices(devices: list[dict[str, Any]], setpoint: float, explicit_bulk: bool = False) -> dict[str, Any]:
@@ -5162,12 +5162,12 @@ def set_heating_mode(mode: str, target: str = 'home') -> dict[str, Any]:
                 if current_setpoint is None or current_setpoint < target_setpoint:
                     maker_command_value(device['id'], 'setHeatingSetpoint', target_setpoint)
                     changed_setpoints[device['id']] = target_setpoint
-                    setpoints.append(f"{device['label']}: {target_setpoint}Â°")
+                    setpoints.append(f"{device['label']}: {target_setpoint}°")
                 changed.append(device['label'])
             elif current_setpoint is None or current_setpoint > off_setpoint:
                 maker_command_value(device['id'], 'setHeatingSetpoint', off_setpoint)
                 changed_setpoints[device['id']] = off_setpoint
-                setpoints.append(f"{device['label']}: {off_setpoint:g}Â°")
+                setpoints.append(f"{device['label']}: {off_setpoint:g}°")
                 changed.append(device['label'])
             else:
                 changed.append(device['label'])
@@ -5211,7 +5211,7 @@ def answer_attribute(target: str, attr: str) -> dict[str, Any]:
     if not candidates:
         return {'success': False, 'message': f'I could not find {attr} for {target}.'}
     d = candidates[0]
-    unit = {'temperature': 'Â°C', 'humidity': '%', 'power': 'W', 'battery': '%', 'energy': 'kWh', 'level': '%', 'illuminance': ' lux'}.get(attr, '')
+    unit = {'temperature': '°C', 'humidity': '%', 'power': 'W', 'battery': '%', 'energy': 'kWh', 'level': '%', 'illuminance': ' lux'}.get(attr, '')
     speech_value = {
         'temperature': spoken_degrees,
         'humidity': spoken_percent,
