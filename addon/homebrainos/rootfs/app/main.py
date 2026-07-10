@@ -6117,8 +6117,176 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
     }
 
 
+def _room_status_subject(question: str) -> str | None:
+    q = normalise(question or '').strip()
+    if not q:
+        return None
+
+    patterns = [
+        r'^(.+?)\s+(?:status|summary)$',
+        r'^(?:room\s+status\s+for|status\s+of|summary\s+of)\s+(.+)$',
+        r'^(?:what(?: is|\'s)? happening in|what is going on in|show|summarise|summarize|check)\s+(.+)$',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, q)
+        if m:
+            subject = m.group(1).strip()
+            if subject and subject not in {'home', 'house', 'device', 'devices'}:
+                return subject
+    return None
+
+
+def _device_matches_room_subject(device: dict[str, Any], subject: str) -> bool:
+    subject_n = normalise(subject or '')
+    subject_c = compact_name(subject_n)
+    room = normalise(device.get('room') or '')
+    label = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+    room_c = compact_name(room)
+    label_c = compact_name(label)
+
+    if not subject_n:
+        return False
+
+    return (
+        subject_n == room
+        or subject_n in room
+        or subject_c == room_c
+        or subject_c in room_c
+        or subject_n in label
+        or subject_c in label_c
+    )
+
+
+def room_status_answer(question: str) -> dict[str, Any] | None:
+    subject = _room_status_subject(question)
+    if not subject:
+        return None
+
+    # Avoid stealing device-specific checks such as "check Livingroom TRV".
+    q = normalise(question or '')
+    if any(word in q for word in ('trv', 'fridge door', 'roborock', 'tuya remote', 'battery', 'offline')):
+        return None
+
+    devices = [d for d in all_devices() if _device_matches_room_subject(d, subject)]
+    if not devices:
+        return None
+
+    # Fetch live details for devices with no useful values.
+    refreshed = []
+    for device in devices[:20]:
+        attrs = device_attribute_map(device)
+        has_useful = any(
+            device.get(attr) is not None or attrs.get(attr) is not None
+            for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'motion', 'contact', 'switch')
+        )
+        if not has_useful and device.get('id'):
+            fresh = fetch_live_device_detail(str(device.get('id')))
+            if fresh:
+                update_cached_device_snapshot(fresh)
+                device = fresh
+        refreshed.append(device)
+    devices = refreshed
+
+    room_name = None
+    for device in devices:
+        room = device.get('room')
+        if room and normalise(room) != 'unknown':
+            room_name = room
+            break
+    room_name = room_name or subject.title()
+
+    temperatures = []
+    humidities = []
+    motions = []
+    contacts = []
+    lights_on = []
+    switches_on = []
+    power_rows = []
+    batteries_low = []
+    all_labels = []
+
+    for device in devices:
+        label = device.get('label') or device.get('name') or str(device.get('id'))
+        all_labels.append(label)
+
+        temperature = safe_float(device.get('temperature') if device.get('temperature') is not None else device_attr_value(device, 'temperature'))
+        humidity = safe_float(device.get('humidity') if device.get('humidity') is not None else device_attr_value(device, 'humidity'))
+        battery = safe_float(device.get('battery') if device.get('battery') is not None else device_attr_value(device, 'battery'))
+        power = safe_float(device.get('power') if device.get('power') is not None else device_attr_value(device, 'power'))
+        motion = device.get('motion') if device.get('motion') is not None else device_attr_value(device, 'motion')
+        contact = device.get('contact') if device.get('contact') is not None else device_attr_value(device, 'contact')
+        switch = device.get('switch') if device.get('switch') is not None else device_attr_value(device, 'switch')
+
+        if temperature is not None:
+            temperatures.append((label, temperature))
+        if humidity is not None:
+            humidities.append((label, humidity))
+        if motion is not None:
+            motions.append((label, str(motion)))
+        if contact is not None:
+            contacts.append((label, str(contact)))
+        if battery is not None and battery < 20:
+            batteries_low.append((label, battery))
+        if power is not None and power > 0:
+            power_rows.append((label, power))
+        if str(switch).lower() == 'on':
+            if str(device.get('category') or '').lower() == 'light' or 'light' in normalise(label):
+                lights_on.append(label)
+            else:
+                switches_on.append(label)
+
+    lines = [f'{room_name} status:']
+
+    if temperatures:
+        label, value = sorted(temperatures, key=lambda item: 0 if 'meter' in normalise(item[0]) or 'sensor' in normalise(item[0]) else 1)[0]
+        lines.append(f'Temperature: {value:g}°C ({label})')
+    if humidities:
+        label, value = sorted(humidities, key=lambda item: 0 if 'meter' in normalise(item[0]) or 'sensor' in normalise(item[0]) else 1)[0]
+        lines.append(f'Humidity: {value:g}% ({label})')
+    if motions:
+        active = [label for label, value in motions if value.lower() == 'active']
+        if active:
+            lines.append('Motion active: ' + ', '.join(active[:5]))
+        else:
+            lines.append('Motion: inactive')
+    if contacts:
+        open_contacts = [label for label, value in contacts if value.lower() == 'open']
+        if open_contacts:
+            lines.append('Open contacts: ' + ', '.join(open_contacts[:5]))
+    if lights_on:
+        lines.append('Lights on: ' + ', '.join(lights_on[:8]))
+    else:
+        room_lights = [label for label in all_labels if 'light' in normalise(label)]
+        if room_lights:
+            lines.append('Lights on: none')
+    if switches_on:
+        lines.append('Other switches on: ' + ', '.join(switches_on[:8]))
+    if power_rows:
+        total_power = sum(power for _, power in power_rows)
+        top_label, top_power = sorted(power_rows, key=lambda item: item[1], reverse=True)[0]
+        lines.append(f'Power: {total_power:g}W total; top: {top_label} {top_power:g}W')
+    if batteries_low:
+        lines.append('Low batteries: ' + ', '.join(f'{label} {value:g}%' for label, value in batteries_low[:5]))
+
+    if len(lines) == 1:
+        lines.append('I found devices in this room, but no live values are currently cached.')
+
+    return {
+        'success': True,
+        'intent': 'room_status',
+        'message': '\n'.join(lines),
+        'speech': f'{room_name} status ready.',
+        'room': room_name,
+        'devices': all_labels,
+    }
+
+
 def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     hint = assistant_intent_hint(question)
+
+    room_status = room_status_answer(question)
+    if room_status:
+        return room_status
 
     finder = find_device_answer(question)
     if finder:
