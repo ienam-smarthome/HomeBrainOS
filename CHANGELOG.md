@@ -1,3 +1,9 @@
+## v1.9.2-alpha - Room Status + Encoding Fix
+
+- Bumped the Home Assistant add-on version so HA can detect the update.
+- Fixed mojibake around GBP and temperature symbols in dashboard/assistant answers.
+- Routed room status prompts such as `bathroom status` to deterministic room facts before daily briefing fallback.
+
 ## 1.4.2-alpha - Performance + Intelligence Polish
 
 - Added UI/event filtering thresholds for tiny power, demand, temperature, and humidity changes.
