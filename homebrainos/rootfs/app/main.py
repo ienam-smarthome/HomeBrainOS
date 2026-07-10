@@ -6334,7 +6334,7 @@ def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
                 report_display['intent'] = 'device_health'
             return report_display
         if 'device health' in q:
-            return with_suggestions(device_health_answer())
+            return with_suggestions(shortcut_device_health_answer())
         return stale_devices_answer(question)
 
     if hint == 'power_saving':
@@ -6349,23 +6349,156 @@ def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     return None
 
 
+def clean_output_text(value: Any) -> str:
+    text = str(value or '')
+    text = text.replace('\r', '\n')
+    text = text.replace('<br/>', '\n').replace('<br>', '\n').replace('</div>', '\n').replace('</p>', '\n')
+    text = re.sub(r'<style[\s\S]*?</style>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<script[\s\S]*?</script>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    replacements = {
+        '&nbsp;': ' ',
+        '&amp;': '&',
+        '&lt;': '<',
+        '&gt;': '>',
+        '&quot;': '"',
+        'Â·': '·',
+        'â€¢': '-',
+        'â€”': '-',
+        'â€“': '-',
+        'ðŸ¥': '',
+        'ðŸ’¡': '',
+        'ðŸ”´': '',
+        'ðŸŸ¢': '',
+        'ðŸŸ¡': '',
+        'ðŸª«': '',
+        'âœ…': '',
+        'âš ï¸': '',
+        'âš': '',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    text = re.sub(r'ðŸ\S*', '', text)
+    lines = [re.sub(r'\s+', ' ', line).strip() for line in text.split('\n')]
+    return '\n'.join(line for line in lines if line)
+
+
+def shortcut_answer_cleanup(answer: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(answer, dict):
+        return answer
+    if 'message' in answer:
+        answer['message'] = clean_output_text(answer.get('message'))
+    if 'speech' in answer:
+        answer['speech'] = clean_output_text(answer.get('speech'))
+    return answer
+
+
+def safe_timeline_answer() -> dict[str, Any]:
+    try:
+        conn = db()
+    except sqlite3.Error:
+        return {
+            'success': False,
+            'intent': 'timeline',
+            'message': 'Timeline is not available because the database could not be opened.',
+        }
+
+    try:
+        rows = conn.execute(
+            'SELECT device_id, attr, value, created_at FROM history ORDER BY created_at DESC LIMIT 30'
+        ).fetchall()
+        devices = {str(d.get('id')): d for d in all_devices()}
+    finally:
+        conn.close()
+
+    filtered = []
+    for row in rows:
+        attr = str(row['attr'] or '')
+        value = str(row['value'] or '')
+        if attr.lower() in {'reporthtml', 'report_html', 'html'}:
+            continue
+        if '<div' in value.lower() or '<style' in value.lower() or len(value) > 240:
+            continue
+        filtered.append(row)
+        if len(filtered) >= 12:
+            break
+
+    if not filtered:
+        return {
+            'success': True,
+            'intent': 'timeline',
+            'message': 'No useful recent device changes found.',
+            'speech': 'No useful recent device changes found.',
+        }
+
+    now = int(time.time())
+    lines = ['Recent useful changes:']
+    for row in filtered:
+        device = devices.get(str(row['device_id']), {})
+        label = device.get('label') or device.get('name') or str(row['device_id'])
+        age = elapsed_duration_label(max(0, now - int(row['created_at'])))
+        lines.append(f"- {label}: {row['attr']} became {row['value']} {age} ago")
+
+    return {
+        'success': True,
+        'intent': 'timeline',
+        'message': '\n'.join(lines),
+        'speech': f'{len(filtered)} useful recent changes found.',
+    }
+
+
+def shortcut_device_health_answer() -> dict[str, Any]:
+    report_display = device_status_report_display_answer('device health')
+    if report_display:
+        report_display['intent'] = 'device_health'
+        return shortcut_answer_cleanup(report_display)
+    return shortcut_answer_cleanup(device_health_answer())
+
+
+def shortcut_weather_answer() -> dict[str, Any]:
+    answer = weather_answer()
+    message = str(answer.get('message') or '')
+    if not message or 'no weather summary yet' in normalise(message):
+        # Fall back to whatever the home summary already knows.
+        summary = home_summary()
+        weather = summary.get('weather') or summary.get('weather_summary') or summary.get('weather_display')
+        if weather:
+            return {
+                'success': True,
+                'intent': 'weather',
+                'message': f'Weather: {weather}',
+                'speech': f'Weather: {weather}',
+            }
+    return shortcut_answer_cleanup(answer)
+
+
 def assistant(text: str) -> dict[str, Any]:
     t = normalise(text)
+
+    # Highest priority: direct room/device answers before summary/briefing shortcuts.
+    room_status = room_status_answer(text)
+    if room_status:
+        return with_suggestions(shortcut_answer_cleanup(room_status))
+
+    direct_value = direct_value_lookup_answer(text)
+    if direct_value:
+        return with_suggestions(shortcut_answer_cleanup(direct_value))
+
     # Early room status lookup - must run before daily briefing / summary fallback.
     room_status = room_status_answer(text)
     if room_status:
-        return with_suggestions(room_status)
+        return with_suggestions(shortcut_answer_cleanup(room_status))
 
 
     # Direct sensor/device value lookup must run before older room humidity/temperature handlers.
     direct_value = direct_value_lookup_answer(text)
     if direct_value:
-        return with_suggestions(direct_value)
+        return with_suggestions(shortcut_answer_cleanup(direct_value))
 
 
     preflight = assistant_preflight_answer(text)
     if preflight:
-        return with_suggestions(preflight)
+        return with_suggestions(shortcut_answer_cleanup(preflight))
 
     # Early device issue lookup - must run before home health / AI fallback.
     if any(phrase in t for phrase in (
@@ -6397,7 +6530,7 @@ def assistant(text: str) -> dict[str, Any]:
             ),
         }
     if 'weather' in t or 'forecast' in t:
-        return with_suggestions(weather_answer())
+        return with_suggestions(shortcut_weather_answer())
     if 'hub log' in t or 'hub logs' in t or 'recent logs' in t or 'log diagnostic' in t:
         return with_suggestions(hub_logs_answer())
     if 'room' in t and ('motion' in t or 'active' in t):
@@ -6426,7 +6559,7 @@ def assistant(text: str) -> dict[str, Any]:
     if 'automation health' in t or 'automation self check' in t or 'automation self-check' in t or 'which automations failed' in t or 'did the fan work' in t:
         return automation_health_answer()
     if 'timeline' in t or 'history' in t or 'what happened' in t:
-        return with_suggestions(timeline_answer())
+        return with_suggestions(safe_timeline_answer())
     if 'energy advisor' in t or 'energy insight' in t or 'electricity high' in t or 'wasting electricity' in t or 'energy waste' in t:
         return with_suggestions(energy_advisor_answer())
     if (
@@ -6465,7 +6598,7 @@ def assistant(text: str) -> dict[str, Any]:
         if report_display:
             report_display['intent'] = 'device_health'
             return report_display
-        return with_suggestions(device_health_answer())
+        return with_suggestions(shortcut_device_health_answer())
     if (
         'urgent device issues' in t
         or 'urgent device issue' in t
@@ -6496,7 +6629,7 @@ def assistant(text: str) -> dict[str, Any]:
     ):
         return with_suggestions(stale_devices_answer(text))
     if 'device health' in t:
-        return with_suggestions(device_health_answer())
+        return with_suggestions(shortcut_device_health_answer())
     if 'what changed' in t or 'changed today' in t or 'changed since yesterday' in t:
         return what_changed_answer()
     if 'recommend' in t or 'suggest action' in t or 'what should i do' in t:
@@ -6934,7 +7067,7 @@ def api_energy_advisor():
 
 @app.get('/api/timeline')
 def api_timeline():
-    return with_suggestions(timeline_answer())
+    return with_suggestions(safe_timeline_answer())
 
 
 @app.get('/api/daily-briefing')
