@@ -6351,6 +6351,11 @@ def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
 
 def assistant(text: str) -> dict[str, Any]:
     t = normalise(text)
+    # Early room status lookup - must run before daily briefing / summary fallback.
+    room_status = room_status_answer(text)
+    if room_status:
+        return with_suggestions(room_status)
+
 
     # Direct sensor/device value lookup must run before older room humidity/temperature handlers.
     direct_value = direct_value_lookup_answer(text)
