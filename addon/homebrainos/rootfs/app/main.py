@@ -6069,6 +6069,14 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
         hay_c = compact_name(hay)
 
         if subject in hay or subject_c in hay_c:
+            # If the cached summary has no useful values, fetch live detail from Maker API.
+            fresh = None
+            if device.get('id'):
+                fresh = fetch_live_device_detail(str(device.get('id')))
+            if fresh:
+                update_cached_device_snapshot(fresh)
+                device = fresh
+
             attrs = device_attribute_map(device)
             interesting = []
             for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'motion', 'contact', 'switch', 'networkStatus', 'ipAddress'):
@@ -6175,6 +6183,12 @@ def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
 
 def assistant(text: str) -> dict[str, Any]:
     t = normalise(text)
+
+    # Direct sensor/device value lookup must run before older room humidity/temperature handlers.
+    direct_value = direct_value_lookup_answer(text)
+    if direct_value:
+        return with_suggestions(direct_value)
+
 
     preflight = assistant_preflight_answer(text)
     if preflight:
