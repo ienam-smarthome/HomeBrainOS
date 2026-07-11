@@ -1,4 +1,5 @@
 import importlib.util
+import time
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -681,6 +682,36 @@ def test_rain_question_uses_weather_summary_precipitation_text():
     assert 'wind 8.7' in answer['message']
 
 
+def test_weather_answer_prefers_populated_weather_device():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'empty-weather',
+            'label': 'Weather Open-Meteo',
+            'room': 'Weather',
+            'category': 'weather',
+            'attributes': {},
+        },
+        {
+            'id': 'real-weather',
+            'label': 'Weather Open-Meteo',
+            'room': 'Weather',
+            'category': 'weather',
+            'temperature': 24,
+            'attributes': {
+                'weatherSummaryLine': 'Sunny, High 28C, Low 19C, Current 24C',
+                'weatherSummary': 'Weather summary for Lewisham. Precipitation now is Dry 0.00mm. Chance of precipitation is 0%.',
+            },
+        },
+    ]
+
+    answer = main.assistant('what is the weather')
+
+    assert answer['intent'] == 'weather'
+    assert 'Sunny, High 28C' in answer['message']
+    assert answer['device']['id'] == 'real-weather'
+
+
 def test_assistant_understands_anything_offline_alias():
     main = load_addon_main()
     main.all_devices = lambda: [
@@ -874,6 +905,41 @@ def test_assistant_reports_required_settings_state():
     assert 'Local AI: disabled' in answer['message']
     assert 'Auto live sync: disabled' in answer['message']
     assert 'ollama_enabled' in answer['message']
+
+
+def test_event_diagnostics_has_distinct_answer():
+    main = load_addon_main()
+    main.UI_STATS['events_received'] = 4
+    main.UI_STATS['events_ui_relevant'] = 2
+    main.UI_STATS['events_ignored_for_ui'] = 1
+    main.UI_STATS['last_event_at'] = time.time()
+
+    answer = main.assistant('event diagnostics')
+
+    assert answer['intent'] == 'event_diagnostics'
+    assert 'Device event diagnostics:' in answer['message']
+    assert 'Events received: 4' in answer['message']
+
+
+def test_heating_status_uses_control_mode_when_thermostat_mode_missing():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'trv1',
+            'label': 'Livingroom TRV',
+            'category': 'thermostat',
+            'temperature': 28,
+            'attributes': {
+                'controlMode': 'onOff',
+                'heatingSetpoint': 12,
+            },
+        },
+    ]
+
+    answer = main.assistant('heating status')
+
+    assert answer['intent'] == 'heating_status'
+    assert 'Livingroom TRV: mode onOff' in answer['message']
 
 
 def test_ollama_answer_marks_truncated_responses():

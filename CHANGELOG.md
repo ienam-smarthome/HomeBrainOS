@@ -1,3 +1,10 @@
+## v1.9.7-alpha - Clearer Device Diagnostics
+
+- Makes the Device Events shortcut show event-stream diagnostics instead of generic device inventory.
+- Makes the Device Health button open the actual health monitor summary.
+- Prefers populated Open-Meteo weather records when duplicate weather devices exist in cache.
+- Uses TRV `controlMode` as a heating-status fallback when `thermostatMode` is absent.
+
 ## v1.9.6-alpha - Rain-Aware Weather + Settings Check
 
 - Routes rain and precipitation questions to the deterministic Open-Meteo weather answer.

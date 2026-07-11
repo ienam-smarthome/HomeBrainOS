@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.6-alpha'
+APP_VERSION = '1.9.7-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1619,6 +1619,33 @@ def device_diagnostics() -> dict[str, Any]:
     }
 
 
+def event_diagnostics_answer() -> dict[str, Any]:
+    diagnostics = event_diagnostics_payload()
+    stream = diagnostics['event_stream']
+    cache = diagnostics['summary_cache']
+    stats = diagnostics['ui_stats']
+    lines = [
+        'Device event diagnostics:',
+        f"Event stream: {stream['status']}",
+        f"State event version: {stream['state_event_version']}",
+        f"SSE clients: {stream['sse_clients']}",
+        f"Summary cache: {'available' if cache['available'] else 'not ready'}",
+        f"Events received: {stats.get('events_received', 0)}",
+        f"UI-relevant events: {stats.get('events_ui_relevant', 0)}",
+        f"Ignored noisy events: {stats.get('events_ignored_for_ui', 0)}",
+    ]
+    if stream.get('last_event_age_seconds') is not None:
+        lines.append(f"Last event: {stream['last_event_age_seconds']}s ago")
+    if stream.get('warning'):
+        lines.append(f"Warning: {stream['warning']}")
+    recent = diagnostics.get('recent_events') or []
+    if recent:
+        lines.append('Recent events:\n' + '\n'.join(str(event.get('text') or event) for event in recent[:5]))
+    else:
+        lines.append('Recent events: none cached yet')
+    return {'success': True, 'intent': 'event_diagnostics', 'message': '\n'.join(lines), 'diagnostics': diagnostics}
+
+
 
 def device_text(device: dict[str, Any]) -> str:
     return normalise(f"{device.get('label') or ''} {device.get('name') or ''} {device.get('category') or ''}")
@@ -3056,9 +3083,18 @@ def heating_status_answer() -> dict[str, Any]:
     devices = climate_control_devices(all_devices())
     lines = []
     for device in devices[:20]:
-        mode = device.get('thermostatMode') or device.get('attributes', {}).get('thermostatMode') or 'unknown'
-        temp = device.get('temperature') or device.get('attributes', {}).get('temperature')
-        setpoint = device.get('heatingSetpoint') or device.get('attributes', {}).get('heatingSetpoint')
+        attrs = device.get('attributes', {})
+        mode = (
+            device.get('thermostatMode')
+            or attrs.get('thermostatMode')
+            or device.get('controlMode')
+            or attrs.get('controlMode')
+            or device.get('thermostatOperatingState')
+            or attrs.get('thermostatOperatingState')
+            or 'unknown'
+        )
+        temp = device.get('temperature') or attrs.get('temperature')
+        setpoint = device.get('heatingSetpoint') or attrs.get('heatingSetpoint')
         detail = f"{device['label']}: mode {mode}"
         if temp is not None:
             detail += f", temp {temp}C"
@@ -3766,7 +3802,7 @@ def automation_explain_answer(text: str) -> dict[str, Any] | None:
 
 def weather_device() -> dict[str, Any] | None:
     devices = all_devices()
-    weather_devices = [
+    candidates = [
         device for device in devices
         if device.get('category') == 'weather'
         or 'weather' in device_search_text(device)
@@ -3775,7 +3811,21 @@ def weather_device() -> dict[str, Any] | None:
         or (device.get('attributes') or {}).get('weatherSummary')
         or (device.get('attributes') or {}).get('weatherSummaryLine')
     ]
-    return weather_devices[0] if weather_devices else None
+    if not candidates:
+        return None
+
+    def score(device: dict[str, Any]) -> int:
+        attrs = device.get('attributes') or {}
+        return sum((
+            80 if weather_attr(device, 'weatherSummary', 'weatherSummaryLine') else 0,
+            40 if weather_attr(device, 'threedayfcstTile', 'threeDayFcstTile', 'forecastTile', 'dailyForecast') else 0,
+            20 if weather_attr(device, 'temperature', 'currentTemperature') is not None else 0,
+            10 if weather_attr(device, 'humidity') is not None else 0,
+            5 if device.get('category') == 'weather' else 0,
+            3 if attrs else 0,
+        ))
+
+    return max(candidates, key=score)
 
 
 def weather_speech(text: str) -> str:
@@ -6863,6 +6913,8 @@ def assistant(text: str) -> dict[str, Any]:
         or 'local ai' in t
     ):
         return with_suggestions(required_settings_answer())
+    if 'event diagnostic' in t or 'device event' in t or 'event stream' in t:
+        return with_suggestions(event_diagnostics_answer())
     if 'weather' in t or 'forecast' in t or 'rain' in t or 'precip' in t:
         return with_suggestions(safe_weather_shortcut_answer())
     if 'offline' in t or 'off line' in t or 'not online' in t:
