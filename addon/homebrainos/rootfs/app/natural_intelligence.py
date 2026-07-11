@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.7-alpha'
+VERSION = '1.9.8-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -426,6 +426,14 @@ def _room_status_answer(app_module: Any, query: str) -> dict[str, Any] | None:
 def _delegate_main_assistant_first(query: str) -> bool:
     q = _normalise(query)
     return any(term in q for term in (
+        'ai status',
+        'ai running',
+        'ollama status',
+        'local ai',
+        'required setting',
+        'settings enabled',
+        'addon options',
+        'add-on options',
         'heating status',
         'heating state',
         'heat status',

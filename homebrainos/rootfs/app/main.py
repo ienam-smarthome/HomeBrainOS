@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.7-alpha'
+APP_VERSION = '1.9.8-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -31,7 +31,7 @@ ROOM_WORDS = [
     'kitchen', 'toilet', 'entrance', 'ventilation', 'dehumidifier', 'energy', 'sockets',
     'multimedia', 'office', 'internet', 'router'
 ]
-DEVICE_ATTRS = ['switch','level','temperature','humidity','illuminance','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint','lock','water','smoke','carbonMonoxide','tamper','acceleration','valve','windowShade','weatherSummary','weatherSummaryLine','pressure','windSpeed','wind_gust','windDirection','precipitationToday']
+DEVICE_ATTRS = ['switch','level','temperature','humidity','illuminance','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint','controlMode','lock','water','smoke','carbonMonoxide','tamper','acceleration','valve','windowShade','weatherSummary','weatherSummaryLine','pressure','windSpeed','wind_gust','windDirection','precipitationToday','threedayfcstTile']
 ATTR_ALIASES = {
     'switch': {'switch', 'switchstate', 'state'},
     'level': {'level', 'switchlevel', 'dimmerlevel'},
@@ -560,6 +560,7 @@ def normalise_device(device: dict[str, Any]) -> dict[str, Any]:
         'thermostatOperatingState': attrs.get('thermostatOperatingState'),
         'heatingSetpoint': attrs.get('heatingSetpoint'),
         'coolingSetpoint': attrs.get('coolingSetpoint'),
+        'controlMode': attrs.get('controlMode'),
         'lock': attrs.get('lock'),
         'water': attrs.get('water'),
         'smoke': attrs.get('smoke'),
@@ -1638,9 +1639,18 @@ def event_diagnostics_answer() -> dict[str, Any]:
         lines.append(f"Last event: {stream['last_event_age_seconds']}s ago")
     if stream.get('warning'):
         lines.append(f"Warning: {stream['warning']}")
+    def event_line(event: Any) -> str:
+        if not isinstance(event, dict):
+            return str(event)
+        label = event.get('label') or event.get('device') or event.get('device_id') or 'Device'
+        attr = event.get('attr') or event.get('name') or 'event'
+        value = event.get('value')
+        relevant = 'UI' if event.get('ui_relevant') else 'background'
+        return f"{label} {attr} {value} ({relevant})".strip()
+
     recent = diagnostics.get('recent_events') or []
     if recent:
-        lines.append('Recent events:\n' + '\n'.join(str(event.get('text') or event) for event in recent[:5]))
+        lines.append('Recent events:\n' + '\n'.join(event_line(event) for event in recent[:5]))
     else:
         lines.append('Recent events: none cached yet')
     return {'success': True, 'intent': 'event_diagnostics', 'message': '\n'.join(lines), 'diagnostics': diagnostics}
@@ -3084,6 +3094,22 @@ def heating_status_answer() -> dict[str, Any]:
     lines = []
     for device in devices[:20]:
         attrs = device.get('attributes', {})
+        cached_mode = (
+            device.get('thermostatMode')
+            or attrs.get('thermostatMode')
+            or device.get('controlMode')
+            or attrs.get('controlMode')
+            or device.get('thermostatOperatingState')
+            or attrs.get('thermostatOperatingState')
+        )
+        cached_temp = device.get('temperature') or attrs.get('temperature')
+        cached_setpoint = device.get('heatingSetpoint') or attrs.get('heatingSetpoint')
+        if device.get('id') and (not cached_mode or cached_temp is None or cached_setpoint is None):
+            fresh = fetch_live_device_detail(str(device.get('id')))
+            if fresh:
+                update_cached_device_snapshot(fresh)
+                device = fresh
+                attrs = device.get('attributes', {})
         mode = (
             device.get('thermostatMode')
             or attrs.get('thermostatMode')
@@ -3897,6 +3923,24 @@ def weather_rain_from_text(*texts: Any) -> tuple[str | None, float | None]:
     return rain, chance
 
 
+def weather_device_has_detail(device: dict[str, Any]) -> bool:
+    return bool(
+        weather_attr(device, 'weatherSummary', 'weatherSummaryLine')
+        or weather_attr(device, 'threedayfcstTile', 'threeDayFcstTile', 'forecastTile', 'dailyForecast')
+        or weather_attr(device, 'temperature', 'currentTemperature') is not None
+    )
+
+
+def refresh_weather_device_if_needed(device: dict[str, Any]) -> dict[str, Any]:
+    if weather_device_has_detail(device) or not device.get('id'):
+        return device
+    fresh = fetch_live_device_detail(str(device.get('id')))
+    if fresh and weather_device_has_detail(fresh):
+        update_cached_device_snapshot(fresh)
+        return fresh
+    return fresh or device
+
+
 def weather_answer() -> dict[str, Any]:
     device = weather_device()
     if not device:
@@ -3905,6 +3949,7 @@ def weather_answer() -> dict[str, Any]:
             'intent': 'weather',
             'message': 'No weather device found. Add your Hubitat weather device to Maker API, then refresh from Hubitat.',
         }
+    device = refresh_weather_device_if_needed(device)
     summary = weather_attr(device, 'weatherSummary')
     line = weather_attr(device, 'weatherSummaryLine')
     current = format_weather_temp(weather_attr(device, 'temperature', 'currentTemperature'))
@@ -5531,6 +5576,21 @@ def required_settings_answer() -> dict[str, Any]:
     }
 
 
+def is_settings_status_question(text: str) -> bool:
+    t = normalise(text)
+    return bool(
+        'required setting' in t
+        or 'settings enabled' in t
+        or 'addon options' in t
+        or 'add-on options' in t
+        or 'ai status' in t
+        or 'ai running' in t
+        or 'ollama status' in t
+        or 'is ai running' in t
+        or 'local ai' in t
+    )
+
+
 def ollama_answer(text: str) -> dict[str, Any] | None:
     if not CONFIG.get('ollama_enabled'):
         return None
@@ -6842,6 +6902,9 @@ def safe_weather_shortcut_answer() -> dict[str, Any]:
 def assistant(text: str) -> dict[str, Any]:
     t = normalise(text)
 
+    if is_settings_status_question(text):
+        return with_suggestions(required_settings_answer())
+
     forced_room = forced_room_status_answer(text)
     if forced_room:
         return with_suggestions(final_text_cleanup(forced_room))
@@ -6901,17 +6964,7 @@ def assistant(text: str) -> dict[str, Any]:
                 "refresh or clear the cache, list room devices, read hub logs, check stale devices, run device health, automation health, home health, energy advisor, home timeline, daily briefing, and diagnostics."
             ),
         }
-    if (
-        'required setting' in t
-        or 'settings enabled' in t
-        or 'addon options' in t
-        or 'add-on options' in t
-        or 'ai status' in t
-        or 'ai running' in t
-        or 'ollama status' in t
-        or 'is ai running' in t
-        or 'local ai' in t
-    ):
+    if is_settings_status_question(text):
         return with_suggestions(required_settings_answer())
     if 'event diagnostic' in t or 'device event' in t or 'event stream' in t:
         return with_suggestions(event_diagnostics_answer())

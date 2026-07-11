@@ -712,6 +712,39 @@ def test_weather_answer_prefers_populated_weather_device():
     assert answer['device']['id'] == 'real-weather'
 
 
+def test_weather_answer_polls_detail_when_cached_summary_missing():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'weather1',
+            'label': 'Weather Open-Meteo',
+            'room': 'Weather',
+            'category': 'weather',
+            'attributes': {},
+        },
+    ]
+    updates = []
+    main.fetch_live_device_detail = lambda device_id: {
+        'id': device_id,
+        'label': 'Weather Open-Meteo',
+        'room': 'Weather',
+        'category': 'weather',
+        'temperature': 24,
+        'attributes': {
+            'weatherSummaryLine': 'Sunny, High 28C, Low 19C, Current 24C',
+            'weatherSummary': 'Weather summary for Lewisham. Precipitation now is Dry 0.00mm. Chance of precipitation is 0%.',
+        },
+    }
+    main.update_cached_device_snapshot = lambda device: updates.append(device)
+
+    answer = main.assistant('will it rain today?')
+
+    assert answer['intent'] == 'weather'
+    assert 'Sunny, High 28C' in answer['message']
+    assert 'rain chance 0%' in answer['message']
+    assert updates and updates[0]['id'] == 'weather1'
+
+
 def test_assistant_understands_anything_offline_alias():
     main = load_addon_main()
     main.all_devices = lambda: [
@@ -921,6 +954,19 @@ def test_event_diagnostics_has_distinct_answer():
     assert 'Events received: 4' in answer['message']
 
 
+def test_event_diagnostics_formats_recent_events():
+    main = load_addon_main()
+    main.EVENT_HISTORY[:] = [
+        {'device_id': '7107', 'label': 'Washing Machine (MQTT)', 'attr': 'power', 'value': '101', 'ui_relevant': True},
+    ]
+
+    answer = main.assistant('device events')
+
+    assert answer['intent'] == 'event_diagnostics'
+    assert 'Washing Machine (MQTT) power 101 (UI)' in answer['message']
+    assert "{'device_id'" not in answer['message']
+
+
 def test_heating_status_uses_control_mode_when_thermostat_mode_missing():
     main = load_addon_main()
     main.all_devices = lambda: [
@@ -940,6 +986,59 @@ def test_heating_status_uses_control_mode_when_thermostat_mode_missing():
 
     assert answer['intent'] == 'heating_status'
     assert 'Livingroom TRV: mode onOff' in answer['message']
+
+
+def test_heating_status_polls_detail_when_mode_missing():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'trv1',
+            'label': 'Livingroom TRV',
+            'category': 'thermostat',
+            'temperature': 28,
+            'attributes': {
+                'heatingSetpoint': 12,
+            },
+        },
+    ]
+    updates = []
+    main.fetch_live_device_detail = lambda device_id: {
+        'id': device_id,
+        'label': 'Livingroom TRV',
+        'category': 'thermostat',
+        'temperature': 28,
+        'attributes': {
+            'controlMode': 'onOff',
+            'heatingSetpoint': 12,
+        },
+    }
+    main.update_cached_device_snapshot = lambda device: updates.append(device)
+
+    answer = main.assistant('heating status')
+
+    assert answer['intent'] == 'heating_status'
+    assert 'Livingroom TRV: mode onOff' in answer['message']
+    assert updates and updates[0]['id'] == 'trv1'
+
+
+def test_ai_status_routes_to_settings_before_room_status():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = True
+    main.CONFIG['ollama_base_url'] = 'http://192.168.1.199:11434'
+    main.all_devices = lambda: [
+        {
+            'id': 'fan1',
+            'label': 'Ventilation Fan',
+            'room': 'Ventilation',
+            'category': 'switch',
+            'attributes': {},
+        },
+    ]
+
+    answer = main.assistant('AI status')
+
+    assert answer['intent'] == 'settings_check'
+    assert 'Local AI: enabled' in answer['message']
 
 
 def test_ollama_answer_marks_truncated_responses():

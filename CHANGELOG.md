@@ -1,3 +1,9 @@
+## v1.9.8-alpha - Targeted Live Detail Polling
+
+- Polls the live Hubitat detail endpoint for weather and TRV status when cached attributes are incomplete.
+- Routes `AI status` and `Ollama status` to the settings check before room/status matching.
+- Formats recent Device Events as readable lines instead of raw event dictionaries.
+
 ## v1.9.7-alpha - Clearer Device Diagnostics
 
 - Makes the Device Events shortcut show event-stream diagnostics instead of generic device inventory.
