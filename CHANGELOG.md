@@ -1,3 +1,9 @@
+## v1.9.4-alpha - AI Fallback for Unknown Questions
+
+- Sends non-control questions that HomeBrain cannot answer deterministically to local AI/Ollama when enabled.
+- Keeps failed device-control requests deterministic so AI cannot imply it operated a device.
+- Improves the disabled-AI message for open-ended questions.
+
 ## v1.9.3-alpha - Faster Shortcuts + Weather Detail
 
 - Made read-only smart shortcut answers feel faster by avoiding unnecessary dashboard/device reloads after each answer.

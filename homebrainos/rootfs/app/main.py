@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.3-alpha'
+APP_VERSION = '1.9.4-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -6955,6 +6955,10 @@ def assistant(text: str) -> dict[str, Any]:
         return {'success': True, 'intent': 'room_devices', 'message': f"{room.title()} devices:\n" + '\n'.join(device_line(d) for d in devices[:20]), 'devices': devices[:20]}
     result = run_command(text)
     if result.get('success') or result.get('message') != f'I did not understand yet: {text}':
+        if not result.get('success') and not looks_like_control_request(text):
+            ollama = ollama_answer(text)
+            if ollama:
+                return ollama
         result.setdefault('intent', 'deterministic_command')
         return result
     ollama = ollama_answer(text)
@@ -6963,8 +6967,18 @@ def assistant(text: str) -> dict[str, Any]:
     return {
         'success': False,
         'intent': 'unknown',
-        'message': "I do not understand that yet. Try 'summary', 'diagnostics', 'which lights are on', 'turn off hallway light', or 'devices in hallway'.",
+        'message': "I could not answer that with deterministic HomeBrain logic, and Local AI is disabled. Enable Ollama/local AI for open-ended questions, or try 'summary', 'diagnostics', 'which lights are on', 'turn off hallway light', or 'devices in hallway'.",
     }
+
+
+def looks_like_control_request(text: str) -> bool:
+    q = normalise(text or '')
+    control_prefixes = (
+        'turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ',
+        'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ',
+        'leave ', 'cancel timer', 'schedule ', 'start ', 'stop ', 'enable ', 'disable ',
+    )
+    return q.startswith(control_prefixes)
 
 
 def run_command(text: str) -> dict[str, Any]:

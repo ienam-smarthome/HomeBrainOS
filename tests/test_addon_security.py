@@ -826,6 +826,30 @@ def test_ollama_answer_marks_truncated_responses():
     assert answer['speech'].endswith('...')
 
 
+def test_unknown_question_falls_back_to_local_ai():
+    main = load_addon_main()
+    main.all_devices = lambda: []
+    asked = []
+    main.ollama_answer = lambda text: asked.append(text) or {'success': True, 'intent': 'ollama_answer', 'message': 'AI fallback answered.'}
+
+    answer = main.assistant('could the house be more comfortable later?')
+
+    assert asked == ['could the house be more comfortable later?']
+    assert answer['intent'] == 'ollama_answer'
+    assert answer['message'] == 'AI fallback answered.'
+
+
+def test_failed_control_request_does_not_fall_back_to_ai():
+    main = load_addon_main()
+    main.all_devices = lambda: []
+    main.ollama_answer = lambda text: (_ for _ in ()).throw(AssertionError('Control failures should not go to AI'))
+
+    answer = main.assistant('turn on imaginary lamp')
+
+    assert answer['success'] is False
+    assert 'Device not found' in answer['message']
+
+
 def test_heating_commands_adjust_setpoints_without_thermostat_mode():
     main = load_addon_main()
     devices = [
