@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.9-alpha'
+APP_VERSION = '1.9.10-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -74,14 +74,14 @@ def load_config() -> dict[str, Any]:
         'maker_api_app_id': os.getenv('MAKER_API_APP_ID', ''),
         'maker_api_token': os.getenv('MAKER_API_TOKEN', ''),
         'api_token': os.getenv('HOMEBRAIN_API_TOKEN', ''),
-        'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '300')),
-        'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '90')),
-        'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '120')),
-        'live_switch_sync_seconds': int(os.getenv('LIVE_SWITCH_SYNC_SECONDS', '60')),
-        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '12')),
+        'refresh_seconds': int(os.getenv('REFRESH_SECONDS', '600')),
+        'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '600')),
+        'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '180')),
+        'live_switch_sync_seconds': int(os.getenv('LIVE_SWITCH_SYNC_SECONDS', '90')),
+        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '8')),
         'event_batch_window_ms': int(os.getenv('EVENT_BATCH_WINDOW_MS', '500')),
-        'auto_live_sync_enabled': os.getenv('AUTO_LIVE_SYNC_ENABLED', 'false').lower() == 'true',
-        'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'false').lower() == 'true',
+        'auto_live_sync_enabled': os.getenv('AUTO_LIVE_SYNC_ENABLED', 'true').lower() == 'true',
+        'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'true').lower() == 'true',
         'ollama_base_url': os.getenv('OLLAMA_BASE_URL', 'http://homeassistant.local:11434'),
         'ollama_model': os.getenv('OLLAMA_MODEL', 'qwen2.5:3b'),
         'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '35')),
@@ -90,9 +90,9 @@ def load_config() -> dict[str, Any]:
         'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
         'ollama_health_timeout_seconds': int(os.getenv('OLLAMA_HEALTH_TIMEOUT_SECONDS', '2')),
         'ollama_health_cache_seconds': int(os.getenv('OLLAMA_HEALTH_CACHE_SECONDS', '60')),
-        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '25')),
-        'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '1800')),
-        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '5')),
+        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '60')),
+        'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '3600')),
+        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '10')),
         'stale_motion_active_minutes': int(os.getenv('STALE_MOTION_ACTIVE_MINUTES', '30')),
         'stale_light_on_hours': int(os.getenv('STALE_LIGHT_ON_HOURS', '4')),
         'stale_device_report_hours': int(os.getenv('STALE_DEVICE_REPORT_HOURS', '24')),
