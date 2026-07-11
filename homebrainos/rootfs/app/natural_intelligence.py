@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.10-alpha'
+VERSION = '1.9.11-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -110,6 +110,7 @@ def classify_intent(query: str) -> IntentResult:
     if room and (
         any(term in q for term in ('status', 'summary', 'what is happening', 'whats happening', 'how is'))
         or q in {_normalise(room), f'{_normalise(room)} status'}
+        or detail != 'glance'
     ):
         return IntentResult(
             'room_status',
@@ -541,13 +542,208 @@ def _voice_dehumidifier_command(app_module: Any, query: str) -> dict[str, Any] |
     return {'success': True, 'intent': 'voice_device_command', 'message': f'{_device_label(candidates[0])} turned {command}.', 'result': result}
 
 
+def _clean_display_text(value: Any) -> str:
+    """Remove raw HTML, mojibake and repeated whitespace from assistant output."""
+    text = str(value or '')
+    text = text.replace('\u00c2Â£', 'Â£').replace('\u00c2Â°C', 'Â°C').replace('\u00c2Â°', 'Â°')
+    text = re.sub(r'<script\b[^>]*>.*?</script>', ' ', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'<style\b[^>]*>.*?</style>', ' ', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _room_matches(device: dict[str, Any], room: str) -> bool:
+    wanted = _normalise_key(room)
+    assigned = _normalise_key(device.get('room'))
+    if assigned and assigned == wanted:
+        return True
+    label = _normalise_key(_device_label(device))
+    return bool(wanted and (label.startswith(wanted) or wanted in label))
+
+
+def _room_devices(app_module: Any, room: str) -> list[dict[str, Any]]:
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    if not isinstance(devices, list):
+        return []
+    matched = [device for device in devices if isinstance(device, dict) and _room_matches(device, room)]
+    return sorted(matched, key=lambda item: _device_label(item).lower())
+
+
+def _numeric_values(devices: list[dict[str, Any]], key: str) -> list[float]:
+    values: list[float] = []
+    for device in devices:
+        value = _safe_float(_attrs(device).get(key))
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def _format_number(value: float, decimals: int = 1) -> str:
+    rounded = round(value, decimals)
+    return f'{rounded:g}'
+
+
+def _active_room_fact(device: dict[str, Any]) -> str | None:
+    attrs = _attrs(device)
+    label = _clean_display_text(_device_label(device))
+    switch = str(attrs.get('switch') or '').lower()
+    motion = str(attrs.get('motion') or '').lower()
+    contact = str(attrs.get('contact') or '').lower()
+    presence = str(attrs.get('presence') or '').lower()
+    lock = str(attrs.get('lock') or '').lower()
+    water = str(attrs.get('water') or '').lower()
+    smoke = str(attrs.get('smoke') or '').lower()
+    carbon = str(attrs.get('carbonMonoxide') or '').lower()
+    operating = str(attrs.get('thermostatOperatingState') or '').lower()
+    power = _safe_float(attrs.get('power'))
+    battery = _safe_float(attrs.get('battery'))
+
+    if water in {'wet', 'detected', 'active'}:
+        return f'{label}: leak detected'
+    if smoke not in {'', 'clear', 'tested', 'false', '0'}:
+        return f'{label}: smoke alert'
+    if carbon not in {'', 'clear', 'false', '0'}:
+        return f'{label}: carbon monoxide alert'
+    if battery is not None and battery <= 20:
+        return f'{label}: battery {_format_number(battery, 0)} percent'
+    if contact == 'open':
+        return f'{label}: open'
+    if lock == 'unlocked':
+        return f'{label}: unlocked'
+    if motion in {'active', 'motion', 'true'}:
+        return f'{label}: motion active'
+    if presence in {'present', 'occupied', 'active'}:
+        return f'{label}: occupied'
+    if operating in {'heating', 'pending heat'}:
+        return f'{label}: heating'
+    if switch == 'on':
+        if power is not None and power >= 1:
+            return f'{label}: on, using {format_power(power)}'
+        return f'{label}: on'
+    if power is not None and power >= 5:
+        return f'{label}: using {format_power(power)}'
+    return None
+
+
+def _concise_device_state(device: dict[str, Any]) -> str:
+    attrs = _attrs(device)
+    label = _clean_display_text(_device_label(device))
+    parts: list[str] = []
+
+    for key in ('switch', 'motion', 'contact', 'presence', 'lock', 'water', 'thermostatOperatingState'):
+        value = attrs.get(key)
+        if value not in (None, ''):
+            parts.append(_clean_display_text(value))
+
+    temp = _safe_float(attrs.get('temperature'))
+    humidity = _safe_float(attrs.get('humidity'))
+    power = _safe_float(attrs.get('power'))
+    battery = _safe_float(attrs.get('battery'))
+    setpoint = _safe_float(attrs.get('heatingSetpoint'))
+
+    if temp is not None:
+        parts.append(f'{_format_number(temp)}Â°C')
+    if humidity is not None:
+        parts.append(f'{_format_number(humidity)}% humidity')
+    if setpoint is not None:
+        parts.append(f'set to {_format_number(setpoint)}Â°C')
+    if power is not None:
+        parts.append(format_power(power))
+    if battery is not None:
+        parts.append(f'{_format_number(battery, 0)}% battery')
+
+    clean_parts: list[str] = []
+    for part in parts:
+        if part and part not in clean_parts:
+            clean_parts.append(part)
+    return f"{label}: {', '.join(clean_parts) if clean_parts else 'no useful state reported'}"
+
+
+def _diagnostic_device_state(device: dict[str, Any]) -> str:
+    attrs = _attrs(device)
+    useful_keys = (
+        'switch', 'level', 'temperature', 'humidity', 'motion', 'contact', 'presence',
+        'battery', 'power', 'energy', 'thermostatMode', 'thermostatOperatingState',
+        'heatingSetpoint', 'lock', 'water', 'smoke', 'carbonMonoxide',
+    )
+    values = []
+    for key in useful_keys:
+        value = attrs.get(key)
+        if value not in (None, ''):
+            values.append(f'{key}={_clean_display_text(value)}')
+    category = _clean_display_text(device.get('category') or 'device')
+    updated = device.get('last_activity_at') or device.get('updated_at')
+    if updated not in (None, ''):
+        values.append(f'updated={updated}')
+    return f"{_clean_display_text(_device_label(device))} [{category}]: " + (', '.join(values) or 'no useful attributes')
+
+
+def focused_room_status_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    route = classify_intent(query)
+    if route.intent != 'room_status' or not route.room:
+        return None
+
+    devices = _room_devices(app_module, route.room)
+    if not devices:
+        # Preserve compatibility with the existing main room-status engine.
+        # The caller will delegate when the focused layer has no matched devices.
+        return None
+
+    temperatures = _numeric_values(devices, 'temperature')
+    humidities = _numeric_values(devices, 'humidity')
+    climate: list[str] = []
+    if temperatures:
+        climate.append(f'{_format_number(sum(temperatures) / len(temperatures))}Â°C')
+    if humidities:
+        climate.append(f'{_format_number(sum(humidities) / len(humidities))}% humidity')
+
+    active = []
+    for device in devices:
+        fact = _active_room_fact(device)
+        if fact and fact not in active:
+            active.append(fact)
+
+    if route.detail_level == 'diagnostic':
+        lines = [_diagnostic_device_state(device) for device in devices]
+        message = f'{route.room} diagnostic status:\n' + '\n'.join(f'â€¢ {line}' for line in lines)
+    elif route.detail_level == 'detailed':
+        lines = [_concise_device_state(device) for device in devices]
+        intro = f"{route.room}: {', '.join(climate)}." if climate else f'{route.room} detailed status.'
+        message = intro + '\n' + '\n'.join(f'â€¢ {line}' for line in lines)
+    else:
+        parts = []
+        if climate:
+            parts.append(', '.join(climate))
+        if active:
+            parts.append('; '.join(active[:8]))
+        if not parts:
+            parts.append('no active devices or important issues')
+        message = f"{route.room}: " + '. '.join(parts).rstrip('.') + '.'
+
+    return {
+        'success': True,
+        'intent': 'room_status',
+        'room': route.room,
+        'detail_level': route.detail_level,
+        'routing': route.as_dict(),
+        'message': naturalise_units(_clean_display_text(message) if route.detail_level == 'glance' else message),
+        'active_facts': active,
+        'device_count': len(devices),
+        'devices': devices if route.detail_level != 'glance' else [],
+    }
+
 def _room_status_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    focused = focused_room_status_answer(app_module, query)
+    if isinstance(focused, dict):
+        return focused
+
     route = classify_intent(query)
     delegate = getattr(app_module, 'room_status_answer', None)
     answer = _safe_call(delegate, query, fallback=None) if callable(delegate) else None
     if isinstance(answer, dict) and answer.get('message'):
         answer = dict(answer)
-        answer['message'] = naturalise_units(answer['message'])
+        answer['message'] = naturalise_units(_clean_display_text(answer['message']))
         answer.setdefault('intent', 'room_status')
         answer['routing'] = route.as_dict()
         answer['detail_level'] = route.detail_level
@@ -555,7 +751,6 @@ def _room_status_answer(app_module: Any, query: str) -> dict[str, Any] | None:
             answer.setdefault('room', route.room)
         return answer
     return None
-
 
 def _delegate_main_assistant_first(query: str) -> bool:
     q = _normalise(query)
@@ -646,6 +841,13 @@ def wrap_assistant(app_module: Any) -> None:
     if not callable(existing) or getattr(existing, '_homebrain_local_first', False):
         return
     def local_first_assistant(query: str) -> dict[str, Any]:
+        route = classify_intent(query)
+        if route.intent == 'room_status':
+            room_answer = _room_status_answer(app_module, query)
+            if room_answer:
+                room_answer.setdefault('success', True)
+                room_answer['local_first'] = True
+                return room_answer
         voice_command = _voice_dehumidifier_command(app_module, query)
         if voice_command:
             voice_command.setdefault('success', True)
