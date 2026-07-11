@@ -1,3 +1,9 @@
+## v1.9.5-alpha - Shortcut Routing + AI Config Clarity
+
+- Fixed `heating status` being intercepted as a daily briefing by the local-first assistant wrapper.
+- Made `which batteries are low` use the dashboard low-battery summary instead of stale replacement-report rows.
+- Clarified the local AI disabled message so it points to `ollama_enabled` and `ollama_base_url` add-on options.
+
 ## v1.9.4-alpha - AI Fallback for Unknown Questions
 
 - Sends non-control questions that HomeBrain cannot answer deterministically to local AI/Ollama when enabled.

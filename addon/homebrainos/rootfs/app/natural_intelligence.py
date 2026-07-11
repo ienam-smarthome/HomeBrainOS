@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.4-alpha'
+VERSION = '1.9.5-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -250,6 +250,8 @@ def _intent(query: str) -> str:
     q = _normalise(query)
     if not q:
         return 'briefing'
+    if any(term in q for term in ('heating status', 'heating state', 'heat status', 'thermostat status')):
+        return 'home_context'
     if any(word in q for word in ('electric', 'energy', 'power', 'cost', 'spent', 'kwh', 'kilowatt')):
         return 'energy'
     if 'today' in q and 'yesterday' in q and any(word in q for word in ('compare', 'comparison', 'versus', 'vs')):
@@ -421,6 +423,19 @@ def _room_status_answer(app_module: Any, query: str) -> dict[str, Any] | None:
     return None
 
 
+def _delegate_main_assistant_first(query: str) -> bool:
+    q = _normalise(query)
+    return any(term in q for term in (
+        'heating status',
+        'heating state',
+        'heat status',
+        'thermostat status',
+        'which batteries are low',
+        'what batteries are low',
+        'low batteries',
+    ))
+
+
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     summary = summary if isinstance(summary, dict) else {}
@@ -499,6 +514,8 @@ def wrap_assistant(app_module: Any) -> None:
             room_status.setdefault('success', True)
             room_status['local_first'] = True
             return room_status
+        if _delegate_main_assistant_first(query):
+            return existing(query)
         if should_answer_locally(query):
             answer = build_intelligence_answer(app_module, query); answer.setdefault('success', True); answer['local_first'] = True; return answer
         return existing(query)

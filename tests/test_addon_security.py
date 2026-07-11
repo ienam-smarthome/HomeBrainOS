@@ -94,6 +94,32 @@ def test_assistant_explains_low_battery_and_motion_summary_tiles():
     assert 'Octopus Energy Live Meter' in power['message']
 
 
+def test_which_batteries_are_low_uses_dashboard_summary_not_replacement_report():
+    main = load_addon_main()
+    main.SUMMARY_CACHE = None
+    main.all_devices = lambda: [
+        {'id': 'b1', 'label': 'Livingroom TRV', 'room': 'Living Room', 'category': 'battery_sensor', 'battery': 12},
+        {
+            'id': 'report',
+            'label': 'Device Status Report',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {
+                'offlineCount': 0,
+                'lowBatteryCount': 2,
+                'motionAlertCount': 0,
+                'reportText': '[LOW BATTERY]\nLivingroom TRV - 12% battery\nFridge Door - 19% battery',
+            },
+        },
+    ]
+
+    answer = main.assistant('which batteries are low')
+
+    assert answer['intent'] == 'summary_low_batteries'
+    assert 'Livingroom TRV' in answer['message']
+    assert 'Fridge Door' not in answer['message']
+
+
 def test_assistant_uses_natural_speech_units_for_summary_attributes():
     main = load_addon_main()
     main.all_devices = lambda: [
@@ -793,6 +819,19 @@ def test_ollama_answer_skips_fast_when_health_check_is_offline():
     assert 'Basic HomeBrain commands are still available' in answer['message']
     assert answer['ollama']['online'] is False
     assert post_called['value'] is False
+
+
+def test_ollama_health_disabled_message_points_to_addon_options():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = False
+    main.CONFIG['ollama_base_url'] = 'http://192.168.1.199:11434'
+
+    health = main.ollama_health(force=True)
+
+    assert health['online'] is False
+    assert 'disabled in HomeBrain OS add-on options' in health['message']
+    assert 'ollama_enabled' in health['message']
+    assert health['base_url'] == 'http://192.168.1.199:11434'
 
 
 def test_ollama_answer_marks_truncated_responses():

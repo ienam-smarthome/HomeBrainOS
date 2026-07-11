@@ -58,6 +58,8 @@ class FakeMain:
         return conn
 
     def assistant(self, query):
+        if query == 'heating status':
+            return self.heating_status_answer()
         self.fallback_called = True
         return {'success': False, 'message': 'Local AI is offline. Basic HomeBrain commands are still available.'}
 
@@ -99,6 +101,9 @@ class FakeMain:
     def daily_briefing_answer(self):
         return {'success': True, 'message': 'Good afternoon. Everything looks normal.'}
 
+    def heating_status_answer(self):
+        return {'success': True, 'intent': 'heating_status', 'message': 'Heating Status:\nHallway TRV: heat, 20C -> 21C, heating'}
+
     def room_status_answer(self, query):
         if query == 'bathroom status':
             return {
@@ -133,6 +138,16 @@ def test_local_first_routes_room_status_before_daily_briefing():
     assert 'Bathroom status:' in answer['message']
     assert 'Temperature: 29.7°C' in answer['message']
     assert 'Daily Home Briefing' not in answer['message']
+
+
+def test_local_first_does_not_turn_heating_status_into_briefing():
+    module = load_natural_intelligence()
+    fake = FakeMain()
+    module.register(fake)
+    answer = fake.assistant('heating status')
+    assert answer['intent'] == 'heating_status'
+    assert 'Heating Status:' in answer['message']
+    assert 'Good afternoon' not in answer['message']
 
 
 def test_light_hours_uses_hubitat_event_history_for_all_lights():

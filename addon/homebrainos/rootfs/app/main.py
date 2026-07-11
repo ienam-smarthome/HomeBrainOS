@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.4-alpha'
+APP_VERSION = '1.9.5-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -5406,7 +5406,7 @@ def set_ollama_health(online: bool, message: str) -> dict[str, Any]:
 
 def ollama_health(force: bool = False) -> dict[str, Any]:
     if not CONFIG.get('ollama_enabled'):
-        return {'checked_at': time.time(), 'online': False, 'message': 'Local AI is disabled', 'base_url': ollama_base_url(), 'model': CONFIG.get('ollama_model', 'qwen2.5:3b')}
+        return {'checked_at': time.time(), 'online': False, 'message': 'Local AI is disabled in HomeBrain OS add-on options. Enable ollama_enabled and set ollama_base_url to your Ollama server, for example http://192.168.1.199:11434.', 'base_url': ollama_base_url(), 'model': CONFIG.get('ollama_model', 'qwen2.5:3b')}
     base_url = ollama_base_url()
     if not base_url:
         return set_ollama_health(False, 'Local AI URL is not configured')
@@ -5528,7 +5528,6 @@ def assistant_intent_hint(question: str) -> str:
     if any(phrase in q for phrase in (
         'battery replacement list',
         'replace batteries',
-        'which batteries',
         'batteries need replacing',
     )):
         return 'battery_list'
@@ -6837,7 +6836,6 @@ def assistant(text: str) -> dict[str, Any]:
     if (
         'battery replacement list' in t
         or 'replace batteries' in t
-        or 'which batteries' in t
         or 'batteries need replacing' in t
     ):
         battery_list = battery_replacement_list_answer()
