@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.5-alpha'
+APP_VERSION = '1.9.6-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -3827,6 +3827,26 @@ def weather_forecast_from_tile(tile: Any) -> str | None:
     return compact[:180] if compact else None
 
 
+def weather_rain_from_text(*texts: Any) -> tuple[str | None, float | None]:
+    text = _strip_html_report(' '.join(str(value or '') for value in texts))
+    text = re.sub(r'\s+', ' ', text).strip()
+    if not text:
+        return None, None
+    rain: str | None = None
+    chance: float | None = None
+    amount_match = re.search(r'(?:precipitation\s+now\s+is\s+(?:dry\s+)?|rain\s+today\s+|rain\s+)(\d+(?:\.\d+)?)\s*mm\b', text, flags=re.IGNORECASE)
+    if not amount_match:
+        amount_match = re.search(r'\b(\d+(?:\.\d+)?)\s*mm\b', text, flags=re.IGNORECASE)
+    if amount_match:
+        rain = format_weather_mm(amount_match.group(1))
+    chance_match = re.search(r'(?:chance\s+of\s+precipitation\s+is\s+|chance\s+rain\s+|rain\s+chance\s+)(\d+(?:\.\d+)?)\s*%', text, flags=re.IGNORECASE)
+    if not chance_match:
+        chance_match = re.search(r'\b(\d+(?:\.\d+)?)\s*%', text, flags=re.IGNORECASE)
+    if chance_match:
+        chance = safe_float(chance_match.group(1))
+    return rain, chance
+
+
 def weather_answer() -> dict[str, Any]:
     device = weather_device()
     if not device:
@@ -3845,7 +3865,11 @@ def weather_answer() -> dict[str, Any]:
     gust = safe_float(weather_attr(device, 'wind_gust', 'windGust', 'wind_gust_speed'))
     rain = format_weather_mm(weather_attr(device, 'precipitationToday', 'precipitation', 'rainToday'))
     rain_chance = safe_float(weather_attr(device, 'precipProbability', 'precipitationChance', 'chanceOfRain'))
-    forecast = weather_forecast_from_tile(weather_attr(device, 'threedayfcstTile', 'threeDayFcstTile', 'forecastTile', 'dailyForecast'))
+    forecast_tile = weather_attr(device, 'threedayfcstTile', 'threeDayFcstTile', 'forecastTile', 'dailyForecast')
+    parsed_rain, parsed_chance = weather_rain_from_text(summary, line, forecast_tile)
+    rain = rain or parsed_rain
+    rain_chance = rain_chance if rain_chance is not None else parsed_chance
+    forecast = weather_forecast_from_tile(forecast_tile)
 
     lines: list[str] = []
     headline = str(line or summary or '').strip()
@@ -5428,6 +5452,35 @@ def ollama_health(force: bool = False) -> dict[str, Any]:
         return set_ollama_health(False, f'Local AI is offline: {public_error(exc)}')
 
 
+def required_settings_answer() -> dict[str, Any]:
+    ollama_enabled = bool(CONFIG.get('ollama_enabled'))
+    live_sync_enabled = bool(CONFIG.get('auto_live_sync_enabled'))
+    base_url = ollama_base_url() or '(not set)'
+    model = str(CONFIG.get('ollama_model') or 'qwen2.5:3b')
+    lines = ['HomeBrain settings check:']
+    lines.append(f"Local AI: {'enabled' if ollama_enabled else 'disabled'}")
+    lines.append(f'Ollama URL: {base_url}')
+    lines.append(f'Ollama model: {model}')
+    lines.append(f"Auto live sync: {'enabled' if live_sync_enabled else 'disabled'}")
+    if not ollama_enabled:
+        lines.append('Next: enable ollama_enabled in the HomeBrain OS add-on options if you want unknown questions to use local AI.')
+    elif 'homeassistant.local' in base_url.lower():
+        lines.append('Next: if Ollama runs on another host, set ollama_base_url to that host IP and port, for example http://192.168.1.199:11434.')
+    if not live_sync_enabled:
+        lines.append('Next: enable auto_live_sync_enabled if you want HomeBrain to refresh live switch/device state automatically.')
+    return {
+        'success': True,
+        'intent': 'settings_check',
+        'message': '\n'.join(lines),
+        'settings': {
+            'ollama_enabled': ollama_enabled,
+            'ollama_base_url': base_url,
+            'ollama_model': model,
+            'auto_live_sync_enabled': live_sync_enabled,
+        },
+    }
+
+
 def ollama_answer(text: str) -> dict[str, Any] | None:
     if not CONFIG.get('ollama_enabled'):
         return None
@@ -6798,7 +6851,19 @@ def assistant(text: str) -> dict[str, Any]:
                 "refresh or clear the cache, list room devices, read hub logs, check stale devices, run device health, automation health, home health, energy advisor, home timeline, daily briefing, and diagnostics."
             ),
         }
-    if 'weather' in t or 'forecast' in t:
+    if (
+        'required setting' in t
+        or 'settings enabled' in t
+        or 'addon options' in t
+        or 'add-on options' in t
+        or 'ai status' in t
+        or 'ai running' in t
+        or 'ollama status' in t
+        or 'is ai running' in t
+        or 'local ai' in t
+    ):
+        return with_suggestions(required_settings_answer())
+    if 'weather' in t or 'forecast' in t or 'rain' in t or 'precip' in t:
         return with_suggestions(safe_weather_shortcut_answer())
     if 'offline' in t or 'off line' in t or 'not online' in t:
         return with_suggestions(stale_devices_answer(text))

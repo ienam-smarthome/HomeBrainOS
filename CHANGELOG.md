@@ -1,3 +1,9 @@
+## v1.9.6-alpha - Rain-Aware Weather + Settings Check
+
+- Routes rain and precipitation questions to the deterministic Open-Meteo weather answer.
+- Extracts rain amount and precipitation chance from Open-Meteo summary text when separate attributes are missing.
+- Adds a HomeBrain settings check answer for Ollama/local AI and auto live sync options.
+
 ## v1.9.5-alpha - Shortcut Routing + AI Config Clarity
 
 - Fixed `heating status` being intercepted as a daily briefing by the local-first assistant wrapper.

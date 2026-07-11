@@ -653,6 +653,34 @@ def test_weather_answer_includes_open_meteo_current_and_forecast_tile():
     assert '22.5 degrees' in answer['speech']
 
 
+def test_rain_question_uses_weather_summary_precipitation_text():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'w1',
+            'label': 'Weather Open-Meteo',
+            'room': 'Weather',
+            'category': 'weather',
+            'temperature': 23.7,
+            'humidity': 59,
+            'attributes': {
+                'weatherSummaryLine': 'Sunny, High 28C, Low 19C, Current 24C',
+                'weatherSummary': 'Weather summary for Lewisham, SE13 updated at 10:34. Sunny with a high of 28C and a low of 19C. Current temperature is 24C and feels like 24C. Precipitation now is Dry 0.00mm. Chance of precipitation is 0%.',
+                'threedayfcstTile': 'Lewisham SE13 Daily Icon Cond H/L Chance Rain Tod Overcast 28C/19C 0% 0mm Sun Overcast 29C/18C 0% 0mm',
+                'windSpeed': 8.7,
+                'seaLevelPressure': 1021.3,
+            },
+        },
+    ]
+
+    answer = main.assistant('will it rain today?')
+
+    assert answer['intent'] == 'weather'
+    assert 'rain today 0mm' in answer['message']
+    assert 'rain chance 0%' in answer['message']
+    assert 'wind 8.7' in answer['message']
+
+
 def test_assistant_understands_anything_offline_alias():
     main = load_addon_main()
     main.all_devices = lambda: [
@@ -832,6 +860,20 @@ def test_ollama_health_disabled_message_points_to_addon_options():
     assert 'disabled in HomeBrain OS add-on options' in health['message']
     assert 'ollama_enabled' in health['message']
     assert health['base_url'] == 'http://192.168.1.199:11434'
+
+
+def test_assistant_reports_required_settings_state():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = False
+    main.CONFIG['auto_live_sync_enabled'] = False
+    main.CONFIG['ollama_base_url'] = 'http://homeassistant.local:11434'
+
+    answer = main.assistant('are required settings enabled?')
+
+    assert answer['intent'] == 'settings_check'
+    assert 'Local AI: disabled' in answer['message']
+    assert 'Auto live sync: disabled' in answer['message']
+    assert 'ollama_enabled' in answer['message']
 
 
 def test_ollama_answer_marks_truncated_responses():
