@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
@@ -10,6 +11,151 @@ LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'heal
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
 
+
+
+ROOM_ALIASES = {
+    'livingroom': 'Living Room',
+    'living room': 'Living Room',
+    'hall': 'Hallway',
+    'hallway': 'Hallway',
+    'bathroom': 'Bathroom',
+    'toilet': 'Toilet',
+    'kitchen': 'Kitchen',
+    'entrance': 'Entrance',
+    'office': 'Office',
+    'bedroom 1': 'Bedroom 1',
+    'bedroom1': 'Bedroom 1',
+    'bedroom 2': 'Bedroom 2',
+    'bedroom2': 'Bedroom 2',
+    'bedroom 3': 'Bedroom 3',
+    'bedroom3': 'Bedroom 3',
+}
+
+DETAIL_TERMS = ('detailed', 'detail', 'full status', 'all devices', 'everything')
+DIAGNOSTIC_TERMS = ('diagnose', 'diagnostic', 'raw status', 'raw attributes', 'debug')
+
+
+@dataclass(frozen=True)
+class IntentResult:
+    intent: str
+    action: str = 'query'
+    room: str | None = None
+    device_type: str | None = None
+    detail_level: str = 'glance'
+    confidence: float = 0.75
+    needs_clarification: bool = False
+    reason: str = ''
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            'intent': self.intent,
+            'action': self.action,
+            'room': self.room,
+            'device_type': self.device_type,
+            'detail_level': self.detail_level,
+            'confidence': round(self.confidence, 2),
+            'needs_clarification': self.needs_clarification,
+            'reason': self.reason,
+        }
+
+
+def _extract_room(query: str) -> str | None:
+    q = _normalise(query)
+    # Longest aliases first so "bedroom 1" wins over partial matches.
+    for alias in sorted(ROOM_ALIASES, key=len, reverse=True):
+        if re.search(rf'\b{re.escape(alias)}\b', q):
+            return ROOM_ALIASES[alias]
+    return None
+
+
+def _detail_level(query: str) -> str:
+    q = _normalise(query)
+    if any(term in q for term in DIAGNOSTIC_TERMS):
+        return 'diagnostic'
+    if any(term in q for term in DETAIL_TERMS):
+        return 'detailed'
+    return 'glance'
+
+
+def _looks_like_device_power_query(query: str) -> bool:
+    """Distinguish a device named/presented as a power switch from energy usage."""
+    q = _normalise(query)
+    device_terms = ('switch', 'socket', 'plug', 'light', 'lamp', 'tv', 'fan', 'heater', 'dehumidifier')
+    state_terms = ('on', 'off', 'state', 'status', 'working')
+    return 'power' in q and any(term in q for term in device_terms) and any(term in q for term in state_terms)
+
+
+def classify_intent(query: str) -> IntentResult:
+    q = _normalise(query)
+    room = _extract_room(q)
+    detail = _detail_level(q)
+
+    if not q:
+        return IntentResult('briefing', confidence=0.98, reason='empty query')
+
+    command_match = re.match(
+        r'^(turn|switch|set|change|adjust|dim|brighten|increase|decrease|raise|lower|keep|leave|refresh|reload|clear|cancel|schedule)\b',
+        q,
+    )
+    if command_match:
+        return IntentResult(
+            'command',
+            action='command',
+            room=room,
+            detail_level=detail,
+            confidence=0.99,
+            reason='explicit command prefix',
+        )
+
+    if room and (
+        any(term in q for term in ('status', 'summary', 'what is happening', 'whats happening', 'how is'))
+        or q in {_normalise(room), f'{_normalise(room)} status'}
+    ):
+        return IntentResult(
+            'room_status',
+            room=room,
+            detail_level=detail,
+            confidence=0.97,
+            reason='room plus status wording',
+        )
+
+    if any(term in q for term in ('heating status', 'heating state', 'heat status', 'thermostat status')):
+        return IntentResult('home_context', room=room, detail_level=detail, confidence=0.95, reason='heating status')
+
+    if _looks_like_device_power_query(q):
+        return IntentResult(
+            'device_state',
+            room=room,
+            device_type='switch',
+            detail_level=detail,
+            confidence=0.94,
+            reason='power describes a device/switch rather than energy usage',
+        )
+
+    if any(word in q for word in ('electric', 'energy', 'cost', 'spent', 'kwh', 'kilowatt')) or (
+        'power' in q and any(term in q for term in ('usage', 'using', 'consume', 'consuming', 'watts', 'whole house', 'octopus'))
+    ):
+        return IntentResult('energy', room=room, detail_level=detail, confidence=0.94, reason='energy usage wording')
+
+    if 'today' in q and 'yesterday' in q and any(word in q for word in ('compare', 'comparison', 'versus', 'vs')):
+        return IntentResult('energy', room=room, detail_level=detail, confidence=0.96, reason='energy comparison wording')
+
+    if 'light' in q and any(word in q for word in ('why', 'because', 'reason')):
+        return IntentResult('why_lights', room=room, detail_level=detail, confidence=0.95, reason='light cause question')
+
+    if 'light' in q and any(word in q for word in ('hour', 'hours', 'time', 'long', 'today', 'yesterday', 'duration')):
+        return IntentResult('light_hours', room=room, detail_level=detail, confidence=0.95, reason='light duration question')
+
+    if any(word in q for word in ('unusual', 'attention', 'problem', 'issue', 'wrong')):
+        return IntentResult('attention', room=room, detail_level=detail, confidence=0.88, reason='problem/attention wording')
+
+    if any(word in q for word in ('health', 'cpu', 'memory', 'load')):
+        return IntentResult('health', room=room, detail_level=detail, confidence=0.94, reason='health metric wording')
+
+    if any(word in q for word in ('briefing', 'happening', 'status', 'summary')):
+        return IntentResult('briefing', room=room, detail_level=detail, confidence=0.78, reason='general status wording')
+
+    return IntentResult('home_context', room=room, detail_level=detail, confidence=0.65, reason='general home question')
 
 def _safe_call(func: Callable[..., Any] | None, *args: Any, fallback: Any = None, **kwargs: Any) -> Any:
     if func is None:
@@ -247,27 +393,10 @@ def _answer_message(answer: Any, fallback: str = '') -> str:
 
 
 def _intent(query: str) -> str:
-    q = _normalise(query)
-    if not q:
-        return 'briefing'
-    if any(term in q for term in ('heating status', 'heating state', 'heat status', 'thermostat status')):
-        return 'home_context'
-    if any(word in q for word in ('electric', 'energy', 'power', 'cost', 'spent', 'kwh', 'kilowatt')):
-        return 'energy'
-    if 'today' in q and 'yesterday' in q and any(word in q for word in ('compare', 'comparison', 'versus', 'vs')):
-        return 'energy'
-    if 'light' in q and any(word in q for word in ('why', 'because', 'reason')):
-        return 'why_lights'
-    if 'light' in q and any(word in q for word in ('hour', 'hours', 'time', 'long', 'today', 'yesterday', 'duration')):
-        return 'light_hours'
-    if any(word in q for word in ('unusual', 'attention', 'problem', 'issue', 'wrong')):
-        return 'attention'
-    if any(word in q for word in ('health', 'cpu', 'memory', 'load')):
-        return 'health'
-    if any(word in q for word in ('briefing', 'happening', 'status', 'summary')):
-        return 'briefing'
-    return 'home_context'
-
+    """Backward-compatible intent name used by existing answer builders."""
+    result = classify_intent(query)
+    # Existing command execution remains in the deterministic main assistant.
+    return 'home_context' if result.intent in {'command', 'device_state', 'room_status'} else result.intent
 
 def should_answer_locally(query: str) -> bool:
     q = _normalise(query)
@@ -413,12 +542,17 @@ def _voice_dehumidifier_command(app_module: Any, query: str) -> dict[str, Any] |
 
 
 def _room_status_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    route = classify_intent(query)
     delegate = getattr(app_module, 'room_status_answer', None)
     answer = _safe_call(delegate, query, fallback=None) if callable(delegate) else None
     if isinstance(answer, dict) and answer.get('message'):
         answer = dict(answer)
         answer['message'] = naturalise_units(answer['message'])
         answer.setdefault('intent', 'room_status')
+        answer['routing'] = route.as_dict()
+        answer['detail_level'] = route.detail_level
+        if route.room:
+            answer.setdefault('room', route.room)
         return answer
     return None
 
