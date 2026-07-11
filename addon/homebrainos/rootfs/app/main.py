@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.2-alpha'
+APP_VERSION = '1.9.3-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1423,21 +1423,33 @@ def select_power_source(power_devices: list[dict[str, Any]]) -> dict[str, Any] |
 def household_people(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     people = []
     for name in HOUSEHOLD_PEOPLE:
-        matches = [d for d in devices if name.lower() in device_search_text(d) and d.get('presence') is not None]
+        matches = [d for d in devices if name.lower() in device_search_text(d)]
         device = matches[0] if matches else None
-        state = state_text(device.get('presence')) if device else ''
-        if state == 'present':
-            status = 'present'
-        elif state in ('not present', 'away', 'absent'):
-            status = 'away'
-        else:
-            status = 'unknown'
+        status = household_presence_status(device)
         people.append({
             'name': name,
             'status': status,
             'device': device.get('label') if device else None,
         })
     return people
+
+
+def household_presence_status(device: dict[str, Any] | None) -> str:
+    if not isinstance(device, dict):
+        return 'unknown'
+    raw_values = [
+        device.get('presence'),
+        device_attr_value(device, 'presence', 'presenceSensor', 'status', 'currentPlace', 'place', 'location', 'home', 'tile'),
+    ]
+    text = _strip_html_report(' '.join(str(value or '') for value in raw_values)).strip().lower().replace('_', ' ')
+    text = re.sub(r'\s+', ' ', text)
+    if not text:
+        return 'unknown'
+    if any(term in text for term in ('not present', 'not home', 'not at home', 'away', 'absent', 'left home', 'left ', 'false')):
+        return 'away'
+    if any(term in text for term in ('present', 'home', 'at home', 'at home since', 'arrived', 'true')):
+        return 'present'
+    return 'unknown'
 
 
 def summary_devices(devices: list[dict[str, Any]], attr: str | None = None) -> list[dict[str, Any]]:
@@ -2383,7 +2395,8 @@ def device_status_report_display_answer(question: str | None = None) -> dict[str
             speech_parts.append(f'{motion} motion no-change')
         speech = 'Device Status Notifier reports ' + ', '.join(speech_parts) if speech_parts else 'No device status issues found.'
 
-    intent = 'device_health' if 'device health' in normalise(question or '') else 'stale_devices'
+    q_norm = normalise(question or '')
+    intent = 'device_health' if 'device health' in q_norm or scope in ('offline', 'low_battery', 'priority') else 'stale_devices'
     return {
         'success': True,
         'intent': intent,
@@ -3767,11 +3780,51 @@ def weather_device() -> dict[str, Any] | None:
 
 def weather_speech(text: str) -> str:
     speech = str(text or '').strip()
+    speech = speech.replace('°C', ' degrees')
     speech = re.sub(r'(\d+(?:\.\d+)?)C\b', r'\1 degrees', speech)
     speech = re.sub(r'(\d+(?:\.\d+)?)mm\b', r'\1 millimetres', speech)
     speech = re.sub(r'\b0\.00 millimetres\b', '0 millimetres', speech)
     speech = speech.replace('SE13', 'S E 13')
     return speech
+
+
+def weather_attr(device: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        value = device_attr_value(device, name)
+        if value not in (None, ''):
+            return value
+    return None
+
+
+def format_weather_temp(value: Any) -> str | None:
+    temp = safe_float(value)
+    return f'{temp:g}°C' if temp is not None else None
+
+
+def format_weather_mm(value: Any) -> str | None:
+    amount = safe_float(value)
+    if amount is None:
+        return None
+    return f'{amount:g}mm'
+
+
+def weather_forecast_from_tile(tile: Any) -> str | None:
+    text = _strip_html_report(str(tile or ''))
+    text = re.sub(r'\s+', ' ', text).strip()
+    if not text:
+        return None
+    forecasts = []
+    day_pattern = r'(Tod|Today|Mon|Tue|Wed|Thu|Fri|Sat|Sun)'
+    for match in re.finditer(day_pattern + r'.{0,90}?(\d+(?:\.\d+)?)C\s*/\s*(\d+(?:\.\d+)?)C', text, flags=re.IGNORECASE):
+        day = match.group(1).title()
+        if day == 'Tod':
+            day = 'Today'
+        forecasts.append(f"{day} {float(match.group(2)):g}°C/{float(match.group(3)):g}°C")
+    if forecasts:
+        return 'Next: ' + ', '.join(dict.fromkeys(forecasts[:4]))
+    compact = re.sub(r'\b(Icon|Cond|H/L|Chance Rain|Daily)\b', ' ', text, flags=re.IGNORECASE)
+    compact = re.sub(r'\s+', ' ', compact).strip()
+    return compact[:180] if compact else None
 
 
 def weather_answer() -> dict[str, Any]:
@@ -3782,24 +3835,50 @@ def weather_answer() -> dict[str, Any]:
             'intent': 'weather',
             'message': 'No weather device found. Add your Hubitat weather device to Maker API, then refresh from Hubitat.',
         }
-    attrs = device_attribute_map(device)
-    summary = device.get('weatherSummary') or attrs.get('weatherSummary')
-    line = device.get('weatherSummaryLine') or attrs.get('weatherSummaryLine')
-    if summary:
-        message = str(summary).strip()
-    elif line:
-        message = str(line).strip()
+    summary = weather_attr(device, 'weatherSummary')
+    line = weather_attr(device, 'weatherSummaryLine')
+    current = format_weather_temp(weather_attr(device, 'temperature', 'currentTemperature'))
+    feels = format_weather_temp(weather_attr(device, 'feelsLike', 'feels_like', 'apparentTemperature'))
+    humidity = safe_float(weather_attr(device, 'humidity'))
+    pressure = safe_float(weather_attr(device, 'seaLevelPressure', 'pressure'))
+    wind = safe_float(weather_attr(device, 'windSpeed'))
+    gust = safe_float(weather_attr(device, 'wind_gust', 'windGust', 'wind_gust_speed'))
+    rain = format_weather_mm(weather_attr(device, 'precipitationToday', 'precipitation', 'rainToday'))
+    rain_chance = safe_float(weather_attr(device, 'precipProbability', 'precipitationChance', 'chanceOfRain'))
+    forecast = weather_forecast_from_tile(weather_attr(device, 'threedayfcstTile', 'threeDayFcstTile', 'forecastTile', 'dailyForecast'))
+
+    lines: list[str] = []
+    headline = str(line or summary or '').strip()
+    if headline:
+        lines.append(headline)
+    elif current:
+        lines.append(f'Weather now: {current}')
     else:
-        parts = []
-        if device.get('temperature') is not None:
-            parts.append(f"Current temperature {device['temperature']}C")
-        if device.get('humidity') is not None:
-            parts.append(f"Humidity {device['humidity']}%")
-        if device.get('precipitationToday') is not None:
-            parts.append(f"Precipitation today {device['precipitationToday']}mm")
-        if device.get('windSpeed') is not None:
-            parts.append(f"Wind speed {device['windSpeed']}")
-        message = ', '.join(parts) if parts else f"{device['label']} has no weather summary yet."
+        lines.append(f"{device.get('label') or 'Weather'} has no weather summary yet.")
+
+    details = []
+    if current:
+        details.append(f'current {current}')
+    if feels:
+        details.append(f'feels like {feels}')
+    if humidity is not None:
+        details.append(f'humidity {humidity:g}%')
+    if rain:
+        details.append(f'rain today {rain}')
+    if rain_chance is not None:
+        details.append(f'rain chance {rain_chance:g}%')
+    if wind is not None:
+        wind_text = f'wind {wind:g}'
+        if gust is not None:
+            wind_text += f', gust {gust:g}'
+        details.append(wind_text)
+    if pressure is not None:
+        details.append(f'pressure {pressure:g} hPa')
+    if details:
+        lines.append('Now: ' + '; '.join(details) + '.')
+    if forecast:
+        lines.append(forecast)
+    message = '\n'.join(lines)
     return {
         'success': True,
         'intent': 'weather',
@@ -5472,6 +5551,12 @@ def assistant_intent_hint(question: str) -> str:
         'device report',
         'device check',
         'offline devices',
+        'anything offline',
+        'any devices offline',
+        'is anything offline',
+        'is anything off line',
+        'what is offline',
+        'what devices are offline',
         'low battery devices',
         'stale devices',
     )):
@@ -6716,6 +6801,8 @@ def assistant(text: str) -> dict[str, Any]:
         }
     if 'weather' in t or 'forecast' in t:
         return with_suggestions(safe_weather_shortcut_answer())
+    if 'offline' in t or 'off line' in t or 'not online' in t:
+        return with_suggestions(stale_devices_answer(text))
     if 'hub log' in t or 'hub logs' in t or 'recent logs' in t or 'log diagnostic' in t:
         return with_suggestions(hub_logs_answer())
     if 'room' in t and ('motion' in t or 'active' in t):

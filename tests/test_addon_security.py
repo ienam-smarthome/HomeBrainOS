@@ -57,6 +57,26 @@ def test_summary_uses_octopus_power_and_named_people():
     assert summary['people_home_names'] == ['Enamul']
 
 
+def test_summary_counts_life360_home_members_as_home():
+    main = load_addon_main()
+    main.SUMMARY_CACHE = None
+    main.all_devices = lambda: [
+        {'id': 'e', 'label': 'Enamul Khan', 'name': 'Life360 Member', 'room': 'Life360', 'category': 'presence_sensor', 'attributes': {'tile': 'Enamul Khan At Home since yesterday 5:31 PM Updated: 5:31 PM'}},
+        {'id': 'm', 'label': 'Muhsena Khan', 'name': 'Life360 Member', 'room': 'Life360', 'category': 'presence_sensor', 'attributes': {'currentPlace': 'Home'}},
+        {'id': 's', 'label': 'Samah Khan', 'name': 'Life360 Member', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'present'},
+        {'id': 't', 'label': 'Tahmid Khan', 'name': 'Life360 Member', 'room': 'Life360', 'category': 'presence_sensor', 'presence': 'home'},
+    ]
+
+    summary = main.dashboard_summary()
+    answer = main.assistant('who is home')
+
+    assert summary['people_home'] == 4
+    assert summary['people_tracked'] == 4
+    assert summary['people_home_names'] == ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
+    assert 'Enamul' in answer['message']
+    assert 'Muhsena' in answer['message']
+
+
 def test_assistant_explains_low_battery_and_motion_summary_tiles():
     main = load_addon_main()
     main.all_devices = lambda: [
@@ -571,6 +591,64 @@ def test_assistant_reads_weather_summary_from_weather_device():
     assert 'Weather summary for Lewisham' in answer['message']
     assert '27 degrees' in answer['speech']
     assert 'S E 13' in answer['speech']
+
+
+def test_weather_answer_includes_open_meteo_current_and_forecast_tile():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'w1',
+            'label': 'Weather Open-Meteo',
+            'room': 'Weather',
+            'category': 'weather',
+            'temperature': 22.5,
+            'humidity': 61,
+            'attributes': {
+                'weatherSummaryLine': 'Sunny, High 28C, Low 19C, Current 23C',
+                'weatherSummary': 'Weather summary for Lewisham, SE13 updated at 09:49. Sunny with a high of 28C and a low of 19C. Current temperature is 23C and feels like 23C. Precipitation now is Dry 0.00mm. Chance of precipitation is 0%.',
+                'threedayfcstTile': 'Lewisham SE13 Daily Icon Cond H/L Chance Rain Tod Overcast 28C/19C 0% 0mm Sun Overcast 29C/18C 0% 0mm Mon Overcast 28C/16C 0% 0mm',
+                'windSpeed': 8.1,
+                'wind_gust': 17.7,
+                'seaLevelPressure': 1021.3,
+                'precipitationToday': 0,
+                'chanceOfRain': 0,
+            },
+        },
+    ]
+
+    answer = main.assistant("what's the weather")
+
+    assert answer['intent'] == 'weather'
+    assert 'Sunny, High 28C, Low 19C, Current 23C' in answer['message']
+    assert 'Now: current 22.5°C' in answer['message']
+    assert 'rain chance 0%' in answer['message']
+    assert 'wind 8.1, gust 17.7' in answer['message']
+    assert 'Next: Today 28°C/19°C, Sun 29°C/18°C, Mon 28°C/16°C' in answer['message']
+    assert '22.5 degrees' in answer['speech']
+
+
+def test_assistant_understands_anything_offline_alias():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'report',
+            'label': 'Device Status Report',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {
+                'offlineCount': 2,
+                'lowBatteryCount': 0,
+                'motionAlertCount': 0,
+                'reportText': '[OFFLINE]\nRoborock Q7 Max - last seen 1d ago\nTuya Remote (bedroom 3) - last seen 1d ago',
+            },
+        },
+    ]
+
+    answer = main.assistant('anything offline?')
+
+    assert answer['intent'] == 'device_health'
+    assert 'Offline devices: 2' in answer['message']
+    assert 'Roborock Q7 Max' in answer['message']
 
 
 def test_assistant_increases_room_brightness_for_room_lights():

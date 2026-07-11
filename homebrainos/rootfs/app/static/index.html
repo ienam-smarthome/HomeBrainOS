@@ -504,8 +504,11 @@ async function ask(){
     const j=await postApi('/api/assistant', {q:text});
     setOutput(j.message||JSON.stringify(j,null,2));
     speak(j.speech||j.message||'Done');
-    loadTimers();
-    status();
+    const changed = j.changed || j.devices || j.device || j.setpoint!=null || j.intent==='voice_device_command' || j.intent==='command';
+    if(changed){
+      loadTimers();
+      status();
+    }
   }catch(err){
     setOutput('Request failed: '+err.message);
   }finally{

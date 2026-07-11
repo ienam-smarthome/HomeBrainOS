@@ -1,3 +1,9 @@
+## v1.9.3-alpha - Faster Shortcuts + Weather Detail
+
+- Made read-only smart shortcut answers feel faster by avoiding unnecessary dashboard/device reloads after each answer.
+- Expanded Open-Meteo weather answers with current conditions, rain, wind, pressure, and next forecast from the cached weather tile.
+- Added natural offline aliases such as `anything offline?`.
+
 ## v1.9.2-alpha - Room Status + Encoding Fix
 
 - Bumped the Home Assistant add-on version so HA can detect the update.
