@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import html as html_lib
 import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.12-alpha'
+VERSION = '1.9.13-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -543,15 +544,48 @@ def _voice_dehumidifier_command(app_module: Any, query: str) -> dict[str, Any] |
 
 
 def _clean_display_text(value: Any) -> str:
-    """Remove raw HTML, mojibake and repeated whitespace from assistant output."""
-    text = str(value or '')
-    text = text.replace('\u00c2Â£', 'Â£').replace('\u00c2Â°C', 'Â°C').replace('\u00c2Â°', 'Â°')
-    text = re.sub(r'<script\b[^>]*>.*?</script>', ' ', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'<style\b[^>]*>.*?</style>', ' ', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-    return re.sub(r'\s+', ' ', text).strip()
+    """Normalise HTML entities, mojibake and whitespace in assistant output."""
+    text = html_lib.unescape(str(value or ''))
 
+    replacements = {
+        '\u00e2\u20ac\u00a2': '-',
+        '\u00e2\u20ac\u201c': '-',
+        '\u00e2\u20ac\u201d': '-',
+        '\u00e2\u20ac\u2122': "'",
+        '\u00c2\u00a3': '£',
+        '\u00c2\u00b0C': '°C',
+        '\u00c2\u00b0': '°',
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
+    text = re.sub(
+        r'<script\b[^>]*>.*?</script>',
+        ' ',
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = re.sub(
+        r'<style\b[^>]*>.*?</style>',
+        ' ',
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(
+        r'</(?:div|p|li|tr|h[1-6])>',
+        '\n',
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r'<[^>]+>', ' ', text)
+
+    lines = [
+        re.sub(r'\s+', ' ', line).strip()
+        for line in text.splitlines()
+    ]
+    return '\n'.join(line for line in lines if line).strip()
 
 def _room_matches(device: dict[str, Any], room: str) -> bool:
     wanted = _normalise_key(room)
@@ -926,14 +960,14 @@ def hub_cpu_advisor_answer(app_module: Any, query: str = '') -> dict[str, Any] |
     elif temp_number is not None:
         advisory.append('Hub temperature is within a reasonable range.')
 
-    message = headline + ':\n' + '\n'.join(f'â€¢ {fact}' for fact in facts)
+    message = headline + ':\n' + '\n'.join(f'- {fact}' for fact in facts)
     if advisory:
         message += '\nAssessment: ' + ' '.join(advisory)
 
     return {
         'success': True,
         'intent': 'hub_status',
-        'message': message,
+        'message': _clean_display_text(message),
         'hub_info': data,
         'source': result.get('source'),
     }
@@ -959,9 +993,7 @@ def _weather_devices(app_module: Any) -> list[dict[str, Any]]:
 
 
 def _weather_device(app_module: Any) -> dict[str, Any] | None:
-    devices = _weather_devices(app_module)
-    return devices[0] if devices else None
-
+    return _authoritative_weather_device(app_module)
 
 def _weather_period(query: str) -> str:
     q = _normalise(query)
@@ -1138,6 +1170,332 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
         'tomorrow': tomorrow,
     }
 
+def _normalise_detail_attributes(detail: Any) -> dict[str, Any]:
+    """Convert Maker API detail payloads into a simple attribute dictionary."""
+    if not isinstance(detail, dict):
+        return {}
+    result: dict[str, Any] = {}
+    raw = detail.get('attributes')
+    if isinstance(raw, dict):
+        result.update(raw)
+    elif isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name') or item.get('attribute')
+            if not name:
+                continue
+            value = item.get('currentValue')
+            if value is None:
+                value = item.get('value')
+            result[str(name)] = value
+    for key, value in detail.items():
+        if key in {
+            'attributes', 'commands', 'capabilities', 'id', 'name', 'label',
+            'type', 'deviceNetworkId', 'date', 'model', 'manufacturer',
+        }:
+            continue
+        if isinstance(value, (str, int, float, bool)) and key not in result:
+            result[key] = value
+    return result
+
+
+def _refresh_device_detail(app_module: Any, device: dict[str, Any]) -> dict[str, Any]:
+    """Fetch one device from Maker API and merge it without changing the cache."""
+    device_id = device.get('id')
+    getter = getattr(app_module, 'maker_get', None)
+    if not device_id or not callable(getter):
+        return device
+    try:
+        detail = getter(f'devices/{device_id}', timeout=8)
+    except TypeError:
+        try:
+            detail = getter(f'devices/{device_id}')
+        except Exception:
+            return device
+    except Exception:
+        return device
+    if not isinstance(detail, dict):
+        return device
+
+    merged = dict(device)
+    merged_attrs = dict(_attrs(device))
+    merged_attrs.update(_normalise_detail_attributes(detail))
+    merged['attributes'] = merged_attrs
+    for key in ('label', 'name', 'room', 'category', 'capabilities', 'commands'):
+        if detail.get(key) not in (None, ''):
+            merged[key] = detail[key]
+    return merged
+
+
+def _authoritative_weather_device(app_module: Any) -> dict[str, Any] | None:
+    devices = _weather_devices(app_module)
+    if not devices:
+        return None
+    # Weather summaries and forecast tiles are commonly omitted from the cached list.
+    for device in devices:
+        refreshed = _refresh_device_detail(app_module, device)
+        attrs = _attrs(refreshed)
+        if any(attrs.get(key) not in (None, '') for key in (
+            'weatherSummary', 'weatherSummaryLine', 'threedayfcstTile',
+            'precipitationToday', 'temperature',
+        )):
+            return refreshed
+    return _refresh_device_detail(app_module, devices[0])
+
+
+def _person_home_from_device(device: dict[str, Any]) -> bool:
+    attrs = _attrs(device)
+    presence = _normalise(attrs.get('presence'))
+    if presence in {'present', 'home', 'at home', 'occupied'}:
+        return True
+
+    for key in ('place', 'currentPlace', 'locationName', 'status', 'address1'):
+        value = _normalise(attrs.get(key))
+        if value in {'home', 'at home'} or value.startswith('at home '):
+            return True
+
+    # Life360 custom drivers often expose the authoritative state in tile HTML.
+    for key in ('tile', 'html', 'map', 'display', 'summary'):
+        raw = _clean_display_text(attrs.get(key))
+        if re.search(r'\bat home since\b', raw, flags=re.IGNORECASE):
+            return True
+        first_lines = ' '.join(raw.splitlines()[:3])
+        if re.search(r'\bat home\b', first_lines, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def authoritative_people_home(app_module: Any) -> dict[str, Any]:
+    household = list(getattr(app_module, 'HOUSEHOLD_PEOPLE', None) or ('Enamul', 'Samah', 'Tahmid', 'Muhsena'))
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    devices = devices if isinstance(devices, list) else []
+    home: list[str] = []
+    evidence: dict[str, str] = {}
+
+    for person in household:
+        person_key = _normalise_key(person)
+        candidates = []
+        for device in devices:
+            if not isinstance(device, dict):
+                continue
+            label_key = _normalise_key(_device_label(device))
+            name_key = _normalise_key(device.get('name'))
+            if label_key.startswith(person_key) or name_key.startswith(person_key):
+                candidates.append(device)
+
+        # Prefer devices that look like Life360/presence devices.
+        candidates.sort(
+            key=lambda d: (
+                'life360' not in _device_text(d),
+                'presence' not in _device_text(d),
+                len(_device_label(d)),
+            )
+        )
+
+        for candidate in candidates:
+            refreshed = _refresh_device_detail(app_module, candidate)
+            if _person_home_from_device(refreshed):
+                home.append(person)
+                evidence[person] = _device_label(refreshed)
+                break
+
+    return {
+        'home': home,
+        'count': len(home),
+        'total': len(household),
+        'away': [person for person in household if person not in home],
+        'evidence': evidence,
+    }
+
+
+def authoritative_family_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    q = _normalise(query)
+    if not any(term in q for term in ('who is home', 'whos home', 'who s home', 'people home', 'family home', 'is everyone home')):
+        return None
+    result = authoritative_people_home(app_module)
+    names = result['home']
+    if result['count'] == result['total'] and result['total']:
+        message = 'Everyone is home: ' + ', '.join(names) + '.'
+    elif names:
+        message = f"{result['count']}/{result['total']} people are home: " + ', '.join(names) + '.'
+        if result['away']:
+            message += ' Away: ' + ', '.join(result['away']) + '.'
+    else:
+        message = 'I cannot confirm anyone as home from the current presence devices.'
+    return {
+        'success': True,
+        'intent': 'family_presence',
+        'message': message,
+        'people_home': names,
+        'people_away': result['away'],
+        'count': result['count'],
+        'total': result['total'],
+        'evidence': result['evidence'],
+    }
+
+
+def _status_report_device(app_module: Any) -> dict[str, Any] | None:
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    if not isinstance(devices, list):
+        return None
+    candidates = []
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        attrs = _attrs(device)
+        text = _device_text(device)
+        if 'device status report' in text or 'reportHtml' in attrs or 'reporthtml' in attrs:
+            candidates.append(device)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: 'device status report display' not in _device_text(item))
+    return _refresh_device_detail(app_module, candidates[0])
+
+
+def _extract_low_battery_report(report_html: Any) -> list[dict[str, Any]]:
+    raw = html_lib.unescape(str(report_html or ''))
+    if not raw:
+        return []
+
+    # Isolate the LOW BATTERY card up to the next report section.
+    match = re.search(
+        r'LOW\s*BATTERY(.*?)(?=\b(?:OK|OFFLINE|INFO|REPORT)\b|$)',
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    section = match.group(1) if match else ''
+    text = _clean_display_text(section)
+    if not text:
+        return []
+
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    patterns = (
+        r'([A-Za-z0-9][A-Za-z0-9 _()./&+\-]+?)\s*-\s*(\d+(?:\.\d+)?)\s*%\s*battery',
+        r'([A-Za-z0-9][A-Za-z0-9 _()./&+\-]+?)\s*[:\-]\s*(\d+(?:\.\d+)?)\s*%',
+    )
+    for pattern in patterns:
+        for label, value in re.findall(pattern, text, flags=re.IGNORECASE):
+            clean_label = re.sub(r'\s+', ' ', label).strip(' -:')
+            # Remove text carried over from a previous line/card.
+            clean_label = re.sub(r'^(?:LOW BATTERY|last seen .*?)\s+', '', clean_label, flags=re.IGNORECASE)
+            key = _normalise_key(clean_label)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            items.append({'label': clean_label, 'battery': float(value), 'source': 'Device Status Report'})
+    return sorted(items, key=lambda item: item['battery'])
+
+
+def authoritative_low_batteries(app_module: Any) -> list[dict[str, Any]]:
+    report_device = _status_report_device(app_module)
+    if report_device:
+        attrs = _attrs(report_device)
+        report = (
+            attrs.get('reportHtml')
+            or attrs.get('reporthtml')
+            or attrs.get('report')
+            or attrs.get('html')
+        )
+        parsed = _extract_low_battery_report(report)
+        if parsed:
+            return parsed
+
+    # Fallback to direct battery attributes.
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    rows = []
+    if isinstance(devices, list):
+        for device in devices:
+            if not isinstance(device, dict):
+                continue
+            battery = _safe_float(_attrs(device).get('battery'))
+            if battery is not None and battery <= 20:
+                rows.append({
+                    'label': _device_label(device),
+                    'battery': battery,
+                    'source': 'device attribute',
+                })
+    return sorted(rows, key=lambda item: item['battery'])
+
+
+def authoritative_low_battery_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    q = _normalise(query)
+    if not (
+        ('battery' in q or 'batteries' in q)
+        and any(term in q for term in ('low', 'which', 'need replacing', 'replace'))
+    ):
+        return None
+
+    rows = authoritative_low_batteries(app_module)
+    if not rows:
+        message = 'No low-battery devices are currently reported.'
+    else:
+        message = 'Low battery devices:\n' + '\n'.join(
+            f"- {item['label']}: {item['battery']:g}%"
+            for item in rows
+        )
+    return {
+        'success': True,
+        'intent': 'low_batteries',
+        'message': message,
+        'low_batteries': rows,
+        'count': len(rows),
+        'source': rows[0]['source'] if rows else None,
+    }
+
+
+def _patch_people_summary_value(value: Any, result: dict[str, Any]) -> Any:
+    if isinstance(value, dict):
+        patched = dict(value)
+        for key in ('count', 'home_count', 'people_home_count'):
+            if key in patched:
+                patched[key] = result['count']
+        for key in ('total', 'people_total'):
+            if key in patched:
+                patched[key] = result['total']
+        for key in ('names', 'home', 'people_home'):
+            if key in patched:
+                patched[key] = result['home']
+        return patched
+    if isinstance(value, list):
+        return result['home']
+    if isinstance(value, int):
+        return result['count']
+    if isinstance(value, str):
+        return ', '.join(result['home'])
+    return value
+
+
+def wrap_dashboard_presence(app_module: Any) -> None:
+    existing = getattr(app_module, 'dashboard_summary', None)
+    if not callable(existing) or getattr(existing, '_homebrain_presence_fixed', False):
+        return
+
+    def dashboard_with_authoritative_presence(*args: Any, **kwargs: Any) -> Any:
+        summary = existing(*args, **kwargs)
+        if not isinstance(summary, dict):
+            return summary
+        result = authoritative_people_home(app_module)
+        patched = dict(summary)
+
+        for key in ('people_home', 'home_people', 'people_home_names', 'home_count'):
+            if key in patched:
+                patched[key] = _patch_people_summary_value(patched[key], result)
+
+        for key in ('people', 'occupancy', 'presence'):
+            if key in patched:
+                patched[key] = _patch_people_summary_value(patched[key], result)
+
+        # Add explicit fields without disturbing existing consumers.
+        patched['authoritative_people_home'] = result['home']
+        patched['authoritative_people_home_count'] = result['count']
+        patched['authoritative_people_total'] = result['total']
+        return patched
+
+    dashboard_with_authoritative_presence._homebrain_presence_fixed = True  # type: ignore[attr-defined]
+    app_module.dashboard_summary = dashboard_with_authoritative_presence
+
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     summary = summary if isinstance(summary, dict) else {}
@@ -1206,6 +1564,14 @@ def wrap_assistant(app_module: Any) -> None:
     if not callable(existing) or getattr(existing, '_homebrain_local_first', False):
         return
     def local_first_assistant(query: str) -> dict[str, Any]:
+        family_answer = authoritative_family_answer(app_module, query)
+        if family_answer:
+            family_answer['local_first'] = True
+            return family_answer
+        battery_answer = authoritative_low_battery_answer(app_module, query)
+        if battery_answer:
+            battery_answer['local_first'] = True
+            return battery_answer
         hub_answer = hub_cpu_advisor_answer(app_module, query)
         if hub_answer:
             hub_answer['local_first'] = True
@@ -1241,6 +1607,7 @@ def wrap_assistant(app_module: Any) -> None:
 
 
 def register(app_module: Any) -> Any:
+    wrap_dashboard_presence(app_module)
     app_module.APP_VERSION = VERSION
     app = app_module.app; app.version = VERSION; wrap_assistant(app_module)
     if not _route_exists(app, '/api/home-context'):

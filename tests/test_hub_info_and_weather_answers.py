@@ -82,7 +82,7 @@ def test_hub_info_parser_and_cpu_answer():
     assert "Hub C8 Pro status from live Hub Info" in answer["message"]
     assert "CPU load: 0.85 / 24.5 %" in answer["message"]
     assert "Free memory: 875.47 MB" in answer["message"]
-    assert "Temperature: 49.2 Â°C" in answer["message"]
+    assert "Temperature: 49.2 °C" in answer["message"]
     assert "Database size: 168 MB" in answer["message"]
 
 
