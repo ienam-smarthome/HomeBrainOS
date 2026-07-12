@@ -109,7 +109,7 @@ def test_weather_detail_is_fetched_on_demand():
     assert device["attributes"]["weatherSummary"]
     answer = module.improved_weather_answer(FakeMain(), "what is the weather")
     assert "Now:" in answer["message"]
-    assert "21Â°C" in answer["message"]
+    assert "21°C" in answer["message"]
     assert "Today:" in answer["message"]
 
 

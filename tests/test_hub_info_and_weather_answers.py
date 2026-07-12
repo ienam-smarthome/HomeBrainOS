@@ -24,7 +24,7 @@ HUB_HTML = """
 <tr><td>DB Size</td><td>168 MB</td></tr>
 <tr><td>Last Restart</td><td>09Jul2026 23:46</td></tr>
 <tr><td>Uptime</td><td>2d:9h:26m:46s</td></tr>
-<tr><td>Temperature</td><td>49.2 Â°C</td></tr>
+<tr><td>Temperature</td><td>49.2 °C</td></tr>
 <tr><td>Matter Enabled/Status</td><td>true / online</td></tr>
 </table>
 """
@@ -90,7 +90,7 @@ def test_weather_now_is_clearly_labelled():
     answer = module.improved_weather_answer(FakeMain(), "what is the weather now")
     assert answer["period"] == "now"
     assert answer["message"].startswith("Now:")
-    assert "21Â°C now" in answer["message"]
+    assert "21°C now" in answer["message"]
     assert "precipitation now: Dry 0.00mm" in answer["message"]
 
 
@@ -98,7 +98,7 @@ def test_weather_today_is_distinct():
     answer = module.improved_weather_answer(FakeMain(), "weather today")
     assert answer["period"] == "today"
     assert answer["message"].startswith("Today:")
-    assert "high 28Â°C, low 17Â°C" in answer["message"]
+    assert "high 28°C, low 17°C" in answer["message"]
     assert "rain chance 0%" in answer["message"]
 
 

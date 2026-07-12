@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.13-alpha'
+VERSION = '1.9.14-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -544,21 +544,28 @@ def _voice_dehumidifier_command(app_module: Any, query: str) -> dict[str, Any] |
 
 
 def _clean_display_text(value: Any) -> str:
-    """Normalise HTML entities, mojibake and whitespace in assistant output."""
+    """Normalise HTML entities, mojibake and whitespace."""
     text = html_lib.unescape(str(value or ''))
 
+    degree = chr(176)
+    pound = chr(163)
+
     replacements = {
-        '\u00e2\u20ac\u00a2': '-',
-        '\u00e2\u20ac\u201c': '-',
-        '\u00e2\u20ac\u201d': '-',
-        '\u00e2\u20ac\u2122': "'",
-        '\u00c2\u00a3': '£',
-        '\u00c2\u00b0C': '°C',
-        '\u00c2\u00b0': '°',
+        chr(226) + chr(8364) + chr(162): '-',          # â€¢
+        chr(226) + chr(8364) + chr(8220): '-',         # â€“
+        chr(226) + chr(8364) + chr(8221): '-',         # â€”
+        chr(226) + chr(8364) + chr(8482): "'",         # â€™
+        chr(194) + chr(163): pound,                     # Â£
+        chr(194) + chr(176) + 'C': degree + 'C',       # Â°C
+        chr(194) + chr(176): degree,                    # Â°
     }
 
-    for old, new in replacements.items():
-        text = text.replace(old, new)
+    for _ in range(3):
+        previous = text
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        if text == previous:
+            break
 
     text = re.sub(
         r'<script\b[^>]*>.*?</script>',
@@ -1033,42 +1040,127 @@ def _weather_summary_values(attrs: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _forecast_tokens(raw: Any) -> list[str]:
+    html = html_lib.unescape(str(raw or ''))
+    if not html:
+        return []
+
+    tokens: list[str] = []
+
+    for chunk in re.findall(r'>([^<>]+)<', html, flags=re.DOTALL):
+        value = _clean_display_text(chunk)
+        if value:
+            tokens.extend(
+                part.strip()
+                for part in value.splitlines()
+                if part.strip()
+            )
+
+    if not tokens:
+        plain = _clean_display_text(html)
+        tokens = [
+            part.strip()
+            for part in re.split(r'[|\n]+', plain)
+            if part.strip()
+        ]
+
+    return tokens
+
+
 def _tomorrow_forecast(attrs: dict[str, Any]) -> dict[str, Any]:
-    raw = str(attrs.get('threedayfcstTile') or '')
-    text = _html_text(raw, separators=True)
-    tomorrow = (datetime.now() + timedelta(days=1)).strftime('%a')
-    labels = [tomorrow, (datetime.now() + timedelta(days=2)).strftime('%a'), 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon']
-    start = re.search(rf'\b{re.escape(tomorrow)}\b', text, flags=re.IGNORECASE)
-    if not start:
-        return {'label': 'Tomorrow', 'raw': text}
+    raw = attrs.get('threedayfcstTile')
+    tokens = _forecast_tokens(raw)
 
-    segment = text[start.end():]
-    boundaries = []
-    for label in labels:
-        if label.lower() == tomorrow.lower():
-            continue
-        match = re.search(rf'\b{re.escape(label)}\b', segment, flags=re.IGNORECASE)
+    tomorrow_dt = datetime.now() + timedelta(days=1)
+    tomorrow_names = {
+        tomorrow_dt.strftime('%a').lower(),
+        tomorrow_dt.strftime('%A').lower(),
+    }
+
+    weekday_names = {
+        'mon', 'monday',
+        'tue', 'tues', 'tuesday',
+        'wed', 'wednesday',
+        'thu', 'thur', 'thurs', 'thursday',
+        'fri', 'friday',
+        'sat', 'saturday',
+        'sun', 'sunday',
+        'tod', 'today',
+    }
+
+    start = None
+    for index, token in enumerate(tokens):
+        if _normalise(token) in tomorrow_names:
+            start = index + 1
+            break
+
+    if start is None:
+        return {
+            'label': 'Tomorrow',
+            'available': False,
+            'raw': _clean_display_text(raw),
+        }
+
+    segment: list[str] = []
+    for token in tokens[start:]:
+        if _normalise(token) in weekday_names:
+            break
+        segment.append(token)
+
+    condition = None
+    for token in segment:
+        if re.fullmatch(
+            r'(Sunny|Clear|Partly cloudy|Mostly cloudy|Cloudy|Overcast|'
+            r'Light rain|Rain|Showers|Drizzle|Thunderstorms?|Snow|Fog|Mist)',
+            token,
+            flags=re.IGNORECASE,
+        ):
+            condition = token
+            break
+
+    high = None
+    low = None
+    for token in segment:
+        match = re.search(
+            r'(-?\d+(?:\.\d+)?)\s*(?:Â°\s*)?C\s*/\s*'
+            r'(-?\d+(?:\.\d+)?)\s*(?:Â°\s*)?C',
+            token,
+            flags=re.IGNORECASE,
+        )
         if match:
-            boundaries.append(match.start())
-    if boundaries:
-        segment = segment[:min(boundaries)]
+            high = match.group(1)
+            low = match.group(2)
+            break
 
-    segment = segment.strip(' |')
-    high_low = re.search(r'(\d+(?:\.\d+)?)\s*C\s*/\s*(\d+(?:\.\d+)?)\s*C', segment, flags=re.IGNORECASE)
-    chance = re.search(r'(?:chance\s*(?:of\s*)?rain|rain)\s*[|:\-]*\s*(\d+(?:\.\d+)?)\s*%', segment, flags=re.IGNORECASE)
-    amount = re.search(r'(\d+(?:\.\d+)?)\s*mm', segment, flags=re.IGNORECASE)
-    condition_match = re.search(r'(Sunny|Clear|Partly cloudy|Cloudy|Overcast|Rain|Showers|Drizzle|Thunderstorms?|Snow|Fog)', segment, flags=re.IGNORECASE)
+    chance = None
+    amount = None
+
+    for token in segment:
+        if chance is None:
+            match = re.fullmatch(r'\s*(\d+(?:\.\d+)?)\s*%\s*', token)
+            if match:
+                chance = match.group(1)
+
+        if amount is None:
+            match = re.fullmatch(
+                r'\s*(\d+(?:\.\d+)?)\s*mm\s*',
+                token,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                amount = match.group(1)
 
     return {
         'label': 'Tomorrow',
-        'condition': condition_match.group(1) if condition_match else None,
-        'high': high_low.group(1) if high_low else None,
-        'low': high_low.group(2) if high_low else None,
-        'chance': chance.group(1) if chance else None,
-        'amount': amount.group(1) if amount else None,
-        'raw': segment,
+        'available': bool(segment),
+        'condition': condition,
+        'high': high,
+        'low': low,
+        'chance': chance,
+        'amount': amount,
+        'raw': ' | '.join(segment),
+        'tokens': segment,
     }
-
 
 def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | None:
     q = _normalise(query)
@@ -1131,7 +1223,10 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
             parts.append(f"forecast rain {tomorrow['amount']} mm")
         if not parts and tomorrow.get('raw'):
             parts.append(str(tomorrow['raw']))
-        message = 'Tomorrow: ' + '. '.join(parts).rstrip('.') + '.'
+        if parts:
+            message = 'Tomorrow: ' + '. '.join(parts).rstrip('.') + '.'
+        else:
+            message = "Tomorrow's forecast is not available from the weather device."
 
     else:
         now_parts = []
@@ -1164,7 +1259,7 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
         'success': True,
         'intent': 'weather',
         'period': period,
-        'message': message,
+        'message': _clean_display_text(message),
         'weather_source': source,
         'now': values,
         'tomorrow': tomorrow,
@@ -1388,7 +1483,23 @@ def _extract_low_battery_report(report_html: Any) -> list[dict[str, Any]]:
     return sorted(items, key=lambda item: item['battery'])
 
 
+def _battery_refresh_candidate(device: dict[str, Any]) -> bool:
+    attrs = _attrs(device)
+    if attrs.get('battery') not in (None, ''):
+        return True
+    text = _device_text(device)
+    terms = (
+        'trv', 'thermostat', 'contact', 'motion', 'remote', 'button',
+        'sensor', 'door', 'window', 'lock', 'valve', 'smoke',
+        'temperature', 'humidity', 'presence',
+    )
+    return any(term in text for term in terms)
+
+
 def authoritative_low_batteries(app_module: Any) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+
+    # Prefer the Device Status Report when available.
     report_device = _status_report_device(app_module)
     if report_device:
         attrs = _attrs(report_device)
@@ -1398,26 +1509,35 @@ def authoritative_low_batteries(app_module: Any) -> list[dict[str, Any]]:
             or attrs.get('report')
             or attrs.get('html')
         )
-        parsed = _extract_low_battery_report(report)
-        if parsed:
-            return parsed
+        for item in _extract_low_battery_report(report):
+            merged[_normalise_key(item['label'])] = item
 
-    # Fallback to direct battery attributes.
+    # Refresh likely battery-powered devices on demand. This catches attributes
+    # omitted from the normal Maker API device list, such as TRV batteries.
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
-    rows = []
-    if isinstance(devices, list):
-        for device in devices:
-            if not isinstance(device, dict):
-                continue
-            battery = _safe_float(_attrs(device).get('battery'))
-            if battery is not None and battery <= 20:
-                rows.append({
-                    'label': _device_label(device),
-                    'battery': battery,
-                    'source': 'device attribute',
-                })
-    return sorted(rows, key=lambda item: item['battery'])
+    candidates = [
+        device for device in (devices if isinstance(devices, list) else [])
+        if isinstance(device, dict) and _battery_refresh_candidate(device)
+    ]
 
+    # Keep the on-demand request bounded.
+    for device in candidates[:60]:
+        refreshed = _refresh_device_detail(app_module, device)
+        battery = _safe_float(_attrs(refreshed).get('battery'))
+        if battery is None or battery > 20:
+            continue
+        label = _device_label(refreshed)
+        key = _normalise_key(label)
+        item = {
+            'label': label,
+            'battery': battery,
+            'source': 'live device detail',
+        }
+        existing = merged.get(key)
+        if existing is None or battery < float(existing.get('battery') or 101):
+            merged[key] = item
+
+    return sorted(merged.values(), key=lambda item: (item['battery'], item['label'].lower()))
 
 def authoritative_low_battery_answer(app_module: Any, query: str) -> dict[str, Any] | None:
     q = _normalise(query)
