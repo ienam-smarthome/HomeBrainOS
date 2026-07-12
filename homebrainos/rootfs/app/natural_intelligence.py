@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.14-alpha'
+VERSION = '1.9.15-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -1041,126 +1041,205 @@ def _weather_summary_values(attrs: dict[str, Any]) -> dict[str, Any]:
 
 
 def _forecast_tokens(raw: Any) -> list[str]:
-    html = html_lib.unescape(str(raw or ''))
-    if not html:
+    # Extract visible text tokens from Hubitat weather tile HTML.
+    from html.parser import HTMLParser
+
+    source = html_lib.unescape(str(raw or ''))
+    if not source:
         return []
 
-    tokens: list[str] = []
+    source = (
+        source.replace('\\u003c', '<')
+        .replace('\\u003e', '>')
+        .replace('\\n', '\n')
+        .replace('\\t', ' ')
+    )
 
-    for chunk in re.findall(r'>([^<>]+)<', html, flags=re.DOTALL):
-        value = _clean_display_text(chunk)
-        if value:
-            tokens.extend(
-                part.strip()
-                for part in value.splitlines()
-                if part.strip()
-            )
+    class _VisibleTextParser(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.tokens: list[str] = []
+            self._ignore_depth = 0
 
-    if not tokens:
-        plain = _clean_display_text(html)
-        tokens = [
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag.lower() in {'script', 'style'}:
+                self._ignore_depth += 1
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag.lower() in {'script', 'style'} and self._ignore_depth:
+                self._ignore_depth -= 1
+
+        def handle_data(self, data: str) -> None:
+            if self._ignore_depth:
+                return
+            value = _clean_display_text(data)
+            if value:
+                self.tokens.extend(
+                    part.strip()
+                    for part in value.splitlines()
+                    if part.strip()
+                )
+
+    parser = _VisibleTextParser()
+    try:
+        parser.feed(source)
+        parser.close()
+    except Exception:
+        return [
             part.strip()
-            for part in re.split(r'[|\n]+', plain)
+            for part in re.split(r'[|\n]+', _clean_display_text(source))
             if part.strip()
         ]
 
-    return tokens
+    return parser.tokens
+
 
 
 def _tomorrow_forecast(attrs: dict[str, Any]) -> dict[str, Any]:
-    raw = attrs.get('threedayfcstTile')
-    tokens = _forecast_tokens(raw)
+    # Parse tomorrow from either row-major or day-block forecast tiles.
+    tokens = _forecast_tokens(attrs.get('threedayfcstTile'))
+    tomorrow_key = (datetime.now() + timedelta(days=1)).strftime('%a').lower()
 
-    tomorrow_dt = datetime.now() + timedelta(days=1)
-    tomorrow_names = {
-        tomorrow_dt.strftime('%a').lower(),
-        tomorrow_dt.strftime('%A').lower(),
+    day_aliases = {
+        'tod': 'today',
+        'today': 'today',
+        'mon': 'mon',
+        'monday': 'mon',
+        'tue': 'tue',
+        'tues': 'tue',
+        'tuesday': 'tue',
+        'wed': 'wed',
+        'wednesday': 'wed',
+        'thu': 'thu',
+        'thur': 'thu',
+        'thurs': 'thu',
+        'thursday': 'thu',
+        'fri': 'fri',
+        'friday': 'fri',
+        'sat': 'sat',
+        'saturday': 'sat',
+        'sun': 'sun',
+        'sunday': 'sun',
     }
 
-    weekday_names = {
-        'mon', 'monday',
-        'tue', 'tues', 'tuesday',
-        'wed', 'wednesday',
-        'thu', 'thur', 'thurs', 'thursday',
-        'fri', 'friday',
-        'sat', 'saturday',
-        'sun', 'sunday',
-        'tod', 'today',
-    }
+    def day_key(token: str) -> str | None:
+        return day_aliases.get(_normalise(token))
 
-    start = None
-    for index, token in enumerate(tokens):
-        if _normalise(token) in tomorrow_names:
-            start = index + 1
-            break
-
-    if start is None:
-        return {
-            'label': 'Tomorrow',
-            'available': False,
-            'raw': _clean_display_text(raw),
-        }
-
-    segment: list[str] = []
-    for token in tokens[start:]:
-        if _normalise(token) in weekday_names:
-            break
-        segment.append(token)
-
-    condition = None
-    for token in segment:
-        if re.fullmatch(
-            r'(Sunny|Clear|Partly cloudy|Mostly cloudy|Cloudy|Overcast|'
-            r'Light rain|Rain|Showers|Drizzle|Thunderstorms?|Snow|Fog|Mist)',
-            token,
+    def condition_value(token: str) -> str | None:
+        match = re.fullmatch(
+            r'(Sunny|Clear|Mostly sunny|Partly cloudy|Mostly cloudy|Cloudy|'
+            r'Overcast|Light rain|Rain|Heavy rain|Showers|Light showers|'
+            r'Drizzle|Thunderstorms?|Snow|Sleet|Fog|Mist)',
+            re.sub(r'\s+', ' ', token).strip(),
             flags=re.IGNORECASE,
-        ):
-            condition = token
-            break
+        )
+        return match.group(1) if match else None
 
-    high = None
-    low = None
-    for token in segment:
+    def high_low_value(token: str) -> tuple[str, str] | None:
         match = re.search(
-            r'(-?\d+(?:\.\d+)?)\s*(?:Â°\s*)?C\s*/\s*'
-            r'(-?\d+(?:\.\d+)?)\s*(?:Â°\s*)?C',
+            r'(-?\d+(?:\.\d+)?)\s*(?:°\s*)?C\s*/\s*'
+            r'(-?\d+(?:\.\d+)?)\s*(?:°\s*)?C',
             token,
             flags=re.IGNORECASE,
         )
-        if match:
-            high = match.group(1)
-            low = match.group(2)
-            break
+        return (match.group(1), match.group(2)) if match else None
 
-    chance = None
-    amount = None
-
-    for token in segment:
-        if chance is None:
-            match = re.fullmatch(r'\s*(\d+(?:\.\d+)?)\s*%\s*', token)
-            if match:
-                chance = match.group(1)
-
-        if amount is None:
-            match = re.fullmatch(
-                r'\s*(\d+(?:\.\d+)?)\s*mm\s*',
-                token,
-                flags=re.IGNORECASE,
-            )
-            if match:
-                amount = match.group(1)
-
-    return {
+    result = {
         'label': 'Tomorrow',
-        'available': bool(segment),
-        'condition': condition,
-        'high': high,
-        'low': low,
-        'chance': chance,
-        'amount': amount,
-        'raw': ' | '.join(segment),
-        'tokens': segment,
+        'available': False,
+        'condition': None,
+        'high': None,
+        'low': None,
+        'chance': None,
+        'amount': None,
+        'raw': _clean_display_text(attrs.get('threedayfcstTile')),
+        'tokens': tokens,
     }
+
+    headers = [
+        (index, key)
+        for index, token in enumerate(tokens)
+        for key in [day_key(token)]
+        if key
+    ]
+    if not headers:
+        return result
+
+    tomorrow_column = next(
+        (column for column, (_, key) in enumerate(headers) if key == tomorrow_key),
+        None,
+    )
+    if tomorrow_column is None:
+        return result
+
+    day_count = len(headers)
+    tail = tokens[headers[-1][0] + 1:]
+
+    conditions = [
+        value
+        for token in tail
+        for value in [condition_value(token)]
+        if value
+    ]
+    high_lows = [
+        value
+        for token in tail
+        for value in [high_low_value(token)]
+        if value
+    ]
+    chances = []
+    amounts = []
+    for token in tail:
+        chance = re.fullmatch(r'\s*(\d+(?:\.\d+)?)\s*%\s*', token)
+        if chance:
+            chances.append(chance.group(1))
+        amount = re.fullmatch(
+            r'\s*(\d+(?:\.\d+)?)\s*mm\s*',
+            token,
+            flags=re.IGNORECASE,
+        )
+        if amount:
+            amounts.append(amount.group(1))
+
+    if len(conditions) >= day_count:
+        result['condition'] = conditions[tomorrow_column]
+    if len(high_lows) >= day_count:
+        result['high'], result['low'] = high_lows[tomorrow_column]
+    if len(chances) >= day_count:
+        result['chance'] = chances[tomorrow_column]
+    if len(amounts) >= day_count:
+        result['amount'] = amounts[tomorrow_column]
+
+    if not any(result.get(key) for key in ('condition', 'high', 'low', 'chance', 'amount')):
+        start = headers[tomorrow_column][0] + 1
+        end = headers[tomorrow_column + 1][0] if tomorrow_column + 1 < day_count else len(tokens)
+        segment = tokens[start:end]
+        for token in segment:
+            if result['condition'] is None:
+                result['condition'] = condition_value(token)
+            if result['high'] is None:
+                pair = high_low_value(token)
+                if pair:
+                    result['high'], result['low'] = pair
+            if result['chance'] is None:
+                chance = re.fullmatch(r'\s*(\d+(?:\.\d+)?)\s*%\s*', token)
+                if chance:
+                    result['chance'] = chance.group(1)
+            if result['amount'] is None:
+                amount = re.fullmatch(
+                    r'\s*(\d+(?:\.\d+)?)\s*mm\s*',
+                    token,
+                    flags=re.IGNORECASE,
+                )
+                if amount:
+                    result['amount'] = amount.group(1)
+
+    result['available'] = any(
+        result.get(key) not in (None, '')
+        for key in ('condition', 'high', 'low', 'chance', 'amount')
+    )
+    return result
+
 
 def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | None:
     q = _normalise(query)
@@ -1176,83 +1255,154 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
     tomorrow = _tomorrow_forecast(attrs)
     period = _weather_period(query)
     rain_only = _rain_question(query)
-    source = _device_label(device)
+    if rain_only and period == 'overview':
+        period = 'today'
 
-    current_temp = values.get('current') or (_safe_float(attrs.get('temperature')) and f"{_safe_float(attrs.get('temperature')):g}")
+    source = _device_label(device)
+    degree = chr(176)
+
+    current_temp = values.get('current')
+    if not current_temp:
+        current_number = _safe_float(attrs.get('temperature'))
+        current_temp = f'{current_number:g}' if current_number is not None else None
+
     current_condition = values.get('condition') or values.get('line')
     precip_now = values.get('precip_now')
     today_chance = values.get('chance')
     today_high = values.get('high')
     today_low = values.get('low')
 
+    def rain_answer(label: str, chance: Any, amount: Any, current: str | None = None) -> str:
+        chance_number = _safe_float(chance)
+        amount_number = _safe_float(amount)
+
+        if amount_number is None and current:
+            amount_match = re.search(r'(\d+(?:\.\d+)?)\s*mm', current, flags=re.IGNORECASE)
+            if amount_match:
+                amount_number = float(amount_match.group(1))
+
+        if chance_number is None and amount_number is None:
+            return f'Rain information for {label.lower()} is not available from the weather device.'
+
+        wet = (
+            (amount_number is not None and amount_number > 0)
+            or (chance_number is not None and chance_number >= 50)
+        )
+        possible = not wet and chance_number is not None and chance_number > 0
+
+        if wet:
+            message = f'{label}: Rain is likely.'
+        elif possible:
+            message = f'{label}: Rain is possible.'
+        else:
+            message = f'{label}: No rain is expected.'
+
+        details = []
+        if chance_number is not None:
+            details.append(f'rain chance {chance_number:g}%')
+        if amount_number is not None:
+            if label.lower() == 'tomorrow':
+                details.append(f'forecast rain {amount_number:g} mm')
+            else:
+                details.append(f'rainfall {amount_number:g} mm')
+        if details:
+            message += ' ' + '; '.join(details) + '.'
+        if current:
+            message += f' It is currently {current}.'
+        return message
+
     if period == 'now':
-        parts = []
-        if current_condition:
-            parts.append(str(current_condition).rstrip('.,'))
-        if current_temp:
-            parts.append(f'{current_temp}Â°C now')
-        if values.get('feels'):
-            parts.append(f"feels like {values['feels']}Â°C")
-        if precip_now:
-            parts.append(f'precipitation now: {precip_now}')
-        elif rain_only:
-            parts.append('no current precipitation reading is available')
-        message = 'Now: ' + '. '.join(parts).rstrip('.') + '.'
+        if rain_only:
+            message = rain_answer('Now', today_chance, None, precip_now)
+        else:
+            parts = []
+            if current_condition:
+                parts.append(str(current_condition).rstrip('.,'))
+            if current_temp:
+                parts.append(f'{current_temp}{degree}C now')
+            if values.get('feels'):
+                parts.append(f"feels like {values['feels']}{degree}C")
+            if precip_now:
+                parts.append(f'precipitation now: {precip_now}')
+            message = 'Now: ' + '. '.join(parts).rstrip('.') + '.'
 
     elif period == 'today':
-        parts = []
-        if current_condition:
-            parts.append(str(current_condition).rstrip('.,'))
-        if today_high and today_low:
-            parts.append(f'high {today_high}Â°C, low {today_low}Â°C')
-        if today_chance:
-            parts.append(f'rain chance {today_chance}%')
-        if precip_now:
-            parts.append(f'currently {precip_now}')
-        message = 'Today: ' + '. '.join(parts).rstrip('.') + '.'
+        if rain_only:
+            message = rain_answer('Today', today_chance, None, precip_now)
+        else:
+            parts = []
+            if current_condition:
+                parts.append(str(current_condition).rstrip('.,'))
+            if today_high and today_low:
+                parts.append(f'high {today_high}{degree}C, low {today_low}{degree}C')
+            if today_chance:
+                parts.append(f'rain chance {today_chance}%')
+            if precip_now:
+                parts.append(f'currently {precip_now}')
+            message = 'Today: ' + '. '.join(parts).rstrip('.') + '.'
 
     elif period == 'tomorrow':
-        parts = []
-        if tomorrow.get('condition'):
-            parts.append(str(tomorrow['condition']))
-        if tomorrow.get('high') and tomorrow.get('low'):
-            parts.append(f"high {tomorrow['high']}Â°C, low {tomorrow['low']}Â°C")
-        if tomorrow.get('chance'):
-            parts.append(f"rain chance {tomorrow['chance']}%")
-        if tomorrow.get('amount'):
-            parts.append(f"forecast rain {tomorrow['amount']} mm")
-        if not parts and tomorrow.get('raw'):
-            parts.append(str(tomorrow['raw']))
-        if parts:
-            message = 'Tomorrow: ' + '. '.join(parts).rstrip('.') + '.'
+        if rain_only:
+            message = rain_answer('Tomorrow', tomorrow.get('chance'), tomorrow.get('amount'))
+            extras = []
+            if tomorrow.get('condition'):
+                extras.append(f"conditions {tomorrow['condition']}")
+            if tomorrow.get('high') and tomorrow.get('low'):
+                extras.append(
+                    f"high {tomorrow['high']}{degree}C, "
+                    f"low {tomorrow['low']}{degree}C"
+                )
+            if extras:
+                message += ' ' + '; '.join(extras) + '.'
         else:
-            message = "Tomorrow's forecast is not available from the weather device."
+            parts = []
+            if tomorrow.get('condition'):
+                parts.append(str(tomorrow['condition']))
+            if tomorrow.get('high') and tomorrow.get('low'):
+                parts.append(
+                    f"high {tomorrow['high']}{degree}C, "
+                    f"low {tomorrow['low']}{degree}C"
+                )
+            if tomorrow.get('chance') is not None:
+                parts.append(f"rain chance {tomorrow['chance']}%")
+            if tomorrow.get('amount') is not None:
+                parts.append(f"forecast rain {tomorrow['amount']} mm")
+            if parts:
+                message = 'Tomorrow: ' + '. '.join(parts).rstrip('.') + '.'
+            else:
+                message = "Tomorrow's forecast is not available from the weather device."
 
     else:
+        lines = []
         now_parts = []
         if current_condition:
             now_parts.append(str(current_condition).rstrip('.,'))
         if current_temp:
-            now_parts.append(f'{current_temp}Â°C')
+            now_parts.append(f'{current_temp}{degree}C')
+        if now_parts:
+            lines.append('Now: ' + ', '.join(now_parts) + '.')
+
         today_parts = []
         if today_high and today_low:
-            today_parts.append(f'high {today_high}Â°C, low {today_low}Â°C')
+            today_parts.append(f'high {today_high}{degree}C, low {today_low}{degree}C')
         if today_chance:
             today_parts.append(f'rain chance {today_chance}%')
+        if today_parts:
+            lines.append('Today: ' + ', '.join(today_parts) + '.')
+
         tomorrow_parts = []
         if tomorrow.get('condition'):
             tomorrow_parts.append(str(tomorrow['condition']))
         if tomorrow.get('high') and tomorrow.get('low'):
-            tomorrow_parts.append(f"high {tomorrow['high']}Â°C, low {tomorrow['low']}Â°C")
-        if tomorrow.get('chance'):
+            tomorrow_parts.append(
+                f"high {tomorrow['high']}{degree}C, "
+                f"low {tomorrow['low']}{degree}C"
+            )
+        if tomorrow.get('chance') is not None:
             tomorrow_parts.append(f"rain chance {tomorrow['chance']}%")
-        lines = []
-        if now_parts:
-            lines.append('Now: ' + ', '.join(now_parts) + '.')
-        if today_parts:
-            lines.append('Today: ' + ', '.join(today_parts) + '.')
         if tomorrow_parts:
             lines.append('Tomorrow: ' + ', '.join(tomorrow_parts) + '.')
+
         message = '\n'.join(lines) or values.get('summary') or values.get('line') or 'Weather information is unavailable.'
 
     return {
@@ -1264,6 +1414,7 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
         'now': values,
         'tomorrow': tomorrow,
     }
+
 
 def _normalise_detail_attributes(detail: Any) -> dict[str, Any]:
     """Convert Maker API detail payloads into a simple attribute dictionary."""
