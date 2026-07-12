@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.17-alpha'
+VERSION = '1.9.18-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -1993,7 +1993,34 @@ def authoritative_low_battery_answer(app_module: Any, query: str) -> dict[str, A
             'live Maker API': 'live Maker API device details',
         }
         if sources:
-            message += '\nSource: ' + ', '.join(source_labels.get(item, item) for item in sources) + '.'
+            message += '\nSource: ' + ', '.join(
+                source_labels.get(item, item)
+                for item in sources
+            ) + '.'
+
+    # Live detail reads above update HomeBrain's device cache. Rebuild the
+    # dashboard summary immediately so the low-battery tile uses those values
+    # instead of waiting for a later event or scheduled refresh.
+    dashboard = None
+    rebuild_error = None
+    rebuilder = getattr(app_module, 'rebuild_summary_cache', None)
+    if callable(rebuilder):
+        try:
+            dashboard = rebuilder('low-battery-answer')
+        except TypeError:
+            try:
+                dashboard = rebuilder()
+            except Exception as exc:
+                rebuild_error = str(exc)
+        except Exception as exc:
+            rebuild_error = str(exc)
+
+    config = getattr(app_module, 'CONFIG', None)
+    config = config if isinstance(config, dict) else {}
+    try:
+        threshold = float(config.get('low_battery_threshold', 20))
+    except Exception:
+        threshold = 20.0
 
     return {
         'success': True,
@@ -2003,10 +2030,11 @@ def authoritative_low_battery_answer(app_module: Any, query: str) -> dict[str, A
         'count': len(rows),
         'source': ', '.join(sources) if sources else None,
         'sources': sources,
-        'threshold': float(
-            (getattr(app_module, 'CONFIG', {}) or {}).get('low_battery_threshold', 20)
-        ),
+        'threshold': threshold,
+        'dashboard': dashboard if isinstance(dashboard, dict) else None,
+        'dashboard_refresh_error': rebuild_error,
     }
+
 
 
 
