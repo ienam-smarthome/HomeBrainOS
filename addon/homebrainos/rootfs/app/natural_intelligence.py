@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.11-alpha'
+VERSION = '1.9.12-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -773,6 +773,371 @@ def _delegate_main_assistant_first(query: str) -> bool:
     ))
 
 
+HUB_INFO_CACHE: dict[str, Any] = {'checked_at': 0.0, 'data': None, 'error': None}
+HUB_INFO_CACHE_SECONDS = 60
+
+
+def _html_text(value: Any, *, separators: bool = False) -> str:
+    text = str(value or '')
+    if separators:
+        text = re.sub(r'</(?:td|th|tr|div|p|br|li)>', ' | ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<br\s*/?>', ' | ', text, flags=re.IGNORECASE)
+    cleaner = globals().get('_clean_display_text')
+    if callable(cleaner):
+        return cleaner(text)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = text.replace('&nbsp;', ' ').replace('&amp;', '&')
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _hub_base_url(app_module: Any) -> str:
+    config = getattr(app_module, 'CONFIG', {}) or {}
+    base = str(config.get('hubitat_base_url') or '').strip().rstrip('/')
+    match = re.match(r'^(https?://[^/]+)', base, flags=re.IGNORECASE)
+    return match.group(1) if match else base
+
+
+def _parse_hub_info_html(html: str) -> dict[str, str]:
+    cells = re.findall(r'<t[dh]\b[^>]*>(.*?)</t[dh]>', html, flags=re.IGNORECASE | re.DOTALL)
+    clean = [_html_text(cell) for cell in cells]
+    data: dict[str, str] = {}
+    for index in range(0, len(clean) - 1, 2):
+        key = clean[index].strip()
+        value = clean[index + 1].strip()
+        if key and value:
+            data[key] = value
+
+    if data:
+        return data
+
+    # Fallback for plain/preformatted responses.
+    labels = (
+        'Name', 'Version', 'IP Addr', 'Free Mem', 'CPU Load/Load%', 'DB Size',
+        'Last Restart', 'Uptime', 'Temperature', 'ZB Channel', 'ZW Radio/SDK',
+        'Matter Enabled/Status',
+    )
+    plain = _html_text(html, separators=True)
+    for label in labels:
+        pattern = rf'{re.escape(label)}\s*[|:\-]*\s*(.*?)(?=\s*(?:{"|".join(re.escape(item) for item in labels)})\b|$)'
+        match = re.search(pattern, plain, flags=re.IGNORECASE)
+        if match:
+            data[label] = match.group(1).strip(' |')
+    return data
+
+
+def fetch_hub_info(app_module: Any, *, force: bool = False) -> dict[str, Any]:
+    now = time.time()
+    cached = HUB_INFO_CACHE.get('data')
+    if not force and cached and now - float(HUB_INFO_CACHE.get('checked_at') or 0) < HUB_INFO_CACHE_SECONDS:
+        return {'success': True, 'source': 'cache', 'data': cached}
+
+    base = _hub_base_url(app_module)
+    if not base:
+        return {'success': False, 'message': 'Hubitat base URL is not configured.', 'data': {}}
+
+    requests_module = getattr(app_module, 'requests', None)
+    if requests_module is None or not hasattr(requests_module, 'get'):
+        return {'success': False, 'message': 'HTTP client is unavailable.', 'data': {}}
+
+    url = base + '/local/hubInfoOutput.html'
+    try:
+        response = requests_module.get(url, timeout=5)
+        response.raise_for_status()
+        data = _parse_hub_info_html(response.text)
+        if not data:
+            raise ValueError('Hub Info page did not contain recognised fields.')
+        HUB_INFO_CACHE.update({'checked_at': now, 'data': data, 'error': None})
+        return {'success': True, 'source': url, 'data': data}
+    except Exception as exc:
+        HUB_INFO_CACHE.update({'checked_at': now, 'data': None, 'error': str(exc)})
+        return {'success': False, 'message': str(exc), 'source': url, 'data': {}}
+
+
+def _hub_field(data: dict[str, str], *names: str) -> str | None:
+    normalised = {_normalise_key(key): value for key, value in data.items()}
+    for name in names:
+        value = normalised.get(_normalise_key(name))
+        if value:
+            return value
+    return None
+
+
+def hub_cpu_advisor_answer(app_module: Any, query: str = '') -> dict[str, Any] | None:
+    q = _normalise(query)
+    if not any(term in q for term in ('cpu advisor', 'hub status', 'hub cpu', 'hubitat status', 'hub information', 'hub info')):
+        return None
+
+    result = fetch_hub_info(app_module)
+    if not result.get('success'):
+        return {
+            'success': False,
+            'intent': 'hub_status',
+            'message': 'I could not read live Hubitat Hub Info: ' + str(result.get('message') or 'unknown error'),
+            'hub_info': {},
+        }
+
+    data = result['data']
+    name = _hub_field(data, 'Name') or 'Hubitat hub'
+    version = _hub_field(data, 'Version')
+    cpu = _hub_field(data, 'CPU Load/Load%', 'CPU Load')
+    free_mem = _hub_field(data, 'Free Mem', 'Free Memory')
+    temperature = _hub_field(data, 'Temperature')
+    db_size = _hub_field(data, 'DB Size')
+    uptime = _hub_field(data, 'Uptime')
+    last_restart = _hub_field(data, 'Last Restart')
+    matter = _hub_field(data, 'Matter Enabled/Status')
+
+    headline = f'{name} status from live Hub Info'
+    if version:
+        headline += f' ({version})'
+
+    facts = []
+    if cpu:
+        facts.append(f'CPU load: {cpu}')
+    if free_mem:
+        facts.append(f'Free memory: {free_mem}')
+    if temperature:
+        facts.append(f'Temperature: {temperature}')
+    if db_size:
+        facts.append(f'Database size: {db_size}')
+    if uptime:
+        facts.append(f'Uptime: {uptime}')
+    if last_restart:
+        facts.append(f'Last restart: {last_restart}')
+    if matter:
+        facts.append(f'Matter: {matter}')
+
+    advisory = []
+    cpu_percent = None
+    if cpu:
+        matches = re.findall(r'(\d+(?:\.\d+)?)\s*%', cpu)
+        if matches:
+            cpu_percent = float(matches[-1])
+    temp_number = _safe_float(re.search(r'(\d+(?:\.\d+)?)', temperature or '').group(1)) if re.search(r'(\d+(?:\.\d+)?)', temperature or '') else None
+    if cpu_percent is not None:
+        if cpu_percent >= 80:
+            advisory.append('CPU is very high; reduce polling and inspect busy apps.')
+        elif cpu_percent >= 50:
+            advisory.append('CPU is elevated; monitor Maker API and app activity.')
+        else:
+            advisory.append('CPU is within a reasonable range.')
+    if temp_number is not None and temp_number >= 65:
+        advisory.append('Hub temperature is high.')
+    elif temp_number is not None:
+        advisory.append('Hub temperature is within a reasonable range.')
+
+    message = headline + ':\n' + '\n'.join(f'â€¢ {fact}' for fact in facts)
+    if advisory:
+        message += '\nAssessment: ' + ' '.join(advisory)
+
+    return {
+        'success': True,
+        'intent': 'hub_status',
+        'message': message,
+        'hub_info': data,
+        'source': result.get('source'),
+    }
+
+
+def _weather_devices(app_module: Any) -> list[dict[str, Any]]:
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    if not isinstance(devices, list):
+        return []
+    matches = []
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        attrs = _attrs(device)
+        text = _device_text(device)
+        if (
+            'weather' in text
+            or 'open-meteo' in text
+            or any(key in attrs for key in ('weatherSummary', 'weatherSummaryLine', 'threedayfcstTile', 'precipitationToday'))
+        ):
+            matches.append(device)
+    return sorted(matches, key=lambda item: ('open-meteo' not in _device_text(item), _device_label(item).lower()))
+
+
+def _weather_device(app_module: Any) -> dict[str, Any] | None:
+    devices = _weather_devices(app_module)
+    return devices[0] if devices else None
+
+
+def _weather_period(query: str) -> str:
+    q = _normalise(query)
+    if any(term in q for term in ('tomorrow', 'next day')):
+        return 'tomorrow'
+    if any(term in q for term in ('right now', 'currently', 'current weather', 'weather now', 'raining now', 'rain now', 'now')):
+        return 'now'
+    if 'today' in q:
+        return 'today'
+    return 'overview'
+
+
+def _rain_question(query: str) -> bool:
+    q = _normalise(query)
+    return any(term in q for term in ('rain', 'raining', 'umbrella', 'precipitation', 'wet weather'))
+
+
+def _weather_summary_values(attrs: dict[str, Any]) -> dict[str, Any]:
+    summary = _html_text(attrs.get('weatherSummary'))
+    line = _html_text(attrs.get('weatherSummaryLine'))
+    combined = ' '.join(value for value in (summary, line) if value)
+
+    def find(pattern: str) -> str | None:
+        match = re.search(pattern, combined, flags=re.IGNORECASE)
+        return match.group(1).strip() if match else None
+
+    return {
+        'summary': summary,
+        'line': line,
+        'condition': find(r'(?:updated at \d{1,2}:\d{2}[.,]?\s*)?([A-Za-z][A-Za-z ]+?)\s+with a high'),
+        'high': find(r'high of?\s*(\d+(?:\.\d+)?)\s*C'),
+        'low': find(r'low of?\s*(\d+(?:\.\d+)?)\s*C'),
+        'current': find(r'current temperature is\s*(\d+(?:\.\d+)?)\s*C'),
+        'feels': find(r'feels like\s*(\d+(?:\.\d+)?)\s*C'),
+        'precip_now': find(r'precipitation now is\s*([A-Za-z ]+\s+\d+(?:\.\d+)?\s*mm)'),
+        'chance': find(r'chance of precipitation is\s*(\d+(?:\.\d+)?)\s*%'),
+    }
+
+
+def _tomorrow_forecast(attrs: dict[str, Any]) -> dict[str, Any]:
+    raw = str(attrs.get('threedayfcstTile') or '')
+    text = _html_text(raw, separators=True)
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime('%a')
+    labels = [tomorrow, (datetime.now() + timedelta(days=2)).strftime('%a'), 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon']
+    start = re.search(rf'\b{re.escape(tomorrow)}\b', text, flags=re.IGNORECASE)
+    if not start:
+        return {'label': 'Tomorrow', 'raw': text}
+
+    segment = text[start.end():]
+    boundaries = []
+    for label in labels:
+        if label.lower() == tomorrow.lower():
+            continue
+        match = re.search(rf'\b{re.escape(label)}\b', segment, flags=re.IGNORECASE)
+        if match:
+            boundaries.append(match.start())
+    if boundaries:
+        segment = segment[:min(boundaries)]
+
+    segment = segment.strip(' |')
+    high_low = re.search(r'(\d+(?:\.\d+)?)\s*C\s*/\s*(\d+(?:\.\d+)?)\s*C', segment, flags=re.IGNORECASE)
+    chance = re.search(r'(?:chance\s*(?:of\s*)?rain|rain)\s*[|:\-]*\s*(\d+(?:\.\d+)?)\s*%', segment, flags=re.IGNORECASE)
+    amount = re.search(r'(\d+(?:\.\d+)?)\s*mm', segment, flags=re.IGNORECASE)
+    condition_match = re.search(r'(Sunny|Clear|Partly cloudy|Cloudy|Overcast|Rain|Showers|Drizzle|Thunderstorms?|Snow|Fog)', segment, flags=re.IGNORECASE)
+
+    return {
+        'label': 'Tomorrow',
+        'condition': condition_match.group(1) if condition_match else None,
+        'high': high_low.group(1) if high_low else None,
+        'low': high_low.group(2) if high_low else None,
+        'chance': chance.group(1) if chance else None,
+        'amount': amount.group(1) if amount else None,
+        'raw': segment,
+    }
+
+
+def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+    q = _normalise(query)
+    if not any(term in q for term in ('weather', 'rain', 'raining', 'umbrella', 'precipitation', 'forecast')):
+        return None
+
+    device = _weather_device(app_module)
+    if device is None:
+        return {'success': False, 'intent': 'weather', 'message': 'I could not find a weather device.'}
+
+    attrs = _attrs(device)
+    values = _weather_summary_values(attrs)
+    tomorrow = _tomorrow_forecast(attrs)
+    period = _weather_period(query)
+    rain_only = _rain_question(query)
+    source = _device_label(device)
+
+    current_temp = values.get('current') or (_safe_float(attrs.get('temperature')) and f"{_safe_float(attrs.get('temperature')):g}")
+    current_condition = values.get('condition') or values.get('line')
+    precip_now = values.get('precip_now')
+    today_chance = values.get('chance')
+    today_high = values.get('high')
+    today_low = values.get('low')
+
+    if period == 'now':
+        parts = []
+        if current_condition:
+            parts.append(str(current_condition).rstrip('.,'))
+        if current_temp:
+            parts.append(f'{current_temp}Â°C now')
+        if values.get('feels'):
+            parts.append(f"feels like {values['feels']}Â°C")
+        if precip_now:
+            parts.append(f'precipitation now: {precip_now}')
+        elif rain_only:
+            parts.append('no current precipitation reading is available')
+        message = 'Now: ' + '. '.join(parts).rstrip('.') + '.'
+
+    elif period == 'today':
+        parts = []
+        if current_condition:
+            parts.append(str(current_condition).rstrip('.,'))
+        if today_high and today_low:
+            parts.append(f'high {today_high}Â°C, low {today_low}Â°C')
+        if today_chance:
+            parts.append(f'rain chance {today_chance}%')
+        if precip_now:
+            parts.append(f'currently {precip_now}')
+        message = 'Today: ' + '. '.join(parts).rstrip('.') + '.'
+
+    elif period == 'tomorrow':
+        parts = []
+        if tomorrow.get('condition'):
+            parts.append(str(tomorrow['condition']))
+        if tomorrow.get('high') and tomorrow.get('low'):
+            parts.append(f"high {tomorrow['high']}Â°C, low {tomorrow['low']}Â°C")
+        if tomorrow.get('chance'):
+            parts.append(f"rain chance {tomorrow['chance']}%")
+        if tomorrow.get('amount'):
+            parts.append(f"forecast rain {tomorrow['amount']} mm")
+        if not parts and tomorrow.get('raw'):
+            parts.append(str(tomorrow['raw']))
+        message = 'Tomorrow: ' + '. '.join(parts).rstrip('.') + '.'
+
+    else:
+        now_parts = []
+        if current_condition:
+            now_parts.append(str(current_condition).rstrip('.,'))
+        if current_temp:
+            now_parts.append(f'{current_temp}Â°C')
+        today_parts = []
+        if today_high and today_low:
+            today_parts.append(f'high {today_high}Â°C, low {today_low}Â°C')
+        if today_chance:
+            today_parts.append(f'rain chance {today_chance}%')
+        tomorrow_parts = []
+        if tomorrow.get('condition'):
+            tomorrow_parts.append(str(tomorrow['condition']))
+        if tomorrow.get('high') and tomorrow.get('low'):
+            tomorrow_parts.append(f"high {tomorrow['high']}Â°C, low {tomorrow['low']}Â°C")
+        if tomorrow.get('chance'):
+            tomorrow_parts.append(f"rain chance {tomorrow['chance']}%")
+        lines = []
+        if now_parts:
+            lines.append('Now: ' + ', '.join(now_parts) + '.')
+        if today_parts:
+            lines.append('Today: ' + ', '.join(today_parts) + '.')
+        if tomorrow_parts:
+            lines.append('Tomorrow: ' + ', '.join(tomorrow_parts) + '.')
+        message = '\n'.join(lines) or values.get('summary') or values.get('line') or 'Weather information is unavailable.'
+
+    return {
+        'success': True,
+        'intent': 'weather',
+        'period': period,
+        'message': message,
+        'weather_source': source,
+        'now': values,
+        'tomorrow': tomorrow,
+    }
+
 def build_home_context(app_module: Any) -> dict[str, Any]:
     summary = _safe_call(getattr(app_module, 'dashboard_summary', None), live=False, fallback={})
     summary = summary if isinstance(summary, dict) else {}
@@ -841,6 +1206,14 @@ def wrap_assistant(app_module: Any) -> None:
     if not callable(existing) or getattr(existing, '_homebrain_local_first', False):
         return
     def local_first_assistant(query: str) -> dict[str, Any]:
+        hub_answer = hub_cpu_advisor_answer(app_module, query)
+        if hub_answer:
+            hub_answer['local_first'] = True
+            return hub_answer
+        weather_answer = improved_weather_answer(app_module, query)
+        if weather_answer:
+            weather_answer['local_first'] = True
+            return weather_answer
         route = classify_intent(query)
         if route.intent == 'room_status':
             room_answer = _room_status_answer(app_module, query)
