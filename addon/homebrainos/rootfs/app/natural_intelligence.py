@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.15-alpha'
+VERSION = '1.9.16-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -1581,22 +1581,66 @@ def authoritative_family_answer(app_module: Any, query: str) -> dict[str, Any] |
     }
 
 
-def _status_report_device(app_module: Any) -> dict[str, Any] | None:
+def _status_report_device(app_module: Any, refresh: bool = True) -> dict[str, Any] | None:
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
     if not isinstance(devices, list):
         return None
+
+    report_names = {
+        'reporthtml', 'report_html', 'reporttext', 'report_text',
+        'currentreport', 'devicestatusreport', 'statussummary',
+        'overallstatus', 'lowbatterycount', 'low_battery_count',
+    }
+
+    def report_payload(device: dict[str, Any]) -> Any:
+        attrs = _attrs(device)
+        lowered = {_normalise_key(key): value for key, value in attrs.items()}
+        for name in (
+            'reporthtml', 'report_html', 'reporttext', 'report_text',
+            'currentreport', 'devicestatusreport', 'statussummary',
+            'overallstatus',
+        ):
+            value = lowered.get(_normalise_key(name))
+            if value not in (None, ''):
+                return value
+        return None
+
     candidates = []
     for device in devices:
         if not isinstance(device, dict):
             continue
         attrs = _attrs(device)
+        attr_names = {_normalise_key(key) for key in attrs}
         text = _device_text(device)
-        if 'device status report' in text or 'reportHtml' in attrs or 'reporthtml' in attrs:
+        if (
+            'device status report' in text
+            or bool(attr_names & report_names)
+            or 'low battery report' in text
+        ):
             candidates.append(device)
+
     if not candidates:
         return None
-    candidates.sort(key=lambda item: 'device status report display' not in _device_text(item))
-    return _refresh_device_detail(app_module, candidates[0])
+
+    candidates.sort(
+        key=lambda item: (
+            report_payload(item) in (None, ''),
+            'device status report display' not in _device_text(item),
+            'device status report' not in _device_text(item),
+            _device_label(item).lower(),
+        )
+    )
+
+    first = None
+    for candidate in candidates:
+        current = _refresh_device_detail(app_module, candidate) if refresh else candidate
+        if first is None:
+            first = current
+        if report_payload(current) not in (None, ''):
+            return current
+
+    return first
+
 
 
 def _extract_low_battery_report(report_html: Any) -> list[dict[str, Any]]:
@@ -1604,116 +1648,366 @@ def _extract_low_battery_report(report_html: Any) -> list[dict[str, Any]]:
     if not raw:
         return []
 
-    # Isolate the LOW BATTERY card up to the next report section.
-    match = re.search(
-        r'LOW\s*BATTERY(.*?)(?=\b(?:OK|OFFLINE|INFO|REPORT)\b|$)',
-        raw,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    section = match.group(1) if match else ''
-    text = _clean_display_text(section)
+    text = _clean_display_text(raw)
     if not text:
         return []
 
+    lines = [re.sub(r'\s+', ' ', line).strip() for line in text.splitlines()]
+    section_lines: list[str] = []
+    active = False
+
+    stop_headings = (
+        'offline', 'no change', 'motion', 'stale', 'info',
+        'ok', 'online', 'report summary', 'device report',
+    )
+
+    for line in lines:
+        if not line:
+            continue
+
+        heading_text = re.sub(r'[^a-z0-9 ]+', ' ', line.lower())
+        heading_text = re.sub(r'\s+', ' ', heading_text).strip()
+
+        low_match = re.match(
+            r'^\s*[\[\(\{]?\s*low\s+batter(?:y|ies)\s*[\]\)\}]?\s*[:\-]?\s*(.*)$',
+            line,
+            flags=re.IGNORECASE,
+        )
+        if low_match:
+            active = True
+            remainder = low_match.group(1).strip()
+            if remainder and not re.fullmatch(r'\d+', remainder):
+                section_lines.append(remainder)
+            continue
+
+        if active and any(heading_text.startswith(value) for value in stop_headings):
+            break
+
+        if active:
+            section_lines.append(line)
+
+    if not section_lines:
+        match = re.search(
+            r'(?:\[|\b)LOW\s+BATTER(?:Y|IES)(?:\]|\b)(.*?)(?='
+            r'(?:\[|\b)(?:OFFLINE|NO\s+CHANGE|MOTION|STALE|INFO|OK|ONLINE|REPORT)(?:\]|\b)|$)',
+            raw,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if match:
+            section_lines = [
+                re.sub(r'\s+', ' ', line).strip()
+                for line in _clean_display_text(match.group(1)).splitlines()
+                if re.sub(r'\s+', ' ', line).strip()
+            ]
+
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
+
     patterns = (
-        r'([A-Za-z0-9][A-Za-z0-9 _()./&+\-]+?)\s*-\s*(\d+(?:\.\d+)?)\s*%\s*battery',
-        r'([A-Za-z0-9][A-Za-z0-9 _()./&+\-]+?)\s*[:\-]\s*(\d+(?:\.\d+)?)\s*%',
+        r'^(?P<label>.+?)\s*[-:–—]\s*(?P<value>\d+(?:\.\d+)?)\s*%(?:\s*battery)?(?:\s|$)',
+        r'^(?P<label>.+?)\s+(?:battery\s*)?(?P<value>\d+(?:\.\d+)?)\s*%(?:\s|$)',
+        r'^(?P<value>\d+(?:\.\d+)?)\s*%(?:\s*battery)?\s*[-:–—]\s*(?P<label>.+)$',
     )
-    for pattern in patterns:
-        for label, value in re.findall(pattern, text, flags=re.IGNORECASE):
-            clean_label = re.sub(r'\s+', ' ', label).strip(' -:')
-            # Remove text carried over from a previous line/card.
-            clean_label = re.sub(r'^(?:LOW BATTERY|last seen .*?)\s+', '', clean_label, flags=re.IGNORECASE)
-            key = _normalise_key(clean_label)
-            if not key or key in seen:
+
+    for line in section_lines:
+        cleaned = re.sub(r'^[\s•●▪◦*\-–—]+', '', line).strip()
+        cleaned = cleaned.replace('🪫', '').replace('🔋', '').strip()
+        for pattern in patterns:
+            match = re.search(pattern, cleaned, flags=re.IGNORECASE)
+            if not match:
                 continue
+
+            label = re.sub(r'\s+', ' ', match.group('label')).strip(' -:–—')
+            label = re.sub(
+                r'^(?:low\s+batter(?:y|ies)|battery)\s*[:\-]?\s*',
+                '',
+                label,
+                flags=re.IGNORECASE,
+            ).strip()
+
+            key = _normalise_key(label)
+            if not key or key in seen:
+                break
+
             seen.add(key)
-            items.append({'label': clean_label, 'battery': float(value), 'source': 'Device Status Report'})
-    return sorted(items, key=lambda item: item['battery'])
+            items.append({
+                'label': label,
+                'battery': float(match.group('value')),
+                'source': 'Device Status Report',
+                'sources': ['Device Status Report'],
+            })
+            break
+
+    return sorted(items, key=lambda item: (item['battery'], item['label'].lower()))
+
 
 
 def _battery_refresh_candidate(device: dict[str, Any]) -> bool:
     attrs = _attrs(device)
-    if attrs.get('battery') not in (None, ''):
+    battery_names = {'battery', 'batterylevel', 'battery_level', 'batterypercent'}
+
+    if device.get('battery') not in (None, ''):
         return True
+    if any(_normalise_key(key) in battery_names for key in attrs):
+        return True
+
+    capabilities = ' '.join(
+        str(value.get('name') if isinstance(value, dict) else value)
+        for value in (device.get('capabilities') or [])
+    ).lower()
+    if 'battery' in capabilities:
+        return True
+
     text = _device_text(device)
     terms = (
-        'trv', 'thermostat', 'contact', 'motion', 'remote', 'button',
-        'sensor', 'door', 'window', 'lock', 'valve', 'smoke',
-        'temperature', 'humidity', 'presence',
+        'trv', 'thermostat', 'radiator', 'heating', 'contact', 'motion',
+        'remote', 'button', 'sensor', 'door', 'window', 'lock', 'valve',
+        'smoke', 'temperature', 'humidity', 'presence', 'leak', 'water',
+        'switchbot', 'aqara', 'zigbee',
     )
     return any(term in text for term in terms)
 
 
-def authoritative_low_batteries(app_module: Any) -> list[dict[str, Any]]:
+
+def authoritative_low_batteries(
+    app_module: Any,
+    refresh_live: bool = True,
+) -> list[dict[str, Any]]:
+    now = time.time()
+    cached_result = getattr(app_module, '_homebrain_low_battery_cache', None)
+    if not refresh_live and isinstance(cached_result, dict):
+        age = now - float(cached_result.get('at') or 0)
+        ttl = float(cached_result.get('ttl') or 0)
+        rows = cached_result.get('rows')
+        if age >= 0 and age < ttl and isinstance(rows, list):
+            return [dict(item) for item in rows if isinstance(item, dict)]
+
+    config = getattr(app_module, 'CONFIG', None)
+    config = config if isinstance(config, dict) else {}
+
+    try:
+        threshold = float(config.get('low_battery_threshold', 20))
+    except Exception:
+        threshold = 20.0
+
     merged: dict[str, dict[str, Any]] = {}
 
-    # Prefer the Device Status Report when available.
-    report_device = _status_report_device(app_module)
+    def battery_value(device: dict[str, Any]) -> float | None:
+        attrs = _attrs(device)
+        candidates = (
+            device.get('battery'),
+            attrs.get('battery'),
+            attrs.get('batteryLevel'),
+            attrs.get('battery_level'),
+            attrs.get('batteryPercent'),
+        )
+        for value in candidates:
+            number = _safe_float(value)
+            if number is not None:
+                return number
+        return None
+
+    def add_item(
+        label: Any,
+        battery: Any,
+        source: str,
+        device: dict[str, Any] | None = None,
+    ) -> None:
+        value = _safe_float(battery)
+        clean_label = re.sub(r'\s+', ' ', str(label or '')).strip()
+        if not clean_label or value is None or value > threshold:
+            return
+
+        key = _normalise_key(clean_label)
+        if not key:
+            return
+
+        existing = merged.get(key)
+        if existing is None:
+            existing = {
+                'label': clean_label,
+                'battery': value,
+                'source': source,
+                'sources': [source],
+            }
+            merged[key] = existing
+        else:
+            if value < float(existing.get('battery') or 101):
+                existing['battery'] = value
+            sources = list(existing.get('sources') or [existing.get('source')])
+            if source not in sources:
+                sources.append(source)
+            existing['sources'] = [item for item in sources if item]
+            if existing.get('source') != 'Device Status Report' and source == 'Device Status Report':
+                existing['source'] = source
+
+        if isinstance(device, dict):
+            existing['id'] = device.get('id')
+            existing['room'] = device.get('room') or 'Unknown'
+            existing['category'] = device.get('category')
+
+    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
+    devices = [item for item in devices if isinstance(item, dict)] if isinstance(devices, list) else []
+
+    report_device = _status_report_device(app_module, refresh=True)
     if report_device:
         attrs = _attrs(report_device)
-        report = (
-            attrs.get('reportHtml')
-            or attrs.get('reporthtml')
-            or attrs.get('report')
-            or attrs.get('html')
-        )
+        lowered = {_normalise_key(key): value for key, value in attrs.items()}
+        report = None
+        for name in (
+            'reportHtml', 'report_html', 'reportText', 'report_text',
+            'currentReport', 'deviceStatusReport', 'statusSummary',
+            'overallStatus', 'report', 'html',
+        ):
+            value = lowered.get(_normalise_key(name))
+            if value not in (None, ''):
+                report = value
+                break
+
         for item in _extract_low_battery_report(report):
-            merged[_normalise_key(item['label'])] = item
+            add_item(item.get('label'), item.get('battery'), 'Device Status Report')
 
-    # Refresh likely battery-powered devices on demand. This catches attributes
-    # omitted from the normal Maker API device list, such as TRV batteries.
-    devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
-    candidates = [
-        device for device in (devices if isinstance(devices, list) else [])
-        if isinstance(device, dict) and _battery_refresh_candidate(device)
-    ]
+    # Include every low value already present in the normal Maker API cache.
+    for device in devices:
+        add_item(
+            _device_label(device),
+            battery_value(device),
+            'cached Maker API',
+            device,
+        )
 
-    # Keep the on-demand request bounded.
-    for device in candidates[:60]:
-        refreshed = _refresh_device_detail(app_module, device)
-        battery = _safe_float(_attrs(refreshed).get('battery'))
-        if battery is None or battery > 20:
-            continue
-        label = _device_label(refreshed)
-        key = _normalise_key(label)
-        item = {
-            'label': label,
-            'battery': battery,
-            'source': 'live device detail',
-        }
-        existing = merged.get(key)
-        if existing is None or battery < float(existing.get('battery') or 101):
-            merged[key] = item
+    # Attach IDs/rooms to report rows even when the cached battery value is missing.
+    for device in devices:
+        key = _normalise_key(_device_label(device))
+        if key in merged:
+            merged[key]['id'] = device.get('id')
+            merged[key]['room'] = device.get('room') or 'Unknown'
+            merged[key]['category'] = device.get('category')
 
-    return sorted(merged.values(), key=lambda item: (item['battery'], item['label'].lower()))
+    if refresh_live:
+        try:
+            limit = max(1, int(config.get('battery_detail_refresh_limit', 100)))
+        except Exception:
+            limit = 100
+
+        def candidate_priority(device: dict[str, Any]) -> tuple[Any, ...]:
+            text = _device_text(device)
+            capabilities = ' '.join(
+                str(value.get('name') if isinstance(value, dict) else value)
+                for value in (device.get('capabilities') or [])
+            ).lower()
+            important = any(
+                term in text
+                for term in (
+                    'trv', 'thermostat', 'radiator', 'lock', 'smoke',
+                    'door', 'window', 'contact', 'remote', 'button',
+                )
+            )
+            has_battery_capability = 'battery' in capabilities
+            cached = battery_value(device)
+            return (
+                0 if important else 1,
+                0 if has_battery_capability else 1,
+                0 if cached is not None else 1,
+                cached if cached is not None else 101,
+                _device_label(device).lower(),
+            )
+
+        candidates = [
+            device for device in devices
+            if _battery_refresh_candidate(device)
+        ]
+        candidates.sort(key=candidate_priority)
+
+        updater = getattr(app_module, 'update_cached_device_snapshot', None)
+
+        for device in candidates[:limit]:
+            refreshed = _refresh_device_detail(app_module, device)
+            value = battery_value(refreshed)
+            if value is None:
+                continue
+
+            if value <= threshold:
+                add_item(
+                    _device_label(refreshed),
+                    value,
+                    'live Maker API',
+                    refreshed,
+                )
+
+            if callable(updater):
+                cache_device = dict(refreshed)
+                cache_device['battery'] = value
+                cache_attrs = dict(_attrs(cache_device))
+                cache_attrs['battery'] = value
+                cache_device['attributes'] = cache_attrs
+                try:
+                    updater(cache_device)
+                except Exception:
+                    pass
+
+    rows = sorted(
+        merged.values(),
+        key=lambda item: (float(item.get('battery') or 101), str(item.get('label') or '').lower()),
+    )
+
+    cache_payload = {
+        'at': now,
+        'ttl': 90 if rows else 10,
+        'rows': [dict(item) for item in rows],
+    }
+    try:
+        setattr(app_module, '_homebrain_low_battery_cache', cache_payload)
+    except Exception:
+        pass
+
+    return rows
+
 
 def authoritative_low_battery_answer(app_module: Any, query: str) -> dict[str, Any] | None:
     q = _normalise(query)
     if not (
         ('battery' in q or 'batteries' in q)
-        and any(term in q for term in ('low', 'which', 'need replacing', 'replace'))
+        and any(term in q for term in ('low', 'which', 'need replacing', 'replace', 'status'))
     ):
         return None
 
-    rows = authoritative_low_batteries(app_module)
+    rows = authoritative_low_batteries(app_module, refresh_live=True)
     if not rows:
         message = 'No low-battery devices are currently reported.'
+        sources: list[str] = []
     else:
         message = 'Low battery devices:\n' + '\n'.join(
             f"- {item['label']}: {item['battery']:g}%"
             for item in rows
         )
+        sources = []
+        for item in rows:
+            for source in item.get('sources') or [item.get('source')]:
+                if source and source not in sources:
+                    sources.append(source)
+
+        source_labels = {
+            'Device Status Report': 'Hubitat Device Status Report',
+            'cached Maker API': 'cached Maker API device states',
+            'live Maker API': 'live Maker API device details',
+        }
+        if sources:
+            message += '\nSource: ' + ', '.join(source_labels.get(item, item) for item in sources) + '.'
+
     return {
         'success': True,
         'intent': 'low_batteries',
         'message': message,
         'low_batteries': rows,
         'count': len(rows),
-        'source': rows[0]['source'] if rows else None,
+        'source': ', '.join(sources) if sources else None,
+        'sources': sources,
+        'threshold': float(
+            (getattr(app_module, 'CONFIG', {}) or {}).get('low_battery_threshold', 20)
+        ),
     }
+
 
 
 def _patch_people_summary_value(value: Any, result: dict[str, Any]) -> Any:
@@ -1737,6 +2031,40 @@ def _patch_people_summary_value(value: Any, result: dict[str, Any]) -> Any:
         return ', '.join(result['home'])
     return value
 
+
+def wrap_dashboard_low_batteries(app_module: Any) -> None:
+    existing = getattr(app_module, 'dashboard_summary', None)
+    if not callable(existing) or getattr(existing, '_homebrain_low_battery_fixed', False):
+        return
+
+    def dashboard_with_authoritative_low_batteries(*args: Any, **kwargs: Any) -> Any:
+        summary = existing(*args, **kwargs)
+        if not isinstance(summary, dict):
+            return summary
+
+        rows = authoritative_low_batteries(app_module, refresh_live=False)
+        patched = dict(summary)
+        patched['low_batteries'] = len(rows)
+        patched['low_battery_devices'] = [
+            {
+                'id': item.get('id'),
+                'label': item.get('label'),
+                'room': item.get('room') or 'Unknown',
+                'battery': item.get('battery'),
+                'source': item.get('source'),
+            }
+            for item in rows
+        ]
+        patched['low_battery_sources'] = sorted({
+            source
+            for item in rows
+            for source in (item.get('sources') or [item.get('source')])
+            if source
+        })
+        return patched
+
+    dashboard_with_authoritative_low_batteries._homebrain_low_battery_fixed = True  # type: ignore[attr-defined]
+    app_module.dashboard_summary = dashboard_with_authoritative_low_batteries
 
 def wrap_dashboard_presence(app_module: Any) -> None:
     existing = getattr(app_module, 'dashboard_summary', None)
@@ -1879,6 +2207,7 @@ def wrap_assistant(app_module: Any) -> None:
 
 def register(app_module: Any) -> Any:
     wrap_dashboard_presence(app_module)
+    wrap_dashboard_low_batteries(app_module)
     app_module.APP_VERSION = VERSION
     app = app_module.app; app.version = VERSION; wrap_assistant(app_module)
     if not _route_exists(app, '/api/home-context'):
