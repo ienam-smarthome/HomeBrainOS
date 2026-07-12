@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.16-alpha'
+VERSION = '1.9.17-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -2038,11 +2038,27 @@ def wrap_dashboard_low_batteries(app_module: Any) -> None:
         return
 
     def dashboard_with_authoritative_low_batteries(*args: Any, **kwargs: Any) -> Any:
+        # Low-battery enrichment is useful, but it must never take the whole
+        # dashboard API offline. Preserve the original summary on any error.
         summary = existing(*args, **kwargs)
         if not isinstance(summary, dict):
             return summary
 
-        rows = authoritative_low_batteries(app_module, refresh_live=False)
+        try:
+            rows = authoritative_low_batteries(app_module, refresh_live=False)
+        except Exception as exc:
+            try:
+                setattr(app_module, '_homebrain_low_battery_last_error', str(exc))
+            except Exception:
+                pass
+            return summary
+
+        # Keep the original dashboard values until the authoritative source
+        # returns at least one row. This avoids replacing a valid cached count
+        # with zero during startup or temporary Hubitat/report unavailability.
+        if not rows:
+            return summary
+
         patched = dict(summary)
         patched['low_batteries'] = len(rows)
         patched['low_battery_devices'] = [
@@ -2065,6 +2081,7 @@ def wrap_dashboard_low_batteries(app_module: Any) -> None:
 
     dashboard_with_authoritative_low_batteries._homebrain_low_battery_fixed = True  # type: ignore[attr-defined]
     app_module.dashboard_summary = dashboard_with_authoritative_low_batteries
+
 
 def wrap_dashboard_presence(app_module: Any) -> None:
     existing = getattr(app_module, 'dashboard_summary', None)
