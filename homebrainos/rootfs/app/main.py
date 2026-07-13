@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import math
 import os
 import re
 import sqlite3
@@ -21,7 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.19-alpha'
+APP_VERSION = '1.9.20-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -296,7 +297,8 @@ def safe_float(value: Any) -> float | None:
     try:
         if value in (None, ''):
             return None
-        return float(str(value).replace('%',''))
+        number = float(str(value).replace('%',''))
+        return number if math.isfinite(number) else None
     except Exception:
         return None
 
@@ -1370,7 +1372,7 @@ def dashboard_summary(live: bool = False) -> dict[str, Any]:
 
 def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     devices = all_devices()
-    environment_devices = [d for d in devices if not is_fridge_meter_device(d)]
+    environment_devices = [d for d in devices if is_indoor_environment_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
     switches_on = [d for d in devices if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
     temps = [d['temperature'] for d in environment_devices if isinstance(d.get('temperature'), (int, float))]
@@ -1418,6 +1420,24 @@ def device_search_text(device: dict[str, Any]) -> str:
 def is_fridge_meter_device(device: dict[str, Any]) -> bool:
     text = device_search_text(device)
     return 'fridge' in text and 'meter' in text
+
+
+def is_system_environment_device(device: dict[str, Any]) -> bool:
+    text = device_search_text(device)
+    system_terms = (
+        'hub info', 'hubitat hub', 'hub c8', 'hub c-8', 'bridge', 'weather',
+        'open meteo', 'open-meteo', 'forecast', 'outside', 'outdoor',
+        'octopus', 'smart meter', 'electricity meter', 'device status report',
+    )
+    return any(term in text for term in system_terms)
+
+
+def is_indoor_environment_device(device: dict[str, Any]) -> bool:
+    if is_fridge_meter_device(device) or is_system_environment_device(device):
+        return False
+    if device.get('category') in {'weather', 'power_device', 'battery_sensor'}:
+        return False
+    return True
 
 
 def select_power_source(power_devices: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -3432,7 +3452,9 @@ def daily_briefing_answer() -> dict[str, Any]:
     weather = weather_device()
     health = home_health_answer()
     energy = energy_waste_candidates()
-    lines = ['Daily Home Briefing:', f"Home health: {health['score']}/100"]
+    health_score = health.get('score', 'unknown')
+    health_insights = health.get('insights') or []
+    lines = ['Daily Home Briefing:', f"Home health: {health_score}/100"]
     if summary['avg_temperature'] is not None:
         lines.append(f"Inside: {summary['avg_temperature']}°C, humidity {summary['avg_humidity']}%")
     else:
@@ -3441,10 +3463,9 @@ def daily_briefing_answer() -> dict[str, Any]:
     if weather:
         weather_text = weather.get('weatherSummaryLine') or weather.get('weatherSummary') or weather.get('label')
         lines.append(f"Weather: {weather_text}")
-    insights = health.get('insights') or []
-    if insights:
+    if health_insights:
         lines.append('Today, check:')
-        lines.extend(f"- {i['title']} - {i['detail']}" for i in insights[:5])
+        lines.extend(f"- {i.get('title', 'Check')} - {i.get('detail', '')}" for i in health_insights[:5])
     if energy:
         lines.append(f"Energy tip: check {energy[0]['label']} ({energy[0]['power_display']}).")
     return {'success': True, 'intent': 'daily_briefing', 'message': '\n'.join(lines), 'summary': summary, 'health': health, 'energy': energy[:5]}
@@ -7675,7 +7696,7 @@ def api_rooms():
             rooms[room]['power_total'] = round(rooms[room]['power_total'] + d['power'], 1)
     for room in rooms.values():
         ds = [d for d in devices if canonical_room_name(d.get('room') or 'Unknown') == room['room']]
-        environment_devices = [d for d in ds if not is_fridge_meter_device(d)]
+        environment_devices = [d for d in ds if is_indoor_environment_device(d)]
         temps = [d['temperature'] for d in environment_devices if isinstance(d.get('temperature'), (int,float))]
         hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int,float))]
         room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None

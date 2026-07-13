@@ -8,7 +8,7 @@ Short GitHub description: Local-first AI smart-home dashboard and assistant for 
 
 ## Current status
 
-`v1.9.19-alpha` assistant dashboard:
+`v1.9.20-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration

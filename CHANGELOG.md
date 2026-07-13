@@ -1,3 +1,9 @@
+## v1.9.20-alpha - Dashboard Hotfix
+
+- Fixes the Summary / What's Happening shortcut crash caused by non-text briefing items.
+- Excludes Hub Info, weather, bridge, meter, and other system/helper devices from indoor temperature and humidity averages.
+- Ignores non-finite numeric readings so invalid device values cannot break dashboard JSON responses.
+
 ## v1.9.19-alpha - Hubitat Request Stability
 
 - Adds a global Maker API request governor so detail refreshes are serialized and paced before they reach Hubitat.
