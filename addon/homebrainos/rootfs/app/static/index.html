@@ -538,6 +538,7 @@ async function ask(){
     if(j.model) details.push(j.model);
     details.push(elapsed+'s');
     setOutput((j.message||JSON.stringify(j,null,2))+'\n\n— '+details.join(' · '));
+    if(j.dashboard) applyDashboard(j.dashboard);
     speak(j.speech||j.message||'Done');
     const refreshIntents = ['voice_device_command','command','device_command','setpoint','timer_create','timer_cancel'];
     const changed = j.changed === true || j.setpoint!=null || refreshIntents.includes(j.intent);

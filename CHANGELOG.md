@@ -1,3 +1,13 @@
+## v1.9.28-alpha - Cache-First Assistant Accuracy and Diagnostics Fix
+
+- Made room temperature and humidity questions cache-first and limited missing-value refreshes to one selected device instead of scanning every candidate.
+- Made broad device inventory requests cache-only and bounded their display; short searches such as `tv` now use word-safe matching.
+- Recognised a cached `switch` state as sufficient evidence that smart-plug devices are controllable even when Hubitat omits capability metadata.
+- Added explicit, reachable Ollama health answers and protected AI status queries from accidental room-name routing.
+- Added period-aware weather and energy answers, including one targeted weather refresh when forecast data is missing and immediate cached explanations when historical meter totals are unavailable.
+- Synchronized answer snapshots back into dashboard cards, corrected Device Status Report counters, and expanded explicit Hub Info details with one targeted refresh.
+- Removed raw HTML, map URLs, coordinates, and rich location payloads from event diagnostics; normal AI context is now cache-only unless logs are explicitly requested.
+
 ## v1.9.27-alpha - Event-Backed Assistant Latency and Consistency Fix
 
 - Removed implicit live Hubitat detail scans from ordinary device-health questions; cached Device Status Report data now answers immediately.

@@ -1023,10 +1023,18 @@ def test_heating_status_polls_detail_when_mode_missing():
     assert updates and updates[0]['id'] == 'trv1'
 
 
-def test_ai_status_routes_to_settings_before_room_status():
+def test_ai_status_checks_ollama_before_room_status():
     main = load_addon_main()
     main.CONFIG['ollama_enabled'] = True
     main.CONFIG['ollama_base_url'] = 'http://192.168.1.199:11434'
+    main.CONFIG['ollama_model'] = 'qwen2.5:3b'
+    main.OLLAMA_HEALTH.update({
+        'checked_at': time.time(),
+        'online': True,
+        'message': 'Local AI is online',
+        'base_url': 'http://192.168.1.199:11434',
+        'model': 'qwen2.5:3b',
+    })
     main.all_devices = lambda: [
         {
             'id': 'fan1',
@@ -1039,8 +1047,9 @@ def test_ai_status_routes_to_settings_before_room_status():
 
     answer = main.assistant('AI status')
 
-    assert answer['intent'] == 'settings_check'
-    assert 'Local AI: enabled' in answer['message']
+    assert answer['intent'] == 'ai_status'
+    assert 'Ollama: online' in answer['message']
+    assert 'qwen2.5:3b' in answer['message']
 
 
 def test_ollama_answer_marks_truncated_responses():
@@ -2040,3 +2049,179 @@ def test_cached_weather_does_not_repeat_current_temperature():
 
     assert answer['message'].lower().count('current') == 1
     assert 'current 21.9' not in answer['message'].lower()
+
+
+def test_event_diagnostics_omits_rich_location_payloads():
+    main = load_addon_main()
+    main.EVENT_HISTORY[:] = [{
+        'device_id': 'life1',
+        'label': 'Family member',
+        'attr': 'tile',
+        'value': '<div>Moving near home</div><a href="https://maps.example/?q=51.4671883,-0.0175467">map</a>',
+        'ui_relevant': False,
+    }]
+
+    answer = main.event_diagnostics_answer()
+
+    assert '[tile payload omitted]' in answer['message']
+    assert 'maps.example' not in answer['message']
+    assert '51.4671883' not in answer['message']
+    assert 'maps.example' not in str(answer['diagnostics'])
+
+
+def test_room_sensor_cache_answer_never_scans_live_devices():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'lr-climate',
+        'label': 'Livingroom temp & humidity',
+        'room': 'Climate',
+        'category': 'climate_sensor',
+        'temperature': 28.2,
+        'humidity': 50,
+        'attributes': {'temperature': 28.2, 'humidity': 50},
+    }]
+    main.fetch_live_device_detail = lambda *_args: (_ for _ in ()).throw(AssertionError('live detail scan called'))
+
+    temperature = main.cache_first_assistant_answer('livingroom temp')
+    humidity = main.cache_first_assistant_answer('what is livingroom humidity')
+
+    assert temperature['value'] == 28.2
+    assert humidity['value'] == 50
+    assert temperature['source'] == 'event_cache'
+    assert humidity['source'] == 'event_cache'
+
+
+def test_direct_value_refreshes_at_most_one_matching_device():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'one', 'label': 'Bathroom climate', 'room': 'Bathroom', 'category': 'climate_sensor', 'attributes': {}},
+        {'id': 'two', 'label': 'Bathroom mirror', 'room': 'Bathroom', 'category': 'device', 'attributes': {}},
+    ]
+    calls = []
+    main.fetch_live_device_detail = lambda device_id: calls.append(device_id) or {
+        'id': device_id, 'label': 'Bathroom climate', 'room': 'Bathroom',
+        'category': 'climate_sensor', 'humidity': 61, 'attributes': {'humidity': 61},
+    }
+    main.update_cached_device_snapshot = lambda _device: None
+
+    answer = main.direct_value_lookup_answer('bathroom humidity')
+
+    assert answer['value'] == 61
+    assert len(calls) == 1
+
+
+def test_find_all_is_cache_only_and_bounded():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': str(index), 'label': f'Device {index}', 'room': 'Room', 'category': 'device', 'attributes': {}}
+        for index in range(40)
+    ]
+    main.fetch_live_device_detail = lambda *_args: (_ for _ in ()).throw(AssertionError('inventory must be cache-only'))
+
+    answer = main.find_device_answer('find all devices')
+
+    assert answer['source'] == 'event_cache'
+    assert len(answer['matches']) == 40
+    assert 'Cached device inventory: 40 devices' in answer['message']
+    assert answer['message'].count('\n- ') == 25
+
+
+def test_short_device_search_does_not_match_across_word_boundaries():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'fan', 'label': 'Fan Boost', 'room': 'Ventilation', 'category': 'switch', 'switch': 'off', 'attributes': {'switch': 'off'}},
+        {'id': 'tv', 'label': 'TV', 'room': 'Multimedia', 'category': 'climate_sensor', 'switch': 'off', 'attributes': {'switch': 'off'}},
+    ]
+
+    answer = main.find_device_answer('find tv')
+
+    assert [item['label'] for item in answer['matches']] == ['TV']
+
+
+def test_switch_state_makes_tv_controllable_without_capability_metadata():
+    main = load_addon_main()
+    tv = {
+        'id': 'tv', 'label': 'TV', 'name': 'Smart plug', 'room': 'Multimedia',
+        'category': 'climate_sensor', 'switch': 'off', 'attributes': {'switch': 'off'},
+        'capabilities': [], 'commands': [],
+    }
+
+    assert main.is_switchable_device(tv) is True
+    assert main.switchable_devices([tv]) == [tv]
+
+
+def test_period_energy_question_is_immediate_cache_answer():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy', 'category': 'power_device',
+        'power': 591,
+        'attributes': {'energyYesterday': 12.34, 'costYesterdayEnergy': 3.21},
+    }]
+    main.dashboard_summary = lambda live=False: {'power_display': '591W'}
+
+    answer = main.cache_first_assistant_answer('energy used yesterday')
+
+    assert answer['intent'] == 'energy_yesterday'
+    assert answer['source'] == 'event_cache'
+    assert '12.34 kWh' in answer['message']
+    assert '£3.21' in answer['message']
+
+
+def test_period_energy_missing_total_does_not_invoke_ai():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy', 'category': 'power_device',
+        'power': 591, 'attributes': {},
+    }]
+    main.dashboard_summary = lambda live=False: {'power_display': '591W'}
+    main.ollama_answer = lambda *_args: (_ for _ in ()).throw(AssertionError('Ollama should not be called'))
+
+    answer = main.cache_first_assistant_answer('energy used yesterday')
+
+    assert 'not cached' in answer['message']
+    assert '591W' in answer['message']
+
+
+def test_forecast_query_refreshes_only_weather_device_once():
+    main = load_addon_main()
+    cached = {
+        'id': 'weather', 'label': 'Weather Open-Meteo', 'name': 'Weather',
+        'room': 'Climate', 'category': 'weather', 'temperature': 21.4,
+        'humidity': 68, 'attributes': {'temperature': 21.4, 'humidity': 68},
+    }
+    main.all_devices = lambda: [cached]
+    calls = []
+    main.fetch_live_device_detail = lambda device_id: calls.append(device_id) or {
+        **cached,
+        'attributes': {'temperature': 21.4, 'humidity': 68, 'forecastTomorrow': 'Rain, high 22C'},
+    }
+    main.update_cached_device_snapshot = lambda _device: None
+    main._homebrain_weather_query_answer = lambda query: {
+        'success': True, 'intent': 'weather', 'message': f'Tomorrow: rain expected ({query}).'
+    }
+
+    answer = main.cached_weather_answer('weather tomorrow')
+
+    assert answer['message'].startswith('Tomorrow:')
+    assert calls == ['weather']
+
+
+def test_ai_context_is_cache_only_by_default():
+    main = load_addon_main()
+    main.all_devices = lambda: []
+    main.dashboard_summary = lambda live=False: {
+        'devices': 0, 'lights_on': 0, 'switches_on': 0, 'avg_temperature': None,
+        'avg_humidity': None, 'power_total': 0, 'power_source_label': 'None',
+        'people_home_names': [], 'low_batteries': 0, 'motion_active': 0,
+    }
+    main.hub_logs_diagnostics = lambda: (_ for _ in ()).throw(AssertionError('hub logs network call'))
+
+    context = main.ai_context_pack()
+
+    assert 'hub_logs' not in context
+
+
+def test_answer_dashboard_snapshot_is_applied_by_web_ui():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert 'if(j.dashboard) applyDashboard(j.dashboard);' in html

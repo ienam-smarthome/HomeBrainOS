@@ -2313,6 +2313,7 @@ def register(app_module: Any) -> Any:
     wrap_dashboard_presence(app_module)
     wrap_dashboard_low_batteries(app_module)
     app_module.refresh_authoritative_low_batteries = lambda: authoritative_low_batteries(app_module, refresh_live=True)
+    app_module._homebrain_weather_query_answer = lambda query: improved_weather_answer(app_module, query)
     app = app_module.app; app.version = app_version(app_module); wrap_assistant(app_module)
     if not _route_exists(app, '/api/home-context'):
         app.add_api_route('/api/home-context', lambda: build_home_context(app_module), methods=['GET'])

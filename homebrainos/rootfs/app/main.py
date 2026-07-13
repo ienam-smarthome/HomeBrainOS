@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.27-alpha'
+APP_VERSION = '1.9.28-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1123,6 +1123,48 @@ def remember_event_diagnostics(records: list[dict[str, Any]], ui_records: list[d
         UI_STATS['last_ui_event_at'] = now
 
 
+def diagnostic_event_value(attr: Any, value: Any) -> str:
+    """Return a short, privacy-safe event value for UI/API diagnostics."""
+    attr_key = compact_name(attr)
+    raw = str(value or '')
+    if attr_key in {'reporthtml', 'reporttext', 'reportjson'}:
+        return f'[status report payload omitted; {len(raw)} characters]'
+    if attr_key in {'tile', 'html', 'map', 'location', 'geolocation'}:
+        return f'[{attr_key or "rich"} payload omitted]'
+    text = _strip_html_report(raw) if '<' in raw and '>' in raw else raw
+    text = public_error(RuntimeError(text)) if text else ''
+    text = re.sub(r'https?://\S+', '[url omitted]', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?<!\d)-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}(?!\d)', '[coordinates omitted]', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:157] + '...' if len(text) > 160 else text
+
+
+def sanitise_diagnostic_event(event: Any) -> Any:
+    if not isinstance(event, dict):
+        return diagnostic_event_value('', event)
+    return {
+        'received_at': event.get('received_at'),
+        'device_id': event.get('device_id'),
+        'attr': event.get('attr'),
+        'value': diagnostic_event_value(event.get('attr'), event.get('value')),
+        'label': event.get('label'),
+        'ui_relevant': bool(event.get('ui_relevant')),
+    }
+
+
+def sanitise_last_hubitat_event(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return None
+    return {
+        'received_at': value.get('received_at'),
+        'count': value.get('count'),
+        'updated': value.get('updated'),
+        'ui_relevant': value.get('ui_relevant'),
+        'last': sanitise_diagnostic_event(value.get('last')),
+        'last_ui': sanitise_diagnostic_event(value.get('last_ui')),
+    }
+
+
 def event_diagnostics_payload() -> dict[str, Any]:
     now = time.time()
     last_event_at = UI_STATS.get('last_event_at')
@@ -1134,7 +1176,7 @@ def event_diagnostics_payload() -> dict[str, Any]:
         'event_stream': {
             'status': 'warning' if event_warning else ('online' if last_event_at else 'waiting'),
             'last_event_age_seconds': age,
-            'last_hubitat_event': LAST_HUBITAT_EVENT,
+            'last_hubitat_event': sanitise_last_hubitat_event(LAST_HUBITAT_EVENT),
             'state_event_version': STATE_EVENT_VERSION,
             'sse_clients': SSE_CLIENTS,
             'warning': 'No Hubitat events received for more than 5 minutes.' if event_warning else None,
@@ -1156,7 +1198,7 @@ def event_diagnostics_payload() -> dict[str, Any]:
                 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS,
             },
         },
-        'recent_events': list(reversed(EVENT_HISTORY[-20:])),
+        'recent_events': [sanitise_diagnostic_event(event) for event in reversed(EVENT_HISTORY[-20:])],
     }
 
 def record_hubitat_events(payload: Any) -> dict[str, Any]:
@@ -1681,12 +1723,12 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
         devices = summary['active_motion_devices']
         lines = [format_summary_device(d) for d in devices]
         message = 'Active motion sensors:\n' + ('\n'.join(lines) if lines else 'None')
-        return {'success': True, 'intent': 'summary_active_motion', 'source': 'event_cache', 'message': message, 'devices': devices}
+        return {'success': True, 'intent': 'summary_active_motion', 'source': 'event_cache', 'message': message, 'devices': devices, 'dashboard': summary}
 
     if wants_people:
         names = summary['people_home_names']
         message = 'People home:\n' + ('\n'.join(names) if names else 'None')
-        return {'success': True, 'intent': 'summary_people_home', 'source': 'event_cache', 'message': message, 'people_home': names}
+        return {'success': True, 'intent': 'summary_people_home', 'source': 'event_cache', 'message': message, 'people_home': names, 'dashboard': summary}
 
     if wants_power:
         source = summary.get('power_source')
@@ -1696,7 +1738,7 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
         else:
             message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_display']}."
             speech = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {spoken_power_value(summary['power_total'])}."
-        return {'success': True, 'intent': 'summary_power', 'source': 'event_cache', 'message': message, 'speech': speech, 'power_source': source}
+        return {'success': True, 'intent': 'summary_power', 'source': 'event_cache', 'message': message, 'speech': speech, 'power_source': source, 'dashboard': summary}
 
     if wants_tiles:
         message = (
@@ -1711,7 +1753,7 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
             f"{summary['people_home']} of {summary['people_tracked']} people home, "
             f"{summary['low_batteries']} low batteries, and {summary['motion_active']} active motion sensors."
         )
-        return {'success': True, 'intent': 'summary_tiles', 'source': 'event_cache', 'message': message, 'speech': speech, 'summary': summary}
+        return {'success': True, 'intent': 'summary_tiles', 'source': 'event_cache', 'message': message, 'speech': speech, 'summary': summary, 'dashboard': summary}
 
     return None
 
@@ -1819,7 +1861,7 @@ def cached_low_battery_answer(summary: dict[str, Any] | None = None) -> dict[str
     message = 'Low battery devices:\n' + ('\n'.join(lines) if lines else 'None')
     if report_items:
         message += '\nSource: Hubitat Device Status Report.'
-    return {'success': True, 'intent': 'summary_low_batteries', 'source': 'event_cache', 'message': message, 'devices': devices, 'count': len(devices)}
+    return {'success': True, 'intent': 'summary_low_batteries', 'source': 'event_cache', 'message': message, 'devices': devices, 'count': len(devices), 'dashboard': summary}
 
 
 def cached_summary_metric_answer(text: str) -> dict[str, Any] | None:
@@ -1841,25 +1883,46 @@ def cached_summary_metric_answer(text: str) -> dict[str, Any] | None:
     if wants_temp:
         value = summary.get('avg_temperature')
         message = f"Average home temperature is {value}C." if value is not None else 'Average home temperature is unavailable.'
-        return {'success': True, 'intent': 'summary_temperature', 'source': 'event_cache', 'message': message, 'speech': f"Average home temperature is {spoken_degrees(value)}.", 'summary': summary}
+        return {'success': True, 'intent': 'summary_temperature', 'source': 'event_cache', 'message': message, 'speech': f"Average home temperature is {spoken_degrees(value)}.", 'summary': summary, 'dashboard': summary}
     if wants_humidity:
         value = summary.get('avg_humidity')
         message = f"Average home humidity is {value}%." if value is not None else 'Average home humidity is unavailable.'
-        return {'success': True, 'intent': 'summary_humidity', 'source': 'event_cache', 'message': message, 'speech': f"Average home humidity is {spoken_percent(value)}.", 'summary': summary}
+        return {'success': True, 'intent': 'summary_humidity', 'source': 'event_cache', 'message': message, 'speech': f"Average home humidity is {spoken_percent(value)}.", 'summary': summary, 'dashboard': summary}
     if wants_power:
         source = summary.get('power_source')
         if source:
             message = f"Power is whole-house live power from {source['label']}: {summary['power_display']}."
         else:
             message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_display']}."
-        return {'success': True, 'intent': 'summary_power', 'source': 'event_cache', 'message': message, 'speech': message, 'power_source': source, 'summary': summary}
+        return {'success': True, 'intent': 'summary_power', 'source': 'event_cache', 'message': message, 'speech': message, 'power_source': source, 'summary': summary, 'dashboard': summary}
     return None
 
 
-def cached_weather_answer() -> dict[str, Any] | None:
+def cached_weather_answer(query: str = '') -> dict[str, Any] | None:
     device = weather_device()
     if not device:
         return {'success': False, 'intent': 'weather', 'message': 'No cached weather device found.'}
+    q = normalise(query)
+    wants_forecast = any(term in q for term in ('tomorrow', 'today', 'forecast', 'rain', 'raining', 'umbrella', 'precipitation'))
+    has_forecast = bool(weather_attr(
+        device, 'weatherSummary', 'weatherSummaryLine', 'threedayfcstTile',
+        'threeDayFcstTile', 'forecastTile', 'dailyForecast',
+        'precipProbability', 'precipitationChance', 'chanceOfRain',
+    ))
+    refreshed = False
+    if wants_forecast and not has_forecast and device.get('id'):
+        fresh = fetch_live_device_detail(str(device.get('id')))
+        if fresh:
+            update_cached_device_snapshot(fresh)
+            device = fresh
+            refreshed = True
+    natural_answerer = globals().get('_homebrain_weather_query_answer')
+    if wants_forecast and callable(natural_answerer):
+        answer = natural_answerer(query)
+        if isinstance(answer, dict):
+            answer = dict(answer)
+            answer.setdefault('source', 'live_device_cache' if refreshed else 'event_cache')
+            return answer
     if not weather_device_has_detail(device):
         return shortcut_weather_answer()
     summary = weather_attr(device, 'weatherSummary')
@@ -1904,6 +1967,7 @@ def cached_home_summary_answer() -> dict[str, Any]:
         ),
         'speech': speech,
         'summary': s,
+        'dashboard': s,
         'source': 'event_cache',
     }
 
@@ -1912,14 +1976,14 @@ def cached_lights_answer() -> dict[str, Any]:
     summary = dashboard_summary(live=False)
     light_devices = [dict(d) for d in summary.get('lights_on_devices') or []]
     labels = [d.get('label') or d.get('name') or str(d.get('id')) for d in light_devices]
-    return {'success': True, 'intent': 'cached_lights_on', 'source': 'event_cache', 'message': 'Lights on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(light_devices), 'devices': light_devices}
+    return {'success': True, 'intent': 'cached_lights_on', 'source': 'event_cache', 'message': 'Lights on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(light_devices), 'devices': light_devices, 'dashboard': summary}
 
 
 def cached_switches_answer() -> dict[str, Any]:
     summary = dashboard_summary(live=False)
     switch_devices = [dict(d) for d in summary.get('switches_on_devices') or []]
     labels = [d.get('label') or d.get('name') or str(d.get('id')) for d in switch_devices]
-    return {'success': True, 'intent': 'cached_switches_on', 'source': 'event_cache', 'message': 'Switches on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(switch_devices), 'devices': switch_devices}
+    return {'success': True, 'intent': 'cached_switches_on', 'source': 'event_cache', 'message': 'Switches on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(switch_devices), 'devices': switch_devices, 'dashboard': summary}
 
 
 def cached_motion_rooms_answer() -> dict[str, Any]:
@@ -1940,6 +2004,7 @@ def cached_motion_rooms_answer() -> dict[str, Any]:
         'message': 'Rooms with active motion:\n' + ('\n'.join(lines) if lines else 'None'),
         'rooms': [{'room': room, 'devices': labels} for room, labels in sorted(by_room.items())],
         'devices': devices,
+        'dashboard': summary,
         'summary_cache_version': SUMMARY_CACHE_VERSION,
     }
 
@@ -1980,10 +2045,59 @@ def cached_attention_answer() -> dict[str, Any]:
     }
 
 
+def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
+    """Answer day-total energy questions from the meter cache only."""
+    t = normalise(text)
+    if not any(word in t for word in ('energy', 'electricity', 'kwh', 'used', 'use', 'spent', 'cost')):
+        return None
+    period = 'yesterday' if 'yesterday' in t else ('today' if 'today' in t else None)
+    if not period:
+        return None
+
+    usage = energy_usage_from_meter()
+    if not usage.get('available'):
+        return {
+            'success': True,
+            'intent': f'energy_{period}',
+            'source': 'event_cache',
+            'message': 'No whole-house energy meter is cached yet.',
+            'usage': usage,
+        }
+
+    day = usage.get(period) or {}
+    label = 'Today so far' if period == 'today' else 'Yesterday'
+    kwh = safe_float(day.get('kwh'))
+    cost = safe_float(day.get('cost_gbp'))
+    details = []
+    if kwh is not None:
+        details.append(f'{kwh:.2f} kWh')
+    if cost is not None:
+        details.append(f'£{cost:.2f}')
+    meter = (usage.get('source') or {}).get('label') or 'the whole-house meter'
+    if details:
+        message = f"{label}: {' costing '.join(details)} from {meter}."
+    else:
+        summary = dashboard_summary(live=False)
+        message = (
+            f"{label}'s energy total is not cached by {meter} yet. "
+            f"Current whole-house power is {summary.get('power_display', 'unavailable')}."
+        )
+    return {
+        'success': True,
+        'intent': f'energy_{period}',
+        'source': 'event_cache',
+        'message': message,
+        'usage': usage,
+        'dashboard': dashboard_summary(live=False),
+    }
+
+
 def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     t = normalise(text)
     if not t:
         return cached_home_summary_answer()
+    if is_ai_status_question(t):
+        return cached_ai_status_answer()
     if re.search(r'\b(turn|switch|set|change|adjust|dim|brighten|increase|decrease|raise|lower|refresh|reload|clear|cancel|schedule)\b', t):
         return None
     if t in ('summary', 'status', 'home summary', 'what is happening', "what's happening", 'whats happening'):
@@ -1994,12 +2108,23 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return hub_health_answer()
     if t in ('cpu advisor', 'performance advisor'):
         return performance_advisor_answer()
+    if any(term in t for term in ('what happened', 'what changed', 'timeline', 'recent history')):
+        answer = safe_timeline_answer()
+        answer.setdefault('source', 'event_cache')
+        return answer
+    energy_period = cached_period_energy_answer(t)
+    if energy_period:
+        return energy_period
     if re.search(r'\b(device health|device status|device check|device report)\b', t):
         return device_status_report_display_answer(t) or stale_devices_answer(t)
     if 'room' in t and 'motion' in t:
         return cached_motion_rooms_answer()
     if 'room' in t and 'active' in t:
         return active_rooms_answer()
+    device_value = smart_device_value_answer(t)
+    if device_value:
+        device_value.setdefault('source', 'event_cache')
+        return device_value
     metric_answer = cached_summary_metric_answer(t)
     if metric_answer:
         return metric_answer
@@ -2011,7 +2136,7 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     if re.search(r'\b(which|what|show|list)\s+switch(?:es)?\s+(are|is)?\s*on\b', t):
         return cached_switches_answer()
     if 'weather' in t or 'forecast' in t or 'rain' in t:
-        return cached_weather_answer()
+        return cached_weather_answer(t)
     return None
 
 
@@ -2813,6 +2938,14 @@ def device_status_report_display_answer(question: str | None = None) -> dict[str
     offline_rows = _extract_report_section(report, '[OFFLINE]')
     low_rows = _extract_report_section(report, '[LOW BATTERY]')
     motion_rows = _extract_report_section(report, '[NO CHANGE]')
+    # Rows are more authoritative than counters, which can lag report text.
+    if offline_rows:
+        offline = len(offline_rows)
+    if low_rows:
+        low = len(low_rows)
+    if motion_rows:
+        motion = len(motion_rows)
+    issue_count = offline + low + motion
 
     if scope == 'priority':
         lines = _health_priority_lines(offline_rows, low_rows, motion_rows)
@@ -4897,6 +5030,14 @@ def hub_health_answer() -> dict[str, Any]:
             'message': 'No Hub Info device found. Add or expose the Hub Info device from Hubitat, then refresh from Hubitat.',
         }
     metrics = hub_health_metrics(hub)
+    source = 'event_cache'
+    if sum(value is not None for value in metrics.values()) < 2 and hub.get('id'):
+        fresh = fetch_live_device_detail(str(hub.get('id')))
+        if fresh:
+            update_cached_device_snapshot(fresh)
+            hub = fresh
+            metrics = hub_health_metrics(hub)
+            source = 'live_device_cache'
     display_metrics = hub_health_display_metrics(metrics)
     lines = [f"{label}: {value}" for label, value in display_metrics.items() if value is not None]
     if not lines:
@@ -4905,7 +5046,7 @@ def hub_health_answer() -> dict[str, Any]:
         message = f"Hub Info was found, but CPU/free-memory attributes were not available.{detail}"
     else:
         message = f"Hub health from {hub.get('label') or hub.get('name') or 'Hub Info'}:\n" + '\n'.join(lines)
-    return {'success': True, 'intent': 'hub_health', 'message': message, 'device': hub, 'metrics': metrics, 'display_metrics': display_metrics}
+    return {'success': True, 'intent': 'hub_health', 'source': source, 'message': message, 'device': hub, 'metrics': metrics, 'display_metrics': display_metrics}
 
 
 def normalise(text: Any) -> str:
@@ -5269,7 +5410,13 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
     if power_child_sensor:
         return False
     smart_plug_word = any(word in label for word in ('plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier'))
-    explicit_switch = switch_capable or {'on', 'off'}.issubset(commands) or (category == 'power_device' and smart_plug_word)
+    explicit_switch = (
+        switch_capable
+        or device.get('switch') is not None
+        or device_attribute_map(device).get('switch') is not None
+        or {'on', 'off'}.issubset(commands)
+        or (category == 'power_device' and smart_plug_word)
+    )
     if category in sensor_categories and not explicit_switch:
         return False
     if any(word in label for word in sensor_words) and not explicit_switch:
@@ -5870,7 +6017,7 @@ def ai_device_fact(device: dict[str, Any]) -> dict[str, Any]:
     return fact
 
 
-def ai_context_pack(include_logs: bool | None = None) -> dict[str, Any]:
+def ai_context_pack(include_logs: bool = False) -> dict[str, Any]:
     devices = all_devices()
     device_limit = max(10, int(CONFIG.get('ollama_context_device_limit', 80)))
     summary = dashboard_summary()
@@ -5909,7 +6056,9 @@ def ai_context_pack(include_logs: bool | None = None) -> dict[str, Any]:
     weather = weather_device()
     if weather:
         context['weather'] = ai_device_fact(weather)
-    should_include_logs = CONFIG.get('ollama_include_hub_logs', True) if include_logs is None else include_logs
+    # Hub logs require network I/O and must be explicitly requested. The normal
+    # AI/UI context is a bounded cache-only snapshot.
+    should_include_logs = bool(include_logs)
     if should_include_logs:
         try:
             log_info = hub_logs_diagnostics(limit=40)
@@ -6029,6 +6178,45 @@ def ollama_health_snapshot() -> dict[str, Any]:
     return snapshot
 
 
+def is_ai_status_question(text: str) -> bool:
+    t = normalise(text)
+    return any(term in t for term in (
+        'ai status', 'ai running', 'ollama status', 'is ai running',
+        'local ai status', 'is ollama running',
+    ))
+
+
+def cached_ai_status_answer() -> dict[str, Any]:
+    # An explicit status question is the one place where a bounded health
+    # probe is useful. ollama_health() reuses its short-lived cache and has a
+    # strict timeout, so this reports whether Ollama is actually reachable.
+    health = ollama_health(force=False)
+    enabled = bool(CONFIG.get('ollama_enabled'))
+    online = health.get('online')
+    state = 'online' if online is True else 'offline' if online is False else 'not checked yet'
+    checked_at = safe_float(health.get('checked_at'))
+    age = max(0, int(time.time() - checked_at)) if checked_at else None
+    lines = [
+        'Local AI status:',
+        f"Enabled: {'yes' if enabled else 'no'}",
+        f'Ollama: {state}',
+        f"Model: {health.get('model') or CONFIG.get('ollama_model', 'qwen2.5:3b')}",
+        f"URL: {health.get('base_url') or '(not configured)'}",
+    ]
+    if health.get('message'):
+        lines.append(f"Health: {health['message']}")
+    if age is not None:
+        lines.append(f'Last checked: {age}s ago')
+    return {
+        'success': online is True,
+        'intent': 'ai_status',
+        'source': 'health_cache',
+        'model': health.get('model'),
+        'message': '\n'.join(lines),
+        'ollama': health,
+    }
+
+
 def required_settings_answer() -> dict[str, Any]:
     ollama_enabled = bool(CONFIG.get('ollama_enabled'))
     live_sync_enabled = bool(CONFIG.get('auto_live_sync_enabled'))
@@ -6065,11 +6253,7 @@ def is_settings_status_question(text: str) -> bool:
         or 'settings enabled' in t
         or 'addon options' in t
         or 'add-on options' in t
-        or 'ai status' in t
-        or 'ai running' in t
-        or 'ollama status' in t
-        or 'is ai running' in t
-        or 'local ai' in t
+        or t in {'local ai settings', 'ollama settings'}
     )
 
 
@@ -6697,6 +6881,7 @@ def direct_value_lookup_answer(question: str) -> dict[str, Any] | None:
 
     subject_c = compact_name(subject)
     matches = []
+    subject_matches = []
 
     for device in all_devices():
         label = str(device.get('label') or device.get('name') or str(device.get('id') or '')).strip()
@@ -6711,38 +6896,6 @@ def direct_value_lookup_answer(question: str) -> dict[str, Any] | None:
         )
 
         if not subject_match:
-            continue
-
-        value = device.get(requested_attr)
-        if value is None:
-            value = device_attr_value(device, requested_attr)
-
-        # Extra case-insensitive/raw-attribute fallback.
-        if value is None:
-            attrs = device_attribute_map(device)
-            for key, raw in attrs.items():
-                if compact_name(key) == compact_name(requested_attr):
-                    value = raw
-                    break
-
-        # If the summary cache has the device but not the attribute, fetch live detail.
-        if value is None and device.get('id'):
-            fresh = fetch_live_device_detail(str(device.get('id')))
-            if fresh:
-                update_cached_device_snapshot(fresh)
-                value = fresh.get(requested_attr)
-                if value is None:
-                    value = device_attr_value(fresh, requested_attr)
-                if value is None:
-                    fresh_attrs = device_attribute_map(fresh)
-                    for key, raw in fresh_attrs.items():
-                        if compact_name(key) == compact_name(requested_attr):
-                            value = raw
-                            break
-                if value is not None:
-                    device = fresh
-
-        if value is None:
             continue
 
         score = 0
@@ -6780,7 +6933,34 @@ def direct_value_lookup_answer(question: str) -> dict[str, Any] | None:
         if requested_attr in ('humidity', 'temperature') and any(w in text for w in ('meter', 'sensor', 'climate')):
             score += 30
 
-        matches.append((score, device, value))
+        subject_matches.append((score, device))
+
+        value = device.get(requested_attr)
+        if value is None:
+            value = device_attr_value(device, requested_attr)
+        if value is None:
+            attrs = device_attribute_map(device)
+            for key, raw in attrs.items():
+                if compact_name(key) == compact_name(requested_attr):
+                    value = raw
+                    break
+        if value is not None:
+            matches.append((score, device, value))
+
+    # Never perform an N-device live scan for one value. If the best matching
+    # cached device has no value, refresh that single device once.
+    if not matches and subject_matches:
+        subject_matches.sort(key=lambda item: item[0], reverse=True)
+        score, selected = subject_matches[0]
+        if selected.get('id'):
+            fresh = fetch_live_device_detail(str(selected.get('id')))
+            if fresh:
+                update_cached_device_snapshot(fresh)
+                value = fresh.get(requested_attr)
+                if value is None:
+                    value = device_attr_value(fresh, requested_attr)
+                if value is not None:
+                    matches.append((score, fresh, value))
 
     if not matches:
         return None
@@ -6839,6 +7019,7 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
         return None
 
     subject_c = compact_name(subject)
+    broad_inventory = subject in {'all', 'all cached', 'everything', 'inventory'}
     matches = []
 
     for device in all_devices():
@@ -6847,10 +7028,17 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
         hay = normalise(f'{label} {room} {device.get("category") or ""}')
         hay_c = compact_name(hay)
 
-        if subject in hay or subject_c in hay_c:
-            # If the cached summary has no useful values, fetch live detail from Maker API.
+        hay_words = set(hay.split())
+        if broad_inventory or subject in hay_words or subject in hay or (len(subject_c) >= 3 and subject_c in hay_c):
+            # Inventory requests stay cache-only. A specific empty match may
+            # perform at most one detail read rather than fanning out to Hubitat.
             fresh = None
-            if device.get('id'):
+            cached_attrs = device_attribute_map(device)
+            has_cached_value = any(
+                device.get(attr) is not None or cached_attrs.get(attr) is not None
+                for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'motion', 'contact', 'switch')
+            )
+            if not broad_inventory and not has_cached_value and device.get('id') and not matches:
                 fresh = fetch_live_device_detail(str(device.get('id')))
             if fresh:
                 update_cached_device_snapshot(fresh)
@@ -6882,8 +7070,8 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
             'matches': [],
         }
 
-    lines = [f'Devices matching "{subject}":']
-    for item in matches[:12]:
+    lines = [f'Cached device inventory: {len(matches)} devices' if broad_inventory else f'Devices matching "{subject}":']
+    for item in matches[:25 if broad_inventory else 12]:
         attr_text = ', '.join(item['attrs']) if item['attrs'] else 'no common values cached'
         lines.append(f"- {item['label']} | room: {item['room']} | type: {item['category']} | {attr_text}")
 
@@ -6892,6 +7080,7 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
         'intent': 'find_device',
         'message': '\n'.join(lines),
         'speech': f'I found {len(matches)} matching devices.',
+        'source': 'event_cache',
         'matches': matches,
     }
 
@@ -6926,14 +7115,12 @@ def _device_matches_room_subject(device: dict[str, Any], subject: str) -> bool:
     if not subject_n:
         return False
 
-    return (
-        subject_n == room
-        or subject_n in room
-        or subject_c == room_c
-        or subject_c in room_c
-        or subject_n in label
-        or subject_c in label_c
-    )
+    exact = subject_n == room or subject_c == room_c or subject_n == label or subject_c == label_c
+    if exact:
+        return True
+    if len(subject_c) < 3:
+        return False
+    return subject_n in room or subject_c in room_c or subject_n in label or subject_c in label_c
 
 
 def room_status_answer(question: str) -> dict[str, Any] | None:
@@ -7433,6 +7620,9 @@ def safe_weather_shortcut_answer() -> dict[str, Any]:
 
 def assistant(text: str) -> dict[str, Any]:
     t = normalise(text)
+
+    if is_ai_status_question(text):
+        return cached_ai_status_answer()
 
     if is_settings_status_question(text):
         return with_suggestions(required_settings_answer())
@@ -7944,7 +8134,7 @@ def api_version():
 
 @app.get('/api/status')
 def api_status():
-    return json_safe({'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS), 'thresholds': {'power_w': POWER_UI_MIN_DELTA_W, 'demand_kw': DEMAND_UI_MIN_DELTA_KW, 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS}}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health_snapshot(), 'performance': PERF_STATS})
+    return json_safe({'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': sanitise_last_hubitat_event(LAST_HUBITAT_EVENT), 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS), 'thresholds': {'power_w': POWER_UI_MIN_DELTA_W, 'demand_kw': DEMAND_UI_MIN_DELTA_KW, 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS}}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': [sanitise_diagnostic_event(event) for event in reversed(EVENT_HISTORY[-5:])]}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health_snapshot(), 'performance': PERF_STATS})
 
 
 @app.get('/api/event-diagnostics')
@@ -8121,9 +8311,9 @@ def api_room_intelligence(room: str):
 
 
 @app.get('/api/ai/context')
-def api_ai_context(request: Request):
+def api_ai_context(request: Request, include_logs: bool = False):
     require_api_token(request)
-    return {'success': True, 'context': ai_context_pack()}
+    return {'success': True, 'source': 'event_cache', 'context': ai_context_pack(include_logs=include_logs)}
 
 
 @app.post('/api/refresh')
