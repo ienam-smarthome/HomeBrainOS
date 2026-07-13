@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.21-alpha'
+VERSION = '1.9.22-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
@@ -1964,7 +1964,7 @@ def authoritative_low_batteries(
     return rows
 
 
-def authoritative_low_battery_answer(app_module: Any, query: str) -> dict[str, Any] | None:
+def authoritative_low_battery_answer(app_module: Any, query: str, refresh_live: bool = True) -> dict[str, Any] | None:
     q = _normalise(query)
     if not (
         ('battery' in q or 'batteries' in q)
@@ -1972,7 +1972,7 @@ def authoritative_low_battery_answer(app_module: Any, query: str) -> dict[str, A
     ):
         return None
 
-    rows = authoritative_low_batteries(app_module, refresh_live=True)
+    rows = authoritative_low_batteries(app_module, refresh_live=refresh_live)
     if not rows:
         message = 'No low-battery devices are currently reported.'
         sources: list[str] = []

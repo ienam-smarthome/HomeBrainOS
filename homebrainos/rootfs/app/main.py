@@ -22,7 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.21-alpha'
+APP_VERSION = '1.9.22-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1591,7 +1591,7 @@ def spoken_command_confirmation(labels: list[str], command: str) -> str:
 def explain_summary_tile(text: str) -> dict[str, Any] | None:
     summary = dashboard_summary()
     wants_low_battery = 'battery' in text or 'batteries' in text
-    wants_motion = 'motion' in text
+    wants_motion = 'motion' in text and 'room' not in text
     wants_people = 'people' in text or 'who is home' in text or any(name.lower() in text for name in HOUSEHOLD_PEOPLE)
     wants_power = 'power' in text or 'octopus' in text or 'meter' in text
     wants_tiles = 'summary tile' in text or 'summary tiles' in text or 'dashboard tile' in text or 'dashboard tiles' in text
@@ -1638,6 +1638,89 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
         )
         return {'success': True, 'intent': 'summary_tiles', 'message': message, 'speech': speech, 'summary': summary}
 
+    return None
+
+
+def cached_weather_answer() -> dict[str, Any] | None:
+    device = weather_device()
+    if not device:
+        return {'success': False, 'intent': 'weather', 'message': 'No cached weather device found.'}
+    summary = weather_attr(device, 'weatherSummary')
+    line = weather_attr(device, 'weatherSummaryLine')
+    current = format_weather_temp(weather_attr(device, 'temperature', 'currentTemperature'))
+    humidity = safe_float(weather_attr(device, 'humidity'))
+    rain = format_weather_mm(weather_attr(device, 'precipitationToday', 'precipitation', 'rainToday'))
+    parts = []
+    headline = str(line or summary or '').strip()
+    if headline:
+        parts.append(headline)
+    if current:
+        parts.append(f'current {current}')
+    if humidity is not None:
+        parts.append(f'humidity {humidity:g}%')
+    if rain:
+        parts.append(f'rain today {rain}')
+    message = 'Weather: ' + ('; '.join(parts) if parts else (device.get('label') or 'cached but no summary available'))
+    return {'success': True, 'intent': 'weather', 'message': message, 'speech': weather_speech(message), 'device': device}
+
+
+def cached_home_summary_answer() -> dict[str, Any]:
+    s = dashboard_summary(live=False)
+    people = ', '.join(s['people_home_names']) if s['people_home_names'] else 'None'
+    speech = (
+        f"Home summary. {s['lights_on']} lights are on. {s['switches_on']} switches are on. "
+        f"Average temperature is {spoken_degrees(s['avg_temperature'])}. "
+        f"Average humidity is {spoken_percent(s['avg_humidity'])}. "
+        f"Power is {spoken_power_value(s['power_total'])}. "
+        f"{s['people_home']} of {s['people_tracked']} people are home. "
+        f"{s['low_batteries']} devices have low batteries. {s['motion_active']} motion sensors are active."
+    )
+    return {
+        'success': True,
+        'intent': 'summary',
+        'message': (
+            f"Home Summary\nDevices: {s['devices']}\nLights on: {s['lights_on']}\nSwitches on: {s['switches_on']}\n"
+            f"Average temperature: {s['avg_temperature']}C\nAverage humidity: {s['avg_humidity']}%\n"
+            f"Whole-house power: {s['power_display']} from {s['power_source_label']}\n"
+            f"People home: {s['people_home']}/{s['people_tracked']} ({people})\n"
+            f"Low batteries: {s['low_batteries']}\nMotion active: {s['motion_active']}"
+        ),
+        'speech': speech,
+        'summary': s,
+    }
+
+
+def cached_lights_answer() -> dict[str, Any]:
+    light_devices = [d for d in all_devices() if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
+    labels = [d.get('label') or d.get('name') or str(d.get('id')) for d in light_devices]
+    return {'success': True, 'intent': 'cached_lights_on', 'message': 'Lights on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(light_devices), 'devices': light_devices}
+
+
+def cached_switches_answer() -> dict[str, Any]:
+    switch_devices = [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
+    labels = [d.get('label') or d.get('name') or str(d.get('id')) for d in switch_devices]
+    return {'success': True, 'intent': 'cached_switches_on', 'message': 'Switches on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(switch_devices), 'devices': switch_devices}
+
+
+def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
+    t = normalise(text)
+    if not t:
+        return cached_home_summary_answer()
+    if re.search(r'\b(turn|switch|set|change|adjust|dim|brighten|increase|decrease|raise|lower|refresh|reload|clear|cancel|schedule)\b', t):
+        return None
+    if t in ('summary', 'status', 'home summary', 'what is happening', "what's happening", 'whats happening'):
+        return cached_home_summary_answer()
+    if 'room' in t and ('motion' in t or 'active' in t):
+        return active_rooms_answer()
+    summary_answer = explain_summary_tile(t)
+    if summary_answer:
+        return with_suggestions(final_text_cleanup(shortcut_answer_cleanup(summary_answer)))
+    if re.search(r'\b(which|what|show|list)\s+lights?\s+(are|is)?\s*on\b', t):
+        return cached_lights_answer()
+    if re.search(r'\b(which|what|show|list)\s+switch(?:es)?\s+(are|is)?\s*on\b', t):
+        return cached_switches_answer()
+    if 'weather' in t or 'forecast' in t or 'rain' in t:
+        return cached_weather_answer()
     return None
 
 
@@ -6984,6 +7067,10 @@ def assistant(text: str) -> dict[str, Any]:
     if preflight:
         return with_suggestions(final_text_cleanup(shortcut_answer_cleanup(preflight)))
 
+    summary_answer = explain_summary_tile(t)
+    if summary_answer:
+        return with_suggestions(final_text_cleanup(shortcut_answer_cleanup(summary_answer)))
+
     # Early device issue lookup - must run before home health / AI fallback.
     if any(phrase in t for phrase in (
         'what is wrong with',
@@ -7132,9 +7219,6 @@ def assistant(text: str) -> dict[str, Any]:
     nlu_answer = natural_language_answer(text)
     if nlu_answer:
         return nlu_answer
-    summary_answer = explain_summary_tile(t)
-    if summary_answer:
-        return summary_answer
     automation_explain = automation_explain_answer(text) if ('automation' in t or 'fan work' in t or 'which automations failed' in t or 'did the fan' in t) else None
     if automation_explain:
         return automation_explain
@@ -7768,13 +7852,15 @@ def api_device_level(device_id: str, level: int, request: Request):
 @app.post('/api/ask')
 def api_ask(payload: AssistantRequest, request: Request):
     require_api_token(request)
-    return json_safe(assistant(payload.q))
+    fast_answer = cache_first_assistant_answer(payload.q)
+    return json_safe(fast_answer if fast_answer else assistant(payload.q))
 
 
 @app.post('/api/assistant')
 def api_assistant(payload: AssistantRequest, request: Request):
     require_api_token(request)
-    return json_safe(assistant(payload.q))
+    fast_answer = cache_first_assistant_answer(payload.q)
+    return json_safe(fast_answer if fast_answer else assistant(payload.q))
 
 
 @app.get('/', response_class=HTMLResponse)

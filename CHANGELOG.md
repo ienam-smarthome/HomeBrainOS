@@ -1,3 +1,8 @@
+## v1.9.22-alpha - Fast Summary Shortcuts
+
+- Routes summary-tile questions such as `which batteries are low` to cached dashboard data before heavier health diagnostics.
+- Stops the local-first low-battery answer from polling live Maker API detail endpoints on read-only shortcut requests.
+
 ## v1.9.21-alpha - JSON + Event Backlog Hotfix
 
 - Sanitizes dashboard/status/assistant responses so stale cached NaN values return as null instead of causing 500 errors.
