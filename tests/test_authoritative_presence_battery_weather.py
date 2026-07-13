@@ -31,6 +31,7 @@ class FakeMain:
         self.CONFIG = {}
         self.app = SimpleNamespace(routes=[], version="old")
         self.APP_VERSION = "old"
+        self.maker_calls = []
 
     def all_devices(self):
         return [
@@ -44,6 +45,7 @@ class FakeMain:
         ]
 
     def maker_get(self, path, timeout=8):
+        self.maker_calls.append(path)
         if path == "devices/p1":
             return {
                 "id": "p1",
@@ -78,15 +80,17 @@ class FakeMain:
 
 
 def test_life360_tile_overrides_stale_presence():
-    result = module.authoritative_people_home(FakeMain())
+    result = module.authoritative_people_home(FakeMain(), refresh_live=True)
     assert result["count"] == 4
     assert result["home"] == ["Enamul", "Samah", "Tahmid", "Muhsena"]
 
 
-def test_family_answer_reports_everyone_home():
-    answer = module.authoritative_family_answer(FakeMain(), "who is home")
-    assert answer["message"].startswith("Everyone is home:")
-    assert answer["count"] == 4
+def test_family_answer_uses_cached_presence_without_network_reads():
+    fake = FakeMain()
+    answer = module.authoritative_family_answer(fake, "who is home")
+    assert answer["message"].startswith("3/4 people are home:")
+    assert answer["count"] == 3
+    assert fake.maker_calls == []
 
 
 def test_report_html_is_authoritative_for_low_batteries():
@@ -117,4 +121,3 @@ def test_display_cleaner_fixes_entities_and_mojibake():
     source = "\u00e2\u20ac\u00a2 CPU &deg;C \u00c2\u00a3"
     cleaned = module._clean_display_text(source)
     assert cleaned == "- CPU \u00b0C \u00a3"
-

@@ -1,3 +1,12 @@
+## v1.9.27-alpha - Event-Backed Assistant Latency and Consistency Fix
+
+- Removed implicit live Hubitat detail scans from ordinary device-health questions; cached Device Status Report data now answers immediately.
+- Stopped dashboard and family-summary reads from polling each presence device on every request.
+- Preserved event/detail attributes when Maker's broad device list omits them, preventing motion, presence, battery, and report state from being erased by refreshes.
+- Unified low-battery tiles and answers with the cached Hubitat Device Status Report.
+- Added a motion-only room answer so motion questions no longer list unrelated powered switches and appliances.
+- Cached light and switch answers now reuse the dashboard snapshot, and weather output no longer repeats the current temperature.
+
 ## v1.9.26-alpha - Live Capability and Dashboard Hotfix
 
 - Fixed Dashboard, AI context, and assistant HTTP 500 errors when Hubitat returns capabilities or commands as objects instead of strings.

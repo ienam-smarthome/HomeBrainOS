@@ -830,6 +830,10 @@ def _delegate_main_assistant_first(query: str) -> bool:
         'low batteries',
         'hub health',
         'hubitat health',
+        'device health',
+        'device status',
+        'device check',
+        'device report',
     ))
 
 
@@ -1531,7 +1535,7 @@ def _person_home_from_device(device: dict[str, Any]) -> bool:
     return False
 
 
-def authoritative_people_home(app_module: Any) -> dict[str, Any]:
+def authoritative_people_home(app_module: Any, refresh_live: bool = False) -> dict[str, Any]:
     household = list(getattr(app_module, 'HOUSEHOLD_PEOPLE', None) or ('Enamul', 'Samah', 'Tahmid', 'Muhsena'))
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
     devices = devices if isinstance(devices, list) else []
@@ -1559,10 +1563,10 @@ def authoritative_people_home(app_module: Any) -> dict[str, Any]:
         )
 
         for candidate in candidates:
-            refreshed = _refresh_device_detail(app_module, candidate)
-            if _person_home_from_device(refreshed):
+            current = _refresh_device_detail(app_module, candidate) if refresh_live else candidate
+            if _person_home_from_device(current):
                 home.append(person)
-                evidence[person] = _device_label(refreshed)
+                evidence[person] = _device_label(current)
                 break
 
     return {
@@ -1591,6 +1595,7 @@ def authoritative_family_answer(app_module: Any, query: str) -> dict[str, Any] |
     return {
         'success': True,
         'intent': 'family_presence',
+        'source': 'event_cache',
         'message': message,
         'people_home': names,
         'people_away': result['away'],

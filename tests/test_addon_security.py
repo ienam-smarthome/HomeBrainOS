@@ -96,7 +96,7 @@ def test_assistant_explains_low_battery_and_motion_summary_tiles():
     assert 'Octopus Energy Live Meter' in power['message']
 
 
-def test_which_batteries_are_low_uses_dashboard_summary_not_replacement_report():
+def test_which_batteries_are_low_merges_authoritative_status_report():
     main = load_addon_main()
     main.SUMMARY_CACHE = None
     main.all_devices = lambda: [
@@ -119,7 +119,8 @@ def test_which_batteries_are_low_uses_dashboard_summary_not_replacement_report()
 
     assert answer['intent'] == 'summary_low_batteries'
     assert 'Livingroom TRV' in answer['message']
-    assert 'Fridge Door' not in answer['message']
+    assert 'Fridge Door' in answer['message']
+    assert answer['count'] == 2
 
 
 def test_assistant_uses_natural_speech_units_for_summary_attributes():
@@ -1309,7 +1310,7 @@ def test_fridge_meter_is_excluded_from_temperature_and_humidity_averages():
     assert kitchen['avg_humidity'] is None
 
 
-def test_assistant_active_rooms_lists_only_active_device_names():
+def test_assistant_motion_rooms_lists_only_active_motion_sensors():
     main = load_addon_main()
     main.all_devices = lambda: [
         {'id': 'm1', 'label': 'Kitchen Motion', 'room': 'Kitchen', 'category': 'motion_sensor', 'motion': 'active'},
@@ -1322,11 +1323,10 @@ def test_assistant_active_rooms_lists_only_active_device_names():
 
     active_rooms = main.assistant('which rooms have motion active')
 
-    assert active_rooms['intent'] == 'active_rooms'
-    assert 'Kitchen: Kitchen Motion active' in active_rooms['message']
-    assert 'Bedroom: Bedroom Light on at 30%' in active_rooms['message']
-    assert 'Dehumidifier: Dehumidifier Socket on, using 42W' in active_rooms['message']
-    assert '0 lights on' not in active_rooms['message']
+    assert active_rooms['intent'] == 'active_motion_rooms'
+    assert 'Kitchen: Kitchen Motion' in active_rooms['message']
+    assert 'Bedroom Light' not in active_rooms['message']
+    assert 'Dehumidifier Socket' not in active_rooms['message']
     assert 'Hallway Motion' not in active_rooms['message']
     assert 'Bedroom Lamp' not in active_rooms['message']
     assert 'Life360' not in active_rooms['message']
@@ -1958,3 +1958,85 @@ def test_integrated_dashboard_handles_event_cached_status_report():
     assert summary['low_batteries'] == 2, summary['low_battery_devices']
     assert [item['label'] for item in summary['low_battery_devices']] == ['Livingroom TRV', 'Fridge Door']
     assert context['summary']['low_batteries'] == 2
+
+
+def test_partial_full_refresh_preserves_event_backed_attributes():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            main.upsert_devices([{
+                'id': 'report1', 'name': 'Device Status Report', 'label': 'Device Status Report',
+                'room': 'System', 'category': 'device', 'motion': 'active',
+                'attributes': {
+                    'motion': 'active',
+                    'reportText': '[LOW BATTERY]\nHallway Contact - 12% battery\n[OK]\nNone',
+                },
+            }])
+            main.upsert_devices([{
+                'id': 'report1', 'name': 'Device Status Report', 'label': 'Device Status Report',
+                'room': 'System', 'category': 'device', 'motion': None, 'attributes': {},
+            }])
+            cached = main.all_devices()[0]
+
+        assert cached['motion'] == 'active'
+        assert 'Hallway Contact' in cached['attributes']['reportText']
+    finally:
+        main.DB_PATH = original_db_path
+
+
+def test_dashboard_merges_low_batteries_from_cached_status_report():
+    main = load_addon_main()
+    main.SUMMARY_CACHE = None
+    main.all_devices = lambda: [
+        {
+            'id': 'report1', 'name': 'Device Status Report', 'label': 'Device Status Report',
+            'room': 'System', 'category': 'device',
+            'attributes': {'reportText': '[LOW BATTERY]\nHallway Contact - 12% battery\n[OK]\nNone'},
+        },
+        {'id': 'contact1', 'name': 'Hallway Contact', 'label': 'Hallway Contact', 'room': 'Hallway', 'category': 'contact_sensor', 'attributes': {}},
+    ]
+
+    summary = main.compute_dashboard_summary({'synced': False})
+
+    assert summary['low_batteries'] == 1
+    assert summary['low_battery_devices'][0]['label'] == 'Hallway Contact'
+    assert summary['low_battery_devices'][0]['battery'] == 12
+
+
+def test_cache_first_device_health_never_starts_live_detail_scan():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'report1', 'name': 'Device Status Report', 'label': 'Device Status Report',
+        'room': 'System', 'category': 'device',
+        'attributes': {
+            'offlineCount': 0,
+            'lowBatteryCount': 1,
+            'reportText': '[LOW BATTERY]\nHallway Contact - 12% battery\n[OK]\nNone',
+        },
+    }]
+    main.refresh_health_device_details = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('live scan called'))
+
+    answer = main.cache_first_assistant_answer('device health')
+
+    assert answer['intent'] == 'device_health'
+    assert 'Hallway Contact' in answer['message']
+
+
+def test_cached_weather_does_not_repeat_current_temperature():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'weather1', 'name': 'Weather', 'label': 'Weather Open-Meteo',
+        'room': 'Weather', 'category': 'weather',
+        'attributes': {
+            'weatherSummaryLine': 'Overcast, High 27C, Low 16C, Current 22C',
+            'temperature': 21.9,
+            'humidity': 65,
+        },
+    }]
+
+    answer = main.cached_weather_answer()
+
+    assert answer['message'].lower().count('current') == 1
+    assert 'current 21.9' not in answer['message'].lower()

@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.26-alpha'
+APP_VERSION = '1.9.27-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -727,17 +727,42 @@ def upsert_devices(devices: list[dict[str, Any]]) -> None:
             detail_refreshed_at = int(d['_detail_refreshed_at']) if d.get('_detail_refreshed_at') is not None else (old['detail_refreshed_at'] if old else None)
             raw_activity_at = d.get('_last_activity_at') if d.get('_last_activity_at') is not None else extract_last_activity_at(d)
             last_activity_at = int(raw_activity_at) if raw_activity_at is not None else (old['last_activity_at'] if old else None)
-            if old:
-                old_d = json.loads(old['json'])
+            old_d = json.loads(old['json']) if old else None
+            if old_d:
+                # Maker's broad /devices response frequently omits attributes
+                # that arrived through events or a prior detail read. Do not let
+                # that partial snapshot erase the event-backed dashboard state.
+                preserved_attrs = (
+                    'switch', 'temperature', 'humidity', 'power', 'energy',
+                    'battery', 'motion', 'presence', 'contact', 'lock', 'water',
+                    'thermostatMode', 'thermostatOperatingState',
+                    'heatingSetpoint', 'coolingSetpoint', 'weatherSummary',
+                    'weatherSummaryLine', 'precipitationToday', 'reportHtml',
+                    'reportText', 'reportJson', 'offlineCount',
+                    'lowBatteryCount', 'motionAlertCount', 'issueCount',
+                )
+                old_attrs = device_attribute_map(old_d)
+                new_attrs = d.setdefault('attributes', {})
+                for attr, old_value in old_attrs.items():
+                    if new_attrs.get(attr) is None and old_value is not None:
+                        new_attrs[attr] = old_value
+                for attr in preserved_attrs:
+                    old_value = old_attrs.get(attr)
+                    if old_value is None:
+                        old_value = old_d.get(attr)
+                    new_value = new_attrs.get(attr)
+                    if new_value is None:
+                        new_value = d.get(attr)
+                    if new_value is None and old_value is not None:
+                        new_attrs[attr] = old_value
+                        d[attr] = old_value
+                    elif d.get(attr) is None and new_attrs.get(attr) is not None:
+                        d[attr] = new_attrs.get(attr)
+
                 watched_attrs = ('switch','temperature','humidity','power','energy','battery','motion','presence','contact','thermostatMode','thermostatOperatingState','heatingSetpoint')
                 if any(old_d.get(attr) != d.get(attr) for attr in watched_attrs):
                     last_activity_at = now
                     d['_last_activity_at'] = now
-            if old and d.get('switch') is None:
-                old_d = json.loads(old['json'])
-                if old_d.get('switch') is not None:
-                    d['switch'] = old_d.get('switch')
-                    d.setdefault('attributes', {})['switch'] = old_d.get('switch')
             conn.execute('''
                 INSERT INTO devices(id,name,label,room,category,json,switch,temperature,humidity,power,energy,battery,detail_refreshed_at,last_activity_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -1445,13 +1470,15 @@ def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     powers = [d['power'] for d in power_devices]
     power_source = select_power_source(power_devices)
     people = household_people(devices)
-    low_batt = [d for d in devices if finite_number(d.get('battery')) and d['battery'] <= 20]
+    low_batt = merged_low_battery_devices(devices)
     motion_active = [d for d in devices if is_state(d.get('motion'), 'active')]
     power_total = round(float(power_source['power']), 1) if power_source and finite_number(power_source.get('power')) else round(sum(float(p) for p in powers), 1) if powers else 0
     return {
         'devices': len(devices),
         'lights_on': len(lights_on),
+        'lights_on_devices': summary_devices(lights_on, 'switch'),
         'switches_on': len(switches_on),
+        'switches_on_devices': summary_devices(switches_on, 'switch'),
         'avg_temperature': round(sum(temps) / len(temps), 1) if temps else None,
         'avg_humidity': round(sum(hums) / len(hums), 1) if hums else None,
         'power_total': power_total,
@@ -1654,12 +1681,12 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
         devices = summary['active_motion_devices']
         lines = [format_summary_device(d) for d in devices]
         message = 'Active motion sensors:\n' + ('\n'.join(lines) if lines else 'None')
-        return {'success': True, 'intent': 'summary_active_motion', 'message': message, 'devices': devices}
+        return {'success': True, 'intent': 'summary_active_motion', 'source': 'event_cache', 'message': message, 'devices': devices}
 
     if wants_people:
         names = summary['people_home_names']
         message = 'People home:\n' + ('\n'.join(names) if names else 'None')
-        return {'success': True, 'intent': 'summary_people_home', 'message': message, 'people_home': names}
+        return {'success': True, 'intent': 'summary_people_home', 'source': 'event_cache', 'message': message, 'people_home': names}
 
     if wants_power:
         source = summary.get('power_source')
@@ -1669,7 +1696,7 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
         else:
             message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_display']}."
             speech = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {spoken_power_value(summary['power_total'])}."
-        return {'success': True, 'intent': 'summary_power', 'message': message, 'speech': speech, 'power_source': source}
+        return {'success': True, 'intent': 'summary_power', 'source': 'event_cache', 'message': message, 'speech': speech, 'power_source': source}
 
     if wants_tiles:
         message = (
@@ -1684,12 +1711,12 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
             f"{summary['people_home']} of {summary['people_tracked']} people home, "
             f"{summary['low_batteries']} low batteries, and {summary['motion_active']} active motion sensors."
         )
-        return {'success': True, 'intent': 'summary_tiles', 'message': message, 'speech': speech, 'summary': summary}
+        return {'success': True, 'intent': 'summary_tiles', 'source': 'event_cache', 'message': message, 'speech': speech, 'summary': summary}
 
     return None
 
 
-def recent_status_report_text() -> str:
+def recent_status_report_text(devices: list[dict[str, Any]] | None = None) -> str:
     for event in reversed(EVENT_HISTORY[-40:]):
         attr = str(event.get('attr') or '').lower()
         if attr not in {'reporthtml', 'reporttext', 'reportjson'}:
@@ -1705,6 +1732,22 @@ def recent_status_report_text() -> str:
         label = normalise(last.get('label') or '')
         if 'device status report' in label:
             return _strip_html_report(last.get('value'))
+    # Persisted device attributes survive restarts and are the reliable fallback
+    # when the latest report event has already rolled out of in-memory history.
+    for device in devices if devices is not None else all_devices():
+        label = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+        attrs = device_attribute_map(device)
+        if 'device status report' not in label and not any(
+            key in attrs for key in ('reportHtml', 'reportText', 'reportJson')
+        ):
+            continue
+        value = device_attr_value(
+            device, 'reportText', 'reportHtml', 'reportJson', 'report_html',
+            'currentReport', 'deviceStatusReport',
+        )
+        text = _strip_html_report(value)
+        if text:
+            return text
     return ''
 
 
@@ -1714,7 +1757,7 @@ def low_battery_items_from_report(report: str) -> list[dict[str, Any]]:
     seen: set[str] = set()
     for row in rows:
         clean = _clean_report_row(row)
-        match = re.search(r'(.+?)\s*-\s*(\d+(?:\.\d+)?)\s*%\s*battery\b', clean, flags=re.IGNORECASE)
+        match = re.search(r'(.+?)\s*(?:-|\||:)\s*(\d+(?:\.\d+)?)\s*%\s*battery\b', clean, flags=re.IGNORECASE)
         if not match:
             continue
         label = re.sub(r'\s+', ' ', match.group(1)).strip()
@@ -1725,6 +1768,40 @@ def low_battery_items_from_report(report: str) -> list[dict[str, Any]]:
         seen.add(key)
         items.append({'label': label, 'room': 'Device Status Report', 'battery': battery, 'source': 'Device Status Report'})
     return items
+
+
+def merged_low_battery_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge normal device battery attributes with Hubitat's status report."""
+    merged: dict[str, dict[str, Any]] = {}
+    by_label = {
+        normalise(device.get('label') or device.get('name') or ''): device
+        for device in devices
+    }
+    for device in devices:
+        battery = safe_float(device.get('battery'))
+        if battery is None or battery > 20:
+            continue
+        item = summary_devices([device], 'battery')[0]
+        item['source'] = 'event cache'
+        merged[normalise(item['label'])] = item
+    for report_item in low_battery_items_from_report(recent_status_report_text(devices)):
+        key = normalise(report_item.get('label') or '')
+        matched = by_label.get(key)
+        item = dict(report_item)
+        if matched:
+            item.update({
+                'id': matched.get('id'),
+                'label': matched.get('label') or matched.get('name'),
+                'room': matched.get('room') or 'Unknown',
+            })
+        merged[key] = item
+    return sorted(
+        merged.values(),
+        key=lambda item: (
+            safe_float(item.get('battery')) if safe_float(item.get('battery')) is not None else 101,
+            normalise(item.get('label') or ''),
+        ),
+    )
 
 
 def cached_low_battery_answer(summary: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1742,7 +1819,7 @@ def cached_low_battery_answer(summary: dict[str, Any] | None = None) -> dict[str
     message = 'Low battery devices:\n' + ('\n'.join(lines) if lines else 'None')
     if report_items:
         message += '\nSource: Hubitat Device Status Report.'
-    return {'success': True, 'intent': 'summary_low_batteries', 'message': message, 'devices': devices, 'count': len(devices)}
+    return {'success': True, 'intent': 'summary_low_batteries', 'source': 'event_cache', 'message': message, 'devices': devices, 'count': len(devices)}
 
 
 def cached_summary_metric_answer(text: str) -> dict[str, Any] | None:
@@ -1764,18 +1841,18 @@ def cached_summary_metric_answer(text: str) -> dict[str, Any] | None:
     if wants_temp:
         value = summary.get('avg_temperature')
         message = f"Average home temperature is {value}C." if value is not None else 'Average home temperature is unavailable.'
-        return {'success': True, 'intent': 'summary_temperature', 'message': message, 'speech': f"Average home temperature is {spoken_degrees(value)}.", 'summary': summary}
+        return {'success': True, 'intent': 'summary_temperature', 'source': 'event_cache', 'message': message, 'speech': f"Average home temperature is {spoken_degrees(value)}.", 'summary': summary}
     if wants_humidity:
         value = summary.get('avg_humidity')
         message = f"Average home humidity is {value}%." if value is not None else 'Average home humidity is unavailable.'
-        return {'success': True, 'intent': 'summary_humidity', 'message': message, 'speech': f"Average home humidity is {spoken_percent(value)}.", 'summary': summary}
+        return {'success': True, 'intent': 'summary_humidity', 'source': 'event_cache', 'message': message, 'speech': f"Average home humidity is {spoken_percent(value)}.", 'summary': summary}
     if wants_power:
         source = summary.get('power_source')
         if source:
             message = f"Power is whole-house live power from {source['label']}: {summary['power_display']}."
         else:
             message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_display']}."
-        return {'success': True, 'intent': 'summary_power', 'message': message, 'speech': message, 'power_source': source, 'summary': summary}
+        return {'success': True, 'intent': 'summary_power', 'source': 'event_cache', 'message': message, 'speech': message, 'power_source': source, 'summary': summary}
     return None
 
 
@@ -1794,14 +1871,14 @@ def cached_weather_answer() -> dict[str, Any] | None:
     headline = str(line or summary or '').strip()
     if headline:
         parts.append(headline)
-    if current:
+    if current and 'current' not in normalise(headline) and 'now' not in normalise(headline):
         parts.append(f'current {current}')
     if humidity is not None:
         parts.append(f'humidity {humidity:g}%')
     if rain:
         parts.append(f'rain today {rain}')
     message = 'Weather: ' + ('; '.join(parts) if parts else (device.get('label') or 'cached but no summary available'))
-    return {'success': True, 'intent': 'weather', 'message': message, 'speech': weather_speech(message), 'device': device}
+    return {'success': True, 'intent': 'weather', 'source': 'event_cache', 'message': message, 'speech': weather_speech(message), 'device': device}
 
 
 def cached_home_summary_answer() -> dict[str, Any]:
@@ -1827,19 +1904,44 @@ def cached_home_summary_answer() -> dict[str, Any]:
         ),
         'speech': speech,
         'summary': s,
+        'source': 'event_cache',
     }
 
 
 def cached_lights_answer() -> dict[str, Any]:
-    light_devices = [d for d in all_devices() if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
+    summary = dashboard_summary(live=False)
+    light_devices = [dict(d) for d in summary.get('lights_on_devices') or []]
     labels = [d.get('label') or d.get('name') or str(d.get('id')) for d in light_devices]
-    return {'success': True, 'intent': 'cached_lights_on', 'message': 'Lights on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(light_devices), 'devices': light_devices}
+    return {'success': True, 'intent': 'cached_lights_on', 'source': 'event_cache', 'message': 'Lights on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(light_devices), 'devices': light_devices}
 
 
 def cached_switches_answer() -> dict[str, Any]:
-    switch_devices = [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
+    summary = dashboard_summary(live=False)
+    switch_devices = [dict(d) for d in summary.get('switches_on_devices') or []]
     labels = [d.get('label') or d.get('name') or str(d.get('id')) for d in switch_devices]
-    return {'success': True, 'intent': 'cached_switches_on', 'message': 'Switches on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(switch_devices), 'devices': switch_devices}
+    return {'success': True, 'intent': 'cached_switches_on', 'source': 'event_cache', 'message': 'Switches on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(switch_devices), 'devices': switch_devices}
+
+
+def cached_motion_rooms_answer() -> dict[str, Any]:
+    """List only rooms whose cached motion state is currently active."""
+    summary = dashboard_summary(live=False)
+    devices = [dict(item) for item in summary.get('active_motion_devices') or []]
+    by_room: dict[str, list[str]] = {}
+    for device in devices:
+        room = canonical_room_name(device.get('room') or 'Unknown')
+        if room in ('Unknown', 'Life360'):
+            continue
+        by_room.setdefault(room, []).append(str(device.get('label') or device.get('id')))
+    lines = [f"{room}: {', '.join(labels)}" for room, labels in sorted(by_room.items())]
+    return {
+        'success': True,
+        'intent': 'active_motion_rooms',
+        'source': 'event_cache',
+        'message': 'Rooms with active motion:\n' + ('\n'.join(lines) if lines else 'None'),
+        'rooms': [{'room': room, 'devices': labels} for room, labels in sorted(by_room.items())],
+        'devices': devices,
+        'summary_cache_version': SUMMARY_CACHE_VERSION,
+    }
 
 
 def cached_attention_answer() -> dict[str, Any]:
@@ -1892,7 +1994,11 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return hub_health_answer()
     if t in ('cpu advisor', 'performance advisor'):
         return performance_advisor_answer()
-    if 'room' in t and ('motion' in t or 'active' in t):
+    if re.search(r'\b(device health|device status|device check|device report)\b', t):
+        return device_status_report_display_answer(t) or stale_devices_answer(t)
+    if 'room' in t and 'motion' in t:
+        return cached_motion_rooms_answer()
+    if 'room' in t and 'active' in t:
         return active_rooms_answer()
     metric_answer = cached_summary_metric_answer(t)
     if metric_answer:
@@ -2548,7 +2654,9 @@ def stale_device_report() -> dict[str, Any]:
 
 def _strip_html_report(value: Any) -> str:
     text = str(value or '')
-    text = text.replace('<br/>', '\n').replace('<br>', '\n').replace('</div>', '\n').replace('</p>', '\n')
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</(?:div|p|tr|li)>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</(?:td|th)>', ' | ', text, flags=re.IGNORECASE)
     text = re.sub(r'<[^>]+>', '', text)
     text = (
         text.replace('&nbsp;', ' ')
@@ -2755,6 +2863,7 @@ def device_status_report_display_answer(question: str | None = None) -> dict[str
     return {
         'success': True,
         'intent': intent,
+        'source': 'hubitat_status_report_cache',
         'message': '\n'.join(lines),
         'speech': speech,
         'stale': {
@@ -2867,7 +2976,8 @@ def stale_devices_answer(question: str | None = None) -> dict[str, Any]:
     report_display = device_status_report_display_answer(question)
     if report_display:
         return report_display
-    refresh_health_device_details('stale-devices-answer')
+    # Normal questions must never trigger dozens of serial Maker API reads.
+    # The explicit refresh/diagnostic controls remain available for a live scan.
     report = stale_device_report()
     lines: list[str] = []
     spoken: list[str] = []
@@ -7400,7 +7510,9 @@ def assistant(text: str) -> dict[str, Any]:
         return with_suggestions(stale_devices_answer(text))
     if 'hub log' in t or 'hub logs' in t or 'recent logs' in t or 'log diagnostic' in t:
         return with_suggestions(hub_logs_answer())
-    if 'room' in t and ('motion' in t or 'active' in t):
+    if 'room' in t and 'motion' in t:
+        return cached_motion_rooms_answer()
+    if 'room' in t and 'active' in t:
         return active_rooms_answer()
     if 'cold' in t and 'room' in t:
         return cold_rooms_answer()
