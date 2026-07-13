@@ -22,7 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.22-alpha'
+APP_VERSION = '1.9.23-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1600,10 +1600,7 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
     summary = dashboard_summary()
 
     if wants_low_battery:
-        devices = summary['low_battery_devices']
-        lines = [format_summary_device(d, 'battery', '%') for d in devices]
-        message = 'Low battery devices:\n' + ('\n'.join(lines) if lines else 'None')
-        return {'success': True, 'intent': 'summary_low_batteries', 'message': message, 'devices': devices}
+        return cached_low_battery_answer(summary)
 
     if wants_motion:
         devices = summary['active_motion_devices']
@@ -1644,10 +1641,91 @@ def explain_summary_tile(text: str) -> dict[str, Any] | None:
     return None
 
 
+def recent_status_report_text() -> str:
+    for event in reversed(EVENT_HISTORY[-40:]):
+        attr = str(event.get('attr') or '').lower()
+        if attr not in {'reporthtml', 'reporttext', 'reportjson'}:
+            continue
+        label = normalise(event.get('label') or '')
+        if 'device status report' not in label:
+            continue
+        text = _strip_html_report(event.get('value'))
+        if text:
+            return text
+    last = (LAST_HUBITAT_EVENT or {}).get('last') if isinstance(LAST_HUBITAT_EVENT, dict) else None
+    if isinstance(last, dict) and str(last.get('attr') or '').lower() in {'reporthtml', 'reporttext', 'reportjson'}:
+        label = normalise(last.get('label') or '')
+        if 'device status report' in label:
+            return _strip_html_report(last.get('value'))
+    return ''
+
+
+def low_battery_items_from_report(report: str) -> list[dict[str, Any]]:
+    rows = _extract_report_section(report, '[LOW BATTERY]')
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        clean = _clean_report_row(row)
+        match = re.search(r'(.+?)\s*-\s*(\d+(?:\.\d+)?)\s*%\s*battery\b', clean, flags=re.IGNORECASE)
+        if not match:
+            continue
+        label = re.sub(r'\s+', ' ', match.group(1)).strip()
+        battery = safe_float(match.group(2))
+        key = normalise(label)
+        if not label or battery is None or key in seen:
+            continue
+        seen.add(key)
+        items.append({'label': label, 'room': 'Device Status Report', 'battery': battery, 'source': 'Device Status Report'})
+    return items
+
+
+def cached_low_battery_answer(summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    summary = summary or dashboard_summary(live=False)
+    devices = [dict(item) for item in (summary.get('low_battery_devices') or []) if isinstance(item, dict)]
+    report_items = low_battery_items_from_report(recent_status_report_text())
+    seen = {normalise(item.get('label') or '') for item in devices}
+    for item in report_items:
+        key = normalise(item.get('label') or '')
+        if key and key not in seen:
+            devices.append(item)
+            seen.add(key)
+    devices.sort(key=lambda item: (safe_float(item.get('battery')) if safe_float(item.get('battery')) is not None else 101, str(item.get('label') or '').lower()))
+    lines = [format_summary_device(d, 'battery', '%') for d in devices]
+    message = 'Low battery devices:\n' + ('\n'.join(lines) if lines else 'None')
+    if report_items:
+        message += '\nSource: Hubitat Device Status Report.'
+    return {'success': True, 'intent': 'summary_low_batteries', 'message': message, 'devices': devices, 'count': len(devices)}
+
+
+def cached_summary_metric_answer(text: str) -> dict[str, Any] | None:
+    summary = dashboard_summary(live=False)
+    wants_temp = 'temperature' in text or re.search(r'\btemp\b', text)
+    wants_humidity = 'humidity' in text or 'humid' in text
+    wants_power = 'power' in text or 'octopus' in text or 'meter' in text
+    if wants_temp:
+        value = summary.get('avg_temperature')
+        message = f"Average home temperature is {value}C." if value is not None else 'Average home temperature is unavailable.'
+        return {'success': True, 'intent': 'summary_temperature', 'message': message, 'speech': f"Average home temperature is {spoken_degrees(value)}.", 'summary': summary}
+    if wants_humidity:
+        value = summary.get('avg_humidity')
+        message = f"Average home humidity is {value}%." if value is not None else 'Average home humidity is unavailable.'
+        return {'success': True, 'intent': 'summary_humidity', 'message': message, 'speech': f"Average home humidity is {spoken_percent(value)}.", 'summary': summary}
+    if wants_power:
+        source = summary.get('power_source')
+        if source:
+            message = f"Power is whole-house live power from {source['label']}: {summary['power_display']}."
+        else:
+            message = f"Power is shown as whole-house power, but no Octopus meter device was found. Current value: {summary['power_display']}."
+        return {'success': True, 'intent': 'summary_power', 'message': message, 'speech': message, 'power_source': source, 'summary': summary}
+    return None
+
+
 def cached_weather_answer() -> dict[str, Any] | None:
     device = weather_device()
     if not device:
         return {'success': False, 'intent': 'weather', 'message': 'No cached weather device found.'}
+    if not weather_device_has_detail(device):
+        return shortcut_weather_answer()
     summary = weather_attr(device, 'weatherSummary')
     line = weather_attr(device, 'weatherSummaryLine')
     current = format_weather_temp(weather_attr(device, 'temperature', 'currentTemperature'))
@@ -1715,6 +1793,9 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return cached_home_summary_answer()
     if 'room' in t and ('motion' in t or 'active' in t):
         return active_rooms_answer()
+    metric_answer = cached_summary_metric_answer(t)
+    if metric_answer:
+        return metric_answer
     summary_answer = explain_summary_tile(t)
     if summary_answer:
         return with_suggestions(final_text_cleanup(shortcut_answer_cleanup(summary_answer)))
@@ -2381,18 +2462,20 @@ def _strip_html_report(value: Any) -> str:
 
 def _extract_report_section(report: str, heading: str) -> list[str]:
     lines = [line.strip() for line in str(report or '').replace('\r', '\n').split('\n')]
-    wanted = heading.upper()
-    headings = ('[OFFLINE]', '[LOW BATTERY]', '[NO CHANGE]', '[INFO]', '[OK]')
+    wanted = heading.upper().strip()
+    wanted_plain = wanted.strip('[]')
+    headings = ('[OFFLINE]', '[LOW BATTERY]', '[NO CHANGE]', '[INFO]', '[OK]', 'OFFLINE', 'LOW BATTERY', 'NO CHANGE', 'INFO', 'OK')
     captured: list[str] = []
     active = False
     for line in lines:
         if not line:
             continue
         upper = line.upper()
-        if upper.startswith(wanted):
+        plain = upper.strip('[]')
+        if upper.startswith(wanted) or plain.startswith(wanted_plain):
             active = True
             continue
-        if active and any(upper.startswith(h) for h in headings):
+        if active and any(upper.startswith(h) or plain.startswith(h.strip('[]')) for h in headings):
             break
         if active:
             captured.append(line)

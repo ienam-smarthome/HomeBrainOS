@@ -1,3 +1,9 @@
+## v1.9.23-alpha - Shortcut Accuracy Hotfix
+
+- Answers average temperature, humidity, and power tile questions directly from the summary cache.
+- Uses recent Hubitat Device Status Report events for low-battery shortcut details without polling every battery device.
+- Refreshes weather detail only when the cached weather device is missing forecast/current attributes, avoiding label-only weather answers.
+
 ## v1.9.22-alpha - Fast Summary Shortcuts
 
 - Routes summary-tile questions such as `which batteries are low` to cached dashboard data before heavier health diagnostics.
