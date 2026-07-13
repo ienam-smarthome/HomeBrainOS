@@ -1,5 +1,5 @@
 name: HomeBrain OS
-version: '1.9.20-alpha'
+version: '1.9.21-alpha'
 slug: homebrainos
 description: HomeBrain OS live dashboard with SQLite device engine and Hubitat Maker API
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -24,8 +24,8 @@ options:
   min_full_refresh_seconds: 600
   state_sync_seconds: 180
   live_switch_sync_seconds: 90
-  live_switch_sync_limit: 4
-  maker_request_min_interval_ms: 250
+  live_switch_sync_limit: 2
+  maker_request_min_interval_ms: 750
   auto_live_sync_enabled: true
   ollama_enabled: true
   ollama_base_url: "http://homeassistant.local:11434"
@@ -36,9 +36,9 @@ options:
   ollama_num_predict: 90
   ollama_health_timeout_seconds: 2
   ollama_health_cache_seconds: 60
-  device_detail_refresh_limit: 12
+  device_detail_refresh_limit: 6
   device_detail_refresh_seconds: 7200
-  device_detail_refresh_batch: 3
+  device_detail_refresh_batch: 2
   stale_motion_active_minutes: 30
   stale_light_on_hours: 4
   stale_device_report_hours: 24

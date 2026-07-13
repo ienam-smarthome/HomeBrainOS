@@ -1,3 +1,10 @@
+## v1.9.21-alpha - JSON + Event Backlog Hotfix
+
+- Sanitizes dashboard/status/assistant responses so stale cached NaN values return as null instead of causing 500 errors.
+- Filters dashboard and room averages with finite-number checks for existing cached values.
+- Drops noisy Hubitat callback attributes such as reportHtml/reportText/lastUpdated from SQLite writes and cache updates.
+- Further reduces Maker API pressure with slower pacing and smaller live/detail refresh caps.
+
 ## v1.9.20-alpha - Dashboard Hotfix
 
 - Fixes the Summary / What's Happening shortcut crash caused by non-text briefing items.

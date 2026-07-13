@@ -22,7 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.20-alpha'
+APP_VERSION = '1.9.21-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -79,8 +79,8 @@ def load_config() -> dict[str, Any]:
         'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '600')),
         'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '180')),
         'live_switch_sync_seconds': int(os.getenv('LIVE_SWITCH_SYNC_SECONDS', '90')),
-        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '4')),
-        'maker_request_min_interval_ms': int(os.getenv('MAKER_REQUEST_MIN_INTERVAL_MS', '250')),
+        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '2')),
+        'maker_request_min_interval_ms': int(os.getenv('MAKER_REQUEST_MIN_INTERVAL_MS', '750')),
         'event_batch_window_ms': int(os.getenv('EVENT_BATCH_WINDOW_MS', '500')),
         'auto_live_sync_enabled': os.getenv('AUTO_LIVE_SYNC_ENABLED', 'true').lower() == 'true',
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'true').lower() == 'true',
@@ -92,9 +92,9 @@ def load_config() -> dict[str, Any]:
         'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
         'ollama_health_timeout_seconds': int(os.getenv('OLLAMA_HEALTH_TIMEOUT_SECONDS', '2')),
         'ollama_health_cache_seconds': int(os.getenv('OLLAMA_HEALTH_CACHE_SECONDS', '60')),
-        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '12')),
+        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '6')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '7200')),
-        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '3')),
+        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '2')),
         'stale_motion_active_minutes': int(os.getenv('STALE_MOTION_ACTIVE_MINUTES', '30')),
         'stale_light_on_hours': int(os.getenv('STALE_LIGHT_ON_HOURS', '4')),
         'stale_device_report_hours': int(os.getenv('STALE_DEVICE_REPORT_HOURS', '24')),
@@ -274,7 +274,7 @@ def maker_get(path: str, timeout: int = 20) -> Any:
     started = time.time()
     try:
         with MAKER_REQUEST_LOCK:
-            min_interval = max(0, int(CONFIG.get('maker_request_min_interval_ms', 250))) / 1000
+            min_interval = max(0, int(CONFIG.get('maker_request_min_interval_ms', 750))) / 1000
             wait = min_interval - (time.time() - LAST_MAKER_REQUEST_AT)
             if wait > 0:
                 time.sleep(wait)
@@ -301,6 +301,20 @@ def safe_float(value: Any) -> float | None:
         return number if math.isfinite(number) else None
     except Exception:
         return None
+
+
+def finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(float(value))
+
+
+def json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
 
 
 def safe_timestamp(value: Any) -> int | None:
@@ -645,8 +659,8 @@ def should_refresh_device_detail(device: dict[str, Any], last_detail_at: int | N
 
 def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     global LAST_DETAIL_ERRORS, PERF_STATS
-    limit = min(max(0, int(CONFIG.get('device_detail_refresh_limit', 12))), 12)
-    batch = min(max(0, int(CONFIG.get('device_detail_refresh_batch', 3))), 3)
+    limit = min(max(0, int(CONFIG.get('device_detail_refresh_limit', 6))), 6)
+    batch = min(max(0, int(CONFIG.get('device_detail_refresh_batch', 2))), 2)
     detail_times = cached_detail_refresh_times()
     now = int(time.time())
     enriched: list[dict[str, Any]] = []
@@ -952,7 +966,8 @@ DASHBOARD_EVENT_ATTRS = {
 NOISY_EVENT_ATTRS = {
     'rssi', 'voltage', 'amperage', 'dataAgeSeconds', 'lastSeen', 'lastTelemetry',
     'displaySummary', 'displaySummaryCompact', 'displayToday', 'displayPower', 'displayMini',
-    'displayCostToday', 'costTodayEnergy', 'illuminance',
+    'displayCostToday', 'costTodayEnergy', 'illuminance', 'lastUpdated',
+    'reportHtml', 'reportText', 'reportJson',
 }
 
 
@@ -1091,9 +1106,14 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
     now = int(time.time())
     records = event_records_from_payload(payload)
     updated: list[dict[str, Any]] = []
+    previous_devices: dict[str, dict[str, Any] | None] = {}
+    if records:
+        previous_devices = {str(d.get('id')): d for d in all_devices()}
+    ui_records = [event for event in records if event_affects_dashboard(event, previous_devices.get(str(event['device_id'])))]
+    persist_records = ui_records
     conn = db()
     try:
-        for event in records:
+        for event in persist_records:
             conn.execute(
                 'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
                 (event['device_id'], event.get('label'), event['attr'], str(event.get('value')), json.dumps(event['raw']), now),
@@ -1101,14 +1121,10 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         conn.commit()
     finally:
         conn.close()
-    previous_devices: dict[str, dict[str, Any] | None] = {}
-    for event in records:
-        matches = [d for d in all_devices() if str(d.get('id')) == str(event['device_id'])]
-        previous_devices[str(event['device_id'])] = matches[0] if matches else None
+    for event in persist_records:
         device = update_cached_attribute(event['device_id'], event['attr'], event.get('value'), event.get('label'))
         if device:
             updated.append(device)
-    ui_records = [event for event in records if event_affects_dashboard(event, previous_devices.get(str(event['device_id'])))]
     remember_event_diagnostics(records, ui_records, len(updated), now)
     PERF_STATS['event_count'] = int(PERF_STATS.get('event_count') or 0) + len(records)
     PERF_STATS['event_updated_count'] = int(PERF_STATS.get('event_updated_count') or 0) + len(updated)
@@ -1306,7 +1322,7 @@ def live_switch_state_sync(reason: str = 'live-switch-state', categories: set[st
             continue
         if d.get('category') in {'light', 'switch', 'power_device'} or is_switchable_device(d):
             selected.append(d)
-    limit = min(max(1, int(CONFIG.get('live_switch_sync_limit', 4))), 4)
+    limit = min(max(1, int(CONFIG.get('live_switch_sync_limit', 2))), 2)
     selected = selected[:limit]
     started = time.time()
     changed = 0
@@ -1375,15 +1391,15 @@ def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     environment_devices = [d for d in devices if is_indoor_environment_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
     switches_on = [d for d in devices if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
-    temps = [d['temperature'] for d in environment_devices if isinstance(d.get('temperature'), (int, float))]
-    hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int, float))]
-    power_devices = [d for d in devices if isinstance(d.get('power'), (int, float))]
+    temps = [float(d['temperature']) for d in environment_devices if finite_number(d.get('temperature'))]
+    hums = [float(d['humidity']) for d in environment_devices if finite_number(d.get('humidity'))]
+    power_devices = [d for d in devices if finite_number(d.get('power'))]
     powers = [d['power'] for d in power_devices]
     power_source = select_power_source(power_devices)
     people = household_people(devices)
-    low_batt = [d for d in devices if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20]
+    low_batt = [d for d in devices if finite_number(d.get('battery')) and d['battery'] <= 20]
     motion_active = [d for d in devices if is_state(d.get('motion'), 'active')]
-    power_total = round(power_source['power'], 1) if power_source else round(sum(powers), 1) if powers else 0
+    power_total = round(float(power_source['power']), 1) if power_source and finite_number(power_source.get('power')) else round(sum(float(p) for p in powers), 1) if powers else 0
     return {
         'devices': len(devices),
         'lights_on': len(lights_on),
@@ -7412,7 +7428,7 @@ def api_version():
 
 @app.get('/api/status')
 def api_status():
-    return {'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS), 'thresholds': {'power_w': POWER_UI_MIN_DELTA_W, 'demand_kw': DEMAND_UI_MIN_DELTA_KW, 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS}}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS}
+    return json_safe({'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS), 'thresholds': {'power_w': POWER_UI_MIN_DELTA_W, 'demand_kw': DEMAND_UI_MIN_DELTA_KW, 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS}}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS})
 
 
 @app.get('/api/event-diagnostics')
@@ -7626,7 +7642,7 @@ def api_cache_clear_refresh(request: Request):
 
 @app.get('/api/dashboard')
 def api_dashboard():
-    return {'success': True, **dashboard_summary(live=False)}
+    return json_safe({'success': True, **dashboard_summary(live=False)})
 
 
 @app.get('/api/devices')
@@ -7689,23 +7705,23 @@ def api_rooms():
             rooms[room]['motion_total'] += 1
             if is_state(d.get('motion'), 'active'):
                 rooms[room]['motion_active'] += 1
-        if isinstance(d.get('battery'), (int, float)) and d['battery'] <= 20:
+        if finite_number(d.get('battery')) and d['battery'] <= 20:
             rooms[room]['low_batteries'] += 1
-        if isinstance(d.get('power'), (int, float)):
+        if finite_number(d.get('power')):
             rooms[room]['power_devices'] += 1
-            rooms[room]['power_total'] = round(rooms[room]['power_total'] + d['power'], 1)
+            rooms[room]['power_total'] = round(rooms[room]['power_total'] + float(d['power']), 1)
     for room in rooms.values():
         ds = [d for d in devices if canonical_room_name(d.get('room') or 'Unknown') == room['room']]
         environment_devices = [d for d in ds if is_indoor_environment_device(d)]
-        temps = [d['temperature'] for d in environment_devices if isinstance(d.get('temperature'), (int,float))]
-        hums = [d['humidity'] for d in environment_devices if isinstance(d.get('humidity'), (int,float))]
+        temps = [float(d['temperature']) for d in environment_devices if finite_number(d.get('temperature'))]
+        hums = [float(d['humidity']) for d in environment_devices if finite_number(d.get('humidity'))]
         room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None
         room['avg_humidity'] = round(sum(hums)/len(hums),1) if hums else None
     def room_sort_key(room: dict[str, Any]) -> tuple[int, str]:
         active_score = int(room.get('lights_on') or 0) + int(room.get('motion_active') or 0)
         return (0 if active_score else 1, str(room['room']).lower())
 
-    return {'success': True, 'rooms': sorted(rooms.values(), key=room_sort_key)}
+    return json_safe({'success': True, 'rooms': sorted(rooms.values(), key=room_sort_key)})
 
 
 @app.get('/api/rooms/{room_name}')
@@ -7752,13 +7768,13 @@ def api_device_level(device_id: str, level: int, request: Request):
 @app.post('/api/ask')
 def api_ask(payload: AssistantRequest, request: Request):
     require_api_token(request)
-    return assistant(payload.q)
+    return json_safe(assistant(payload.q))
 
 
 @app.post('/api/assistant')
 def api_assistant(payload: AssistantRequest, request: Request):
     require_api_token(request)
-    return assistant(payload.q)
+    return json_safe(assistant(payload.q))
 
 
 @app.get('/', response_class=HTMLResponse)
