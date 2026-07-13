@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-APP_VERSION = '1.9.18-alpha'
+APP_VERSION = '1.9.19-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -78,7 +78,8 @@ def load_config() -> dict[str, Any]:
         'min_full_refresh_seconds': int(os.getenv('MIN_FULL_REFRESH_SECONDS', '600')),
         'state_sync_seconds': int(os.getenv('STATE_SYNC_SECONDS', '180')),
         'live_switch_sync_seconds': int(os.getenv('LIVE_SWITCH_SYNC_SECONDS', '90')),
-        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '8')),
+        'live_switch_sync_limit': int(os.getenv('LIVE_SWITCH_SYNC_LIMIT', '4')),
+        'maker_request_min_interval_ms': int(os.getenv('MAKER_REQUEST_MIN_INTERVAL_MS', '250')),
         'event_batch_window_ms': int(os.getenv('EVENT_BATCH_WINDOW_MS', '500')),
         'auto_live_sync_enabled': os.getenv('AUTO_LIVE_SYNC_ENABLED', 'true').lower() == 'true',
         'ollama_enabled': os.getenv('OLLAMA_ENABLED', 'true').lower() == 'true',
@@ -90,9 +91,9 @@ def load_config() -> dict[str, Any]:
         'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
         'ollama_health_timeout_seconds': int(os.getenv('OLLAMA_HEALTH_TIMEOUT_SECONDS', '2')),
         'ollama_health_cache_seconds': int(os.getenv('OLLAMA_HEALTH_CACHE_SECONDS', '60')),
-        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '60')),
-        'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '3600')),
-        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '10')),
+        'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '12')),
+        'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '7200')),
+        'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '3')),
         'stale_motion_active_minutes': int(os.getenv('STALE_MOTION_ACTIVE_MINUTES', '30')),
         'stale_light_on_hours': int(os.getenv('STALE_LIGHT_ON_HOURS', '4')),
         'stale_device_report_hours': int(os.getenv('STALE_DEVICE_REPORT_HOURS', '24')),
@@ -130,6 +131,7 @@ PERF_STATS: dict[str, Any] = {
     'maker_get_error_count': 0,
     'maker_get_last_path': None,
     'maker_get_last_ms': None,
+    'maker_get_throttle_wait_ms': 0,
     'state_sync_count': 0,
     'state_sync_skipped': 0,
     'state_sync_last_reason': None,
@@ -162,6 +164,8 @@ UI_STATS: dict[str, Any] = {
     'last_sse_push_at': None,
 }
 LAST_LIVE_SWITCH_SYNC = 0.0
+MAKER_REQUEST_LOCK = threading.Lock()
+LAST_MAKER_REQUEST_AT = 0.0
 
 app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
@@ -265,14 +269,22 @@ def maker_url(path: str) -> str:
 
 
 def maker_get(path: str, timeout: int = 20) -> Any:
+    global LAST_MAKER_REQUEST_AT
     started = time.time()
     try:
-        response = requests.get(maker_url(path), timeout=timeout)
-        response.raise_for_status()
-        PERF_STATS['maker_get_count'] = int(PERF_STATS.get('maker_get_count') or 0) + 1
-        PERF_STATS['maker_get_last_path'] = path
-        PERF_STATS['maker_get_last_ms'] = int((time.time() - started) * 1000)
-        return response.json()
+        with MAKER_REQUEST_LOCK:
+            min_interval = max(0, int(CONFIG.get('maker_request_min_interval_ms', 250))) / 1000
+            wait = min_interval - (time.time() - LAST_MAKER_REQUEST_AT)
+            if wait > 0:
+                time.sleep(wait)
+                PERF_STATS['maker_get_throttle_wait_ms'] = int(PERF_STATS.get('maker_get_throttle_wait_ms') or 0) + int(wait * 1000)
+            response = requests.get(maker_url(path), timeout=timeout)
+            LAST_MAKER_REQUEST_AT = time.time()
+            response.raise_for_status()
+            PERF_STATS['maker_get_count'] = int(PERF_STATS.get('maker_get_count') or 0) + 1
+            PERF_STATS['maker_get_last_path'] = path
+            PERF_STATS['maker_get_last_ms'] = int((time.time() - started) * 1000)
+            return response.json()
     except Exception:
         PERF_STATS['maker_get_error_count'] = int(PERF_STATS.get('maker_get_error_count') or 0) + 1
         PERF_STATS['maker_get_last_path'] = path
@@ -631,8 +643,8 @@ def should_refresh_device_detail(device: dict[str, Any], last_detail_at: int | N
 
 def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     global LAST_DETAIL_ERRORS, PERF_STATS
-    limit = max(0, int(CONFIG.get('device_detail_refresh_limit', 150)))
-    batch = max(0, int(CONFIG.get('device_detail_refresh_batch', 30)))
+    limit = min(max(0, int(CONFIG.get('device_detail_refresh_limit', 12))), 12)
+    batch = min(max(0, int(CONFIG.get('device_detail_refresh_batch', 3))), 3)
     detail_times = cached_detail_refresh_times()
     now = int(time.time())
     enriched: list[dict[str, Any]] = []
@@ -1292,7 +1304,7 @@ def live_switch_state_sync(reason: str = 'live-switch-state', categories: set[st
             continue
         if d.get('category') in {'light', 'switch', 'power_device'} or is_switchable_device(d):
             selected.append(d)
-    limit = max(1, int(CONFIG.get('live_switch_sync_limit', 40)))
+    limit = min(max(1, int(CONFIG.get('live_switch_sync_limit', 4))), 4)
     selected = selected[:limit]
     started = time.time()
     changed = 0

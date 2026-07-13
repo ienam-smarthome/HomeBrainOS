@@ -4,9 +4,11 @@ AI-ready smart home operating system for Hubitat and Home Assistant.
 
 HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API, normalises devices into a clean internal model, and exposes a mobile-friendly dashboard/API.
 
+Short GitHub description: Local-first AI smart-home dashboard and assistant for Hubitat + Home Assistant, with event-driven state, room intelligence, and privacy-preserving local control.
+
 ## Current status
 
-`v1.2.0-alpha` assistant dashboard:
+`v1.9.19-alpha` assistant dashboard:
 
 - Home Assistant OS add-on structure
 - Hubitat Maker API integration

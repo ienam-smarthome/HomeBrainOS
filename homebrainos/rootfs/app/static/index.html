@@ -148,7 +148,7 @@ function setOutput(text, active=true){
   $('out').classList.toggle('output-active', active);
 }
 function roomIsActive(room){
-  return (room.lights_on||0)+(room.switches_on||0)+(room.motion_active||0)>0;
+  return (room.lights_on||0)+(room.motion_active||0)>0;
 }
 function roomHasSignals(room){
   return (room.lights_total||0)>0 || (room.switches_total||0)>0 || (room.motion_total||0)>0 || (room.power_devices||0)>0 || room.avg_temperature!=null || room.avg_humidity!=null;
@@ -376,15 +376,21 @@ async function status(){
     const hub=s.hub_health&&s.hub_health.available?' · '+s.hub_health.label:'';
     badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices'+hub;
     badge.className=s.error?'pill error':(s.hub_health&&s.hub_health.level==='warning'?'pill warning':(s.hub_health&&s.hub_health.level==='error'?'pill error':'pill'));
-    const d=await api('/api/dashboard');
-    applyDashboard(d);
-    loadRooms();
-    loadDevices();
-    loadTimers();
   }catch(err){
     badge.textContent='API offline: '+err.message;
     badge.className='pill error';
+    return;
   }
+  try{
+    const d=await api('/api/dashboard');
+    applyDashboard(d);
+  }catch(err){
+    if(!badge.textContent.includes('Dashboard unavailable')) badge.textContent+=' - Dashboard unavailable';
+    if(!badge.className.includes('error')) badge.className='pill warning';
+  }
+  if(viewState.rooms) loadRooms();
+  if(viewState.devices) loadDevices();
+  if(viewState.timers) loadTimers();
 }
 function handleStateEvent(event){
   try{
@@ -504,9 +510,10 @@ async function ask(){
     const j=await postApi('/api/assistant', {q:text});
     setOutput(j.message||JSON.stringify(j,null,2));
     speak(j.speech||j.message||'Done');
-    const changed = j.changed || j.devices || j.device || j.setpoint!=null || j.intent==='voice_device_command' || j.intent==='command';
+    const refreshIntents = ['voice_device_command','command','device_command','setpoint','timer_create','timer_cancel'];
+    const changed = j.changed === true || j.setpoint!=null || refreshIntents.includes(j.intent);
     if(changed){
-      loadTimers();
+      if(viewState.timers) loadTimers();
       status();
     }
   }catch(err){
@@ -744,7 +751,7 @@ if(urlParams.get('station')==='1'){
 if(urlParams.get('voice')==='1'){
   setVoiceOverlay(true,'Tap the microphone to start. Browsers require one tap before using the mic.');
 }
-applyViewState(); status(); loadTimers(); connectStateEvents(); setInterval(status,30000);
+applyViewState(); status(); connectStateEvents(); setInterval(status,30000);
 </script>
 </body>
 </html>

@@ -1,3 +1,10 @@
+## v1.9.19-alpha - Hubitat Request Stability
+
+- Adds a global Maker API request governor so detail refreshes are serialized and paced before they reach Hubitat.
+- Lowers default live/detail refresh batch sizes to avoid Hubitat pending asynchronous HTTP request buildup.
+- Keeps the UI online when only dashboard data fails, and stops read-only shortcuts from triggering full dashboard/device reloads.
+- Aligns active-room filtering with the backend rule: active means a light is on or motion is active.
+
 ## v1.9.8-alpha - Targeted Live Detail Polling
 
 - Polls the live Hubitat detail endpoint for weather and TRV status when cached attributes are incomplete.
