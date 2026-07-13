@@ -1589,12 +1589,15 @@ def spoken_command_confirmation(labels: list[str], command: str) -> str:
 
 
 def explain_summary_tile(text: str) -> dict[str, Any] | None:
-    summary = dashboard_summary()
     wants_low_battery = 'battery' in text or 'batteries' in text
     wants_motion = 'motion' in text and 'room' not in text
     wants_people = 'people' in text or 'who is home' in text or any(name.lower() in text for name in HOUSEHOLD_PEOPLE)
     wants_power = 'power' in text or 'octopus' in text or 'meter' in text
     wants_tiles = 'summary tile' in text or 'summary tiles' in text or 'dashboard tile' in text or 'dashboard tiles' in text
+    if not any((wants_low_battery, wants_motion, wants_people, wants_power, wants_tiles)):
+        return None
+
+    summary = dashboard_summary()
 
     if wants_low_battery:
         devices = summary['low_battery_devices']
