@@ -1751,7 +1751,7 @@ def test_dashboard_tiles_have_visible_click_feedback():
     assert "content:'Loading'" not in html
     assert '.metric.summary-tile.loading:after' not in html
     assert 'function markActiveControl' in html
-    assert "setOutput('Running: '+text+'...')" in html
+    assert "setOutput('Thinking: '+text+' (0s)')" in html
     assert "quick('summary', this)" in html
 
 
@@ -1854,3 +1854,73 @@ def test_maker_api_event_parser_accepts_form_encoded_body():
     assert records[0]['attr'] == 'motion'
     assert records[0]['value'] == 'active'
     assert records[0]['label'] == 'Kitchen Linptech'
+
+
+def test_cached_metric_router_is_lazy_and_does_not_hijack_open_questions():
+    main = load_addon_main()
+    main.dashboard_summary = lambda live=False: (_ for _ in ()).throw(
+        AssertionError('Unrelated questions must not build the dashboard summary')
+    )
+
+    assert main.cached_summary_metric_answer('which lights are on') is None
+    assert main.cached_summary_metric_answer('why does a room feel humid') is None
+
+
+def test_open_knowledge_question_reaches_ollama_instead_of_temperature_rules():
+    main = load_addon_main()
+    main.all_devices = lambda: []
+    asked = []
+    main.ollama_answer = lambda text: asked.append(text) or {
+        'success': True,
+        'intent': 'ollama_answer',
+        'source': 'ollama',
+        'message': 'Condensation forms when moist air meets a cold surface.',
+    }
+
+    answer = main.assistant('Why does condensation form on a cold window?')
+
+    assert asked == ['Why does condensation form on a cold window?']
+    assert answer['intent'] == 'ollama_answer'
+
+
+def test_battery_report_event_is_persisted_and_invalidates_authoritative_cache():
+    main = load_addon_main()
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        main.upsert_devices([{
+            'id': 'report1',
+            'name': 'Device Status Report',
+            'label': 'Device Status Report',
+            'room': 'System',
+            'category': 'device',
+            'attributes': {},
+        }])
+        main._homebrain_low_battery_cache = {'at': time.time(), 'ttl': 300, 'rows': []}
+
+        result = main.record_hubitat_events({
+            'deviceId': 'report1',
+            'name': 'reportHtml',
+            'value': '[LOW BATTERY] Hallway Contact - 12% battery',
+            'displayName': 'Device Status Report',
+        })
+        cached = main.all_devices()[0]
+        conn = main.db()
+        try:
+            row = conn.execute("SELECT attr, value FROM hubitat_events WHERE attr='reportHtml'").fetchone()
+        finally:
+            conn.close()
+
+    assert result['events'] == 1
+    assert result['updated'] == 1
+    assert row['attr'] == 'reportHtml'
+    assert 'Hallway Contact' in row['value']
+    assert 'Hallway Contact' in cached['attributes']['reportHtml']
+    assert not hasattr(main, '_homebrain_low_battery_cache')
+
+
+def test_assistant_output_is_next_to_prompt_and_reports_elapsed_time():
+    html = (Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'static' / 'index.html').read_text(encoding='utf-8')
+
+    assert html.count('id="out"') == 1
+    assert html.index('id="out"') < html.index('id="shortcutsCard"')
+    assert "details.push(elapsed+'s')" in html

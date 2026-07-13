@@ -815,6 +815,8 @@ def _delegate_main_assistant_first(query: str) -> bool:
         'which batteries are low',
         'what batteries are low',
         'low batteries',
+        'hub health',
+        'hubitat health',
     ))
 
 
@@ -1853,7 +1855,8 @@ def authoritative_low_batteries(
     devices = _safe_call(getattr(app_module, 'all_devices', None), fallback=[])
     devices = [item for item in devices if isinstance(item, dict)] if isinstance(devices, list) else []
 
-    report_device = _status_report_device(app_module, refresh=True)
+    report_device = _status_report_device(app_module, refresh=refresh_live)
+    report_items: list[dict[str, Any]] = []
     if report_device:
         attrs = _attrs(report_device)
         lowered = {_normalise_key(key): value for key, value in attrs.items()}
@@ -1868,7 +1871,8 @@ def authoritative_low_batteries(
                 report = value
                 break
 
-        for item in _extract_low_battery_report(report):
+        report_items = _extract_low_battery_report(report)
+        for item in report_items:
             add_item(item.get('label'), item.get('battery'), 'Device Status Report')
 
     # Include every low value already present in the normal Maker API cache.
@@ -1880,19 +1884,37 @@ def authoritative_low_batteries(
             device,
         )
 
-    # Attach IDs/rooms to report rows even when the cached battery value is missing.
+    updater = getattr(app_module, 'update_cached_device_snapshot', None)
+
+    # Attach IDs/rooms to report rows even when the cached battery value is missing,
+    # and copy the authoritative value into the normal device cache so every
+    # dashboard/room consumer sees the same battery state.
     for device in devices:
         key = _normalise_key(_device_label(device))
         if key in merged:
             merged[key]['id'] = device.get('id')
             merged[key]['room'] = device.get('room') or 'Unknown'
             merged[key]['category'] = device.get('category')
+            if 'Device Status Report' in (merged[key].get('sources') or []):
+                cache_device = dict(device)
+                cache_device['battery'] = merged[key]['battery']
+                cache_attrs = dict(_attrs(cache_device))
+                cache_attrs['battery'] = merged[key]['battery']
+                cache_device['attributes'] = cache_attrs
+                if callable(updater):
+                    try:
+                        updater(cache_device)
+                    except Exception:
+                        pass
 
-    if refresh_live:
+    # A populated Device Status Report is authoritative and avoids dozens of
+    # serial Maker API calls. Detail sampling is only a fallback when no report
+    # payload is available.
+    if refresh_live and not report_items:
         try:
-            limit = max(1, int(config.get('battery_detail_refresh_limit', 100)))
+            limit = min(12, max(1, int(config.get('battery_detail_refresh_limit', 8))))
         except Exception:
-            limit = 100
+            limit = 8
 
         def candidate_priority(device: dict[str, Any]) -> tuple[Any, ...]:
             text = _device_text(device)
@@ -1923,9 +1945,17 @@ def authoritative_low_batteries(
         ]
         candidates.sort(key=candidate_priority)
 
-        updater = getattr(app_module, 'update_cached_device_snapshot', None)
+        cursor = int(getattr(app_module, '_homebrain_low_battery_cursor', 0) or 0)
+        if candidates:
+            cursor %= len(candidates)
+        ordered = candidates[cursor:] + candidates[:cursor]
+        selected = ordered[:limit]
+        try:
+            setattr(app_module, '_homebrain_low_battery_cursor', (cursor + len(selected)) % max(1, len(candidates)))
+        except Exception:
+            pass
 
-        for device in candidates[:limit]:
+        for device in selected:
             refreshed = _refresh_device_detail(app_module, device)
             value = battery_value(refreshed)
             if value is None:
@@ -1957,7 +1987,7 @@ def authoritative_low_batteries(
 
     cache_payload = {
         'at': now,
-        'ttl': 90 if rows else 10,
+        'ttl': 300,
         'rows': [dict(item) for item in rows],
     }
     try:
@@ -2216,7 +2246,7 @@ def wrap_assistant(app_module: Any) -> None:
         if family_answer:
             family_answer['local_first'] = True
             return family_answer
-        battery_answer = authoritative_low_battery_answer(app_module, query)
+        battery_answer = authoritative_low_battery_answer(app_module, query, refresh_live=False)
         if battery_answer:
             battery_answer['local_first'] = True
             return battery_answer
@@ -2257,6 +2287,7 @@ def wrap_assistant(app_module: Any) -> None:
 def register(app_module: Any) -> Any:
     wrap_dashboard_presence(app_module)
     wrap_dashboard_low_batteries(app_module)
+    app_module.refresh_authoritative_low_batteries = lambda: authoritative_low_batteries(app_module, refresh_live=True)
     app = app_module.app; app.version = app_version(app_module); wrap_assistant(app_module)
     if not _route_exists(app, '/api/home-context'):
         app.add_api_route('/api/home-context', lambda: build_home_context(app_module), methods=['GET'])

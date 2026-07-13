@@ -1,3 +1,13 @@
+## v1.9.25-alpha - Event-driven Dashboard and AI Experience
+
+- Removed accidental live Maker API reads from cached dashboard and shortcut paths.
+- Persisted battery and Device Status Report events and rebuild the summary immediately when they arrive.
+- Moved bounded battery-detail sampling to a rotating background refresh instead of blocking user requests.
+- Fixed broad keyword routing that intercepted ordinary questions containing words such as humidity, temperature, cold, or power.
+- Added fast event-cache answers for Attention, Hub status, CPU advisor, summary metrics, lights, and switches.
+- Reduced Ollama prompt size for general questions, kept the model warm in the background, validated the configured model, and exposed model/latency metadata.
+- Moved assistant output beside the question box and added visible elapsed-time feedback while an answer is running.
+
 ## v1.9.24-alpha - Version and Responsiveness Fixes
 
 - Removed the secondary intelligence-module version override so Home Assistant, the API, and Web UI always report one authoritative version.

@@ -235,3 +235,44 @@ def test_register_adds_routes_once_without_overwriting_host_version():
     assert fake.APP_VERSION == 'old'
     assert fake.app.version == 'old'
     assert module.build_home_context(fake)['version'] == 'old'
+
+
+def test_cached_low_battery_read_never_refreshes_live_device_detail():
+    module = load_natural_intelligence()
+    fake = SimpleNamespace(
+        CONFIG={'low_battery_threshold': 20},
+        all_devices=lambda: [{
+            'id': 'report1',
+            'label': 'Device Status Report',
+            'name': 'Device Status Report',
+            'room': 'System',
+            'attributes': {'reportHtml': '[LOW BATTERY]\nHallway Contact - 12% battery'},
+        }],
+    )
+    module._refresh_device_detail = lambda app, device: (_ for _ in ()).throw(
+        AssertionError('Cached dashboard reads must not perform Maker API calls')
+    )
+
+    rows = module.authoritative_low_batteries(fake, refresh_live=False)
+
+    assert [(row['label'], row['battery']) for row in rows] == [('Hallway Contact', 12.0)]
+
+
+def test_registered_low_battery_assistant_uses_cache_and_exposes_background_refresher():
+    module = load_natural_intelligence()
+    fake = FakeMain()
+    fake._homebrain_low_battery_cache = {
+        'at': module.time.time(),
+        'ttl': 300,
+        'rows': [{'label': 'Hallway Contact', 'battery': 12.0, 'source': 'Device Status Report'}],
+    }
+    module._refresh_device_detail = lambda app, device: (_ for _ in ()).throw(
+        AssertionError('Assistant request must not perform live battery scans')
+    )
+    module.register(fake)
+
+    answer = fake.assistant('which batteries are low')
+
+    assert answer['intent'] == 'low_batteries'
+    assert 'Hallway Contact' in answer['message']
+    assert callable(fake.refresh_authoritative_low_batteries)

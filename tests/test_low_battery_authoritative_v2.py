@@ -99,7 +99,10 @@ class ReportMain:
                 "id": "display-report",
                 "label": "Device Status Report Display",
                 "category": "report",
-                "attributes": {},
+                # In production reportText arrives through the Hubitat event
+                # stream and is persisted in the device cache. Cached dashboard
+                # reads must consume it without calling Maker API.
+                "attributes": {"reportText": REPORT_HTML},
             },
             {
                 "id": "trv",
@@ -154,7 +157,7 @@ def test_report_parser_supports_bracket_headings_bullets_and_no_change_section()
     ]
 
 
-def test_status_report_search_skips_empty_parent_and_uses_display_report():
+def test_cached_status_report_skips_empty_parent_and_uses_display_report():
     rows = module.authoritative_low_batteries(ReportMain(), refresh_live=False)
     assert [(row["label"], row["battery"]) for row in rows] == [
         ("Livingroom TRV", 12.0),

@@ -1,5 +1,5 @@
 name: HomeBrain OS
-version: '1.9.24-alpha'
+version: '1.9.25-alpha'
 slug: homebrainos
 description: HomeBrain OS live dashboard with SQLite device engine and Hubitat Maker API
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -36,6 +36,12 @@ options:
   ollama_num_predict: 90
   ollama_health_timeout_seconds: 2
   ollama_health_cache_seconds: 60
+  ollama_keep_alive: "15m"
+  ollama_warmup_enabled: true
+  ollama_num_ctx: 4096
+  low_battery_threshold: 20
+  battery_detail_refresh_limit: 8
+  low_battery_refresh_seconds: 300
   device_detail_refresh_limit: 6
   device_detail_refresh_seconds: 7200
   device_detail_refresh_batch: 2
@@ -68,6 +74,12 @@ schema:
   ollama_num_predict: int
   ollama_health_timeout_seconds: int
   ollama_health_cache_seconds: int
+  ollama_keep_alive: str
+  ollama_warmup_enabled: bool
+  ollama_num_ctx: int
+  low_battery_threshold: int
+  battery_detail_refresh_limit: int
+  low_battery_refresh_seconds: int
   device_detail_refresh_limit: int
   device_detail_refresh_seconds: int
   device_detail_refresh_batch: int

@@ -9,6 +9,7 @@ import re
 import sqlite3
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 from pathlib import Path
@@ -22,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.24-alpha'
+APP_VERSION = '1.9.25-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -92,6 +93,12 @@ def load_config() -> dict[str, Any]:
         'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
         'ollama_health_timeout_seconds': int(os.getenv('OLLAMA_HEALTH_TIMEOUT_SECONDS', '2')),
         'ollama_health_cache_seconds': int(os.getenv('OLLAMA_HEALTH_CACHE_SECONDS', '60')),
+        'ollama_keep_alive': os.getenv('OLLAMA_KEEP_ALIVE', '15m'),
+        'ollama_warmup_enabled': os.getenv('OLLAMA_WARMUP_ENABLED', 'true').lower() == 'true',
+        'ollama_num_ctx': int(os.getenv('OLLAMA_NUM_CTX', '4096')),
+        'low_battery_threshold': int(os.getenv('LOW_BATTERY_THRESHOLD', '20')),
+        'battery_detail_refresh_limit': int(os.getenv('BATTERY_DETAIL_REFRESH_LIMIT', '8')),
+        'low_battery_refresh_seconds': int(os.getenv('LOW_BATTERY_REFRESH_SECONDS', '300')),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '6')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '7200')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '2')),
@@ -168,7 +175,29 @@ LAST_LIVE_SWITCH_SYNC = 0.0
 MAKER_REQUEST_LOCK = threading.Lock()
 LAST_MAKER_REQUEST_AT = 0.0
 
-app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
+
+@asynccontextmanager
+async def app_lifespan(_: FastAPI):
+    """Start and stop background workers with the application lifecycle."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    rebuild_summary_cache('startup-cache')
+    restore_pending_timers()
+    tasks = [
+        asyncio.create_task(initial_refresh()),
+        asyncio.create_task(refresh_loop()),
+        asyncio.create_task(ollama_health_loop()),
+        asyncio.create_task(ollama_warmup_loop()),
+        asyncio.create_task(low_battery_refresh_loop()),
+    ]
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+app = FastAPI(title='HomeBrain OS', version=APP_VERSION, lifespan=app_lifespan)
 
 
 class AssistantRequest(BaseModel):
@@ -969,6 +998,10 @@ NOISY_EVENT_ATTRS = {
     'displayCostToday', 'costTodayEnergy', 'illuminance', 'lastUpdated',
     'reportHtml', 'reportText', 'reportJson',
 }
+BATTERY_REPORT_EVENT_ATTRS = {
+    'battery', 'reportHtml', 'reportText', 'reportJson',
+    'lowBatteryCount', 'low_battery_count',
+}
 
 
 POWER_UI_MIN_DELTA_W = 5.0
@@ -976,7 +1009,7 @@ DEMAND_UI_MIN_DELTA_KW = 0.05
 TEMP_UI_MIN_DELTA_C = 0.2
 HUMIDITY_UI_MIN_DELTA_PERCENT = 1.0
 SUMMARY_EVENT_DEBOUNCE_SECONDS = 1.5
-CRITICAL_UI_ATTRS = {'switch', 'motion', 'presence', 'contact', 'lock', 'thermostatOperatingState'}
+CRITICAL_UI_ATTRS = {'switch', 'motion', 'presence', 'contact', 'lock', 'battery', 'thermostatOperatingState'}
 
 
 def numeric_attr_value(device: dict[str, Any] | None, attr: str) -> float | None:
@@ -1110,7 +1143,17 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
     if records:
         previous_devices = {str(d.get('id')): d for d in all_devices()}
     ui_records = [event for event in records if event_affects_dashboard(event, previous_devices.get(str(event['device_id'])))]
-    persist_records = ui_records
+    battery_report_records = [
+        event for event in records
+        if canonical_attr(event.get('attr')) in BATTERY_REPORT_EVENT_ATTRS
+    ]
+    persist_records = []
+    persisted_keys: set[tuple[str, str, str]] = set()
+    for event in ui_records + battery_report_records:
+        key = (str(event.get('device_id')), str(event.get('attr')), str(event.get('value')))
+        if key not in persisted_keys:
+            persist_records.append(event)
+            persisted_keys.add(key)
     conn = db()
     try:
         for event in persist_records:
@@ -1140,8 +1183,13 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
     summary = None
     if records:
         STATE_EVENT_VERSION += len(records)
-    if should_rebuild_summary_for_events(ui_records, now):
-        summary = rebuild_summary_cache('hubitat-event')
+    if battery_report_records:
+        # Natural intelligence owns this cache. Invalidating it here makes a
+        # battery/report event visible to both the tile and assistant at once.
+        globals().pop('_homebrain_low_battery_cache', None)
+    if battery_report_records or should_rebuild_summary_for_events(ui_records, now):
+        reason = 'hubitat-battery-event' if battery_report_records else 'hubitat-event'
+        summary = rebuild_summary_cache(reason)
         PERF_STATS['summary_event_push_count'] = int(PERF_STATS.get('summary_event_push_count') or 0) + 1
     return {'success': True, 'events': len(records), 'updated': len(updated), 'ui_relevant': len(ui_records), 'last_event': LAST_HUBITAT_EVENT, 'devices': updated, 'dashboard': summary}
 
@@ -1698,10 +1746,21 @@ def cached_low_battery_answer(summary: dict[str, Any] | None = None) -> dict[str
 
 
 def cached_summary_metric_answer(text: str) -> dict[str, Any] | None:
+    # Only answer an explicit dashboard-reading request here. Previously any
+    # sentence containing "humid", "temperature", or "power" was swallowed,
+    # including open questions intended for Ollama.
+    if re.search(r'^(why|how|what causes|explain why)\b', text):
+        return None
+    scope = bool(re.search(
+        r'\b(home|house|average|avg|current|now|reading|level|value|tile|dashboard)\b',
+        text,
+    )) or bool(re.search(r'^(what(?: is|\'s)?|show|tell me|give me)\b', text))
+    wants_temp = bool(re.search(r'\b(temperature|temp)\b', text)) and scope
+    wants_humidity = bool(re.search(r'\b(humidity|humid)\b', text)) and scope
+    wants_power = bool(re.search(r'\b(power|octopus meter)\b', text)) and scope
+    if not (wants_temp or wants_humidity or wants_power):
+        return None
     summary = dashboard_summary(live=False)
-    wants_temp = 'temperature' in text or re.search(r'\btemp\b', text)
-    wants_humidity = 'humidity' in text or 'humid' in text
-    wants_power = 'power' in text or 'octopus' in text or 'meter' in text
     if wants_temp:
         value = summary.get('avg_temperature')
         message = f"Average home temperature is {value}C." if value is not None else 'Average home temperature is unavailable.'
@@ -1783,6 +1842,42 @@ def cached_switches_answer() -> dict[str, Any]:
     return {'success': True, 'intent': 'cached_switches_on', 'message': 'Switches on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(switch_devices), 'devices': switch_devices}
 
 
+def cached_attention_answer() -> dict[str, Any]:
+    """Return immediate, event-backed attention items without live hub scans."""
+    summary = dashboard_summary(live=False)
+    items: list[str] = []
+    low = [item for item in (summary.get('low_battery_devices') or []) if isinstance(item, dict)]
+    if low:
+        labels = ', '.join(
+            f"{item.get('label') or item.get('id')} {safe_float(item.get('battery')):g}%"
+            for item in low[:5]
+            if safe_float(item.get('battery')) is not None
+        )
+        items.append(f"Low batteries: {labels or len(low)}")
+    active_motion = [item for item in (summary.get('active_motion_devices') or []) if isinstance(item, dict)]
+    if active_motion:
+        items.append('Motion active: ' + ', '.join(str(item.get('label') or item.get('id')) for item in active_motion[:5]))
+    offline = []
+    for device in all_devices():
+        health = normalise(device_attr_value(device, 'healthStatus', 'health_status') or '')
+        if health in {'offline', 'unavailable'}:
+            offline.append(str(device.get('label') or device.get('name') or device.get('id')))
+    if offline:
+        items.append('Offline: ' + ', '.join(offline[:5]))
+    if LAST_ERROR:
+        items.append('Hubitat sync warning: ' + public_error(LAST_ERROR))
+    message = 'Needs attention:\n' + '\n'.join(f'- {item}' for item in items) if items else 'No event-backed issues need attention right now.'
+    return {
+        'success': True,
+        'intent': 'attention',
+        'source': 'event_cache',
+        'message': message,
+        'issues': items,
+        'summary_cache_version': SUMMARY_CACHE_VERSION,
+        'generated_at': int(time.time()),
+    }
+
+
 def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     t = normalise(text)
     if not t:
@@ -1791,6 +1886,12 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return None
     if t in ('summary', 'status', 'home summary', 'what is happening', "what's happening", 'whats happening'):
         return cached_home_summary_answer()
+    if t in ('what needs attention', 'what needs my attention', 'anything unusual', 'attention'):
+        return cached_attention_answer()
+    if t in ('hub health', 'hub info', 'hubitat health'):
+        return hub_health_answer()
+    if t in ('cpu advisor', 'performance advisor'):
+        return performance_advisor_answer()
     if 'room' in t and ('motion' in t or 'active' in t):
         return active_rooms_answer()
     metric_answer = cached_summary_metric_answer(t)
@@ -5717,6 +5818,36 @@ def ai_context_text(context: dict[str, Any]) -> str:
     return json.dumps(context, ensure_ascii=True, separators=(',', ':'))
 
 
+def question_needs_home_context(text: str) -> bool:
+    """Avoid sending the entire home graph for ordinary knowledge questions."""
+    q = normalise(text)
+    home_terms = (
+        'home', 'house', 'room', 'device', 'light', 'switch', 'sensor', 'battery',
+        'heating', 'thermostat', 'energy', 'power', 'weather', 'humidity reading',
+        'temperature reading', 'motion', 'presence', 'hubitat', 'automation',
+        'unusual', 'attention',
+    )
+    if any(term in q for term in home_terms):
+        return True
+    compact_query = compact_name(q)
+    for device in all_devices():
+        label = compact_name(str(device.get('label') or device.get('name') or ''))
+        if len(label) >= 4 and label in compact_query:
+            return True
+    return False
+
+
+def minimal_ai_context() -> dict[str, Any]:
+    return {
+        'app': 'HomeBrain OS',
+        'version': APP_VERSION,
+        'safety': {
+            'device_facts': 'Do not invent smart-home device states.',
+            'control': 'Do not claim to have controlled a device.',
+        },
+    }
+
+
 def clean_ollama_message(message: str, data: dict[str, Any]) -> tuple[str, bool]:
     text = re.sub(r'\s+', ' ', str(message or '')).strip()
     done_reason = str(data.get('done_reason') or '').lower()
@@ -5760,6 +5891,18 @@ def ollama_health(force: bool = False) -> dict[str, Any]:
         timeout = max(1, int(CONFIG.get('ollama_health_timeout_seconds', 2)))
         response = requests.get(base_url + '/api/tags', timeout=timeout)
         response.raise_for_status()
+        try:
+            payload = response.json()
+            installed = {
+                str(item.get('name') or item.get('model') or '')
+                for item in (payload.get('models') or [])
+                if isinstance(item, dict)
+            }
+            configured = str(CONFIG.get('ollama_model') or '')
+            if installed and configured not in installed:
+                return set_ollama_health(False, f'Local AI is online, but model {configured} is not installed')
+        except (AttributeError, TypeError, ValueError):
+            pass
         return set_ollama_health(True, 'Local AI is online')
     except Exception as exc:
         return set_ollama_health(False, f'Local AI is offline: {public_error(exc)}')
@@ -5825,10 +5968,11 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
     health = ollama_health()
     if not health.get('online'):
         return {'success': False, 'message': 'Local AI is offline. Basic HomeBrain commands are still available.', 'intent': 'ollama_offline', 'source': 'ollama', 'ollama': health}
-    context = ai_context_pack()
+    started = time.perf_counter()
+    context = ai_context_pack() if question_needs_home_context(text) else minimal_ai_context()
     prompt = (
         'You are HomeBrain OS, a fast concise smart home assistant. '
-        'Use only the JSON context below. Do not invent device states. '
+        'Answer ordinary knowledge questions normally. For smart-home facts, use only the JSON context below and do not invent device states. '
         'Device control is handled before you are called by deterministic HomeBrain commands. '
         'If the user asks for a control action that was not already handled, explain the exact deterministic phrase they should use. '
         'Answer in one short paragraph of 1-2 complete sentences. Finish the final sentence before stopping. '
@@ -5844,8 +5988,10 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
                 'model': CONFIG.get('ollama_model', 'qwen2.5:3b'),
                 'prompt': prompt,
                 'stream': False,
+                'keep_alive': str(CONFIG.get('ollama_keep_alive', '15m')),
                 'options': {
                     'num_predict': num_predict,
+                    'num_ctx': max(2048, int(CONFIG.get('ollama_num_ctx', 4096))),
                     'temperature': 0.2,
                     'top_p': 0.8,
                 },
@@ -5857,11 +6003,58 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         data = response.json()
         message, truncated = clean_ollama_message(str(data.get('response') or ''), data)
         if message:
-            return {'success': True, 'message': message, 'speech': message, 'intent': 'ollama_answer', 'source': 'ollama', 'truncated': truncated}
+            return {
+                'success': True,
+                'message': message,
+                'speech': message,
+                'intent': 'ollama_answer',
+                'source': 'ollama',
+                'model': CONFIG.get('ollama_model', 'qwen2.5:3b'),
+                'duration_ms': round((time.perf_counter() - started) * 1000),
+                'truncated': truncated,
+            }
     except Exception as exc:
         set_ollama_health(False, f'Local AI is offline: {public_error(exc)}')
         return {'success': False, 'message': f'Ollama is enabled but did not answer: {public_error(exc)}', 'intent': 'ollama_error'}
     return None
+
+
+def warm_ollama() -> bool:
+    """Load the configured model in the background so the first user prompt is not cold."""
+    if not CONFIG.get('ollama_enabled') or not CONFIG.get('ollama_warmup_enabled', True):
+        return False
+    try:
+        response = requests.post(
+            ollama_base_url() + '/api/generate',
+            json={
+                'model': CONFIG.get('ollama_model', 'qwen2.5:3b'),
+                'prompt': '',
+                'stream': False,
+                'keep_alive': str(CONFIG.get('ollama_keep_alive', '15m')),
+            },
+            timeout=max(20, int(CONFIG.get('ollama_timeout_seconds', 75))),
+        )
+        response.raise_for_status()
+        PERF_STATS['ollama_last_warmup_at'] = time.time()
+        PERF_STATS['ollama_warmup_error'] = None
+        return True
+    except Exception as exc:
+        PERF_STATS['ollama_warmup_error'] = public_error(exc)
+        return False
+
+
+def should_prefer_ollama_open_question(text: str) -> bool:
+    q = normalise(text)
+    if not re.search(r'^(why|how|what causes|explain how|explain why)\b', q):
+        return False
+    if q.startswith(('how long', 'how much', 'how many')):
+        return False
+    smart_home_anchors = (
+        'my ', 'our ', 'home', 'house', 'room', 'device', 'sensor', 'reading',
+        'automation', 'hubitat', 'light', 'switch', 'thermostat', 'heating',
+        'fan', 'bathroom', 'energy meter', 'power meter',
+    )
+    return not any(anchor in q for anchor in smart_home_anchors)
 
 
 def assistant_suggestions_for_intent(intent: str) -> list[str]:
@@ -7306,6 +7499,14 @@ def assistant(text: str) -> dict[str, Any]:
         return what_changed_answer()
     if 'recommend' in t or 'suggest action' in t or 'what should i do' in t:
         return recommendations_answer()
+    # Open knowledge questions should reach the language model. The former
+    # keyword rules turned questions such as "why does condensation form?"
+    # into unrelated thermostat readouts merely because they contained
+    # "cold" or "humidity".
+    if should_prefer_ollama_open_question(text):
+        ollama = ollama_answer(text)
+        if ollama:
+            return ollama
     room_intel = room_intelligence_answer(t)
     if room_intel:
         return room_intel
@@ -7605,14 +7806,22 @@ async def ollama_health_loop() -> None:
         await asyncio.sleep(max(30, int(CONFIG.get('ollama_health_cache_seconds', 60))))
 
 
-@app.on_event('startup')
-async def startup() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    rebuild_summary_cache('startup-cache')
-    restore_pending_timers()
-    asyncio.create_task(initial_refresh())
-    asyncio.create_task(refresh_loop())
-    asyncio.create_task(ollama_health_loop())
+async def ollama_warmup_loop() -> None:
+    await asyncio.sleep(3)
+    while True:
+        await asyncio.to_thread(warm_ollama)
+        await asyncio.sleep(600)
+
+
+async def low_battery_refresh_loop() -> None:
+    """Refresh expensive battery details away from dashboard/assistant requests."""
+    await asyncio.sleep(10)
+    while True:
+        refresher = globals().get('refresh_authoritative_low_batteries')
+        if callable(refresher):
+            await asyncio.to_thread(refresher)
+            await asyncio.to_thread(rebuild_summary_cache, 'background-low-battery')
+        await asyncio.sleep(max(60, int(CONFIG.get('low_battery_refresh_seconds', 300))))
 
 
 @app.get('/api/version')

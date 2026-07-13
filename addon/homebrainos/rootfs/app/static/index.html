@@ -39,6 +39,7 @@
     <input id="q" placeholder="Ask HomeBrain...">
     <button onclick="ask()">Ask</button>
     <button onclick="voice()">🎤 Speak</button>
+    <pre id="out" aria-live="polite">Ready</pre>
   </div>
   <div class="card grid shortcut-grid" id="shortcutsCard">
     <div class="shortcut-note">Smart shortcuts for everyday use</div>
@@ -71,7 +72,6 @@
   <div class="card" id="timersCard"><h2>Scheduled</h2><div class="timers" id="timers">No scheduled actions</div></div>
   <div class="card" id="roomsCard"><h2>Rooms</h2><div class="rooms" id="rooms">Loading rooms...</div></div>
   <details class="card collapsible"><summary>Controllable Devices</summary><div class="devices" id="devices">Loading devices...</div></details>
-  <pre id="out">Ready</pre>
 </div>
 <button class="mic-fab" id="micFab" title="Speak to HomeBrain" aria-label="Speak to HomeBrain">🎤</button>
 <div class="voice-overlay" id="voiceOverlay">
@@ -524,10 +524,20 @@ async function loadRooms(){
 }
 async function ask(){
   const text=$('q').value.trim(); if(!text) return;
-  setOutput('Running: '+text+'...');
+  const started=performance.now();
+  setOutput('Thinking: '+text+' (0s)');
+  const progress=setInterval(()=>{
+    const seconds=Math.max(1,Math.round((performance.now()-started)/1000));
+    setOutput('Thinking: '+text+` (${seconds}s)`);
+  },1000);
   try{
     const j=await postApi('/api/assistant', {q:text}, 90000);
-    setOutput(j.message||JSON.stringify(j,null,2));
+    const elapsed=((performance.now()-started)/1000).toFixed(1);
+    const details=[];
+    if(j.source) details.push(j.source);
+    if(j.model) details.push(j.model);
+    details.push(elapsed+'s');
+    setOutput((j.message||JSON.stringify(j,null,2))+'\n\n— '+details.join(' · '));
     speak(j.speech||j.message||'Done');
     const refreshIntents = ['voice_device_command','command','device_command','setpoint','timer_create','timer_cancel'];
     const changed = j.changed === true || j.setpoint!=null || refreshIntents.includes(j.intent);
@@ -538,6 +548,7 @@ async function ask(){
   }catch(err){
     setOutput('Request failed: '+err.message);
   }finally{
+    clearInterval(progress);
     finishActiveControl();
   }
 }
