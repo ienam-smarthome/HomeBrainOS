@@ -58,6 +58,7 @@ class FakeMain:
                 "category": "weather",
                 "attributes": {
                     "temperature": 21,
+                    "humidity": 64,
                     "weatherSummary": (
                         "Weather summary for Lewisham, SE13 updated at 09:19. "
                         "Partly cloudy with a high of 28C and a low of 17C. "
@@ -114,5 +115,11 @@ def test_weather_tomorrow_includes_rain():
 def test_weather_overview_separates_periods():
     answer = module.improved_weather_answer(FakeMain(), "weather")
     assert "Now:" in answer["message"]
+    assert "Current details:" in answer["message"]
+    assert "feels like 21°C" in answer["message"]
+    assert "humidity 64%" in answer["message"]
     assert "Today:" in answer["message"]
+    assert "rain chance 0%" in answer["message"]
     assert "Tomorrow:" in answer["message"]
+    assert "rain chance 60%" in answer["message"]
+    assert "forecast rain 3 mm" in answer["message"]

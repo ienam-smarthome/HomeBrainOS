@@ -1290,6 +1290,7 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
         current_temp = f'{current_number:g}' if current_number is not None else None
 
     current_condition = values.get('condition') or values.get('line')
+    current_humidity = _safe_float(attrs.get('humidity'))
     precip_now = values.get('precip_now')
     today_chance = values.get('chance')
     today_high = values.get('high')
@@ -1405,11 +1406,23 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
         if now_parts:
             lines.append('Now: ' + ', '.join(now_parts) + '.')
 
+        current_details = []
+        if values.get('feels'):
+            current_details.append(f"feels like {values['feels']}{degree}C")
+        if current_humidity is not None:
+            current_details.append(f'humidity {current_humidity:g}%')
+        if precip_now:
+            current_details.append(f'precipitation now {precip_now}')
+        if current_details:
+            lines.append('Current details: ' + ', '.join(current_details) + '.')
+
         today_parts = []
         if today_high and today_low:
             today_parts.append(f'high {today_high}{degree}C, low {today_low}{degree}C')
         if today_chance:
             today_parts.append(f'rain chance {today_chance}%')
+        if precip_now:
+            today_parts.append(f'current rainfall {precip_now}')
         if today_parts:
             lines.append('Today: ' + ', '.join(today_parts) + '.')
 
@@ -1423,6 +1436,8 @@ def improved_weather_answer(app_module: Any, query: str) -> dict[str, Any] | Non
             )
         if tomorrow.get('chance') is not None:
             tomorrow_parts.append(f"rain chance {tomorrow['chance']}%")
+        if tomorrow.get('amount') is not None:
+            tomorrow_parts.append(f"forecast rain {tomorrow['amount']} mm")
         if tomorrow_parts:
             lines.append('Tomorrow: ' + ', '.join(tomorrow_parts) + '.')
 

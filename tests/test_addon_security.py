@@ -2206,6 +2206,53 @@ def test_forecast_query_refreshes_only_weather_device_once():
     assert calls == ['weather']
 
 
+def test_generic_weather_refreshes_detail_and_uses_complete_briefing():
+    main = load_addon_main()
+    cached = {
+        'id': 'weather', 'label': 'Weather Open-Meteo', 'name': 'Weather',
+        'room': 'Climate', 'category': 'weather', 'temperature': 20,
+        'humidity': 72, 'attributes': {'temperature': 20, 'humidity': 72},
+    }
+    main.all_devices = lambda: [cached]
+    calls = []
+    main.fetch_live_device_detail = lambda device_id: calls.append(device_id) or {
+        **cached,
+        'attributes': {
+            'temperature': 20, 'humidity': 72,
+            'weatherSummary': 'Partly cloudy with a high of 27C and a low of 16C.',
+            'threedayfcstTile': 'Tomorrow Overcast 30C/18C Chance Rain 10% 1mm',
+        },
+    }
+    main.update_cached_device_snapshot = lambda _device: None
+    main._homebrain_weather_query_answer = lambda _query: {
+        'success': True,
+        'intent': 'weather',
+        'message': 'Now: Partly cloudy, 20°C.\nToday: high 27°C, low 16°C, rain chance 10%.\nTomorrow: Overcast, high 30°C, low 18°C, rain chance 20%.',
+    }
+
+    answer = main.cached_weather_answer('what is the weather')
+
+    assert calls == ['weather']
+    assert 'Today:' in answer['message']
+    assert 'Tomorrow:' in answer['message']
+    assert answer['source'] == 'live_device_cache'
+
+
+def test_bare_devices_query_uses_cached_inventory_not_ollama():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'one', 'label': 'Hallway Light', 'room': 'Hallway',
+        'category': 'light', 'switch': 'off', 'attributes': {'switch': 'off'},
+    }]
+    main.ollama_answer = lambda *_args: (_ for _ in ()).throw(AssertionError('Ollama should not be called'))
+
+    answer = main.cache_first_assistant_answer('devices')
+
+    assert answer['intent'] == 'find_device'
+    assert answer['source'] == 'event_cache'
+    assert 'Hallway Light' in answer['message']
+
+
 def test_ai_context_is_cache_only_by_default():
     main = load_addon_main()
     main.all_devices = lambda: []

@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.28-alpha'
+APP_VERSION = '1.9.29-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1904,20 +1904,21 @@ def cached_weather_answer(query: str = '') -> dict[str, Any] | None:
         return {'success': False, 'intent': 'weather', 'message': 'No cached weather device found.'}
     q = normalise(query)
     wants_forecast = any(term in q for term in ('tomorrow', 'today', 'forecast', 'rain', 'raining', 'umbrella', 'precipitation'))
+    wants_overview = not q or any(term in q for term in ('weather', 'outlook', 'conditions'))
     has_forecast = bool(weather_attr(
         device, 'weatherSummary', 'weatherSummaryLine', 'threedayfcstTile',
         'threeDayFcstTile', 'forecastTile', 'dailyForecast',
         'precipProbability', 'precipitationChance', 'chanceOfRain',
     ))
     refreshed = False
-    if wants_forecast and not has_forecast and device.get('id'):
+    if (wants_forecast or wants_overview) and not has_forecast and device.get('id'):
         fresh = fetch_live_device_detail(str(device.get('id')))
         if fresh:
             update_cached_device_snapshot(fresh)
             device = fresh
             refreshed = True
     natural_answerer = globals().get('_homebrain_weather_query_answer')
-    if wants_forecast and callable(natural_answerer):
+    if (wants_forecast or wants_overview) and callable(natural_answerer):
         answer = natural_answerer(query)
         if isinstance(answer, dict):
             answer = dict(answer)
@@ -2102,6 +2103,8 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return None
     if t in ('summary', 'status', 'home summary', 'what is happening', "what's happening", 'whats happening'):
         return cached_home_summary_answer()
+    if t in ('devices', 'all devices', 'device list', 'list devices'):
+        return find_device_answer('find all devices')
     if t in ('what needs attention', 'what needs my attention', 'anything unusual', 'attention'):
         return cached_attention_answer()
     if t in ('hub health', 'hub info', 'hubitat health'):

@@ -1,3 +1,9 @@
+## v1.9.29-alpha - Complete Weather Briefing
+
+- Generic weather questions now perform one targeted detail refresh when the cached device only contains temperature and humidity.
+- Weather overviews include current conditions, temperature, feels-like temperature, humidity and precipitation, plus today's and tomorrow's high/low, rain probability and forecast rainfall.
+- Bare `devices` and `device list` questions now return the bounded cached inventory instead of waiting for an Ollama response.
+
 ## v1.9.28-alpha - Cache-First Assistant Accuracy and Diagnostics Fix
 
 - Made room temperature and humidity questions cache-first and limited missing-value refreshes to one selected device instead of scanning every candidate.
