@@ -1,3 +1,10 @@
+## v1.9.26-alpha - Live Capability and Dashboard Hotfix
+
+- Fixed Dashboard, AI context, and assistant HTTP 500 errors when Hubitat returns capabilities or commands as objects instead of strings.
+- Reused the canonical capability/command normalizers throughout health, matching, and switchability checks.
+- Fixed `[LOW BATTERY] Below 20%` being misread as a third device named `Below`.
+- Added an integrated regression test using the deployed Device Status Report event and object-shaped capability data.
+
 ## v1.9.25-alpha - Event-driven Dashboard and AI Experience
 
 - Removed accidental live Maker API reads from cached dashboard and shortcut paths.

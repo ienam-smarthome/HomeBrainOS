@@ -251,7 +251,20 @@ def _is_on(value: Any) -> bool:
 
 def _device_text(device: dict[str, Any]) -> str:
     attrs = _attrs(device)
-    return ' '.join(str(part or '') for part in [device.get('label'), device.get('name'), device.get('room'), device.get('category'), ' '.join(device.get('capabilities') or []), ' '.join(attrs.keys())]).lower()
+    capabilities = ' '.join(
+        str(value.get('name') or value.get('displayName') or '')
+        if isinstance(value, dict)
+        else str(value or '')
+        for value in (device.get('capabilities') or [])
+    )
+    return ' '.join(str(part or '') for part in [
+        device.get('label'),
+        device.get('name'),
+        device.get('room'),
+        device.get('category'),
+        capabilities,
+        ' '.join(str(key) for key in attrs.keys()),
+    ]).lower()
 
 
 def _is_aggregate_energy_meter(device: dict[str, Any]) -> bool:
@@ -1682,7 +1695,14 @@ def _extract_low_battery_report(report_html: Any) -> list[dict[str, Any]]:
         if low_match:
             active = True
             remainder = low_match.group(1).strip()
-            if remainder and not re.fullmatch(r'\d+', remainder):
+            # Hubitat commonly labels the section "[LOW BATTERY] Below 20%".
+            # That is a threshold, not a device named "Below" with 20%.
+            threshold_label = re.fullmatch(
+                r'(?:below|under|less\s+than|threshold)?\s*\d+(?:\.\d+)?\s*%?',
+                remainder,
+                flags=re.IGNORECASE,
+            )
+            if remainder and not threshold_label:
                 section_lines.append(remainder)
             continue
 

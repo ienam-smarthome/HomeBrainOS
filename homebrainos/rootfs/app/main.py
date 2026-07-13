@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.25-alpha'
+APP_VERSION = '1.9.26-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2285,7 +2285,7 @@ def is_presence_style_motion_device(device: dict[str, Any]) -> bool:
     """
     label = f"{device.get('label') or ''} {device.get('name') or ''}".lower()
     category = str(device.get('category') or '').lower()
-    caps = ' '.join(device.get('capabilities') or []).lower()
+    caps = caps_text(device)
     attrs = device_attribute_map(device)
     if category == 'presence_sensor' or device.get('presence') is not None or 'presence' in attrs or 'presence' in caps:
         return True
@@ -4827,8 +4827,8 @@ def device_match_text(device: dict[str, Any]) -> str:
         device.get('name', ''),
         device.get('room', ''),
         device.get('category', ''),
-        ' '.join(device.get('capabilities', []) or []),
-        ' '.join(device.get('commands', []) or []),
+        caps_text(device),
+        commands_text(device),
     ]
     attrs = device_attribute_map(device)
     parts.extend(str(key) for key in attrs.keys())
@@ -5142,8 +5142,9 @@ def room_details_answer(text: str) -> dict[str, Any] | None:
 
 def is_switchable_device(device: dict[str, Any]) -> bool:
     label = normalise(device.get('label', '') + ' ' + device.get('name', ''))
-    caps = ' '.join(device.get('capabilities', []) or []).lower()
-    commands = {str(command).lower() for command in device.get('commands', []) or []}
+    caps = caps_text(device)
+    commands = set(list_names(device.get('commands'), ('name', 'command')))
+    commands = {command.lower() for command in commands}
     category = device.get('category')
     intelligence = device_intelligence_profile(device)
     if 'unknown_switch_state' in intelligence.get('ignore_checks', []):

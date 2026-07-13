@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 import time
 import tempfile
 from datetime import datetime, timezone
@@ -1924,3 +1925,36 @@ def test_assistant_output_is_next_to_prompt_and_reports_elapsed_time():
     assert html.count('id="out"') == 1
     assert html.index('id="out"') < html.index('id="shortcutsCard"')
     assert "details.push(elapsed+'s')" in html
+
+
+def test_integrated_dashboard_handles_event_cached_status_report():
+    main = load_addon_main()
+    natural_path = Path(__file__).resolve().parents[1] / 'homebrainos' / 'rootfs' / 'app' / 'natural_intelligence.py'
+    spec = importlib.util.spec_from_file_location('homebrainos_natural_integration', natural_path)
+    natural = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = natural
+    spec.loader.exec_module(natural)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        main.upsert_devices([
+            {'id': '7182', 'name': 'Device Status Report Display', 'label': 'Device Status Report Display', 'room': 'Apps', 'category': 'device', 'capabilities': [{'name': 'Refresh'}, {'name': 'Actuator'}], 'attributes': {}},
+            {'id': '4718', 'name': 'Tuya TRV602Z TRV', 'label': 'Livingroom TRV', 'room': 'Thermostat Trv S', 'category': 'thermostat', 'attributes': {}},
+            {'id': '5401', 'name': 'Zigbee Door Contact', 'label': 'Fridge Door', 'room': 'Appliances', 'category': 'device', 'attributes': {}},
+        ])
+        main.rebuild_summary_cache('test')
+        natural.register(main)
+        main.record_hubitat_events({
+            'deviceId': '7182',
+            'name': 'reportText',
+            'displayName': 'Device Status Report Display',
+            'value': 'Device Status Notifier - Current Status\n\n[LOW BATTERY] Below 20%\nLivingroom TRV - 12% battery - last seen 25m ago\nFridge Door - 19% battery - last seen 2h ago\n\n[OK]\nNone',
+        })
+
+        summary = main.dashboard_summary(live=False)
+        context = main.ai_context_pack()
+
+    assert summary['low_batteries'] == 2, summary['low_battery_devices']
+    assert [item['label'] for item in summary['low_battery_devices']] == ['Livingroom TRV', 'Fridge Door']
+    assert context['summary']['low_batteries'] == 2
