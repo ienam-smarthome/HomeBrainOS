@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-VERSION = '1.9.22-alpha'
 LOCAL_FIRST_INTENTS = {'energy', 'why_lights', 'light_hours', 'attention', 'health', 'briefing'}
 COMMAND_PREFIXES = ('turn on', 'turn off', 'switch on', 'switch off', 'set ', 'change ', 'adjust ', 'dim ', 'brighten ', 'increase ', 'decrease ', 'raise ', 'lower ', 'keep ', 'leave ', 'refresh', 'reload', 'clear cache', 'cancel timer', 'schedule ')
 NUMBER_WORDS = {'one': '1', 'two': '2', 'too': '2', 'to': '2', 'three': '3', 'four': '4'}
+
+
+def app_version(app_module: Any) -> str:
+    """Return the host application's authoritative version."""
+    return str(getattr(app_module, 'APP_VERSION', 'unknown'))
 
 
 
@@ -2147,13 +2151,13 @@ def build_home_context(app_module: Any) -> dict[str, Any]:
     health = health if isinstance(health, dict) else {}
     energy = _safe_call(getattr(app_module, 'energy_advisor_answer', None), fallback={})
     energy = energy if isinstance(energy, dict) else {}
-    return {'success': True, 'intent': 'home_context', 'version': VERSION, 'generated_at': int(time.time()), 'dashboard': summary, 'occupancy': summary.get('occupancy') or summary.get('people') or {}, 'lights': summary.get('lights') or {}, 'rooms': summary.get('rooms') or [], 'energy': energy, 'health': health, 'timeline': _safe_call(getattr(app_module, 'recent_home_timeline', None), 12, 12, fallback=[]), 'recommendations': _safe_call(getattr(app_module, 'recommendations_answer', None), fallback={}), 'top_power_consumers': _top_power_consumers(app_module)}
+    return {'success': True, 'intent': 'home_context', 'version': app_version(app_module), 'generated_at': int(time.time()), 'dashboard': summary, 'occupancy': summary.get('occupancy') or summary.get('people') or {}, 'lights': summary.get('lights') or {}, 'rooms': summary.get('rooms') or [], 'energy': energy, 'health': health, 'timeline': _safe_call(getattr(app_module, 'recent_home_timeline', None), 12, 12, fallback=[]), 'recommendations': _safe_call(getattr(app_module, 'recommendations_answer', None), fallback={}), 'top_power_consumers': _top_power_consumers(app_module)}
 
 
 def build_briefing(app_module: Any) -> dict[str, Any]:
     briefing = _safe_call(getattr(app_module, 'daily_briefing_answer', None), fallback={})
     briefing = briefing if isinstance(briefing, dict) else {}
-    briefing.setdefault('success', True); briefing.setdefault('intent', 'briefing'); briefing.setdefault('version', VERSION); briefing['alias_for'] = '/api/daily-briefing'
+    briefing.setdefault('success', True); briefing.setdefault('intent', 'briefing'); briefing.setdefault('version', app_version(app_module)); briefing['alias_for'] = '/api/daily-briefing'
     if briefing.get('message'):
         briefing['message'] = naturalise_units(briefing['message'])
     return briefing
@@ -2163,7 +2167,7 @@ def build_home_health_score(app_module: Any) -> dict[str, Any]:
     health = _safe_call(getattr(app_module, 'home_health_answer', None), fallback={})
     health = health if isinstance(health, dict) else {}
     score = health.get('score') or health.get('health_score') or (100 if health.get('success') else 0)
-    return {'success': True, 'intent': 'home_health_score', 'version': VERSION, 'score': score, 'message': naturalise_units(health.get('message') or health.get('speech') or 'Home health score is available.'), 'deductions': health.get('deductions') or health.get('issues') or [], 'health': health}
+    return {'success': True, 'intent': 'home_health_score', 'version': app_version(app_module), 'score': score, 'message': naturalise_units(health.get('message') or health.get('speech') or 'Home health score is available.'), 'deductions': health.get('deductions') or health.get('issues') or [], 'health': health}
 
 
 def build_intelligence_answer(app_module: Any, query: str = '') -> dict[str, Any]:
@@ -2253,8 +2257,7 @@ def wrap_assistant(app_module: Any) -> None:
 def register(app_module: Any) -> Any:
     wrap_dashboard_presence(app_module)
     wrap_dashboard_low_batteries(app_module)
-    app_module.APP_VERSION = VERSION
-    app = app_module.app; app.version = VERSION; wrap_assistant(app_module)
+    app = app_module.app; app.version = app_version(app_module); wrap_assistant(app_module)
     if not _route_exists(app, '/api/home-context'):
         app.add_api_route('/api/home-context', lambda: build_home_context(app_module), methods=['GET'])
     if not _route_exists(app, '/api/briefing'):

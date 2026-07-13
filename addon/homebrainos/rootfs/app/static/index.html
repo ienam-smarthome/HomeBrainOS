@@ -109,11 +109,23 @@ let eventRefreshTimer = null;
 let lastSummaryCacheVersion = null;
 let liveConnected = false;
 let liveFallbackTimer = null;
+let statusRunning = false;
 async function api(path, options={}){
   const headers = Object.assign({}, options.headers || {});
   if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
   if(options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, {headers}));
+  const timeoutMs = options.timeoutMs == null ? 10000 : options.timeoutMs;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(()=>controller.abort(), timeoutMs);
+  let response;
+  try{
+    response = await fetch(path, Object.assign({}, options, {headers, signal:controller.signal}));
+  }catch(err){
+    if(err.name === 'AbortError') throw new Error(`Request timed out after ${Math.round(timeoutMs/1000)} seconds`);
+    throw err;
+  }finally{
+    clearTimeout(timeoutId);
+  }
   if(response.status === 401){
     const token = prompt('HomeBrain API token');
     if(token){
@@ -125,8 +137,8 @@ async function api(path, options={}){
   if(!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json();
 }
-async function postApi(path, body){
-  return api(path, {method:'POST', body: body === undefined ? undefined : JSON.stringify(body)});
+async function postApi(path, body, timeoutMs=10000){
+  return api(path, {method:'POST', body: body === undefined ? undefined : JSON.stringify(body), timeoutMs});
 }
 function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -369,28 +381,35 @@ function scheduleFallbackPoll(){
   },30000);
 }
 async function status(){
+  if(statusRunning) return;
+  statusRunning=true;
   const badge=$('status');
-  try{
-    const s=await api('/api/status');
+  const [statusResult,dashboardResult]=await Promise.allSettled([
+    api('/api/status'),
+    api('/api/dashboard'),
+  ]);
+  if(statusResult.status==='fulfilled'){
+    const s=statusResult.value;
     if(s.version) $('appVersion').textContent='v'+String(s.version); else { const embedded=document.documentElement.dataset.appVersion; if(embedded && embedded!=='APP_VERSION') $('appVersion').textContent='v'+embedded; }
     const hub=s.hub_health&&s.hub_health.available?' · '+s.hub_health.label:'';
     badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices'+hub;
     badge.className=s.error?'pill error':(s.hub_health&&s.hub_health.level==='warning'?'pill warning':(s.hub_health&&s.hub_health.level==='error'?'pill error':'pill'));
-  }catch(err){
-    badge.textContent='API offline: '+err.message;
+  }else{
+    badge.textContent='API offline: '+statusResult.reason.message;
     badge.className='pill error';
-    return;
   }
-  try{
-    const d=await api('/api/dashboard');
-    applyDashboard(d);
-  }catch(err){
+  if(dashboardResult.status==='fulfilled'){
+    applyDashboard(dashboardResult.value);
+  }else{
     if(!badge.textContent.includes('Dashboard unavailable')) badge.textContent+=' - Dashboard unavailable';
     if(!badge.className.includes('error')) badge.className='pill warning';
   }
-  if(viewState.rooms) loadRooms();
-  if(viewState.devices) loadDevices();
-  if(viewState.timers) loadTimers();
+  const secondary=[];
+  if(viewState.rooms) secondary.push(loadRooms());
+  if(viewState.devices) secondary.push(loadDevices());
+  if(viewState.timers) secondary.push(loadTimers());
+  await Promise.allSettled(secondary);
+  statusRunning=false;
 }
 function handleStateEvent(event){
   try{
@@ -507,7 +526,7 @@ async function ask(){
   const text=$('q').value.trim(); if(!text) return;
   setOutput('Running: '+text+'...');
   try{
-    const j=await postApi('/api/assistant', {q:text});
+    const j=await postApi('/api/assistant', {q:text}, 90000);
     setOutput(j.message||JSON.stringify(j,null,2));
     speak(j.speech||j.message||'Done');
     const refreshIntents = ['voice_device_command','command','device_command','setpoint','timer_create','timer_cancel'];
@@ -751,7 +770,7 @@ if(urlParams.get('station')==='1'){
 if(urlParams.get('voice')==='1'){
   setVoiceOverlay(true,'Tap the microphone to start. Browsers require one tap before using the mic.');
 }
-applyViewState(); status(); connectStateEvents(); setInterval(status,30000);
+applyViewState(); status(); connectStateEvents(); setInterval(()=>{if(!liveConnected) status();},30000);
 </script>
 </body>
 </html>

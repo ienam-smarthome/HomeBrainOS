@@ -1,3 +1,12 @@
+## v1.9.24-alpha - Version and Responsiveness Fixes
+
+- Removed the secondary intelligence-module version override so Home Assistant, the API, and Web UI always report one authoritative version.
+- Added repository validation and regression coverage that fail CI when add-on and runtime versions diverge.
+- Made startup serve the cached dashboard before refreshing Hubitat in the background.
+- Removed live Ollama network checks from `/api/status` and refresh AI health in the background.
+- Loaded status and dashboard data concurrently, added browser request timeouts, and stopped redundant polling while SSE is connected.
+- Limited assistant input size, removed internal AI context from normal responses, and redacted Ollama errors.
+
 ## v1.9.23-alpha - Shortcut Accuracy Hotfix
 
 - Answers average temperature, humidity, and power tile questions directly from the summary cache.

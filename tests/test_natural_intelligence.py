@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sqlite3
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ def load_natural_intelligence():
     spec = importlib.util.spec_from_file_location('natural_intelligence', path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -219,7 +221,7 @@ def test_today_and_yesterday_period_answers_still_work():
     assert 'Total cost including standing charge was £3.59.' in yesterday['message']
 
 
-def test_register_adds_routes_once_and_updates_version():
+def test_register_adds_routes_once_without_overwriting_host_version():
     module = load_natural_intelligence()
     fake = FakeMain()
     module.register(fake)
@@ -230,5 +232,6 @@ def test_register_adds_routes_once_and_updates_version():
     assert paths.count('/api/home-health-score') == 1
     assert paths.count('/api/insight') == 1
     assert paths.count('/api/why') == 1
-    assert fake.APP_VERSION == module.VERSION
-    assert fake.app.version == module.VERSION
+    assert fake.APP_VERSION == 'old'
+    assert fake.app.version == 'old'
+    assert module.build_home_context(fake)['version'] == 'old'

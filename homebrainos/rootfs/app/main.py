@@ -20,9 +20,9 @@ import requests
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.23-alpha'
+APP_VERSION = '1.9.24-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -172,7 +172,7 @@ app = FastAPI(title='HomeBrain OS', version=APP_VERSION)
 
 
 class AssistantRequest(BaseModel):
-    q: str
+    q: str = Field(min_length=1, max_length=500)
 
 
 def db() -> sqlite3.Connection:
@@ -5765,6 +5765,16 @@ def ollama_health(force: bool = False) -> dict[str, Any]:
         return set_ollama_health(False, f'Local AI is offline: {public_error(exc)}')
 
 
+def ollama_health_snapshot() -> dict[str, Any]:
+    """Return cached health without performing network I/O on UI status requests."""
+    snapshot = dict(OLLAMA_HEALTH)
+    snapshot['base_url'] = ollama_base_url()
+    snapshot['model'] = CONFIG.get('ollama_model', 'qwen2.5:3b')
+    if not CONFIG.get('ollama_enabled'):
+        snapshot.update({'online': False, 'message': 'Local AI is disabled'})
+    return snapshot
+
+
 def required_settings_answer() -> dict[str, Any]:
     ollama_enabled = bool(CONFIG.get('ollama_enabled'))
     live_sync_enabled = bool(CONFIG.get('auto_live_sync_enabled'))
@@ -5847,10 +5857,10 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
         data = response.json()
         message, truncated = clean_ollama_message(str(data.get('response') or ''), data)
         if message:
-            return {'success': True, 'message': message, 'speech': message, 'intent': 'ollama_answer', 'source': 'ollama', 'context': context, 'truncated': truncated}
+            return {'success': True, 'message': message, 'speech': message, 'intent': 'ollama_answer', 'source': 'ollama', 'truncated': truncated}
     except Exception as exc:
         set_ollama_health(False, f'Local AI is offline: {public_error(exc)}')
-        return {'success': False, 'message': f'Ollama is enabled but did not answer: {exc}', 'intent': 'ollama_error'}
+        return {'success': False, 'message': f'Ollama is enabled but did not answer: {public_error(exc)}', 'intent': 'ollama_error'}
     return None
 
 
@@ -7578,17 +7588,31 @@ async def refresh_loop() -> None:
     while True:
         await asyncio.sleep(seconds)
         await asyncio.to_thread(refresh_devices, False, 'scheduled')
+        await asyncio.to_thread(rebuild_summary_cache, 'scheduled')
         await asyncio.to_thread(save_performance_snapshot, 'scheduled')
+
+
+async def initial_refresh() -> None:
+    """Refresh external state after the cached UI is already available."""
+    await asyncio.to_thread(refresh_devices, True, 'startup')
+    await asyncio.to_thread(rebuild_summary_cache, 'startup-refresh')
+    await asyncio.to_thread(save_performance_snapshot, 'startup-refresh')
+
+
+async def ollama_health_loop() -> None:
+    while True:
+        await asyncio.to_thread(ollama_health, True)
+        await asyncio.sleep(max(30, int(CONFIG.get('ollama_health_cache_seconds', 60))))
 
 
 @app.on_event('startup')
 async def startup() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    refresh_devices(True, 'startup')
-    rebuild_summary_cache('startup')
-    save_performance_snapshot('startup')
+    rebuild_summary_cache('startup-cache')
     restore_pending_timers()
+    asyncio.create_task(initial_refresh())
     asyncio.create_task(refresh_loop())
+    asyncio.create_task(ollama_health_loop())
 
 
 @app.get('/api/version')
@@ -7598,7 +7622,7 @@ def api_version():
 
 @app.get('/api/status')
 def api_status():
-    return json_safe({'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS), 'thresholds': {'power_w': POWER_UI_MIN_DELTA_W, 'demand_kw': DEMAND_UI_MIN_DELTA_KW, 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS}}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health(), 'performance': PERF_STATS})
+    return json_safe({'success': True, 'app': 'HomeBrain OS', 'version': APP_VERSION, 'hubitat': CONFIG.get('hubitat_base_url'), 'devices': count_devices(), 'last_refresh': LAST_REFRESH, 'last_hubitat_event': LAST_HUBITAT_EVENT, 'state_event_version': STATE_EVENT_VERSION, 'summary_cache': {'version': SUMMARY_CACHE_VERSION, 'last_rebuild': SUMMARY_CACHE_LAST_REBUILD, 'available': SUMMARY_CACHE is not None, 'sse_clients': SSE_CLIENTS}, 'event_filter': {'dashboard_attrs': sorted(DASHBOARD_EVENT_ATTRS), 'ignored_ui_attrs': sorted(NOISY_EVENT_ATTRS), 'thresholds': {'power_w': POWER_UI_MIN_DELTA_W, 'demand_kw': DEMAND_UI_MIN_DELTA_KW, 'summary_debounce_seconds': SUMMARY_EVENT_DEBOUNCE_SECONDS}}, 'event_diagnostics': {'ui_stats': dict(UI_STATS), 'recent_events': list(reversed(EVENT_HISTORY[-5:]))}, 'database': str(DB_PATH), 'error': LAST_ERROR, 'detail_errors': LAST_DETAIL_ERRORS, 'auth_required': api_token_required(), 'hub_health': hub_health_summary(), 'ollama': ollama_health_snapshot(), 'performance': PERF_STATS})
 
 
 @app.get('/api/event-diagnostics')
