@@ -1,3 +1,8 @@
+## v1.9.30-alpha - Home Assistant Update Release
+
+- Bumped the Home Assistant add-on and runtime version so installed systems receive the light-duration routing fix as an add-on update.
+- Includes the fix that routes questions such as `lights on time today` to the state-duration engine before generic switch-state lookup.
+
 ## v1.9.29-alpha - Complete Weather Briefing
 
 - Generic weather questions now perform one targeted detail refresh when the cached device only contains temperature and humidity.
