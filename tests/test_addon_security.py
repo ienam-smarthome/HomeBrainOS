@@ -515,12 +515,20 @@ def test_light_on_time_today_routes_before_direct_switch_lookup():
                 conn.close()
 
             answer = main.assistant('lights on time today')
+            fast_answer = main.cache_first_assistant_answer('lights on time today')
+            preflight_answer = main.assistant_preflight_answer('lights on time today')
 
         assert answer['intent'] == 'state_usage_summary'
         assert 'Light-on time today' in answer['message']
         assert 'Bedroom Light' in answer['message']
         assert 'Computer' not in answer['message']
         assert answer['total_seconds'] == 5400
+        assert fast_answer['intent'] == 'state_usage_summary'
+        assert 'Bedroom Light' in fast_answer['message']
+        assert 'Computer' not in fast_answer['message']
+        assert preflight_answer['intent'] == 'state_usage_summary'
+        assert 'Bedroom Light' in preflight_answer['message']
+        assert 'Computer' not in preflight_answer['message']
     finally:
         main.DB_PATH = original_db_path
         main.time.time = original_time

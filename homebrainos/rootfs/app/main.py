@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.30-alpha'
+APP_VERSION = '1.9.31-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2101,6 +2101,9 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return cached_ai_status_answer()
     if re.search(r'\b(turn|switch|set|change|adjust|dim|brighten|increase|decrease|raise|lower|refresh|reload|clear|cancel|schedule)\b', t):
         return None
+    nlu_answer = natural_language_answer(text)
+    if nlu_answer:
+        return nlu_answer
     if t in ('summary', 'status', 'home summary', 'what is happening', "what's happening", 'whats happening'):
         return cached_home_summary_answer()
     if t in ('devices', 'all devices', 'device list', 'list devices'):
@@ -7252,6 +7255,10 @@ def room_status_answer(question: str) -> dict[str, Any] | None:
 
 def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     hint = assistant_intent_hint(question)
+
+    nlu_answer = natural_language_answer(question)
+    if nlu_answer:
+        return nlu_answer
 
     room_status = room_status_answer(question)
     if room_status:

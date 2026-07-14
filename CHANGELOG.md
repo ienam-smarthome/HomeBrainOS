@@ -1,3 +1,8 @@
+## v1.9.31-alpha - Light Duration Fast-Path Hotfix
+
+- Routes light-duration questions through the natural language duration engine before cache-first and preflight direct switch lookups.
+- Fixes `/api/assistant` returning an unrelated switch, such as `Computer`, for `lights on time today`.
+
 ## v1.9.30-alpha - Home Assistant Update Release
 
 - Bumped the Home Assistant add-on and runtime version so installed systems receive the light-duration routing fix as an add-on update.
