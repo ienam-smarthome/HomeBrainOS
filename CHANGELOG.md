@@ -1,3 +1,10 @@
+## v1.9.37-alpha - Structured Local AI Tools
+
+- Added bounded, read-only Ollama tool calling for grounded summary, room climate, device, weather, timeline, energy, and diagnostic answers.
+- Added filtered, projected, and paginated cached device inventory queries so AI clients no longer need the complete device graph for narrow questions.
+- Replaced broad post-command refreshes with event-aware confirmation followed by at most two targeted Maker API reads.
+- Added explicit command confirmation metadata and performance diagnostics, while retaining cache-first deterministic answers for common dashboard questions.
+
 ## v1.9.36-alpha - Immediate Climate Summary Values
 
 - Normalised Hubitat temperature and humidity strings before calculating dashboard and room averages.

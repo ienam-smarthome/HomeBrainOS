@@ -884,10 +884,10 @@ def test_ai_context_pack_includes_summary_weather_and_safety_policy():
     assert any(device['label'] == 'Hallway Light' for device in context['devices'])
 
 
-def test_ollama_answer_uses_structured_context_and_control_guardrails():
+def test_ollama_answer_uses_bounded_read_tools_for_home_questions():
     main = load_addon_main()
     main.CONFIG['ollama_enabled'] = True
-    main.CONFIG['ollama_include_hub_logs'] = False
+    main.CONFIG['ollama_tool_calling_enabled'] = True
     main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
     main.CONFIG['ollama_model'] = 'qwen2.5:3b'
     main.CONFIG['ollama_timeout_seconds'] = 75
@@ -895,41 +895,93 @@ def test_ollama_answer_uses_structured_context_and_control_guardrails():
     main.all_devices = lambda: [
         {'id': 'w1', 'label': 'Weather Open-Meteo', 'room': 'Weather', 'category': 'weather', 'weatherSummaryLine': 'Clear'},
     ]
-    captured = {}
+    captured = []
 
     class HealthResponse:
         def raise_for_status(self):
             return None
 
     class Response:
+        def __init__(self, payload):
+            self.payload = payload
         def raise_for_status(self):
             return None
         def json(self):
-            return {'response': 'The home looks stable.'}
+            return self.payload
 
     def post(url, json, timeout=20):
-        captured['url'] = url
-        captured['json'] = json
-        captured['timeout'] = timeout
-        return Response()
+        captured.append({'url': url, 'json': json, 'timeout': timeout})
+        if len(captured) == 1:
+            return Response({
+                'message': {
+                    'role': 'assistant',
+                    'content': '',
+                    'tool_calls': [{
+                        'function': {'name': 'home_get_summary', 'arguments': {}},
+                    }],
+                },
+            })
+        return Response({'message': {'role': 'assistant', 'content': 'The home looks stable.'}})
 
     main.requests.get = lambda url, timeout=2: HealthResponse()
     main.requests.post = post
 
     answer = main.ollama_answer('anything unusual?')
 
-    prompt = captured['json']['prompt']
-    assert answer['intent'] == 'ollama_answer'
-    assert captured['url'] == 'http://ollama.local:11434/api/generate'
-    assert captured['timeout'] == 75
-    assert captured['json']['model'] == 'qwen2.5:3b'
-    assert captured['json']['options']['num_predict'] == 90
-    assert 'Context JSON' in prompt
-    assert '"weather"' in prompt
-    assert '\n  "weather"' not in prompt
-    assert 'Device control is handled before you are called' in prompt
-    assert 'complete sentences' in prompt
+    assert answer['intent'] == 'ollama_tool_answer'
+    assert answer['source'] == 'ollama_tools'
+    assert answer['tools_used'] == ['home_get_summary']
+    assert [call['url'] for call in captured] == [
+        'http://ollama.local:11434/api/chat',
+        'http://ollama.local:11434/api/chat',
+    ]
+    assert all(call['timeout'] == 75 for call in captured)
+    assert len(captured[0]['json']['tools']) == 8
+    assert 'tools' not in captured[1]['json']
+    tool_message = captured[1]['json']['messages'][-1]
+    assert tool_message['role'] == 'tool'
+    assert tool_message['tool_name'] == 'home_get_summary'
+    assert 'lights_on' in tool_message['content']
     assert answer['speech'] == 'The home looks stable.'
+
+
+def test_ollama_tool_selection_falls_back_to_generate_when_no_tool_is_called():
+    main = load_addon_main()
+    main.CONFIG['ollama_enabled'] = True
+    main.CONFIG['ollama_tool_calling_enabled'] = True
+    main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
+    main.CONFIG['ollama_model'] = 'qwen2.5:3b'
+    main.all_devices = lambda: []
+    calls = []
+
+    class HealthResponse:
+        def raise_for_status(self):
+            return None
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return self.payload
+
+    def post(url, json, timeout=20):
+        calls.append(url)
+        if url.endswith('/api/chat'):
+            return Response({'message': {'role': 'assistant', 'content': 'No tool selected.'}})
+        return Response({'response': 'I cannot see a matching live home fact.'})
+
+    main.requests.get = lambda url, timeout=2: HealthResponse()
+    main.requests.post = post
+
+    answer = main.ollama_answer('is anything unusual at home?')
+
+    assert answer['intent'] == 'ollama_answer'
+    assert calls == [
+        'http://ollama.local:11434/api/chat',
+        'http://ollama.local:11434/api/generate',
+    ]
 
 
 def test_ollama_answer_skips_fast_when_health_check_is_offline():
@@ -2166,6 +2218,33 @@ def test_event_diagnostics_omits_rich_location_payloads():
     assert 'maps.example' not in str(answer['diagnostics'])
 
 
+def test_ai_timeline_omits_rich_payloads_and_background_telemetry():
+    main = load_addon_main()
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        now = int(time.time())
+        conn = main.db()
+        try:
+            conn.executemany(
+                'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
+                [
+                    ('person', 'Family member', 'tile', '<a href="https://maps.example">map</a>', '{}', now),
+                    ('sensor', 'Hallway Sensor', 'voltage', '241', '{}', now),
+                    ('light', 'Hallway Light', 'switch', 'on', '{}', now),
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        timeline = main.recent_home_timeline(limit=10, hours=1)
+
+    assert len(timeline) == 1
+    assert timeline[0]['label'] == 'Hallway Light'
+    assert timeline[0]['attr'] == 'switch'
+    assert 'maps.example' not in str(timeline)
+
+
 def test_room_sensor_cache_answer_never_scans_live_devices():
     main = load_addon_main()
     main.all_devices = lambda: [{
@@ -2384,6 +2463,128 @@ def test_switches_off_uses_real_cached_state_and_never_ollama():
     assert 'Google Nest Hub' not in answer['message']
     assert 'Halo3000x socket' not in answer['message']
     assert 'Bathroom Light 1' not in answer['message']
+
+
+def test_filtered_device_inventory_applies_state_projection_and_pagination():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'nest', 'label': 'Google Nest Hub', 'room': 'Unknown',
+            'category': 'device', 'switch': None,
+            'attributes': {'networkStatus': 'online'},
+        },
+        {
+            'id': 'halo', 'label': 'Halo3000x socket', 'room': 'Sockets',
+            'category': 'device', 'switch': 'on', 'attributes': {'switch': 'on'},
+        },
+        {
+            'id': 'dehum', 'label': 'Dehumidifier 1', 'room': 'Bathroom',
+            'category': 'device', 'switch': 'off', 'attributes': {'switch': 'off'},
+        },
+        {
+            'id': 'light', 'label': 'Bathroom Light 1', 'room': 'Bathroom',
+            'category': 'light', 'switch': 'off', 'attributes': {'switch': 'off'},
+        },
+    ]
+
+    off_switches = main.filtered_device_inventory(
+        category='switch', state='off', fields={'label', 'switch'}
+    )
+    first_page = main.filtered_device_inventory(query='all devices', limit=2, offset=0)
+
+    assert off_switches['total'] == 1
+    assert off_switches['devices'] == [{'label': 'Dehumidifier 1', 'switch': 'off'}]
+    assert first_page['count'] == 2
+    assert first_page['total'] == 4
+    assert first_page['next_offset'] == 2
+
+
+def test_home_tool_room_metric_uses_cached_label_when_driver_room_is_generic():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'living', 'label': 'Livingroom temp & humidity', 'room': 'Climate',
+            'category': 'climate_sensor', 'temperature': 24.5, 'humidity': 51,
+        },
+        {
+            'id': 'outside', 'label': 'Weather Open-Meteo', 'room': 'Climate',
+            'category': 'weather', 'temperature': 18, 'humidity': 90,
+        },
+    ]
+
+    result = main.execute_home_tool('home_get_room_metric', {
+        'room': 'living room', 'metric': 'humidity',
+    })
+
+    assert result['success'] is True
+    assert result['average'] == 51
+    assert result['source'] == 'event_cache'
+    assert [sensor['label'] for sensor in result['sensors']] == ['Livingroom temp & humidity']
+
+
+def test_verify_device_attribute_accepts_event_cache_confirmation_without_polling():
+    main = load_addon_main()
+    main.CONFIG.update({
+        'hubitat_base_url': 'http://hub.local',
+        'maker_api_app_id': '1',
+        'maker_api_token': 'secret',
+    })
+    main.all_devices = lambda: [
+        {'id': 'plug', 'label': 'Plug', 'category': 'switch', 'switch': 'on'},
+    ]
+    main.fetch_live_device_detail = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError('confirmed event cache must not poll Maker API')
+    )
+
+    result = main.verify_device_attribute(['plug'], 'switch', 'on', timeout_seconds=0.1)
+
+    assert result['confirmed'] is True
+    assert result['source'] == 'event_cache'
+    assert result['detail_reads'] == 0
+
+
+def test_verify_device_attribute_uses_one_targeted_read_after_event_wait():
+    main = load_addon_main()
+    main.CONFIG.update({
+        'hubitat_base_url': 'http://hub.local',
+        'maker_api_app_id': '1',
+        'maker_api_token': 'secret',
+    })
+    devices = [{'id': 'plug', 'label': 'Plug', 'category': 'switch', 'switch': 'off'}]
+    main.all_devices = lambda: devices
+    reads = []
+    main.fetch_live_device_detail = lambda device_id, timeout=6: reads.append(device_id) or {
+        'id': 'plug', 'label': 'Plug', 'category': 'switch', 'switch': 'on',
+    }
+    main.update_cached_device_snapshot = lambda fresh: devices.__setitem__(0, fresh)
+
+    result = main.verify_device_attribute(['plug'], 'switch', 'on', timeout_seconds=0.01)
+
+    assert result['confirmed'] is True
+    assert result['source'] == 'targeted_read'
+    assert result['detail_reads'] == 1
+    assert reads == ['plug']
+
+
+def test_command_devices_does_not_write_optimistic_state_when_hubitat_is_unconfirmed():
+    main = load_addon_main()
+    device = {'id': 'plug', 'label': 'Plug', 'category': 'switch', 'switch': 'off'}
+    main.maker_command = lambda *_args: None
+    main.all_devices = lambda: [device]
+    main.verify_device_attribute = lambda *_args, **_kwargs: {
+        'status': 'unconfirmed', 'confirmed': False, 'requested_ids': ['plug'],
+        'confirmed_ids': [], 'unconfirmed_ids': ['plug'], 'source': 'targeted_read',
+    }
+    main.update_cached_switch = lambda *_args: (_ for _ in ()).throw(
+        AssertionError('unconfirmed commands must not overwrite the cache')
+    )
+
+    answer = main.command_devices([device], 'on')
+
+    assert answer['success'] is True
+    assert answer['confirmed'] is False
+    assert answer['devices'][0]['switch'] == 'off'
+    assert 'has not confirmed' in answer['message']
 
 
 def test_switch_state_questions_support_on_off_and_polite_phrasing():

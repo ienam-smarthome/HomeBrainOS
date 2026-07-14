@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.36-alpha'
+APP_VERSION = '1.9.37-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -96,6 +96,8 @@ def load_config() -> dict[str, Any]:
         'ollama_keep_alive': os.getenv('OLLAMA_KEEP_ALIVE', '15m'),
         'ollama_warmup_enabled': os.getenv('OLLAMA_WARMUP_ENABLED', 'true').lower() == 'true',
         'ollama_num_ctx': int(os.getenv('OLLAMA_NUM_CTX', '4096')),
+        'ollama_tool_calling_enabled': os.getenv('OLLAMA_TOOL_CALLING_ENABLED', 'true').lower() == 'true',
+        'command_verify_timeout_seconds': float(os.getenv('COMMAND_VERIFY_TIMEOUT_SECONDS', '3')),
         'low_battery_threshold': int(os.getenv('LOW_BATTERY_THRESHOLD', '20')),
         'battery_detail_refresh_limit': int(os.getenv('BATTERY_DETAIL_REFRESH_LIMIT', '8')),
         'low_battery_refresh_seconds': int(os.getenv('LOW_BATTERY_REFRESH_SECONDS', '300')),
@@ -154,6 +156,14 @@ PERF_STATS: dict[str, Any] = {
     'summary_event_push_count': 0,
     'summary_event_debounce_count': 0,
     'event_small_change_ignored_count': 0,
+    'ollama_tool_call_count': 0,
+    'ollama_tool_call_error_count': 0,
+    'ollama_tool_call_last_ms': None,
+    'ollama_tool_call_last_tools': [],
+    'command_verify_count': 0,
+    'command_verify_confirmed_count': 0,
+    'command_verify_unconfirmed_count': 0,
+    'command_verify_last_ms': None,
 }
 LAST_SUMMARY_EVENT_REBUILD = 0.0
 SUMMARY_CACHE: dict[str, Any] | None = None
@@ -1374,10 +1384,10 @@ def sync_live_states(reason: str = 'live-state') -> dict[str, Any]:
     return {'synced': LAST_ERROR is None, 'devices': count, 'error': LAST_ERROR, 'last_refresh': LAST_REFRESH, 'elapsed_ms': elapsed_ms}
 
 
-def fetch_live_device_detail(device_id: str) -> dict[str, Any] | None:
+def fetch_live_device_detail(device_id: str, timeout: int | float = 6) -> dict[str, Any] | None:
     """Fetch one device detail from Maker API and return a normalised live snapshot."""
     try:
-        raw = maker_get(f"devices/{quote(str(device_id), safe='')}", timeout=6)
+        raw = maker_get(f"devices/{quote(str(device_id), safe='')}", timeout=timeout)
         if isinstance(raw, list):
             raw = raw[0] if raw and isinstance(raw[0], dict) else None
         if not isinstance(raw, dict):
@@ -1419,6 +1429,85 @@ def update_cached_device_snapshot(device: dict[str, Any]) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def device_attribute_matches(value: Any, expected: Any) -> bool:
+    expected_number = safe_float(expected)
+    value_number = safe_float(value)
+    if expected_number is not None and value_number is not None:
+        return abs(value_number - expected_number) <= 0.05
+    return normalise(value or '') == normalise(expected or '')
+
+
+def verify_device_attribute(
+    device_ids: list[str],
+    attribute: str,
+    expected: Any,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Verify a command from pushed cache state, then at most two targeted reads."""
+    ids = [str(device_id) for device_id in dict.fromkeys(device_ids) if device_id]
+    timeout = safe_float(timeout_seconds if timeout_seconds is not None else CONFIG.get('command_verify_timeout_seconds')) or 0
+    started = time.perf_counter()
+    if not ids or timeout <= 0 or not maker_configured():
+        return {
+            'status': 'skipped', 'confirmed': False, 'attribute': attribute, 'expected': expected,
+            'requested_ids': ids, 'confirmed_ids': [], 'unconfirmed_ids': ids,
+            'source': 'optimistic_cache', 'duration_ms': 0,
+        }
+
+    def matching_ids() -> list[str]:
+        wanted = set(ids)
+        return [
+            str(device.get('id'))
+            for device in all_devices()
+            if str(device.get('id')) in wanted and device_attribute_matches(device.get(attribute), expected)
+        ]
+
+    deadline = time.perf_counter() + timeout
+    # Keep at least one second of the caller's budget for a targeted detail read.
+    # Very small verification budgets therefore skip the event wait entirely.
+    event_wait_seconds = min(0.65, max(0.0, timeout - 1.0))
+    event_deadline = min(deadline, time.perf_counter() + event_wait_seconds)
+    confirmed_ids = matching_ids()
+    while len(confirmed_ids) < len(ids) and time.perf_counter() < event_deadline:
+        time.sleep(min(0.08, max(0.0, event_deadline - time.perf_counter())))
+        confirmed_ids = matching_ids()
+
+    detail_reads = 0
+    for device_id in [device_id for device_id in ids if device_id not in set(confirmed_ids)][:2]:
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            break
+        fresh = fetch_live_device_detail(device_id, timeout=max(0.05, min(2, remaining)))
+        detail_reads += 1
+        if fresh:
+            update_cached_device_snapshot(fresh)
+        confirmed_ids = matching_ids()
+        if len(confirmed_ids) == len(ids):
+            break
+
+    unconfirmed_ids = [device_id for device_id in ids if device_id not in set(confirmed_ids)]
+    status = 'confirmed' if not unconfirmed_ids else 'partial' if confirmed_ids else 'unconfirmed'
+    duration_ms = round((time.perf_counter() - started) * 1000)
+    PERF_STATS['command_verify_count'] = int(PERF_STATS.get('command_verify_count') or 0) + 1
+    PERF_STATS['command_verify_last_ms'] = duration_ms
+    if status == 'confirmed':
+        PERF_STATS['command_verify_confirmed_count'] = int(PERF_STATS.get('command_verify_confirmed_count') or 0) + 1
+    else:
+        PERF_STATS['command_verify_unconfirmed_count'] = int(PERF_STATS.get('command_verify_unconfirmed_count') or 0) + 1
+    return {
+        'status': status,
+        'confirmed': status == 'confirmed',
+        'attribute': attribute,
+        'expected': expected,
+        'requested_ids': ids,
+        'confirmed_ids': confirmed_ids,
+        'unconfirmed_ids': unconfirmed_ids,
+        'source': 'targeted_read' if detail_reads else 'event_cache',
+        'detail_reads': detail_reads,
+        'duration_ms': duration_ms,
+    }
 
 
 def live_switch_state_sync(reason: str = 'live-switch-state', categories: set[str] | None = None, force: bool = False) -> dict[str, Any]:
@@ -1615,6 +1704,100 @@ def is_indoor_environment_device(device: dict[str, Any]) -> bool:
     if device.get('category') in {'weather', 'power_device', 'battery_sensor'}:
         return False
     return True
+
+
+PUBLIC_DEVICE_FIELDS = {
+    'id', 'label', 'name', 'room', 'category', 'switch', 'level', 'temperature',
+    'humidity', 'illuminance', 'motion', 'contact', 'presence', 'battery', 'power',
+    'energy', 'thermostatMode', 'thermostatOperatingState', 'heatingSetpoint',
+    'coolingSetpoint', 'lock', 'water', 'smoke', 'valve', 'windowShade',
+}
+
+
+def device_matches_category(device: dict[str, Any], category: str | None) -> bool:
+    wanted = normalise(category or '')
+    if not wanted or wanted == 'all':
+        return True
+    actual = normalise(device.get('category') or 'device')
+    if wanted == 'switch':
+        return actual != 'light' and device.get('switch') is not None
+    if wanted == 'sensor':
+        return actual.endswith('sensor') or any(
+            device.get(attr) is not None
+            for attr in ('temperature', 'humidity', 'motion', 'contact', 'presence', 'battery')
+        )
+    return actual == wanted
+
+
+def device_matches_state(device: dict[str, Any], state: str | None) -> bool:
+    wanted = normalise(state or '')
+    if not wanted:
+        return True
+    state_attrs = {
+        'on': ('switch',),
+        'off': ('switch',),
+        'active': ('motion',),
+        'inactive': ('motion',),
+        'open': ('contact',),
+        'closed': ('contact',),
+        'present': ('presence',),
+        'away': ('presence',),
+        'locked': ('lock',),
+        'unlocked': ('lock',),
+    }
+    attrs = state_attrs.get(wanted)
+    if not attrs:
+        return False
+    aliases = {'away': {'away', 'not present', 'not_present'}}
+    accepted = aliases.get(wanted, {wanted})
+    return any(normalise(device.get(attr) or '') in accepted for attr in attrs)
+
+
+def project_device(device: dict[str, Any], fields: set[str] | None = None) -> dict[str, Any]:
+    selected = fields or PUBLIC_DEVICE_FIELDS
+    return {
+        key: device.get(key)
+        for key in selected
+        if key in PUBLIC_DEVICE_FIELDS and device.get(key) not in (None, '', [], {})
+    }
+
+
+def filtered_device_inventory(
+    query: str | None = None,
+    room: str | None = None,
+    category: str | None = None,
+    state: str | None = None,
+    fields: set[str] | None = None,
+    limit: int = 0,
+    offset: int = 0,
+) -> dict[str, Any]:
+    devices = all_devices()
+    query_terms = [term for term in normalise(query or '').split() if term not in {'all', 'device', 'devices'}]
+    if query_terms:
+        devices = [device for device in devices if all(term in device_search_text(device) for term in query_terms)]
+    if room:
+        wanted_room = normalise(canonical_room_name(room))
+        devices = [device for device in devices if normalise(canonical_room_name(device.get('room') or 'Unknown')) == wanted_room]
+    devices = [device for device in devices if device_matches_category(device, category)]
+    devices = [device for device in devices if device_matches_state(device, state)]
+    devices.sort(key=lambda device: (
+        canonical_room_name(device.get('room') or 'Unknown').lower(),
+        str(device.get('label') or device.get('name') or device.get('id')).lower(),
+    ))
+    total = len(devices)
+    start = max(0, int(offset or 0))
+    page_limit = max(0, min(100, int(limit or 0)))
+    page = devices[start:start + page_limit] if page_limit else devices[start:]
+    next_offset = start + len(page) if start + len(page) < total else None
+    return {
+        'success': True,
+        'count': len(page),
+        'total': total,
+        'offset': start,
+        'limit': page_limit,
+        'next_offset': next_offset,
+        'devices': [project_device(device, fields) for device in page] if fields else page,
+    }
 
 
 def select_power_source(power_devices: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -4118,7 +4301,13 @@ def recent_home_timeline(limit: int = 25, hours: int = 12) -> list[dict[str, Any
             label = row['label'] or row['device_id'] or 'Device'
             attr = row['attr'] or 'event'
             value = row['value'] or ''
-            if attr in ('temperature', 'humidity', 'battery', 'energy'):
+            # Timeline and AI tools only need meaningful state transitions. Rich
+            # HTML/location tiles and background telemetry are intentionally omitted.
+            if attr not in {
+                'switch', 'motion', 'presence', 'contact', 'lock', 'water', 'smoke',
+                'valve', 'windowShade', 'thermostatMode', 'thermostatOperatingState',
+                'heatingSetpoint', 'coolingSetpoint', 'level',
+            }:
                 continue
             ts = int(row['created_at'])
             items.append({'time': time.strftime('%H:%M', time.localtime(ts)), 'label': label, 'attr': attr, 'value': value, 'source': row['source'], 'created_at': ts, 'text': f"{time.strftime('%H:%M', time.localtime(ts))} - {label} {attr} {value}".strip()})
@@ -5739,20 +5928,37 @@ def command_devices(devices: list[dict[str, Any]], command: str, explicit_bulk: 
     if len(candidates) > 1 and not explicit_bulk:
         return disambiguation_response(candidates, 'control')
     changed = []
+    changed_ids = []
     errors = []
     for d in candidates:
         try:
             maker_command(d['id'], command)
             changed.append(d['label'])
+            changed_ids.append(str(d['id']))
         except Exception as exc:
             errors.append(f"{d['label']}: {public_error(exc)}")
-    refresh_devices_for_context('command-context')
     if changed:
-        updated = update_cached_switch([d['id'] for d in candidates if d['label'] in changed], command)
+        verification = verify_device_attribute(changed_ids, 'switch', command)
+        if verification['status'] == 'skipped':
+            updated = update_cached_switch(changed_ids, command)
+        else:
+            changed_id_set = set(changed_ids)
+            updated = [device for device in all_devices() if str(device.get('id')) in changed_id_set]
         message = f"Turned {command}:\n" + '\n'.join(changed)
+        if not verification.get('confirmed'):
+            message += '\n\nCommand sent, but Hubitat has not confirmed every device state yet.'
         if errors:
             message += '\n\nErrors:\n' + '\n'.join(errors)
-        return {'success': True, 'message': message, 'speech': spoken_command_confirmation(changed, command), 'changed': changed, 'errors': errors, 'devices': updated}
+        return {
+            'success': True,
+            'message': message,
+            'speech': spoken_command_confirmation(changed, command),
+            'changed': changed,
+            'errors': errors,
+            'devices': updated,
+            'confirmed': bool(verification.get('confirmed')),
+            'confirmation': verification,
+        }
     return {'success': False, 'message': 'Hubitat command failed:\n' + '\n'.join(errors), 'errors': errors}
 
 
@@ -5925,8 +6131,9 @@ def delayed_device_command(timer_id: str, device_ids: list[str], command: str) -
                 maker_command(device_id, command)
             except Exception:
                 continue
-        refresh_devices_for_context('command-context')
-        update_cached_switch(device_ids, command)
+        verification = verify_device_attribute(device_ids, 'switch', command)
+        if verification['status'] == 'skipped':
+            update_cached_switch(device_ids, command)
     finally:
         mark_timer_status(timer_id, 'done')
         ACTIVE_TIMER_THREADS.pop(timer_id, None)
@@ -6311,6 +6518,343 @@ def minimal_ai_context() -> dict[str, Any]:
     }
 
 
+def home_tool_definitions() -> list[dict[str, Any]]:
+    """Small read-only tool catalog for local Ollama models."""
+    return [
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_summary',
+                'description': 'Get the current cached whole-home summary, including lights, switches, climate, power, presence, batteries and motion.',
+                'parameters': {'type': 'object', 'properties': {}},
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_room_metric',
+                'description': 'Get the current cached temperature or humidity for one named room, including contributing sensors.',
+                'parameters': {
+                    'type': 'object',
+                    'required': ['room', 'metric'],
+                    'properties': {
+                        'room': {'type': 'string', 'description': 'Room name, for example Bathroom or Living Room.'},
+                        'metric': {'type': 'string', 'enum': ['temperature', 'humidity']},
+                    },
+                },
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_search_devices',
+                'description': 'Search the cached smart-home inventory with optional room, category and current-state filters.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'query': {'type': 'string', 'description': 'Words from the device name; omit to list by filters.'},
+                        'room': {'type': 'string'},
+                        'category': {
+                            'type': 'string',
+                            'enum': ['all', 'light', 'switch', 'sensor', 'motion_sensor', 'climate_sensor', 'power_device', 'thermostat', 'presence_sensor', 'weather'],
+                        },
+                        'state': {'type': 'string', 'enum': ['on', 'off', 'active', 'inactive', 'open', 'closed', 'present', 'away', 'locked', 'unlocked']},
+                        'limit': {'type': 'integer', 'minimum': 1, 'maximum': 20},
+                    },
+                },
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_device_state',
+                'description': 'Find a named device and return its current cached state and useful sensor values.',
+                'parameters': {
+                    'type': 'object',
+                    'required': ['query'],
+                    'properties': {'query': {'type': 'string', 'description': 'Exact or partial device name.'}},
+                },
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_weather',
+                'description': 'Get current, today or tomorrow weather from the configured Hubitat weather device.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {'period': {'type': 'string', 'enum': ['current', 'today', 'tomorrow']}},
+                },
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_timeline',
+                'description': 'Get recent cached Hubitat events and notable home changes.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'hours': {'type': 'integer', 'minimum': 1, 'maximum': 168},
+                        'limit': {'type': 'integer', 'minimum': 1, 'maximum': 30},
+                    },
+                },
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_energy',
+                'description': 'Get current whole-house power or cached energy usage for today or yesterday.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {'period': {'type': 'string', 'enum': ['current', 'today', 'yesterday']}},
+                },
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_diagnostics',
+                'description': 'Get read-only cached HomeBrain and device diagnostic counts. This never changes hub state.',
+                'parameters': {'type': 'object', 'properties': {}},
+            },
+        },
+    ]
+
+
+def home_tool_room_metric(room: str, metric: str) -> dict[str, Any]:
+    wanted_room = canonical_room_name(room)
+    attribute = 'humidity' if normalise(metric) == 'humidity' else 'temperature'
+    devices = [
+        device for device in all_devices()
+        if _room_device_match(device, room)
+        and is_indoor_environment_device(device)
+    ]
+    sensors = []
+    for device in devices:
+        value = safe_float(device.get(attribute))
+        if value is not None:
+            sensors.append({
+                'id': device.get('id'),
+                'label': device.get('label') or device.get('name'),
+                'value': value,
+            })
+    average = round(sum(sensor['value'] for sensor in sensors) / len(sensors), 1) if sensors else None
+    return {
+        'success': average is not None,
+        'room': wanted_room,
+        'metric': attribute,
+        'average': average,
+        'unit': '%' if attribute == 'humidity' else 'C',
+        'sensors': sensors,
+        'source': 'event_cache',
+    }
+
+
+def execute_home_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Execute one allowlisted read-only HomeBrain tool."""
+    try:
+        if name == 'home_get_summary':
+            summary = dashboard_summary(live=False)
+            keys = (
+                'devices', 'lights_on', 'switches_on', 'avg_temperature', 'avg_humidity',
+                'power_total', 'power_display', 'power_source_label', 'people_home',
+                'people_tracked', 'people_home_names', 'low_batteries', 'motion_active',
+                'active_room_names',
+            )
+            return {'success': True, 'source': 'event_cache', **{key: summary.get(key) for key in keys}}
+        if name == 'home_get_room_metric':
+            return home_tool_room_metric(str(arguments.get('room') or ''), str(arguments.get('metric') or 'temperature'))
+        if name == 'home_search_devices':
+            fields = {
+                'id', 'label', 'room', 'category', 'switch', 'level', 'temperature',
+                'humidity', 'motion', 'contact', 'presence', 'battery', 'power', 'energy',
+                'thermostatMode', 'thermostatOperatingState', 'heatingSetpoint', 'lock', 'water',
+            }
+            return filtered_device_inventory(
+                query=str(arguments.get('query') or '') or None,
+                room=str(arguments.get('room') or '') or None,
+                category=str(arguments.get('category') or '') or None,
+                state=str(arguments.get('state') or '') or None,
+                fields=fields,
+                limit=max(1, min(20, int(arguments.get('limit') or 12))),
+            )
+        if name == 'home_get_device_state':
+            matches = find_devices(str(arguments.get('query') or ''))[:8]
+            return {
+                'success': bool(matches),
+                'count': len(matches),
+                'devices': [ai_device_fact(device) for device in matches],
+                'source': 'event_cache',
+            }
+        if name == 'home_get_weather':
+            period = normalise(arguments.get('period') or 'current')
+            answer = cached_weather_answer(f'weather {period}') or {'success': False, 'message': 'Weather is unavailable.'}
+            return {
+                'success': bool(answer.get('success')),
+                'message': answer.get('message'),
+                'source': answer.get('source') or 'event_cache',
+                'device': ai_device_fact(answer['device']) if isinstance(answer.get('device'), dict) else None,
+            }
+        if name == 'home_get_timeline':
+            hours = max(1, min(168, int(arguments.get('hours') or 24)))
+            limit = max(1, min(30, int(arguments.get('limit') or 15)))
+            events = recent_home_timeline(limit=limit, hours=hours)
+            return {'success': True, 'hours': hours, 'count': len(events), 'events': events, 'source': 'event_cache'}
+        if name == 'home_get_energy':
+            period = normalise(arguments.get('period') or 'current')
+            if period == 'current':
+                summary = dashboard_summary(live=False)
+                return {
+                    'success': True,
+                    'period': 'current',
+                    'power_total': summary.get('power_total'),
+                    'power_display': summary.get('power_display'),
+                    'source_label': summary.get('power_source_label'),
+                    'source': 'event_cache',
+                }
+            answer = cached_period_energy_answer(f'energy used {period}') or {'success': False, 'message': 'Energy data is unavailable.'}
+            return {
+                'success': bool(answer.get('success')),
+                'period': period,
+                'message': answer.get('message'),
+                'usage': answer.get('usage'),
+                'source': answer.get('source') or 'event_cache',
+            }
+        if name == 'home_get_diagnostics':
+            diagnostics = device_diagnostics()
+            keys = (
+                'devices', 'switchable', 'unknown_switch_state', 'unknown_room',
+                'temperature_devices', 'humidity_devices', 'power_devices',
+            )
+            return {
+                'success': True,
+                **{key: diagnostics.get(key) for key in keys},
+                'stale_issue_count': (diagnostics.get('stale') or {}).get('issue_count'),
+                'last_error': public_error(diagnostics.get('last_error')) if diagnostics.get('last_error') else None,
+                'detail_error_count': len(diagnostics.get('detail_errors') or []),
+                'source': 'event_cache',
+            }
+        return {'success': False, 'error': f'Unknown HomeBrain tool: {name}'}
+    except Exception as exc:
+        return {'success': False, 'error': public_error(exc), 'tool': name}
+
+
+def tool_call_arguments(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    function = call.get('function') if isinstance(call, dict) else None
+    function = function if isinstance(function, dict) else {}
+    name = str(function.get('name') or '')
+    arguments = function.get('arguments') or {}
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except (TypeError, ValueError):
+            arguments = {}
+    return name, arguments if isinstance(arguments, dict) else {}
+
+
+def ollama_tool_answer(text: str) -> dict[str, Any] | None:
+    """Let Ollama select bounded read tools, then synthesize one grounded reply."""
+    if not CONFIG.get('ollama_tool_calling_enabled', True):
+        return None
+    started = time.perf_counter()
+    timeout = max(10, int(CONFIG.get('ollama_timeout_seconds', 75)))
+    model = CONFIG.get('ollama_model', 'qwen2.5:3b')
+    system = (
+        'You are HomeBrain OS. For any smart-home fact, call one or more provided read-only tools and use only their results. '
+        'Never invent device names, states, readings or events. These tools cannot control devices; never claim that you changed anything. '
+        'Answer concisely in one or two complete sentences, or a short list when the user asks which devices.'
+    )
+    messages: list[dict[str, Any]] = [
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': text},
+    ]
+    first_payload = {
+        'model': model,
+        'messages': messages,
+        'tools': home_tool_definitions(),
+        'stream': False,
+        'keep_alive': str(CONFIG.get('ollama_keep_alive', '15m')),
+        'options': {
+            'num_predict': 96,
+            'num_ctx': max(2048, int(CONFIG.get('ollama_num_ctx', 4096))),
+            'temperature': 0,
+        },
+    }
+    try:
+        first_response = requests.post(ollama_base_url() + '/api/chat', json=first_payload, timeout=timeout)
+        first_response.raise_for_status()
+        first_data = first_response.json()
+        assistant_message = first_data.get('message') if isinstance(first_data, dict) else None
+        assistant_message = assistant_message if isinstance(assistant_message, dict) else {}
+        calls = assistant_message.get('tool_calls') or []
+        calls = [call for call in calls if isinstance(call, dict)][:2]
+        if not calls:
+            return None
+
+        messages.append({
+            'role': 'assistant',
+            'content': str(assistant_message.get('content') or ''),
+            'tool_calls': calls,
+        })
+        tool_names = []
+        tool_results = []
+        for call in calls:
+            name, arguments = tool_call_arguments(call)
+            result = execute_home_tool(name, arguments)
+            tool_names.append(name)
+            tool_results.append(result)
+            messages.append({
+                'role': 'tool',
+                'tool_name': name,
+                'content': json.dumps(json_safe(result), ensure_ascii=True, separators=(',', ':')),
+            })
+
+        final_payload = {
+            'model': model,
+            'messages': messages,
+            'stream': False,
+            'keep_alive': str(CONFIG.get('ollama_keep_alive', '15m')),
+            'options': {
+                'num_predict': max(48, int(CONFIG.get('ollama_num_predict', 90))),
+                'num_ctx': max(2048, int(CONFIG.get('ollama_num_ctx', 4096))),
+                'temperature': 0.1,
+            },
+        }
+        final_response = requests.post(ollama_base_url() + '/api/chat', json=final_payload, timeout=timeout)
+        final_response.raise_for_status()
+        final_data = final_response.json()
+        final_message = final_data.get('message') if isinstance(final_data, dict) else None
+        content = str((final_message or {}).get('content') or '') if isinstance(final_message, dict) else ''
+        message, truncated = clean_ollama_message(content, final_data if isinstance(final_data, dict) else {})
+        if not message:
+            message = next((str(result.get('message')) for result in tool_results if result.get('message')), '')
+        if not message:
+            message = 'I found the requested home data, but Local AI could not format the response.'
+        duration_ms = round((time.perf_counter() - started) * 1000)
+        PERF_STATS['ollama_tool_call_count'] = int(PERF_STATS.get('ollama_tool_call_count') or 0) + 1
+        PERF_STATS['ollama_tool_call_last_ms'] = duration_ms
+        PERF_STATS['ollama_tool_call_last_tools'] = tool_names
+        set_ollama_health(True, 'Local AI is online')
+        return {
+            'success': any(bool(result.get('success')) for result in tool_results),
+            'message': message,
+            'speech': message,
+            'intent': 'ollama_tool_answer',
+            'source': 'ollama_tools',
+            'model': model,
+            'tools_used': tool_names,
+            'tool_results': tool_results,
+            'duration_ms': duration_ms,
+            'truncated': truncated,
+        }
+    except Exception as exc:
+        PERF_STATS['ollama_tool_call_error_count'] = int(PERF_STATS.get('ollama_tool_call_error_count') or 0) + 1
+        PERF_STATS['ollama_tool_call_last_error'] = public_error(exc)
+        return None
+
+
 def clean_ollama_message(message: str, data: dict[str, Any]) -> tuple[str, bool]:
     text = re.sub(r'\s+', ' ', str(message or '')).strip()
     done_reason = str(data.get('done_reason') or '').lower()
@@ -6467,7 +7011,12 @@ def ollama_answer(text: str) -> dict[str, Any] | None:
     if not health.get('online'):
         return {'success': False, 'message': 'Local AI is offline. Basic HomeBrain commands are still available.', 'intent': 'ollama_offline', 'source': 'ollama', 'ollama': health}
     started = time.perf_counter()
-    context = ai_context_pack() if question_needs_home_context(text) else minimal_ai_context()
+    needs_home_context = question_needs_home_context(text)
+    if needs_home_context:
+        tool_answer = ollama_tool_answer(text)
+        if tool_answer:
+            return tool_answer
+    context = ai_context_pack() if needs_home_context else minimal_ai_context()
     prompt = (
         'You are HomeBrain OS, a fast concise smart home assistant. '
         'Answer ordinary knowledge questions normally. For smart-home facts, use only the JSON context below and do not invent device states. '
@@ -8592,13 +9141,32 @@ def api_dashboard():
 
 
 @app.get('/api/devices')
-def api_devices(category: str | None = None, room: str | None = None):
-    devices = all_devices()
-    if category:
-        devices = [d for d in devices if d['category'] == category]
-    if room:
-        devices = [d for d in devices if normalise(room) in normalise(d.get('room',''))]
-    return {'success': True, 'count': len(devices), 'devices': devices}
+def api_devices(
+    category: str | None = None,
+    room: str | None = None,
+    query: str | None = None,
+    state: str | None = None,
+    fields: str | None = None,
+    limit: int = 0,
+    offset: int = 0,
+):
+    requested_fields = None
+    if fields:
+        requested_fields = {field.strip() for field in fields.split(',') if field.strip()}
+        unknown = requested_fields - PUBLIC_DEVICE_FIELDS
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Unsupported device fields: {', '.join(sorted(unknown))}")
+    if state and normalise(state) not in {'on', 'off', 'active', 'inactive', 'open', 'closed', 'present', 'away', 'locked', 'unlocked'}:
+        raise HTTPException(status_code=400, detail='Unsupported device state filter.')
+    return filtered_device_inventory(
+        query=query,
+        room=room,
+        category=category,
+        state=state,
+        fields=requested_fields,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.get('/api/switches')
