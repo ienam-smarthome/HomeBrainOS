@@ -2358,6 +2358,84 @@ def test_period_energy_missing_total_does_not_invoke_ai():
     assert '591W' in answer['message']
 
 
+def test_monthly_energy_question_returns_native_meter_total_directly():
+    main = load_addon_main()
+    main.CONFIG['electricity_unit_rate_gbp'] = 0.25
+    main.all_devices = lambda: [{
+        'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy', 'category': 'power_device',
+        'energy': 8273.88,
+        'attributes': {'energyThisMonth': 42.5, 'costThisMonth': 10.75},
+    }]
+    main.dashboard_summary = lambda live=False: {'power_display': '289W'}
+    main.ollama_answer = lambda *_args: (_ for _ in ()).throw(AssertionError('Ollama should not be called'))
+
+    answer = main.cache_first_assistant_answer('energy usage and cost this month')
+
+    assert answer['intent'] == 'energy_month'
+    assert answer['source'] == 'event_cache'
+    assert answer['usage']['month']['source'] == 'meter_attribute'
+    assert answer['usage']['month']['cost_estimated'] is False
+    assert answer['message'] == 'Month to date: 42.50 kWh costing £10.75 from Octopus Live Meter.'
+    assert 'AI Energy Advisor' not in answer['message']
+    assert 'Worth checking' not in answer['message']
+
+
+def test_monthly_energy_derives_usage_from_cumulative_history_and_labels_cost_estimate():
+    main = load_addon_main()
+    main.CONFIG['electricity_unit_rate_gbp'] = 0.30
+    timezone = main.local_timezone()
+    now = datetime.now(timezone) if timezone else datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    baseline_at = int(month_start.timestamp()) + 60
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        conn = main.db()
+        try:
+            conn.execute(
+                'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
+                ('meter', 'Octopus Live Meter', 'energy', '1000.0', '{}', baseline_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        main.all_devices = lambda: [{
+            'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy',
+            'category': 'power_device', 'energy': 1012.5, 'attributes': {'energy': 1012.5},
+        }]
+        main.dashboard_summary = lambda live=False: {'power_display': '289W'}
+
+        answer = main.cache_first_assistant_answer('how much electricity have I used this month and what did it cost')
+
+    month = answer['usage']['month']
+    assert answer['intent'] == 'energy_month'
+    assert month['source'] == 'cumulative_history'
+    assert month['coverage_complete'] is True
+    assert month['kwh'] == 12.5
+    assert month['cost_gbp'] == 3.75
+    assert month['cost_estimated'] is True
+    assert 'Estimated energy cost: £3.75 at £0.300/kWh' in answer['message']
+    assert 'standing charges are not included' in answer['message']
+
+
+def test_monthly_energy_without_baseline_gives_direct_data_limitation():
+    main = load_addon_main()
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        main.all_devices = lambda: [{
+            'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy',
+            'category': 'power_device', 'energy': 8273.88, 'attributes': {'energy': 8273.88},
+        }]
+        main.dashboard_summary = lambda live=False: {'power_display': '289W'}
+
+        answer = main.cache_first_assistant_answer('energy usage and cost this month')
+
+    assert answer['intent'] == 'energy_month'
+    assert 'Month-to-date energy is not available' in answer['message']
+    assert '8273.88 kWh' in answer['message']
+    assert 'month-start baseline' in answer['message']
+    assert 'Worth checking' not in answer['message']
+
+
 def test_forecast_query_refreshes_only_weather_device_once():
     main = load_addon_main()
     cached = {

@@ -1,3 +1,9 @@
+## v1.9.38-alpha - Direct Monthly Energy Answers
+
+- Routed month-to-date energy and cost questions to a concise meter answer instead of the broad AI Energy Advisor.
+- Added native monthly meter-field support with a cumulative-energy history fallback when the Hubitat driver exposes only a lifetime counter.
+- Added a configurable electricity unit rate for clearly labelled cost estimates when the meter does not expose a native monthly cost.
+
 ## v1.9.37-alpha - Structured Local AI Tools
 
 - Added bounded, read-only Ollama tool calling for grounded summary, room climate, device, weather, timeline, energy, and diagnostic answers.

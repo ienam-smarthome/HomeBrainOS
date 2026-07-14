@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.37-alpha'
+APP_VERSION = '1.9.38-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -98,6 +98,7 @@ def load_config() -> dict[str, Any]:
         'ollama_num_ctx': int(os.getenv('OLLAMA_NUM_CTX', '4096')),
         'ollama_tool_calling_enabled': os.getenv('OLLAMA_TOOL_CALLING_ENABLED', 'true').lower() == 'true',
         'command_verify_timeout_seconds': float(os.getenv('COMMAND_VERIFY_TIMEOUT_SECONDS', '3')),
+        'electricity_unit_rate_gbp': float(os.getenv('ELECTRICITY_UNIT_RATE_GBP', '0.25')),
         'low_battery_threshold': int(os.getenv('LOW_BATTERY_THRESHOLD', '20')),
         'battery_detail_refresh_limit': int(os.getenv('BATTERY_DETAIL_REFRESH_LIMIT', '8')),
         'low_battery_refresh_seconds': int(os.getenv('LOW_BATTERY_REFRESH_SECONDS', '300')),
@@ -2316,11 +2317,12 @@ def cached_attention_answer() -> dict[str, Any]:
 
 
 def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
-    """Answer day-total energy questions from the meter cache only."""
+    """Answer period energy questions directly from cached meter data."""
     t = normalise(text)
     if not any(word in t for word in ('energy', 'electricity', 'kwh', 'used', 'use', 'spent', 'cost')):
         return None
-    period = 'yesterday' if 'yesterday' in t else ('today' if 'today' in t else None)
+    month_requested = any(term in t for term in ('this month', 'month to date', 'month so far', 'monthly usage', 'monthly cost'))
+    period = 'month' if month_requested else ('yesterday' if 'yesterday' in t else ('today' if 'today' in t else None))
     if not period:
         return None
 
@@ -2335,7 +2337,7 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
         }
 
     day = usage.get(period) or {}
-    label = 'Today so far' if period == 'today' else 'Yesterday'
+    label = {'today': 'Today so far', 'yesterday': 'Yesterday', 'month': 'Month to date'}[period]
     kwh = safe_float(day.get('kwh'))
     cost = safe_float(day.get('cost_gbp'))
     details = []
@@ -2344,14 +2346,32 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
     if cost is not None:
         details.append(f'£{cost:.2f}')
     meter = (usage.get('source') or {}).get('label') or 'the whole-house meter'
-    if details:
+    if details and period == 'month' and day.get('cost_estimated'):
+        rate = safe_float(day.get('unit_rate_gbp'))
+        usage_text = f'{kwh:.2f} kWh' if kwh is not None else 'usage unavailable'
+        rate_text = f' at £{rate:.3f}/kWh' if rate is not None else ''
+        message = (
+            f'{label}: {usage_text} from {meter}. '
+            f'Estimated energy cost: £{cost:.2f}{rate_text}; standing charges are not included.'
+        )
+    elif details:
         message = f"{label}: {' costing '.join(details)} from {meter}."
     else:
         summary = dashboard_summary(live=False)
-        message = (
-            f"{label}'s energy total is not cached by {meter} yet. "
-            f"Current whole-house power is {summary.get('power_display', 'unavailable')}."
-        )
+        if period == 'month' and usage.get('cumulative_kwh') is not None:
+            message = (
+                f'Month-to-date energy is not available from {meter} yet. The meter exposes a cumulative '
+                f"reading of {usage['cumulative_kwh']:.2f} kWh, but HomeBrain has no month-start baseline."
+            )
+        else:
+            message = (
+                f"{label}'s energy total is not cached by {meter} yet. "
+                f"Current whole-house power is {summary.get('power_display', 'unavailable')}."
+            )
+    if period == 'month' and day.get('coverage_start') and not day.get('coverage_complete', False):
+        timezone = local_timezone()
+        coverage = datetime.fromtimestamp(int(day['coverage_start']), tz=timezone).strftime('%-d %B') if os.name != 'nt' else datetime.fromtimestamp(int(day['coverage_start']), tz=timezone).strftime('%d %B').lstrip('0')
+        message += f' Cached history starts on {coverage}, so this is a partial-month figure.'
     return {
         'success': True,
         'intent': f'energy_{period}',
@@ -4195,6 +4215,58 @@ def parse_kwh_cost_text(text: Any, marker: str) -> tuple[float | None, float | N
     return safe_float(match.group('kwh')), safe_float(match.group('cost'))
 
 
+def safe_currency_amount(value: Any) -> float | None:
+    numeric = safe_float(value)
+    if numeric is not None:
+        return numeric
+    match = re.search(r'(?:£|\u00c2£)\s*([0-9]+(?:\.[0-9]+)?)', str(value or ''))
+    return safe_float(match.group(1)) if match else None
+
+
+def month_to_date_energy_from_history(device_id: str, cumulative_kwh: float | None) -> dict[str, Any]:
+    """Derive month-to-date usage from the closest cached cumulative reading to month start."""
+    if cumulative_kwh is None:
+        return {'kwh': None, 'coverage_start': None, 'coverage_complete': False, 'source': None}
+    timezone = local_timezone()
+    now = datetime.now(timezone) if timezone else datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start_ts = int(month_start.timestamp())
+    candidates: list[tuple[int, float]] = []
+    try:
+        conn = db()
+        try:
+            for table in ('hubitat_events', 'history'):
+                before = conn.execute(
+                    f"SELECT value, created_at FROM {table} WHERE device_id=? AND lower(attr)='energy' AND created_at<=? ORDER BY created_at DESC LIMIT 1",
+                    (str(device_id), month_start_ts),
+                ).fetchone()
+                after = conn.execute(
+                    f"SELECT value, created_at FROM {table} WHERE device_id=? AND lower(attr)='energy' AND created_at>=? ORDER BY created_at ASC LIMIT 1",
+                    (str(device_id), month_start_ts),
+                ).fetchone()
+                for row in (before, after):
+                    value = safe_float(row['value']) if row else None
+                    if value is not None:
+                        candidates.append((int(row['created_at']), value))
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        candidates = []
+    if not candidates:
+        return {'kwh': None, 'coverage_start': None, 'coverage_complete': False, 'source': None}
+    baseline_at, baseline_kwh = min(candidates, key=lambda item: abs(item[0] - month_start_ts))
+    delta = cumulative_kwh - baseline_kwh
+    if delta < -0.05:
+        return {'kwh': None, 'coverage_start': baseline_at, 'coverage_complete': False, 'source': None}
+    return {
+        'kwh': round(max(0.0, delta), 3),
+        'coverage_start': baseline_at,
+        'coverage_complete': abs(baseline_at - month_start_ts) <= 6 * 3600,
+        'source': 'cumulative_history',
+        'baseline_kwh': baseline_kwh,
+    }
+
+
 def energy_usage_from_meter() -> dict[str, Any]:
     devices = all_devices()
     meter = None
@@ -4204,23 +4276,31 @@ def energy_usage_from_meter() -> dict[str, Any]:
             meter = device
             break
     if not meter:
-        return {'available': False, 'source': None, 'today': {}, 'yesterday': {}}
+        return {'available': False, 'source': None, 'today': {}, 'yesterday': {}, 'month': {}}
     attrs = meter.get('attributes') or {}
     today_kwh = safe_float(first_attr_value(meter, (
         'energyToday', 'todayEnergy', 'importToday', 'electricityToday', 'todayKwh', 'todayKWh'
     )))
-    today_cost = safe_float(first_attr_value(meter, (
+    today_cost = safe_currency_amount(first_attr_value(meter, (
         'costTodayEnergy', 'displayCostToday', 'costToday', 'todayCost', 'electricityCostToday'
     )))
     yesterday_kwh = safe_float(first_attr_value(meter, (
         'energyYesterday', 'yesterdayEnergy', 'importYesterday', 'electricityYesterday', 'yesterdayKwh', 'yesterdayKWh'
     )))
-    yesterday_cost = safe_float(first_attr_value(meter, (
+    yesterday_cost = safe_currency_amount(first_attr_value(meter, (
         'costYesterdayEnergy', 'displayCostYesterday', 'costYesterday', 'yesterdayCost', 'electricityCostYesterday'
+    )))
+    month_kwh = safe_float(first_attr_value(meter, (
+        'energyThisMonth', 'energyMonth', 'monthEnergy', 'importThisMonth',
+        'electricityThisMonth', 'monthKwh', 'monthKWh'
+    )))
+    month_cost = safe_currency_amount(first_attr_value(meter, (
+        'costThisMonth', 'costMonthEnergy', 'monthCost', 'electricityCostThisMonth'
     )))
     summary_text = first_attr_value(meter, ('displaySummary', 'displaySummaryCompact', 'summary'))
     display_today = first_attr_value(meter, ('displayToday', 'todayDisplay'))
     display_yesterday = first_attr_value(meter, ('displayYesterday', 'yesterdayDisplay'))
+    display_month = first_attr_value(meter, ('displayMonth', 'monthDisplay', 'displayThisMonth'))
     parsed_today = parse_kwh_cost_text(summary_text, 'T')
     parsed_yesterday = parse_kwh_cost_text(summary_text, 'Y')
     if today_kwh is None or today_cost is None:
@@ -4231,11 +4311,34 @@ def energy_usage_from_meter() -> dict[str, Any]:
         dy_kwh, dy_cost = parse_kwh_cost_text(display_yesterday, '')
         yesterday_kwh = yesterday_kwh if yesterday_kwh is not None else (parsed_yesterday[0] if parsed_yesterday[0] is not None else dy_kwh)
         yesterday_cost = yesterday_cost if yesterday_cost is not None else (parsed_yesterday[1] if parsed_yesterday[1] is not None else dy_cost)
+    parsed_month_kwh, parsed_month_cost = parse_kwh_cost_text(display_month, '')
+    month_kwh = month_kwh if month_kwh is not None else parsed_month_kwh
+    month_cost = month_cost if month_cost is not None else parsed_month_cost
+    cumulative_kwh = safe_float(meter.get('energy'))
+    month_history = {'kwh': None, 'coverage_start': None, 'coverage_complete': False, 'source': None}
+    if month_kwh is None:
+        month_history = month_to_date_energy_from_history(str(meter.get('id') or ''), cumulative_kwh)
+        month_kwh = safe_float(month_history.get('kwh'))
+    unit_rate = safe_float(CONFIG.get('electricity_unit_rate_gbp', 0.25))
+    cost_estimated = False
+    if month_cost is None and month_kwh is not None and unit_rate is not None and unit_rate >= 0:
+        month_cost = round(month_kwh * unit_rate, 2)
+        cost_estimated = True
     return {
         'available': True,
         'source': {'id': meter.get('id'), 'label': meter.get('label') or meter.get('name') or 'Energy meter'},
         'today': {'kwh': today_kwh, 'cost_gbp': today_cost},
         'yesterday': {'kwh': yesterday_kwh, 'cost_gbp': yesterday_cost},
+        'month': {
+            'kwh': month_kwh,
+            'cost_gbp': month_cost,
+            'cost_estimated': cost_estimated,
+            'unit_rate_gbp': unit_rate if cost_estimated else None,
+            'coverage_start': month_history.get('coverage_start'),
+            'coverage_complete': bool(month_history.get('coverage_complete')) if month_history.get('source') else True,
+            'source': month_history.get('source') or ('meter_attribute' if month_kwh is not None or month_cost is not None else None),
+        },
+        'cumulative_kwh': cumulative_kwh,
         'raw_summary': summary_text,
         'attributes_seen': sorted(str(k) for k in attrs.keys()),
     }
@@ -6605,10 +6708,10 @@ def home_tool_definitions() -> list[dict[str, Any]]:
             'type': 'function',
             'function': {
                 'name': 'home_get_energy',
-                'description': 'Get current whole-house power or cached energy usage for today or yesterday.',
+                'description': 'Get current whole-house power or cached energy usage for today, yesterday, or this month.',
                 'parameters': {
                     'type': 'object',
-                    'properties': {'period': {'type': 'string', 'enum': ['current', 'today', 'yesterday']}},
+                    'properties': {'period': {'type': 'string', 'enum': ['current', 'today', 'yesterday', 'month']}},
                 },
             },
         },
