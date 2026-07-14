@@ -1,3 +1,10 @@
+## v1.9.36-alpha - Immediate Climate Summary Values
+
+- Normalised Hubitat temperature and humidity strings before calculating dashboard and room averages.
+- Fixed the average-humidity tile initially showing an em dash until a later device event converted cached values to numbers.
+- Kept outdoor weather and appliance sensors excluded from indoor climate averages.
+- Applied the same numeric handling to room-intelligence answers so cached climate values are consistent across the UI and assistant.
+
 ## v1.9.35-alpha - Authoritative Switch-State Answers
 
 - Added deterministic cache-first answers for switches, sockets and plugs that are on or off.

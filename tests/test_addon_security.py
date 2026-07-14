@@ -1363,6 +1363,48 @@ def test_fridge_meter_is_excluded_from_temperature_and_humidity_averages():
     assert kitchen['avg_humidity'] is None
 
 
+def test_dashboard_and_rooms_include_numeric_string_climate_values_immediately():
+    main = load_addon_main()
+    main.SUMMARY_CACHE = None
+    main.all_devices = lambda: [
+        {
+            'id': 'hallway', 'label': 'Hallway Sensor', 'room': 'Hallway',
+            'category': 'climate_sensor', 'temperature': '24.5', 'humidity': '42',
+        },
+        {
+            'id': 'living', 'label': 'Living Room Sensor', 'room': 'Living Room',
+            'category': 'climate_sensor', 'temperature': 25.5, 'humidity': 48,
+        },
+        {
+            'id': 'weather', 'label': 'Weather Open-Meteo', 'room': 'Weather',
+            'category': 'climate_sensor', 'temperature': '17', 'humidity': '90',
+        },
+    ]
+
+    summary = main.compute_dashboard_summary({'synced': False, 'reason': 'startup-cache'})
+    rooms = main.api_rooms()['rooms']
+    hallway = next(room for room in rooms if room['room'] == 'Hallway')
+
+    assert summary['avg_temperature'] == 25
+    assert summary['avg_humidity'] == 45
+    assert hallway['avg_temperature'] == 24.5
+    assert hallway['avg_humidity'] == 42
+
+
+def test_room_intelligence_includes_numeric_string_climate_values():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'bathroom', 'label': 'Bathroom Meter', 'room': 'Bathroom',
+        'category': 'climate_sensor', 'temperature': '23.4', 'humidity': '61',
+    }]
+
+    answer = main.room_intelligence_answer('room summary bathroom')
+
+    assert answer is not None
+    assert 'Temperature: 23.4°C' in answer['message']
+    assert 'Humidity: 61.0%' in answer['message']
+
+
 def test_assistant_motion_rooms_lists_only_active_motion_sensors():
     main = load_addon_main()
     main.all_devices = lambda: [

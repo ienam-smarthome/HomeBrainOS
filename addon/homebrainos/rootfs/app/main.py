@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.35-alpha'
+APP_VERSION = '1.9.36-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -334,6 +334,16 @@ def safe_float(value: Any) -> float | None:
 
 def finite_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and math.isfinite(float(value))
+
+
+def numeric_device_values(devices: list[dict[str, Any]], attribute: str) -> list[float]:
+    """Return finite numeric device values, including Hubitat numeric strings."""
+    values: list[float] = []
+    for device in devices:
+        value = safe_float(device.get(attribute))
+        if value is not None:
+            values.append(value)
+    return values
 
 
 def json_safe(value: Any) -> Any:
@@ -1536,8 +1546,8 @@ def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     environment_devices = [d for d in devices if is_indoor_environment_device(d)]
     lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
     switches_on = [d for d in devices if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
-    temps = [float(d['temperature']) for d in environment_devices if finite_number(d.get('temperature'))]
-    hums = [float(d['humidity']) for d in environment_devices if finite_number(d.get('humidity'))]
+    temps = numeric_device_values(environment_devices, 'temperature')
+    hums = numeric_device_values(environment_devices, 'humidity')
     power_devices = [d for d in devices if finite_number(d.get('power'))]
     powers = [d['power'] for d in power_devices]
     power_source = select_power_source(power_devices)
@@ -4386,8 +4396,8 @@ def room_intelligence_answer(text: str) -> dict[str, Any] | None:
     occupied = [d for d in devices if is_state(d.get('motion'), 'active') or is_state(d.get('presence'), 'present')]
     lights_on = [d for d in devices if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
     power = sum(float(d.get('power') or 0) for d in devices if isinstance(d.get('power'), (int, float)))
-    temps = [d.get('temperature') for d in devices if isinstance(d.get('temperature'), (int, float))]
-    hums = [d.get('humidity') for d in devices if isinstance(d.get('humidity'), (int, float))]
+    temps = numeric_device_values(devices, 'temperature')
+    hums = numeric_device_values(devices, 'humidity')
     lines = [f"{payload['room']['room']} summary:"]
     lines.append('Occupied' if occupied else 'No current occupancy detected')
     if temps:
@@ -8649,8 +8659,8 @@ def api_rooms():
     for room in rooms.values():
         ds = [d for d in devices if canonical_room_name(d.get('room') or 'Unknown') == room['room']]
         environment_devices = [d for d in ds if is_indoor_environment_device(d)]
-        temps = [float(d['temperature']) for d in environment_devices if finite_number(d.get('temperature'))]
-        hums = [float(d['humidity']) for d in environment_devices if finite_number(d.get('humidity'))]
+        temps = numeric_device_values(environment_devices, 'temperature')
+        hums = numeric_device_values(environment_devices, 'humidity')
         room['avg_temperature'] = round(sum(temps)/len(temps),1) if temps else None
         room['avg_humidity'] = round(sum(hums)/len(hums),1) if hums else None
     def room_sort_key(room: dict[str, Any]) -> tuple[int, str]:
