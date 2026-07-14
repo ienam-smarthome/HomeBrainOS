@@ -7634,6 +7634,12 @@ def assistant(text: str) -> dict[str, Any]:
     if forced_room:
         return with_suggestions(final_text_cleanup(forced_room))
 
+    # Duration/history phrases such as "lights on time today" contain the word
+    # "on", so route them before direct value lookup can treat them as a
+    # generic switch-state question.
+    nlu_answer = natural_language_answer(text)
+    if nlu_answer:
+        return nlu_answer
 
     # Highest priority: direct room/device answers before summary/briefing shortcuts.
     room_status = room_status_answer(text)

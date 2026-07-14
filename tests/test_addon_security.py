@@ -491,6 +491,42 @@ def test_device_total_state_duration_answers_today_for_exact_tv():
         main.CONFIG['time_zone'] = original_tz
 
 
+def test_light_on_time_today_routes_before_direct_switch_lookup():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    original_time = main.time.time
+    original_tz = main.CONFIG.get('time_zone')
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            main.CONFIG['time_zone'] = 'Europe/London'
+            main.time.time = lambda: datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc).timestamp()
+            main.upsert_devices([
+                {'id': 'pc1', 'name': 'Computer', 'label': 'Computer', 'room': 'Multimedia', 'category': 'switch', 'switch': 'on', 'attributes': {'switch': 'on'}},
+                {'id': 'l1', 'name': 'Bedroom Light', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'off', 'attributes': {'switch': 'off'}},
+            ])
+            conn = main.db()
+            try:
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('pc1', 'Computer', 'switch', 'on', '{}', int(datetime(2026, 7, 6, 10, 0, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('l1', 'Bedroom Light', 'switch', 'on', '{}', int(datetime(2026, 7, 6, 16, 0, tzinfo=timezone.utc).timestamp())))
+                conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('l1', 'Bedroom Light', 'switch', 'off', '{}', int(datetime(2026, 7, 6, 17, 30, tzinfo=timezone.utc).timestamp())))
+                conn.commit()
+            finally:
+                conn.close()
+
+            answer = main.assistant('lights on time today')
+
+        assert answer['intent'] == 'state_usage_summary'
+        assert 'Light-on time today' in answer['message']
+        assert 'Bedroom Light' in answer['message']
+        assert 'Computer' not in answer['message']
+        assert answer['total_seconds'] == 5400
+    finally:
+        main.DB_PATH = original_db_path
+        main.time.time = original_time
+        main.CONFIG['time_zone'] = original_tz
+
+
 def test_device_total_state_duration_clips_session_from_before_midnight():
     main = load_addon_main()
     original_db_path = main.DB_PATH
