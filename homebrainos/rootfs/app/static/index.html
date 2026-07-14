@@ -30,6 +30,7 @@
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="home temperature"><div class="big" id="temp">—°</div><div>Avg temp</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="home humidity"><div class="big" id="hum">—%</div><div>Avg humidity</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="explain power tile"><div class="big" id="power">0W</div><div>Whole-house power</div><div class="mini"><a href="#" id="powerSource">Octopus meter</a></div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which rooms are active"><div class="big" id="activeRooms">0</div><div>Active Rooms</div><div class="mini" id="activeRoomNames">None</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which switches are on"><div class="big" id="switches">0</div><div>Switches on</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="who is home"><div class="big" id="people">0/4</div><div>People home</div><div class="mini" id="peopleNames">No one home</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which batteries are low"><div class="big" id="batt">0</div><div>Low batteries</div></div>
@@ -89,6 +90,13 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
+function orderSummaryTiles(){
+  const order = {power:1, activeRooms:2, lights:3, motion:4, people:5, temp:6, hum:7, switches:8, batt:9};
+  Object.entries(order).forEach(([id, value]) => {
+    const tile = $(id)?.closest('.summary-tile');
+    if(tile) tile.style.order = value;
+  });
+}
 let apiToken = localStorage.getItem('homebrainos_api_token') || '';
 const viewDefaults = {summary:true, shortcuts:true, rooms:true, inactiveRooms:false, emptyRooms:false, devices:true, timers:true, output:true};
 let viewState = Object.assign({}, viewDefaults, JSON.parse(localStorage.getItem('homebrainos_view_options') || '{}'));
@@ -358,10 +366,13 @@ document.querySelectorAll('.summary-tile').forEach(tile => {
   });
 });
 function applyDashboard(d){
+  orderSummaryTiles();
   if(!d) return;
   $('lights').textContent=d.lights_on; $('switches').textContent=d.switches_on; $('batt').textContent=d.low_batteries;
   $('people').textContent=(d.people_home??0)+'/'+(d.people_tracked??4); $('motion').textContent=d.motion_active;
   $('peopleNames').textContent=(d.people_home_names||[]).join(', ') || 'No one home';
+  $('activeRooms').textContent=d.active_rooms??0;
+  $('activeRoomNames').textContent=(d.active_room_names||[]).slice(0,4).join(', ') || 'None';
   $('powerSource').textContent=d.power_source_label||'Octopus meter';
   $('temp').textContent=(d.avg_temperature??'—')+'°'; $('hum').textContent=(d.avg_humidity??'—')+'%'; $('power').textContent=d.power_display||(d.power_total+'W');
   if(d.summary_cache && d.summary_cache.version!=null) lastSummaryCacheVersion=d.summary_cache.version;

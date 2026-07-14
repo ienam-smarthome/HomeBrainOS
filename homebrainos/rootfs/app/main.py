@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.31-alpha'
+APP_VERSION = '1.9.32-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1501,6 +1501,36 @@ def dashboard_summary(live: bool = False) -> dict[str, Any]:
     return rebuild_summary_cache('cache-miss')
 
 
+def light_motion_active_room_summary(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    by_room: dict[str, list[str]] = {}
+    active_devices: list[dict[str, Any]] = []
+    seen_devices: set[str] = set()
+    for device in devices:
+        label = str(device.get('label') or device.get('name') or '').strip()
+        if not label:
+            continue
+        phrases: list[str] = []
+        if device.get('category') == 'light' and is_state(device.get('switch'), 'on'):
+            phrases.append(f'{label} on')
+        if is_state(device.get('motion'), 'active'):
+            phrases.append(f'{label} active')
+        if not phrases:
+            continue
+        room = canonical_room_name(device.get('room') or 'Unknown')
+        if room in ('Unknown', 'Life360'):
+            continue
+        by_room.setdefault(room, []).extend(phrases)
+        device_id = str(device.get('id') or label)
+        if device_id not in seen_devices:
+            seen_devices.add(device_id)
+            active_devices.append(device)
+    rooms = [
+        {'room': room, 'active_devices': labels, 'active_count': len(labels)}
+        for room, labels in sorted(by_room.items())
+    ]
+    return rooms, active_devices
+
+
 def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     devices = all_devices()
     environment_devices = [d for d in devices if is_indoor_environment_device(d)]
@@ -1514,6 +1544,7 @@ def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     people = household_people(devices)
     low_batt = merged_low_battery_devices(devices)
     motion_active = [d for d in devices if is_state(d.get('motion'), 'active')]
+    active_rooms, _active_room_devices = light_motion_active_room_summary(devices)
     power_total = round(float(power_source['power']), 1) if power_source and finite_number(power_source.get('power')) else round(sum(float(p) for p in powers), 1) if powers else 0
     return {
         'devices': len(devices),
@@ -1532,6 +1563,9 @@ def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
         'low_battery_devices': summary_devices(low_batt, 'battery'),
         'motion_active': len(motion_active),
         'active_motion_devices': summary_devices(motion_active, 'motion'),
+        'active_rooms': len(active_rooms),
+        'active_room_names': [room['room'] for room in active_rooms],
+        'active_room_details': active_rooms,
         'people_home': len([p for p in people if p['status'] == 'present']),
         'people_tracked': len(people),
         'people_home_names': [p['name'] for p in people if p['status'] == 'present'],
@@ -3589,20 +3623,8 @@ def device_last_state_duration_answer(target: str, attr: str = 'switch', expecte
 
 
 def active_rooms_answer() -> dict[str, Any]:
-    devices = all_devices()
-    by_room: dict[str, list[str]] = {}
-    active_devices: list[dict[str, Any]] = []
-    for device in devices:
-        active_label = active_device_phrase(device)
-        if not active_label:
-            continue
-        room = canonical_room_name(device.get('room') or 'Unknown')
-        if room in ('Unknown', 'Life360'):
-            continue
-        by_room.setdefault(room, []).append(active_label)
-        active_devices.append(device)
-    lines = [f"{room}: {', '.join(labels)}" for room, labels in sorted(by_room.items())]
-    rooms = [{'room': room, 'active_devices': labels, 'active_count': len(labels)} for room, labels in sorted(by_room.items())]
+    rooms, active_devices = light_motion_active_room_summary(all_devices())
+    lines = [f"{room['room']}: {', '.join(room['active_devices'])}" for room in rooms]
     return {
         'success': True,
         'intent': 'active_rooms',

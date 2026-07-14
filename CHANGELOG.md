@@ -1,3 +1,9 @@
+## v1.9.32-alpha - Active Rooms Dashboard Tile
+
+- Added an Active Rooms summary tile to the dashboard, based only on lights that are on and motion sensors that are active.
+- Reordered the dashboard summary tiles to prioritise whole-house power, active rooms, lights, motion, people, climate, switches, and low batteries.
+- Kept active-room shortcut answers aligned with the dashboard rule so sockets, power draw, presence, locks, and contacts do not mark rooms active.
+
 ## v1.9.31-alpha - Light Duration Fast-Path Hotfix
 
 - Routes light-duration questions through the natural language duration engine before cache-first and preflight direct switch lookups.

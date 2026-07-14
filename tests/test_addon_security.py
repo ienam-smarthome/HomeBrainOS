@@ -1689,12 +1689,23 @@ def test_room_summary_sorts_active_rooms_alphabetically_and_ignores_socket_activ
         {'id': 'z1', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'active'},
         {'id': 'a1', 'label': 'Bathroom Light', 'room': 'Bathroom', 'category': 'light', 'switch': 'on'},
         {'id': 's1', 'label': 'Dehumidifier Socket', 'room': 'Dehumidifier', 'category': 'power_device', 'switch': 'on', 'power': 22},
+        {'id': 'p1', 'label': 'Family Presence', 'room': 'Climate', 'category': 'presence_sensor', 'presence': 'present'},
         {'id': 'k1', 'label': 'Kitchen Plug', 'room': 'Kitchen', 'category': 'switch', 'switch': 'off'},
     ]
 
     room_names = [room['room'] for room in main.api_rooms()['rooms']]
+    summary = main.compute_dashboard_summary({'synced': False})
+    active_answer = main.active_rooms_answer()
 
-    assert room_names == ['Bathroom', 'Hallway', 'Dehumidifier', 'Kitchen']
+    assert room_names == ['Bathroom', 'Hallway', 'Climate', 'Dehumidifier', 'Kitchen']
+    assert summary['active_rooms'] == 2
+    assert summary['active_room_names'] == ['Bathroom', 'Hallway']
+    assert active_answer['rooms'] == [
+        {'room': 'Bathroom', 'active_devices': ['Bathroom Light on'], 'active_count': 1},
+        {'room': 'Hallway', 'active_devices': ['Hallway Motion active'], 'active_count': 1},
+    ]
+    assert 'Dehumidifier' not in active_answer['message']
+    assert 'Climate' not in active_answer['message']
 
 
 def test_normalise_device_prefers_hubitat_room_assignment_over_label_inference():

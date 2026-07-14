@@ -30,6 +30,7 @@
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="home temperature"><div class="big" id="temp">—°</div><div>Avg temp</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="home humidity"><div class="big" id="hum">—%</div><div>Avg humidity</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="explain power tile"><div class="big" id="power">0W</div><div>Whole-house power</div><div class="mini"><a href="#" id="powerSource">Octopus meter</a></div></div>
+    <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which rooms are active"><div class="big" id="activeRooms">0</div><div>Active Rooms</div><div class="mini" id="activeRoomNames">None</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which switches are on"><div class="big" id="switches">0</div><div>Switches on</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="who is home"><div class="big" id="people">0/4</div><div>People home</div><div class="mini" id="peopleNames">No one home</div></div>
     <div class="metric summary-tile" role="button" tabindex="0" data-summary-query="which batteries are low"><div class="big" id="batt">0</div><div>Low batteries</div></div>
@@ -39,6 +40,7 @@
     <input id="q" placeholder="Ask HomeBrain...">
     <button onclick="ask()">Ask</button>
     <button onclick="voice()">🎤 Speak</button>
+    <pre id="out" aria-live="polite">Ready</pre>
   </div>
   <div class="card grid shortcut-grid" id="shortcutsCard">
     <div class="shortcut-note">Smart shortcuts for everyday use</div>
@@ -56,14 +58,14 @@
     <button class="secondary" onclick="quick('which rooms are cold', this)">❄️ Cold rooms</button>
     <button class="secondary" onclick="quick('what is the weather', this)">🌦️ Weather</button>
     <details class="tools" style="grid-column:1/-1">
-      <summary>Developer tools</summary>
+      <summary>Health, Diagnostics & Maintenance</summary>
       <div class="grid tools-grid">
-        <button class="secondary" onclick="quick('hub health', this)">Hub health</button>
-        <button class="secondary" onclick="quick('event diagnostics', this)">Event diagnostics</button>
-        <button class="secondary" onclick="quick('diagnostics', this)">App diagnostics</button>
-        <button class="secondary" onclick="quick('hub logs', this)">Hub logs</button>
-        <button class="secondary" title="Update devices from Hubitat without deleting the local cache" onclick="quick('refresh cache', this)">Refresh from Hubitat</button>
-        <button class="secondary" title="Delete the local device cache, then rebuild it from Hubitat" onclick="clearRefresh(event)">Clear cache + reload</button>
+        <button class="secondary" onclick="quick('hub health', this)">Hub status</button>
+        <button class="secondary" onclick="quick('event diagnostics', this)">Device events</button>
+        <button class="secondary" onclick="quick('device health', this)">Device health</button>
+        <button class="secondary" onclick="quick('hub logs', this)">Logs</button>
+        <button class="secondary" title="Update devices from Hubitat without deleting the local cache" onclick="quick('refresh cache', this)">Refresh devices</button>
+        <button class="secondary" title="Delete the local device cache, then rebuild it from Hubitat" onclick="clearRefresh(event)">Rebuild cache</button>
         <button class="secondary" onclick="showAiContext(event)">AI context</button>
       </div>
     </details>
@@ -71,7 +73,6 @@
   <div class="card" id="timersCard"><h2>Scheduled</h2><div class="timers" id="timers">No scheduled actions</div></div>
   <div class="card" id="roomsCard"><h2>Rooms</h2><div class="rooms" id="rooms">Loading rooms...</div></div>
   <details class="card collapsible"><summary>Controllable Devices</summary><div class="devices" id="devices">Loading devices...</div></details>
-  <pre id="out">Ready</pre>
 </div>
 <button class="mic-fab" id="micFab" title="Speak to HomeBrain" aria-label="Speak to HomeBrain">🎤</button>
 <div class="voice-overlay" id="voiceOverlay">
@@ -89,6 +90,13 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
+function orderSummaryTiles(){
+  const order = {power:1, activeRooms:2, lights:3, motion:4, people:5, temp:6, hum:7, switches:8, batt:9};
+  Object.entries(order).forEach(([id, value]) => {
+    const tile = $(id)?.closest('.summary-tile');
+    if(tile) tile.style.order = value;
+  });
+}
 let apiToken = localStorage.getItem('homebrainos_api_token') || '';
 const viewDefaults = {summary:true, shortcuts:true, rooms:true, inactiveRooms:false, emptyRooms:false, devices:true, timers:true, output:true};
 let viewState = Object.assign({}, viewDefaults, JSON.parse(localStorage.getItem('homebrainos_view_options') || '{}'));
@@ -100,16 +108,32 @@ let stationRecognizer = null;
 let stationRestart = null;
 let stationArmedUntil = 0;
 let stationArmedTick = null;
+let stationPendingWake = '';
+let stationLastCommand = '';
+let stationLastCommandAt = 0;
+let stationRunningCommand = false;
 let stateEvents = null;
 let eventRefreshTimer = null;
 let lastSummaryCacheVersion = null;
 let liveConnected = false;
 let liveFallbackTimer = null;
+let statusRunning = false;
 async function api(path, options={}){
   const headers = Object.assign({}, options.headers || {});
   if(apiToken) headers['X-HomeBrain-Token'] = apiToken;
   if(options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, options, {headers}));
+  const timeoutMs = options.timeoutMs == null ? 10000 : options.timeoutMs;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(()=>controller.abort(), timeoutMs);
+  let response;
+  try{
+    response = await fetch(path, Object.assign({}, options, {headers, signal:controller.signal}));
+  }catch(err){
+    if(err.name === 'AbortError') throw new Error(`Request timed out after ${Math.round(timeoutMs/1000)} seconds`);
+    throw err;
+  }finally{
+    clearTimeout(timeoutId);
+  }
   if(response.status === 401){
     const token = prompt('HomeBrain API token');
     if(token){
@@ -121,8 +145,8 @@ async function api(path, options={}){
   if(!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json();
 }
-async function postApi(path, body){
-  return api(path, {method:'POST', body: body === undefined ? undefined : JSON.stringify(body)});
+async function postApi(path, body, timeoutMs=10000){
+  return api(path, {method:'POST', body: body === undefined ? undefined : JSON.stringify(body), timeoutMs});
 }
 function escapeHtml(value){
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -144,7 +168,7 @@ function setOutput(text, active=true){
   $('out').classList.toggle('output-active', active);
 }
 function roomIsActive(room){
-  return (room.lights_on||0)+(room.switches_on||0)+(room.motion_active||0)>0;
+  return (room.lights_on||0)+(room.motion_active||0)>0;
 }
 function roomHasSignals(room){
   return (room.lights_total||0)>0 || (room.switches_total||0)>0 || (room.motion_total||0)>0 || (room.power_devices||0)>0 || room.avg_temperature!=null || room.avg_humidity!=null;
@@ -342,10 +366,13 @@ document.querySelectorAll('.summary-tile').forEach(tile => {
   });
 });
 function applyDashboard(d){
+  orderSummaryTiles();
   if(!d) return;
   $('lights').textContent=d.lights_on; $('switches').textContent=d.switches_on; $('batt').textContent=d.low_batteries;
   $('people').textContent=(d.people_home??0)+'/'+(d.people_tracked??4); $('motion').textContent=d.motion_active;
   $('peopleNames').textContent=(d.people_home_names||[]).join(', ') || 'No one home';
+  $('activeRooms').textContent=d.active_rooms??0;
+  $('activeRoomNames').textContent=(d.active_room_names||[]).slice(0,4).join(', ') || 'None';
   $('powerSource').textContent=d.power_source_label||'Octopus meter';
   $('temp').textContent=(d.avg_temperature??'—')+'°'; $('hum').textContent=(d.avg_humidity??'—')+'%'; $('power').textContent=d.power_display||(d.power_total+'W');
   if(d.summary_cache && d.summary_cache.version!=null) lastSummaryCacheVersion=d.summary_cache.version;
@@ -365,22 +392,35 @@ function scheduleFallbackPoll(){
   },30000);
 }
 async function status(){
+  if(statusRunning) return;
+  statusRunning=true;
   const badge=$('status');
-  try{
-    const s=await api('/api/status');
+  const [statusResult,dashboardResult]=await Promise.allSettled([
+    api('/api/status'),
+    api('/api/dashboard'),
+  ]);
+  if(statusResult.status==='fulfilled'){
+    const s=statusResult.value;
     if(s.version) $('appVersion').textContent='v'+String(s.version); else { const embedded=document.documentElement.dataset.appVersion; if(embedded && embedded!=='APP_VERSION') $('appVersion').textContent='v'+embedded; }
     const hub=s.hub_health&&s.hub_health.available?' · '+s.hub_health.label:'';
     badge.textContent=s.error?'Hubitat error: '+s.error:'Online · '+s.devices+' devices'+hub;
     badge.className=s.error?'pill error':(s.hub_health&&s.hub_health.level==='warning'?'pill warning':(s.hub_health&&s.hub_health.level==='error'?'pill error':'pill'));
-    const d=await api('/api/dashboard');
-    applyDashboard(d);
-    loadRooms();
-    loadDevices();
-    loadTimers();
-  }catch(err){
-    badge.textContent='API offline: '+err.message;
+  }else{
+    badge.textContent='API offline: '+statusResult.reason.message;
     badge.className='pill error';
   }
+  if(dashboardResult.status==='fulfilled'){
+    applyDashboard(dashboardResult.value);
+  }else{
+    if(!badge.textContent.includes('Dashboard unavailable')) badge.textContent+=' - Dashboard unavailable';
+    if(!badge.className.includes('error')) badge.className='pill warning';
+  }
+  const secondary=[];
+  if(viewState.rooms) secondary.push(loadRooms());
+  if(viewState.devices) secondary.push(loadDevices());
+  if(viewState.timers) secondary.push(loadTimers());
+  await Promise.allSettled(secondary);
+  statusRunning=false;
 }
 function handleStateEvent(event){
   try{
@@ -495,16 +535,32 @@ async function loadRooms(){
 }
 async function ask(){
   const text=$('q').value.trim(); if(!text) return;
-  setOutput('Running: '+text+'...');
+  const started=performance.now();
+  setOutput('Thinking: '+text+' (0s)');
+  const progress=setInterval(()=>{
+    const seconds=Math.max(1,Math.round((performance.now()-started)/1000));
+    setOutput('Thinking: '+text+` (${seconds}s)`);
+  },1000);
   try{
-    const j=await postApi('/api/assistant', {q:text});
-    setOutput(j.message||JSON.stringify(j,null,2));
+    const j=await postApi('/api/assistant', {q:text}, 90000);
+    const elapsed=((performance.now()-started)/1000).toFixed(1);
+    const details=[];
+    if(j.source) details.push(j.source);
+    if(j.model) details.push(j.model);
+    details.push(elapsed+'s');
+    setOutput((j.message||JSON.stringify(j,null,2))+'\n\n— '+details.join(' · '));
+    if(j.dashboard) applyDashboard(j.dashboard);
     speak(j.speech||j.message||'Done');
-    loadTimers();
-    status();
+    const refreshIntents = ['voice_device_command','command','device_command','setpoint','timer_create','timer_cancel'];
+    const changed = j.changed === true || j.setpoint!=null || refreshIntents.includes(j.intent);
+    if(changed){
+      if(viewState.timers) loadTimers();
+      status();
+    }
   }catch(err){
     setOutput('Request failed: '+err.message);
   }finally{
+    clearInterval(progress);
     finishActiveControl();
   }
 }
@@ -533,7 +589,28 @@ function setStationStatus(text, active=false){
   $('stationStart').textContent=active?'Voice station running':'Start voice station';
 }
 function normaliseSpeech(text){
-  return String(text||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+  return String(text||'')
+    .toLowerCase()
+    .replace(/home\s+brain/g,'homebrain')
+    .replace(/hope\s+brain/g,'homebrain')
+    .replace(/own\s+brain/g,'homebrain')
+    .replace(/[^\w\s]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function cleanStationCommand(text){
+  return normaliseSpeech(text)
+    .replace(/^(please|can you|could you|would you)\s+/,'')
+    .replace(/^(homebrain|hey homebrain|hi homebrain|hello homebrain|okay homebrain|ok homebrain)\s+/,'')
+    .trim();
+}
+function stationDuplicateCommand(command){
+  const now=Date.now();
+  const clean=cleanStationCommand(command);
+  if(clean && clean===stationLastCommand && now-stationLastCommandAt<4500) return true;
+  stationLastCommand=clean;
+  stationLastCommandAt=now;
+  return false;
 }
 function stationIsArmed(){
   return Date.now()<stationArmedUntil;
@@ -550,6 +627,7 @@ function refreshStationStatus(){
 }
 function clearStationArmed(){
   stationArmedUntil=0;
+  stationPendingWake='';
   clearInterval(stationArmedTick);
   stationArmedTick=null;
 }
@@ -567,26 +645,38 @@ function armVoiceStation(ms=15000){
   refreshStationStatus();
 }
 function wakePhraseCommand(transcript){
-  const spoken=normaliseSpeech(transcript).replace(/\bhome brain\b/g,'homebrain');
-  const phrases=['hey homebrain','hi homebrain','hello homebrain','okay homebrain','ok homebrain','homebrain'];
+  const spoken=normaliseSpeech(transcript);
+  const phrases=['hey homebrain','hi homebrain','hello homebrain','okay homebrain','ok homebrain','homebrain','hey home brain','hi home brain','okay home brain','ok home brain'];
   for(const phrase of phrases){
-    const idx=spoken.indexOf(phrase);
+    const p=normaliseSpeech(phrase);
+    const idx=spoken.indexOf(p);
     if(idx>=0){
-      return {heard:true, command:spoken.slice(idx+phrase.length).replace(/^[,.\s]+/,'').trim()};
+      return {heard:true, before:spoken.slice(0,idx).trim(), command:cleanStationCommand(spoken.slice(idx+p.length))};
     }
   }
-  return {heard:false, command:''};
+  return {heard:false, before:'', command:''};
 }
 function stationCommandFromTranscript(transcript){
-  const wake=wakePhraseCommand(transcript);
+  const spoken=normaliseSpeech(transcript);
+  if(!spoken) return '';
+  const wake=wakePhraseCommand(spoken);
   if(wake.heard){
-    if(wake.command) return wake.command;
-    armVoiceStation(15000);
+    if(wake.command){
+      clearStationArmed();
+      return wake.command;
+    }
+    stationPendingWake=spoken;
+    armVoiceStation(18000);
     return null;
   }
   if(stationIsArmed()){
+    const command=cleanStationCommand(spoken);
+    if(command.length<2){
+      armVoiceStation(12000);
+      return null;
+    }
     clearStationArmed();
-    return normaliseSpeech(transcript);
+    return command;
   }
   return '';
 }
@@ -606,43 +696,68 @@ function stopVoiceStation(){
 function startVoiceStation(){
   stopSpeaking();
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){alert('Voice station needs Chrome or Edge speech recognition');return;}
+  if(!SR){alert('Voice station needs Chrome or Edge speech recognition. Use Chrome or Edge over HTTPS, or Home Assistant local access.');return;}
   stationEnabled=true;
   clearStationArmed();
-  setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain", then your command. You can pause briefly after the wake phrase.');
+  clearTimeout(stationRestart);
+  setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain" and the full command, or pause briefly after the wake phrase.');
   const startLoop=()=>{
-    if(!stationEnabled) return;
+    if(!stationEnabled || stationRunningCommand) return;
+    clearTimeout(stationRestart);
     const r=new SR();
     stationRecognizer=r;
     r.lang='en-GB';
     r.continuous=true;
-    r.interimResults=false;
-    r.maxAlternatives=1;
+    r.interimResults=true;
+    r.maxAlternatives=3;
     r.onstart=()=>{setListening(true);refreshStationStatus();};
     r.onerror=e=>{
-      if(['no-speech','aborted'].includes(e.error||'')){refreshStationStatus();return;}
-      setStationStatus('Voice station microphone error: '+(e.error||'unknown'));
+      const err=e.error||'unknown';
+      if(['no-speech','aborted'].includes(err)){refreshStationStatus();return;}
+      if(err==='not-allowed' || err==='service-not-allowed') setStationStatus('Microphone blocked. Allow microphone access, then start voice station again.');
+      else if(err==='network') setStationStatus('Voice recognition network error. Browser speech recognition may need internet access.');
+      else setStationStatus('Voice station microphone error: '+err);
     };
-    r.onend=()=>{setListening(stationIsArmed());refreshStationStatus();if(stationEnabled) stationRestart=setTimeout(startLoop,450);};
+    r.onend=()=>{
+      setListening(false);
+      if(!stationRunningCommand) refreshStationStatus();
+      if(stationEnabled && !stationRunningCommand) stationRestart=setTimeout(startLoop,900);
+    };
     r.onresult=e=>{
+      let heardFinal=false;
       for(let i=e.resultIndex;i<e.results.length;i++){
-        const transcript=e.results[i][0].transcript||'';
+        const result=e.results[i];
+        const transcript=result[0].transcript||'';
         const command=stationCommandFromTranscript(transcript);
         if(command===null) continue;
         if(!command){
-          if(stationIsArmed()){
-            setStationStatus('Wake phrase heard. Say the command now ...', true);
-            continue;
-          }
-          setStationStatus('Heard "'+transcript+'". Waiting for Hey HomeBrain ...', true);
+          if(stationIsArmed()) setStationStatus('Wake phrase heard. Say the full command now ...', true);
+          else setStationStatus('Heard "'+transcript+'". Waiting for Hey HomeBrain ...', true);
           continue;
         }
+        if(!result.isFinal && command.split(' ').length<3){
+          setStationStatus('Heard command start: '+command+' ...', true);
+          continue;
+        }
+        if(stationDuplicateCommand(command)) continue;
+        heardFinal=true;
+        stationRunningCommand=true;
+        clearStationArmed();
         $('q').value=command;
         setStationStatus('Running: '+command, true);
-        ask();
+        try{r.stop();}catch(err){}
+        Promise.resolve(ask()).finally(()=>{
+          stationRunningCommand=false;
+          if(stationEnabled) stationRestart=setTimeout(startLoop,1200);
+        });
+        break;
       }
+      if(!heardFinal) refreshStationStatus();
     };
-    try{r.start();}catch(e){setStationStatus('Voice station could not start: '+e.message);}
+    try{r.start();}catch(e){
+      setStationStatus('Voice station could not start: '+e.message);
+      if(stationEnabled) stationRestart=setTimeout(startLoop,1200);
+    }
   };
   startLoop();
 }
@@ -678,7 +793,7 @@ if(urlParams.get('station')==='1'){
 if(urlParams.get('voice')==='1'){
   setVoiceOverlay(true,'Tap the microphone to start. Browsers require one tap before using the mic.');
 }
-applyViewState(); status(); loadTimers(); connectStateEvents(); setInterval(status,30000);
+applyViewState(); status(); connectStateEvents(); setInterval(()=>{if(!liveConnected) status();},30000);
 </script>
 </body>
 </html>
