@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.32-alpha'
+APP_VERSION = '1.9.33-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2127,6 +2127,92 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
     }
 
 
+def cached_room_inventory_answer(text: str) -> dict[str, Any] | None:
+    t = normalise(text)
+    if t not in {'rooms', 'show rooms', 'list rooms', 'room list', 'show room list', 'cached rooms'}:
+        return None
+    rooms = api_rooms().get('rooms', [])
+    if not rooms:
+        return {
+            'success': True,
+            'intent': 'room_inventory',
+            'source': 'event_cache',
+            'message': 'Rooms:\nNone cached yet.',
+            'rooms': [],
+        }
+    lines = ['Rooms:']
+    for room in rooms[:24]:
+        active = int(room.get('lights_on') or 0) + int(room.get('motion_active') or 0)
+        state = 'active' if active else 'idle'
+        bits = [f"{room.get('devices', 0)} devices", state]
+        if room.get('lights_total'):
+            bits.append(f"{room.get('lights_on', 0)}/{room.get('lights_total', 0)} lights on")
+        if room.get('motion_total'):
+            bits.append(f"{room.get('motion_active', 0)}/{room.get('motion_total', 0)} motion active")
+        if room.get('avg_temperature') is not None:
+            bits.append(f"{room['avg_temperature']}C")
+        lines.append(f"- {room['room']}: " + ', '.join(bits))
+    if len(rooms) > 24:
+        lines.append(f"- {len(rooms) - 24} more rooms not shown.")
+    return {
+        'success': True,
+        'intent': 'room_inventory',
+        'source': 'event_cache',
+        'message': '\n'.join(lines),
+        'rooms': rooms,
+    }
+
+
+def cached_power_device_answer(text: str) -> dict[str, Any] | None:
+    t = normalise(text)
+    wants_ranking = (
+        ('power' in t and any(word in t for word in ('highest', 'top', 'most', 'biggest')))
+        or 'power consumption' in t
+        or 'using most electricity' in t
+        or 'using most power' in t
+    )
+    wants_inventory = (
+        t in {'power devices', 'powered devices', 'power device list', 'energy devices'}
+        or bool(re.search(r'^(?:find|show|list)\s+(?:all\s+)?(?:power|powered|energy)\s+devices?$', t))
+    )
+    if not wants_ranking and not wants_inventory:
+        return None
+    devices = []
+    for device in all_devices():
+        value = device.get('power')
+        if value is None:
+            value = device_attr_value(device, 'power')
+        power = safe_float(value)
+        if power is None:
+            continue
+        devices.append((power, device))
+    devices.sort(key=lambda item: (-item[0], canonical_room_name(item[1].get('room') or 'Unknown').lower(), str(item[1].get('label') or item[1].get('name') or '').lower()))
+    if wants_ranking:
+        shown = [(power, device) for power, device in devices if power > 0][:10] or devices[:10]
+        title = 'Highest live power devices:'
+        intent = 'top_power_devices'
+    else:
+        shown = devices[:25]
+        title = f'Power devices: {len(devices)} cached'
+        intent = 'power_device_inventory'
+    lines = [title]
+    for power, device in shown:
+        label = device.get('label') or device.get('name') or str(device.get('id'))
+        room = canonical_room_name(device.get('room') or 'Unknown')
+        switch = device.get('switch') or device_attr_value(device, 'switch')
+        suffix = f", switch={switch}" if switch is not None else ''
+        lines.append(f"- {label} ({room}): {format_power_value(power)}{suffix}")
+    if not shown:
+        lines.append('None cached yet.')
+    return {
+        'success': True,
+        'intent': intent,
+        'source': 'event_cache',
+        'message': '\n'.join(lines),
+        'devices': [device for _power, device in shown],
+    }
+
+
 def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     t = normalise(text)
     if not t:
@@ -2142,6 +2228,14 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return cached_home_summary_answer()
     if t in ('devices', 'all devices', 'device list', 'list devices'):
         return find_device_answer('find all devices')
+    room_inventory = cached_room_inventory_answer(t)
+    if room_inventory:
+        return room_inventory
+    power_devices = cached_power_device_answer(t)
+    if power_devices:
+        return power_devices
+    if t.startswith(('find ', 'search ', 'show ', 'list ', 'debug ')):
+        return find_device_answer(t)
     if t in ('what needs attention', 'what needs my attention', 'anything unusual', 'attention'):
         return cached_attention_answer()
     if t in ('hub health', 'hub info', 'hubitat health'):
@@ -7282,13 +7376,21 @@ def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     if nlu_answer:
         return nlu_answer
 
-    room_status = room_status_answer(question)
-    if room_status:
-        return room_status
+    room_inventory = cached_room_inventory_answer(question)
+    if room_inventory:
+        return room_inventory
+
+    power_devices = cached_power_device_answer(question)
+    if power_devices:
+        return power_devices
 
     finder = find_device_answer(question)
     if finder:
         return finder
+
+    room_status = room_status_answer(question)
+    if room_status:
+        return room_status
 
     direct_value = direct_value_lookup_answer(question)
     if direct_value:
@@ -7662,6 +7764,18 @@ def assistant(text: str) -> dict[str, Any]:
     forced_room = forced_room_status_answer(text)
     if forced_room:
         return with_suggestions(final_text_cleanup(forced_room))
+
+    room_inventory = cached_room_inventory_answer(text)
+    if room_inventory:
+        return with_suggestions(room_inventory)
+
+    power_devices = cached_power_device_answer(text)
+    if power_devices:
+        return with_suggestions(power_devices)
+
+    finder = find_device_answer(text)
+    if finder:
+        return with_suggestions(finder)
 
     # Duration/history phrases such as "lights on time today" contain the word
     # "on", so route them before direct value lookup can treat them as a

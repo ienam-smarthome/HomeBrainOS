@@ -1,3 +1,9 @@
+## v1.9.33-alpha - Assistant Inventory Routing Fix
+
+- Added deterministic cache-first answers for `show rooms`, room inventories, `power devices`, and highest-power device rankings.
+- Prevented broad inventory and ranking questions from being stolen by generic switch/power value lookup.
+- Made `find ...` requests return cached matching devices before room-status or direct-value shortcuts.
+
 ## v1.9.32-alpha - Active Rooms Dashboard Tile
 
 - Added an Active Rooms summary tile to the dashboard, based only on lights that are on and motion sensors that are active.

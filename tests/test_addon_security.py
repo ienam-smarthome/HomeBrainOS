@@ -2308,6 +2308,36 @@ def test_bare_devices_query_uses_cached_inventory_not_ollama():
     assert 'Hallway Light' in answer['message']
 
 
+def test_inventory_queries_do_not_fall_into_direct_value_lookup():
+    main = load_addon_main()
+    main.SUMMARY_CACHE = None
+    main.all_devices = lambda: [
+        {'id': 'tv', 'label': 'TV', 'room': 'Multimedia', 'category': 'device', 'switch': 'off', 'power': 0},
+        {'id': 'fan', 'label': 'Air Purifier', 'room': 'Ventilation', 'category': 'switch', 'switch': 'off'},
+        {'id': 'halo', 'label': 'Halo3000x socket power', 'room': 'Sockets', 'category': 'power_device', 'switch': 'on', 'power': 7.2},
+        {'id': 'plug', 'label': 'Desk Plug', 'room': 'Office', 'category': 'power_device', 'switch': 'off', 'power': 0.4},
+        {'id': 'motion', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'inactive'},
+    ]
+
+    rooms = main.cache_first_assistant_answer('show rooms')
+    power_devices = main.cache_first_assistant_answer('power devices')
+    top_power = main.cache_first_assistant_answer('device with highest power consumption')
+    ventilation = main.cache_first_assistant_answer('find ventilation')
+
+    assert rooms['intent'] == 'room_inventory'
+    assert 'Rooms:' in rooms['message']
+    assert 'Living Room status' not in rooms['message']
+    assert power_devices['intent'] == 'power_device_inventory'
+    assert 'Halo3000x socket power' in power_devices['message']
+    assert 'Power is shown as whole-house power' not in power_devices['message']
+    assert top_power['intent'] == 'top_power_devices'
+    assert top_power['message'].splitlines()[1].startswith('- Halo3000x socket power')
+    assert 'Device: Halo3000x socket power' not in top_power['message']
+    assert ventilation['intent'] == 'find_device'
+    assert 'Air Purifier' in ventilation['message']
+    assert 'Switch: off' not in ventilation['message']
+
+
 def test_ai_context_is_cache_only_by_default():
     main = load_addon_main()
     main.all_devices = lambda: []
