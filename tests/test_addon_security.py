@@ -2308,6 +2308,60 @@ def test_bare_devices_query_uses_cached_inventory_not_ollama():
     assert 'Hallway Light' in answer['message']
 
 
+def test_switches_off_uses_real_cached_state_and_never_ollama():
+    main = load_addon_main()
+    devices = [
+        {
+            'id': 'nest', 'label': 'Google Nest Hub', 'room': 'Unknown',
+            'category': 'device', 'switch': None,
+            'attributes': {'networkStatus': 'online', 'ipAddress': '192.168.1.133'},
+        },
+        {
+            'id': 'halo', 'label': 'Halo3000x socket', 'room': 'Sockets',
+            'category': 'device', 'switch': 'on', 'attributes': {'switch': 'on'},
+        },
+        {
+            'id': 'dehum', 'label': 'Dehumidifier 1', 'room': 'Dehumidifier',
+            'category': 'device', 'switch': 'off', 'attributes': {'switch': 'off'},
+        },
+        {
+            'id': 'light', 'label': 'Bathroom Light 1', 'room': 'Bathroom',
+            'category': 'light', 'switch': 'off', 'attributes': {'switch': 'off'},
+        },
+    ]
+    main.all_devices = lambda: devices
+    main.dashboard_summary = lambda live=False: {'switches_on': 1, 'switches_on_devices': [devices[1]]}
+    main.ollama_answer = lambda *_args: (_ for _ in ()).throw(AssertionError('Ollama should not be called'))
+
+    answer = main.cache_first_assistant_answer('which switches are off')
+
+    assert answer['intent'] == 'cached_switches_off'
+    assert answer['source'] == 'event_cache'
+    assert answer['count'] == 1
+    assert [device['label'] for device in answer['devices']] == ['Dehumidifier 1']
+    assert 'Google Nest Hub' not in answer['message']
+    assert 'Halo3000x socket' not in answer['message']
+    assert 'Bathroom Light 1' not in answer['message']
+
+
+def test_switch_state_questions_support_on_off_and_polite_phrasing():
+    main = load_addon_main()
+    devices = [
+        {'id': 'on', 'label': 'TV', 'room': 'Multimedia', 'category': 'power_device', 'switch': 'on', 'attributes': {'switch': 'on'}},
+        {'id': 'off', 'label': 'Iron', 'room': 'Appliances', 'category': 'device', 'switch': 'off', 'attributes': {'switch': 'off'}},
+    ]
+    main.all_devices = lambda: devices
+    main.dashboard_summary = lambda live=False: {'switches_on': 1, 'switches_on_devices': [devices[0]]}
+
+    on_answer = main.cache_first_assistant_answer('what switches are on')
+    off_answer = main.cache_first_assistant_answer('could you show me which switches are currently off please')
+    singular = main.cache_first_assistant_answer('what switch is off')
+
+    assert [device['label'] for device in on_answer['devices']] == ['TV']
+    assert [device['label'] for device in off_answer['devices']] == ['Iron']
+    assert [device['label'] for device in singular['devices']] == ['Iron']
+
+
 def test_inventory_queries_do_not_fall_into_direct_value_lookup():
     main = load_addon_main()
     main.SUMMARY_CACHE = None

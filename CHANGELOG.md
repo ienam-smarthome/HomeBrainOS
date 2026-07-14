@@ -1,3 +1,10 @@
+## v1.9.35-alpha - Authoritative Switch-State Answers
+
+- Added deterministic cache-first answers for switches, sockets and plugs that are on or off.
+- Excluded devices without a real switch state, preventing network-only devices such as Google Nest Hub from being described as off.
+- Moved switch-state questions ahead of generic NLU/Ollama and stopped treating the noun `switch` in a question as a control command.
+- Included cached room names and result counts so switch-state answers are easy to verify against device search results.
+
 ## v1.9.34-alpha - Broader Assistant Intent Understanding
 
 - Normalised polite and natural phrasing before deterministic routing so similar user questions map to the same intent.

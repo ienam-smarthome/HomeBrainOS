@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.34-alpha'
+APP_VERSION = '1.9.35-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2014,11 +2014,53 @@ def cached_lights_answer() -> dict[str, Any]:
     return {'success': True, 'intent': 'cached_lights_on', 'source': 'event_cache', 'message': 'Lights on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(light_devices), 'devices': light_devices, 'dashboard': summary}
 
 
-def cached_switches_answer() -> dict[str, Any]:
+def cached_switches_answer(state: str = 'on') -> dict[str, Any]:
+    """List real non-light switch devices in one cached state.
+
+    A device must expose an actual switch value. This prevents Ollama or label
+    matching from treating network-only devices such as Google Nest Hub as off.
+    """
+    wanted = 'off' if normalise(state) == 'off' else 'on'
     summary = dashboard_summary(live=False)
-    switch_devices = [dict(d) for d in summary.get('switches_on_devices') or []]
-    labels = [d.get('label') or d.get('name') or str(d.get('id')) for d in switch_devices]
-    return {'success': True, 'intent': 'cached_switches_on', 'source': 'event_cache', 'message': 'Switches on:\n' + ('\n'.join(labels) if labels else 'None'), 'speech': spoken_device_locations(switch_devices), 'devices': switch_devices, 'dashboard': summary}
+    switch_devices = [
+        dict(device)
+        for device in all_devices()
+        if device.get('category') != 'light'
+        and device.get('switch') is not None
+        and is_state(device.get('switch'), wanted)
+    ]
+    switch_devices.sort(key=lambda device: (
+        canonical_room_name(device.get('room') or 'Unknown').lower(),
+        str(device.get('label') or device.get('name') or device.get('id')).lower(),
+    ))
+    lines = []
+    for device in switch_devices:
+        label = device.get('label') or device.get('name') or str(device.get('id'))
+        room = canonical_room_name(device.get('room') or 'Unknown')
+        lines.append(f'- {label} ({room})')
+    title = f"Switches {wanted}: {len(switch_devices)}"
+    return {
+        'success': True,
+        'intent': f'cached_switches_{wanted}',
+        'source': 'event_cache',
+        'message': title + '\n' + ('\n'.join(lines) if lines else 'None'),
+        'speech': spoken_device_locations(switch_devices),
+        'state': wanted,
+        'count': len(switch_devices),
+        'devices': switch_devices,
+        'dashboard': summary,
+    }
+
+
+def cached_switch_state_question(text: str) -> dict[str, Any] | None:
+    t = assistant_query_text(text)
+    match = re.search(
+        r'\b(?:which|what|show|list)?\s*(?:switch|switches|sockets|plugs)\s+(?:are|is)?\s*(on|off)\b',
+        t,
+    )
+    if not match:
+        match = re.search(r'\b(?:which|what)\s+(?:switch|switches|sockets|plugs)\s+(?:are|is)\s+(on|off)\b', t)
+    return cached_switches_answer(match.group(1)) if match else None
 
 
 def cached_motion_rooms_answer() -> dict[str, Any]:
@@ -2245,8 +2287,11 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return cached_home_summary_answer()
     if is_ai_status_question(t):
         return cached_ai_status_answer()
-    if re.search(r'\b(turn|switch|set|change|adjust|dim|brighten|increase|decrease|raise|lower|refresh|reload|clear|cancel|schedule)\b', t):
+    if looks_like_control_request(t) or t in ('refresh', 'refresh cache', 'reload cache', 'update cache', 'clear cache'):
         return None
+    switch_state = cached_switch_state_question(t)
+    if switch_state:
+        return switch_state
     nlu_answer = natural_language_answer(text)
     if nlu_answer:
         return nlu_answer
@@ -2294,7 +2339,7 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     if re.search(r'\b(which|what|show|list)\s+lights?\s+(are|is)?\s*on\b', t):
         return cached_lights_answer()
     if re.search(r'\b(which|what|show|list)\s+switch(?:es)?\s+(are|is)?\s*on\b', t):
-        return cached_switches_answer()
+        return cached_switches_answer('on')
     if 'weather' in t or 'forecast' in t or 'rain' in t:
         return cached_weather_answer(t)
     return None
