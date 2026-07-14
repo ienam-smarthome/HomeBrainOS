@@ -1,3 +1,9 @@
+## v1.9.34-alpha - Broader Assistant Intent Understanding
+
+- Normalised polite and natural phrasing before deterministic routing so similar user questions map to the same intent.
+- Expanded room, power-device, top-consumer, and device-finder recognition for phrases such as `what rooms are there`, `what is using the most power`, and `where is ventilation`.
+- Improved finder precedence so search/location questions use cached inventory instead of being misread as room status or a single attribute lookup.
+
 ## v1.9.33-alpha - Assistant Inventory Routing Fix
 
 - Added deterministic cache-first answers for `show rooms`, room inventories, `power devices`, and highest-power device rankings.

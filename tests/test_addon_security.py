@@ -2338,6 +2338,42 @@ def test_inventory_queries_do_not_fall_into_direct_value_lookup():
     assert 'Switch: off' not in ventilation['message']
 
 
+def test_assistant_understands_inventory_and_power_paraphrases():
+    main = load_addon_main()
+    main.SUMMARY_CACHE = None
+    main.all_devices = lambda: [
+        {'id': 'fan', 'label': 'Air Purifier', 'room': 'Ventilation', 'category': 'switch', 'switch': 'off'},
+        {'id': 'halo', 'label': 'Halo3000x socket power', 'room': 'Sockets', 'category': 'power_device', 'switch': 'on', 'power': 7.2},
+        {'id': 'pc', 'label': 'Bedroom PC', 'room': 'Bedroom 3', 'category': 'power_device', 'switch': 'on', 'power': 5.1},
+        {'id': 'motion', 'label': 'Hallway Motion', 'room': 'Hallway', 'category': 'motion_sensor', 'motion': 'inactive'},
+    ]
+
+    room_phrases = ['what rooms are there', 'can you show me the rooms', 'list all rooms']
+    power_inventory_phrases = ['what devices have power readings', 'show me energy devices', 'which are power devices']
+    top_power_phrases = ['what is using the most power', 'which device is drawing most power', 'top electricity consumers']
+    find_phrases = ['where is ventilation', 'locate air purifier', 'what devices match ventilation']
+
+    for phrase in room_phrases:
+        answer = main.cache_first_assistant_answer(phrase)
+        assert answer['intent'] == 'room_inventory'
+        assert 'Ventilation' in answer['message']
+
+    for phrase in power_inventory_phrases:
+        answer = main.cache_first_assistant_answer(phrase)
+        assert answer['intent'] == 'power_device_inventory'
+        assert 'Halo3000x socket power' in answer['message']
+
+    for phrase in top_power_phrases:
+        answer = main.cache_first_assistant_answer(phrase)
+        assert answer['intent'] == 'top_power_devices'
+        assert answer['message'].splitlines()[1].startswith('- Halo3000x socket power')
+
+    for phrase in find_phrases:
+        answer = main.cache_first_assistant_answer(phrase)
+        assert answer['intent'] == 'find_device'
+        assert 'Air Purifier' in answer['message']
+
+
 def test_ai_context_is_cache_only_by_default():
     main = load_addon_main()
     main.all_devices = lambda: []

@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.33-alpha'
+APP_VERSION = '1.9.34-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2127,9 +2127,29 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
     }
 
 
+def assistant_query_text(text: str) -> str:
+    q = normalise(text or '')
+    q = re.sub(r'\b(?:please|can you|could you|would you|tell me|show me|give me|i want to know|do we have|do i have)\b', ' ', q)
+    q = re.sub(r'\b(?:the|a|an|all|any|current|currently|right now|now|please)\b', ' ', q)
+    q = re.sub(r'\s+', ' ', q).strip(' ?')
+    return q
+
+
+def looks_like_find_request(text: str) -> bool:
+    t = assistant_query_text(text)
+    if t.startswith(('find ', 'search ', 'locate ', 'look up ', 'lookup ', 'where is ', 'where are ')):
+        return True
+    return bool(re.search(r'^(?:what|which)\s+devices?\s+(?:match|contain|called|named)\s+', t))
+
+
 def cached_room_inventory_answer(text: str) -> dict[str, Any] | None:
-    t = normalise(text)
-    if t not in {'rooms', 'show rooms', 'list rooms', 'room list', 'show room list', 'cached rooms'}:
+    t = assistant_query_text(text)
+    room_inventory_terms = {
+        'rooms', 'show rooms', 'list rooms', 'room list', 'show room list', 'cached rooms',
+        'what rooms', 'what rooms are there', 'which rooms', 'which rooms are there',
+        'rooms in home', 'rooms in house', 'room inventory', 'available rooms',
+    }
+    if t not in room_inventory_terms and not re.search(r'^(?:show|list|display)\s+(?:home|house\s+)?rooms?$', t):
         return None
     rooms = api_rooms().get('rooms', [])
     if not rooms:
@@ -2164,16 +2184,22 @@ def cached_room_inventory_answer(text: str) -> dict[str, Any] | None:
 
 
 def cached_power_device_answer(text: str) -> dict[str, Any] | None:
-    t = normalise(text)
+    t = assistant_query_text(text)
     wants_ranking = (
-        ('power' in t and any(word in t for word in ('highest', 'top', 'most', 'biggest')))
+        (any(word in t for word in ('power', 'electricity', 'energy', 'watts', 'wattage')) and any(word in t for word in ('highest', 'top', 'most', 'biggest', 'largest', 'highest consuming')))
         or 'power consumption' in t
+        or 'power consumer' in t
+        or 'energy consumer' in t
         or 'using most electricity' in t
         or 'using most power' in t
+        or 'drawing most power' in t
+        or 'highest wattage' in t
     )
     wants_inventory = (
-        t in {'power devices', 'powered devices', 'power device list', 'energy devices'}
-        or bool(re.search(r'^(?:find|show|list)\s+(?:all\s+)?(?:power|powered|energy)\s+devices?$', t))
+        t in {'power devices', 'powered devices', 'power device list', 'energy devices', 'power sensors', 'power meters', 'devices with power'}
+        or bool(re.search(r'^(?:find|show|list|display)\s+(?:all\s+)?(?:power|powered|energy|electricity|wattage)\s+(?:devices?|sensors?|meters?)$', t))
+        or bool(re.search(r'^(?:which|what)\s+devices?\s+(?:have|show|report)\s+(?:power|energy|wattage|electricity)', t))
+        or bool(re.search(r'^(?:what|which)\s+(?:are\s+)?(?:power|powered|energy)\s+devices?$', t))
     )
     if not wants_ranking and not wants_inventory:
         return None
@@ -2234,7 +2260,7 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     power_devices = cached_power_device_answer(t)
     if power_devices:
         return power_devices
-    if t.startswith(('find ', 'search ', 'show ', 'list ', 'debug ')):
+    if looks_like_find_request(t) or t.startswith(('find ', 'search ', 'show ', 'list ', 'debug ')):
         return find_device_answer(t)
     if t in ('what needs attention', 'what needs my attention', 'anything unusual', 'attention'):
         return cached_attention_answer()
@@ -7126,14 +7152,21 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
     if not (
         q.startswith('find ')
         or q.startswith('search ')
+        or q.startswith('locate ')
+        or q.startswith('look up ')
+        or q.startswith('lookup ')
+        or q.startswith('where is ')
+        or q.startswith('where are ')
         or q.startswith('show ')
         or q.startswith('list ')
         or q.startswith('debug ')
+        or re.search(r'^(?:what|which)\s+devices?\s+(?:match|contain|called|named)\s+', q)
     ):
         return None
 
     subject = q
-    for word in ('find', 'search', 'show', 'list', 'debug', 'device', 'devices'):
+    subject = re.sub(r'^(?:what|which)\s+devices?\s+(?:match|contain|called|named)\s+', ' ', subject)
+    for word in ('find', 'search', 'locate', 'look up', 'lookup', 'where is', 'where are', 'show', 'list', 'debug', 'device', 'devices'):
         subject = re.sub(rf'\b{word}\b', ' ', subject)
     subject = re.sub(r'\s+', ' ', subject).strip()
 
