@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.45-alpha'
+APP_VERSION = '1.9.46-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -477,7 +477,15 @@ def is_light_like_device(device: dict[str, Any]) -> bool:
     if 'light' in caps:
         return True
     text = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
-    return bool(caps.intersection({'switchlevel', 'colorcontrol', 'colortemperature'}) and re.search(r'\b(light|lamp|bulb)\b', text))
+    name_looks_like_light = bool(re.search(r'\b(light|lamp|bulb)\b', text))
+    has_light_control = bool(caps.intersection({'switchlevel', 'colorcontrol', 'colortemperature'}))
+    has_cached_switch = device.get('switch') is not None
+    has_cached_level = device.get('level') is not None
+    attrs = device.get('attributes') or {}
+    if isinstance(attrs, dict):
+        has_cached_switch = has_cached_switch or attrs.get('switch') is not None
+        has_cached_level = has_cached_level or attrs.get('level') is not None
+    return bool(name_looks_like_light and (has_light_control or has_cached_switch or has_cached_level))
 
 
 def commands_text(device: dict[str, Any]) -> str:

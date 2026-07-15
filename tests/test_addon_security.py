@@ -2674,9 +2674,8 @@ def test_category_inventory_lists_all_lights():
             'category': 'power_device', 'switch': 'on', 'attributes': {'switch': 'on'},
         },
         {
-            'id': 'floor', 'label': 'My Floor Lamp', 'room': 'Living Room',
-            'category': 'switch', 'switch': 'off', 'level': 5,
-            'capabilities': ['Actuator', 'Light', 'Switch', 'SwitchLevel'],
+            'id': 'floor', 'label': 'My Floor Lamp', 'room': 'Bedroom 1',
+            'category': 'device', 'switch': 'off',
             'attributes': {'switch': 'off', 'level': 5},
         },
     ]
@@ -2686,17 +2685,16 @@ def test_category_inventory_lists_all_lights():
     assert answer['intent'] == 'lights'
     assert 'Lights: 2 cached' in answer['message']
     assert 'Bedroom Light (Bedroom 1) - on' in answer['message']
-    assert 'My Floor Lamp (Living Room) - off' in answer['message']
+    assert 'My Floor Lamp (Bedroom 1) - off' in answer['message']
     assert 'Desk Plug' not in answer['message']
 
 
-def test_light_like_capability_counts_as_light_not_switch_in_summary():
+def test_named_lamp_switch_counts_as_light_not_switch_in_summary():
     main = load_addon_main()
     main.all_devices = lambda: [
         {
-            'id': 'floor', 'label': 'My Floor Lamp', 'room': 'Living Room',
-            'category': 'switch', 'switch': 'on',
-            'capabilities': ['Light', 'Switch', 'SwitchLevel'],
+            'id': 'floor', 'label': 'My Floor Lamp', 'room': 'Bedroom 1',
+            'category': 'device', 'switch': 'on',
             'attributes': {'switch': 'on'},
         },
     ]
