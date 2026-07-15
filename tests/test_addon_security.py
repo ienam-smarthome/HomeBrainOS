@@ -1395,6 +1395,29 @@ def test_contracted_bathroom_on_query_uses_logical_room_devices():
     assert 'Bedroom Light' not in answer['message']
 
 
+def test_metering_smartplug_dehumidifier_is_controllable():
+    main = load_addon_main()
+    device = {
+        'id': '5313',
+        'label': 'Dehumidifier 1',
+        'name': 'Tuya Zigbee Metering SmartPlug',
+        'room': 'Dehumidifier',
+        'category': 'device',
+    }
+    commands = []
+    main.maker_command = lambda device_id, command: commands.append((device_id, command))
+    main.verify_device_attribute = lambda *_args, **_kwargs: {'status': 'skipped', 'confirmed': False}
+    main.update_cached_switch = lambda device_ids, switch: [{'id': device_id, 'switch': switch} for device_id in device_ids]
+
+    assert main.is_switchable_device(device) is True
+    answer = main.command_devices([device], 'on')
+
+    assert answer['success'] is True
+    assert commands == [('5313', 'on')]
+    assert 'Turned on:' in answer['message']
+    assert 'Dehumidifier 1' in answer['message']
+
+
 def test_assistant_turns_device_on_for_duration_and_schedules_off():
     main = load_addon_main()
     main.all_devices = lambda: [

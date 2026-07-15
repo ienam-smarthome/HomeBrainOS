@@ -83,7 +83,8 @@ def test_contracted_room_happening_does_not_fall_back_to_home_briefing():
 def test_whats_on_room_query_includes_logically_named_meter():
     answer = module.focused_room_status_answer(LiveShapedBathroomMain(), "what's on in the bathroom?")
     assert answer["intent"] == "room_status"
-    assert "Bathroom Fan: on" in answer["message"]
+    assert "Lights on: none" in answer["message"]
+    assert "Other switches on: Bathroom Fan" in answer["message"]
     assert "23.1°C" in answer["message"]
 
 

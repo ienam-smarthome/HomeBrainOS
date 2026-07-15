@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.51-alpha'
+APP_VERSION = '1.9.52-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -6484,13 +6484,16 @@ def is_switchable_device(device: dict[str, Any]) -> bool:
     power_child_sensor = category == 'power_device' and 'power' in label and not switch_capable and device.get('switch') is None
     if power_child_sensor:
         return False
-    smart_plug_word = any(word in label for word in ('plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier'))
+    smart_plug_word = any(word in label for word in ('smartplug', 'smart plug', 'plug', 'socket', 'outlet', 'switch', 'fan', 'dehumidifier', 'humidifier', 'purifier'))
     explicit_switch = (
         switch_capable
         or device.get('switch') is not None
         or device_attribute_map(device).get('switch') is not None
         or {'on', 'off'}.issubset(commands)
-        or (category == 'power_device' and smart_plug_word)
+        # Hubitat's broad device list can omit capabilities and switch state.
+        # A clearly named actuator must not be rejected merely because its
+        # underlying driver name also contains "Metering".
+        or smart_plug_word
     )
     if category in sensor_categories and not explicit_switch:
         return False

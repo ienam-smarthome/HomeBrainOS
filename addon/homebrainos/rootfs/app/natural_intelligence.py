@@ -777,6 +777,29 @@ def focused_room_status_answer(app_module: Any, query: str) -> dict[str, Any] | 
         if fact and fact not in active:
             active.append(fact)
 
+    q = _normalise(query)
+    wants_on_status = any(term in q for term in (
+        'what is on', 'what are on', 'which devices are on',
+        'which lights are on', 'which switches are on',
+    ))
+    light_devices: list[dict[str, Any]] = []
+    other_switches: list[dict[str, Any]] = []
+    for device in devices:
+        attrs = _attrs(device)
+        if attrs.get('switch') is None:
+            continue
+        label_text = _normalise(_device_label(device))
+        if device.get('category') == 'light' or any(word in label_text for word in ('light', 'lamp', 'bulb')):
+            light_devices.append(device)
+        else:
+            other_switches.append(device)
+
+    def on_labels(items: list[dict[str, Any]]) -> list[str]:
+        return [_clean_display_text(_device_label(device)) for device in items if _is_on(_attrs(device).get('switch'))]
+
+    light_names = on_labels(light_devices)
+    switch_names = on_labels(other_switches)
+
     if route.detail_level == 'diagnostic':
         lines = [_diagnostic_device_state(device) for device in devices]
         message = f'{route.room} diagnostic status:\n' + '\n'.join(f'â€¢ {line}' for line in lines)
@@ -788,7 +811,18 @@ def focused_room_status_answer(app_module: Any, query: str) -> dict[str, Any] | 
         parts = []
         if climate:
             parts.append(', '.join(climate))
-        if active:
+        if wants_on_status:
+            parts.append('Lights on: ' + (', '.join(light_names) if light_names else 'none'))
+            parts.append('Other switches on: ' + (', '.join(switch_names) if switch_names else 'none'))
+            non_switch_facts = [
+                fact for device in devices
+                if not _is_on(_attrs(device).get('switch'))
+                for fact in [_active_room_fact(device)]
+                if fact
+            ]
+            if non_switch_facts:
+                parts.append('; '.join(non_switch_facts[:8]))
+        elif active:
             parts.append('; '.join(active[:8]))
         if not parts:
             parts.append('no active devices or important issues')

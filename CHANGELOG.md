@@ -1,3 +1,9 @@
+## v1.9.52-alpha - Explicit Room Activity and Smart-Plug Control
+
+- Fixed exact dehumidifier commands being rejected when Hubitat identifies the device as a metering smart plug but omits switch capability metadata from the broad device cache.
+- Made room activity questions explicitly state which lights and other switches are on, including clear `none` results, while retaining room climate and important sensor facts.
+- Added live-shaped regression coverage for Dehumidifier 1 control and bathroom switch/light reporting.
+
 ## v1.9.51-alpha - Deterministic Assistant Resolution
 
 - Fixed contracted room questions such as `what's happening in the bathroom` and `what's on in the bathroom` being routed to a whole-home briefing or empty result.
