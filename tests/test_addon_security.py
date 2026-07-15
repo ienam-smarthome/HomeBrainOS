@@ -2641,6 +2641,48 @@ def test_highest_power_device_ranking_excludes_whole_house_meter():
     assert 'Octopus Live Meter' not in answer['message']
 
 
+def test_category_inventory_lists_humidity_sensors():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'bath', 'label': 'Bathroom Sensor', 'room': 'Bathroom',
+            'category': 'climate_sensor', 'humidity': 52, 'attributes': {'humidity': 52},
+        },
+        {
+            'id': 'hall', 'label': 'Hallway Temperature', 'room': 'Hallway',
+            'category': 'climate_sensor', 'temperature': 21, 'attributes': {'temperature': 21},
+        },
+    ]
+
+    answer = main.cache_first_assistant_answer('list humidity sensors')
+
+    assert answer['intent'] == 'humidity_sensors'
+    assert 'Humidity sensors: 1 cached' in answer['message']
+    assert 'Bathroom Sensor (Bathroom) - 52%' in answer['message']
+    assert 'Hallway Temperature' not in answer['message']
+
+
+def test_category_inventory_lists_all_lights():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'bed', 'label': 'Bedroom Light', 'room': 'Bedroom 1',
+            'category': 'light', 'switch': 'on', 'attributes': {'switch': 'on'},
+        },
+        {
+            'id': 'plug', 'label': 'Desk Plug', 'room': 'Office',
+            'category': 'power_device', 'switch': 'on', 'attributes': {'switch': 'on'},
+        },
+    ]
+
+    answer = main.cache_first_assistant_answer('show all lights')
+
+    assert answer['intent'] == 'lights'
+    assert 'Lights: 1 cached' in answer['message']
+    assert 'Bedroom Light (Bedroom 1) - on' in answer['message']
+    assert 'Desk Plug' not in answer['message']
+
+
 def test_monthly_energy_question_returns_native_meter_total_directly():
     main = load_addon_main()
     main.CONFIG['electricity_unit_rate_gbp'] = 0.25

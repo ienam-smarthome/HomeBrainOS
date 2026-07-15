@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.43-alpha'
+APP_VERSION = '1.9.44-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2529,6 +2529,75 @@ def cached_room_inventory_answer(text: str) -> dict[str, Any] | None:
     }
 
 
+def cached_category_inventory_answer(text: str) -> dict[str, Any] | None:
+    """Answer common list/show category requests from the device cache."""
+    t = assistant_query_text(text)
+    if not re.search(r'^(?:show|list|display|find)\s+', t):
+        return None
+    target = re.sub(r'^(?:show|list|display|find)\s+', '', t).strip()
+    target = re.sub(r'^(?:all\s+|cached\s+|homebrain\s+)+', '', target).strip()
+    target = re.sub(r'\b(?:devices?|sensors?|meters?)$', '', target).strip()
+    if not target:
+        return None
+    if target in {'light', 'lights', 'lighting'}:
+        kind = 'lights'
+        title = 'Lights'
+        matches = [d for d in all_devices() if d.get('category') == 'light']
+        attr = 'switch'
+    elif target in {'humidity', 'humidities', 'humid'}:
+        kind = 'humidity_sensors'
+        title = 'Humidity sensors'
+        matches = [d for d in all_devices() if safe_float(d.get('humidity')) is not None or safe_float(device_attr_value(d, 'humidity')) is not None]
+        attr = 'humidity'
+    elif target in {'temperature', 'temp', 'temperatures'}:
+        kind = 'temperature_sensors'
+        title = 'Temperature sensors'
+        matches = [d for d in all_devices() if safe_float(d.get('temperature')) is not None or safe_float(device_attr_value(d, 'temperature')) is not None]
+        attr = 'temperature'
+    elif target in {'motion', 'motion sensor'}:
+        kind = 'motion_sensors'
+        title = 'Motion sensors'
+        matches = [d for d in all_devices() if d.get('motion') is not None or device_attr_value(d, 'motion') is not None or d.get('category') == 'motion_sensor']
+        attr = 'motion'
+    elif target in {'battery', 'batteries'}:
+        kind = 'battery_sensors'
+        title = 'Battery sensors'
+        matches = [d for d in all_devices() if safe_float(d.get('battery')) is not None or safe_float(device_attr_value(d, 'battery')) is not None]
+        attr = 'battery'
+    else:
+        return None
+
+    matches.sort(key=lambda d: (canonical_room_name(d.get('room') or 'Unknown').lower(), str(d.get('label') or d.get('name') or '').lower()))
+    lines = [f'{title}: {len(matches)} cached']
+    for device in matches[:30]:
+        label = device.get('label') or device.get('name') or str(device.get('id'))
+        room = canonical_room_name(device.get('room') or 'Unknown')
+        value = device.get(attr)
+        if value is None:
+            value = device_attr_value(device, attr)
+        detail = ''
+        if attr in {'humidity', 'battery'}:
+            num = safe_float(value)
+            detail = f' - {num:g}%' if num is not None else ''
+        elif attr == 'temperature':
+            num = safe_float(value)
+            detail = f' - {num:g}C' if num is not None else ''
+        elif value is not None:
+            detail = f' - {value}'
+        lines.append(f'- {label} ({room}){detail}')
+    if len(matches) > 30:
+        lines.append(f'- {len(matches) - 30} more not shown.')
+    if not matches:
+        lines.append('None cached yet.')
+    return {
+        'success': True,
+        'intent': kind,
+        'source': 'event_cache',
+        'message': '\n'.join(lines),
+        'devices': matches,
+    }
+
+
 def cached_power_device_answer(text: str) -> dict[str, Any] | None:
     t = assistant_query_text(text)
     wants_high_power = bool(re.search(r'\bhigh\s+(?:power|electricity|energy|wattage)\b', t))
@@ -2631,6 +2700,9 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     room_inventory = cached_room_inventory_answer(t)
     if room_inventory:
         return room_inventory
+    category_inventory = cached_category_inventory_answer(t)
+    if category_inventory:
+        return category_inventory
     power_devices = cached_power_device_answer(t)
     if power_devices:
         return power_devices
@@ -8431,6 +8503,10 @@ def assistant_preflight_answer(question: str) -> dict[str, Any] | None:
     if room_inventory:
         return room_inventory
 
+    category_inventory = cached_category_inventory_answer(question)
+    if category_inventory:
+        return category_inventory
+
     power_devices = cached_power_device_answer(question)
     if power_devices:
         return power_devices
@@ -8819,6 +8895,10 @@ def assistant(text: str) -> dict[str, Any]:
     room_inventory = cached_room_inventory_answer(text)
     if room_inventory:
         return with_suggestions(room_inventory)
+
+    category_inventory = cached_category_inventory_answer(text)
+    if category_inventory:
+        return with_suggestions(category_inventory)
 
     power_devices = cached_power_device_answer(text)
     if power_devices:
