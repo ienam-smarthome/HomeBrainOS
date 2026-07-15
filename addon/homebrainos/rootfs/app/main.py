@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.46-alpha'
+APP_VERSION = '1.9.47-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1739,7 +1739,7 @@ def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     hums = numeric_device_values(environment_devices, 'humidity')
     power_devices = [d for d in devices if finite_number(d.get('power'))]
     powers = [d['power'] for d in power_devices]
-    power_source = select_power_source(power_devices)
+    power_source = select_power_source(devices)
     people = household_people(devices)
     low_batt = merged_low_battery_devices(devices)
     motion_active = [d for d in devices if is_state(d.get('motion'), 'active')]
@@ -1900,15 +1900,22 @@ def filtered_device_inventory(
     }
 
 
-def select_power_source(power_devices: list[dict[str, Any]]) -> dict[str, Any] | None:
-    for device in power_devices:
+def select_power_source(devices: list[dict[str, Any]]) -> dict[str, Any] | None:
+    candidates = sorted(
+        devices,
+        key=lambda device: 0 if octopus_display_period(device) == 'power' else 1,
+    )
+    for device in candidates:
         text = device_search_text(device)
         if any(term in text for term in POWER_SOURCE_TERMS):
+            power = device_power_watts(device)
+            if power is None:
+                continue
             return {
                 'id': device.get('id'),
                 'label': device.get('label') or device.get('name') or 'Octopus meter',
                 'room': device.get('room') or 'Unknown',
-                'power': device.get('power'),
+                'power': power,
             }
     return None
 
@@ -2426,7 +2433,8 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
     if not any(word in t for word in ('energy', 'electricity', 'kwh', 'used', 'use', 'spent', 'cost')):
         return None
     month_requested = any(term in t for term in ('this month', 'month to date', 'month so far', 'monthly usage', 'monthly cost'))
-    period = 'month' if month_requested else ('yesterday' if 'yesterday' in t else ('today' if 'today' in t else None))
+    week_requested = any(term in t for term in ('this week', 'week to date', 'week so far', 'weekly usage', 'weekly cost'))
+    period = 'month' if month_requested else ('week' if week_requested else ('yesterday' if 'yesterday' in t else ('today' if 'today' in t else None)))
     if not period:
         return None
 
@@ -2441,7 +2449,7 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
         }
 
     day = usage.get(period) or {}
-    label = {'today': 'Today so far', 'yesterday': 'Yesterday', 'month': 'Month to date'}[period]
+    label = {'today': 'Today so far', 'yesterday': 'Yesterday', 'week': 'Week to date', 'month': 'Month to date'}[period]
     kwh = safe_float(day.get('kwh'))
     cost = safe_float(day.get('cost_gbp'))
     details = []
@@ -2449,7 +2457,7 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
         details.append(f'{kwh:.2f} kWh')
     if cost is not None:
         details.append(f'£{cost:.2f}')
-    meter = (usage.get('source') or {}).get('label') or 'the whole-house meter'
+    meter = (day.get('source_device') or {}).get('label') or (usage.get('source') or {}).get('label') or 'the whole-house meter'
     dashboard = None
     if kwh is not None and cost is not None and day.get('cost_estimated'):
         rate = safe_float(day.get('unit_rate_gbp'))
@@ -4421,6 +4429,67 @@ def parse_kwh_cost_text(text: Any, marker: str) -> tuple[float | None, float | N
     return safe_float(match.group('kwh')), safe_float(match.group('cost'))
 
 
+def parse_power_watts_text(text: Any) -> float | None:
+    match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*(?:w|watts)\b', str(text or ''), flags=re.IGNORECASE)
+    return safe_float(match.group(1)) if match else None
+
+
+def display_device_value(device: dict[str, Any]) -> Any:
+    return device_attr_value(
+        device,
+        'value', 'valueStr', 'value_str', 'displayValue', 'display_value',
+        'currentValue', 'current_value',
+    )
+
+
+def device_power_watts(device: dict[str, Any]) -> float | None:
+    direct = safe_float(device.get('power'))
+    if direct is not None:
+        return direct
+    value = first_attr_value(device, ('power', 'displayPower', 'value', 'valueStr', 'value_str'))
+    if value is None:
+        value = display_device_value(device)
+    numeric = safe_float(value)
+    return numeric if numeric is not None else parse_power_watts_text(value)
+
+
+def octopus_display_period(device: dict[str, Any]) -> str | None:
+    friendly = device_attr_value(device, 'friendly_name', 'friendlyName')
+    text = normalise(f"{device.get('label') or ''} {device.get('name') or ''} {friendly or ''}")
+    if 'octopus' not in text or 'display' not in text:
+        return None
+    if re.search(r'\bpower\b', text):
+        return 'power'
+    for period in ('today', 'yesterday', 'week', 'month'):
+        if re.search(rf'\b{period}\b', text):
+            return period
+    return None
+
+
+def octopus_display_period_readings(devices: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    readings: dict[str, dict[str, Any]] = {}
+    for device in devices:
+        period = octopus_display_period(device)
+        if period not in {'today', 'yesterday', 'week', 'month'}:
+            continue
+        value = display_device_value(device)
+        kwh, cost = parse_kwh_cost_text(value, '')
+        if kwh is None and cost is None:
+            continue
+        readings[period] = {
+            'kwh': kwh,
+            'cost_gbp': cost,
+            'cost_estimated': False,
+            'source': 'octopus_display_device',
+            'source_device': {
+                'id': device.get('id'),
+                'label': device.get('label') or device.get('name') or f'Octopus {period}',
+            },
+            'raw_value': str(value),
+        }
+    return readings
+
+
 def safe_currency_amount(value: Any) -> float | None:
     numeric = safe_float(value)
     if numeric is not None:
@@ -4559,13 +4628,14 @@ def month_to_date_energy_from_history(device_id: str, cumulative_kwh: float | No
 
 def energy_usage_from_meter() -> dict[str, Any]:
     devices = all_devices()
+    display_readings = octopus_display_period_readings(devices)
     meter = None
     for device in devices:
         if is_whole_house_power_source(device):
             meter = device
             break
-    if not meter:
-        return {'available': False, 'source': None, 'today': {}, 'yesterday': {}, 'month': {}}
+    if not meter and not display_readings:
+        return {'available': False, 'source': None, 'today': {}, 'yesterday': {}, 'week': {}, 'month': {}}
     attrs = meter.get('attributes') or {}
     today_kwh = safe_float(first_attr_value(meter, (
         'energyToday', 'todayEnergy', 'importToday', 'electricityToday', 'todayKwh', 'todayKWh'
@@ -4579,6 +4649,13 @@ def energy_usage_from_meter() -> dict[str, Any]:
     yesterday_cost = safe_currency_amount(first_attr_value(meter, (
         'costYesterdayEnergy', 'displayCostYesterday', 'costYesterday', 'yesterdayCost', 'electricityCostYesterday'
     )))
+    week_kwh = safe_float(first_attr_value(meter, (
+        'energyThisWeek', 'energyWeek', 'weekEnergy', 'importThisWeek',
+        'electricityThisWeek', 'weekKwh', 'weekKWh'
+    )))
+    week_cost = safe_currency_amount(first_attr_value(meter, (
+        'costThisWeek', 'costWeekEnergy', 'weekCost', 'electricityCostThisWeek'
+    )))
     month_kwh = safe_float(first_attr_value(meter, (
         'energyThisMonth', 'energyMonth', 'monthEnergy', 'importThisMonth',
         'electricityThisMonth', 'monthKwh', 'monthKWh'
@@ -4589,6 +4666,7 @@ def energy_usage_from_meter() -> dict[str, Any]:
     summary_text = first_attr_value(meter, ('displaySummary', 'displaySummaryCompact', 'summary'))
     display_today = first_attr_value(meter, ('displayToday', 'todayDisplay'))
     display_yesterday = first_attr_value(meter, ('displayYesterday', 'yesterdayDisplay'))
+    display_week = first_attr_value(meter, ('displayWeek', 'weekDisplay', 'displayThisWeek'))
     display_month = first_attr_value(meter, ('displayMonth', 'monthDisplay', 'displayThisMonth'))
     parsed_today = parse_kwh_cost_text(summary_text, 'T')
     parsed_yesterday = parse_kwh_cost_text(summary_text, 'Y')
@@ -4600,9 +4678,24 @@ def energy_usage_from_meter() -> dict[str, Any]:
         dy_kwh, dy_cost = parse_kwh_cost_text(display_yesterday, '')
         yesterday_kwh = yesterday_kwh if yesterday_kwh is not None else (parsed_yesterday[0] if parsed_yesterday[0] is not None else dy_kwh)
         yesterday_cost = yesterday_cost if yesterday_cost is not None else (parsed_yesterday[1] if parsed_yesterday[1] is not None else dy_cost)
+    parsed_week_kwh, parsed_week_cost = parse_kwh_cost_text(display_week, '')
+    week_kwh = week_kwh if week_kwh is not None else parsed_week_kwh
+    week_cost = week_cost if week_cost is not None else parsed_week_cost
     parsed_month_kwh, parsed_month_cost = parse_kwh_cost_text(display_month, '')
     month_kwh = month_kwh if month_kwh is not None else parsed_month_kwh
     month_cost = month_cost if month_cost is not None else parsed_month_cost
+    if display_readings.get('today'):
+        today_kwh = display_readings['today'].get('kwh')
+        today_cost = display_readings['today'].get('cost_gbp')
+    if display_readings.get('yesterday'):
+        yesterday_kwh = display_readings['yesterday'].get('kwh')
+        yesterday_cost = display_readings['yesterday'].get('cost_gbp')
+    if display_readings.get('week'):
+        week_kwh = display_readings['week'].get('kwh')
+        week_cost = display_readings['week'].get('cost_gbp')
+    if display_readings.get('month'):
+        month_kwh = display_readings['month'].get('kwh')
+        month_cost = display_readings['month'].get('cost_gbp')
     cumulative_kwh = cumulative_energy_kwh(meter)
     today_history = {'kwh': None, 'coverage_start': None, 'coverage_end': None, 'coverage_complete': False, 'source': None}
     yesterday_history = {'kwh': None, 'coverage_start': None, 'coverage_end': None, 'coverage_complete': False, 'source': None}
@@ -4625,6 +4718,10 @@ def energy_usage_from_meter() -> dict[str, Any]:
     if yesterday_cost is None and yesterday_kwh is not None and unit_rate is not None and unit_rate >= 0:
         yesterday_cost = round(yesterday_kwh * unit_rate, 2)
         yesterday_cost_estimated = True
+    week_cost_estimated = False
+    if week_cost is None and week_kwh is not None and unit_rate is not None and unit_rate >= 0:
+        week_cost = round(week_kwh * unit_rate, 2)
+        week_cost_estimated = True
     cost_estimated = False
     if month_cost is None and month_kwh is not None and unit_rate is not None and unit_rate >= 0:
         month_cost = round(month_kwh * unit_rate, 2)
@@ -4638,7 +4735,9 @@ def energy_usage_from_meter() -> dict[str, Any]:
             'coverage_start': today_history.get('coverage_start'),
             'coverage_end': today_history.get('coverage_end'),
             'coverage_complete': bool(today_history.get('coverage_complete')) if today_history.get('source') else True,
-            'source': today_history.get('source') or ('meter_attribute' if today_kwh is not None or today_cost is not None else None),
+            'source': (display_readings.get('today') or {}).get('source') or today_history.get('source') or ('meter_attribute' if today_kwh is not None or today_cost is not None else None),
+            'source_device': (display_readings.get('today') or {}).get('source_device'),
+            'raw_value': (display_readings.get('today') or {}).get('raw_value'),
             'cost_estimated': today_cost_estimated,
             'unit_rate_gbp': unit_rate if today_cost_estimated else None,
         },
@@ -4648,9 +4747,22 @@ def energy_usage_from_meter() -> dict[str, Any]:
             'coverage_start': yesterday_history.get('coverage_start'),
             'coverage_end': yesterday_history.get('coverage_end'),
             'coverage_complete': bool(yesterday_history.get('coverage_complete')) if yesterday_history.get('source') else True,
-            'source': yesterday_history.get('source') or ('meter_attribute' if yesterday_kwh is not None or yesterday_cost is not None else None),
+            'source': (display_readings.get('yesterday') or {}).get('source') or yesterday_history.get('source') or ('meter_attribute' if yesterday_kwh is not None or yesterday_cost is not None else None),
+            'source_device': (display_readings.get('yesterday') or {}).get('source_device'),
+            'raw_value': (display_readings.get('yesterday') or {}).get('raw_value'),
             'cost_estimated': yesterday_cost_estimated,
             'unit_rate_gbp': unit_rate if yesterday_cost_estimated else None,
+        },
+        'week': {
+            'kwh': week_kwh,
+            'cost_gbp': week_cost,
+            'cost_estimated': week_cost_estimated,
+            'unit_rate_gbp': unit_rate if week_cost_estimated else None,
+            'coverage_start': None,
+            'coverage_complete': True,
+            'source': (display_readings.get('week') or {}).get('source') or ('meter_attribute' if week_kwh is not None or week_cost is not None else None),
+            'source_device': (display_readings.get('week') or {}).get('source_device'),
+            'raw_value': (display_readings.get('week') or {}).get('raw_value'),
         },
         'month': {
             'kwh': month_kwh,
@@ -4659,7 +4771,9 @@ def energy_usage_from_meter() -> dict[str, Any]:
             'unit_rate_gbp': unit_rate if cost_estimated else None,
             'coverage_start': month_history.get('coverage_start'),
             'coverage_complete': bool(month_history.get('coverage_complete')) if month_history.get('source') else True,
-            'source': month_history.get('source') or ('meter_attribute' if month_kwh is not None or month_cost is not None else None),
+            'source': (display_readings.get('month') or {}).get('source') or month_history.get('source') or ('meter_attribute' if month_kwh is not None or month_cost is not None else None),
+            'source_device': (display_readings.get('month') or {}).get('source_device'),
+            'raw_value': (display_readings.get('month') or {}).get('raw_value'),
         },
         'cumulative_kwh': cumulative_kwh,
         'raw_summary': summary_text,
@@ -7084,10 +7198,10 @@ def home_tool_definitions() -> list[dict[str, Any]]:
             'type': 'function',
             'function': {
                 'name': 'home_get_energy',
-                'description': 'Get current whole-house power or cached energy usage for today, yesterday, or this month.',
+                'description': 'Get current whole-house power or cached energy usage for today, yesterday, this week, or this month.',
                 'parameters': {
                     'type': 'object',
-                    'properties': {'period': {'type': 'string', 'enum': ['current', 'today', 'yesterday', 'month']}},
+                    'properties': {'period': {'type': 'string', 'enum': ['current', 'today', 'yesterday', 'week', 'month']}},
                 },
             },
         },

@@ -2584,6 +2584,64 @@ def test_period_energy_yesterday_derives_from_octopus_cumulative_history():
     assert 'not cached' not in answer['message']
 
 
+def test_period_energy_uses_octopus_display_child_devices_first():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy', 'category': 'power_device',
+            'energy': 8273.88, 'attributes': {},
+        },
+        {
+            'id': 'today', 'label': 'Octopus Live Meter Display Today', 'room': 'Octopus Energy',
+            'category': 'device', 'value': '3.70 kWh (\u00a31.44)',
+            'attributes': {'value': '3.70 kWh (\u00a31.44)', 'friendly_name': 'Octopus Live Meter Display Today'},
+        },
+        {
+            'id': 'month', 'label': 'Octopus Live Meter Display Month', 'room': 'Octopus Energy',
+            'category': 'device', 'value': '125.59 kWh (\u00a341.06)',
+            'attributes': {'valueStr': '125.59 kWh (\u00a341.06)', 'friendly_name': 'Octopus Live Meter Display Month'},
+        },
+    ]
+    main.dashboard_summary = lambda live=False: (_ for _ in ()).throw(AssertionError('Dashboard summary should not be needed for a successful energy answer'))
+
+    today = main.cache_first_assistant_answer('energy usage today')
+    month = main.cache_first_assistant_answer('energy usage and cost this month')
+
+    assert today['intent'] == 'energy_today'
+    assert today['usage']['today']['source'] == 'octopus_display_device'
+    assert today['usage']['today']['kwh'] == 3.70
+    assert today['usage']['today']['cost_gbp'] == 1.44
+    assert '3.70 kWh' in today['message']
+    assert '1.44' in today['message']
+    assert 'Octopus Live Meter Display Today' in today['message']
+    assert month['intent'] == 'energy_month'
+    assert month['usage']['month']['source'] == 'octopus_display_device'
+    assert month['usage']['month']['kwh'] == 125.59
+    assert month['usage']['month']['cost_gbp'] == 41.06
+    assert '125.59 kWh' in month['message']
+    assert '41.06' in month['message']
+    assert 'month-start baseline' not in month['message']
+
+
+def test_week_energy_uses_octopus_display_child_device():
+    main = load_addon_main()
+    main.all_devices = lambda: [{
+        'id': 'week', 'label': 'Octopus Live Meter Display Week', 'room': 'Octopus Energy',
+        'category': 'device', 'value': '28.40 kWh (\u00a39.10)',
+        'attributes': {'value': '28.40 kWh (\u00a39.10)', 'friendly_name': 'Octopus Live Meter Display Week'},
+    }]
+    main.dashboard_summary = lambda live=False: (_ for _ in ()).throw(AssertionError('Dashboard summary should not be needed for a successful energy answer'))
+
+    answer = main.cache_first_assistant_answer('energy cost this week')
+
+    assert answer['intent'] == 'energy_week'
+    assert answer['usage']['week']['source'] == 'octopus_display_device'
+    assert answer['usage']['week']['kwh'] == 28.40
+    assert answer['usage']['week']['cost_gbp'] == 9.10
+    assert 'Week to date' in answer['message']
+    assert '28.40 kWh' in answer['message']
+
+
 def test_period_energy_missing_total_does_not_invoke_ai():
     main = load_addon_main()
     main.all_devices = lambda: [{
@@ -2639,6 +2697,28 @@ def test_highest_power_device_ranking_excludes_whole_house_meter():
     assert answer['intent'] == 'top_power_devices'
     assert 'Fridge' in answer['message']
     assert 'Octopus Live Meter' not in answer['message']
+
+
+def test_dashboard_power_prefers_octopus_display_power_child():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'old-meter', 'label': 'Octopus Live Meter', 'room': 'Energy',
+            'category': 'power_device', 'power': 111, 'attributes': {'power': 111},
+        },
+        {
+            'id': 'display-power', 'label': 'Octopus Live Meter Display Power', 'room': 'Octopus Energy',
+            'category': 'device', 'value': '208 W',
+            'attributes': {'valueStr': '208 W', 'friendly_name': 'Octopus Live Meter Display Power'},
+        },
+    ]
+    main.merged_low_battery_devices = lambda devices: []
+
+    summary = main.compute_dashboard_summary({'synced': False})
+
+    assert summary['power_total'] == 208
+    assert summary['power_display'] == '208W'
+    assert summary['power_source_label'] == 'Octopus Live Meter Display Power'
 
 
 def test_category_inventory_lists_humidity_sensors():
