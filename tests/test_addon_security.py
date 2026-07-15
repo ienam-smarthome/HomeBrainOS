@@ -2032,6 +2032,12 @@ def test_dashboard_has_voice_station_mode():
     assert "['no-speech','aborted'].includes" in html
     assert "urlParams.get('station')==='1'" in html
     assert 'r.continuous=true' in html
+    assert 'function commandLooksComplete' in html
+    assert 'stationCommandFromTranscript(transcript, result.isFinal)' in html
+    assert 'stationSpeechUntil' in html
+    assert 'Answering. Listening will resume in a moment' in html
+    assert 'stationRestartDelay=Math.min(3500, stationRestartDelay+600)' in html
+    assert 'home brain os' in html
 
 
 def test_dashboard_tiles_have_visible_click_feedback():

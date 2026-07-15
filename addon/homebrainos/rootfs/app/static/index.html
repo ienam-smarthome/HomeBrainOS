@@ -112,6 +112,9 @@ let stationPendingWake = '';
 let stationLastCommand = '';
 let stationLastCommandAt = 0;
 let stationRunningCommand = false;
+let stationSpeechUntil = 0;
+let stationStartRequestedAt = 0;
+let stationRestartDelay = 900;
 let stateEvents = null;
 let eventRefreshTimer = null;
 let lastSummaryCacheVersion = null;
@@ -565,7 +568,7 @@ async function ask(){
   }
 }
 function quick(t, source){$('q').value=t;if(source) markActiveControl(source);ask()}
-function stopSpeaking(){ if('speechSynthesis' in window) speechSynthesis.cancel(); }
+function stopSpeaking(){ stationSpeechUntil=0; if('speechSynthesis' in window) speechSynthesis.cancel(); }
 function setAudioMuted(muted){
   audioMuted = muted;
   localStorage.setItem('homebrainos_audio_muted', String(audioMuted));
@@ -573,7 +576,16 @@ function setAudioMuted(muted){
   if(toggle) toggle.checked=audioMuted;
   if(audioMuted) stopSpeaking();
 }
-function speak(t){ if(!audioMuted && 'speechSynthesis' in window && t){ stopSpeaking(); speechSynthesis.speak(new SpeechSynthesisUtterance(t)); } }
+function speak(t){
+  if(!audioMuted && 'speechSynthesis' in window && t){
+    stopSpeaking();
+    const utterance=new SpeechSynthesisUtterance(t);
+    stationSpeechUntil=Date.now()+Math.min(12000, Math.max(1800, String(t).length*65));
+    utterance.onend=()=>{stationSpeechUntil=0;};
+    utterance.onerror=()=>{stationSpeechUntil=0;};
+    speechSynthesis.speak(utterance);
+  }
+}
 function setVoiceOverlay(open, hint){
   $('voiceOverlay').classList.toggle('show', open);
   if(hint) $('voiceHint').textContent=hint;
@@ -594,6 +606,10 @@ function normaliseSpeech(text){
     .replace(/home\s+brain/g,'homebrain')
     .replace(/hope\s+brain/g,'homebrain')
     .replace(/own\s+brain/g,'homebrain')
+    .replace(/hum\s+brain/g,'homebrain')
+    .replace(/home\s+bring/g,'homebrain')
+    .replace(/home\s+rain/g,'homebrain')
+    .replace(/brain\s+os/g,'homebrain')
     .replace(/[^\w\s]/g,' ')
     .replace(/\s+/g,' ')
     .trim();
@@ -607,7 +623,7 @@ function cleanStationCommand(text){
 function stationDuplicateCommand(command){
   const now=Date.now();
   const clean=cleanStationCommand(command);
-  if(clean && clean===stationLastCommand && now-stationLastCommandAt<4500) return true;
+  if(clean && clean===stationLastCommand && now-stationLastCommandAt<8000) return true;
   stationLastCommand=clean;
   stationLastCommandAt=now;
   return false;
@@ -646,7 +662,11 @@ function armVoiceStation(ms=15000){
 }
 function wakePhraseCommand(transcript){
   const spoken=normaliseSpeech(transcript);
-  const phrases=['hey homebrain','hi homebrain','hello homebrain','okay homebrain','ok homebrain','homebrain','hey home brain','hi home brain','okay home brain','ok home brain'];
+  const phrases=[
+    'hey homebrain','hi homebrain','hello homebrain','okay homebrain','ok homebrain',
+    'hey home brain','hi home brain','hello home brain','okay home brain','ok home brain',
+    'homebrain','home brain','homebrain os','home brain os'
+  ];
   for(const phrase of phrases){
     const p=normaliseSpeech(phrase);
     const idx=spoken.indexOf(p);
@@ -656,12 +676,23 @@ function wakePhraseCommand(transcript){
   }
   return {heard:false, before:'', command:''};
 }
-function stationCommandFromTranscript(transcript){
+function commandLooksComplete(command){
+  const clean=cleanStationCommand(command);
+  if(!clean || clean.length<3) return false;
+  if(/\b(on|off|up|down|open|close|closed|lock|unlock|refresh|summary|status|weather|temperature|humidity|batteries|battery|lights?|switches?|rooms?|power|energy|heating|heat|timer|minutes?|hours?)\b/.test(clean)) return true;
+  return clean.split(' ').length>=3;
+}
+function stationCommandFromTranscript(transcript, isFinal=false){
   const spoken=normaliseSpeech(transcript);
   if(!spoken) return '';
   const wake=wakePhraseCommand(spoken);
   if(wake.heard){
     if(wake.command){
+      if(!isFinal && !commandLooksComplete(wake.command)){
+        stationPendingWake=spoken;
+        armVoiceStation(18000);
+        return null;
+      }
       clearStationArmed();
       return wake.command;
     }
@@ -671,6 +702,10 @@ function stationCommandFromTranscript(transcript){
   }
   if(stationIsArmed()){
     const command=cleanStationCommand(spoken);
+    if(!isFinal && !commandLooksComplete(command)){
+      armVoiceStation(18000);
+      return null;
+    }
     if(command.length<2){
       armVoiceStation(12000);
       return null;
@@ -698,11 +733,18 @@ function startVoiceStation(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){alert('Voice station needs Chrome or Edge speech recognition. Use Chrome or Edge over HTTPS, or Home Assistant local access.');return;}
   stationEnabled=true;
+  stationStartRequestedAt=Date.now();
+  stationRestartDelay=900;
   clearStationArmed();
   clearTimeout(stationRestart);
   setVoiceOverlay(true,'Voice station is active. Say "Hey HomeBrain" and the full command, or pause briefly after the wake phrase.');
   const startLoop=()=>{
     if(!stationEnabled || stationRunningCommand) return;
+    if(stationSpeechUntil && Date.now()<stationSpeechUntil){
+      stationRestart=setTimeout(startLoop, Math.min(2000, stationSpeechUntil-Date.now()+250));
+      setStationStatus('Answering. Listening will resume in a moment ...', true);
+      return;
+    }
     clearTimeout(stationRestart);
     const r=new SR();
     stationRecognizer=r;
@@ -714,33 +756,36 @@ function startVoiceStation(){
     r.onerror=e=>{
       const err=e.error||'unknown';
       if(['no-speech','aborted'].includes(err)){refreshStationStatus();return;}
-      if(err==='not-allowed' || err==='service-not-allowed') setStationStatus('Microphone blocked. Allow microphone access, then start voice station again.');
+      if(err==='not-allowed' || err==='service-not-allowed'){ stationEnabled=false; setStationStatus('Microphone blocked. Allow microphone access, then start voice station again.'); }
       else if(err==='network') setStationStatus('Voice recognition network error. Browser speech recognition may need internet access.');
       else setStationStatus('Voice station microphone error: '+err);
     };
     r.onend=()=>{
       setListening(false);
       if(!stationRunningCommand) refreshStationStatus();
-      if(stationEnabled && !stationRunningCommand) stationRestart=setTimeout(startLoop,900);
+      if(stationEnabled && !stationRunningCommand){
+        const delay=Date.now()-stationStartRequestedAt<3000 ? 250 : stationRestartDelay;
+        stationRestart=setTimeout(startLoop,delay);
+      }
     };
     r.onresult=e=>{
-      let heardFinal=false;
+      let acted=false;
       for(let i=e.resultIndex;i<e.results.length;i++){
         const result=e.results[i];
         const transcript=result[0].transcript||'';
-        const command=stationCommandFromTranscript(transcript);
+        const command=stationCommandFromTranscript(transcript, result.isFinal);
         if(command===null) continue;
         if(!command){
           if(stationIsArmed()) setStationStatus('Wake phrase heard. Say the full command now ...', true);
           else setStationStatus('Heard "'+transcript+'". Waiting for Hey HomeBrain ...', true);
           continue;
         }
-        if(!result.isFinal && command.split(' ').length<3){
-          setStationStatus('Heard command start: '+command+' ...', true);
+        if(!result.isFinal){
+          setStationStatus('Heard: '+command+' ...', true);
           continue;
         }
         if(stationDuplicateCommand(command)) continue;
-        heardFinal=true;
+        acted=true;
         stationRunningCommand=true;
         clearStationArmed();
         $('q').value=command;
@@ -748,15 +793,16 @@ function startVoiceStation(){
         try{r.stop();}catch(err){}
         Promise.resolve(ask()).finally(()=>{
           stationRunningCommand=false;
-          if(stationEnabled) stationRestart=setTimeout(startLoop,1200);
+          if(stationEnabled) stationRestart=setTimeout(startLoop, stationSpeechUntil ? Math.min(3000, stationSpeechUntil-Date.now()+250) : 1200);
         });
         break;
       }
-      if(!heardFinal) refreshStationStatus();
+      if(!acted) refreshStationStatus();
     };
     try{r.start();}catch(e){
       setStationStatus('Voice station could not start: '+e.message);
-      if(stationEnabled) stationRestart=setTimeout(startLoop,1200);
+      stationRestartDelay=Math.min(3500, stationRestartDelay+600);
+      if(stationEnabled) stationRestart=setTimeout(startLoop,stationRestartDelay);
     }
   };
   startLoop();
