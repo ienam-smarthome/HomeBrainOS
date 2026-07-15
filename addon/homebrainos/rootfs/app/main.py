@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.44-alpha'
+APP_VERSION = '1.9.45-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -468,6 +468,16 @@ def list_names(values: Any, keys: tuple[str, ...]) -> list[str]:
 
 def caps_text(device: dict[str, Any]) -> str:
     return ' '.join(list_names(device.get('capabilities'), ('name', 'capability', 'id'))).lower()
+
+
+def is_light_like_device(device: dict[str, Any]) -> bool:
+    if device.get('category') == 'light':
+        return True
+    caps = {compact_name(cap) for cap in list_names(device.get('capabilities'), ('name', 'capability', 'id'))}
+    if 'light' in caps:
+        return True
+    text = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+    return bool(caps.intersection({'switchlevel', 'colorcontrol', 'colortemperature'}) and re.search(r'\b(light|lamp|bulb)\b', text))
 
 
 def commands_text(device: dict[str, Any]) -> str:
@@ -1691,7 +1701,7 @@ def light_motion_active_room_summary(devices: list[dict[str, Any]]) -> tuple[lis
         if not label:
             continue
         phrases: list[str] = []
-        if device.get('category') == 'light' and is_state(device.get('switch'), 'on'):
+        if is_light_like_device(device) and is_state(device.get('switch'), 'on'):
             phrases.append(f'{label} on')
         if is_state(device.get('motion'), 'active'):
             phrases.append(f'{label} active')
@@ -1715,8 +1725,8 @@ def light_motion_active_room_summary(devices: list[dict[str, Any]]) -> tuple[lis
 def compute_dashboard_summary(sync_result: dict[str, Any]) -> dict[str, Any]:
     devices = all_devices()
     environment_devices = [d for d in devices if is_indoor_environment_device(d)]
-    lights_on = [d for d in devices if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
-    switches_on = [d for d in devices if d['category'] != 'light' and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
+    lights_on = [d for d in devices if is_light_like_device(d) and is_state(d.get('switch'), 'on')]
+    switches_on = [d for d in devices if not is_light_like_device(d) and d.get('switch') is not None and is_state(d.get('switch'), 'on')]
     temps = numeric_device_values(environment_devices, 'temperature')
     hums = numeric_device_values(environment_devices, 'humidity')
     power_devices = [d for d in devices if finite_number(d.get('power'))]
@@ -2542,7 +2552,7 @@ def cached_category_inventory_answer(text: str) -> dict[str, Any] | None:
     if target in {'light', 'lights', 'lighting'}:
         kind = 'lights'
         title = 'Lights'
-        matches = [d for d in all_devices() if d.get('category') == 'light']
+        matches = [d for d in all_devices() if is_light_like_device(d)]
         attr = 'switch'
     elif target in {'humidity', 'humidities', 'humid'}:
         kind = 'humidity_sensors'
@@ -3328,7 +3338,7 @@ def stale_device_report() -> dict[str, Any]:
                         occupied.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'occupied/active', 'reason': stale_motion_exemption_reason(device)})
                 elif age >= motion_seconds:
                     motion.append({'id': device_id, 'label': label, 'room': room, 'age_seconds': age, 'duration': elapsed_duration_label(age), 'state': 'motion active'})
-            if device.get('category') == 'light' and is_state(device.get('switch'), 'on'):
+            if is_light_like_device(device) and is_state(device.get('switch'), 'on'):
                 since = history_current_since(conn, device_id, 'switch', device.get('switch'), updated_at)
                 age = now - since
                 if age >= light_seconds:
@@ -4065,7 +4075,7 @@ def parse_homebrain_language(text: str) -> dict[str, Any] | None:
             devices = room_devices(room, 'light')
             title = f'{room} light-on time'
         else:
-            devices = [d for d in all_devices() if d.get('category') == 'light']
+            devices = [d for d in all_devices() if is_light_like_device(d)]
             title = 'Light-on time'
         return state_usage_summary(devices, 'switch', 'on', period, title)
 
@@ -4813,7 +4823,7 @@ def active_light_explanation_answer(text: str) -> dict[str, Any] | None:
         return None
 
     devices = all_devices()
-    lights_on = [d for d in devices if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
+    lights_on = [d for d in devices if is_light_like_device(d) and is_state(d.get('switch'), 'on')]
     lights_on.sort(key=lambda d: (canonical_room_name(d.get('room') or 'Unknown').lower(), str(d.get('label') or '').lower()))
     if not lights_on:
         msg = 'No lights are currently on.'
@@ -4991,7 +5001,7 @@ def room_intelligence_answer(text: str) -> dict[str, Any] | None:
     payload = room_details_payload(matched)
     devices = exact_room_devices(payload['room']['room'])
     occupied = [d for d in devices if is_state(d.get('motion'), 'active') or is_state(d.get('presence'), 'present')]
-    lights_on = [d for d in devices if d.get('category') == 'light' and is_state(d.get('switch'), 'on')]
+    lights_on = [d for d in devices if is_light_like_device(d) and is_state(d.get('switch'), 'on')]
     power = sum(float(d.get('power') or 0) for d in devices if isinstance(d.get('power'), (int, float)))
     temps = numeric_device_values(devices, 'temperature')
     hums = numeric_device_values(devices, 'humidity')
@@ -6429,7 +6439,7 @@ def resolve_switch_target(target: str) -> tuple[list[dict[str, Any]], bool, str 
     if target in ('lights', 'light', 'switches', 'switch', 'devices', 'device'):
         return [], explicit_bulk, f"Please specify a room/device, or say 'all {target}' if you mean the whole home."
     if target in ('all lights', 'all light'):
-        return [d for d in all_devices() if d.get('category') == 'light'], explicit_bulk, None
+        return [d for d in all_devices() if is_light_like_device(d)], explicit_bulk, None
     if target in ('all switches', 'all switch'):
         return [d for d in all_devices() if d.get('category') != 'light' and d.get('switch') is not None], explicit_bulk, None
     if target == 'all devices':
@@ -9214,8 +9224,8 @@ def run_command(text: str) -> dict[str, Any]:
         return room_on_status_answer(m_room_on.group(1).strip())
     if re.search(r'\b(which|what)\s+lights?\s+(are|is)\s+on\b', t):
         sync_info = live_switch_state_sync('question-lights-on', categories={'light'}, force=False)
-        lights = [d['label'] for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
-        light_devices = [d for d in all_devices() if d['category'] == 'light' and is_state(d.get('switch'), 'on')]
+        lights = [d['label'] for d in all_devices() if is_light_like_device(d) and is_state(d.get('switch'), 'on')]
+        light_devices = [d for d in all_devices() if is_light_like_device(d) and is_state(d.get('switch'), 'on')]
         return {'success': True, 'message': 'Lights on:\n' + ('\n'.join(lights) if lights else 'None'), 'speech': spoken_device_locations(light_devices)}
     if re.search(r'\b(which|what)\s+switch(es)?\s+(are|is)\s+on\b', t):
         sync_info = live_switch_state_sync('question-switches-on', categories={'switch','power_device'}, force=False)
@@ -9288,7 +9298,7 @@ def run_command(text: str) -> dict[str, Any]:
         increase = action in ('increase', 'raise', 'brighten')
         explicit_bulk = True
         if target in ('all lights', 'lights', ''):
-            devices = [d for d in all_devices() if d.get('category') == 'light']
+            devices = [d for d in all_devices() if is_light_like_device(d)]
         else:
             devices = room_devices(target, 'light')
             if not devices:
@@ -9698,11 +9708,12 @@ def api_rooms():
             'avg_humidity': None,
         })
         rooms[room]['devices'] += 1
-        if d['category'] == 'light':
+        light_like = is_light_like_device(d)
+        if light_like:
             rooms[room]['lights_total'] += 1
             if is_state(d.get('switch'), 'on'):
                 rooms[room]['lights_on'] += 1
-        if is_room_switch_device(d):
+        if not light_like and is_room_switch_device(d):
             rooms[room]['switches_total'] += 1
             if is_room_socket_device(d):
                 rooms[room]['sockets_total'] += 1

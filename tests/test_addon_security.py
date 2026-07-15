@@ -2673,14 +2673,40 @@ def test_category_inventory_lists_all_lights():
             'id': 'plug', 'label': 'Desk Plug', 'room': 'Office',
             'category': 'power_device', 'switch': 'on', 'attributes': {'switch': 'on'},
         },
+        {
+            'id': 'floor', 'label': 'My Floor Lamp', 'room': 'Living Room',
+            'category': 'switch', 'switch': 'off', 'level': 5,
+            'capabilities': ['Actuator', 'Light', 'Switch', 'SwitchLevel'],
+            'attributes': {'switch': 'off', 'level': 5},
+        },
     ]
 
     answer = main.cache_first_assistant_answer('show all lights')
 
     assert answer['intent'] == 'lights'
-    assert 'Lights: 1 cached' in answer['message']
+    assert 'Lights: 2 cached' in answer['message']
     assert 'Bedroom Light (Bedroom 1) - on' in answer['message']
+    assert 'My Floor Lamp (Living Room) - off' in answer['message']
     assert 'Desk Plug' not in answer['message']
+
+
+def test_light_like_capability_counts_as_light_not_switch_in_summary():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'floor', 'label': 'My Floor Lamp', 'room': 'Living Room',
+            'category': 'switch', 'switch': 'on',
+            'capabilities': ['Light', 'Switch', 'SwitchLevel'],
+            'attributes': {'switch': 'on'},
+        },
+    ]
+    main.merged_low_battery_devices = lambda devices: []
+
+    summary = main.compute_dashboard_summary({'synced': False})
+
+    assert summary['lights_on'] == 1
+    assert summary['switches_on'] == 0
+    assert summary['lights_on_devices'][0]['label'] == 'My Floor Lamp'
 
 
 def test_monthly_energy_question_returns_native_meter_total_directly():
