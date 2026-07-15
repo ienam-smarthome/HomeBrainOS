@@ -2541,6 +2541,43 @@ def test_period_energy_question_is_immediate_cache_answer():
     assert '£3.21' in answer['message']
 
 
+def test_period_energy_yesterday_derives_from_octopus_cumulative_history():
+    main = load_addon_main()
+    timezone_obj = main.local_timezone()
+    now = datetime.now(timezone_obj) if timezone_obj else datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start.timestamp() - 86400
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        conn = main.db()
+        try:
+            conn.execute(
+                'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
+                ('meter', 'Octopus Live Meter', 'energy', '1000.0', '{}', int(yesterday_start)),
+            )
+            conn.execute(
+                'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
+                ('meter', 'Octopus Live Meter', 'energy', '1012.34', '{}', int(today_start.timestamp())),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        main.all_devices = lambda: [{
+            'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy', 'category': 'power_device',
+            'power': 3, 'energy': 1013.0, 'attributes': {'energy': 1013.0},
+        }]
+        main.dashboard_summary = lambda live=False: {'power_display': '3W'}
+
+        answer = main.cache_first_assistant_answer('energy usage yesterday')
+
+    assert answer['intent'] == 'energy_yesterday'
+    assert answer['source'] == 'event_cache'
+    assert answer['usage']['yesterday']['source'] == 'cumulative_history'
+    assert answer['usage']['yesterday']['kwh'] == 12.34
+    assert '12.34 kWh' in answer['message']
+    assert 'not cached' not in answer['message']
+
+
 def test_period_energy_missing_total_does_not_invoke_ai():
     main = load_addon_main()
     main.all_devices = lambda: [{
@@ -2554,6 +2591,48 @@ def test_period_energy_missing_total_does_not_invoke_ai():
 
     assert 'not cached' in answer['message']
     assert '591W' in answer['message']
+
+
+def test_high_power_device_does_not_label_small_load_as_high_or_use_octopus_meter():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy',
+            'category': 'power_device', 'power': 204, 'attributes': {'power': 204},
+        },
+        {
+            'id': 'plug', 'label': 'Halo3000x socket power', 'room': 'Sockets',
+            'category': 'power_device', 'power': 6.9, 'attributes': {'power': 6.9},
+        },
+    ]
+
+    answer = main.cache_first_assistant_answer('high power device')
+
+    assert answer['intent'] == 'high_power_devices'
+    assert 'No high-power devices are currently cached' in answer['message']
+    assert 'Halo3000x socket power' in answer['message']
+    assert '6.9W' in answer['message']
+    assert answer['devices'] == []
+
+
+def test_highest_power_device_ranking_excludes_whole_house_meter():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy',
+            'category': 'power_device', 'power': 204, 'attributes': {'power': 204},
+        },
+        {
+            'id': 'fridge', 'label': 'Fridge', 'room': 'Appliances',
+            'category': 'power_device', 'power': 86, 'attributes': {'power': 86},
+        },
+    ]
+
+    answer = main.cache_first_assistant_answer('device with highest power consumption')
+
+    assert answer['intent'] == 'top_power_devices'
+    assert 'Fridge' in answer['message']
+    assert 'Octopus Live Meter' not in answer['message']
 
 
 def test_monthly_energy_question_returns_native_meter_total_directly():

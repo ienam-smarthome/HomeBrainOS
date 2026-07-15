@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.41-alpha'
+APP_VERSION = '1.9.42-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -1895,6 +1895,11 @@ def select_power_source(power_devices: list[dict[str, Any]]) -> dict[str, Any] |
     return None
 
 
+def is_whole_house_power_source(device: dict[str, Any]) -> bool:
+    text = device_search_text(device)
+    return any(term in text for term in POWER_SOURCE_TERMS) or 'octopus live meter' in text
+
+
 def household_people(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     people = []
     for name in HOUSEHOLD_PEOPLE:
@@ -2521,8 +2526,10 @@ def cached_room_inventory_answer(text: str) -> dict[str, Any] | None:
 
 def cached_power_device_answer(text: str) -> dict[str, Any] | None:
     t = assistant_query_text(text)
+    wants_high_power = bool(re.search(r'\bhigh\s+(?:power|electricity|energy|wattage)\b', t))
     wants_ranking = (
         (any(word in t for word in ('power', 'electricity', 'energy', 'watts', 'wattage')) and any(word in t for word in ('highest', 'top', 'most', 'biggest', 'largest', 'highest consuming')))
+        or wants_high_power
         or 'power consumption' in t
         or 'power consumer' in t
         or 'energy consumer' in t
@@ -2549,10 +2556,33 @@ def cached_power_device_answer(text: str) -> dict[str, Any] | None:
             continue
         devices.append((power, device))
     devices.sort(key=lambda item: (-item[0], canonical_room_name(item[1].get('room') or 'Unknown').lower(), str(item[1].get('label') or item[1].get('name') or '').lower()))
+    device_loads = [(power, device) for power, device in devices if not is_whole_house_power_source(device)]
     if wants_ranking:
-        shown = [(power, device) for power, device in devices if power > 0][:10] or devices[:10]
-        title = 'Highest live power devices:'
-        intent = 'top_power_devices'
+        high_threshold_w = 50.0
+        if wants_high_power:
+            shown = [(power, device) for power, device in device_loads if power >= high_threshold_w][:10]
+            if not shown:
+                highest = next(((power, device) for power, device in device_loads if power > 0), None)
+                if highest:
+                    power, device = highest
+                    label = device.get('label') or device.get('name') or str(device.get('id'))
+                    room = canonical_room_name(device.get('room') or 'Unknown')
+                    message = f'No high-power devices are currently cached. Highest device load is {label} ({room}) at {format_power_value(power)}.'
+                else:
+                    message = 'No high-power devices are currently cached.'
+                return {
+                    'success': True,
+                    'intent': 'high_power_devices',
+                    'source': 'event_cache',
+                    'message': message,
+                    'devices': [],
+                }
+            title = f'High-power devices ({high_threshold_w:g}W+):'
+            intent = 'high_power_devices'
+        else:
+            shown = [(power, device) for power, device in device_loads if power > 0][:10] or device_loads[:10]
+            title = 'Highest live device power:'
+            intent = 'top_power_devices'
     else:
         shown = devices[:25]
         title = f'Power devices: {len(devices)} cached'
@@ -4304,6 +4334,90 @@ def safe_currency_amount(value: Any) -> float | None:
     return safe_float(match.group(1)) if match else None
 
 
+def parse_first_kwh_text(text: Any) -> float | None:
+    match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*kWh\b', str(text or ''), flags=re.IGNORECASE)
+    return safe_float(match.group(1)) if match else None
+
+
+def cumulative_energy_kwh(meter: dict[str, Any]) -> float | None:
+    direct = safe_float(meter.get('energy'))
+    if direct is not None:
+        return direct
+    value = first_attr_value(meter, (
+        'energy', 'totalEnergy', 'cumulativeEnergy', 'importTotal', 'totalImport',
+        'meterReading', 'electricityMeterReading', 'displayMini'
+    ))
+    numeric = safe_float(value)
+    return numeric if numeric is not None else parse_first_kwh_text(value)
+
+
+def cumulative_energy_reading_near(device_id: str, target_ts: int, max_gap_seconds: int = 6 * 3600) -> dict[str, Any] | None:
+    candidates: list[dict[str, Any]] = []
+    try:
+        conn = db()
+        try:
+            for table in ('hubitat_events', 'history'):
+                before = conn.execute(
+                    f"SELECT value, created_at FROM {table} WHERE device_id=? AND lower(attr)='energy' AND created_at<=? ORDER BY created_at DESC LIMIT 1",
+                    (str(device_id), int(target_ts)),
+                ).fetchone()
+                after = conn.execute(
+                    f"SELECT value, created_at FROM {table} WHERE device_id=? AND lower(attr)='energy' AND created_at>=? ORDER BY created_at ASC LIMIT 1",
+                    (str(device_id), int(target_ts)),
+                ).fetchone()
+                for row in (before, after):
+                    value = safe_float(row['value']) if row else None
+                    if value is None:
+                        continue
+                    created_at = int(row['created_at'])
+                    gap = abs(created_at - int(target_ts))
+                    if gap <= max_gap_seconds:
+                        candidates.append({'kwh': value, 'created_at': created_at, 'gap_seconds': gap, 'source': table})
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        candidates = []
+    return min(candidates, key=lambda item: item['gap_seconds']) if candidates else None
+
+
+def period_energy_from_history(device_id: str, period: str, cumulative_kwh: float | None) -> dict[str, Any]:
+    """Derive today/yesterday usage from cumulative Octopus energy history around local midnight."""
+    timezone = local_timezone()
+    now = datetime.now(timezone) if timezone else datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == 'yesterday':
+        start = today_start - timedelta(days=1)
+        end = today_start
+    elif period == 'today':
+        start = today_start
+        end = now
+    else:
+        return {'kwh': None, 'coverage_start': None, 'coverage_end': None, 'coverage_complete': False, 'source': None}
+
+    start_reading = cumulative_energy_reading_near(device_id, int(start.timestamp()))
+    if not start_reading:
+        return {'kwh': None, 'coverage_start': None, 'coverage_end': None, 'coverage_complete': False, 'source': None}
+    if period == 'today' and cumulative_kwh is not None:
+        end_reading = {'kwh': cumulative_kwh, 'created_at': int(time.time()), 'gap_seconds': 0, 'source': 'current_meter'}
+    else:
+        end_reading = cumulative_energy_reading_near(device_id, int(end.timestamp()))
+    if not end_reading:
+        return {'kwh': None, 'coverage_start': start_reading.get('created_at'), 'coverage_end': None, 'coverage_complete': False, 'source': None}
+
+    delta = float(end_reading['kwh']) - float(start_reading['kwh'])
+    if delta < -0.05:
+        return {'kwh': None, 'coverage_start': start_reading.get('created_at'), 'coverage_end': end_reading.get('created_at'), 'coverage_complete': False, 'source': None}
+    return {
+        'kwh': round(max(0.0, delta), 3),
+        'coverage_start': start_reading.get('created_at'),
+        'coverage_end': end_reading.get('created_at'),
+        'coverage_complete': True,
+        'source': 'cumulative_history',
+        'start_kwh': start_reading.get('kwh'),
+        'end_kwh': end_reading.get('kwh'),
+    }
+
+
 def month_to_date_energy_from_history(device_id: str, cumulative_kwh: float | None) -> dict[str, Any]:
     """Derive month-to-date usage from the closest cached cumulative reading to month start."""
     if cumulative_kwh is None:
@@ -4352,8 +4466,7 @@ def energy_usage_from_meter() -> dict[str, Any]:
     devices = all_devices()
     meter = None
     for device in devices:
-        text = device_search_text(device)
-        if any(term in text for term in POWER_SOURCE_TERMS) or 'octopus live meter' in text:
+        if is_whole_house_power_source(device):
             meter = device
             break
     if not meter:
@@ -4395,7 +4508,15 @@ def energy_usage_from_meter() -> dict[str, Any]:
     parsed_month_kwh, parsed_month_cost = parse_kwh_cost_text(display_month, '')
     month_kwh = month_kwh if month_kwh is not None else parsed_month_kwh
     month_cost = month_cost if month_cost is not None else parsed_month_cost
-    cumulative_kwh = safe_float(meter.get('energy'))
+    cumulative_kwh = cumulative_energy_kwh(meter)
+    today_history = {'kwh': None, 'coverage_start': None, 'coverage_end': None, 'coverage_complete': False, 'source': None}
+    yesterday_history = {'kwh': None, 'coverage_start': None, 'coverage_end': None, 'coverage_complete': False, 'source': None}
+    if today_kwh is None:
+        today_history = period_energy_from_history(str(meter.get('id') or ''), 'today', cumulative_kwh)
+        today_kwh = safe_float(today_history.get('kwh'))
+    if yesterday_kwh is None:
+        yesterday_history = period_energy_from_history(str(meter.get('id') or ''), 'yesterday', cumulative_kwh)
+        yesterday_kwh = safe_float(yesterday_history.get('kwh'))
     month_history = {'kwh': None, 'coverage_start': None, 'coverage_complete': False, 'source': None}
     if month_kwh is None:
         month_history = month_to_date_energy_from_history(str(meter.get('id') or ''), cumulative_kwh)
@@ -4408,8 +4529,22 @@ def energy_usage_from_meter() -> dict[str, Any]:
     return {
         'available': True,
         'source': {'id': meter.get('id'), 'label': meter.get('label') or meter.get('name') or 'Energy meter'},
-        'today': {'kwh': today_kwh, 'cost_gbp': today_cost},
-        'yesterday': {'kwh': yesterday_kwh, 'cost_gbp': yesterday_cost},
+        'today': {
+            'kwh': today_kwh,
+            'cost_gbp': today_cost,
+            'coverage_start': today_history.get('coverage_start'),
+            'coverage_end': today_history.get('coverage_end'),
+            'coverage_complete': bool(today_history.get('coverage_complete')) if today_history.get('source') else True,
+            'source': today_history.get('source') or ('meter_attribute' if today_kwh is not None or today_cost is not None else None),
+        },
+        'yesterday': {
+            'kwh': yesterday_kwh,
+            'cost_gbp': yesterday_cost,
+            'coverage_start': yesterday_history.get('coverage_start'),
+            'coverage_end': yesterday_history.get('coverage_end'),
+            'coverage_complete': bool(yesterday_history.get('coverage_complete')) if yesterday_history.get('source') else True,
+            'source': yesterday_history.get('source') or ('meter_attribute' if yesterday_kwh is not None or yesterday_cost is not None else None),
+        },
         'month': {
             'kwh': month_kwh,
             'cost_gbp': month_cost,
