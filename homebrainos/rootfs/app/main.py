@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.48-alpha'
+APP_VERSION = '1.9.49-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2512,6 +2512,58 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
     return result
 
 
+def octopus_rate_display_readings(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    readings: list[dict[str, Any]] = []
+    for device in devices:
+        kind = octopus_display_period(device)
+        if kind not in {'rate', 'standing_charge'}:
+            continue
+        value = display_device_value(device)
+        if value is None or str(value).strip() == '':
+            continue
+        label = device.get('label') or device.get('name') or 'Octopus display'
+        short_label = re.sub(r'^\s*Octopus\s+Live\s+Meter\s+Display\s+', '', str(label), flags=re.IGNORECASE).strip()
+        readings.append({
+            'id': device.get('id'),
+            'label': label,
+            'short_label': short_label or label,
+            'kind': kind,
+            'value': str(value).strip(),
+        })
+    order = {
+        'Rates Compact': 0,
+        'Current Rate': 1,
+        'Previous Rate': 2,
+        'Standing Charge': 3,
+    }
+    return sorted(readings, key=lambda item: (order.get(str(item['short_label']), 9), str(item['short_label'])))
+
+
+def cached_octopus_rate_answer(text: str) -> dict[str, Any] | None:
+    t = normalise(text)
+    if not any(term in t for term in ('rate', 'rates', 'tariff', 'standing charge', 'price per kwh', 'p/kwh', 'p per kwh')):
+        return None
+    readings = octopus_rate_display_readings(all_devices())
+    if not readings:
+        return {
+            'success': True,
+            'intent': 'octopus_rates',
+            'source': 'event_cache',
+            'message': 'No Octopus rate display values are cached yet. Rebuild cache after selecting the Octopus display devices in Maker API.',
+            'rates': [],
+        }
+    lines = ['Octopus rate displays:']
+    for item in readings:
+        lines.append(f"- {item['short_label']}: {item['value']}")
+    return {
+        'success': True,
+        'intent': 'octopus_rates',
+        'source': 'event_cache',
+        'message': '\n'.join(lines),
+        'rates': readings,
+    }
+
+
 def assistant_query_text(text: str) -> str:
     q = normalise(text or '')
     q = re.sub(r'\b(?:please|can you|could you|would you|tell me|show me|give me|i want to know|do we have|do i have)\b', ' ', q)
@@ -2760,6 +2812,9 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     energy_period = cached_period_energy_answer(t)
     if energy_period:
         return energy_period
+    rate_answer = cached_octopus_rate_answer(t)
+    if rate_answer:
+        return rate_answer
     if re.search(r'\b(device health|device status|device check|device report)\b', t):
         return device_status_report_display_answer(t) or stale_devices_answer(t)
     if 'room' in t and 'motion' in t:
@@ -4443,8 +4498,20 @@ def parse_kwh_cost_text(text: Any, marker: str) -> tuple[float | None, float | N
 
 
 def parse_power_watts_text(text: Any) -> float | None:
-    match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*(?:w|watts)\b', str(text or ''), flags=re.IGNORECASE)
-    return safe_float(match.group(1)) if match else None
+    match = re.search(
+        r'([0-9]+(?:\.[0-9]+)?)\s*(kw|kilowatt(?:s)?|w|watt(?:s)?)\b',
+        str(text or ''),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    value = safe_float(match.group(1))
+    if value is None:
+        return None
+    unit = compact_name(match.group(2))
+    if unit in {'kw', 'kilowatt', 'kilowatts'}:
+        return round(value * 1000, 3)
+    return value
 
 
 def display_device_value(device: dict[str, Any]) -> Any:
@@ -4476,6 +4543,10 @@ def octopus_display_period(device: dict[str, Any]) -> str | None:
     for period in ('today', 'yesterday', 'week', 'month'):
         if re.search(rf'\b{period}\b', text):
             return period
+    if 'standing charge' in text:
+        return 'standing_charge'
+    if re.search(r'\b(?:rate|rates|tariff)\b', text):
+        return 'rate'
     return None
 
 

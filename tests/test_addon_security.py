@@ -2708,16 +2708,16 @@ def test_dashboard_power_prefers_octopus_display_power_child():
         },
         {
             'id': 'display-power', 'label': 'Octopus Live Meter Display Power', 'room': 'Octopus Energy',
-            'category': 'device', 'value': '208 W',
-            'attributes': {'valueStr': '208 W', 'friendly_name': 'Octopus Live Meter Display Power'},
+            'category': 'device', 'value': '1.99 kW',
+            'attributes': {'valueStr': '1.99 kW', 'friendly_name': 'Octopus Live Meter Display Power'},
         },
     ]
     main.merged_low_battery_devices = lambda devices: []
 
     summary = main.compute_dashboard_summary({'synced': False})
 
-    assert summary['power_total'] == 208
-    assert summary['power_display'] == '208W'
+    assert summary['power_total'] == 1990
+    assert summary['power_display'] == '2kW'
     assert summary['power_source_label'] == 'Octopus Live Meter Display Power'
 
 
@@ -2733,6 +2733,8 @@ def test_refresh_prioritises_octopus_display_detail_values():
             ] + [
                 {'id': 'display-power', 'label': 'Octopus Live Meter Display Power', 'name': 'Octopus Live Meter Display Power'},
                 {'id': 'display-month', 'label': 'Octopus Live Meter Display Month', 'name': 'Octopus Live Meter Display Month'},
+                {'id': 'display-rates', 'label': 'Octopus Live Meter Display Rates Compact', 'name': 'Octopus Live Meter Display Rates Compact'},
+                {'id': 'display-previous-rate', 'label': 'Octopus Live Meter Display Previous Rate', 'name': 'Octopus Live Meter Display Previous Rate'},
                 {'id': 'meter', 'label': 'Octopus Live Meter', 'name': 'Octopus Live Meter', 'attributes': {'power': 111, 'energy': 8277.7}},
             ]
             detail_calls = []
@@ -2747,7 +2749,7 @@ def test_refresh_prioritises_octopus_display_detail_values():
                         'label': 'Octopus Live Meter Display Power',
                         'name': 'Octopus Live Meter Display Power',
                         'attributes': {'friendly_name': 'Octopus Live Meter Display Power'},
-                        'currentStates': [{'name': 'value', 'value': '208 W'}],
+                        'currentStates': [{'name': 'value', 'value': '1.99 kW'}],
                     }
                 if path == 'devices/display-month':
                     return {
@@ -2756,6 +2758,22 @@ def test_refresh_prioritises_octopus_display_detail_values():
                         'name': 'Octopus Live Meter Display Month',
                         'attributes': {'friendly_name': 'Octopus Live Meter Display Month'},
                         'currentStates': [{'name': 'value', 'value': '125.59 kWh (\u00a341.06)'}],
+                    }
+                if path == 'devices/display-rates':
+                    return {
+                        'id': 'display-rates',
+                        'label': 'Octopus Live Meter Display Rates Compact',
+                        'name': 'Octopus Live Meter Display Rates Compact',
+                        'attributes': {'friendly_name': 'Octopus Live Meter Display Rates Compact'},
+                        'currentStates': [{'name': 'value', 'value': 'Now 27.81p | Next 27.81p'}],
+                    }
+                if path == 'devices/display-previous-rate':
+                    return {
+                        'id': 'display-previous-rate',
+                        'label': 'Octopus Live Meter Display Previous Rate',
+                        'name': 'Octopus Live Meter Display Previous Rate',
+                        'attributes': {'friendly_name': 'Octopus Live Meter Display Previous Rate'},
+                        'currentStates': [{'name': 'value', 'value': '27.81 p/kWh'}],
                     }
                 return {'id': path.rsplit('/', 1)[-1], 'currentStates': []}
 
@@ -2767,17 +2785,45 @@ def test_refresh_prioritises_octopus_display_detail_values():
 
         display_power = next(device for device in devices if device['id'] == 'display-power')
         display_month = next(device for device in devices if device['id'] == 'display-month')
+        display_rates = next(device for device in devices if device['id'] == 'display-rates')
+        display_previous_rate = next(device for device in devices if device['id'] == 'display-previous-rate')
         assert count == len(raw_devices)
         assert 'devices/display-power' in detail_calls
         assert 'devices/display-month' in detail_calls
-        assert display_power['attributes']['value'] == '208 W'
+        assert 'devices/display-rates' in detail_calls
+        assert 'devices/display-previous-rate' in detail_calls
+        assert display_power['attributes']['value'] == '1.99 kW'
         assert display_month['attributes']['value'] == '125.59 kWh (\u00a341.06)'
-        assert summary['power_total'] == 208
+        assert display_rates['attributes']['value'] == 'Now 27.81p | Next 27.81p'
+        assert display_previous_rate['attributes']['value'] == '27.81 p/kWh'
+        assert summary['power_total'] == 1990
         assert summary['power_source_label'] == 'Octopus Live Meter Display Power'
         assert month['usage']['month']['source'] == 'octopus_display_device'
         assert '125.59 kWh' in month['message']
     finally:
         main.DB_PATH = original_db_path
+
+
+def test_octopus_rate_question_uses_display_child_devices():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {
+            'id': 'rates', 'label': 'Octopus Live Meter Display Rates Compact',
+            'category': 'device',
+            'attributes': {'valueStr': 'Now 27.81p | Next 27.81p', 'friendly_name': 'Octopus Live Meter Display Rates Compact'},
+        },
+        {
+            'id': 'previous-rate', 'label': 'Octopus Live Meter Display Previous Rate',
+            'category': 'device',
+            'attributes': {'valueStr': '27.81 p/kWh', 'friendly_name': 'Octopus Live Meter Display Previous Rate'},
+        },
+    ]
+
+    answer = main.cache_first_assistant_answer('what is the electricity rate')
+
+    assert answer['intent'] == 'octopus_rates'
+    assert 'Rates Compact: Now 27.81p | Next 27.81p' in answer['message']
+    assert 'Previous Rate: 27.81 p/kWh' in answer['message']
 
 
 def test_category_inventory_lists_humidity_sensors():
