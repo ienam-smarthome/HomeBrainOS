@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.40-alpha'
+APP_VERSION = '1.9.41-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -106,6 +106,7 @@ def load_config() -> dict[str, Any]:
         'event_retention_days': int(os.getenv('EVENT_RETENTION_DAYS', '30')),
         'event_prune_interval_seconds': int(os.getenv('EVENT_PRUNE_INTERVAL_SECONDS', '86400')),
         'sse_poll_seconds': float(os.getenv('SSE_POLL_SECONDS', '0.5')),
+        'hub_info_refresh_seconds': int(os.getenv('HUB_INFO_REFRESH_SECONDS', '30')),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '6')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '7200')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '2')),
@@ -127,6 +128,7 @@ LAST_ERROR: str | None = None
 LAST_REFRESH: float | None = None
 LAST_DETAIL_ERRORS: list[str] = []
 LAST_HUBITAT_EVENT: dict[str, Any] | None = None
+LIVE_HUB_INFO_CACHE: dict[str, Any] = {'checked_at': 0.0, 'device': None, 'error': None}
 STATE_EVENT_VERSION = 0
 PENDING_DEVICE_TIMERS: dict[str, dict[str, Any]] = {}
 ACTIVE_TIMER_THREADS: dict[str, threading.Timer] = {}
@@ -5300,6 +5302,58 @@ def hub_info_device() -> dict[str, Any] | None:
     return next((d for d in all_devices() if 'hub info' in device_search_text(d)), None)
 
 
+def hubitat_base_root() -> str:
+    base = str(CONFIG.get('hubitat_base_url') or '').strip().rstrip('/')
+    match = re.match(r'^(https?://[^/]+)', base, flags=re.IGNORECASE)
+    return match.group(1) if match else base
+
+
+def live_hub_info_device(force: bool = False) -> dict[str, Any] | None:
+    """Read Hubitat's live Hub Info HTML page without a Maker API device scan."""
+    global LIVE_HUB_INFO_CACHE
+    refresh_seconds = max(5, int(CONFIG.get('hub_info_refresh_seconds', 30)))
+    now = time.time()
+    cached = LIVE_HUB_INFO_CACHE.get('device')
+    if not force and cached and now - float(LIVE_HUB_INFO_CACHE.get('checked_at') or 0) < refresh_seconds:
+        return cached
+
+    base = hubitat_base_root()
+    if not base:
+        return None
+    url = base + '/local/hubInfoOutput.html'
+    try:
+        response = requests.get(url, timeout=3)
+        response.raise_for_status()
+        html = str(response.text or '')
+        if not html.strip():
+            raise RuntimeError('Hub Info page returned an empty response.')
+        device = {
+            'id': 'hub-info-live',
+            'label': 'Hub Info',
+            'name': 'Hub Info',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {'Html': html},
+            '_homebrain_source': url,
+        }
+        if not hub_info_rows(device):
+            raise RuntimeError('Hub Info page did not contain recognised fields.')
+        LIVE_HUB_INFO_CACHE = {'checked_at': now, 'device': device, 'error': None}
+        return device
+    except Exception as exc:
+        LIVE_HUB_INFO_CACHE = {'checked_at': now, 'device': cached, 'error': public_error(exc)}
+        return cached if isinstance(cached, dict) else None
+
+
+def best_hub_info_device(live: bool = False) -> tuple[dict[str, Any] | None, str]:
+    if live:
+        live_device = live_hub_info_device()
+        if live_device:
+            return live_device, 'live_hub_info'
+    cached = hub_info_device()
+    return cached, 'event_cache' if cached else 'unavailable'
+
+
 
 def current_performance_metrics() -> dict[str, Any]:
     now = time.time()
@@ -5567,7 +5621,7 @@ def hub_health_display_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
 
 
 def hub_health_summary() -> dict[str, Any]:
-    hub = hub_info_device()
+    hub, source = best_hub_info_device(live=True)
     if not hub:
         return {'available': False, 'level': 'unknown', 'label': 'Hub health unavailable'}
     metrics = hub_health_metrics(hub)
@@ -5592,11 +5646,13 @@ def hub_health_summary() -> dict[str, Any]:
         'free_memory_mb': free_mb,
         'metrics': metrics,
         'display_metrics': hub_health_display_metrics(metrics),
+        'source': source,
+        'error': LIVE_HUB_INFO_CACHE.get('error'),
     }
 
 
 def hub_health_answer() -> dict[str, Any]:
-    hub = hub_info_device()
+    hub, source = best_hub_info_device(live=True)
     if not hub:
         return {
             'success': False,
@@ -5604,8 +5660,7 @@ def hub_health_answer() -> dict[str, Any]:
             'message': 'No Hub Info device found. Add or expose the Hub Info device from Hubitat, then refresh from Hubitat.',
         }
     metrics = hub_health_metrics(hub)
-    source = 'event_cache'
-    if sum(value is not None for value in metrics.values()) < 2 and hub.get('id'):
+    if sum(value is not None for value in metrics.values()) < 2 and hub.get('id') and hub.get('id') != 'hub-info-live':
         fresh = fetch_live_device_detail(str(hub.get('id')))
         if fresh:
             update_cached_device_snapshot(fresh)

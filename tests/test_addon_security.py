@@ -1740,6 +1740,77 @@ def test_status_hub_health_summary_colours_cpu_and_memory():
     assert summary['label'] == 'Hub CPU 22% · Free 1.02GB'
 
 
+def test_status_hub_health_summary_prefers_live_hub_info_page():
+    main = load_addon_main()
+    main.CONFIG['hubitat_base_url'] = 'http://192.168.1.239:8080'
+    main.CONFIG['hub_info_refresh_seconds'] = 30
+    main.LIVE_HUB_INFO_CACHE = {'checked_at': 0.0, 'device': None, 'error': None}
+    main.all_devices = lambda: [
+        {
+            'id': 'hub',
+            'label': 'Hub Info',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {'freeMemory': '846.06 MB', 'cpu': 24.5},
+        },
+    ]
+
+    class Response:
+        text = '''
+        <table>
+            <tr><td>Free Mem</td><td>1011.44 MB</td></tr>
+            <tr><td>CPU Load/Load%</td><td>0.44 / 14.75 %</td></tr>
+        </table>
+        '''
+
+        def raise_for_status(self):
+            return None
+
+    calls = []
+
+    def get(url, timeout=3):
+        calls.append((url, timeout))
+        return Response()
+
+    main.requests.get = get
+
+    summary = main.hub_health_summary()
+
+    assert summary['source'] == 'live_hub_info'
+    assert summary['cpu_load_percent'] == 14.75
+    assert summary['free_memory_mb'] == 1011.44
+    assert summary['label'].startswith('Hub CPU 14.75%')
+    assert summary['label'].endswith('Free 1.01GB')
+    assert calls == [('http://192.168.1.239:8080/local/hubInfoOutput.html', 3)]
+
+
+def test_status_hub_health_summary_falls_back_to_cached_hub_info_when_live_unavailable():
+    main = load_addon_main()
+    main.CONFIG['hubitat_base_url'] = 'http://hubitat.local'
+    main.LIVE_HUB_INFO_CACHE = {'checked_at': 0.0, 'device': None, 'error': None}
+    main.all_devices = lambda: [
+        {
+            'id': 'hub',
+            'label': 'Hub Info',
+            'room': 'Hub',
+            'category': 'device',
+            'attributes': {'Html': 'Free Mem : 846.06 MB\nCPU Load/Load% : 0.88 / 24.5 %'},
+        },
+    ]
+
+    def get(*_args, **_kwargs):
+        raise RuntimeError('offline')
+
+    main.requests.get = get
+
+    summary = main.hub_health_summary()
+
+    assert summary['source'] == 'event_cache'
+    assert summary['cpu_load_percent'] == 24.5
+    assert summary['free_memory_mb'] == 846.06
+    assert 'offline' in str(summary.get('error'))
+
+
 def test_status_hub_health_summary_treats_small_plain_memory_as_gb():
     main = load_addon_main()
     main.all_devices = lambda: [

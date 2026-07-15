@@ -1,5 +1,5 @@
 name: HomeBrain OS
-version: '1.9.40-alpha'
+version: '1.9.41-alpha'
 slug: homebrainos
 description: HomeBrain OS live dashboard with SQLite device engine and Hubitat Maker API
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -49,6 +49,7 @@ options:
   event_retention_days: 30
   event_prune_interval_seconds: 86400
   sse_poll_seconds: 0.5
+  hub_info_refresh_seconds: 30
   device_detail_refresh_limit: 6
   device_detail_refresh_seconds: 7200
   device_detail_refresh_batch: 2
@@ -94,6 +95,7 @@ schema:
   event_retention_days: int
   event_prune_interval_seconds: int
   sse_poll_seconds: float
+  hub_info_refresh_seconds: int
   device_detail_refresh_limit: int
   device_detail_refresh_seconds: int
   device_detail_refresh_batch: int
