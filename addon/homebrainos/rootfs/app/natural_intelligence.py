@@ -113,7 +113,10 @@ def classify_intent(query: str) -> IntentResult:
         )
 
     if room and (
-        any(term in q for term in ('status', 'summary', 'what is happening', 'whats happening', 'how is'))
+        any(term in q for term in (
+            'status', 'summary', 'what is happening', 'what is going on',
+            'what is on', 'what are on', 'which devices are on', 'how is',
+        ))
         or q in {_normalise(room), f'{_normalise(room)} status'}
         or detail != 'glance'
     ):
@@ -206,6 +209,8 @@ def format_money(value: Any) -> str:
 def _normalise(text: Any) -> str:
     value = str(text or '').lower()
     replacements = {
+        "what's": 'what is', 'whats': 'what is', 'what s': 'what is',
+        'd tv': 'tv', 'dtv': 'tv',
         'bedroom too': 'bedroom 2', 'bed room too': 'bedroom 2', 'bedroom two': 'bedroom 2', 'bed room two': 'bedroom 2',
         'yeseterday': 'yesterday', 'kilowatts': 'kilowatt-hours',
         'humidify': 'dehumidifier', 'dehumidify': 'dehumidifier', 'de humidifier': 'dehumidifier', 'humidifier': 'dehumidifier',
@@ -537,17 +542,27 @@ def _voice_dehumidifier_command(app_module: Any, query: str) -> dict[str, Any] |
         return None
     candidates = []
     for device in devices:
-        if not isinstance(device, dict) or not _is_switchable(device):
+        if not isinstance(device, dict):
             continue
         label = _normalise(_device_label(device))
-        if 'dehumidifier' not in label:
+        device_name = _normalise(device.get('name'))
+        if 'dehumidifier' not in label and 'dehumidifier' not in device_name:
             continue
         label_numbers = set(re.findall(r'\b\d+\b', label))
         if requested_numbers and not requested_numbers.intersection(label_numbers):
             continue
         candidates.append(device)
-    if len(candidates) != 1:
+    if not candidates:
         return None
+    if len(candidates) > 1:
+        labels = [_device_label(device) for device in candidates]
+        return {
+            'success': False,
+            'intent': 'clarification',
+            'needs_clarification': True,
+            'message': 'I found more than one dehumidifier. Which one did you mean: ' + ', '.join(labels) + '?',
+            'matched': labels,
+        }
     controller = getattr(app_module, 'command_devices', None)
     if not callable(controller):
         return {'success': False, 'intent': 'voice_device_command', 'message': f'I understood {_device_label(candidates[0])}, but device control is unavailable.'}

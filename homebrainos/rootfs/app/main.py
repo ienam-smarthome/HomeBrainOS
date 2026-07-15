@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.50-alpha'
+APP_VERSION = '1.9.51-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2778,6 +2778,9 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return cached_ai_status_answer()
     if looks_like_control_request(t) or t in ('refresh', 'refresh cache', 'reload cache', 'update cache', 'clear cache'):
         return None
+    named_state = named_switch_state_answer(t)
+    if named_state:
+        return named_state
     switch_state = cached_switch_state_question(t)
     if switch_state:
         return switch_state
@@ -6121,6 +6124,8 @@ def hub_health_answer() -> dict[str, Any]:
 def normalise(text: Any) -> str:
     text = str(text or '').lower().strip()
     replacements = {
+        "what's": 'what is', 'whats': 'what is', 'what s': 'what is',
+        'd tv': 'tv', 'dtv': 'tv',
         'turn of': 'turn off', 'switch of': 'switch off', 'the humidifier': 'dehumidifier',
         'de humidifier': 'dehumidifier', 'humidifier': 'dehumidifier', 'ligth': 'light',
         'lite': 'light', 'livingroom': 'living room', 'one': '1', 'two': '2', 'three': '3',
@@ -6322,10 +6327,11 @@ def find_devices(query: str, category: str | None = None) -> list[dict[str, Any]
 
 def room_devices(room: str, category: str | None = None) -> list[dict[str, Any]]:
     room_n = normalise(room)
+    room_n = re.sub(r'^(?:the|my)\s+', '', room_n).strip()
     generic_targets = {'', 'all', 'any', 'home', 'house', 'everything', 'device', 'devices', 'light', 'lights', 'switch', 'switches'}
     if room_n in generic_targets:
         return []
-    devices = [d for d in all_devices() if room_n in normalise(d.get('room','')) or room_n in normalise(d.get('label',''))]
+    devices = [d for d in all_devices() if _device_matches_room_subject(d, room_n)]
     if category:
         devices = [d for d in devices if d['category'] == category]
     return devices
@@ -8289,6 +8295,51 @@ def smart_device_value_answer(question: str) -> dict[str, Any] | None:
     }
 
 
+def named_switch_state_answer(question: str) -> dict[str, Any] | None:
+    """Answer an exact named-device state question without fuzzy or LLM routing."""
+    q = normalise(question or '').strip()
+    match = re.match(r'^(?:is|are)\s+(?:the\s+)?(.+?)\s+(?:on|off|running)$', q)
+    if not match:
+        return None
+    subject = normalise(match.group(1))
+    subject_key = compact_name(subject)
+    if not subject_key:
+        return None
+
+    matches: list[dict[str, Any]] = []
+    for device in all_devices():
+        label = normalise(device.get('label') or '')
+        name = normalise(device.get('name') or '')
+        if subject in {label, name} or subject_key in {compact_name(label), compact_name(name)}:
+            state = device.get('switch')
+            if state is None:
+                state = device_attr_value(device, 'switch')
+            if state is not None:
+                matches.append(device)
+
+    if not matches:
+        return None
+    if len(matches) > 1:
+        return disambiguation_response(matches, 'state')
+
+    device = matches[0]
+    label = device.get('label') or device.get('name') or subject
+    state = device.get('switch')
+    if state is None:
+        state = device_attr_value(device, 'switch')
+    state_text = normalise(state) or 'unknown'
+    return {
+        'success': True,
+        'intent': 'named_switch_state',
+        'source': 'event_cache',
+        'message': f'{label} is {state_text}.',
+        'speech': f'{label} is {state_text}.',
+        'device': label,
+        'attribute': 'switch',
+        'value': state,
+    }
+
+
 def direct_value_lookup_answer(question: str) -> dict[str, Any] | None:
     q = normalise(question or '').strip()
 
@@ -8614,13 +8665,9 @@ def room_status_answer(question: str) -> dict[str, Any] | None:
         refreshed.append(device)
     devices = refreshed
 
-    room_name = None
-    for device in devices:
-        room = device.get('room')
-        if room and normalise(room) != 'unknown':
-            room_name = room
-            break
-    room_name = room_name or subject.title()
+    # The requested logical room is authoritative. A sensor named for the room
+    # can be assigned to a technical group such as "Ventilation".
+    room_name = canonical_room_name(subject)
 
     temperatures = []
     humidities = []

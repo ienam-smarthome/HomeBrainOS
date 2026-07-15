@@ -1,3 +1,11 @@
+## v1.9.51-alpha - Deterministic Assistant Resolution
+
+- Fixed contracted room questions such as `what's happening in the bathroom` and `what's on in the bathroom` being routed to a whole-home briefing or empty result.
+- Added logical-room matching for devices whose label names the room but whose Hubitat group differs, such as a Bathroom meter assigned to Ventilation.
+- Added exact named-switch answers and a `DTV` voice alias so `is the TV on` cannot select an unrelated switch such as Roborock.
+- Made generic dehumidifier commands request clarification when multiple devices match, and retained numbered smart-plug targets even when their cached switch capability is incomplete.
+- Added regression coverage using the live-shaped TV, bathroom, and dehumidifier metadata that exposed these inconsistencies.
+
 ## v1.9.38-alpha - Direct Monthly Energy Answers
 
 - Routed month-to-date energy and cost questions to a concise meter answer instead of the broad AI Energy Advisor.

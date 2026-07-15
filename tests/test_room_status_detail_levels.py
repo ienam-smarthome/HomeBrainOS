@@ -48,6 +48,19 @@ class FakeMain:
         ]
 
 
+class LiveShapedBathroomMain(FakeMain):
+    def all_devices(self):
+        devices = super().all_devices()
+        devices[0] = {
+            "id": "b1",
+            "label": "Bathroom meter",
+            "room": "Ventilation",
+            "category": "climate_sensor",
+            "attributes": {"temperature": 23.1, "humidity": 68},
+        }
+        return devices
+
+
 def test_glance_room_status_is_focused():
     answer = module.focused_room_status_answer(FakeMain(), "bathroom status")
     assert answer["detail_level"] == "glance"
@@ -57,6 +70,21 @@ def test_glance_room_status_is_focused():
     assert "Bathroom Motion: battery 14 percent" in answer["message"]
     assert "Hallway" not in answer["message"]
     assert answer["devices"] == []
+
+
+def test_contracted_room_happening_does_not_fall_back_to_home_briefing():
+    answer = module.focused_room_status_answer(LiveShapedBathroomMain(), "what's happening in the bathroom?")
+    assert answer["intent"] == "room_status"
+    assert answer["room"] == "Bathroom"
+    assert "23.1°C" in answer["message"]
+    assert "68% humidity" in answer["message"]
+
+
+def test_whats_on_room_query_includes_logically_named_meter():
+    answer = module.focused_room_status_answer(LiveShapedBathroomMain(), "what's on in the bathroom?")
+    assert answer["intent"] == "room_status"
+    assert "Bathroom Fan: on" in answer["message"]
+    assert "23.1°C" in answer["message"]
 
 
 def test_detailed_room_status_lists_useful_device_states():

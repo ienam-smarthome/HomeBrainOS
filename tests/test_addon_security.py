@@ -1355,6 +1355,46 @@ def test_assistant_reports_active_devices_in_named_room():
     assert answer['speech'] == 'Hallway: Hallway Light on and Hallway TRV heating.'
 
 
+def test_exact_tv_state_never_selects_unrelated_switch():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'tv', 'label': 'TV', 'name': 'Innr SP 242 Power Metering SmartPlug', 'room': 'Multimedia', 'category': 'device', 'switch': 'off'},
+        {'id': 'vac', 'label': 'Roborock Q7 Max', 'name': 'Roborock Q7 Max', 'room': 'Appliances', 'category': 'device', 'switch': 'on'},
+    ]
+
+    answer = main.cache_first_assistant_answer('is the tv on')
+    assert answer['intent'] == 'named_switch_state'
+    assert answer['message'] == 'TV is off.'
+    assert answer['device'] == 'TV'
+
+
+def test_voice_dtv_alias_resolves_exact_tv_state():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'tv', 'label': 'TV', 'name': 'Innr SP 242 Power Metering SmartPlug', 'room': 'Multimedia', 'category': 'device', 'switch': 'off'},
+        {'id': 'vac', 'label': 'Roborock Q7 Max', 'name': 'Roborock Q7 Max', 'room': 'Appliances', 'category': 'device', 'switch': 'on'},
+    ]
+
+    answer = main.cache_first_assistant_answer('is dtv on')
+    assert answer['message'] == 'TV is off.'
+
+
+def test_contracted_bathroom_on_query_uses_logical_room_devices():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Bathroom Light 1', 'room': 'Bathroom', 'category': 'light', 'switch': 'off'},
+        {'id': 'l2', 'label': 'Bathroom Light 2', 'room': 'Bathroom', 'category': 'light', 'switch': 'on'},
+        {'id': 'm1', 'label': 'Aqara Bathroom Motion', 'room': 'Bathroom', 'category': 'motion_sensor', 'motion': 'inactive'},
+        {'id': 'meter', 'label': 'Bathroom meter', 'room': 'Ventilation', 'category': 'climate_sensor', 'temperature': 24.5, 'humidity': 52},
+        {'id': 'other', 'label': 'Bedroom Light', 'room': 'Bedroom', 'category': 'light', 'switch': 'on'},
+    ]
+
+    answer = main.assistant("what's on in the bathroom?")
+    assert answer['intent'] == 'room_on_status'
+    assert 'Bathroom Light 2 on' in answer['message']
+    assert 'Bedroom Light' not in answer['message']
+
+
 def test_assistant_turns_device_on_for_duration_and_schedules_off():
     main = load_addon_main()
     main.all_devices = lambda: [
