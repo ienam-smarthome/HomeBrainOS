@@ -1,3 +1,10 @@
+## v1.9.54-alpha - Natural Room Activity Answers
+
+- Replaced diagnostic-style `Lights on: none` and `Other switches on: none` output with concise conversational room answers.
+- Room activity answers now mention only devices that are on, actively heating, or drawing power, and combine state with power such as `is on and using 8W`.
+- When no applicable device is active, the assistant now answers `Nothing is on in <room>` without listing off devices or empty categories.
+- Applied the same wording through both cache-first and wrapped local-intelligence assistant paths.
+
 ## v1.9.53-alpha - Prayer Times and Strict Room Activity
 
 - Added deterministic answers backed by the Hubitat `Pray times` device for Fajr, sunrise, Dhuhr, Asr, Maghrib, Isha, full daily prayer times, and the next prayer.

@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.53-alpha'
+APP_VERSION = '1.9.54-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -4555,30 +4555,63 @@ def room_on_status_answer(room: str) -> dict[str, Any]:
         if not is_state(switch, 'on') and active_device_phrase(device):
             other_active.append(device)
 
+    room_name = canonical_room_name(room)
+    def label_of(device: dict[str, Any]) -> str:
+        return str(device.get('label') or device.get('name') or device.get('id') or 'Device')
+
+    def activity_key(device: dict[str, Any]) -> str:
+        value = normalise(label_of(device))
+        return re.sub(r'\s+(?:power|energy|meter)$', '', value).strip()
+
+    power_by_key: dict[str, tuple[dict[str, Any], float]] = {}
+    for device, power in power_rows:
+        key = activity_key(device)
+        existing = power_by_key.get(key)
+        if existing is None or power > existing[1]:
+            power_by_key[key] = (device, power)
+
+    clauses: list[str] = []
+    consumed_power_keys: set[str] = set()
+    for device in lights_on + switches_on:
+        key = activity_key(device)
+        power_item = power_by_key.get(key)
+        if power_item:
+            consumed_power_keys.add(key)
+            clauses.append(f'{label_of(device)} is on and using {format_power_value(power_item[1])}')
+        else:
+            clauses.append(f'{label_of(device)} is on')
+    for key, (device, power) in sorted(power_by_key.items(), key=lambda item: item[1][1], reverse=True):
+        if key not in consumed_power_keys:
+            clauses.append(f'{label_of(device)} is using {format_power_value(power)}')
+
+    power_ids = {str(device.get('id')) for device, _power in power_rows}
+    secondary_activity: list[str] = []
+    for device in other_active:
+        if str(device.get('id')) in power_ids:
+            continue
+        fact = active_device_phrase(device)
+        if not fact:
+            continue
+        label = label_of(device)
+        detail = fact[len(label):].strip() if fact.startswith(label) else fact
+        natural_fact = f'{label} is {detail}' if detail else fact
+        if 'heat' in normalise(device.get('thermostatOperatingState') or ''):
+            clauses.append(natural_fact)
+        else:
+            secondary_activity.append(natural_fact)
+
+    if clauses:
+        message = f'In {room_name}, {spoken_list(clauses)}'
+    else:
+        message = f'Nothing is on in {room_name}.'
+    if secondary_activity:
+        message += ' Other activity: ' + spoken_list(secondary_activity[:8])
+
     active_by_id: dict[str, dict[str, Any]] = {}
     for device in lights_on + switches_on + [device for device, _power in power_rows] + other_active:
         active_by_id[str(device.get('id'))] = device
     active = list(active_by_id.values())
-
-    room_name = canonical_room_name(room)
-    lines = [f'{room_name} active now:']
-    lines.append('Lights on: ' + (', '.join(str(device.get('label') or device.get('name')) for device in lights_on) if lights_on else 'none'))
-    lines.append('Other switches on: ' + (', '.join(str(device.get('label') or device.get('name')) for device in switches_on) if switches_on else 'none'))
-    if power_rows:
-        lines.append('Power now:')
-        lines.extend(f"- {device.get('label') or device.get('name')}: {format_power_value(power)}" for device, power in sorted(power_rows, key=lambda item: item[1], reverse=True))
-    power_ids = {str(device.get('id')) for device, _power in power_rows}
-    sensor_facts = [active_device_phrase(device) for device in other_active if str(device.get('id')) not in power_ids]
-    sensor_facts = [fact for fact in sensor_facts if fact]
-    if sensor_facts:
-        lines.append('Other activity: ' + '; '.join(sensor_facts[:8]))
-    message = '\n'.join(lines)
-    spoken_items = [
-        *(f"{device.get('label') or device.get('name')} on" for device in lights_on + switches_on),
-        *(f"{device.get('label') or device.get('name')} using {format_power_value(power)}" for device, power in power_rows if device not in lights_on and device not in switches_on),
-        *sensor_facts,
-    ]
-    speech = f"{room_name}: {spoken_list(spoken_items)}" if spoken_items else f'{room_name}: no lights or switches are on.'
+    speech = message
     return {'success': True, 'intent': 'room_on_status', 'message': message, 'speech': speech, 'devices': active, 'room': room_name}
 
 
@@ -4586,7 +4619,6 @@ def room_activity_query_answer(text: str) -> dict[str, Any] | None:
     q = normalise(text or '').strip()
     patterns = (
         r'^(?:what is|which|show|list)\s+(?:devices\s+)?(?:are\s+|is\s+)?on\s+(?:in|inside)\s+(.+)$',
-        r'^(?:what is happening|what is going on)\s+(?:in|inside)\s+(.+)$',
     )
     for pattern in patterns:
         match = re.match(pattern, q)

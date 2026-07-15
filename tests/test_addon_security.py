@@ -1347,12 +1347,10 @@ def test_assistant_reports_active_devices_in_named_room():
     answer = main.assistant('what is on in hallway')
 
     assert answer['intent'] == 'room_on_status'
-    assert 'Hallway active now:' in answer['message']
-    assert 'Lights on: Hallway Light' in answer['message']
-    assert 'Hallway TRV heating' in answer['message']
+    assert answer['message'] == 'In Hallway, Hallway Light is on and Hallway TRV is heating.'
     assert 'Hallway Plug' not in answer['message']
     assert 'Bedroom Light' not in answer['message']
-    assert answer['speech'] == 'Hallway: Hallway Light on and Hallway TRV heating.'
+    assert answer['speech'] == answer['message']
 
 
 def test_exact_tv_state_never_selects_unrelated_switch():
@@ -1391,7 +1389,7 @@ def test_contracted_bathroom_on_query_uses_logical_room_devices():
 
     answer = main.assistant("what's on in the bathroom?")
     assert answer['intent'] == 'room_on_status'
-    assert 'Lights on: Bathroom Light 2' in answer['message']
+    assert answer['message'] == 'In Bathroom, Bathroom Light 2 is on.'
     assert 'Bedroom Light' not in answer['message']
 
 
@@ -1431,9 +1429,8 @@ def test_bedroom_activity_is_room_scoped_lists_all_states_and_power():
     answer = main.cache_first_assistant_answer("what's on in bedroom 1")
 
     assert answer['intent'] == 'room_on_status'
-    assert 'Lights on: Bedroom 1 Light 1' in answer['message']
-    assert 'Other switches on: Bedroom1 (MQTT)' in answer['message']
-    assert 'Bedroom1 (MQTT) power: 4W' in answer['message']
+    assert 'Bedroom 1 Light 1 is on' in answer['message']
+    assert 'Bedroom1 (MQTT) is on and using 4W' in answer['message']
     assert 'Bedroom 1 Light 2' not in answer['message']
     assert 'Bedroom3 PC' not in answer['message']
 
@@ -1451,7 +1448,35 @@ def test_living_room_activity_cannot_fall_through_to_global_power_lookup():
     assert answer['intent'] == 'room_on_status'
     assert 'Livingroom Light 1' in answer['message']
     assert 'Livingroom socket' in answer['message']
-    assert 'Livingroom socket: 7W' in answer['message']
+    assert 'Livingroom socket is on and using 7W' in answer['message']
+    assert 'Bedroom3 PC' not in answer['message']
+
+
+def test_room_activity_says_nothing_is_on_without_listing_off_categories():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l1', 'label': 'Bedroom 2 Light 1', 'room': 'Bedroom 2', 'category': 'light', 'switch': 'off'},
+        {'id': 'l2', 'label': 'Bedroom 2 Light 2', 'room': 'Bedroom 2', 'category': 'light', 'switch': 'off'},
+        {'id': 's1', 'label': 'Bedroom2 socket', 'room': 'Sockets', 'category': 'switch', 'switch': 'off', 'power': 0},
+    ]
+
+    answer = main.cache_first_assistant_answer("what's on in bedroom 2")
+
+    assert answer['message'] == 'Nothing is on in Bedroom 2.'
+    assert 'Lights on: none' not in answer['message']
+    assert 'switches on: none' not in answer['message']
+
+
+def test_power_only_room_activity_is_described_naturally():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'p2', 'label': 'Bedroom2 (MQTT)', 'room': 'Sockets', 'category': 'power_device', 'power': 8},
+        {'id': 'p3', 'label': 'Bedroom3 PC (MQTT)', 'room': 'Sockets', 'category': 'power_device', 'power': 49},
+    ]
+
+    answer = main.cache_first_assistant_answer("what's on in bedroom 2")
+
+    assert answer['message'] == 'In Bedroom 2, Bedroom2 (MQTT) is using 8W.'
     assert 'Bedroom3 PC' not in answer['message']
 
 

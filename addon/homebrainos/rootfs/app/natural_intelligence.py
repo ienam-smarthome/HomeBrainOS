@@ -206,6 +206,17 @@ def format_money(value: Any) -> str:
     return 'not available' if amount is None else f'£{amount:.2f}'
 
 
+def _spoken_list(values: list[str]) -> str:
+    clean = [str(value).strip() for value in values if str(value).strip()]
+    if not clean:
+        return ''
+    if len(clean) == 1:
+        return clean[0]
+    if len(clean) == 2:
+        return f'{clean[0]} and {clean[1]}'
+    return ', '.join(clean[:-1]) + f', and {clean[-1]}'
+
+
 def _normalise(text: Any) -> str:
     value = str(text or '').lower()
     replacements = {
@@ -782,6 +793,14 @@ def focused_room_status_answer(app_module: Any, query: str) -> dict[str, Any] | 
         'what is on', 'what are on', 'which devices are on',
         'which lights are on', 'which switches are on',
     ))
+    if wants_on_status:
+        room_activity = getattr(app_module, 'room_activity_query_answer', None)
+        delegated = _safe_call(room_activity, query, fallback=None) if callable(room_activity) else None
+        if isinstance(delegated, dict) and delegated.get('message'):
+            delegated = dict(delegated)
+            delegated.setdefault('routing', route.as_dict())
+            delegated.setdefault('detail_level', route.detail_level)
+            return delegated
     light_devices: list[dict[str, Any]] = []
     other_switches: list[dict[str, Any]] = []
     for device in devices:
@@ -812,16 +831,33 @@ def focused_room_status_answer(app_module: Any, query: str) -> dict[str, Any] | 
         if climate:
             parts.append(', '.join(climate))
         if wants_on_status:
-            parts.append('Lights on: ' + (', '.join(light_names) if light_names else 'none'))
-            parts.append('Other switches on: ' + (', '.join(switch_names) if switch_names else 'none'))
-            non_switch_facts = [
-                fact for device in devices
-                if not _is_on(_attrs(device).get('switch'))
-                for fact in [_active_room_fact(device)]
-                if fact
-            ]
-            if non_switch_facts:
-                parts.append('; '.join(non_switch_facts[:8]))
+            clauses = []
+            for device in light_devices + other_switches:
+                attrs = _attrs(device)
+                if not _is_on(attrs.get('switch')):
+                    continue
+                label = _clean_display_text(_device_label(device))
+                power = _safe_float(attrs.get('power'))
+                clauses.append(f'{label} is on' + (f' and using {format_power(power)}' if power is not None and power > 0 else ''))
+            explicit_ids = {str(device.get('id')) for device in light_devices + other_switches}
+            for device in devices:
+                attrs = _attrs(device)
+                power = _safe_float(attrs.get('power'))
+                if power is not None and power > 0 and str(device.get('id')) not in explicit_ids:
+                    clauses.append(f'{_clean_display_text(_device_label(device))} is using {format_power(power)}')
+            message = f"In {route.room}, " + _spoken_list(clauses) + '.' if clauses else f'Nothing is on in {route.room}.'
+            return {
+                'success': True,
+                'intent': 'room_status',
+                'room': route.room,
+                'detail_level': route.detail_level,
+                'routing': route.as_dict(),
+                'message': message,
+                'speech': message,
+                'active_facts': clauses,
+                'device_count': len(devices),
+                'devices': [],
+            }
         elif active:
             parts.append('; '.join(active[:8]))
         if not parts:
