@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.38-alpha'
+APP_VERSION = '1.9.39-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -90,6 +90,7 @@ def load_config() -> dict[str, Any]:
         'ollama_context_device_limit': int(os.getenv('OLLAMA_CONTEXT_DEVICE_LIMIT', '35')),
         'ollama_include_hub_logs': os.getenv('OLLAMA_INCLUDE_HUB_LOGS', 'false').lower() == 'true',
         'ollama_timeout_seconds': int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '75')),
+        'ollama_tool_timeout_seconds': int(os.getenv('OLLAMA_TOOL_TIMEOUT_SECONDS', '18')),
         'ollama_num_predict': int(os.getenv('OLLAMA_NUM_PREDICT', '90')),
         'ollama_health_timeout_seconds': int(os.getenv('OLLAMA_HEALTH_TIMEOUT_SECONDS', '2')),
         'ollama_health_cache_seconds': int(os.getenv('OLLAMA_HEALTH_CACHE_SECONDS', '60')),
@@ -102,6 +103,9 @@ def load_config() -> dict[str, Any]:
         'low_battery_threshold': int(os.getenv('LOW_BATTERY_THRESHOLD', '20')),
         'battery_detail_refresh_limit': int(os.getenv('BATTERY_DETAIL_REFRESH_LIMIT', '8')),
         'low_battery_refresh_seconds': int(os.getenv('LOW_BATTERY_REFRESH_SECONDS', '300')),
+        'event_retention_days': int(os.getenv('EVENT_RETENTION_DAYS', '30')),
+        'event_prune_interval_seconds': int(os.getenv('EVENT_PRUNE_INTERVAL_SECONDS', '86400')),
+        'sse_poll_seconds': float(os.getenv('SSE_POLL_SECONDS', '0.5')),
         'device_detail_refresh_limit': int(os.getenv('DEVICE_DETAIL_REFRESH_LIMIT', '6')),
         'device_detail_refresh_seconds': int(os.getenv('DEVICE_DETAIL_REFRESH_SECONDS', '7200')),
         'device_detail_refresh_batch': int(os.getenv('DEVICE_DETAIL_REFRESH_BATCH', '2')),
@@ -172,6 +176,7 @@ SUMMARY_CACHE_VERSION = 0
 SUMMARY_CACHE_LAST_REBUILD: float | None = None
 SSE_CLIENTS = 0
 EVENT_HISTORY: list[dict[str, Any]] = []
+LAST_EVENT_PRUNE_AT = 0.0
 UI_STATS: dict[str, Any] = {
     'events_received': 0,
     'events_updated': 0,
@@ -192,6 +197,7 @@ async def app_lifespan(_: FastAPI):
     """Start and stop background workers with the application lifecycle."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     rebuild_summary_cache('startup-cache')
+    prune_event_history('startup', force=True)
     restore_pending_timers()
     tasks = [
         asyncio.create_task(initial_refresh()),
@@ -216,6 +222,7 @@ class AssistantRequest(BaseModel):
 
 
 def db() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
@@ -278,8 +285,11 @@ def db() -> sqlite3.Connection:
     ''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_room_category ON devices(room, category)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_history_device_created ON history(device_id, created_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_history_device_attr_created ON history(device_id, attr, created_at)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_device_timers_status_due ON device_timers(status, due_at)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_hubitat_events_created ON hubitat_events(created_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_hubitat_events_device_attr_created ON hubitat_events(device_id, attr, created_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_hubitat_events_attr_created ON hubitat_events(attr, created_at)')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS performance_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -822,6 +832,43 @@ def prune_missing_devices(device_ids: set[str]) -> int:
         conn.close()
 
 
+def prune_event_history(reason: str = 'scheduled', force: bool = False) -> dict[str, Any]:
+    """Keep local event history bounded so duration queries stay fast."""
+    global LAST_EVENT_PRUNE_AT, PERF_STATS
+    retention_days = max(0, int(CONFIG.get('event_retention_days', 30)))
+    if retention_days <= 0:
+        return {'success': True, 'skipped': True, 'reason': 'disabled'}
+    now = time.time()
+    interval = max(60, int(CONFIG.get('event_prune_interval_seconds', 86400)))
+    if not force and LAST_EVENT_PRUNE_AT and now - LAST_EVENT_PRUNE_AT < interval:
+        return {'success': True, 'skipped': True, 'reason': 'fresh', 'last_prune_at': LAST_EVENT_PRUNE_AT}
+
+    cutoff = int(now - retention_days * 86400)
+    conn = db()
+    try:
+        history = conn.execute('DELETE FROM history WHERE created_at < ?', (cutoff,)).rowcount
+        events = conn.execute('DELETE FROM hubitat_events WHERE created_at < ?', (cutoff,)).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+
+    LAST_EVENT_PRUNE_AT = now
+    PERF_STATS['event_prune_count'] = int(PERF_STATS.get('event_prune_count') or 0) + 1
+    PERF_STATS['event_prune_last_at'] = now
+    PERF_STATS['event_prune_last_reason'] = reason
+    PERF_STATS['event_prune_last_history_rows'] = max(0, int(history or 0))
+    PERF_STATS['event_prune_last_event_rows'] = max(0, int(events or 0))
+    return {
+        'success': True,
+        'skipped': False,
+        'reason': reason,
+        'cutoff': cutoff,
+        'retention_days': retention_days,
+        'history_rows': max(0, int(history or 0)),
+        'event_rows': max(0, int(events or 0)),
+    }
+
+
 def update_cached_switch(device_ids: list[str], switch: str) -> list[dict[str, Any]]:
     now = int(time.time())
     updated: list[dict[str, Any]] = []
@@ -1160,6 +1207,30 @@ def diagnostic_event_value(attr: Any, value: Any) -> str:
     return text[:157] + '...' if len(text) > 160 else text
 
 
+SENSITIVE_EVENT_ATTRS = {
+    'tile', 'html', 'map', 'location', 'geolocation', 'latitude', 'longitude',
+    'lat', 'lon', 'address', 'currentplace', 'place', 'resolvedplace',
+    'resolvedplacetype', 'resolvedplacename',
+}
+
+
+def redact_event_raw(attr: Any, raw: Any) -> Any:
+    """Return event payload safe enough for local persistence and diagnostics."""
+    attr_key = compact_name(attr)
+    if not isinstance(raw, dict):
+        return diagnostic_event_value(attr, raw)
+    redacted: dict[str, Any] = {}
+    for key, value in raw.items():
+        key_text = str(key)
+        compact_key = compact_name(key_text)
+        if compact_key in SENSITIVE_EVENT_ATTRS or (compact_key == 'value' and attr_key in SENSITIVE_EVENT_ATTRS):
+            redacted_attr = compact_key if compact_key in SENSITIVE_EVENT_ATTRS else attr_key
+            redacted[key_text] = diagnostic_event_value(redacted_attr, value)
+        else:
+            redacted[key_text] = value
+    return redacted
+
+
 def sanitise_diagnostic_event(event: Any) -> Any:
     if not isinstance(event, dict):
         return diagnostic_event_value('', event)
@@ -1247,7 +1318,7 @@ def record_hubitat_events(payload: Any) -> dict[str, Any]:
         for event in persist_records:
             conn.execute(
                 'INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)',
-                (event['device_id'], event.get('label'), event['attr'], str(event.get('value')), json.dumps(event['raw']), now),
+                (event['device_id'], event.get('label'), event['attr'], str(event.get('value')), json.dumps(redact_event_raw(event['attr'], event['raw'])), now),
             )
         conn.commit()
     finally:
@@ -6862,8 +6933,10 @@ def ollama_tool_answer(text: str) -> dict[str, Any] | None:
     if not CONFIG.get('ollama_tool_calling_enabled', True):
         return None
     started = time.perf_counter()
-    timeout = max(10, int(CONFIG.get('ollama_timeout_seconds', 75)))
+    timeout = max(5, int(CONFIG.get('ollama_tool_timeout_seconds', CONFIG.get('ollama_timeout_seconds', 18))))
     model = CONFIG.get('ollama_model', 'qwen2.5:3b')
+    tool_results: list[dict[str, Any]] = []
+    tool_names: list[str] = []
     system = (
         'You are HomeBrain OS. For any smart-home fact, call one or more provided read-only tools and use only their results. '
         'Never invent device names, states, readings or events. These tools cannot control devices; never claim that you changed anything. '
@@ -6901,8 +6974,6 @@ def ollama_tool_answer(text: str) -> dict[str, Any] | None:
             'content': str(assistant_message.get('content') or ''),
             'tool_calls': calls,
         })
-        tool_names = []
-        tool_results = []
         for call in calls:
             name, arguments = tool_call_arguments(call)
             result = execute_home_tool(name, arguments)
@@ -6955,6 +7026,31 @@ def ollama_tool_answer(text: str) -> dict[str, Any] | None:
     except Exception as exc:
         PERF_STATS['ollama_tool_call_error_count'] = int(PERF_STATS.get('ollama_tool_call_error_count') or 0) + 1
         PERF_STATS['ollama_tool_call_last_error'] = public_error(exc)
+        if tool_results:
+            message = next((str(result.get('message')) for result in tool_results if result.get('message')), '')
+            if message:
+                return {
+                    'success': any(bool(result.get('success')) for result in tool_results),
+                    'message': message,
+                    'speech': message,
+                    'intent': 'ollama_tool_answer',
+                    'source': 'ollama_tools',
+                    'model': model,
+                    'tools_used': tool_names,
+                    'tool_results': tool_results,
+                    'duration_ms': round((time.perf_counter() - started) * 1000),
+                    'fallback': 'tool_result',
+                }
+        if isinstance(exc, requests.Timeout):
+            return {
+                'success': False,
+                'message': 'Local AI tool response timed out. Cached HomeBrain commands are still available.',
+                'speech': 'Local AI timed out. Cached HomeBrain commands are still available.',
+                'intent': 'ollama_tool_timeout',
+                'source': 'ollama_tools',
+                'model': model,
+                'duration_ms': round((time.perf_counter() - started) * 1000),
+            }
         return None
 
 
@@ -8986,6 +9082,7 @@ async def refresh_loop() -> None:
         await asyncio.to_thread(refresh_devices, False, 'scheduled')
         await asyncio.to_thread(rebuild_summary_cache, 'scheduled')
         await asyncio.to_thread(save_performance_snapshot, 'scheduled')
+        await asyncio.to_thread(prune_event_history, 'scheduled')
 
 
 async def initial_refresh() -> None:
@@ -9072,7 +9169,7 @@ async def api_events(request: Request):
                     UI_STATS['sse_payloads_sent'] = int(UI_STATS.get('sse_payloads_sent') or 0) + 1
                     UI_STATS['last_sse_push_at'] = time.time()
                     yield f"event: ping\ndata: {json.dumps(payload)}\n\n"
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(max(0.2, float(CONFIG.get('sse_poll_seconds', 0.5))))
         finally:
             SSE_CLIENTS = max(0, SSE_CLIENTS - 1)
 

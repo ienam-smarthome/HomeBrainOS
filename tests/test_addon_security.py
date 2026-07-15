@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import time
 import tempfile
@@ -2075,6 +2076,73 @@ def test_battery_report_event_is_persisted_and_invalidates_authoritative_cache()
     assert 'Hallway Contact' in row['value']
     assert 'Hallway Contact' in cached['attributes']['reportHtml']
     assert not hasattr(main, '_homebrain_low_battery_cache')
+
+
+def test_event_history_indexes_are_created_for_duration_queries():
+    main = load_addon_main()
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        conn = main.db()
+        try:
+            indexes = {
+                row['name']
+                for table in ('history', 'hubitat_events')
+                for row in conn.execute(f'PRAGMA index_list({table})').fetchall()
+            }
+        finally:
+            conn.close()
+
+    assert 'idx_history_device_attr_created' in indexes
+    assert 'idx_hubitat_events_device_attr_created' in indexes
+
+
+def test_sensitive_event_raw_payload_is_redacted_before_persistence_helpers():
+    main = load_addon_main()
+    redacted = main.redact_event_raw('tile', {
+        'name': 'tile',
+        'value': '<div>Map pin 51.501234,-0.141234</div>',
+        'location': '51.501234,-0.141234',
+        'displayName': 'Life360 Person',
+    })
+
+    assert '[tile payload omitted]' in redacted['value']
+    assert '[location payload omitted]' in redacted['location']
+    assert 'Life360 Person' in redacted['displayName']
+    assert '51.501234' not in json.dumps(redacted)
+
+
+def test_prune_event_history_removes_old_rows_and_keeps_recent_rows():
+    main = load_addon_main()
+    with tempfile.TemporaryDirectory() as tmp:
+        main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+        main.CONFIG['event_retention_days'] = 30
+        main.LAST_EVENT_PRUNE_AT = 0
+        now = int(time.time())
+        old = now - 40 * 86400
+        recent = now - 2 * 86400
+        conn = main.db()
+        try:
+            conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', ('old', 'switch', 'on', old))
+            conn.execute('INSERT INTO history(device_id,attr,value,created_at) VALUES(?,?,?,?)', ('new', 'switch', 'off', recent))
+            conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('old', 'Old', 'switch', 'on', '{}', old))
+            conn.execute('INSERT INTO hubitat_events(device_id,label,attr,value,raw,created_at) VALUES(?,?,?,?,?,?)', ('new', 'New', 'switch', 'off', '{}', recent))
+            conn.commit()
+        finally:
+            conn.close()
+
+        result = main.prune_event_history('test', force=True)
+
+        conn = main.db()
+        try:
+            history_ids = [row['device_id'] for row in conn.execute('SELECT device_id FROM history ORDER BY device_id').fetchall()]
+            event_ids = [row['device_id'] for row in conn.execute('SELECT device_id FROM hubitat_events ORDER BY device_id').fetchall()]
+        finally:
+            conn.close()
+
+    assert result['history_rows'] == 1
+    assert result['event_rows'] == 1
+    assert history_ids == ['new']
+    assert event_ids == ['new']
 
 
 def test_assistant_output_is_next_to_prompt_and_reports_elapsed_time():
