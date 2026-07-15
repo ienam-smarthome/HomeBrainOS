@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.47-alpha'
+APP_VERSION = '1.9.48-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -33,7 +33,7 @@ ROOM_WORDS = [
     'kitchen', 'toilet', 'entrance', 'ventilation', 'dehumidifier', 'energy', 'sockets',
     'multimedia', 'office', 'internet', 'router'
 ]
-DEVICE_ATTRS = ['switch','level','temperature','humidity','illuminance','motion','contact','presence','battery','power','energy','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint','controlMode','lock','water','smoke','carbonMonoxide','tamper','acceleration','valve','windowShade','weatherSummary','weatherSummaryLine','pressure','windSpeed','wind_gust','windDirection','precipitationToday','threedayfcstTile']
+DEVICE_ATTRS = ['switch','level','temperature','humidity','illuminance','motion','contact','presence','battery','power','energy','value','valueStr','displayValue','thermostatMode','thermostatOperatingState','heatingSetpoint','coolingSetpoint','controlMode','lock','water','smoke','carbonMonoxide','tamper','acceleration','valve','windowShade','weatherSummary','weatherSummaryLine','pressure','windSpeed','wind_gust','windDirection','precipitationToday','threedayfcstTile']
 ATTR_ALIASES = {
     'switch': {'switch', 'switchstate', 'state'},
     'level': {'level', 'switchlevel', 'dimmerlevel'},
@@ -713,6 +713,8 @@ def merge_raw_device(summary: dict[str, Any], detail: Any) -> dict[str, Any]:
 
 
 def needs_device_detail(raw_device: dict[str, Any], device: dict[str, Any]) -> bool:
+    if octopus_display_period(raw_device) and display_device_value(device) is None:
+        return True
     if not device.get('attributes'):
         return True
     if is_switchable_device(device) and device.get('switch') is None:
@@ -738,6 +740,8 @@ def should_refresh_device_detail(device: dict[str, Any], last_detail_at: int | N
         return False
     if last_detail_at and now - int(last_detail_at) < seconds:
         return False
+    if octopus_display_period(device):
+        return True
     priority_categories = {
         'light', 'switch', 'power_device', 'thermostat', 'climate_sensor',
         'motion_sensor', 'presence_sensor', 'contact_sensor', 'weather',
@@ -748,6 +752,7 @@ def should_refresh_device_detail(device: dict[str, Any], last_detail_at: int | N
 def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     global LAST_DETAIL_ERRORS, PERF_STATS
     limit = min(max(0, int(CONFIG.get('device_detail_refresh_limit', 6))), 6)
+    display_limit = max(limit, 10)
     batch = min(max(0, int(CONFIG.get('device_detail_refresh_batch', 2))), 2)
     detail_times = cached_detail_refresh_times()
     now = int(time.time())
@@ -755,11 +760,17 @@ def enrich_raw_devices(raw_devices: list[dict[str, Any]]) -> list[dict[str, Any]
     detail_errors: list[str] = []
     detail_count = 0
     stale_detail_count = 0
-    for raw_device in raw_devices:
+    priority_raw_devices = sorted(
+        raw_devices,
+        key=lambda item: 0 if octopus_display_period(item) else 1,
+    )
+    for raw_device in priority_raw_devices:
         device = normalise_device(raw_device)
+        display_child = octopus_display_period(raw_device) is not None or octopus_display_period(device) is not None
         incomplete = needs_device_detail(raw_device, device)
         stale = should_refresh_device_detail(device, detail_times.get(str(device['id'])), now)
-        should_fetch = detail_count < limit and (incomplete or (stale and stale_detail_count < batch))
+        detail_budget = display_limit if display_child else limit
+        should_fetch = detail_count < detail_budget and (incomplete or (stale and (display_child or stale_detail_count < batch)))
         if should_fetch:
             try:
                 detail = maker_get(f"devices/{quote(str(device['id']), safe='')}", timeout=8)
@@ -1170,6 +1181,8 @@ def event_affects_dashboard(event: dict[str, Any], previous_device: dict[str, An
     if small_change_event(event, previous_device):
         PERF_STATS['event_small_change_ignored_count'] = int(PERF_STATS.get('event_small_change_ignored_count') or 0) + 1
         return False
+    if compact_name(attr) in {'value', 'valuestr', 'displayvalue'} and previous_device and octopus_display_period(previous_device):
+        return True
     if attr in DASHBOARD_EVENT_ATTRS:
         return True
     # Unknown switch/motion-like events should still wake the dashboard, but
@@ -8413,7 +8426,7 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
             cached_attrs = device_attribute_map(device)
             has_cached_value = any(
                 device.get(attr) is not None or cached_attrs.get(attr) is not None
-                for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'motion', 'contact', 'switch')
+                for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'value', 'valueStr', 'displayValue', 'motion', 'contact', 'switch')
             )
             if not broad_inventory and not has_cached_value and device.get('id') and not matches:
                 fresh = fetch_live_device_detail(str(device.get('id')))
@@ -8423,7 +8436,7 @@ def find_device_answer(question: str) -> dict[str, Any] | None:
 
             attrs = device_attribute_map(device)
             interesting = []
-            for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'motion', 'contact', 'switch', 'networkStatus', 'ipAddress'):
+            for attr in ('temperature', 'humidity', 'battery', 'power', 'energy', 'value', 'valueStr', 'displayValue', 'motion', 'contact', 'switch', 'networkStatus', 'ipAddress'):
                 value = device.get(attr)
                 if value is None:
                     value = device_attr_value(device, attr)

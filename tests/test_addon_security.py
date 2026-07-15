@@ -2721,6 +2721,65 @@ def test_dashboard_power_prefers_octopus_display_power_child():
     assert summary['power_source_label'] == 'Octopus Live Meter Display Power'
 
 
+def test_refresh_prioritises_octopus_display_detail_values():
+    main = load_addon_main()
+    original_db_path = main.DB_PATH
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            main.DB_PATH = Path(tmp) / 'homebrainos.sqlite3'
+            raw_devices = [
+                {'id': f'filler-{idx}', 'label': f'Generic Device {idx}', 'name': f'Generic Device {idx}'}
+                for idx in range(8)
+            ] + [
+                {'id': 'display-power', 'label': 'Octopus Live Meter Display Power', 'name': 'Octopus Live Meter Display Power'},
+                {'id': 'display-month', 'label': 'Octopus Live Meter Display Month', 'name': 'Octopus Live Meter Display Month'},
+                {'id': 'meter', 'label': 'Octopus Live Meter', 'name': 'Octopus Live Meter', 'attributes': {'power': 111, 'energy': 8277.7}},
+            ]
+            detail_calls = []
+
+            def fake_maker_get(path, timeout=20):
+                if path == 'devices':
+                    return raw_devices
+                detail_calls.append(path)
+                if path == 'devices/display-power':
+                    return {
+                        'id': 'display-power',
+                        'label': 'Octopus Live Meter Display Power',
+                        'name': 'Octopus Live Meter Display Power',
+                        'attributes': {'friendly_name': 'Octopus Live Meter Display Power'},
+                        'currentStates': [{'name': 'value', 'value': '208 W'}],
+                    }
+                if path == 'devices/display-month':
+                    return {
+                        'id': 'display-month',
+                        'label': 'Octopus Live Meter Display Month',
+                        'name': 'Octopus Live Meter Display Month',
+                        'attributes': {'friendly_name': 'Octopus Live Meter Display Month'},
+                        'currentStates': [{'name': 'value', 'value': '125.59 kWh (\u00a341.06)'}],
+                    }
+                return {'id': path.rsplit('/', 1)[-1], 'currentStates': []}
+
+            main.maker_get = fake_maker_get
+            count = main.refresh_devices(True, 'test')
+            devices = main.all_devices()
+            summary = main.compute_dashboard_summary({'synced': True})
+            month = main.cache_first_assistant_answer('energy usage this month')
+
+        display_power = next(device for device in devices if device['id'] == 'display-power')
+        display_month = next(device for device in devices if device['id'] == 'display-month')
+        assert count == len(raw_devices)
+        assert 'devices/display-power' in detail_calls
+        assert 'devices/display-month' in detail_calls
+        assert display_power['attributes']['value'] == '208 W'
+        assert display_month['attributes']['value'] == '125.59 kWh (\u00a341.06)'
+        assert summary['power_total'] == 208
+        assert summary['power_source_label'] == 'Octopus Live Meter Display Power'
+        assert month['usage']['month']['source'] == 'octopus_display_device'
+        assert '125.59 kWh' in month['message']
+    finally:
+        main.DB_PATH = original_db_path
+
+
 def test_category_inventory_lists_humidity_sensors():
     main = load_addon_main()
     main.all_devices = lambda: [
