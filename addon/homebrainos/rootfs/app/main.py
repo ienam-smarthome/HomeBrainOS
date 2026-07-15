@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.42-alpha'
+APP_VERSION = '1.9.43-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2432,7 +2432,8 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
     if cost is not None:
         details.append(f'£{cost:.2f}')
     meter = (usage.get('source') or {}).get('label') or 'the whole-house meter'
-    if details and period == 'month' and day.get('cost_estimated'):
+    dashboard = None
+    if kwh is not None and cost is not None and day.get('cost_estimated'):
         rate = safe_float(day.get('unit_rate_gbp'))
         usage_text = f'{kwh:.2f} kWh' if kwh is not None else 'usage unavailable'
         rate_text = f' at £{rate:.3f}/kWh' if rate is not None else ''
@@ -2443,7 +2444,7 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
     elif details:
         message = f"{label}: {' costing '.join(details)} from {meter}."
     else:
-        summary = dashboard_summary(live=False)
+        dashboard = dashboard_summary(live=False)
         if period == 'month' and usage.get('cumulative_kwh') is not None:
             message = (
                 f'Month-to-date energy is not available from {meter} yet. The meter exposes a cumulative '
@@ -2452,20 +2453,24 @@ def cached_period_energy_answer(text: str) -> dict[str, Any] | None:
         else:
             message = (
                 f"{label}'s energy total is not cached by {meter} yet. "
-                f"Current whole-house power is {summary.get('power_display', 'unavailable')}."
+                f"Current whole-house power is {dashboard.get('power_display', 'unavailable')}."
             )
+    if day.get('source') == 'cumulative_history':
+        message += ' Derived from cumulative Octopus meter history.'
     if period == 'month' and day.get('coverage_start') and not day.get('coverage_complete', False):
         timezone = local_timezone()
         coverage = datetime.fromtimestamp(int(day['coverage_start']), tz=timezone).strftime('%-d %B') if os.name != 'nt' else datetime.fromtimestamp(int(day['coverage_start']), tz=timezone).strftime('%d %B').lstrip('0')
         message += f' Cached history starts on {coverage}, so this is a partial-month figure.'
-    return {
+    result = {
         'success': True,
         'intent': f'energy_{period}',
         'source': 'event_cache',
         'message': message,
         'usage': usage,
-        'dashboard': dashboard_summary(live=False),
     }
+    if dashboard is not None:
+        result['dashboard'] = dashboard
+    return result
 
 
 def assistant_query_text(text: str) -> str:
@@ -4522,6 +4527,14 @@ def energy_usage_from_meter() -> dict[str, Any]:
         month_history = month_to_date_energy_from_history(str(meter.get('id') or ''), cumulative_kwh)
         month_kwh = safe_float(month_history.get('kwh'))
     unit_rate = safe_float(CONFIG.get('electricity_unit_rate_gbp', 0.25))
+    today_cost_estimated = False
+    yesterday_cost_estimated = False
+    if today_cost is None and today_kwh is not None and unit_rate is not None and unit_rate >= 0:
+        today_cost = round(today_kwh * unit_rate, 2)
+        today_cost_estimated = True
+    if yesterday_cost is None and yesterday_kwh is not None and unit_rate is not None and unit_rate >= 0:
+        yesterday_cost = round(yesterday_kwh * unit_rate, 2)
+        yesterday_cost_estimated = True
     cost_estimated = False
     if month_cost is None and month_kwh is not None and unit_rate is not None and unit_rate >= 0:
         month_cost = round(month_kwh * unit_rate, 2)
@@ -4536,6 +4549,8 @@ def energy_usage_from_meter() -> dict[str, Any]:
             'coverage_end': today_history.get('coverage_end'),
             'coverage_complete': bool(today_history.get('coverage_complete')) if today_history.get('source') else True,
             'source': today_history.get('source') or ('meter_attribute' if today_kwh is not None or today_cost is not None else None),
+            'cost_estimated': today_cost_estimated,
+            'unit_rate_gbp': unit_rate if today_cost_estimated else None,
         },
         'yesterday': {
             'kwh': yesterday_kwh,
@@ -4544,6 +4559,8 @@ def energy_usage_from_meter() -> dict[str, Any]:
             'coverage_end': yesterday_history.get('coverage_end'),
             'coverage_complete': bool(yesterday_history.get('coverage_complete')) if yesterday_history.get('source') else True,
             'source': yesterday_history.get('source') or ('meter_attribute' if yesterday_kwh is not None or yesterday_cost is not None else None),
+            'cost_estimated': yesterday_cost_estimated,
+            'unit_rate_gbp': unit_rate if yesterday_cost_estimated else None,
         },
         'month': {
             'kwh': month_kwh,

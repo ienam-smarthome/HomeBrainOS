@@ -2531,18 +2531,20 @@ def test_period_energy_question_is_immediate_cache_answer():
         'power': 591,
         'attributes': {'energyYesterday': 12.34, 'costYesterdayEnergy': 3.21},
     }]
-    main.dashboard_summary = lambda live=False: {'power_display': '591W'}
+    main.dashboard_summary = lambda live=False: (_ for _ in ()).throw(AssertionError('Dashboard summary should not be needed for a successful energy answer'))
 
     answer = main.cache_first_assistant_answer('energy used yesterday')
 
     assert answer['intent'] == 'energy_yesterday'
     assert answer['source'] == 'event_cache'
     assert '12.34 kWh' in answer['message']
+    assert 'dashboard' not in answer
     assert '£3.21' in answer['message']
 
 
 def test_period_energy_yesterday_derives_from_octopus_cumulative_history():
     main = load_addon_main()
+    main.CONFIG['electricity_unit_rate_gbp'] = 0.30
     timezone_obj = main.local_timezone()
     now = datetime.now(timezone_obj) if timezone_obj else datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2566,7 +2568,7 @@ def test_period_energy_yesterday_derives_from_octopus_cumulative_history():
             'id': 'meter', 'label': 'Octopus Live Meter', 'room': 'Energy', 'category': 'power_device',
             'power': 3, 'energy': 1013.0, 'attributes': {'energy': 1013.0},
         }]
-        main.dashboard_summary = lambda live=False: {'power_display': '3W'}
+        main.dashboard_summary = lambda live=False: (_ for _ in ()).throw(AssertionError('Dashboard summary should not be needed for a successful energy answer'))
 
         answer = main.cache_first_assistant_answer('energy usage yesterday')
 
@@ -2575,6 +2577,10 @@ def test_period_energy_yesterday_derives_from_octopus_cumulative_history():
     assert answer['usage']['yesterday']['source'] == 'cumulative_history'
     assert answer['usage']['yesterday']['kwh'] == 12.34
     assert '12.34 kWh' in answer['message']
+    assert 'Estimated energy cost' in answer['message']
+    assert '£3.70' in answer['message'] or 'Â£3.70' in answer['message']
+    assert 'Derived from cumulative Octopus meter history' in answer['message']
+    assert 'dashboard' not in answer
     assert 'not cached' not in answer['message']
 
 
