@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.54-alpha'
+APP_VERSION = '1.9.55-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2965,9 +2965,9 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return rate_answer
     if re.search(r'\b(device health|device status|device check|device report)\b', t):
         return device_status_report_display_answer(t) or stale_devices_answer(t)
-    if 'room' in t and 'motion' in t:
+    if re.search(r'\brooms?\b', t) and re.search(r'\bmotion\b', t):
         return cached_motion_rooms_answer()
-    if 'room' in t and 'active' in t:
+    if re.search(r'\brooms?\b', t) and re.search(r'\bactive\b', t):
         return active_rooms_answer()
     device_value = smart_device_value_answer(t)
     if device_value:
@@ -7325,7 +7325,7 @@ def answer_attribute(target: str, attr: str) -> dict[str, Any]:
 
 def ai_device_fact(device: dict[str, Any]) -> dict[str, Any]:
     keys = (
-        'id', 'label', 'room', 'category', 'switch', 'level', 'temperature', 'humidity',
+        'id', 'label', 'room', 'category', 'switch', 'level', 'temperature', 'humidity', 'illuminance',
         'power', 'energy', 'battery', 'motion', 'contact', 'presence',
         'thermostatMode', 'thermostatOperatingState', 'heatingSetpoint',
         'weatherSummaryLine',
@@ -7441,6 +7441,20 @@ def home_tool_definitions() -> list[dict[str, Any]]:
                 'name': 'home_get_summary',
                 'description': 'Get the current cached whole-home summary, including lights, switches, climate, power, presence, batteries and motion.',
                 'parameters': {'type': 'object', 'properties': {}},
+            },
+        },
+        {
+            'type': 'function',
+            'function': {
+                'name': 'home_get_room_snapshot',
+                'description': 'Get one complete cached room snapshot in a single call: lights, switches, motion, presence, climate, heating, power and illuminance. Use this for comparisons or questions about what is happening in a room.',
+                'parameters': {
+                    'type': 'object',
+                    'required': ['room'],
+                    'properties': {
+                        'room': {'type': 'string', 'description': 'Room name, for example Bedroom 3 or Living Room.'},
+                    },
+                },
             },
         },
         {
@@ -7566,6 +7580,20 @@ def home_tool_room_metric(room: str, metric: str) -> dict[str, Any]:
     }
 
 
+def home_tool_room_snapshot(room: str) -> dict[str, Any]:
+    """Return a bounded, room-scoped fact set for one Ollama tool call."""
+    room_name = canonical_room_name(room)
+    devices = [device for device in all_devices() if _room_device_match(device, room)]
+    facts = [ai_device_fact(device) for device in devices[:30]]
+    return {
+        'success': bool(facts),
+        'room': room_name,
+        'count': len(facts),
+        'devices': facts,
+        'source': 'event_cache',
+    }
+
+
 def execute_home_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Execute one allowlisted read-only HomeBrain tool."""
     try:
@@ -7578,12 +7606,14 @@ def execute_home_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 'active_room_names',
             )
             return {'success': True, 'source': 'event_cache', **{key: summary.get(key) for key in keys}}
+        if name == 'home_get_room_snapshot':
+            return home_tool_room_snapshot(str(arguments.get('room') or ''))
         if name == 'home_get_room_metric':
             return home_tool_room_metric(str(arguments.get('room') or ''), str(arguments.get('metric') or 'temperature'))
         if name == 'home_search_devices':
             fields = {
                 'id', 'label', 'room', 'category', 'switch', 'level', 'temperature',
-                'humidity', 'motion', 'contact', 'presence', 'battery', 'power', 'energy',
+                'humidity', 'illuminance', 'motion', 'contact', 'presence', 'battery', 'power', 'energy',
                 'thermostatMode', 'thermostatOperatingState', 'heatingSetpoint', 'lock', 'water',
             }
             return filtered_device_inventory(
@@ -7705,7 +7735,7 @@ def ollama_tool_answer(text: str) -> dict[str, Any] | None:
         assistant_message = first_data.get('message') if isinstance(first_data, dict) else None
         assistant_message = assistant_message if isinstance(assistant_message, dict) else {}
         calls = assistant_message.get('tool_calls') or []
-        calls = [call for call in calls if isinstance(call, dict)][:2]
+        calls = [call for call in calls if isinstance(call, dict)][:3]
         if not calls:
             return None
 
@@ -8041,6 +8071,22 @@ def should_prefer_ollama_open_question(text: str) -> bool:
         'fan', 'bathroom', 'energy meter', 'power meter',
     )
     return not any(anchor in q for anchor in smart_home_anchors)
+
+
+def should_prefer_ollama_home_analysis(text: str) -> bool:
+    """Route explicit multi-fact smart-home reasoning to grounded Ollama tools."""
+    q = normalise(text)
+    asks_for_analysis = bool(
+        re.search(r'^(compare|analyse|analyze|correlate|interpret)\b', q)
+        or re.search(r'\bwhat (?:does|do|might|could) (?:this|that|these|they).*(?:suggest|indicate|mean)\b', q)
+    )
+    if not asks_for_analysis or looks_like_control_request(q):
+        return False
+    smart_home_fact = re.search(
+        r'\b(home|house|bedroom|bathroom|kitchen|hallway|room|device|sensor|motion|presence|lighting|climate|temperature|humidity|power|energy|heating|thermostat)\b',
+        q,
+    )
+    return bool(smart_home_fact)
 
 
 def assistant_suggestions_for_intent(intent: str) -> list[str]:
@@ -9481,9 +9527,9 @@ def assistant(text: str) -> dict[str, Any]:
         return with_suggestions(stale_devices_answer(text))
     if 'hub log' in t or 'hub logs' in t or 'recent logs' in t or 'log diagnostic' in t:
         return with_suggestions(hub_logs_answer())
-    if 'room' in t and 'motion' in t:
+    if re.search(r'\brooms?\b', t) and re.search(r'\bmotion\b', t):
         return cached_motion_rooms_answer()
-    if 'room' in t and 'active' in t:
+    if re.search(r'\brooms?\b', t) and re.search(r'\bactive\b', t):
         return active_rooms_answer()
     if 'cold' in t and 'room' in t:
         return cold_rooms_answer()
@@ -9587,7 +9633,7 @@ def assistant(text: str) -> dict[str, Any]:
     # keyword rules turned questions such as "why does condensation form?"
     # into unrelated thermostat readouts merely because they contained
     # "cold" or "humidity".
-    if should_prefer_ollama_open_question(text):
+    if should_prefer_ollama_open_question(text) or should_prefer_ollama_home_analysis(text):
         ollama = ollama_answer(text)
         if ollama:
             return ollama

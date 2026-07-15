@@ -996,7 +996,7 @@ def test_ollama_answer_uses_bounded_read_tools_for_home_questions():
         'http://ollama.local:11434/api/chat',
     ]
     assert all(call['timeout'] == 18 for call in captured)
-    assert len(captured[0]['json']['tools']) == 8
+    assert len(captured[0]['json']['tools']) == 9
     assert 'tools' not in captured[1]['json']
     tool_message = captured[1]['json']['messages'][-1]
     assert tool_message['role'] == 'tool'
@@ -3263,6 +3263,51 @@ def test_home_tool_room_metric_uses_cached_label_when_driver_room_is_generic():
     assert result['average'] == 51
     assert result['source'] == 'event_cache'
     assert [sensor['label'] for sensor in result['sensors']] == ['Livingroom temp & humidity']
+
+
+def test_home_tool_room_snapshot_is_room_scoped_and_includes_comparison_facts():
+    main = load_addon_main()
+    main.all_devices = lambda: [
+        {'id': 'l3', 'label': 'Bedroom 3 Light', 'room': 'Bedroom 3', 'category': 'light', 'switch': 'on', 'level': 75},
+        {'id': 'm3', 'label': 'Bedroom 3 Motion', 'room': 'Bedroom 3', 'category': 'motion_sensor', 'motion': 'active'},
+        {'id': 'p3', 'label': 'Bedroom 3 Presence', 'room': 'Bedroom 3', 'category': 'presence_sensor', 'presence': 'not present'},
+        {'id': 't3', 'label': 'Bedroom 3 TRV', 'room': 'Bedroom 3', 'category': 'thermostat', 'temperature': 25, 'thermostatMode': 'off'},
+        {'id': 'pc3', 'label': 'Bedroom3 PC (MQTT)', 'room': 'Sockets', 'category': 'power_device', 'switch': 'on', 'power': 49},
+        {'id': 'l2', 'label': 'Bedroom 2 Light', 'room': 'Bedroom 2', 'category': 'light', 'switch': 'on'},
+    ]
+
+    result = main.execute_home_tool('home_get_room_snapshot', {'room': 'Bedroom 3'})
+
+    assert result['success'] is True
+    assert result['room'] == 'Bedroom 3'
+    labels = [device['label'] for device in result['devices']]
+    assert labels == [
+        'Bedroom 3 Light', 'Bedroom 3 Motion', 'Bedroom 3 Presence',
+        'Bedroom 3 TRV', 'Bedroom3 PC (MQTT)',
+    ]
+    assert result['devices'][0]['level'] == 75
+    assert 'Bedroom 2 Light' not in labels
+
+
+def test_bedroom_comparison_prompt_reaches_ollama_instead_of_global_motion_rooms():
+    main = load_addon_main()
+    prompt = 'Compare the current motion, presence, lighting and climate in Bedroom 3, and explain what they suggest.'
+    main.cached_motion_rooms_answer = lambda: (_ for _ in ()).throw(
+        AssertionError('Bedroom is not the standalone word room')
+    )
+    main.ollama_answer = lambda text: {
+        'success': True,
+        'intent': 'ollama_tool_answer',
+        'source': 'ollama_tools',
+        'message': 'Grounded comparison.',
+        'question': text,
+    }
+
+    assert main.cache_first_assistant_answer(prompt) is None
+    answer = main.assistant(prompt)
+
+    assert answer['source'] == 'ollama_tools'
+    assert answer['question'] == prompt
 
 
 def test_verify_device_attribute_accepts_event_cache_confirmation_without_polling():

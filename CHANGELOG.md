@@ -1,3 +1,10 @@
+## v1.9.55-alpha - Grounded Room Comparison Routing
+
+- Fixed `Bedroom` and similar names being mistaken for the standalone word `room`, which routed comparison questions to the global active-motion list instead of Local AI.
+- Added a bounded `home_get_room_snapshot` Ollama tool that returns room-scoped lighting, motion, presence, climate, heating, power and illuminance facts in one cached call.
+- Allowed up to three tool calls per Ollama planning response while retaining the read-only allowlist and deterministic control safety boundary.
+- Added regression coverage proving room comparison/explanation prompts bypass the global motion shortcut and reach grounded Ollama tools.
+
 ## v1.9.54-alpha - Natural Room Activity Answers
 
 - Replaced diagnostic-style `Lights on: none` and `Other switches on: none` output with concise conversational room answers.
