@@ -892,6 +892,7 @@ def test_ollama_answer_uses_bounded_read_tools_for_home_questions():
     main.CONFIG['ollama_base_url'] = 'http://ollama.local:11434'
     main.CONFIG['ollama_model'] = 'qwen2.5:3b'
     main.CONFIG['ollama_timeout_seconds'] = 75
+    main.CONFIG['ollama_tool_timeout_seconds'] = 18
     main.CONFIG['ollama_num_predict'] = 90
     main.all_devices = lambda: [
         {'id': 'w1', 'label': 'Weather Open-Meteo', 'room': 'Weather', 'category': 'weather', 'weatherSummaryLine': 'Clear'},
@@ -936,7 +937,7 @@ def test_ollama_answer_uses_bounded_read_tools_for_home_questions():
         'http://ollama.local:11434/api/chat',
         'http://ollama.local:11434/api/chat',
     ]
-    assert all(call['timeout'] == 75 for call in captured)
+    assert all(call['timeout'] == 18 for call in captured)
     assert len(captured[0]['json']['tools']) == 8
     assert 'tools' not in captured[1]['json']
     tool_message = captured[1]['json']['messages'][-1]
