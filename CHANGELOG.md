@@ -1,3 +1,11 @@
+## v1.9.53-alpha - Prayer Times and Strict Room Activity
+
+- Added deterministic answers backed by the Hubitat `Pray times` device for Fajr, sunrise, Dhuhr, Asr, Maghrib, Isha, full daily prayer times, and the next prayer.
+- Added common spoken spelling aliases such as `zuhr` and `magrib`, plus a targeted live-device-detail fetch when the broad Maker API cache omits prayer attributes.
+- Fixed room activity questions being misclassified as power questions because the single-letter watt alias matched the `w` in `what`.
+- Made Bedroom and Living Room activity answers strictly room-scoped, list every light and switch that is on, and show all available matching-device power readings.
+- Added regressions preventing Bedroom 3 devices from appearing in Bedroom 1 or Living Room answers.
+
 ## v1.9.52-alpha - Explicit Room Activity and Smart-Plug Control
 
 - Fixed exact dehumidifier commands being rejected when Hubitat identifies the device as a metering smart plug but omits switch capability metadata from the broad device cache.

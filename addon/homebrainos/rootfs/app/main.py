@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.52-alpha'
+APP_VERSION = '1.9.53-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -2770,6 +2770,145 @@ def cached_power_device_answer(text: str) -> dict[str, Any] | None:
     }
 
 
+PRAYER_TIME_ORDER = ('fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha')
+PRAYER_TIME_LABELS = {
+    'fajr': 'Fajr',
+    'sunrise': 'Sunrise',
+    'dhuhr': 'Dhuhr',
+    'asr': 'Asr',
+    'maghrib': 'Maghrib',
+    'isha': 'Isha',
+}
+PRAYER_TIME_ALIASES = {
+    'fajr': ('fajr', 'fajer', 'fajar'),
+    'sunrise': ('sunrise', 'sun rise'),
+    'dhuhr': ('dhuhr', 'zuhr', 'duhr', 'zuhur'),
+    'asr': ('asr', 'asar'),
+    'maghrib': ('maghrib', 'magrib', 'mughrib'),
+    'isha': ('isha', 'ishaa', 'isha prayer'),
+}
+
+
+def _prayer_time_query(text: str) -> bool:
+    q = normalise(text)
+    if not q or q.startswith(('turn ', 'switch ', 'set ', 'schedule ', 'cancel ')):
+        return False
+    general_terms = ('prayer time', 'prayer times', 'pray time', 'pray times', 'salah time', 'salah times', 'namaz time', 'namaz times', 'next prayer')
+    if any(term in q for term in general_terms):
+        return True
+    return any(re.search(rf'\b{re.escape(alias)}\b', q) for aliases in PRAYER_TIME_ALIASES.values() for alias in aliases)
+
+
+def _prayer_device_snapshot() -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for device in all_devices():
+        text = normalise(f"{device.get('label') or ''} {device.get('name') or ''}")
+        attrs = device_attribute_map(device)
+        attr_keys = {normalise(key).replace(' ', '') for key in attrs}
+        if 'prayer time' in text or 'pray time' in text or len(attr_keys.intersection(PRAYER_TIME_ORDER)) >= 2:
+            candidates.append(device)
+    if not candidates:
+        return None, {}
+
+    candidates.sort(key=lambda device: (
+        'pray times' not in normalise(device.get('label') or ''),
+        str(device.get('label') or device.get('name') or ''),
+    ))
+    device = candidates[0]
+    attrs = device_attribute_map(device)
+    available = {normalise(key).replace(' ', '') for key, value in attrs.items() if value not in (None, '')}
+    if len(available.intersection(PRAYER_TIME_ORDER)) < 2 and device.get('id'):
+        fresh = fetch_live_device_detail(str(device['id']))
+        if fresh:
+            update_cached_device_snapshot(fresh)
+            device = fresh
+            attrs = device_attribute_map(device)
+
+    values: dict[str, Any] = {}
+    for key, value in attrs.items():
+        canonical = normalise(key).replace(' ', '')
+        if canonical in PRAYER_TIME_ORDER or canonical == 'lastupdated':
+            values[canonical] = value
+    return device, values
+
+
+def _clean_prayer_time(value: Any) -> str | None:
+    if value in (None, ''):
+        return None
+    text = re.sub(r'\s+', ' ', str(value)).strip()
+    match = re.search(r'\b([01]?\d|2[0-3]):[0-5]\d\b', text)
+    return match.group(0) if match else text
+
+
+def _next_prayer_time(times: dict[str, str]) -> tuple[str, str] | None:
+    timezone = local_timezone()
+    now = datetime.now(timezone) if timezone else datetime.now()
+    current_minutes = now.hour * 60 + now.minute
+    for key in ('fajr', 'dhuhr', 'asr', 'maghrib', 'isha'):
+        value = times.get(key)
+        if not value:
+            continue
+        match = re.fullmatch(r'(\d{1,2}):(\d{2})', value)
+        if match and int(match.group(1)) * 60 + int(match.group(2)) >= current_minutes:
+            return key, value
+    return None
+
+
+def prayer_times_answer(text: str) -> dict[str, Any] | None:
+    """Answer prayer-time questions from the Hubitat Prayer Times device."""
+    if not _prayer_time_query(text):
+        return None
+    q = normalise(text)
+    device, raw_values = _prayer_device_snapshot()
+    if not device:
+        message = 'I could not find a Prayer Times device in the HomeBrain cache. Add it to the Hubitat Maker API device list, then rebuild the cache.'
+        return {'success': False, 'intent': 'prayer_times', 'source': 'event_cache', 'message': message, 'speech': message}
+
+    times = {
+        key: cleaned
+        for key in PRAYER_TIME_ORDER
+        for cleaned in [_clean_prayer_time(raw_values.get(key))]
+        if cleaned
+    }
+    if not times:
+        message = f"I found {device.get('label') or 'the Prayer Times device'}, but its prayer-time values are not available yet. Use Refresh on the Hubitat device, then ask again."
+        return {'success': False, 'intent': 'prayer_times', 'source': 'live_device_detail', 'message': message, 'speech': message, 'device': device}
+
+    if 'next prayer' in q:
+        next_time = _next_prayer_time(times)
+        if next_time:
+            key, value = next_time
+            message = f'The next prayer is {PRAYER_TIME_LABELS[key]} at {value}.'
+        else:
+            message = "Today's scheduled prayers have passed. Tomorrow's Fajr time is not available from today's device values yet."
+        return {'success': True, 'intent': 'next_prayer_time', 'source': 'prayer_times_device', 'message': message, 'speech': message, 'times': times, 'device': device}
+
+    requested: list[str] = []
+    for key in PRAYER_TIME_ORDER:
+        if any(re.search(rf'\b{re.escape(alias)}\b', q) for alias in PRAYER_TIME_ALIASES[key]):
+            requested.append(key)
+    if requested:
+        available = [(key, times[key]) for key in requested if key in times]
+        if len(available) == 1:
+            key, value = available[0]
+            message = f'{PRAYER_TIME_LABELS[key]} is at {value} today.'
+        elif available:
+            message = 'Today: ' + ', '.join(f'{PRAYER_TIME_LABELS[key]} {value}' for key, value in available) + '.'
+        else:
+            names = ', '.join(PRAYER_TIME_LABELS[key] for key in requested)
+            message = f'{names} is not available from the Prayer Times device yet.'
+        return {'success': bool(available), 'intent': 'prayer_time', 'source': 'prayer_times_device', 'message': message, 'speech': message, 'times': times, 'device': device}
+
+    lines = ["Today's prayer times:"]
+    lines.extend(f'{PRAYER_TIME_LABELS[key]}: {times[key]}' for key in PRAYER_TIME_ORDER if key in times)
+    updated = str(raw_values.get('lastupdated') or '').strip()
+    if updated:
+        lines.append(f'Updated: {updated}')
+    message = '\n'.join(lines)
+    speech = 'Today: ' + ', '.join(f'{PRAYER_TIME_LABELS[key]} at {times[key]}' for key in PRAYER_TIME_ORDER if key in times) + '.'
+    return {'success': True, 'intent': 'prayer_times', 'source': 'prayer_times_device', 'message': message, 'speech': speech, 'times': times, 'last_updated': updated or None, 'device': device}
+
+
 def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
     t = normalise(text)
     if not t:
@@ -2778,6 +2917,12 @@ def cache_first_assistant_answer(text: str) -> dict[str, Any] | None:
         return cached_ai_status_answer()
     if looks_like_control_request(t) or t in ('refresh', 'refresh cache', 'reload cache', 'update cache', 'clear cache'):
         return None
+    prayer_answer = prayer_times_answer(t)
+    if prayer_answer:
+        return prayer_answer
+    room_activity = room_activity_query_answer(t)
+    if room_activity:
+        return room_activity
     named_state = named_switch_state_answer(t)
     if named_state:
         return named_state
@@ -4388,15 +4533,66 @@ def heating_status_answer() -> dict[str, Any]:
 
 
 def room_on_status_answer(room: str) -> dict[str, Any]:
+    room = re.sub(r'^(?:the|my)\s+', '', normalise(room)).strip()
     devices = room_devices(room)
     if not devices:
         return {'success': False, 'intent': 'room_on_status', 'message': f'I found no devices in {room}.'}
-    active = [d for d in devices if active_device_phrase(d)]
-    lines = [active_device_phrase(d) for d in active]
+
+    lights_on: list[dict[str, Any]] = []
+    switches_on: list[dict[str, Any]] = []
+    power_rows: list[tuple[dict[str, Any], float]] = []
+    other_active: list[dict[str, Any]] = []
+    for device in devices:
+        switch = device.get('switch')
+        if switch is None:
+            switch = device_attr_value(device, 'switch')
+        power = safe_float(device.get('power') if device.get('power') is not None else device_attr_value(device, 'power'))
+        is_light = device.get('category') == 'light' or any(word in normalise(device.get('label') or device.get('name') or '') for word in ('light', 'lamp', 'bulb'))
+        if is_state(switch, 'on'):
+            (lights_on if is_light else switches_on).append(device)
+        if power is not None and power > 0 and not is_whole_house_power_source(device):
+            power_rows.append((device, power))
+        if not is_state(switch, 'on') and active_device_phrase(device):
+            other_active.append(device)
+
+    active_by_id: dict[str, dict[str, Any]] = {}
+    for device in lights_on + switches_on + [device for device, _power in power_rows] + other_active:
+        active_by_id[str(device.get('id'))] = device
+    active = list(active_by_id.values())
+
     room_name = canonical_room_name(room)
-    message = f'{room_name} active now:\n' + ('\n'.join(lines) if lines else 'Nothing active.')
-    speech = f"{room_name}: {spoken_list(lines)}" if active else f'{room_name}: nothing is active.'
+    lines = [f'{room_name} active now:']
+    lines.append('Lights on: ' + (', '.join(str(device.get('label') or device.get('name')) for device in lights_on) if lights_on else 'none'))
+    lines.append('Other switches on: ' + (', '.join(str(device.get('label') or device.get('name')) for device in switches_on) if switches_on else 'none'))
+    if power_rows:
+        lines.append('Power now:')
+        lines.extend(f"- {device.get('label') or device.get('name')}: {format_power_value(power)}" for device, power in sorted(power_rows, key=lambda item: item[1], reverse=True))
+    power_ids = {str(device.get('id')) for device, _power in power_rows}
+    sensor_facts = [active_device_phrase(device) for device in other_active if str(device.get('id')) not in power_ids]
+    sensor_facts = [fact for fact in sensor_facts if fact]
+    if sensor_facts:
+        lines.append('Other activity: ' + '; '.join(sensor_facts[:8]))
+    message = '\n'.join(lines)
+    spoken_items = [
+        *(f"{device.get('label') or device.get('name')} on" for device in lights_on + switches_on),
+        *(f"{device.get('label') or device.get('name')} using {format_power_value(power)}" for device, power in power_rows if device not in lights_on and device not in switches_on),
+        *sensor_facts,
+    ]
+    speech = f"{room_name}: {spoken_list(spoken_items)}" if spoken_items else f'{room_name}: no lights or switches are on.'
     return {'success': True, 'intent': 'room_on_status', 'message': message, 'speech': speech, 'devices': active, 'room': room_name}
+
+
+def room_activity_query_answer(text: str) -> dict[str, Any] | None:
+    q = normalise(text or '').strip()
+    patterns = (
+        r'^(?:what is|which|show|list)\s+(?:devices\s+)?(?:are\s+|is\s+)?on\s+(?:in|inside)\s+(.+)$',
+        r'^(?:what is happening|what is going on)\s+(?:in|inside)\s+(.+)$',
+    )
+    for pattern in patterns:
+        match = re.match(pattern, q)
+        if match:
+            return room_on_status_answer(match.group(1).strip())
+    return None
 
 
 def device_health_answer() -> dict[str, Any]:
@@ -8130,7 +8326,7 @@ ASSISTANT_ATTR_WORDS = {
 def _assistant_requested_attr(question: str) -> str | None:
     q = normalise(question or '')
     for attr, words in ASSISTANT_ATTR_WORDS.items():
-        if any(word in q for word in words):
+        if any(re.search(rf'\b{re.escape(word)}\b', q) for word in words):
             return attr
     return None
 
@@ -8259,7 +8455,7 @@ def smart_device_value_answer(question: str) -> dict[str, Any] | None:
         return None
 
     # Require a real subject, not generic summary words.
-    if subject in {'home', 'house', 'summary', 'tile', 'tiles', 'devices', 'device', 'sensors', 'sensor', 'rooms', 'room'}:
+    if subject in {'home', 'house', 'summary', 'tile', 'tiles', 'devices', 'device', 'sensors', 'sensor', 'rooms', 'room', 'light', 'lights', 'switch', 'switches'}:
         return None
 
     candidates = []
@@ -9153,6 +9349,10 @@ def assistant(text: str) -> dict[str, Any]:
 
     if is_settings_status_question(text):
         return with_suggestions(required_settings_answer())
+
+    room_activity = room_activity_query_answer(text)
+    if room_activity:
+        return with_suggestions(room_activity)
 
     forced_room = forced_room_status_answer(text)
     if forced_room:
