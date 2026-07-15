@@ -30,6 +30,64 @@ def test_public_error_redacts_tokens():
     assert 'access_token=REDACTED' in message
 
 
+def test_maker_get_reports_empty_hubitat_response():
+    main = load_addon_main()
+    main.CONFIG['hubitat_base_url'] = 'http://hubitat.local'
+    main.CONFIG['maker_api_app_id'] = '123'
+    main.CONFIG['maker_api_token'] = 'maker-secret'
+
+    class Response:
+        text = ''
+        headers = {'content-type': 'text/plain'}
+        def raise_for_status(self):
+            return None
+        def json(self):
+            raise AssertionError('json should not be called for an empty response')
+
+    main.requests.get = lambda *_args, **_kwargs: Response()
+
+    try:
+        main.maker_get('devices')
+    except RuntimeError as exc:
+        message = main.public_error(exc)
+    else:
+        raise AssertionError('Expected RuntimeError')
+
+    assert 'empty response' in message
+    assert 'devices' in message
+    assert 'maker-secret' not in message
+
+
+def test_maker_get_reports_non_json_hubitat_response():
+    main = load_addon_main()
+    main.CONFIG['hubitat_base_url'] = 'http://hubitat.local'
+    main.CONFIG['maker_api_app_id'] = '123'
+    main.CONFIG['maker_api_token'] = 'maker-secret'
+
+    class Response:
+        text = '<html>Login required</html>'
+        headers = {'content-type': 'text/html'}
+        def raise_for_status(self):
+            return None
+        def json(self):
+            raise ValueError('Expecting value: line 1 column 1 (char 0)')
+
+    main.requests.get = lambda *_args, **_kwargs: Response()
+
+    try:
+        main.maker_get('devices')
+    except RuntimeError as exc:
+        message = main.public_error(exc)
+    else:
+        raise AssertionError('Expected RuntimeError')
+
+    assert 'non-JSON' in message
+    assert 'text/html' in message
+    assert 'Login required' in message
+    assert 'Expecting value' not in message
+    assert 'maker-secret' not in message
+
+
 def test_generic_room_targets_do_not_match_every_device():
     main = load_addon_main()
     main.all_devices = lambda: [

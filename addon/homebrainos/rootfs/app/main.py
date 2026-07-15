@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = '1.9.39-alpha'
+APP_VERSION = '1.9.40-alpha'
 CONFIG_PATH = Path('/data/options.json')
 DB_PATH = Path('/data/homebrainos.sqlite3')
 HOUSEHOLD_PEOPLE = ['Enamul', 'Samah', 'Tahmid', 'Muhsena']
@@ -334,7 +334,16 @@ def maker_get(path: str, timeout: int = 20) -> Any:
             PERF_STATS['maker_get_count'] = int(PERF_STATS.get('maker_get_count') or 0) + 1
             PERF_STATS['maker_get_last_path'] = path
             PERF_STATS['maker_get_last_ms'] = int((time.time() - started) * 1000)
-            return response.json()
+            text = response.text.strip()
+            if not text:
+                raise RuntimeError(f'Hubitat Maker API returned an empty response for {path}. Check the Maker API app id, token, selected devices, and hub availability.')
+            try:
+                return response.json()
+            except ValueError as exc:
+                content_type = response.headers.get('content-type', 'unknown') if response.headers else 'unknown'
+                preview = re.sub(r'\s+', ' ', response.text).strip()[:120]
+                detail = f' Content-Type: {content_type}. Response starts: {preview}' if preview else f' Content-Type: {content_type}.'
+                raise RuntimeError(f'Hubitat Maker API returned non-JSON for {path}.{detail}') from exc
     except Exception:
         PERF_STATS['maker_get_error_count'] = int(PERF_STATS.get('maker_get_error_count') or 0) + 1
         PERF_STATS['maker_get_last_path'] = path
