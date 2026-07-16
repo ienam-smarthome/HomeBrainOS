@@ -11,7 +11,7 @@ from fastpath_ai_handoff import install_fastpath_ai_handoff
 from ollama_agent_device_resolution import DeviceResolutionNaturalAgent
 
 
-RELEASE_VERSION = "0.2.5-alpha"
+RELEASE_VERSION = "0.2.6-alpha"
 
 
 def _replace_fallback_router() -> None:
