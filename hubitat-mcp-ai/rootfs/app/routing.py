@@ -44,12 +44,30 @@ def is_fast_path_query(query: str) -> bool:
     if any(term in q for term in slow_reasoning_terms):
         return False
 
+    # Resource/status questions should never wait for Ollama. They are direct
+    # reads from Kingpanther's hub_get_info tool.
+    if "hub" in q and any(
+        term in q
+        for term in (
+            "cpu",
+            "processor",
+            "free memory",
+            "memory",
+            "resources",
+            "temperature",
+            "database size",
+            "uptime",
+        )
+    ):
+        return True
+
     patterns = (
         r"^(?:what(?:'s| is) happening(?: at home)?|home status)\??$",
         r"^(?:which|what|list)?\s*(?:lights?|switches?)\s+(?:are\s+)?on\??$",
         r"^(?:which|what|list)?\s*(?:batter(?:y|ies))\s+(?:are\s+)?low\??$",
         r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
         r"^(?:what(?:'s| is)\s+)?(?:the\s+)?hub\s+(?:cpu|memory|free memory)\??$",
+        r"^how much\s+free memory\s+(?:does\s+)?(?:the\s+)?hub\s+have\??$",
         r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
         r"^(?:what(?:'s| is)\s+)?(?:the\s+)?weather(?: today| now)?\??$",
         r"^(?:will it rain|is it raining)(?: today| now)?\??$",
