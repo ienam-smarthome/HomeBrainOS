@@ -29,6 +29,7 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         )
         self._inference_cache: tuple[float, dict[str, Any]] | None = None
         self._inference_probe_lock = asyncio.Lock()
+        self._inference_probe_task: asyncio.Task[dict[str, Any]] | None = None
 
     def inference_status(self) -> dict[str, Any]:
         now = time.time()
@@ -41,9 +42,58 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
             }
 
         checked_at, status = self._inference_cache
+        age_seconds = round(max(0.0, now - checked_at), 1)
+
+        if (
+            status.get("ready") is False
+            and age_seconds >= self.inference_failure_ttl_seconds
+        ):
+            return {
+                "ready": None,
+                "state": "retry-due",
+                "model": self.model,
+                "message": (
+                    "The previous inference failure has expired; a background recheck is due."
+                ),
+                "source": status.get("source"),
+                "elapsed_ms": status.get("elapsed_ms"),
+                "error": status.get("error"),
+                "previous_state": status.get("state"),
+                "stale": True,
+                "age_seconds": age_seconds,
+            }
+
         result = dict(status)
-        result["age_seconds"] = round(max(0.0, now - checked_at), 1)
+        result["age_seconds"] = age_seconds
         return result
+
+    def inference_probe_due(self) -> bool:
+        status = self.inference_status()
+        if status.get("ready") is None:
+            return True
+        if status.get("ready") is False:
+            return False
+        return float(status.get("age_seconds") or 0) >= 300
+
+    def schedule_inference_probe(
+        self,
+        *,
+        force: bool = False,
+    ) -> asyncio.Task[dict[str, Any]] | None:
+        """Start one non-blocking inference probe when a recheck is due."""
+        if not force and not self.inference_probe_due():
+            return self._inference_probe_task
+        if self._inference_probe_task and not self._inference_probe_task.done():
+            return self._inference_probe_task
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+
+        self._inference_probe_task = loop.create_task(
+            self.probe_inference(force=force)
+        )
+        return self._inference_probe_task
 
     def recent_inference_failure(self) -> dict[str, Any] | None:
         if not self._inference_cache:
@@ -99,10 +149,27 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         if recent_failure and not force:
             return recent_failure
         current = self.inference_status()
-        if current.get("ready") is True and not force and current.get("age_seconds", 999) < 60:
+        if (
+            current.get("ready") is True
+            and not force
+            and current.get("age_seconds", 999) < 300
+        ):
             return current
 
         async with self._inference_probe_lock:
+            # Another queued task may already have completed the probe while this
+            # task was waiting for the lock.
+            recent_failure = self.recent_inference_failure()
+            if recent_failure and not force:
+                return recent_failure
+            current = self.inference_status()
+            if (
+                current.get("ready") is True
+                and not force
+                and current.get("age_seconds", 999) < 300
+            ):
+                return current
+
             server = await self.health(force=force)
             if not server.get("online"):
                 return self.record_inference_failure(
@@ -209,6 +276,11 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
             return (
                 f"Ollama server is online, but {self.model} could not complete the chat "
                 "request. The local MCP fallback answered instead."
+            )
+        if server_online and inference.get("state") == "retry-due":
+            return (
+                "The previous Ollama inference failure has expired and is being rechecked. "
+                "The local MCP fallback answered meanwhile."
             )
         if not server_online:
             return "Ollama server is currently unreachable. The local MCP fallback answered instead."
