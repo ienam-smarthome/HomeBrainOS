@@ -1,5 +1,5 @@
 name: Hubitat MCP AI
-version: '0.1.5-alpha'
+version: '0.1.6-alpha'
 slug: hubitat_mcp_ai
 description: Local Ollama web assistant powered by kingpanther13's Hubitat MCP Rule Server
 url: https://github.com/ienam-smarthome/HomeBrainOS
