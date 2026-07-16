@@ -6,7 +6,14 @@ from typing import Any
 from fallback_router import _device_id, _label, _normalise
 from fast_fallback_groups import FastFallbackRouter as GroupFastFallbackRouter
 from fast_fallback_live import live_attributes
-from presenter import display_payload
+from mcp_client import MCPError
+from presenter import (
+    compact_number,
+    display_payload,
+    first_mapping,
+    first_value,
+    format_memory_kb,
+)
 
 
 _DEVICE_HEALTH_TERMS = (
@@ -21,15 +28,126 @@ _DEVICE_HEALTH_TERMS = (
     "unresponsive devices",
 )
 
+_HUB_RESOURCE_TERMS = (
+    "hub resources",
+    "hub resource",
+    "hub cpu",
+    "cpu load",
+    "processor load",
+    "free memory",
+    "hub memory",
+    "hub temperature",
+    "database size",
+    "hub uptime",
+)
+
 
 class FastFallbackRouter(GroupFastFallbackRouter):
-    """Group-aware fallback with a dedicated offline/stale device route."""
+    """Group-aware fallback with focused device-health and hub-resource routes."""
 
     async def answer(self, query: str) -> dict[str, Any]:
         q = _normalise(query)
+        if any(term in q for term in _HUB_RESOURCE_TERMS):
+            return await self._hub_resources()
         if any(term in q for term in _DEVICE_HEALTH_TERMS):
             return await self._device_health()
         return await super().answer(query)
+
+    async def _hub_resources(self) -> dict[str, Any]:
+        result = await self.client.call_tool("hub_get_info", {})
+        if result.is_error:
+            raise MCPError(result.text or "hub_get_info failed")
+
+        data = first_mapping(result.data)
+        model = first_value(data, "name", "hubName", "model") or "Hubitat hub"
+        firmware = first_value(data, "firmwareVersion", "currentVersion")
+        free_memory = format_memory_kb(
+            first_value(data, "freeMemoryKB", "freeMemoryKb")
+        )
+        temperature = compact_number(
+            first_value(data, "internalTempCelsius", "temperature"),
+            "°C",
+        )
+        database_size = format_memory_kb(
+            first_value(data, "databaseSizeKB", "databaseSizeKb")
+        )
+        uptime = first_value(
+            data,
+            "uptimeFormatted",
+            "formattedUptime",
+            "uptime",
+        )
+        cpu_raw = first_value(
+            data,
+            "cpuLoad",
+            "cpuLoadPercent",
+            "cpuPercent",
+            "processorLoad",
+        )
+        cpu = compact_number(cpu_raw, "%") if cpu_raw not in (None, "") else None
+
+        lines: list[str] = []
+        if cpu:
+            lines.append(f"Hub CPU load is {cpu}.")
+        else:
+            lines.append(
+                "The Hubitat MCP Rule Server does not expose CPU load through hub_get_info."
+            )
+        if free_memory:
+            lines.append(f"Hub free memory is {free_memory}.")
+        if temperature:
+            lines.append(f"Internal temperature is {temperature}.")
+        if database_size:
+            lines.append(f"Database size is {database_size}.")
+        if uptime:
+            lines.append(f"Uptime is {uptime}.")
+
+        metrics = [
+            {
+                "label": "CPU load",
+                "value": cpu or "Not exposed",
+                "icon": "🧠",
+            }
+        ]
+        for label, value, icon in (
+            ("Free memory", free_memory, "💾"),
+            ("Temperature", temperature, "🌡️"),
+            ("Database", database_size, "🗄️"),
+            ("Uptime", uptime, "⏱️"),
+        ):
+            if value not in (None, ""):
+                metrics.append({"label": label, "value": str(value), "icon": icon})
+
+        subtitle = " · ".join(
+            value
+            for value in (
+                str(model),
+                f"Firmware {firmware}" if firmware else None,
+            )
+            if value
+        )
+        display = display_payload(
+            "hub-resources",
+            "Hub resources",
+            subtitle=subtitle,
+            metrics=metrics,
+            note=(
+                "Kingpanther MCP currently exposes free memory, temperature, database size "
+                "and uptime, but not the Hubitat CPU percentage."
+                if not cpu
+                else "Live values were read from Kingpanther's hub_get_info tool."
+            ),
+        )
+        return self._decorate(
+            self._response(
+                "\n".join(lines),
+                "fallback-hub-resources",
+                True,
+                result,
+            ),
+            display,
+            result,
+        )
 
     async def _device_health(self) -> dict[str, Any]:
         stale_call = self._execute_catalog_tool(
