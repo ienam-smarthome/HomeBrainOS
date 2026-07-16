@@ -9,6 +9,13 @@ def normalise(value: Any) -> str:
 
 
 def is_control_query(query: str) -> bool:
+    """Only explicit, low-risk on/off commands bypass Ollama.
+
+    Natural read questions, diagnostics, weather, rooms, rules and reasoning now
+    go through the Ollama-first MCP agent. The deterministic path is retained for
+    basic commands where speed and state verification matter more than language
+    synthesis.
+    """
     q = normalise(query)
     return bool(
         re.match(
@@ -19,81 +26,7 @@ def is_control_query(query: str) -> bool:
 
 
 def is_fast_path_query(query: str) -> bool:
-    """Return True for common requests that do not need LLM reasoning."""
-    q = normalise(query)
-    if not q:
-        return False
-    if is_control_query(q):
-        return True
-
-    slow_reasoning_terms = (
-        "why ",
-        "explain",
-        "analyse",
-        "analyze",
-        "compare",
-        "correlate",
-        "suggest",
-        "create rule",
-        "create automation",
-        "modify rule",
-        "troubleshoot",
-        "diagnose",
-        "what does this mean",
-    )
-    if any(term in q for term in slow_reasoning_terms):
-        return False
-
-    # Resource/status questions should never wait for Ollama. They are direct
-    # reads from Kingpanther's hub_get_info tool.
-    if "hub" in q and any(
-        term in q
-        for term in (
-            "cpu",
-            "processor",
-            "free memory",
-            "memory",
-            "resources",
-            "temperature",
-            "database size",
-            "uptime",
-        )
-    ):
-        return True
-
-    # Weather devices already expose deterministic current, today, tomorrow
-    # and rain fields. Do not wait for Ollama to interpret these questions.
-    if any(
-        term in q
-        for term in (
-            "weather",
-            "forecast",
-            "rain",
-            "raining",
-            "precipitation",
-            "umbrella",
-            "temperature outside",
-        )
-    ):
-        return True
-
-    patterns = (
-        r"^(?:what(?:'s| is) happening(?: at home)?|home status)\??$",
-        r"^(?:which|what|list)?\s*(?:lights?|switches?)\s+(?:are\s+)?on\??$",
-        r"^(?:which|what|list)?\s*(?:batter(?:y|ies))\s+(?:are\s+)?low\??$",
-        r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
-        r"^(?:what(?:'s| is)\s+)?(?:the\s+)?hub\s+(?:cpu|memory|free memory)\??$",
-        r"^how much\s+free memory\s+(?:does\s+)?(?:the\s+)?hub\s+have\??$",
-        r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
-        r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
-        r"^(?:find|show|list)\s+devices\s+that\s+(?:need|needs)\s+attention\??$",
-        r"^(?:what|which)\s+devices\s+(?:need|needs)\s+attention\??$",
-        r"^(?:list|show|find)\s+(?:devices\s+that\s+are\s+)?(?:offline|stale)(?:\s+(?:or|and)\s+(?:offline|stale))?(?:\s+devices)?\??$",
-        r"^(?:list|show|find)\s+devices\s+that\s+are\s+offline\s+(?:or|and)\s+stale\??$",
-        r"^(?:device|devices)\s+health(?:\s+status)?\??$",
-        r"^(?:which|what)\s+devices\s+(?:are\s+)?(?:offline|stale|not responding)\??$",
-    )
-    return any(re.match(pattern, q) for pattern in patterns)
+    return is_control_query(query)
 
 
 def dedupe_current_query(
