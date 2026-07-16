@@ -28,7 +28,7 @@ def test_spoken_numbers_match_numeric_device_labels():
     assert normalise_spoken_device_name("Dehumidifier number one") == "dehumidifier 1"
 
 
-def test_humidifier_does_not_silently_equal_dehumidifier():
+def test_unique_humidifier_dehumidifier_speech_variant_matches_same_number():
     candidates = [
         {"id": "1", "label": "Dehumidifier 1"},
         {"id": "2", "label": "Dehumidifier 2"},
@@ -39,9 +39,41 @@ def test_humidifier_does_not_silently_equal_dehumidifier():
     )
     assert match is None
     assert alternatives[0] == "Dehumidifier 1"
+    assert FastFallbackRouter._humidity_speech_alias_match(
+        "humidifier one",
+        candidates,
+    ) == candidates[0]
 
 
-def test_humidity_name_conflict_returns_short_confirmation_without_control():
+def test_humidity_speech_variant_requires_exact_remaining_label_tokens():
+    candidates = [
+        {"id": "1", "label": "Dehumidifier 1"},
+        {"id": "2", "label": "Dehumidifier 2"},
+    ]
+    assert FastFallbackRouter._humidity_speech_alias_match(
+        "humidifier",
+        candidates,
+    ) is None
+    assert FastFallbackRouter._humidity_speech_alias_match(
+        "humidifier three",
+        candidates,
+    ) is None
+
+
+def test_exact_real_humidifier_still_wins_over_speech_alias():
+    candidates = [
+        {"id": "1", "label": "Humidifier 1"},
+        {"id": "2", "label": "Dehumidifier 1"},
+    ]
+    match, alternatives = FastFallbackRouter._match_device(
+        "humidifier one",
+        candidates,
+    )
+    assert match == candidates[0]
+    assert alternatives == []
+
+
+def test_ambiguous_humidity_name_returns_short_confirmation_without_control():
     async def original_ask(_request):
         return {
             "success": False,
@@ -54,13 +86,13 @@ def test_humidity_name_conflict_returns_short_confirmation_without_control():
 
     class OllamaMustNotRun:
         async def answer_with_planner(self, query, history):
-            raise AssertionError("opposite appliance meanings require confirmation first")
+            raise AssertionError("ambiguous humidity appliance names require confirmation")
 
     application = SimpleNamespace(
         ask=original_ask,
         ollama=OllamaMustNotRun(),
         OPTIONS={"ollama_agent_timeout_seconds": 60},
-        VERSION="0.2.5-alpha",
+        VERSION="0.2.6-alpha",
     )
     wrapped = install_fastpath_ai_handoff(application)
     request = SimpleNamespace(query="turn on the humidifier one", history=[])
