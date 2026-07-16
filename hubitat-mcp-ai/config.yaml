@@ -1,5 +1,5 @@
 name: Hubitat MCP AI
-version: '0.2.1-alpha'
+version: '0.2.2-alpha'
 slug: hubitat_mcp_ai
 description: Ollama-first natural Hubitat assistant powered by kingpanther13's MCP Rule Server
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -22,15 +22,18 @@ options:
   ollama_base_url: "http://homeassistant.local:11434"
   ollama_model: "qwen3.5:9b"
   ollama_planner_model: ""
+  ollama_routine_model: ""
   ollama_health_timeout_seconds: 3
-  ollama_planner_timeout_seconds: 45
+  ollama_planner_timeout_seconds: 25
   ollama_response_timeout_seconds: 90
+  ollama_routine_response_timeout_seconds: 55
   ollama_agent_timeout_seconds: 150
   ollama_num_ctx: 4096
-  ollama_num_predict: 220
+  ollama_num_predict: 160
   ollama_keep_alive: "30m"
-  ollama_planner_tool_limit: 6
-  ollama_tool_result_limit_chars: 12000
+  ollama_planner_tool_limit: 4
+  ollama_tool_result_limit_chars: 6000
+  ollama_evidence_item_limit: 10
   ollama_max_tool_rounds: 3
   fast_path_enabled: true
   fallback_enabled: true
@@ -45,15 +48,18 @@ schema:
   ollama_base_url: str
   ollama_model: str
   ollama_planner_model: str
+  ollama_routine_model: str
   ollama_health_timeout_seconds: int
   ollama_planner_timeout_seconds: int
   ollama_response_timeout_seconds: int
+  ollama_routine_response_timeout_seconds: int
   ollama_agent_timeout_seconds: int
   ollama_num_ctx: int
   ollama_num_predict: int
   ollama_keep_alive: str
   ollama_planner_tool_limit: int
   ollama_tool_result_limit_chars: int
+  ollama_evidence_item_limit: int
   ollama_max_tool_rounds: int
   fast_path_enabled: bool
   fallback_enabled: bool
