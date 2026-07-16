@@ -9,90 +9,141 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from ollama_agent_inference import OllamaMCPAgent, OllamaUnavailable  # noqa: E402
+from mcp_client import MCPTool, MCPToolResult  # noqa: E402
+from ollama_agent_claude import ClaudeStyleOllamaAgent  # noqa: E402
 from webui import render_page  # noqa: E402
 
 
-class PendingTask:
-    def done(self):
-        return False
+class FakeMCP:
+    async def list_tools(self):
+        return [
+            MCPTool(
+                name="hub_search_tools",
+                description="Search the Hubitat MCP catalog",
+                input_schema={"type": "object", "properties": {"query": {"type": "string"}}},
+            ),
+            MCPTool(
+                name="hub_get_info",
+                description="Get hub health, memory, firmware and platform information",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+    async def call_tool(self, name, arguments):
+        assert name == "hub_get_info"
+        return MCPToolResult(
+            name=name,
+            arguments=arguments,
+            raw={},
+            text="",
+            data={"name": "Hub C8 Pro", "freeMemoryKB": 941568},
+            is_error=False,
+        )
 
 
-def test_running_probe_is_reported_as_warming():
-    agent = OllamaMCPAgent(
-        client=object(),
+class FakeResponse:
+    def __init__(self, body):
+        self.body = body
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.body
+
+
+class FakeHTTP:
+    def __init__(self):
+        self.posts = []
+
+    async def post(self, url, json, timeout):
+        self.posts.append((json["model"], bool(json.get("tools")), timeout))
+        index = len(self.posts)
+        if index == 1:
+            return FakeResponse(
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "hub_get_info",
+                                    "arguments": {},
+                                }
+                            }
+                        ],
+                    }
+                }
+            )
+        if index == 2:
+            return FakeResponse({"message": {"content": "I have the live hub data."}})
+        return FakeResponse(
+            {"message": {"content": "Your Hub C8 Pro has 919.5 MB of free memory."}}
+        )
+
+    async def get(self, url, timeout):
+        return FakeResponse(
+            {
+                "models": [
+                    {"name": "qwen3.5:9b"},
+                    {"name": "qwen3:4b"},
+                ]
+            }
+        )
+
+
+def make_agent():
+    agent = ClaudeStyleOllamaAgent(
+        client=FakeMCP(),
         base_url="http://ollama:11434",
         model="qwen3.5:9b",
-        inference_probe_timeout_seconds=20,
-        inference_warmup_timeout_seconds=90,
+        planner_model="",
+        planner_timeout_seconds=45,
+        response_timeout_seconds=90,
+        max_tool_rounds=3,
     )
     agent._health_cache = (
         time.time(),
-        {"online": True, "model": "qwen3.5:9b"},
-    )
-    agent._inference_probe_task = PendingTask()
-
-    status = agent.inference_status()
-    assert status["ready"] is None
-    assert status["state"] == "warming"
-    assert "warming up" in status["message"].lower()
-    assert "warming up" in agent.fallback_reason().lower()
-
-
-def test_probe_accepts_long_warmup_timeout():
-    captured = {}
-
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"message": {"content": "ready"}}
-
-    class FakeHTTP:
-        async def post(self, url, json, timeout):
-            captured["timeout"] = timeout
-            return FakeResponse()
-
-    agent = OllamaMCPAgent(
-        client=object(),
-        base_url="http://ollama:11434",
-        model="qwen3.5:9b",
-        inference_probe_timeout_seconds=20,
-        inference_warmup_timeout_seconds=90,
+        {
+            "online": True,
+            "model": "qwen3.5:9b",
+            "model_present": True,
+            "models": ["qwen3.5:9b", "qwen3:4b"],
+        },
     )
     agent._http = FakeHTTP()
-    agent._health_cache = (
+    return agent
+
+
+def test_real_question_is_not_blocked_by_old_probe_failure():
+    agent = make_agent()
+    agent._inference_cache = (
         time.time(),
-        {"online": True, "model": "qwen3.5:9b"},
+        {
+            "ready": False,
+            "state": "timeout",
+            "model": "qwen3.5:9b",
+            "message": "Model inference timed out.",
+        },
     )
 
-    result = asyncio.run(
-        agent.probe_inference(force=True, timeout_seconds=90)
-    )
-    assert captured["timeout"] == 90
-    assert result["state"] == "ready"
+    answer = asyncio.run(agent.answer("How much free memory does my hub have?"))
+
+    assert answer["success"] is True
+    assert answer["route"] == "ollama+mcp"
+    assert answer["planner_model"] == "qwen3:4b"
+    assert answer["message"] == "Your Hub C8 Pro has 919.5 MB of free memory."
+    assert [item[0] for item in agent._http.posts] == [
+        "qwen3:4b",
+        "qwen3:4b",
+        "qwen3.5:9b",
+    ]
+    assert agent._http.posts[0][1] is True
+    assert agent._http.posts[-1][1] is False
 
 
-def test_questions_do_not_wait_while_background_warmup_is_running():
-    agent = OllamaMCPAgent(
-        client=object(),
-        base_url="http://ollama:11434",
-        model="qwen3.5:9b",
-    )
-    agent._inference_probe_task = PendingTask()
-
-    async def run():
-        try:
-            await agent.answer("Explain why the hallway is active")
-        except OllamaUnavailable as exc:
-            return str(exc)
-        raise AssertionError("Expected warm-up fallback")
-
-    error = asyncio.run(run())
-    assert "warming up" in error.lower()
-
-
-def test_ui_has_warming_status_text():
-    page = render_page("Hubitat MCP AI", "0.1.13-alpha")
-    assert "model warming up" in page
+def test_ui_reports_available_or_loaded_instead_of_synthetic_timeout():
+    page = render_page("Hubitat MCP AI", "0.2.0-alpha")
+    assert "loads on first question" in page
+    assert "runtime.model_loaded" in page
+    assert "inference timed out" not in page
