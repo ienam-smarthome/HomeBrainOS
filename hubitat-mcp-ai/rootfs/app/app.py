@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -11,13 +12,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from fallback_router import HomeBrainFallbackRouter
+from fast_fallback import FastFallbackRouter
 from mcp_client import HubitatMCPClient
-from ollama_agent import OllamaMCPAgent, OllamaUnavailable
+from ollama_agent_fast import OllamaMCPAgent, OllamaUnavailable
+from routing import dedupe_current_query, is_control_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.0-alpha"
+VERSION = "0.1.1-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -28,13 +30,15 @@ def load_options() -> dict[str, Any]:
         "ollama_enabled": True,
         "ollama_base_url": "http://homeassistant.local:11434",
         "ollama_model": "qwen2.5:3b",
-        "ollama_timeout_seconds": 75,
+        "ollama_timeout_seconds": 35,
+        "ollama_total_timeout_seconds": 40,
         "ollama_health_timeout_seconds": 3,
-        "ollama_num_ctx": 8192,
-        "ollama_num_predict": 220,
+        "ollama_num_ctx": 4096,
+        "ollama_num_predict": 160,
         "ollama_keep_alive": "15m",
-        "ollama_tool_limit": 16,
-        "ollama_max_tool_rounds": 6,
+        "ollama_tool_limit": 10,
+        "ollama_max_tool_rounds": 3,
+        "fast_path_enabled": True,
         "fallback_enabled": True,
         "mcp_timeout_seconds": 25,
         "require_sensitive_confirmation": True,
@@ -54,6 +58,13 @@ def load_options() -> dict[str, Any]:
     return defaults
 
 
+def option_bool(name: str, default: bool = False) -> bool:
+    value = OPTIONS.get(name, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 OPTIONS = load_options()
 
 mcp = HubitatMCPClient(
@@ -65,18 +76,19 @@ ollama = OllamaMCPAgent(
     client=mcp,
     base_url=str(OPTIONS.get("ollama_base_url") or ""),
     model=str(OPTIONS.get("ollama_model") or ""),
-    timeout_seconds=float(OPTIONS.get("ollama_timeout_seconds") or 75),
+    timeout_seconds=float(OPTIONS.get("ollama_timeout_seconds") or 35),
     health_timeout_seconds=float(OPTIONS.get("ollama_health_timeout_seconds") or 3),
-    num_ctx=int(OPTIONS.get("ollama_num_ctx") or 8192),
-    num_predict=int(OPTIONS.get("ollama_num_predict") or 220),
+    num_ctx=int(OPTIONS.get("ollama_num_ctx") or 4096),
+    num_predict=int(OPTIONS.get("ollama_num_predict") or 160),
     keep_alive=str(OPTIONS.get("ollama_keep_alive") or "15m"),
-    tool_limit=int(OPTIONS.get("ollama_tool_limit") or 16),
-    max_tool_rounds=int(OPTIONS.get("ollama_max_tool_rounds") or 6),
-    require_sensitive_confirmation=bool(
-        OPTIONS.get("require_sensitive_confirmation", True)
+    tool_limit=int(OPTIONS.get("ollama_tool_limit") or 10),
+    max_tool_rounds=int(OPTIONS.get("ollama_max_tool_rounds") or 3),
+    require_sensitive_confirmation=option_bool(
+        "require_sensitive_confirmation",
+        True,
     ),
 )
-fallback = HomeBrainFallbackRouter(mcp)
+fallback = FastFallbackRouter(mcp)
 
 app = FastAPI(
     title=str(OPTIONS.get("web_title") or "Hubitat MCP AI"),
@@ -92,6 +104,10 @@ class HistoryItem(BaseModel):
 class AskRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     history: list[HistoryItem] = Field(default_factory=list)
+
+
+def elapsed_ms(started: float) -> int:
+    return round((time.perf_counter() - started) * 1000)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -115,7 +131,7 @@ async def status() -> dict[str, Any]:
         mcp_status = {"online": False, "error": str(mcp_status)}
     if isinstance(ollama_status, Exception):
         ollama_status = {"online": False, "error": str(ollama_status)}
-    if not OPTIONS.get("ollama_enabled", True):
+    if not option_bool("ollama_enabled", True):
         ollama_status = {
             "online": False,
             "disabled": True,
@@ -126,34 +142,73 @@ async def status() -> dict[str, Any]:
         "version": VERSION,
         "mcp": mcp_status,
         "ollama": ollama_status,
-        "fallback_enabled": bool(OPTIONS.get("fallback_enabled", True)),
+        "fast_path_enabled": option_bool("fast_path_enabled", True),
+        "fallback_enabled": option_bool("fallback_enabled", True),
+        "ollama_total_timeout_seconds": float(
+            OPTIONS.get("ollama_total_timeout_seconds") or 40
+        ),
     }
 
 
 @app.post("/api/ask")
 async def ask(request: AskRequest) -> dict[str, Any]:
+    started = time.perf_counter()
     query = request.query.strip()
-    history = [
+    raw_history = [
         {"role": item.role, "content": item.content}
         for item in request.history[-10:]
     ]
+    history = dedupe_current_query(raw_history, query)
 
-    if OPTIONS.get("ollama_enabled", True):
+    fallback_enabled = option_bool("fallback_enabled", True)
+    fast_path_enabled = option_bool("fast_path_enabled", True)
+    fast_path_error: str | None = None
+
+    if fallback_enabled and fast_path_enabled and is_fast_path_query(query):
         try:
-            answer = await ollama.answer(query, history)
+            answer = await asyncio.wait_for(
+                fallback.answer(query),
+                timeout=float(OPTIONS.get("mcp_timeout_seconds") or 25) + 5,
+            )
+            answer["route"] = "mcp-fast"
+            answer["version"] = VERSION
+            answer["elapsed_ms"] = elapsed_ms(started)
+            if answer.get("success") or is_control_query(query):
+                return answer
+            fast_path_error = str(answer.get("message") or "Fast path did not answer")
+        except Exception as exc:
+            fast_path_error = str(exc)
+
+    ollama_error = "Ollama is disabled"
+    if option_bool("ollama_enabled", True):
+        total_timeout = max(
+            8.0,
+            float(OPTIONS.get("ollama_total_timeout_seconds") or 40),
+        )
+        try:
+            answer = await asyncio.wait_for(
+                ollama.answer(query, history),
+                timeout=total_timeout,
+            )
             answer.setdefault("version", VERSION)
-            return answer
+            answer["elapsed_ms"] = elapsed_ms(started)
+            if answer.get("success", True):
+                return answer
+            ollama_error = str(answer.get("message") or "Ollama tool loop did not finish")
+        except asyncio.TimeoutError:
+            ollama_error = f"Ollama exceeded the {total_timeout:g}s total response budget"
         except OllamaUnavailable as exc:
             ollama_error = str(exc)
         except Exception as exc:
             ollama_error = str(exc)
-    else:
-        ollama_error = "Ollama is disabled"
 
-    if OPTIONS.get("fallback_enabled", True):
+    if fallback_enabled:
         answer = await fallback.answer(query)
+        answer["route"] = "fallback"
         answer["ollama_error"] = ollama_error
+        answer["fast_path_error"] = fast_path_error
         answer["version"] = VERSION
+        answer["elapsed_ms"] = elapsed_ms(started)
         return answer
 
     raise HTTPException(
