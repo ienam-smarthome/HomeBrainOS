@@ -10,7 +10,7 @@ from fastpath_ai_handoff import install_fastpath_ai_handoff
 from ollama_agent_quality import QualityNaturalHubitatOllamaAgent
 
 
-RELEASE_VERSION = "0.2.3-alpha"
+RELEASE_VERSION = "0.2.4-alpha"
 
 
 def _replace_ollama_agent() -> None:
