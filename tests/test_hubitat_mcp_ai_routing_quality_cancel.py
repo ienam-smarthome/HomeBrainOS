@@ -5,11 +5,16 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from fastapi import FastAPI
+
 
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from cancellable_requests import ActiveRequestRegistry  # noqa: E402
+from cancellable_requests import (  # noqa: E402
+    ActiveRequestRegistry,
+    install_cancellable_ask,
+)
 from fastpath_ai_handoff import install_fastpath_ai_handoff  # noqa: E402
 from ollama_agent_quality import QualityNaturalHubitatOllamaAgent  # noqa: E402
 from routing_policy import classify_query  # noqa: E402
@@ -118,6 +123,35 @@ def test_new_request_cancels_previous_for_same_client():
     asyncio.run(scenario())
 
 
+def test_cancellable_route_installs_without_fastapi_response_model_error():
+    async def original_ask(_request):
+        return {"success": True, "message": "ok"}
+
+    api = FastAPI()
+
+    @api.post("/api/ask")
+    async def old_ask():
+        return {"success": True}
+
+    application = SimpleNamespace(
+        app=api,
+        ask=original_ask,
+        AskRequest=SimpleNamespace,
+    )
+
+    registry = install_cancellable_ask(application)
+    matching = [
+        route
+        for route in api.routes
+        if getattr(route, "path", None) == "/api/ask"
+        and "POST" in (getattr(route, "methods", set()) or set())
+    ]
+
+    assert isinstance(registry, ActiveRequestRegistry)
+    assert len(matching) == 1
+    assert matching[0].response_model is None
+
+
 def test_unresolved_fast_control_is_handed_to_ai_planner():
     async def original_ask(_request):
         return {
@@ -140,7 +174,7 @@ def test_unresolved_fast_control_is_handed_to_ai_planner():
         ask=original_ask,
         ollama=FakeOllama(),
         OPTIONS={"ollama_agent_timeout_seconds": 60},
-        VERSION="0.2.3-alpha",
+        VERSION="0.2.4-alpha",
     )
     wrapped = install_fastpath_ai_handoff(application)
     request = SimpleNamespace(query="Turn off Bedroom Light", history=[])
@@ -152,7 +186,7 @@ def test_unresolved_fast_control_is_handed_to_ai_planner():
 
 
 def test_web_ui_allows_stop_and_replace_request():
-    page = render_page("Hubitat MCP AI", "0.2.3-alpha")
+    page = render_page("Hubitat MCP AI", "0.2.4-alpha")
     assert "AbortController" in page
     assert "Stop & ask" in page
     assert "X-HMCP-Client" in page
