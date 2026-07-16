@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from fast_fallback_groups import FastFallbackRouter
+from fast_fallback_device_health import FastFallbackRouter
 from mcp_client import HubitatMCPClient
 from ollama_agent_inference import OllamaMCPAgent, OllamaUnavailable
 from request_router import run_fast_path, schedule_background_health_check
@@ -20,7 +20,7 @@ from routing import dedupe_current_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.10-alpha"
+VERSION = "0.1.11-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -413,7 +413,7 @@ async def ask(request: AskRequest) -> dict[str, Any]:
                 ollama.fallback_reason()
                 + "\n\n"
                 + "The fallback currently handles device on/off, lights and switches on, "
-                "low batteries, weather, rooms, home status, and hub health."
+                "low batteries, device health, weather, rooms, home status, and hub health."
             )
         return answer
 
