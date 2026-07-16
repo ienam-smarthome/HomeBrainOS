@@ -27,9 +27,19 @@ def is_fast_path_query(query: str) -> bool:
         return True
 
     slow_reasoning_terms = (
-        "why ", "explain", "analyse", "analyze", "compare", "correlate",
-        "suggest", "create rule", "create automation", "modify rule",
-        "troubleshoot", "diagnose", "what does this mean",
+        "why ",
+        "explain",
+        "analyse",
+        "analyze",
+        "compare",
+        "correlate",
+        "suggest",
+        "create rule",
+        "create automation",
+        "modify rule",
+        "troubleshoot",
+        "diagnose",
+        "what does this mean",
     )
     if any(term in q for term in slow_reasoning_terms):
         return False
@@ -43,6 +53,9 @@ def is_fast_path_query(query: str) -> bool:
         r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
         r"^(?:what(?:'s| is)\s+)?(?:the\s+)?weather(?: today| now)?\??$",
         r"^(?:will it rain|is it raining)(?: today| now)?\??$",
+        r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
+        r"^(?:find|show|list)\s+devices\s+that\s+(?:need|needs)\s+attention\??$",
+        r"^(?:what|which)\s+devices\s+(?:need|needs)\s+attention\??$",
     )
     return any(re.match(pattern, q) for pattern in patterns)
 
@@ -53,9 +66,14 @@ def dedupe_current_query(
 ) -> list[dict[str, str]]:
     """Remove the UI's duplicated latest user turn before sending to Ollama."""
     cleaned = [
-        {"role": str(item.get("role") or ""), "content": str(item.get("content") or "")}
+        {
+            "role": str(item.get("role") or ""),
+            "content": str(item.get("content") or ""),
+        }
         for item in (history or [])
-        if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and item.get("content")
+        if isinstance(item, dict)
+        and item.get("role") in {"user", "assistant"}
+        and item.get("content")
     ][-10:]
     if (
         cleaned
