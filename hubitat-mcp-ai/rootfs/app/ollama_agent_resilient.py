@@ -9,20 +9,26 @@ from ollama_agent_fast import OllamaUnavailable
 
 
 class OllamaMCPAgent(BaseOllamaMCPAgent):
-    """Ollama agent with retry and short grace period for transient health failures."""
+    """Ollama agent with bounded health checks and transient-failure grace."""
 
     async def health(self, force: bool = False) -> dict[str, Any]:
         now = time.time()
-        if not force and self._health_cache and now - self._health_cache[0] < 15:
-            return dict(self._health_cache[1])
+        if not force and self._health_cache:
+            cached_at, cached = self._health_cache
+            ttl = 15 if cached.get("online") else 60
+            if now - cached_at < ttl:
+                return dict(cached)
+
         if not self.base_url or not self.model:
             result = {"online": False, "error": "Ollama is not configured"}
             self._health_cache = (now, result)
             return result
 
         last_error: Exception | None = None
-        timeout = max(5.0, self.health_timeout_seconds)
-        for attempt in range(2):
+        timeout = max(2.0, self.health_timeout_seconds)
+        attempts = 2 if force else 1
+
+        for attempt in range(attempts):
             try:
                 response = await self._http.get(
                     f"{self.base_url}/api/tags",
@@ -50,7 +56,7 @@ class OllamaMCPAgent(BaseOllamaMCPAgent):
                 return dict(result)
             except Exception as exc:
                 last_error = exc
-                if attempt == 0:
+                if attempt < attempts - 1:
                     await asyncio.sleep(0.2)
 
         previous = getattr(self, "_last_online_health", None)

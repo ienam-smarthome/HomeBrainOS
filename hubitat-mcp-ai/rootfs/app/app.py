@@ -15,11 +15,12 @@ from pydantic import BaseModel, Field
 from fast_fallback_weather import FastFallbackRouter
 from mcp_client import HubitatMCPClient
 from ollama_agent_resilient import OllamaMCPAgent, OllamaUnavailable
-from routing import dedupe_current_query, is_control_query, is_fast_path_query
+from request_router import run_fast_path, schedule_background_health_check
+from routing import dedupe_current_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.4-alpha"
+VERSION = "0.1.5-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -162,22 +163,25 @@ async def ask(request: AskRequest) -> dict[str, Any]:
 
     fallback_enabled = option_bool("fallback_enabled", True)
     fast_path_enabled = option_bool("fast_path_enabled", True)
-    fast_path_error: str | None = None
 
+    # Common home-status, device-control, weather, room, battery and hub-health
+    # questions are deterministic. Never delay them with an Ollama health check.
     if fallback_enabled and fast_path_enabled and is_fast_path_query(query):
-        try:
-            answer = await asyncio.wait_for(
-                fallback.answer(query),
-                timeout=float(OPTIONS.get("mcp_timeout_seconds") or 25) + 5,
-            )
-            answer["route"] = "mcp-fast"
-            answer["version"] = VERSION
-            answer["elapsed_ms"] = elapsed_ms(started)
-            if answer.get("success") or is_control_query(query):
-                return answer
-            fast_path_error = str(answer.get("message") or "Fast path did not answer")
-        except Exception as exc:
-            fast_path_error = str(exc)
+        answer = await run_fast_path(
+            query,
+            fallback,
+            timeout_seconds=float(OPTIONS.get("mcp_timeout_seconds") or 25),
+            retries=1,
+        )
+        answer["route"] = "mcp-fast"
+        answer["version"] = VERSION
+        answer["elapsed_ms"] = elapsed_ms(started)
+
+        # Keep the status banner fresh, but do the Ollama probe after the user
+        # already has the MCP response.
+        if option_bool("ollama_enabled", True):
+            asyncio.create_task(schedule_background_health_check(ollama.health))
+        return answer
 
     ollama_error = "Ollama is disabled"
     if option_bool("ollama_enabled", True):
@@ -210,7 +214,6 @@ async def ask(request: AskRequest) -> dict[str, Any]:
         answer = await fallback.answer(query)
         answer["route"] = "fallback"
         answer["ollama_error"] = ollama_error
-        answer["fast_path_error"] = fast_path_error
         answer["version"] = VERSION
         answer["elapsed_ms"] = elapsed_ms(started)
         return answer
