@@ -41,8 +41,9 @@ def _replace_ollama_agent() -> None:
         health_timeout_seconds=float(
             options.get("ollama_health_timeout_seconds") or 3
         ),
-        planner_timeout_seconds=float(
-            options.get("ollama_planner_timeout_seconds") or 35
+        planner_timeout_seconds=max(
+            35.0,
+            float(options.get("ollama_planner_timeout_seconds") or 35),
         ),
         response_timeout_seconds=float(
             options.get("ollama_response_timeout_seconds") or 75
