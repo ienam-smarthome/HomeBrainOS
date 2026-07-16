@@ -60,8 +60,8 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
         )
     ]
 
-    @api.post("/api/ask")
-    async def cancellable_ask(request: Request) -> dict[str, Any] | JSONResponse:
+    @api.post("/api/ask", response_model=None)
+    async def cancellable_ask(request: Request):
         payload = await request.json()
         body = application.AskRequest.model_validate(payload)
         client_id = request.headers.get("X-HMCP-Client")
