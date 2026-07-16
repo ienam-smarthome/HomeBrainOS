@@ -23,10 +23,13 @@ _CONTEXTUAL_TARGET_WORDS = {
     "these",
     "same",
     "other",
-    "one",
-    "ones",
     "there",
 }
+
+_CONTEXTUAL_ONE = re.compile(
+    r"^(?:(?:the|that|this|same|other)\s+)?ones?(?:\s+(?:in|from|there))?(?:\s|$)",
+    re.IGNORECASE,
+)
 
 _COMPLEX_CONTROL_TERMS = (
     " and ",
@@ -88,6 +91,11 @@ _FAST_READ_PATTERNS = (
     r"^(?:which|what|list|show)?\s*(?:lights?)\s+(?:are\s+)?on\??$",
     r"^(?:which|what|list|show)?\s*(?:switches?)\s+(?:are\s+)?on\??$",
     r"^(?:which|what|list|show)?\s*(?:batter(?:y|ies))\s+(?:are\s+)?low\??$",
+    r"^(?:which|what|list|show)?\s*(?:motion\s+)?sensors?\s+(?:are\s+)?active\??$",
+    r"^(?:where\s+is\s+)?motion\s+active\??$",
+    r"^(?:what(?:'s| is)\s+)?(?:the\s+)?weather(?:\s+(?:now|today|tomorrow))?\??$",
+    r"^(?:what(?:'s| is)\s+)?(?:the\s+)?forecast(?:\s+(?:today|tomorrow))?\??$",
+    r"^(?:will\s+it\s+rain|is\s+it\s+raining)(?:\s+(?:now|today|tomorrow))?\??$",
     r"^(?:list|show)\s+(?:all\s+)?devices\??$",
     r"^(?:list|show)\s+(?:all\s+)?lights\??$",
     r"^compare\s+(?:humidity|temperature)\s+(?:in|between)\s+(?:the\s+)?.+?\s+and\s+(?:the\s+)?.+?\??$",
@@ -106,13 +114,24 @@ def normalise(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def _contextual_control_target(target: str) -> bool:
+    words = set(re.findall(r"[a-z0-9]+", target))
+    if words & _CONTEXTUAL_TARGET_WORDS:
+        return True
+    # "one" is often a spoken number in a real device label (Bedroom One Light).
+    # Treat it as contextual only when it is being used as a pronoun, such as
+    # "turn off the one in the bedroom".
+    return bool(_CONTEXTUAL_ONE.match(target))
+
+
 def classify_query(query: str) -> RouteDecision:
     """Choose deterministic MCP, verified natural AI, or full AI planning.
 
-    Exact state reads, inventories, simple room comparisons and basic on/off
-    controls are deterministic because MCP already has the authoritative answer.
-    Natural summaries use MCP evidence plus one short model pass. Only requests
-    that genuinely require interpretation or multi-step reasoning use the planner.
+    Exact state reads, inventories, simple room comparisons, weather and basic
+    on/off controls are deterministic because MCP already has the authoritative
+    answer. Natural summaries use MCP evidence plus one short model pass. Only
+    requests that genuinely require interpretation or multi-step reasoning use the
+    planner.
     """
     q = normalise(query)
     if not q:
@@ -122,7 +141,7 @@ def classify_query(query: str) -> RouteDecision:
     if control:
         target = normalise(control.group(2)).strip(" .!?")
         words = set(re.findall(r"[a-z0-9]+", target))
-        contextual = bool(words & _CONTEXTUAL_TARGET_WORDS)
+        contextual = _contextual_control_target(target)
         complex_target = any(term in f" {target} " for term in _COMPLEX_CONTROL_TERMS)
         too_long = len(words) > 8
         if target and not contextual and not complex_target and not too_long:
@@ -138,7 +157,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
-            "authoritative live-state, inventory, comparison or diagnostic query",
+            "authoritative live-state, weather, inventory, comparison or diagnostic query",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
