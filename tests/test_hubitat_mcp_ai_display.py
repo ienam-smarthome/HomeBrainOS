@@ -103,10 +103,15 @@ def test_hub_health_is_human_readable_and_structured():
     assert answer["display"]["kind"] == "hub-health"
     assert answer["display"]["title"] == "C8 Pro"
     assert "firmware 2.5.1.128" in answer["message"]
-    assert "free memory 926.1 MB" in answer["message"]
+    assert "free memory 926.1" in answer["message"]
     assert not answer["message"].lstrip().startswith("{")
-    labels = {item["label"] for item in answer["display"]["metrics"]}
-    assert {"Firmware", "Free memory", "Temperature", "MCP devices"} <= labels
+    metrics = {
+        item["label"]: item["value"]
+        for item in answer["display"]["metrics"]
+    }
+    assert metrics["Free memory"] == "926.1 MB"
+    assert metrics["Temperature"] == "46.7°C"
+    assert {"Firmware", "Free memory", "Temperature", "MCP devices"} <= set(metrics)
 
 
 def test_rules_and_attention_are_fast_paths():
