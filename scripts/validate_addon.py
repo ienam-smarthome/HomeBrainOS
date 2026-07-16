@@ -25,6 +25,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/presenter.py',
     'hubitat-mcp-ai/rootfs/app/routing.py',
     'hubitat-mcp-ai/rootfs/app/webui.py',
+    'hubitat-mcp-ai/rootfs/app/webui_homebrain.py',
     'hubitat-mcp-ai/rootfs/app/kingpanther_skill.py',
     'hubitat-mcp-ai/rootfs/app/requirements.txt',
     'hubitat-mcp-ai/LICENSE-UPSTREAM',
