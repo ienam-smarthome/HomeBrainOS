@@ -19,7 +19,7 @@ from routing import dedupe_current_query, is_control_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.2-alpha"
+VERSION = "0.1.3-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
