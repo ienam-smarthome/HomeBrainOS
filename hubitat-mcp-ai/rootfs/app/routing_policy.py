@@ -96,6 +96,8 @@ _FAST_READ_PATTERNS = (
     r"^(?:device|devices)\s+health(?:\s+status)?\??$",
     r"^(?:find|show|list)\s+devices\s+that\s+(?:need|needs)\s+attention\??$",
     r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
+    r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
+    r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
 )
 
 
@@ -107,8 +109,8 @@ def classify_query(query: str) -> RouteDecision:
     """Choose the narrow deterministic path or one of the natural AI paths.
 
     ``mcp-fast``
-        Basic explicit on/off commands and canonical live-state shortcuts. These
-        are deterministic, state-verified and normally sub-second.
+        Basic explicit on/off commands and canonical live-state or inventory
+        shortcuts. These are deterministic, state-verified and normally fast.
 
     ``ollama-verified``
         Routine natural questions. MCP gathers authoritative evidence first, then
@@ -142,7 +144,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
-            "canonical live-state or diagnostic shortcut with a structured answer",
+            "canonical live-state, inventory or diagnostic shortcut",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
