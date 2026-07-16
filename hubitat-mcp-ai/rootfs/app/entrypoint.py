@@ -6,7 +6,7 @@ import uvicorn
 
 import app as application
 from cancellable_requests import install_cancellable_ask
-from fast_fallback_speech import FastFallbackRouter
+from fast_fallback_inventory import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from ollama_agent_final_answer import FinalAnswerNaturalAgent
 
