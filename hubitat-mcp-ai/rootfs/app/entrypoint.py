@@ -7,12 +7,12 @@ import uvicorn
 import app as application
 from cancellable_requests import install_cancellable_ask
 from dashboard_api import install_dashboard_api
-from fast_fallback_dashboard import FastFallbackRouter
+from fast_fallback_essentials import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 
 
-RELEASE_VERSION = "0.2.8-alpha"
+RELEASE_VERSION = "0.2.9-alpha"
 
 
 def _replace_fallback_router() -> None:
