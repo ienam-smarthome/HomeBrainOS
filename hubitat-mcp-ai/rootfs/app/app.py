@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from fast_fallback_live import FastFallbackRouter
+from fast_fallback_verified import FastFallbackRouter
 from mcp_client import HubitatMCPClient
 from ollama_agent_inference import OllamaMCPAgent, OllamaUnavailable
 from request_router import run_fast_path, schedule_background_health_check
@@ -34,7 +34,7 @@ def load_options() -> dict[str, Any]:
         "ollama_timeout_seconds": 35,
         "ollama_total_timeout_seconds": 40,
         "ollama_health_timeout_seconds": 3,
-        "ollama_inference_probe_timeout_seconds": 8,
+        "ollama_inference_probe_timeout_seconds": 20,
         "ollama_inference_failure_ttl_seconds": 60,
         "ollama_num_ctx": 4096,
         "ollama_num_predict": 160,
@@ -102,7 +102,7 @@ ollama = OllamaMCPAgent(
     timeout_seconds=float(OPTIONS.get("ollama_timeout_seconds") or 35),
     health_timeout_seconds=float(OPTIONS.get("ollama_health_timeout_seconds") or 3),
     inference_probe_timeout_seconds=float(
-        OPTIONS.get("ollama_inference_probe_timeout_seconds") or 8
+        OPTIONS.get("ollama_inference_probe_timeout_seconds") or 20
     ),
     inference_failure_ttl_seconds=float(
         OPTIONS.get("ollama_inference_failure_ttl_seconds") or 60
