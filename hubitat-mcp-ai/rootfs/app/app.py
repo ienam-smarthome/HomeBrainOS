@@ -19,7 +19,7 @@ from routing import dedupe_current_query, is_control_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.1-alpha"
+VERSION = "0.1.2-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -194,9 +194,13 @@ async def ask(request: AskRequest) -> dict[str, Any]:
             answer["elapsed_ms"] = elapsed_ms(started)
             if answer.get("success", True):
                 return answer
-            ollama_error = str(answer.get("message") or "Ollama tool loop did not finish")
+            ollama_error = str(
+                answer.get("message") or "Ollama tool loop did not finish"
+            )
         except asyncio.TimeoutError:
-            ollama_error = f"Ollama exceeded the {total_timeout:g}s total response budget"
+            ollama_error = (
+                f"Ollama exceeded the {total_timeout:g}s total response budget"
+            )
         except OllamaUnavailable as exc:
             ollama_error = str(exc)
         except Exception as exc:

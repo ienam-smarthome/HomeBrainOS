@@ -22,6 +22,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/ollama_agent_fast.py',
     'hubitat-mcp-ai/rootfs/app/fallback_router.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback.py',
+    'hubitat-mcp-ai/rootfs/app/presenter.py',
     'hubitat-mcp-ai/rootfs/app/routing.py',
     'hubitat-mcp-ai/rootfs/app/webui.py',
     'hubitat-mcp-ai/rootfs/app/kingpanther_skill.py',
