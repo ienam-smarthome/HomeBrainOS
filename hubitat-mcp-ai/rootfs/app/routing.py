@@ -38,7 +38,7 @@ def is_fast_path_query(query: str) -> bool:
         r"^(?:what(?:'s| is) happening(?: at home)?|home status)\??$",
         r"^(?:which|what|list)?\s*(?:lights?|switches?)\s+(?:are\s+)?on\??$",
         r"^(?:which|what|list)?\s*(?:batter(?:y|ies))\s+(?:are\s+)?low\??$",
-        r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health|status)\??$",
+        r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
         r"^(?:what(?:'s| is)\s+)?(?:the\s+)?hub\s+(?:cpu|memory|free memory)\??$",
         r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
         r"^(?:what(?:'s| is)\s+)?(?:the\s+)?weather(?: today| now)?\??$",
