@@ -75,8 +75,6 @@ class FakeHTTP:
                     }
                 }
             )
-        if index == 2:
-            return FakeResponse({"message": {"content": "I have the live hub data."}})
         return FakeResponse(
             {"message": {"content": "Your Hub C8 Pro has 919.5 MB of free memory."}}
         )
@@ -135,7 +133,6 @@ def test_real_question_is_not_blocked_by_old_probe_failure():
     assert answer["message"] == "Your Hub C8 Pro has 919.5 MB of free memory."
     assert [item[0] for item in agent._http.posts] == [
         "qwen3:4b",
-        "qwen3:4b",
         "qwen3.5:9b",
     ]
     assert agent._http.posts[0][1] is True
@@ -143,7 +140,7 @@ def test_real_question_is_not_blocked_by_old_probe_failure():
 
 
 def test_ui_reports_available_or_loaded_instead_of_synthetic_timeout():
-    page = render_page("Hubitat MCP AI", "0.2.0-alpha")
+    page = render_page("Hubitat MCP AI", "0.2.1-alpha")
     assert "loads on first question" in page
     assert "runtime.model_loaded" in page
     assert "inference timed out" not in page
