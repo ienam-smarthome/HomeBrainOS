@@ -24,6 +24,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/fallback_router.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_weather.py',
+    'hubitat-mcp-ai/rootfs/app/fast_fallback_live.py',
     'hubitat-mcp-ai/rootfs/app/presenter.py',
     'hubitat-mcp-ai/rootfs/app/weather_presenter_v2.py',
     'hubitat-mcp-ai/rootfs/app/request_router.py',

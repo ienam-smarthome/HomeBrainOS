@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from fast_fallback_weather import FastFallbackRouter
+from fast_fallback_live import FastFallbackRouter
 from mcp_client import HubitatMCPClient
 from ollama_agent_resilient import OllamaMCPAgent, OllamaUnavailable
 from request_router import run_fast_path, schedule_background_health_check
@@ -20,7 +20,7 @@ from routing import dedupe_current_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.5-alpha"
+VERSION = "0.1.6-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -164,8 +164,6 @@ async def ask(request: AskRequest) -> dict[str, Any]:
     fallback_enabled = option_bool("fallback_enabled", True)
     fast_path_enabled = option_bool("fast_path_enabled", True)
 
-    # Common home-status, device-control, weather, room, battery and hub-health
-    # questions are deterministic. Never delay them with an Ollama health check.
     if fallback_enabled and fast_path_enabled and is_fast_path_query(query):
         answer = await run_fast_path(
             query,
@@ -177,8 +175,6 @@ async def ask(request: AskRequest) -> dict[str, Any]:
         answer["version"] = VERSION
         answer["elapsed_ms"] = elapsed_ms(started)
 
-        # Keep the status banner fresh, but do the Ollama probe after the user
-        # already has the MCP response.
         if option_bool("ollama_enabled", True):
             asyncio.create_task(schedule_background_health_check(ollama.health))
         return answer
