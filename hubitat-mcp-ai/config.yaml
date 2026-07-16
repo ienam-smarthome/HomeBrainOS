@@ -1,5 +1,5 @@
 name: Hubitat MCP AI
-version: '0.2.7-alpha'
+version: '0.2.8-alpha'
 slug: hubitat_mcp_ai
 description: Ollama-first natural Hubitat assistant powered by kingpanther13's MCP Rule Server
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -24,7 +24,7 @@ options:
   ollama_planner_model: ""
   ollama_routine_model: ""
   ollama_health_timeout_seconds: 3
-  ollama_planner_timeout_seconds: 20
+  ollama_planner_timeout_seconds: 35
   ollama_response_timeout_seconds: 75
   ollama_routine_response_timeout_seconds: 40
   ollama_agent_timeout_seconds: 120
@@ -39,6 +39,9 @@ options:
   fallback_enabled: true
   mcp_timeout_seconds: 25
   attention_stale_hours: 48
+  hub_cpu_probe_enabled: true
+  hub_cpu_probe_timeout_seconds: 3
+  dashboard_refresh_seconds: 30
   require_sensitive_confirmation: true
   web_title: "Hubitat MCP AI"
 schema:
@@ -65,5 +68,8 @@ schema:
   fallback_enabled: bool
   mcp_timeout_seconds: int
   attention_stale_hours: int
+  hub_cpu_probe_enabled: bool
+  hub_cpu_probe_timeout_seconds: int
+  dashboard_refresh_seconds: int
   require_sensitive_confirmation: bool
   web_title: str

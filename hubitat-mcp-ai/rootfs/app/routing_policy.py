@@ -84,12 +84,13 @@ _CONTROL_VERBS = (
     "stop ",
 )
 
-# Canonical UI shortcuts and equally explicit variants. These return a verified,
-# structured answer directly from MCP and do not benefit from a language-model pass.
 _FAST_READ_PATTERNS = (
     r"^(?:which|what|list|show)?\s*(?:lights?)\s+(?:are\s+)?on\??$",
     r"^(?:which|what|list|show)?\s*(?:switches?)\s+(?:are\s+)?on\??$",
     r"^(?:which|what|list|show)?\s*(?:batter(?:y|ies))\s+(?:are\s+)?low\??$",
+    r"^(?:list|show)\s+(?:all\s+)?devices\??$",
+    r"^(?:list|show)\s+(?:all\s+)?lights\??$",
+    r"^compare\s+(?:humidity|temperature)\s+(?:in|between)\s+(?:the\s+)?.+?\s+and\s+(?:the\s+)?.+?\??$",
     r"^(?:show|check)\s+(?:the\s+)?hub\s+(?:cpu|memory|free memory|resources|temperature|uptime)(?:\s+and\s+(?:cpu|memory|free memory|temperature|uptime))?\??$",
     r"^how much\s+free memory\s+(?:does\s+)?(?:the\s+)?hub\s+have\??$",
     r"^(?:list|show)\s+devices\s+that\s+are\s+(?:offline|stale)(?:\s+(?:or|and)\s+(?:offline|stale))?\??$",
@@ -106,19 +107,12 @@ def normalise(value: str) -> str:
 
 
 def classify_query(query: str) -> RouteDecision:
-    """Choose the narrow deterministic path or one of the natural AI paths.
+    """Choose deterministic MCP, verified natural AI, or full AI planning.
 
-    ``mcp-fast``
-        Basic explicit on/off commands and canonical live-state or inventory
-        shortcuts. These are deterministic, state-verified and normally fast.
-
-    ``ollama-verified``
-        Routine natural questions. MCP gathers authoritative evidence first, then
-        one Ollama pass turns it into a concise natural answer.
-
-    ``ollama-planner``
-        Ambiguous/contextual controls, comparisons, explanations, recommendations,
-        automation work and multi-source reasoning.
+    Exact state reads, inventories, simple room comparisons and basic on/off
+    controls are deterministic because MCP already has the authoritative answer.
+    Natural summaries use MCP evidence plus one short model pass. Only requests
+    that genuinely require interpretation or multi-step reasoning use the planner.
     """
     q = normalise(query)
     if not q:
@@ -144,7 +138,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
-            "canonical live-state, inventory or diagnostic shortcut",
+            "authoritative live-state, inventory, comparison or diagnostic query",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
@@ -156,7 +150,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(term in q for term in _PLANNER_TERMS):
         return RouteDecision(
             "ollama-planner",
-            "reasoning, comparison, recommendation or automation request",
+            "reasoning, recommendation, automation or multi-source request",
         )
 
     return RouteDecision(
