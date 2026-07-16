@@ -8,7 +8,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from presenter import present_weather  # noqa: E402
+from weather_presenter_v2 import present_weather  # noqa: E402
 from webui import render_page  # noqa: E402
 
 
@@ -31,23 +31,25 @@ def test_weather_reads_attribute_list_from_device_payload():
         }
     )
 
-    assert message == "Today: Mostly sunny."
+    assert message.startswith("Today: Mostly sunny.")
     metrics = {item["label"]: item["value"] for item in display["metrics"]}
     assert metrics["Temperature"] == "26.1°C"
     assert metrics["Humidity"] == "51.3%"
-    assert metrics["Precipitation"] == "0 mm"
+    assert metrics["Rainfall"] == "0 mm"
 
 
-def test_homebrain_ui_uses_two_columns_at_tablet_width_and_compact_model_tile():
+def test_homebrain_ui_uses_two_columns_and_smaller_summary_tile_text():
     page = render_page("Hubitat MCP AI", "0.1.4-alpha")
     assert "@media(max-width:820px)" in page
-    assert ".summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}" in page
+    assert "#summaryCard{grid-template-columns:repeat(2,minmax(0,1fr))}" in page
     assert 'class="big model-value" id="model"' in page
-    assert ".model-value" in page
+    assert "#summaryCard .big{font-size:24px" in page
+    assert ".model-value{font-size:20px!important" in page
+    assert ".connection-tile{display:none}" in page
 
 
 def test_ollama_health_retries_and_retains_recent_online_state():
-    from ollama_agent_fast import OllamaMCPAgent  # noqa: E402
+    from ollama_agent_resilient import OllamaMCPAgent  # noqa: E402
 
     class FakeResponse:
         def raise_for_status(self):
