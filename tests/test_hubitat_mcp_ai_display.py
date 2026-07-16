@@ -119,10 +119,16 @@ def test_rules_and_attention_are_fast_paths():
     assert is_fast_path_query("Find devices that need attention") is True
 
 
-def test_web_ui_contains_rich_cards_and_collapsed_technical_details():
-    page = render_page("Hubitat MCP AI", "0.1.2-alpha")
-    assert "metric-grid" in page
-    assert "item-list" in page
+def test_web_ui_matches_homebrain_mobile_layout_and_keeps_rich_results():
+    page = render_page("Hubitat MCP AI", "0.1.3-alpha")
+    assert 'class="wrap"' in page
+    assert 'class="card view-card"' in page
+    assert 'id="summaryCard"' in page
+    assert 'id="shortcutsCard"' in page
+    assert 'id="outputCard"' in page
+    assert 'id="micFab"' in page
+    assert 'grid-template-columns:repeat(2,minmax(0,1fr))' in page
+    assert "Smart shortcuts for everyday use" in page
     assert "Technical details" in page
     assert "Read answers" in page
     assert "overflow-wrap:anywhere" in page
