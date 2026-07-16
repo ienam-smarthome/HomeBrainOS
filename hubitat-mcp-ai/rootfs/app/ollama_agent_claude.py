@@ -12,17 +12,12 @@ from ollama_agent_inference import OllamaMCPAgent as InferenceOllamaMCPAgent
 
 
 class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
-    """Ollama-first MCP agent with compact planning and natural final synthesis.
+    """Ollama-first MCP agent with robust tool execution and natural synthesis.
 
-    The previous agent sent a large fixed tool set to the 9B response model and
-    gated real questions behind a synthetic readiness probe. This class instead:
-
-    * allows real questions whenever the Ollama server and model are available;
-    * optionally uses a smaller installed model for tool planning;
-    * exposes only a compact, query-relevant MCP tool set to the planner;
-    * executes MCP tools sequentially; and
-    * asks the response model for a grounded, Claude-style final answer without
-      resending all tool schemas.
+    Local models do not always emit Ollama's native ``tool_calls`` structure. Some
+    return the intended call as JSON in the assistant content instead. This agent
+    accepts both forms, never exposes a raw plan to the user, and uses generic MCP
+    discovery when a live-home question reaches the planner without a tool call.
     """
 
     def __init__(
@@ -110,12 +105,10 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
         tools = await self.client.list_tools()
         selected = self._select_compact_tools(query, tools)
         ollama_tools = [tool.as_ollama_tool() for tool in selected]
+        requires_live_data = self._requires_live_data(query)
 
         messages: list[dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": self._planner_prompt(),
-            }
+            {"role": "system", "content": self._planner_prompt()}
         ]
         for item in (history or [])[-8:]:
             role = item.get("role")
@@ -126,6 +119,8 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
 
         tools_used: list[dict[str, Any]] = []
         planning_content = ""
+        discovery_injected = False
+        successful_data_call = False
         self._last_agent_status = {
             "state": "planning",
             "planner_model": planner_model,
@@ -147,58 +142,83 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                 )
                 message = body.get("message") or {}
                 planning_content = str(message.get("content") or "").strip()
-                tool_calls = message.get("tool_calls") or []
+                tool_calls = list(message.get("tool_calls") or [])
+
+                # Qwen and some other local models occasionally print a valid tool
+                # request as JSON instead of filling Ollama's tool_calls property.
+                if not tool_calls and planning_content:
+                    tool_calls = self._extract_text_tool_calls(planning_content)
 
                 if not tool_calls:
+                    if requires_live_data and not successful_data_call:
+                        if not discovery_injected and self._tool_available(
+                            "hub_search_tools", tools
+                        ):
+                            discovery_injected = True
+                            record, tool_text = await self._execute_tool_call(
+                                "hub_search_tools",
+                                {"query": query},
+                                query,
+                            )
+                            tools_used.append(record)
+                            messages.append(
+                                {
+                                    "role": "assistant",
+                                    "content": (
+                                        "I need MCP discovery before answering this live-home question."
+                                    ),
+                                }
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_name": "hub_search_tools",
+                                    "content": tool_text,
+                                }
+                            )
+                            continue
+                        raise OllamaUnavailable(
+                            "The planner did not execute an MCP tool for a live-home question."
+                        )
+                    break
+
+                normalised_calls: list[dict[str, Any]] = []
+                for tool_call in tool_calls:
+                    name, arguments = self._parse_tool_call(tool_call)
+                    if name:
+                        normalised_calls.append(
+                            {
+                                "function": {
+                                    "name": name,
+                                    "arguments": arguments,
+                                }
+                            }
+                        )
+
+                if not normalised_calls:
+                    if requires_live_data and not successful_data_call:
+                        raise OllamaUnavailable(
+                            "The planner produced a tool request that could not be parsed."
+                        )
                     break
 
                 messages.append(
                     {
                         "role": "assistant",
-                        "content": planning_content,
-                        "tool_calls": tool_calls,
+                        "content": "",
+                        "tool_calls": normalised_calls,
                     }
                 )
 
-                for tool_call in tool_calls:
+                round_had_discovery = False
+                round_had_successful_data = False
+                for tool_call in normalised_calls:
                     name, arguments = self._parse_tool_call(tool_call)
-                    if not name:
-                        tool_text = "The model requested an unnamed tool."
-                        record = {
-                            "name": "",
-                            "arguments": arguments,
-                            "success": False,
-                            "error": tool_text,
-                        }
-                    elif self._sensitive_confirmation_required(name, arguments, query):
-                        tool_text = (
-                            "This operation requires explicit confirmation in the user's "
-                            "latest message. Explain what would be changed and ask for confirmation."
-                        )
-                        record = {
-                            "name": name,
-                            "arguments": arguments,
-                            "success": False,
-                            "blocked": "confirmation-required",
-                        }
-                    else:
-                        try:
-                            result = await self.client.call_tool(name, arguments)
-                            tool_text = self._compact_tool_result(result)
-                            record = {
-                                "name": name,
-                                "arguments": arguments,
-                                "success": not result.is_error,
-                                "preview": tool_text[:700],
-                            }
-                        except Exception as exc:
-                            tool_text = f"MCP tool error: {exc}"
-                            record = {
-                                "name": name,
-                                "arguments": arguments,
-                                "success": False,
-                                "error": str(exc),
-                            }
+                    record, tool_text = await self._execute_tool_call(
+                        name,
+                        arguments,
+                        query,
+                    )
                     tools_used.append(record)
                     messages.append(
                         {
@@ -207,14 +227,28 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                             "content": tool_text,
                         }
                     )
+                    if self._is_discovery_call(name, arguments):
+                        round_had_discovery = True
+                    elif record.get("success"):
+                        round_had_successful_data = True
+                        successful_data_call = True
 
-                # After a successful data-bearing tool call, give the planner one
-                # more chance to request missing detail. Most requests finish in
-                # a single tool round, avoiding the old large multi-round loop.
+                # Once authoritative data has been returned, go directly to final
+                # synthesis. The previous extra planner round roughly doubled the
+                # response time on a CPU-hosted 9B model.
+                if round_had_successful_data and not round_had_discovery:
+                    break
                 if round_number >= self.max_tool_rounds:
                     break
 
-            if not tools_used and planning_content:
+            if requires_live_data and not successful_data_call:
+                raise OllamaUnavailable(
+                    "The MCP planning stage finished without authoritative home data."
+                )
+
+            if not tools_used:
+                if not planning_content or self._looks_like_tool_json(planning_content):
+                    raise OllamaUnavailable("Ollama returned no usable answer")
                 content = planning_content
                 route = "ollama"
             else:
@@ -223,7 +257,6 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                     query=query,
                     history=history or [],
                     planner_messages=messages,
-                    planner_content=planning_content,
                 )
                 body = await self._chat(
                     model=self.model,
@@ -239,6 +272,10 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
 
             if not content:
                 raise OllamaUnavailable("Ollama returned an empty final answer")
+            if self._looks_like_tool_json(content):
+                raise OllamaUnavailable(
+                    "Ollama returned an internal tool plan instead of a final answer."
+                )
 
             elapsed = round((time.perf_counter() - started) * 1000)
             self.record_inference_success(elapsed, source="agent")
@@ -259,7 +296,12 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                 "planner_model": planner_model,
                 "tools_used": tools_used,
                 "tool_rounds": len(
-                    [item for item in messages if item.get("role") == "assistant" and item.get("tool_calls")]
+                    [
+                        item
+                        for item in messages
+                        if item.get("role") == "assistant"
+                        and item.get("tool_calls")
+                    ]
                 ),
                 "selected_tools": [tool.name for tool in selected],
                 "elapsed_ms": elapsed,
@@ -284,6 +326,64 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
             if isinstance(exc, OllamaUnavailable):
                 raise
             raise OllamaUnavailable(str(exc)) from exc
+
+    async def _execute_tool_call(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        query: str,
+    ) -> tuple[dict[str, Any], str]:
+        if not name:
+            text = "The model requested an unnamed tool."
+            return {
+                "name": "",
+                "arguments": arguments,
+                "success": False,
+                "error": text,
+            }, text
+
+        placeholder = self._find_placeholder(arguments)
+        if placeholder:
+            text = (
+                f"Invalid placeholder {placeholder!r}. Use a concrete value or discover the "
+                "correct MCP schema before retrying."
+            )
+            return {
+                "name": name,
+                "arguments": arguments,
+                "success": False,
+                "error": text,
+            }, text
+
+        if self._sensitive_confirmation_required(name, arguments, query):
+            text = (
+                "This operation requires explicit confirmation in the user's latest "
+                "message. Explain what would be changed and ask for confirmation."
+            )
+            return {
+                "name": name,
+                "arguments": arguments,
+                "success": False,
+                "blocked": "confirmation-required",
+            }, text
+
+        try:
+            result = await self.client.call_tool(name, arguments)
+            tool_text = self._compact_tool_result(result)
+            return {
+                "name": name,
+                "arguments": arguments,
+                "success": not result.is_error,
+                "preview": tool_text[:700],
+            }, tool_text
+        except Exception as exc:
+            tool_text = f"MCP tool error: {exc}"
+            return {
+                "name": name,
+                "arguments": arguments,
+                "success": False,
+                "error": str(exc),
+            }, tool_text
 
     async def _chat(
         self,
@@ -333,13 +433,13 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
         if self.configured_planner_model:
             if self._model_matches(self.configured_planner_model, installed_models):
                 return self.configured_planner_model
-            # Do not break the assistant because an optional planner was removed.
             return self.model
 
         candidates = [
             name
             for name in installed_models
-            if name and not any(term in name.lower() for term in ("embed", "nomic", "bge"))
+            if name
+            and not any(term in name.lower() for term in ("embed", "nomic", "bge"))
         ]
         if not candidates:
             return self.model
@@ -362,14 +462,59 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
         query_tokens = self._tokens(query)
         preferred: set[str] = {"hub_search_tools"}
 
-        if any(term in q for term in ("device", "light", "switch", "sensor", "thermostat", "battery")):
+        if any(term in q for term in ("what's happening", "what is happening", "home status", "at home")):
+            preferred.update(
+                {
+                    "hub_list_devices",
+                    "hub_get_info",
+                    "hub_read_rooms",
+                    "hub_read_diagnostics",
+                }
+            )
+        if any(
+            term in q
+            for term in (
+                "attention",
+                "offline",
+                "stale",
+                "not responding",
+                "unresponsive",
+                "low battery",
+                "low batteries",
+            )
+        ):
+            preferred.update(
+                {
+                    "hub_read_diagnostics",
+                    "hub_list_devices",
+                    "hub_get_info",
+                }
+            )
+        if any(
+            term in q
+            for term in (
+                "device",
+                "light",
+                "switch",
+                "sensor",
+                "thermostat",
+                "battery",
+                "weather",
+                "rain",
+                "temperature",
+                "presence",
+                "motion",
+            )
+        ):
             preferred.update({"hub_list_devices", "hub_get_device"})
         if any(term in q for term in ("turn ", "switch ", "set ", "lock", "unlock")):
             preferred.add("hub_call_device_command")
         if any(term in q for term in ("hub", "memory", "firmware", "update", "health", "cpu")):
             preferred.add("hub_get_info")
         if any(term in q for term in ("rule", "automation", "schedule", "trigger")):
-            preferred.update({"hub_get_tool_guide", "hub_search_tools"})
+            preferred.update(
+                {"hub_get_tool_guide", "hub_search_tools", "hub_read_rules"}
+            )
         if any(term in q for term in ("room", "rooms")):
             preferred.add("hub_read_rooms")
 
@@ -380,7 +525,9 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
             score = overlap * 5.0
             if tool.name in preferred:
                 score += 100.0
-            if tool.name.startswith("hub_read_") and any(token in text for token in query_tokens):
+            if tool.name.startswith("hub_read_") and any(
+                token in text for token in query_tokens
+            ):
                 score += 5.0
             if tool.name.startswith("hub_manage_") and not re.search(
                 r"\b(create|change|modify|delete|remove|set|turn|switch|update|enable|disable)\b",
@@ -403,12 +550,81 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                 break
         return selected
 
+    @classmethod
+    def _extract_text_tool_calls(cls, content: str) -> list[dict[str, Any]]:
+        values = cls._json_values(content)
+        calls: list[dict[str, Any]] = []
+        for value in values:
+            candidates: list[Any]
+            if isinstance(value, list):
+                candidates = value
+            elif isinstance(value, dict) and isinstance(value.get("tool_calls"), list):
+                candidates = value["tool_calls"]
+            else:
+                candidates = [value]
+            for candidate in candidates:
+                name, arguments = cls._parse_tool_call(candidate)
+                if name:
+                    calls.append(
+                        {
+                            "function": {
+                                "name": name,
+                                "arguments": arguments,
+                            }
+                        }
+                    )
+        return calls
+
+    @staticmethod
+    def _json_values(content: str) -> list[Any]:
+        text = str(content or "").strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+        decoder = json.JSONDecoder()
+        values: list[Any] = []
+        index = 0
+        while index < len(text):
+            start_candidates = [
+                position
+                for position in (text.find("{", index), text.find("[", index))
+                if position >= 0
+            ]
+            if not start_candidates:
+                break
+            start = min(start_candidates)
+            try:
+                value, end = decoder.raw_decode(text[start:])
+                values.append(value)
+                index = start + end
+            except json.JSONDecodeError:
+                index = start + 1
+        return values
+
     @staticmethod
     def _parse_tool_call(tool_call: Any) -> tuple[str, dict[str, Any]]:
-        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+        if not isinstance(tool_call, dict):
+            return "", {}
+
+        function = tool_call.get("function")
         function = function if isinstance(function, dict) else {}
-        name = str(function.get("name") or "").strip()
-        arguments = function.get("arguments") or {}
+        name = str(
+            function.get("name")
+            or tool_call.get("name")
+            or tool_call.get("tool")
+            or ""
+        ).strip()
+        arguments: Any = (
+            function.get("arguments")
+            if "arguments" in function
+            else tool_call.get("arguments")
+            if "arguments" in tool_call
+            else tool_call.get("parameters")
+            if "parameters" in tool_call
+            else tool_call.get("input")
+            if "input" in tool_call
+            else tool_call.get("args")
+        )
+        arguments = arguments or {}
         if isinstance(arguments, str):
             try:
                 arguments = json.loads(arguments)
@@ -416,17 +632,41 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                 arguments = {}
         if not isinstance(arguments, dict):
             arguments = {}
+
+        # Some models wrap a direct call as:
+        # {"name":"hub_list_devices","parameters":{"tool":"hub_list_devices","args":{...}}}
+        # Unwrap this without disturbing genuine gateway calls.
+        nested_tool = str(arguments.get("tool") or "").strip()
+        nested_args = arguments.get("args")
+        if (
+            nested_tool
+            and nested_tool == name
+            and isinstance(nested_args, dict)
+            and not name.startswith(("hub_read_", "hub_manage_"))
+        ):
+            arguments = nested_args
+
         return name, arguments
 
     def _compact_tool_result(self, result: MCPToolResult) -> str:
         if result.data is not None and not isinstance(result.data, str):
-            text = json.dumps(result.data, ensure_ascii=False, separators=(",", ":"), default=str)
+            text = json.dumps(
+                result.data,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
         elif result.text:
             text = result.text
         elif result.data is not None:
             text = str(result.data)
         else:
-            text = json.dumps(result.raw, ensure_ascii=False, separators=(",", ":"), default=str)
+            text = json.dumps(
+                result.raw,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
 
         if len(text) <= self.tool_result_limit_chars:
             return text
@@ -441,13 +681,14 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
     def _planner_prompt(self) -> str:
         return (
             KINGPANTHER_SYSTEM_PROMPT
-            + "\n\nYou are the planning stage of a natural smart-home assistant. "
-            "For any question about the user's live home, always call the minimum MCP tool or "
-            "gateway needed before answering. Use hub_search_tools when the required tool is not "
-            "obvious. A gateway may be called with no arguments to discover its sub-tools, then "
-            "called again with tool and args. Do not produce a final live-state answer from memory. "
-            "Keep planning terse and prefer one focused tool call at a time because the hub is "
-            "resource constrained."
+            + "\n\nYou are the MCP planning stage. For every live-home question, use "
+            "Ollama's native tool calling and call at least one relevant MCP tool before "
+            "answering. Never print a tool request as JSON or prose. Never claim the hub is "
+            "still gathering data unless an MCP result explicitly says that. Use "
+            "hub_search_tools when the correct tool is unclear. Gateways may be called with "
+            "no arguments to discover sub-tools, then with tool and args to execute one. "
+            "Never use placeholders such as stale:N. Prefer the fewest focused calls and "
+            "run them sequentially because the hub is resource constrained."
         )
 
     def _synthesis_messages(
@@ -456,7 +697,6 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
         query: str,
         history: list[dict[str, str]],
         planner_messages: list[dict[str, Any]],
-        planner_content: str,
     ) -> list[dict[str, Any]]:
         tool_context: list[dict[str, str]] = []
         for item in planner_messages:
@@ -465,7 +705,7 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                     {
                         "role": "user",
                         "content": (
-                            f"MCP result from {item.get('tool_name', 'tool')}:\n"
+                            f"Authoritative MCP result from {item.get('tool_name', 'tool')}:\n"
                             f"{item.get('content', '')}"
                         ),
                     }
@@ -476,12 +716,13 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                 "role": "system",
                 "content": (
                     KINGPANTHER_SYSTEM_PROMPT
-                    + "\n\nYou are now the final response stage. Answer in a natural, confident, "
-                    "Claude-style conversational tone. Ground every live fact in the MCP results "
-                    "provided below. Do not mention internal planning, schemas, JSON, fast paths, "
-                    "or tool mechanics unless the user explicitly asks. Be concise but include the "
-                    "important names, values, warnings, and whether an action was confirmed. If the "
-                    "MCP data is incomplete, say exactly what is missing rather than guessing."
+                    + "\n\nYou are the final response stage. Answer the original question "
+                    "naturally and directly using the authoritative MCP results below. Do not "
+                    "output JSON, a tool request, tool names, schemas, planning notes, or options "
+                    "for checks that have already been performed. Do not say data is still being "
+                    "gathered when MCP data is present. Summarise the actual states, names, values, "
+                    "warnings, or confirmed actions. If a particular fact is genuinely missing, "
+                    "state only that limitation while still reporting everything that was found."
                 ),
             }
         ]
@@ -492,20 +733,82 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
                 )
         messages.append({"role": "user", "content": query})
         messages.extend(tool_context)
-        if planner_content:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"Planner note (not authoritative): {planner_content}",
-                }
-            )
         messages.append(
             {
                 "role": "user",
-                "content": "Give the final answer to the original question now.",
+                "content": "Give the final user-facing answer now.",
             }
         )
         return messages
+
+    @staticmethod
+    def _requires_live_data(query: str) -> bool:
+        q = str(query or "").lower()
+        return any(
+            term in q
+            for term in (
+                "home",
+                "hub",
+                "device",
+                "light",
+                "switch",
+                "sensor",
+                "thermostat",
+                "battery",
+                "weather",
+                "rain",
+                "temperature",
+                "humidity",
+                "room",
+                "rule",
+                "automation",
+                "energy",
+                "power",
+                "presence",
+                "motion",
+                "door",
+                "window",
+                "lock",
+                "heating",
+                "attention",
+                "offline",
+                "stale",
+            )
+        )
+
+    @staticmethod
+    def _is_discovery_call(name: str, arguments: dict[str, Any]) -> bool:
+        if name in {"hub_search_tools", "hub_get_tool_guide"}:
+            return True
+        return name.startswith(("hub_read_", "hub_manage_")) and not arguments
+
+    @staticmethod
+    def _tool_available(name: str, tools: list[MCPTool]) -> bool:
+        return any(tool.name == name for tool in tools)
+
+    @classmethod
+    def _looks_like_tool_json(cls, content: str) -> bool:
+        return bool(cls._extract_text_tool_calls(content))
+
+    @staticmethod
+    def _find_placeholder(value: Any) -> str | None:
+        if isinstance(value, dict):
+            for item in value.values():
+                found = ClaudeStyleOllamaAgent._find_placeholder(item)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for item in value:
+                found = ClaudeStyleOllamaAgent._find_placeholder(item)
+                if found:
+                    return found
+        elif isinstance(value, str) and re.search(
+            r"(?:^|[:=])(?:N|X|ID|NAME|VALUE)(?:$|[,}])",
+            value,
+            flags=re.IGNORECASE,
+        ):
+            return value
+        return None
 
     @staticmethod
     def _model_matches(model: str, names: list[str]) -> bool:
