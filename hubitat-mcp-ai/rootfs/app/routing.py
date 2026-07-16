@@ -56,6 +56,10 @@ def is_fast_path_query(query: str) -> bool:
         r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
         r"^(?:find|show|list)\s+devices\s+that\s+(?:need|needs)\s+attention\??$",
         r"^(?:what|which)\s+devices\s+(?:need|needs)\s+attention\??$",
+        r"^(?:list|show|find)\s+(?:devices\s+that\s+are\s+)?(?:offline|stale)(?:\s+(?:or|and)\s+(?:offline|stale))?(?:\s+devices)?\??$",
+        r"^(?:list|show|find)\s+devices\s+that\s+are\s+offline\s+(?:or|and)\s+stale\??$",
+        r"^(?:device|devices)\s+health(?:\s+status)?\??$",
+        r"^(?:which|what)\s+devices\s+(?:are\s+)?(?:offline|stale|not responding)\??$",
     )
     return any(re.match(pattern, q) for pattern in patterns)
 
