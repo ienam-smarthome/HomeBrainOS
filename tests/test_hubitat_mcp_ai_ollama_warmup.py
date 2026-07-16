@@ -26,6 +26,10 @@ def test_running_probe_is_reported_as_warming():
         inference_probe_timeout_seconds=20,
         inference_warmup_timeout_seconds=90,
     )
+    agent._health_cache = (
+        time.time(),
+        {"online": True, "model": "qwen3.5:9b"},
+    )
     agent._inference_probe_task = PendingTask()
 
     status = agent.inference_status()
