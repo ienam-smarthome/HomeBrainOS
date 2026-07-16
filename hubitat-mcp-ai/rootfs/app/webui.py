@@ -5,16 +5,21 @@ from webui_homebrain import render_homebrain_page
 
 HOME_BRAIN_MOBILE_PATCH = r"""
 .connection-tile{display:none}
-.model-value{font-size:22px;overflow-wrap:normal;word-break:normal;letter-spacing:-.02em}
-#summaryCard .metric{min-height:82px}
+#summaryCard .big{font-size:24px;line-height:1.05}
+#summaryCard .metric>div:last-child{font-size:13px;line-height:1.2}
+.model-value{font-size:20px!important;overflow-wrap:normal;word-break:normal;letter-spacing:-.02em}
+#summaryCard .metric{min-height:78px}
 @media(max-width:820px){
   #summaryCard{grid-template-columns:repeat(2,minmax(0,1fr))}
   .shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .model-value{font-size:20px}
+  #summaryCard .big{font-size:20px}
+  #summaryCard .metric>div:last-child{font-size:12px}
+  .model-value{font-size:18px!important}
 }
 @media(max-width:380px){
-  .model-value{font-size:18px}
-  #summaryCard .metric{padding:9px}
+  #summaryCard .big{font-size:18px}
+  .model-value{font-size:16px!important}
+  #summaryCard .metric{padding:9px;min-height:72px}
 }
 """
 
