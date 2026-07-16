@@ -20,7 +20,7 @@ from routing import dedupe_current_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.9-alpha"
+VERSION = "0.1.10-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -150,6 +150,7 @@ def inference_label(status: dict[str, Any]) -> str:
         "timeout": "Timed out",
         "error": "Failed",
         "server-offline": "Server offline",
+        "retry-due": "Rechecking",
         "unknown": "Not checked",
     }.get(state, state.replace("-", " ").title())
 
@@ -174,6 +175,9 @@ async def build_ollama_diagnostics(force_probe: bool = False) -> dict[str, Any]:
             inference = await ollama.probe_inference(force=True)
         else:
             inference = ollama.inference_status()
+            if server.get("online") and ollama.inference_probe_due():
+                ollama.schedule_inference_probe()
+                inference = ollama.inference_status()
 
     server_text = "Online" if server.get("online") else "Offline"
     inference_text = inference_label(inference)
@@ -290,12 +294,23 @@ async def status() -> dict[str, Any]:
             "disabled": True,
             "model": OPTIONS.get("ollama_model"),
         }
+
+    inference = ollama.inference_status()
+    if (
+        option_bool("ollama_enabled", True)
+        and isinstance(ollama_status, dict)
+        and ollama_status.get("online")
+        and ollama.inference_probe_due()
+    ):
+        ollama.schedule_inference_probe()
+        inference = ollama.inference_status()
+
     return {
         "success": True,
         "version": VERSION,
         "mcp": mcp_status,
         "ollama": ollama_status,
-        "ollama_inference": ollama.inference_status(),
+        "ollama_inference": inference,
         "fast_path_enabled": option_bool("fast_path_enabled", True),
         "fallback_enabled": option_bool("fallback_enabled", True),
         "ollama_total_timeout_seconds": float(
@@ -340,6 +355,7 @@ async def ask(request: AskRequest) -> dict[str, Any]:
 
         if option_bool("ollama_enabled", True):
             asyncio.create_task(schedule_background_health_check(ollama.health))
+            ollama.schedule_inference_probe()
         return answer
 
     ollama_error = "Ollama is disabled"
@@ -445,7 +461,7 @@ async def refresh() -> dict[str, Any]:
 @app.on_event("startup")
 async def startup() -> None:
     if option_bool("ollama_enabled", True):
-        asyncio.create_task(ollama.probe_inference(force=True))
+        ollama.schedule_inference_probe(force=True)
 
 
 @app.on_event("shutdown")
