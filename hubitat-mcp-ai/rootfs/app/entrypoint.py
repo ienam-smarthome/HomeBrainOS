@@ -6,6 +6,7 @@ import uvicorn
 
 import app as application
 from cancellable_requests import install_cancellable_ask
+from fastpath_ai_handoff import install_fastpath_ai_handoff
 from ollama_agent_quality import QualityNaturalHubitatOllamaAgent
 
 
@@ -57,6 +58,7 @@ def _replace_ollama_agent() -> None:
 
 
 _replace_ollama_agent()
+install_fastpath_ai_handoff(application)
 request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
