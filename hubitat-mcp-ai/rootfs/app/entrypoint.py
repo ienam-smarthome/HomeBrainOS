@@ -6,12 +6,12 @@ import uvicorn
 
 import app as application
 from cancellable_requests import install_cancellable_ask
-from fast_fallback_speech import FastFallbackRouter
+from fast_fallback_inventory import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
-from ollama_agent_device_resolution import DeviceResolutionNaturalAgent
+from ollama_agent_final_answer import FinalAnswerNaturalAgent
 
 
-RELEASE_VERSION = "0.2.6-alpha"
+RELEASE_VERSION = "0.2.7-alpha"
 
 
 def _replace_fallback_router() -> None:
@@ -27,7 +27,7 @@ def _replace_ollama_agent() -> None:
     previous = application.ollama
     options = application.OPTIONS
 
-    application.ollama = DeviceResolutionNaturalAgent(
+    application.ollama = FinalAnswerNaturalAgent(
         client=application.mcp,
         base_url=str(options.get("ollama_base_url") or ""),
         model=str(options.get("ollama_model") or ""),
@@ -46,7 +46,7 @@ def _replace_ollama_agent() -> None:
             options.get("ollama_routine_response_timeout_seconds") or 40
         ),
         num_ctx=int(options.get("ollama_num_ctx") or 4096),
-        num_predict=int(options.get("ollama_num_predict") or 140),
+        num_predict=int(options.get("ollama_num_predict") or 180),
         keep_alive=str(options.get("ollama_keep_alive") or "30m"),
         planner_tool_limit=int(options.get("ollama_planner_tool_limit") or 4),
         tool_result_limit_chars=int(
