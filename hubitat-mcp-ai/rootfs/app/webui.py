@@ -30,7 +30,7 @@ NEW_OLLAMA_STATUS = """const inference=data.ollama_inference||{};const inference
 
 
 OLD_SUBMIT_START = """query=(query||input.value).trim();if(!query)return;input.value='';"""
-NEW_SUBMIT_START = """query=(query||input.value).trim();if(!query)return;input.value=query;"""
+NEW_SUBMIT_START = """query=(query||input.value).trim();if(!query)return;input.value=query;localStorage.setItem('hmcp_last_query',query);"""
 
 
 def render_page(title: str, version: str) -> str:
@@ -55,4 +55,10 @@ def render_page(title: str, version: str) -> str:
     )
     page = page.replace(OLD_OLLAMA_STATUS, NEW_OLLAMA_STATUS)
     page = page.replace(OLD_SUBMIT_START, NEW_SUBMIT_START)
+    page = page.replace(
+        "document.getElementById('readAnswers').checked=readAnswers;",
+        "document.getElementById('readAnswers').checked=readAnswers;"
+        "input.value=localStorage.getItem('hmcp_last_query')||'';",
+    )
+    page = page.replace("setInterval(status,30000);", "setInterval(status,10000);")
     return page.replace("</style>", HOME_BRAIN_MOBILE_PATCH + "</style>", 1)
