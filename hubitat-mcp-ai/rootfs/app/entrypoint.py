@@ -5,17 +5,18 @@ import asyncio
 import uvicorn
 
 import app as application
-from ollama_agent_natural import NaturalHubitatOllamaAgent
+from cancellable_requests import install_cancellable_ask
+from ollama_agent_quality import QualityNaturalHubitatOllamaAgent
 
 
-RELEASE_VERSION = "0.2.2-alpha"
+RELEASE_VERSION = "0.2.3-alpha"
 
 
 def _replace_ollama_agent() -> None:
     previous = application.ollama
     options = application.OPTIONS
 
-    application.ollama = NaturalHubitatOllamaAgent(
+    application.ollama = QualityNaturalHubitatOllamaAgent(
         client=application.mcp,
         base_url=str(options.get("ollama_base_url") or ""),
         model=str(options.get("ollama_model") or ""),
@@ -25,20 +26,20 @@ def _replace_ollama_agent() -> None:
             options.get("ollama_health_timeout_seconds") or 3
         ),
         planner_timeout_seconds=float(
-            options.get("ollama_planner_timeout_seconds") or 45
+            options.get("ollama_planner_timeout_seconds") or 20
         ),
         response_timeout_seconds=float(
-            options.get("ollama_response_timeout_seconds") or 90
+            options.get("ollama_response_timeout_seconds") or 75
         ),
         routine_response_timeout_seconds=float(
-            options.get("ollama_routine_response_timeout_seconds") or 55
+            options.get("ollama_routine_response_timeout_seconds") or 40
         ),
         num_ctx=int(options.get("ollama_num_ctx") or 4096),
-        num_predict=int(options.get("ollama_num_predict") or 220),
+        num_predict=int(options.get("ollama_num_predict") or 140),
         keep_alive=str(options.get("ollama_keep_alive") or "30m"),
-        planner_tool_limit=int(options.get("ollama_planner_tool_limit") or 6),
+        planner_tool_limit=int(options.get("ollama_planner_tool_limit") or 4),
         tool_result_limit_chars=int(
-            options.get("ollama_tool_result_limit_chars") or 12000
+            options.get("ollama_tool_result_limit_chars") or 6000
         ),
         max_tool_rounds=int(options.get("ollama_max_tool_rounds") or 3),
         require_sensitive_confirmation=application.option_bool(
@@ -46,12 +47,9 @@ def _replace_ollama_agent() -> None:
             True,
         ),
         fallback_provider=application.fallback.answer,
-        evidence_item_limit=int(options.get("ollama_evidence_item_limit") or 10),
+        evidence_item_limit=int(options.get("ollama_evidence_item_limit") or 8),
     )
 
-    # app.py constructs the legacy agent while loading its routes. Close that
-    # unused HTTP client before serving requests, then let the existing shutdown
-    # handler close the replacement agent.
     try:
         asyncio.run(previous.close())
     except Exception:
@@ -59,9 +57,15 @@ def _replace_ollama_agent() -> None:
 
 
 _replace_ollama_agent()
+request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
 app = application.app
+
+
+@app.on_event("shutdown")
+async def cancel_active_requests() -> None:
+    await request_registry.cancel_all()
 
 
 if __name__ == "__main__":
