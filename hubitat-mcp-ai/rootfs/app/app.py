@@ -20,7 +20,7 @@ from routing import dedupe_current_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.11-alpha"
+VERSION = "0.1.12-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -413,7 +413,8 @@ async def ask(request: AskRequest) -> dict[str, Any]:
                 ollama.fallback_reason()
                 + "\n\n"
                 + "The fallback currently handles device on/off, lights and switches on, "
-                "low batteries, device health, weather, rooms, home status, and hub health."
+                "low batteries, device health, hub resources, weather, rooms, home status, "
+                "and hub health."
             )
         return answer
 
