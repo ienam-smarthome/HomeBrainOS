@@ -3,30 +3,30 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from routing_policy import classify_query, is_mcp_fast
+
 
 def normalise(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
 def is_control_query(query: str) -> bool:
-    """Only explicit, low-risk on/off commands bypass Ollama.
+    """Return True only for basic, explicit on/off requests.
 
-    Natural read questions, diagnostics, weather, rooms, rules and reasoning now
-    go through the Ollama-first MCP agent. The deterministic path is retained for
-    basic commands where speed and state verification matter more than language
-    synthesis.
+    Complex controls, contextual pronouns and multi-device conditions are sent to
+    the natural Ollama MCP planner. The deterministic path is intentionally narrow
+    because it prioritises speed and verified execution over interpretation.
     """
-    q = normalise(query)
-    return bool(
-        re.match(
-            r"^(?:please\s+)?(?:turn|switch)\s+(?:on|off)\s+(?:the\s+)?[^?]+$",
-            q,
-        )
-    )
+    return is_mcp_fast(query)
 
 
 def is_fast_path_query(query: str) -> bool:
-    return is_control_query(query)
+    return is_mcp_fast(query)
+
+
+def routing_debug(query: str) -> dict[str, str]:
+    decision = classify_query(query)
+    return {"route": decision.route, "reason": decision.reason}
 
 
 def dedupe_current_query(
