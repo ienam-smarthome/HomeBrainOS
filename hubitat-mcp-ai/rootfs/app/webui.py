@@ -24,6 +24,11 @@ HOME_BRAIN_MOBILE_PATCH = r"""
 """
 
 
+OLD_OLLAMA_STATUS = """setPill('ollamaStatus',data.ollama?.online,data.ollama?.online?`Ollama online · ${data.ollama.model}`:`Ollama offline · ${data.ollama?.error||'unavailable'}`);"""
+
+NEW_OLLAMA_STATUS = """const inference=data.ollama_inference||{};const inferenceState=inference.state||'unknown';let ollamaPillState=false;let ollamaPillText='Ollama offline · '+(data.ollama?.error||'unavailable');if(data.ollama?.online){if(inference.ready===true){ollamaPillState=true;ollamaPillText=`Ollama ready · ${data.ollama.model}`;}else if(inference.ready===false){ollamaPillState=null;ollamaPillText=`Ollama server online · inference ${inferenceState==='timeout'?'timed out':'failed'}`;}else{ollamaPillState=null;ollamaPillText=`Ollama server online · inference not checked`;}}setPill('ollamaStatus',ollamaPillState,ollamaPillText);"""
+
+
 def render_page(title: str, version: str) -> str:
     """Render the compact HomeBrain-style interface for Hubitat MCP AI."""
     page = render_homebrain_page(title, version)
@@ -39,4 +44,10 @@ def render_page(title: str, version: str) -> str:
         'class="big" id="model"',
         'class="big model-value" id="model"',
     )
+    page = page.replace(
+        '<button class="secondary" id="refreshMcp">Refresh MCP tools</button>',
+        '<button class="secondary" data-q="Ollama diagnostics">Ollama diagnostics</button>'
+        '<button class="secondary" id="refreshMcp">Refresh MCP tools</button>',
+    )
+    page = page.replace(OLD_OLLAMA_STATUS, NEW_OLLAMA_STATUS)
     return page.replace("</style>", HOME_BRAIN_MOBILE_PATCH + "</style>", 1)
