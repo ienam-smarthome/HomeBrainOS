@@ -13,6 +13,18 @@ required = [
     'addon/homebrainos/Dockerfile',
     'addon/homebrainos/run.sh',
     'addon/homebrainos/rootfs/app/main.py',
+    'hubitat-mcp-ai/config.yaml',
+    'hubitat-mcp-ai/Dockerfile',
+    'hubitat-mcp-ai/run.sh',
+    'hubitat-mcp-ai/rootfs/app/app.py',
+    'hubitat-mcp-ai/rootfs/app/mcp_client.py',
+    'hubitat-mcp-ai/rootfs/app/ollama_agent.py',
+    'hubitat-mcp-ai/rootfs/app/fallback_router.py',
+    'hubitat-mcp-ai/rootfs/app/webui.py',
+    'hubitat-mcp-ai/rootfs/app/kingpanther_skill.py',
+    'hubitat-mcp-ai/rootfs/app/requirements.txt',
+    'hubitat-mcp-ai/LICENSE-UPSTREAM',
+    'hubitat-mcp-ai/UPSTREAM.md',
     'backend/integrations/hubitat_maker.py',
     'backend/services/normalizer.py',
     'frontend/index.html',
@@ -69,10 +81,20 @@ if len(set(version_sources.values())) != 1:
         print(f' - {path}: {version}')
     sys.exit(1)
 
+mcp_ai_versions = {
+    'hubitat-mcp-ai/config.yaml': yaml_version('hubitat-mcp-ai/config.yaml'),
+    'hubitat-mcp-ai/rootfs/app/app.py': python_string_assignment('hubitat-mcp-ai/rootfs/app/app.py', 'VERSION'),
+}
+if len(set(mcp_ai_versions.values())) != 1:
+    print('Hubitat MCP AI version sources differ:')
+    for path, version in mcp_ai_versions.items():
+        print(f' - {path}: {version}')
+    sys.exit(1)
+
 for path in ('homebrainos/rootfs/app/natural_intelligence.py', 'addon/homebrainos/rootfs/app/natural_intelligence.py'):
     source = Path(path).read_text(encoding='utf-8')
     if re.search(r'(?m)^VERSION\s*=', source) or 'app_module.APP_VERSION =' in source:
         print(f'{path} defines or overwrites the authoritative application version')
         sys.exit(1)
 
-print('HomeBrain OS repository layout OK')
+print('HomeBrain OS and Hubitat MCP AI repository layout OK')
