@@ -30,12 +30,13 @@ def test_balanced_routing_policy():
         "Show hub CPU and free memory",
         "List devices that are offline or stale",
         "Find devices that need attention",
+        "List my Hubitat rooms",
+        "List active automation rules",
     }
     verified = {
         "What's happening at home?",
         "What is the weather tomorrow?",
         "Are any lights still on downstairs?",
-        "List my Hubitat rooms",
     }
     planner = {
         "Why are the hallway lights on?",
@@ -174,7 +175,7 @@ def test_unresolved_fast_control_is_handed_to_ai_planner():
         ask=original_ask,
         ollama=FakeOllama(),
         OPTIONS={"ollama_agent_timeout_seconds": 60},
-        VERSION="0.2.4-alpha",
+        VERSION="0.2.7-alpha",
     )
     wrapped = install_fastpath_ai_handoff(application)
     request = SimpleNamespace(query="Turn off Bedroom Light", history=[])
@@ -186,7 +187,7 @@ def test_unresolved_fast_control_is_handed_to_ai_planner():
 
 
 def test_web_ui_allows_stop_and_replace_request():
-    page = render_page("Hubitat MCP AI", "0.2.4-alpha")
+    page = render_page("Hubitat MCP AI", "0.2.7-alpha")
     assert "AbortController" in page
     assert "Stop & ask" in page
     assert "X-HMCP-Client" in page
