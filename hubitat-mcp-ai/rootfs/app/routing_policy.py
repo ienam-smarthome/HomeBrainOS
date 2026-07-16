@@ -84,6 +84,20 @@ _CONTROL_VERBS = (
     "stop ",
 )
 
+# Canonical UI shortcuts and equally explicit variants. These return a verified,
+# structured answer directly from MCP and do not benefit from a language-model pass.
+_FAST_READ_PATTERNS = (
+    r"^(?:which|what|list|show)?\s*(?:lights?)\s+(?:are\s+)?on\??$",
+    r"^(?:which|what|list|show)?\s*(?:switches?)\s+(?:are\s+)?on\??$",
+    r"^(?:which|what|list|show)?\s*(?:batter(?:y|ies))\s+(?:are\s+)?low\??$",
+    r"^(?:show|check)\s+(?:the\s+)?hub\s+(?:cpu|memory|free memory|resources|temperature|uptime)(?:\s+and\s+(?:cpu|memory|free memory|temperature|uptime))?\??$",
+    r"^how much\s+free memory\s+(?:does\s+)?(?:the\s+)?hub\s+have\??$",
+    r"^(?:list|show)\s+devices\s+that\s+are\s+(?:offline|stale)(?:\s+(?:or|and)\s+(?:offline|stale))?\??$",
+    r"^(?:device|devices)\s+health(?:\s+status)?\??$",
+    r"^(?:find|show|list)\s+devices\s+that\s+(?:need|needs)\s+attention\??$",
+    r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
+)
+
 
 def normalise(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
@@ -92,9 +106,17 @@ def normalise(value: str) -> str:
 def classify_query(query: str) -> RouteDecision:
     """Choose the narrow deterministic path or one of the natural AI paths.
 
-    - ``mcp-fast`` is deliberately limited to one explicit on/off target.
-    - ``ollama-verified`` uses deterministic MCP evidence plus one natural summary.
-    - ``ollama-planner`` lets Ollama select and combine MCP tools.
+    ``mcp-fast``
+        Basic explicit on/off commands and canonical live-state shortcuts. These
+        are deterministic, state-verified and normally sub-second.
+
+    ``ollama-verified``
+        Routine natural questions. MCP gathers authoritative evidence first, then
+        one Ollama pass turns it into a concise natural answer.
+
+    ``ollama-planner``
+        Ambiguous/contextual controls, comparisons, explanations, recommendations,
+        automation work and multi-source reasoning.
     """
     q = normalise(query)
     if not q:
@@ -115,6 +137,12 @@ def classify_query(query: str) -> RouteDecision:
         return RouteDecision(
             "ollama-planner",
             "on/off command requires context or multi-device interpretation",
+        )
+
+    if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
+        return RouteDecision(
+            "mcp-fast",
+            "canonical live-state or diagnostic shortcut with a structured answer",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
