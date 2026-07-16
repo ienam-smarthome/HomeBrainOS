@@ -28,6 +28,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/fast_fallback_live.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_verified.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_attention.py',
+    'hubitat-mcp-ai/rootfs/app/fast_fallback_groups.py',
     'hubitat-mcp-ai/rootfs/app/presenter.py',
     'hubitat-mcp-ai/rootfs/app/weather_presenter_v2.py',
     'hubitat-mcp-ai/rootfs/app/system_presenter_v2.py',
