@@ -14,13 +14,13 @@ from pydantic import BaseModel, Field
 
 from fast_fallback_device_health import FastFallbackRouter
 from mcp_client import HubitatMCPClient
-from ollama_agent_inference import OllamaMCPAgent, OllamaUnavailable
-from request_router import run_fast_path, schedule_background_health_check
+from ollama_agent_claude import ClaudeStyleOllamaAgent, OllamaUnavailable
+from request_router import run_fast_path
 from routing import dedupe_current_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.13-alpha"
+VERSION = "0.2.0-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -30,17 +30,17 @@ def load_options() -> dict[str, Any]:
         "hubitat_mcp_token": "",
         "ollama_enabled": True,
         "ollama_base_url": "http://homeassistant.local:11434",
-        "ollama_model": "qwen2.5:3b",
-        "ollama_timeout_seconds": 35,
-        "ollama_total_timeout_seconds": 40,
+        "ollama_model": "qwen3.5:9b",
+        "ollama_planner_model": "",
         "ollama_health_timeout_seconds": 3,
-        "ollama_inference_probe_timeout_seconds": 20,
-        "ollama_inference_warmup_timeout_seconds": 90,
-        "ollama_inference_failure_ttl_seconds": 60,
+        "ollama_planner_timeout_seconds": 45,
+        "ollama_response_timeout_seconds": 90,
+        "ollama_agent_timeout_seconds": 150,
         "ollama_num_ctx": 4096,
-        "ollama_num_predict": 160,
-        "ollama_keep_alive": "15m",
-        "ollama_tool_limit": 10,
+        "ollama_num_predict": 220,
+        "ollama_keep_alive": "30m",
+        "ollama_planner_tool_limit": 6,
+        "ollama_tool_result_limit_chars": 12000,
         "ollama_max_tool_rounds": 3,
         "fast_path_enabled": True,
         "fallback_enabled": True,
@@ -85,6 +85,7 @@ def is_ollama_diagnostics_query(query: str) -> bool:
             "ready",
             "online",
             "model",
+            "loaded",
             "inference",
         )
     )
@@ -97,25 +98,25 @@ mcp = HubitatMCPClient(
     access_token=str(OPTIONS.get("hubitat_mcp_token") or ""),
     timeout_seconds=float(OPTIONS.get("mcp_timeout_seconds") or 25),
 )
-ollama = OllamaMCPAgent(
+ollama = ClaudeStyleOllamaAgent(
     client=mcp,
     base_url=str(OPTIONS.get("ollama_base_url") or ""),
     model=str(OPTIONS.get("ollama_model") or ""),
-    timeout_seconds=float(OPTIONS.get("ollama_timeout_seconds") or 35),
+    planner_model=str(OPTIONS.get("ollama_planner_model") or ""),
     health_timeout_seconds=float(OPTIONS.get("ollama_health_timeout_seconds") or 3),
-    inference_probe_timeout_seconds=float(
-        OPTIONS.get("ollama_inference_probe_timeout_seconds") or 20
+    planner_timeout_seconds=float(
+        OPTIONS.get("ollama_planner_timeout_seconds") or 45
     ),
-    inference_warmup_timeout_seconds=float(
-        OPTIONS.get("ollama_inference_warmup_timeout_seconds") or 90
-    ),
-    inference_failure_ttl_seconds=float(
-        OPTIONS.get("ollama_inference_failure_ttl_seconds") or 60
+    response_timeout_seconds=float(
+        OPTIONS.get("ollama_response_timeout_seconds") or 90
     ),
     num_ctx=int(OPTIONS.get("ollama_num_ctx") or 4096),
-    num_predict=int(OPTIONS.get("ollama_num_predict") or 160),
-    keep_alive=str(OPTIONS.get("ollama_keep_alive") or "15m"),
-    tool_limit=int(OPTIONS.get("ollama_tool_limit") or 10),
+    num_predict=int(OPTIONS.get("ollama_num_predict") or 220),
+    keep_alive=str(OPTIONS.get("ollama_keep_alive") or "30m"),
+    planner_tool_limit=int(OPTIONS.get("ollama_planner_tool_limit") or 6),
+    tool_result_limit_chars=int(
+        OPTIONS.get("ollama_tool_result_limit_chars") or 12000
+    ),
     max_tool_rounds=int(OPTIONS.get("ollama_max_tool_rounds") or 3),
     require_sensitive_confirmation=option_bool(
         "require_sensitive_confirmation",
@@ -147,135 +148,124 @@ def elapsed_ms(started: float) -> int:
     return round((time.perf_counter() - started) * 1000)
 
 
-def inference_label(status: dict[str, Any]) -> str:
-    state = str(status.get("state") or "unknown")
+def compatibility_inference(runtime: dict[str, Any]) -> dict[str, Any]:
+    if not runtime.get("online"):
+        return {
+            "ready": False,
+            "state": "server-offline",
+            "model": runtime.get("model"),
+            "message": runtime.get("error") or "Ollama server is unreachable.",
+        }
+    if not runtime.get("model_present"):
+        return {
+            "ready": False,
+            "state": "missing",
+            "model": runtime.get("model"),
+            "message": "The configured response model is not installed.",
+        }
+    if runtime.get("model_loaded"):
+        return {
+            "ready": True,
+            "state": "ready",
+            "model": runtime.get("model"),
+            "message": "The response model is loaded and ready.",
+        }
     return {
-        "ready": "Ready",
-        "warming": "Warming up",
-        "timeout": "Timed out",
-        "error": "Failed",
-        "server-offline": "Server offline",
-        "retry-due": "Rechecking",
-        "unknown": "Not checked",
-    }.get(state, state.replace("-", " ").title())
+        "ready": None,
+        "state": "available",
+        "model": runtime.get("model"),
+        "message": "The model is installed and will load on the next AI question.",
+    }
 
 
-async def build_ollama_diagnostics(force_probe: bool = False) -> dict[str, Any]:
+async def build_ollama_diagnostics(force: bool = False) -> dict[str, Any]:
     if not option_bool("ollama_enabled", True):
-        server = {
+        runtime = {
             "online": False,
             "disabled": True,
             "model": OPTIONS.get("ollama_model"),
-            "error": "Ollama is disabled",
-        }
-        inference = {
-            "ready": False,
-            "state": "disabled",
-            "model": OPTIONS.get("ollama_model"),
-            "message": "Ollama is disabled in add-on configuration.",
+            "error": "Ollama is disabled in add-on configuration.",
+            "loaded_models": [],
+            "installed_models": [],
+            "last_agent": {"state": "disabled"},
         }
     else:
-        server = await ollama.health(force=force_probe)
-        if force_probe and server.get("online"):
-            inference = await ollama.probe_inference(force=True)
-        else:
-            inference = ollama.inference_status()
-            if server.get("online") and ollama.inference_probe_due():
-                ollama.schedule_inference_probe(
-                    timeout_seconds=ollama.inference_warmup_timeout_seconds
-                )
-                inference = ollama.inference_status()
+        runtime = await ollama.runtime_status(force=force)
 
-    server_text = "Online" if server.get("online") else "Offline"
-    inference_text = inference_label(inference)
-    model = str(server.get("model") or inference.get("model") or ollama.model or "—")
-    last_ms = inference.get("elapsed_ms")
-    age = inference.get("age_seconds")
+    server_text = "Online" if runtime.get("online") else "Offline"
+    model_text = str(runtime.get("model") or "—")
+    model_state = (
+        "Loaded"
+        if runtime.get("model_loaded")
+        else "Available"
+        if runtime.get("model_present")
+        else "Missing"
+    )
+    planner_text = str(runtime.get("planner_model") or model_text)
+    last_agent = runtime.get("last_agent") or {}
+    last_state = str(last_agent.get("state") or "idle").replace("-", " ").title()
 
     lines = [
         f"Ollama server: {server_text}",
-        f"Model: {model}",
-        f"Model inference: {inference_text}",
+        f"Response model: {model_text} ({model_state.lower()})",
+        f"Planner model: {planner_text}",
+        f"Last agent state: {last_state}",
     ]
-    if last_ms is not None:
-        lines.append(f"Latest inference check: {float(last_ms) / 1000:.1f}s")
-    if inference.get("message"):
-        lines.append(str(inference["message"]))
-    if server.get("error"):
-        lines.append(f"Server error: {server['error']}")
-    if inference.get("error"):
-        lines.append(f"Chat error: {inference['error']}")
+    if last_agent.get("elapsed_ms") is not None:
+        lines.append(f"Last agent time: {float(last_agent['elapsed_ms']) / 1000:.1f}s")
+    if last_agent.get("error"):
+        lines.append(f"Last agent error: {last_agent['error']}")
+    if runtime.get("error"):
+        lines.append(f"Server error: {runtime['error']}")
 
     metrics = [
         {
             "label": "Server",
             "value": server_text,
-            "icon": "🟢" if server.get("online") else "🔴",
+            "icon": "🟢" if runtime.get("online") else "🔴",
         },
         {
-            "label": "Inference",
-            "value": inference_text,
+            "label": "Response model",
+            "value": model_state,
             "icon": "🧠",
         },
         {
-            "label": "Model",
-            "value": model,
+            "label": "Planner",
+            "value": planner_text,
+            "icon": "🧭",
+        },
+        {
+            "label": "Last agent",
+            "value": last_state,
             "icon": "🤖",
         },
         {
-            "label": "Warm-up limit",
-            "value": f"{int(ollama.inference_warmup_timeout_seconds)}s",
-            "icon": "🔥",
-        },
-        {
-            "label": "Failure cache",
-            "value": f"{int(ollama.inference_failure_ttl_seconds)}s",
-            "icon": "⏱️",
+            "label": "Fast path",
+            "value": "On/off only",
+            "icon": "⚡",
         },
     ]
-    if last_ms is not None:
-        metrics.append(
-            {
-                "label": "Latest inference",
-                "value": f"{float(last_ms) / 1000:.1f}s",
-                "icon": "⚡",
-            }
-        )
-    if age is not None:
-        metrics.append(
-            {
-                "label": "Checked",
-                "value": f"{age:g}s ago",
-                "icon": "🕒",
-            }
-        )
 
     return {
-        "success": bool(server.get("online")),
+        "success": bool(runtime.get("online")),
         "route": "system",
         "intent": "ollama-diagnostics",
         "message": "\n".join(lines),
-        "model": model,
-        "server": server,
-        "inference": inference,
+        "model": model_text,
+        "runtime": runtime,
+        "inference": compatibility_inference(runtime),
         "display": {
             "kind": "ollama-diagnostics",
             "title": "Ollama diagnostics",
-            "subtitle": (
-                f"Server {server_text.lower()} · inference {inference_text.lower()}"
-            ),
+            "subtitle": f"Server {server_text.lower()} · model {model_state.lower()}",
             "metrics": metrics,
             "items": [],
             "note": (
-                "The server check uses /api/tags. A longer background /api/chat warm-up "
-                "loads slower CPU-hosted models without blocking normal MCP questions."
+                "Model availability is read from /api/tags and loaded state from /api/ps. "
+                "Real questions are no longer blocked by a synthetic readiness probe."
             ),
         },
-        "technical": json.dumps(
-            {"server": server, "inference": inference},
-            ensure_ascii=False,
-            indent=2,
-        ),
+        "technical": json.dumps(runtime, ensure_ascii=False, indent=2, default=str),
         "version": VERSION,
     }
 
@@ -292,51 +282,45 @@ async def index() -> HTMLResponse:
 
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
-    mcp_status, ollama_status = await asyncio.gather(
+    mcp_status, runtime = await asyncio.gather(
         mcp.health(),
-        ollama.health(),
+        ollama.runtime_status(),
         return_exceptions=True,
     )
     if isinstance(mcp_status, Exception):
         mcp_status = {"online": False, "error": str(mcp_status)}
-    if isinstance(ollama_status, Exception):
-        ollama_status = {"online": False, "error": str(ollama_status)}
+    if isinstance(runtime, Exception):
+        runtime = {
+            "online": False,
+            "model": OPTIONS.get("ollama_model"),
+            "error": str(runtime),
+        }
     if not option_bool("ollama_enabled", True):
-        ollama_status = {
+        runtime = {
             "online": False,
             "disabled": True,
             "model": OPTIONS.get("ollama_model"),
+            "error": "Ollama is disabled",
         }
-
-    inference = ollama.inference_status()
-    if (
-        option_bool("ollama_enabled", True)
-        and isinstance(ollama_status, dict)
-        and ollama_status.get("online")
-        and ollama.inference_probe_due()
-    ):
-        ollama.schedule_inference_probe(
-            timeout_seconds=ollama.inference_warmup_timeout_seconds
-        )
-        inference = ollama.inference_status()
 
     return {
         "success": True,
         "version": VERSION,
         "mcp": mcp_status,
-        "ollama": ollama_status,
-        "ollama_inference": inference,
+        "ollama": runtime,
+        "ollama_inference": compatibility_inference(runtime),
         "fast_path_enabled": option_bool("fast_path_enabled", True),
+        "fast_path_scope": "explicit on/off commands only",
         "fallback_enabled": option_bool("fallback_enabled", True),
-        "ollama_total_timeout_seconds": float(
-            OPTIONS.get("ollama_total_timeout_seconds") or 40
+        "ollama_agent_timeout_seconds": float(
+            OPTIONS.get("ollama_agent_timeout_seconds") or 150
         ),
     }
 
 
 @app.get("/api/ollama-diagnostics")
-async def ollama_diagnostics(probe: bool = False) -> dict[str, Any]:
-    return await build_ollama_diagnostics(force_probe=probe)
+async def ollama_diagnostics(force: bool = False) -> dict[str, Any]:
+    return await build_ollama_diagnostics(force=force)
 
 
 @app.post("/api/ask")
@@ -350,13 +334,15 @@ async def ask(request: AskRequest) -> dict[str, Any]:
     history = dedupe_current_query(raw_history, query)
 
     if is_ollama_diagnostics_query(query):
-        answer = await build_ollama_diagnostics(force_probe=False)
+        answer = await build_ollama_diagnostics(force=False)
         answer["elapsed_ms"] = elapsed_ms(started)
         return answer
 
     fallback_enabled = option_bool("fallback_enabled", True)
     fast_path_enabled = option_bool("fast_path_enabled", True)
 
+    # Deliberately narrow: deterministic routing is only for explicit, low-risk
+    # on/off commands. Everything else uses the natural Ollama MCP agent.
     if fallback_enabled and fast_path_enabled and is_fast_path_query(query):
         answer = await run_fast_path(
             query,
@@ -367,71 +353,45 @@ async def ask(request: AskRequest) -> dict[str, Any]:
         answer["route"] = "mcp-fast"
         answer["version"] = VERSION
         answer["elapsed_ms"] = elapsed_ms(started)
-
-        if option_bool("ollama_enabled", True):
-            asyncio.create_task(schedule_background_health_check(ollama.health))
-            ollama.schedule_inference_probe(
-                timeout_seconds=ollama.inference_warmup_timeout_seconds
-            )
         return answer
 
     ollama_error = "Ollama is disabled"
     if option_bool("ollama_enabled", True):
-        total_timeout = max(
-            8.0,
-            float(OPTIONS.get("ollama_total_timeout_seconds") or 40),
+        agent_timeout = max(
+            30.0,
+            float(OPTIONS.get("ollama_agent_timeout_seconds") or 150),
         )
         try:
             answer = await asyncio.wait_for(
                 ollama.answer(query, history),
-                timeout=total_timeout,
+                timeout=agent_timeout,
             )
             answer.setdefault("version", VERSION)
             answer["elapsed_ms"] = elapsed_ms(started)
             if answer.get("success", True):
                 return answer
-            ollama_error = str(
-                answer.get("message") or "Ollama tool loop did not finish"
-            )
-            ollama.record_inference_failure(
-                ollama_error,
-                state="error",
-                elapsed_ms=elapsed_ms(started),
-            )
+            ollama_error = str(answer.get("message") or "Ollama agent did not finish")
         except asyncio.TimeoutError:
-            ollama_error = (
-                f"Ollama exceeded the {total_timeout:g}s total response budget"
-            )
-            ollama.record_inference_failure(
-                ollama_error,
-                state="timeout",
-                elapsed_ms=elapsed_ms(started),
-            )
+            ollama_error = f"Ollama agent exceeded the {agent_timeout:g}s response budget"
         except OllamaUnavailable as exc:
             ollama_error = str(exc)
         except Exception as exc:
             ollama_error = str(exc)
-            ollama.record_inference_failure(
-                ollama_error,
-                state="error",
-                elapsed_ms=elapsed_ms(started),
-            )
 
     if fallback_enabled:
         answer = await fallback.answer(query)
         answer["route"] = "fallback"
         answer["ollama_error"] = ollama_error
-        answer["fallback_reason"] = ollama.fallback_reason()
-        answer["ollama_inference"] = ollama.inference_status()
         answer["version"] = VERSION
         answer["elapsed_ms"] = elapsed_ms(started)
+        answer["fallback_reason"] = (
+            f"The Ollama-first agent could not complete this request: {ollama_error}"
+        )
         if answer.get("intent") == "fallback-unsupported":
             answer["message"] = (
-                ollama.fallback_reason()
-                + "\n\n"
-                + "The fallback currently handles device on/off, lights and switches on, "
-                "low batteries, device health, hub resources, period-specific weather and rain, "
-                "rooms, home status, and hub health."
+                "The natural Ollama agent could not complete the request, and the local "
+                "fallback does not support this question.\n\n"
+                f"Ollama error: {ollama_error}"
             )
         return answer
 
@@ -462,27 +422,13 @@ async def tools() -> dict[str, Any]:
 async def refresh() -> dict[str, Any]:
     await mcp.initialize(force=True)
     values = await mcp.list_tools(refresh=True)
-    ollama_status = await ollama.health(force=True)
-    inference = (
-        await ollama.probe_inference(force=True)
-        if option_bool("ollama_enabled", True)
-        else ollama.inference_status()
-    )
+    runtime = await ollama.runtime_status(force=True)
     return {
         "success": True,
         "tools": len(values),
-        "ollama": ollama_status,
-        "ollama_inference": inference,
+        "ollama": runtime,
+        "ollama_inference": compatibility_inference(runtime),
     }
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    if option_bool("ollama_enabled", True):
-        ollama.schedule_inference_probe(
-            force=True,
-            timeout_seconds=ollama.inference_warmup_timeout_seconds,
-        )
 
 
 @app.on_event("shutdown")
