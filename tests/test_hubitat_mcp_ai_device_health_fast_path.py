@@ -73,13 +73,13 @@ class FakeMCP:
         )
 
 
-def test_offline_stale_wording_is_fast_path():
-    assert is_fast_path_query("List devices that are offline or stale") is True
-    assert is_fast_path_query("Show stale devices") is True
-    assert is_fast_path_query("Device health") is True
+def test_device_health_wording_uses_the_ollama_first_agent():
+    assert is_fast_path_query("List devices that are offline or stale") is False
+    assert is_fast_path_query("Show stale devices") is False
+    assert is_fast_path_query("Device health") is False
 
 
-def test_device_health_lists_offline_and_stale_without_duplicates():
+def test_device_health_fallback_lists_offline_and_stale_without_duplicates():
     answer = asyncio.run(
         FastFallbackRouter(FakeMCP(), attention_stale_hours=48).answer(
             "List devices that are offline or stale"
