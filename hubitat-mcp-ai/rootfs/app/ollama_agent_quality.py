@@ -34,14 +34,56 @@ class QualityNaturalHubitatOllamaAgent(NaturalHubitatOllamaAgent):
                 )
         return await super().answer(query, history)
 
+    async def answer_with_planner(
+        self,
+        query: str,
+        history: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        """Force the full MCP planner for ambiguous control resolution."""
+        return await super().answer(query, history or [])
+
+    def _resolve_planner_model(self, installed_models: list[str]) -> str:
+        if self.configured_planner_model:
+            if self._model_matches(self.configured_planner_model, installed_models):
+                return self.configured_planner_model
+            return self.model
+        return self._preferred_family_model(installed_models)
+
     def _resolve_routine_model(self, installed_models: list[str]) -> str:
-        # Do not silently downgrade natural answers to an unrelated smallest model
-        # such as llama3.2:3b. Use the configured response model unless the user has
-        # explicitly selected a separate routine model.
         if self.configured_routine_model:
             if self._model_matches(self.configured_routine_model, installed_models):
                 return self.configured_routine_model
-        return self.model
+            return self.model
+        return self._preferred_family_model(installed_models)
+
+    def _preferred_family_model(self, installed_models: list[str]) -> str:
+        """Prefer a smaller Qwen-family model, never an unrelated silent downgrade."""
+        response_family = self.model.split(":", 1)[0].lower()
+        broad_family = re.sub(r"\d.*$", "", response_family) or response_family
+        candidates = [
+            name
+            for name in installed_models
+            if name
+            and not any(term in name.lower() for term in ("embed", "nomic", "bge"))
+            and (
+                name.split(":", 1)[0].lower().startswith(broad_family)
+                or (
+                    response_family.startswith("qwen")
+                    and name.split(":", 1)[0].lower().startswith("qwen")
+                )
+            )
+        ]
+        if not candidates:
+            return self.model
+
+        def size_key(name: str) -> tuple[float, int, str]:
+            match = re.search(r"(?<!\d)(\d+(?:\.\d+)?)b(?:\b|$)", name.lower())
+            size = float(match.group(1)) if match else 999.0
+            exact_family = 0 if name.split(":", 1)[0].lower() == response_family else 1
+            return size, exact_family, name.lower()
+
+        candidates.sort(key=size_key)
+        return candidates[0]
 
     async def _answer_from_verified_context(
         self,
@@ -62,7 +104,11 @@ class QualityNaturalHubitatOllamaAgent(NaturalHubitatOllamaAgent):
         installed = list(health.get("models") or [])
         response_model = self._resolve_routine_model(installed)
         evidence_text = self._compact_fallback_evidence(verified)
-        timeout = min(self.response_timeout_seconds, self.routine_response_timeout_seconds, 40.0)
+        timeout = min(
+            self.response_timeout_seconds,
+            self.routine_response_timeout_seconds,
+            40.0,
+        )
 
         self._last_agent_status = {
             "state": "synthesising",
