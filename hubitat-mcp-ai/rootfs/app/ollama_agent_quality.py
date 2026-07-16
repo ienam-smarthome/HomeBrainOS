@@ -7,6 +7,7 @@ from typing import Any
 
 from ollama_agent_fast import OllamaUnavailable
 from ollama_agent_natural import NaturalHubitatOllamaAgent
+from routing_policy import requires_planner
 
 
 class QualityNaturalHubitatOllamaAgent(NaturalHubitatOllamaAgent):
@@ -15,7 +16,8 @@ class QualityNaturalHubitatOllamaAgent(NaturalHubitatOllamaAgent):
     Routine read-only questions first ask the existing MCP fallback provider for a
     compact, authoritative evidence package. Ollama still writes the user-facing
     answer, but the slow tool-planning pass is skipped when verified context is
-    already available. Complex questions continue through the full MCP planner.
+    already available. Complex questions and non-basic controls use the full MCP
+    planner.
     """
 
     async def answer(
@@ -24,14 +26,16 @@ class QualityNaturalHubitatOllamaAgent(NaturalHubitatOllamaAgent):
         history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         history = history or []
-        if not self._is_deep_reasoning_query(query):
-            verified = await self._fallback_evidence(query)
-            if verified is not None:
-                return await self._answer_from_verified_context(
-                    query=query,
-                    history=history,
-                    verified=verified,
-                )
+        if requires_planner(query):
+            return await super().answer(query, history)
+
+        verified = await self._fallback_evidence(query)
+        if verified is not None:
+            return await self._answer_from_verified_context(
+                query=query,
+                history=history,
+                verified=verified,
+            )
         return await super().answer(query, history)
 
     async def answer_with_planner(
