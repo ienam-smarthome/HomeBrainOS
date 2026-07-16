@@ -17,9 +17,6 @@ jobs:
       - name: Python syntax check
         run: python -m compileall backend addon/homebrainos/rootfs/app homebrainos/rootfs/app hubitat-mcp-ai/rootfs/app
       - name: Install test dependencies
-        run: |
-          python -m pip install -r requirements.txt
-          python -m pip install -r hubitat-mcp-ai/rootfs/app/requirements.txt
-          python -m pip install pytest
+        run: python -m pip install -r requirements.txt pytest httpx==0.28.1
       - name: Run tests
         run: python -m pytest
