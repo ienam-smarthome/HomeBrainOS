@@ -17,6 +17,7 @@ required = [
     'hubitat-mcp-ai/Dockerfile',
     'hubitat-mcp-ai/run.sh',
     'hubitat-mcp-ai/rootfs/app/app.py',
+    'hubitat-mcp-ai/rootfs/app/entrypoint.py',
     'hubitat-mcp-ai/rootfs/app/mcp_client.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_fast.py',
@@ -100,7 +101,10 @@ if len(set(version_sources.values())) != 1:
 
 mcp_ai_versions = {
     'hubitat-mcp-ai/config.yaml': yaml_version('hubitat-mcp-ai/config.yaml'),
-    'hubitat-mcp-ai/rootfs/app/app.py': python_string_assignment('hubitat-mcp-ai/rootfs/app/app.py', 'VERSION'),
+    'hubitat-mcp-ai/rootfs/app/entrypoint.py': python_string_assignment(
+        'hubitat-mcp-ai/rootfs/app/entrypoint.py',
+        'RELEASE_VERSION',
+    ),
 }
 if len(set(mcp_ai_versions.values())) != 1:
     print('Hubitat MCP AI version sources differ:')
