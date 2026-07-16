@@ -22,6 +22,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/ollama_agent_fast.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_resilient.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_inference.py',
+    'hubitat-mcp-ai/rootfs/app/ollama_agent_claude.py',
     'hubitat-mcp-ai/rootfs/app/fallback_router.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_weather.py',

@@ -45,11 +45,11 @@ WEATHER_DATA = {
 }
 
 
-def test_tomorrow_and_rain_queries_use_fast_path():
-    assert is_fast_path_query("what is the weather tomorrow") is True
-    assert is_fast_path_query("will it rain tomorrow") is True
-    assert is_fast_path_query("will it rain today") is True
-    assert is_fast_path_query("weather forecast for tomorrow") is True
+def test_weather_questions_use_the_ollama_first_agent():
+    assert is_fast_path_query("what is the weather tomorrow") is False
+    assert is_fast_path_query("will it rain tomorrow") is False
+    assert is_fast_path_query("will it rain today") is False
+    assert is_fast_path_query("weather forecast for tomorrow") is False
 
 
 def test_tomorrow_weather_is_period_specific():

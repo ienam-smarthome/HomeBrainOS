@@ -34,13 +34,13 @@ class FakeMCP:
         )
 
 
-def test_show_hub_cpu_and_free_memory_is_fast_path():
-    assert is_fast_path_query("Show hub CPU and free memory") is True
-    assert is_fast_path_query("Show hub resources") is True
-    assert is_fast_path_query("How much free memory does the hub have?") is True
+def test_hub_resource_questions_use_the_ollama_first_agent():
+    assert is_fast_path_query("Show hub CPU and free memory") is False
+    assert is_fast_path_query("Show hub resources") is False
+    assert is_fast_path_query("How much free memory does the hub have?") is False
 
 
-def test_hub_resources_returns_focused_mcp_answer():
+def test_hub_resources_fallback_remains_available_when_ollama_fails():
     answer = asyncio.run(
         FastFallbackRouter(FakeMCP()).answer("Show hub CPU and free memory")
     )
