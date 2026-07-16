@@ -12,14 +12,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from fast_fallback import FastFallbackRouter
+from fast_fallback_weather import FastFallbackRouter
 from mcp_client import HubitatMCPClient
-from ollama_agent_fast import OllamaMCPAgent, OllamaUnavailable
+from ollama_agent_resilient import OllamaMCPAgent, OllamaUnavailable
 from routing import dedupe_current_query, is_control_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.3-alpha"
+VERSION = "0.1.4-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
