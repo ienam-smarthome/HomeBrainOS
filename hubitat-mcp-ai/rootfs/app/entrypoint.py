@@ -6,12 +6,13 @@ import uvicorn
 
 import app as application
 from cancellable_requests import install_cancellable_ask
-from fast_fallback_inventory import FastFallbackRouter
+from dashboard_api import install_dashboard_api
+from fast_fallback_dashboard import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
-from ollama_agent_final_answer import FinalAnswerNaturalAgent
+from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 
 
-RELEASE_VERSION = "0.2.7-alpha"
+RELEASE_VERSION = "0.2.8-alpha"
 
 
 def _replace_fallback_router() -> None:
@@ -20,6 +21,10 @@ def _replace_fallback_router() -> None:
         attention_stale_hours=float(
             application.OPTIONS.get("attention_stale_hours") or 48
         ),
+        cpu_probe_enabled=application.option_bool("hub_cpu_probe_enabled", True),
+        cpu_probe_timeout_seconds=float(
+            application.OPTIONS.get("hub_cpu_probe_timeout_seconds") or 2.5
+        ),
     )
 
 
@@ -27,7 +32,7 @@ def _replace_ollama_agent() -> None:
     previous = application.ollama
     options = application.OPTIONS
 
-    application.ollama = FinalAnswerNaturalAgent(
+    application.ollama = AdaptiveFinalAnswerAgent(
         client=application.mcp,
         base_url=str(options.get("ollama_base_url") or ""),
         model=str(options.get("ollama_model") or ""),
@@ -37,7 +42,7 @@ def _replace_ollama_agent() -> None:
             options.get("ollama_health_timeout_seconds") or 3
         ),
         planner_timeout_seconds=float(
-            options.get("ollama_planner_timeout_seconds") or 20
+            options.get("ollama_planner_timeout_seconds") or 35
         ),
         response_timeout_seconds=float(
             options.get("ollama_response_timeout_seconds") or 75
@@ -70,6 +75,10 @@ def _replace_ollama_agent() -> None:
 _replace_fallback_router()
 _replace_ollama_agent()
 install_fastpath_ai_handoff(application)
+dashboard_snapshot = install_dashboard_api(
+    application,
+    ttl_seconds=float(application.OPTIONS.get("dashboard_refresh_seconds") or 30),
+)
 request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
