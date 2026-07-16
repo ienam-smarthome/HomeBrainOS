@@ -61,6 +61,22 @@ def is_fast_path_query(query: str) -> bool:
     ):
         return True
 
+    # Weather devices already expose deterministic current, today, tomorrow
+    # and rain fields. Do not wait for Ollama to interpret these questions.
+    if any(
+        term in q
+        for term in (
+            "weather",
+            "forecast",
+            "rain",
+            "raining",
+            "precipitation",
+            "umbrella",
+            "temperature outside",
+        )
+    ):
+        return True
+
     patterns = (
         r"^(?:what(?:'s| is) happening(?: at home)?|home status)\??$",
         r"^(?:which|what|list)?\s*(?:lights?|switches?)\s+(?:are\s+)?on\??$",
@@ -69,8 +85,6 @@ def is_fast_path_query(query: str) -> bool:
         r"^(?:what(?:'s| is)\s+)?(?:the\s+)?hub\s+(?:cpu|memory|free memory)\??$",
         r"^how much\s+free memory\s+(?:does\s+)?(?:the\s+)?hub\s+have\??$",
         r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
-        r"^(?:what(?:'s| is)\s+)?(?:the\s+)?weather(?: today| now)?\??$",
-        r"^(?:will it rain|is it raining)(?: today| now)?\??$",
         r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
         r"^(?:find|show|list)\s+devices\s+that\s+(?:need|needs)\s+attention\??$",
         r"^(?:what|which)\s+devices\s+(?:need|needs)\s+attention\??$",
