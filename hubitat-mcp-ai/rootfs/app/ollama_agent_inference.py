@@ -15,6 +15,7 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         self,
         *args: Any,
         inference_probe_timeout_seconds: float = 8,
+        inference_warmup_timeout_seconds: float = 90,
         inference_failure_ttl_seconds: float = 60,
         **kwargs: Any,
     ) -> None:
@@ -22,6 +23,10 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         self.inference_probe_timeout_seconds = max(
             2.0,
             float(inference_probe_timeout_seconds),
+        )
+        self.inference_warmup_timeout_seconds = max(
+            self.inference_probe_timeout_seconds,
+            float(inference_warmup_timeout_seconds),
         )
         self.inference_failure_ttl_seconds = max(
             10.0,
@@ -31,14 +36,25 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         self._inference_probe_lock = asyncio.Lock()
         self._inference_probe_task: asyncio.Task[dict[str, Any]] | None = None
 
+    def inference_probe_running(self) -> bool:
+        return bool(
+            self._inference_probe_task
+            and not self._inference_probe_task.done()
+        )
+
     def inference_status(self) -> dict[str, Any]:
         now = time.time()
+        running = self.inference_probe_running()
         if not self._inference_cache:
             return {
                 "ready": None,
-                "state": "unknown",
+                "state": "warming" if running else "unknown",
                 "model": self.model,
-                "message": "Model inference has not been checked yet.",
+                "message": (
+                    "The Ollama model is warming up in the background."
+                    if running
+                    else "Model inference has not been checked yet."
+                ),
             }
 
         checked_at, status = self._inference_cache
@@ -50,10 +66,12 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         ):
             return {
                 "ready": None,
-                "state": "retry-due",
+                "state": "warming" if running else "retry-due",
                 "model": self.model,
                 "message": (
-                    "The previous inference failure has expired; a background recheck is due."
+                    "The Ollama model is warming up in the background."
+                    if running
+                    else "The previous inference failure has expired; a background recheck is due."
                 ),
                 "source": status.get("source"),
                 "elapsed_ms": status.get("elapsed_ms"),
@@ -68,6 +86,8 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         return result
 
     def inference_probe_due(self) -> bool:
+        if self.inference_probe_running():
+            return False
         status = self.inference_status()
         if status.get("ready") is None:
             return True
@@ -79,11 +99,12 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         self,
         *,
         force: bool = False,
+        timeout_seconds: float | None = None,
     ) -> asyncio.Task[dict[str, Any]] | None:
         """Start one non-blocking inference probe when a recheck is due."""
         if not force and not self.inference_probe_due():
             return self._inference_probe_task
-        if self._inference_probe_task and not self._inference_probe_task.done():
+        if self.inference_probe_running():
             return self._inference_probe_task
         try:
             loop = asyncio.get_running_loop()
@@ -91,7 +112,10 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
             return None
 
         self._inference_probe_task = loop.create_task(
-            self.probe_inference(force=force)
+            self.probe_inference(
+                force=force,
+                timeout_seconds=timeout_seconds,
+            )
         )
         return self._inference_probe_task
 
@@ -144,7 +168,11 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         self._inference_cache = (time.time(), result)
         return dict(result)
 
-    async def probe_inference(self, force: bool = False) -> dict[str, Any]:
+    async def probe_inference(
+        self,
+        force: bool = False,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
         recent_failure = self.recent_inference_failure()
         if recent_failure and not force:
             return recent_failure
@@ -157,8 +185,6 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
             return current
 
         async with self._inference_probe_lock:
-            # Another queued task may already have completed the probe while this
-            # task was waiting for the lock.
             recent_failure = self.recent_inference_failure()
             if recent_failure and not force:
                 return recent_failure
@@ -178,6 +204,10 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
                     source="probe",
                 )
 
+            allowed_timeout = max(
+                2.0,
+                float(timeout_seconds or self.inference_probe_timeout_seconds),
+            )
             started = time.perf_counter()
             payload = {
                 "model": self.model,
@@ -200,7 +230,7 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
                 response = await self._http.post(
                     f"{self.base_url}/api/chat",
                     json=payload,
-                    timeout=self.inference_probe_timeout_seconds,
+                    timeout=allowed_timeout,
                 )
                 response.raise_for_status()
                 body = response.json()
@@ -235,6 +265,10 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
         recent_failure = self.recent_inference_failure()
         if recent_failure:
             raise OllamaUnavailable(recent_failure["message"])
+        if self.inference_probe_running() and self.inference_status().get("ready") is not True:
+            raise OllamaUnavailable(
+                "The Ollama model is warming up in the background."
+            )
 
         started = time.perf_counter()
         try:
@@ -267,6 +301,11 @@ class OllamaMCPAgent(ResilientOllamaMCPAgent):
             and self._health_cache[1].get("online")
         )
         inference = self.inference_status()
+        if server_online and inference.get("state") == "warming":
+            return (
+                f"Ollama server is online and {self.model} is warming up in the background. "
+                "The local MCP fallback answered meanwhile."
+            )
         if server_online and inference.get("ready") is False:
             if inference.get("state") == "timeout":
                 return (
