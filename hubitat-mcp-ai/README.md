@@ -38,6 +38,14 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 - Keep Read enabled.
 - Enable Write only when you want the assistant to control devices or create rules.
 
-## Status
+## Current comparison build
 
-Initial comparison build. The project intentionally remains separate from HomeBrain so both assistants can be tested side by side.
+### v0.1.4-alpha
+
+- More compact HomeBrain-style summary tiles with smaller text and a fixed two-column mobile/tablet layout.
+- Removes duplicate MCP/Ollama connection tiles while retaining the status banner.
+- Keeps model names such as `qwen3.5:9b` on one line where space allows.
+- Reads Hubitat weather values from both mapping-based and list-based device attributes.
+- Retries transient Ollama health-check failures before showing the service as offline.
+
+The project intentionally remains separate from HomeBrain so both assistants can be tested side by side.
