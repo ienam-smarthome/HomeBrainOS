@@ -44,6 +44,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/fast_fallback_speech.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_inventory.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_dashboard.py',
+    'hubitat-mcp-ai/rootfs/app/fast_fallback_essentials.py',
     'hubitat-mcp-ai/rootfs/app/hub_cpu_probe.py',
     'hubitat-mcp-ai/rootfs/app/presenter.py',
     'hubitat-mcp-ai/rootfs/app/weather_presenter_v2.py',
