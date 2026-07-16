@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -e
 
-exec python3 /app/app.py
+exec python3 /app/entrypoint.py
