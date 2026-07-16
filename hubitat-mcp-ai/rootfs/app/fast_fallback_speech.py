@@ -22,6 +22,8 @@ _NUMBER_WORDS = {
     "ten": "10",
 }
 
+_HUMIDITY_APPLIANCE_WORDS = {"humidifier", "dehumidifier"}
+
 
 def normalise_spoken_device_name(value: str) -> str:
     """Normalise common speech-to-text variants without changing device meaning."""
@@ -34,8 +36,24 @@ def normalise_spoken_device_name(value: str) -> str:
     return " ".join(normalised)
 
 
+def _humidity_speech_key(value: str) -> str | None:
+    """Return a shared key for humidifier/dehumidifier speech variants.
+
+    Speech recognition commonly drops the short leading "de" sound. This key is
+    used only after exact matching has failed, and only a unique full-label match
+    is accepted. Other words and number suffixes must still match exactly.
+    """
+    words = normalise_spoken_device_name(value).split()
+    if not any(word in _HUMIDITY_APPLIANCE_WORDS for word in words):
+        return None
+    return " ".join(
+        "humidity-appliance" if word in _HUMIDITY_APPLIANCE_WORDS else word
+        for word in words
+    )
+
+
 class FastFallbackRouter(DeviceHealthFastFallbackRouter):
-    """Fast fallback with safe speech-number matching and richer ambiguity data."""
+    """Fast fallback with speech-aware matching and verified device controls."""
 
     @staticmethod
     def _match_device(
@@ -70,6 +88,21 @@ class FastFallbackRouter(DeviceHealthFastFallbackRouter):
         alternatives = [_label(item) for score, item in scored if score >= 0.35]
         return None, alternatives
 
+    @staticmethod
+    def _humidity_speech_alias_match(
+        requested_name: str,
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        requested_key = _humidity_speech_key(requested_name)
+        if not requested_key:
+            return None
+        matches = [
+            item
+            for item in candidates
+            if _label(item) and _humidity_speech_key(_label(item)) == requested_key
+        ]
+        return matches[0] if len(matches) == 1 else None
+
     async def _control_device(self, requested_name: str, action: str) -> dict[str, Any]:
         answer = await super()._control_device(requested_name, action)
         if answer.get("intent") not in {
@@ -79,13 +112,33 @@ class FastFallbackRouter(DeviceHealthFastFallbackRouter):
             return answer
 
         # The MCP label filter may not equate spoken numbers with digits. Retry
-        # against the live switch inventory, then repeat the command using the
-        # authoritative label when one exact normalised match exists.
+        # against the complete live switch inventory before involving Ollama.
         live_result = await self._live_devices("Switch")
         candidates = self._device_rows(live_result.data)
         match, alternatives = self._match_device(requested_name, candidates)
         if match:
             return await super()._control_device(_label(match), action)
+
+        # Speech-to-text often hears "dehumidifier" as "humidifier". Treat those
+        # words as equivalent only when every other label token (including its
+        # number) matches and exactly one live switch candidate exists.
+        speech_alias = self._humidity_speech_alias_match(requested_name, candidates)
+        if speech_alias:
+            resolved_label = _label(speech_alias)
+            resolved = await super()._control_device(resolved_label, action)
+            resolved = dict(resolved)
+            resolved.update(
+                {
+                    "speech_alias_applied": True,
+                    "heard_device_name": requested_name,
+                    "resolved_device_name": resolved_label,
+                }
+            )
+            resolved["message"] = (
+                f'Interpreted “{requested_name}” as “{resolved_label}” from speech.\n'
+                + str(resolved.get("message") or "")
+            ).strip()
+            return resolved
 
         enriched = dict(answer)
         enriched.update(
@@ -108,4 +161,7 @@ class FastFallbackRouter(DeviceHealthFastFallbackRouter):
         return enriched
 
 
-__all__ = ["FastFallbackRouter", "normalise_spoken_device_name"]
+__all__ = [
+    "FastFallbackRouter",
+    "normalise_spoken_device_name",
+]
