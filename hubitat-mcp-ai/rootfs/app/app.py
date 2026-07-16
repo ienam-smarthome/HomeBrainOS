@@ -20,7 +20,7 @@ from routing import dedupe_current_query, is_fast_path_query
 from webui import render_page
 
 
-VERSION = "0.1.12-alpha"
+VERSION = "0.1.13-alpha"
 OPTIONS_PATH = Path("/data/options.json")
 
 
@@ -35,6 +35,7 @@ def load_options() -> dict[str, Any]:
         "ollama_total_timeout_seconds": 40,
         "ollama_health_timeout_seconds": 3,
         "ollama_inference_probe_timeout_seconds": 20,
+        "ollama_inference_warmup_timeout_seconds": 90,
         "ollama_inference_failure_ttl_seconds": 60,
         "ollama_num_ctx": 4096,
         "ollama_num_predict": 160,
@@ -105,6 +106,9 @@ ollama = OllamaMCPAgent(
     inference_probe_timeout_seconds=float(
         OPTIONS.get("ollama_inference_probe_timeout_seconds") or 20
     ),
+    inference_warmup_timeout_seconds=float(
+        OPTIONS.get("ollama_inference_warmup_timeout_seconds") or 90
+    ),
     inference_failure_ttl_seconds=float(
         OPTIONS.get("ollama_inference_failure_ttl_seconds") or 60
     ),
@@ -147,6 +151,7 @@ def inference_label(status: dict[str, Any]) -> str:
     state = str(status.get("state") or "unknown")
     return {
         "ready": "Ready",
+        "warming": "Warming up",
         "timeout": "Timed out",
         "error": "Failed",
         "server-offline": "Server offline",
@@ -176,7 +181,9 @@ async def build_ollama_diagnostics(force_probe: bool = False) -> dict[str, Any]:
         else:
             inference = ollama.inference_status()
             if server.get("online") and ollama.inference_probe_due():
-                ollama.schedule_inference_probe()
+                ollama.schedule_inference_probe(
+                    timeout_seconds=ollama.inference_warmup_timeout_seconds
+                )
                 inference = ollama.inference_status()
 
     server_text = "Online" if server.get("online") else "Offline"
@@ -214,6 +221,11 @@ async def build_ollama_diagnostics(force_probe: bool = False) -> dict[str, Any]:
             "label": "Model",
             "value": model,
             "icon": "🤖",
+        },
+        {
+            "label": "Warm-up limit",
+            "value": f"{int(ollama.inference_warmup_timeout_seconds)}s",
+            "icon": "🔥",
         },
         {
             "label": "Failure cache",
@@ -255,7 +267,8 @@ async def build_ollama_diagnostics(force_probe: bool = False) -> dict[str, Any]:
             "metrics": metrics,
             "items": [],
             "note": (
-                "The server check uses /api/tags. Inference readiness uses a small /api/chat request."
+                "The server check uses /api/tags. A longer background /api/chat warm-up "
+                "loads slower CPU-hosted models without blocking normal MCP questions."
             ),
         },
         "technical": json.dumps(
@@ -302,7 +315,9 @@ async def status() -> dict[str, Any]:
         and ollama_status.get("online")
         and ollama.inference_probe_due()
     ):
-        ollama.schedule_inference_probe()
+        ollama.schedule_inference_probe(
+            timeout_seconds=ollama.inference_warmup_timeout_seconds
+        )
         inference = ollama.inference_status()
 
     return {
@@ -355,7 +370,9 @@ async def ask(request: AskRequest) -> dict[str, Any]:
 
         if option_bool("ollama_enabled", True):
             asyncio.create_task(schedule_background_health_check(ollama.health))
-            ollama.schedule_inference_probe()
+            ollama.schedule_inference_probe(
+                timeout_seconds=ollama.inference_warmup_timeout_seconds
+            )
         return answer
 
     ollama_error = "Ollama is disabled"
@@ -413,8 +430,8 @@ async def ask(request: AskRequest) -> dict[str, Any]:
                 ollama.fallback_reason()
                 + "\n\n"
                 + "The fallback currently handles device on/off, lights and switches on, "
-                "low batteries, device health, hub resources, weather, rooms, home status, "
-                "and hub health."
+                "low batteries, device health, hub resources, period-specific weather and rain, "
+                "rooms, home status, and hub health."
             )
         return answer
 
@@ -462,7 +479,10 @@ async def refresh() -> dict[str, Any]:
 @app.on_event("startup")
 async def startup() -> None:
     if option_bool("ollama_enabled", True):
-        ollama.schedule_inference_probe(force=True)
+        ollama.schedule_inference_probe(
+            force=True,
+            timeout_seconds=ollama.inference_warmup_timeout_seconds,
+        )
 
 
 @app.on_event("shutdown")
