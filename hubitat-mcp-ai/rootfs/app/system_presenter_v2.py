@@ -139,6 +139,14 @@ def _app_status(data: dict[str, Any]) -> dict[str, Any]:
 
 def present_hub_info_v2(value: Any) -> tuple[str, dict[str, Any]]:
     base_message, base_display = present_hub_info(value)
+    # The older presenter collapses platformUpdate into a single line. Remove it
+    # so the tri-state platform result below is the only update statement shown.
+    base_message = "\n".join(
+        line
+        for line in base_message.splitlines()
+        if not line.strip().lower().startswith("platform update:")
+    )
+
     data = first_mapping(value)
     platform = _platform_status(data)
     app_update = _app_status(data)
@@ -149,7 +157,13 @@ def present_hub_info_v2(value: Any) -> tuple[str, dict[str, Any]]:
             {
                 "label": "Hub update",
                 "value": platform["label"],
-                "icon": "⬆️" if platform["available"] else "✅" if platform["available"] is False else "❔",
+                "icon": (
+                    "⬆️"
+                    if platform["available"] is True
+                    else "✅"
+                    if platform["available"] is False
+                    else "❔"
+                ),
             },
             {
                 "label": "MCP app update",
@@ -170,7 +184,11 @@ def present_hub_info_v2(value: Any) -> tuple[str, dict[str, Any]]:
                 "tone": platform["tone"],
             }
         )
-    if app_update["available"] is True or app_update["label"] in {"Checking", "Check failed", "Unknown"}:
+    if app_update["available"] is True or app_update["label"] in {
+        "Checking",
+        "Check failed",
+        "Unknown",
+    }:
         items.append(
             {
                 "icon": "📦",
