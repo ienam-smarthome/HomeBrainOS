@@ -6,6 +6,7 @@ import uvicorn
 
 import app as application
 from cancellable_requests import install_cancellable_ask
+from fast_fallback_routine import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from ollama_agent_quality import QualityNaturalHubitatOllamaAgent
 
@@ -13,10 +14,14 @@ from ollama_agent_quality import QualityNaturalHubitatOllamaAgent
 RELEASE_VERSION = "0.2.3-alpha"
 
 
-def _replace_ollama_agent() -> None:
+def _replace_runtime() -> None:
     previous = application.ollama
     options = application.OPTIONS
 
+    application.fallback = FastFallbackRouter(
+        application.mcp,
+        attention_stale_hours=float(options.get("attention_stale_hours") or 48),
+    )
     application.ollama = QualityNaturalHubitatOllamaAgent(
         client=application.mcp,
         base_url=str(options.get("ollama_base_url") or ""),
@@ -57,7 +62,7 @@ def _replace_ollama_agent() -> None:
         pass
 
 
-_replace_ollama_agent()
+_replace_runtime()
 install_fastpath_ai_handoff(application)
 request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
