@@ -10,6 +10,7 @@ from dashboard_api import install_dashboard_api
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_index import DeviceIntelligenceIndex
+from device_intelligence_webui import install_device_intelligence_webui
 from fast_fallback_device_index import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from mcp_tool_catalogue import install_mcp_tool_catalogue
@@ -134,6 +135,7 @@ install_mcp_tool_catalogue(application, application.mcp)
 request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
+install_device_intelligence_webui(application)
 app = application.app
 
 
