@@ -27,7 +27,7 @@ options:
   ollama_planner_timeout_seconds: 20
   ollama_response_timeout_seconds: 75
   ollama_routine_response_timeout_seconds: 40
-  ollama_agent_timeout_seconds: 120
+  ollama_agent_timeout_seconds: 90
   ollama_num_ctx: 4096
   ollama_num_predict: 140
   ollama_keep_alive: "30m"
