@@ -7,20 +7,23 @@ import uvicorn
 import app as application
 from cancellable_requests import install_cancellable_ask
 from dashboard_api import install_dashboard_api
-from fast_fallback_device_types_live import FastFallbackRouter
+from device_index_broker import IndexedMCPStateBroker
+from device_intelligence_api import install_device_intelligence_api
+from device_intelligence_catalogue_safe import SafeCapabilityCatalogueDeviceIndex
+from device_intelligence_webui import install_device_intelligence_webui
+from fast_fallback_device_index import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
-from mcp_state_broker import MCPStateBroker
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.3.8-alpha"
+RELEASE_VERSION = "0.3.9-alpha"
 
 
 def _replace_mcp_client() -> None:
     options = application.OPTIONS
-    application.mcp = MCPStateBroker(
+    application.mcp = IndexedMCPStateBroker(
         application.mcp,
         device_ttl_seconds=float(
             options.get("mcp_device_cache_seconds") or 12
@@ -32,9 +35,26 @@ def _replace_mcp_client() -> None:
     )
 
 
-def _replace_fallback_router() -> None:
+def _create_device_index() -> SafeCapabilityCatalogueDeviceIndex:
+    options = application.OPTIONS
+    index = SafeCapabilityCatalogueDeviceIndex(
+        application.mcp,
+        ttl_seconds=float(options.get("device_index_ttl_seconds") or 15),
+        capability_ttl_seconds=float(
+            options.get("device_index_capability_ttl_seconds") or 60
+        ),
+        metadata_ttl_seconds=float(
+            options.get("device_index_metadata_ttl_seconds") or 120
+        ),
+    )
+    application.device_index = index
+    return index
+
+
+def _replace_fallback_router(index: SafeCapabilityCatalogueDeviceIndex) -> None:
     application.fallback = FastFallbackRouter(
         application.mcp,
+        device_index=index,
         attention_stale_hours=float(
             application.OPTIONS.get("attention_stale_hours") or 48
         ),
@@ -91,7 +111,8 @@ def _replace_ollama_agent() -> None:
 
 
 _replace_mcp_client()
-_replace_fallback_router()
+device_index = _create_device_index()
+_replace_fallback_router(device_index)
 _replace_ollama_agent()
 install_fastpath_ai_handoff(application)
 request_traces = install_request_tracing(
@@ -102,12 +123,35 @@ request_traces = install_request_tracing(
 dashboard_snapshot = install_dashboard_api(
     application,
     ttl_seconds=float(application.OPTIONS.get("dashboard_refresh_seconds") or 30),
+    device_index=device_index,
 )
+
+
+async def _invalidate_dashboard(category: str) -> None:
+    if category in {"devices", "all"}:
+        await dashboard_snapshot.invalidate()
+
+
+application.mcp.register_invalidator(_invalidate_dashboard)
+install_device_intelligence_api(application, device_index)
 install_mcp_tool_catalogue(application, application.mcp)
 request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
+install_device_intelligence_webui(application)
 app = application.app
+
+
+@app.on_event("startup")
+async def warm_device_intelligence_index() -> None:
+    try:
+        await asyncio.gather(
+            device_index.summary_result(),
+            device_index.metadata_result(),
+        )
+    except Exception:
+        # Startup must remain available even when Hubitat is temporarily offline.
+        pass
 
 
 @app.on_event("shutdown")
