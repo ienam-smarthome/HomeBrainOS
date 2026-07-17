@@ -55,6 +55,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/fast_fallback_prayer_times.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_device_types.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_device_types_compat.py',
+    'hubitat-mcp-ai/rootfs/app/fast_fallback_device_types_live.py',
     'hubitat-mcp-ai/rootfs/app/hub_cpu_probe.py',
     'hubitat-mcp-ai/rootfs/app/hub_metric_formatting.py',
     'hubitat-mcp-ai/rootfs/app/presenter.py',
