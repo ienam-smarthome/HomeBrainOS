@@ -108,9 +108,10 @@ _FAST_READ_PATTERNS = (
     r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
     r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
     # Exact room inventories. The fallback verifies the requested name against
-    # Hubitat rooms before returning devices, so "List Apps" can mean the Apps room.
-    r"^(?:list|show|display)\s+(?:all\s+)?devices\s+(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
-    r"^(?:what|which)\s+devices\s+(?:are\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
+    # Hubitat rooms before returning devices, so ordinary phrases are not treated
+    # as room names. "Find devices listed under Apps" is accepted as well.
+    r"^(?:list|show|display|find)\s+(?:all\s+)?devices\s+(?:listed\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
+    r"^(?:what|which)\s+devices\s+(?:are\s+)?(?:listed\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
     r"^(?:list|show|display)\s+(?:the\s+)?[a-z0-9][a-z0-9 &'_\-]{0,50}(?:\s+room(?:\s+devices)?)?\??$",
 )
 
