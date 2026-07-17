@@ -9,7 +9,7 @@ from cancellable_requests import install_cancellable_ask
 from dashboard_api import install_dashboard_api
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
-from device_intelligence_index import DeviceIntelligenceIndex
+from device_intelligence_catalogue import CapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
 from fast_fallback_device_index import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
@@ -35,20 +35,23 @@ def _replace_mcp_client() -> None:
     )
 
 
-def _create_device_index() -> DeviceIntelligenceIndex:
+def _create_device_index() -> CapabilityCatalogueDeviceIndex:
     options = application.OPTIONS
-    index = DeviceIntelligenceIndex(
+    index = CapabilityCatalogueDeviceIndex(
         application.mcp,
         ttl_seconds=float(options.get("device_index_ttl_seconds") or 15),
         capability_ttl_seconds=float(
             options.get("device_index_capability_ttl_seconds") or 60
+        ),
+        metadata_ttl_seconds=float(
+            options.get("device_index_metadata_ttl_seconds") or 120
         ),
     )
     application.device_index = index
     return index
 
 
-def _replace_fallback_router(index: DeviceIntelligenceIndex) -> None:
+def _replace_fallback_router(index: CapabilityCatalogueDeviceIndex) -> None:
     application.fallback = FastFallbackRouter(
         application.mcp,
         device_index=index,
@@ -142,7 +145,10 @@ app = application.app
 @app.on_event("startup")
 async def warm_device_intelligence_index() -> None:
     try:
-        await device_index.summary_result()
+        await asyncio.gather(
+            device_index.summary_result(),
+            device_index.metadata_result(),
+        )
     except Exception:
         # Startup must remain available even when Hubitat is temporarily offline.
         pass
