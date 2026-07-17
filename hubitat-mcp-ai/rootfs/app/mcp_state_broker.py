@@ -93,6 +93,7 @@ class MCPStateBroker:
         self.hub_ttl_seconds = max(0.0, float(hub_ttl_seconds))
         self._cache: dict[str, _CacheEntry] = {}
         self._inflight: dict[str, asyncio.Task[MCPToolResult]] = {}
+        self._generation = {"devices": 0, "catalog": 0, "hub": 0}
         self._lock = asyncio.Lock()
         self._stats = {
             "hits": 0,
@@ -101,6 +102,7 @@ class MCPStateBroker:
             "bypassed": 0,
             "invalidations": 0,
             "upstream_calls": 0,
+            "discarded_stale_fetches": 0,
         }
 
     def __getattr__(self, name: str) -> Any:
@@ -113,6 +115,11 @@ class MCPStateBroker:
     @property
     def server_info(self) -> dict[str, Any]:
         return self.client.server_info
+
+    async def initialize(self, force: bool = False) -> None:
+        if force:
+            await self.clear()
+        await self.client.initialize(force=force)
 
     async def close(self) -> None:
         await self.client.close()
@@ -190,12 +197,14 @@ class MCPStateBroker:
                 )
             else:
                 self._stats["misses"] += 1
+                generation = self._generation[category]
                 task = asyncio.create_task(
                     self._fetch_and_store(
                         key=key,
                         name=name,
                         arguments=arguments,
                         category=category,
+                        generation=generation,
                         ttl_seconds=ttl_seconds,
                     ),
                     name=f"hmcp-cache-{name}",
@@ -211,6 +220,7 @@ class MCPStateBroker:
         name: str,
         arguments: dict[str, Any],
         category: str,
+        generation: int,
         ttl_seconds: float,
     ) -> MCPToolResult:
         started = time.perf_counter()
@@ -229,12 +239,15 @@ class MCPStateBroker:
             if not result.is_error:
                 now = time.monotonic()
                 async with self._lock:
-                    self._cache[key] = _CacheEntry(
-                        value=result,
-                        stored_at=now,
-                        expires_at=now + ttl_seconds,
-                        category=category,
-                    )
+                    if self._generation[category] == generation:
+                        self._cache[key] = _CacheEntry(
+                            value=result,
+                            stored_at=now,
+                            expires_at=now + ttl_seconds,
+                            category=category,
+                        )
+                    else:
+                        self._stats["discarded_stale_fetches"] += 1
             return result
         finally:
             async with self._lock:
@@ -261,6 +274,11 @@ class MCPStateBroker:
 
     async def invalidate(self, category: str = "all") -> int:
         async with self._lock:
+            categories = tuple(self._generation) if category == "all" else (category,)
+            for item in categories:
+                if item in self._generation:
+                    self._generation[item] += 1
+
             if category == "all":
                 count = len(self._cache)
                 self._cache.clear()
@@ -273,8 +291,7 @@ class MCPStateBroker:
                 for key in keys:
                     self._cache.pop(key, None)
                 count = len(keys)
-            if count:
-                self._stats["invalidations"] += 1
+            self._stats["invalidations"] += 1
         _trace_event(
             {
                 "tool": "cache.invalidate",
