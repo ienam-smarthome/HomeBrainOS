@@ -71,6 +71,7 @@ _PLANNER_TERMS = (
     "based on",
     "depending on",
     "work out",
+    "backup",
 )
 
 _CONTROL_VERBS = (
@@ -96,6 +97,10 @@ _FAST_READ_PATTERNS = (
     r"^(?:what(?:'s| is)\s+)?(?:the\s+)?weather(?:\s+(?:now|today|tomorrow))?\??$",
     r"^(?:what(?:'s| is)\s+)?(?:the\s+)?forecast(?:\s+(?:today|tomorrow))?\??$",
     r"^(?:will\s+it\s+rain|is\s+it\s+raining)(?:\s+(?:now|today|tomorrow))?\??$",
+    # Prayer times come from the selected Pray times device, not Ollama.
+    r"^(?:what\s+time\s+(?:is|does)|when\s+(?:is|does)|tell\s+me\s+(?:the\s+)?)\s*(?:fajr|fajar|sunrise|shuruq|ishraq|dhuhr|dhur|zuhr|zohar|asr|maghrib|magrib|isha|ishaa)(?:\s+(?:start|begin|starts|begins))?(?:\s+(?:today|tonight))?\??$",
+    r"^(?:fajr|fajar|sunrise|shuruq|ishraq|dhuhr|dhur|zuhr|zohar|asr|maghrib|magrib|isha|ishaa)(?:\s+prayer)?\s+time(?:\s+(?:today|tonight))?\??$",
+    r"^(?:show|list|display|give\s+me|what\s+are|what(?:'s|\s+is))\s+(?:today(?:'s)?\s+)?(?:pray|prayer)\s+times(?:\s+today)?\??$",
     r"^(?:list|show)\s+(?:all\s+)?devices\??$",
     r"^(?:list|show)\s+(?:all\s+)?lights\??$",
     r"^compare\s+(?:humidity|temperature)\s+(?:in|between)\s+(?:the\s+)?.+?\s+and\s+(?:the\s+)?.+?\??$",
@@ -188,7 +193,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(term in q for term in _PLANNER_TERMS):
         return RouteDecision(
             "ollama-planner",
-            "reasoning, recommendation, automation or multi-source request",
+            "reasoning, recommendation, automation, backup or multi-source request",
         )
 
     return RouteDecision(
