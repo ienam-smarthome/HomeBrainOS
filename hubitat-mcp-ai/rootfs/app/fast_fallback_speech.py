@@ -22,6 +22,13 @@ _NUMBER_WORDS = {
     "ten": "10",
 }
 
+# Safe speech/name variants that preserve the intended device meaning. The
+# normalised form is accepted only when exactly one selected MCP device matches.
+_DEVICE_WORD_ALIASES = {
+    "prayer": "pray",
+    "prayers": "pray",
+}
+
 _HUMIDITY_APPLIANCE_WORDS = {"humidifier", "dehumidifier"}
 
 
@@ -32,7 +39,9 @@ def normalise_spoken_device_name(value: str) -> str:
     for word in words:
         if word == "number":
             continue
-        normalised.append(_NUMBER_WORDS.get(word, word))
+        word = _NUMBER_WORDS.get(word, word)
+        word = _DEVICE_WORD_ALIASES.get(word, word)
+        normalised.append(word)
     return " ".join(normalised)
 
 

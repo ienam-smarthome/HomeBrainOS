@@ -107,6 +107,19 @@ _FAST_READ_PATTERNS = (
     r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
     r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
     r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
+    # High-value read-only tools hidden behind Kingpanther category gateways.
+    r"^(?:show|get|list|find)?\s*(?:recent\s+)?hub\s+(?:logs?|errors?|warnings?)(?:\s+and\s+(?:logs?|errors?|warnings?))?\??$",
+    r"^(?:show|list|get|find)\s+(?:the\s+)?(?:slow|busy)\s+(?:apps?|devices?)\??$",
+    r"^(?:show|list|get)\s+(?:the\s+)?(?:hub\s+)?performance(?:\s+stats?)?\??$",
+    r"^(?:show|list|get)\s+(?:the\s+)?(?:scheduled|running|hub)\s+(?:jobs?|tasks?)\??$",
+    r"^(?:list|show|find|get)\s+(?:all\s+)?(?:installed\s+)?(?:hubitat\s+)?apps?\??$",
+    r"^(?:list|show|get)\s+(?:the\s+)?(?:hpm|installed|package manager)\s+packages?\??$",
+    r"^(?:list|show|get)\s+(?:the\s+)?(?:hub|global)\s+variables?\??$",
+    r"^(?:list|show|get)\s+(?:the\s+)?(?:easy|hub)?\s*dashboards?\??$",
+    r"^(?:show|get)\s+(?:the\s+)?(?:hub\s+)?(?:memory|cpu)\s+(?:history|trend)\??$",
+    r"^(?:show|get)\s+(?:the\s+)?(?:z-wave|zwave|zigbee|matter|radio)\s+details?\??$",
+    r"^(?:show|list|get|find)\s+(?:the\s+)?(?:recent\s+)?events\s+(?:for|from|of)\s+.+?\??$",
+    r"^(?:show|list|get)\s+.+?\s+events\??$",
     # Exact room inventories. The fallback verifies the requested name against
     # Hubitat rooms before returning devices, so ordinary phrases are not treated
     # as room names. "Find devices listed under Apps" is accepted as well.
@@ -163,7 +176,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
-            "authoritative live-state, weather, room inventory, comparison or diagnostic query",
+            "authoritative live-state, gateway read, room inventory, comparison or diagnostic query",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):

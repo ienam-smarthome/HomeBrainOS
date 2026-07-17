@@ -7,14 +7,15 @@ import uvicorn
 import app as application
 from cancellable_requests import install_cancellable_ask
 from dashboard_api import install_dashboard_api
-from fast_fallback_device_status import FastFallbackRouter
+from fast_fallback_extended_reads import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from mcp_state_broker import MCPStateBroker
+from mcp_tool_catalogue import install_mcp_tool_catalogue
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.3.3-alpha"
+RELEASE_VERSION = "0.3.4-alpha"
 
 
 def _replace_mcp_client() -> None:
@@ -102,6 +103,7 @@ dashboard_snapshot = install_dashboard_api(
     application,
     ttl_seconds=float(application.OPTIONS.get("dashboard_refresh_seconds") or 30),
 )
+install_mcp_tool_catalogue(application, application.mcp)
 request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
@@ -39,13 +40,13 @@ class _CacheEntry:
 
 
 class MCPStateBroker:
-    """Shared, short-lived cache and request coalescer for Hubitat MCP reads.
+    """Shared cache, request coalescer and gateway-aware MCP proxy.
 
-    The broker is a transparent proxy around :class:`HubitatMCPClient`. Existing
-    fallback routes, the dashboard and the Ollama tool agent therefore share the
-    same authoritative snapshots without each issuing a duplicate hub request.
-    Device-control writes are never cached and invalidate affected snapshots
-    before the caller performs its verification read.
+    Kingpanther's current MCP server publishes a compact list of core tools and
+    category gateways. The descriptions of those gateways enumerate the hidden
+    tools they contain. This broker transparently translates a valid hidden tool
+    request such as ``hub_get_logs`` into the correct gateway call, while keeping
+    writes uncached and preserving the original tool name in traces and results.
     """
 
     DEVICE_READ_TOOLS = {"hub_list_devices", "hub_read_devices"}
@@ -69,6 +70,8 @@ class MCPStateBroker:
         "hub_pause_rule",
         "hub_resume_rule",
         "hub_run_rule",
+        "hub_set_rule",
+        "hub_call_rule",
     )
     GLOBAL_WRITE_PREFIXES = (
         "hub_set_mode",
@@ -78,6 +81,7 @@ class MCPStateBroker:
         "hub_restore",
         "hub_update_firmware",
     )
+    GATEWAY_PREFIXES = ("hub_read_", "hub_manage_")
 
     def __init__(
         self,
@@ -95,6 +99,7 @@ class MCPStateBroker:
         self._inflight: dict[str, asyncio.Task[MCPToolResult]] = {}
         self._generation = {"devices": 0, "catalog": 0, "hub": 0}
         self._lock = asyncio.Lock()
+        self._gateway_map: dict[str, str] = {}
         self._stats = {
             "hits": 0,
             "misses": 0,
@@ -103,6 +108,7 @@ class MCPStateBroker:
             "invalidations": 0,
             "upstream_calls": 0,
             "discarded_stale_fetches": 0,
+            "gateway_translations": 0,
         }
 
     def __getattr__(self, name: str) -> Any:
@@ -119,10 +125,85 @@ class MCPStateBroker:
     async def initialize(self, force: bool = False) -> None:
         if force:
             await self.clear()
+            self._gateway_map.clear()
         await self.client.initialize(force=force)
 
     async def close(self) -> None:
         await self.client.close()
+
+    async def gateway_map(self, refresh: bool = False) -> dict[str, str]:
+        """Return hidden tool → preferred gateway mappings from tools/list."""
+        if self._gateway_map and not refresh:
+            return dict(self._gateway_map)
+
+        tools = await self.client.list_tools(refresh=refresh)
+        visible = {tool.name for tool in tools}
+        candidates: dict[str, list[str]] = {}
+        for tool in tools:
+            if not tool.name.startswith(self.GATEWAY_PREFIXES):
+                continue
+            names = set(re.findall(r"\bhub_[a-z0-9_]+\b", tool.description or ""))
+            names.discard(tool.name)
+            for hidden in names:
+                if hidden in visible:
+                    continue
+                candidates.setdefault(hidden, []).append(tool.name)
+
+        resolved: dict[str, str] = {}
+        for hidden, gateways in candidates.items():
+            gateways.sort(key=lambda gateway: self._gateway_priority(hidden, gateway))
+            resolved[hidden] = gateways[0]
+        self._gateway_map = resolved
+        return dict(resolved)
+
+    @staticmethod
+    def _gateway_priority(hidden: str, gateway: str) -> tuple[int, str]:
+        read_name = hidden.startswith(("hub_get_", "hub_list_", "hub_read_"))
+        if read_name and gateway.startswith("hub_read_"):
+            return 0, gateway
+        if gateway.startswith("hub_manage_"):
+            return 1, gateway
+        return 2, gateway
+
+    async def _translate_tool_call(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+    ) -> tuple[str, dict[str, Any], str | None]:
+        tools = await self.client.list_tools()
+        visible = {tool.name for tool in tools}
+        if name in visible or not name.startswith("hub_"):
+            return name, arguments, None
+
+        gateway = (await self.gateway_map()).get(name)
+        if not gateway:
+            return name, arguments, None
+        self._stats["gateway_translations"] += 1
+        return gateway, {"tool": name, "args": arguments}, gateway
+
+    async def _upstream_call(
+        self,
+        requested_name: str,
+        arguments: dict[str, Any],
+    ) -> tuple[MCPToolResult, str | None]:
+        upstream_name, upstream_args, gateway = await self._translate_tool_call(
+            requested_name,
+            arguments,
+        )
+        result = await self.client.call_tool(upstream_name, upstream_args)
+        if gateway:
+            raw = dict(result.raw) if isinstance(result.raw, dict) else {"raw": result.raw}
+            raw["gateway"] = gateway
+            raw["requestedTool"] = requested_name
+            result = MCPToolResult(
+                name=requested_name,
+                arguments=arguments,
+                raw=raw,
+                text=result.text,
+                data=result.data,
+                is_error=result.is_error,
+            )
+        return result, gateway
 
     async def call_tool(
         self,
@@ -135,18 +216,20 @@ class MCPStateBroker:
             started = time.perf_counter()
             self._stats["bypassed"] += 1
             self._stats["upstream_calls"] += 1
+            gateway: str | None = None
             try:
-                result = await self.client.call_tool(name, arguments)
+                result, gateway = await self._upstream_call(name, arguments)
             finally:
                 duration_ms = round((time.perf_counter() - started) * 1000)
-                _trace_event(
-                    {
-                        "tool": name,
-                        "cache": "bypass",
-                        "duration_ms": duration_ms,
-                        "argument_keys": sorted(arguments),
-                    }
-                )
+                event = {
+                    "tool": name,
+                    "cache": "bypass",
+                    "duration_ms": duration_ms,
+                    "argument_keys": sorted(arguments),
+                }
+                if gateway:
+                    event["gateway"] = gateway
+                _trace_event(event)
             if not result.is_error:
                 await self._invalidate_for_write(name)
             return result
@@ -156,15 +239,16 @@ class MCPStateBroker:
             started = time.perf_counter()
             self._stats["bypassed"] += 1
             self._stats["upstream_calls"] += 1
-            result = await self.client.call_tool(name, arguments)
-            _trace_event(
-                {
-                    "tool": name,
-                    "cache": "disabled",
-                    "duration_ms": round((time.perf_counter() - started) * 1000),
-                    "argument_keys": sorted(arguments),
-                }
-            )
+            result, gateway = await self._upstream_call(name, arguments)
+            event = {
+                "tool": name,
+                "cache": "disabled",
+                "duration_ms": round((time.perf_counter() - started) * 1000),
+                "argument_keys": sorted(arguments),
+            }
+            if gateway:
+                event["gateway"] = gateway
+            _trace_event(event)
             return result
 
         key = self._cache_key(name, arguments)
@@ -226,16 +310,17 @@ class MCPStateBroker:
         started = time.perf_counter()
         self._stats["upstream_calls"] += 1
         try:
-            result = await self.client.call_tool(name, arguments)
+            result, gateway = await self._upstream_call(name, arguments)
             duration_ms = round((time.perf_counter() - started) * 1000)
-            _trace_event(
-                {
-                    "tool": name,
-                    "cache": "miss",
-                    "duration_ms": duration_ms,
-                    "argument_keys": sorted(arguments),
-                }
-            )
+            event = {
+                "tool": name,
+                "cache": "miss",
+                "duration_ms": duration_ms,
+                "argument_keys": sorted(arguments),
+            }
+            if gateway:
+                event["gateway"] = gateway
+            _trace_event(event)
             if not result.is_error:
                 now = time.monotonic()
                 async with self._lock:
@@ -312,6 +397,7 @@ class MCPStateBroker:
             **self._stats,
             "entries": len(live_entries),
             "inflight": len(self._inflight),
+            "gateway_mappings": len(self._gateway_map),
             "device_ttl_seconds": self.device_ttl_seconds,
             "catalog_ttl_seconds": self.catalog_ttl_seconds,
             "hub_ttl_seconds": self.hub_ttl_seconds,
