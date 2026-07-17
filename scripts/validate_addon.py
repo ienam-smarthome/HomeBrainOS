@@ -49,6 +49,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/fast_fallback_essentials.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_room_inventory.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_release.py',
+    'hubitat-mcp-ai/rootfs/app/fast_fallback_device_status.py',
     'hubitat-mcp-ai/rootfs/app/hub_cpu_probe.py',
     'hubitat-mcp-ai/rootfs/app/hub_metric_formatting.py',
     'hubitat-mcp-ai/rootfs/app/presenter.py',
