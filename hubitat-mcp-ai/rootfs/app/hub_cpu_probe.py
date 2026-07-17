@@ -8,6 +8,8 @@ import httpx
 
 
 _PERCENT_PATTERNS = (
+    # Hub Info-style output: "CPU Load/Load% 0.6 / 15.0 %".
+    r"cpu\s*load\s*/\s*load\s*%?\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*%",
     r"(?:cpu(?:\s+(?:usage|load))?|usage)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*%",
     r"([0-9]+(?:\.[0-9]+)?)\s*%\s*(?:cpu|usage|load)",
 )
@@ -29,7 +31,14 @@ def _private_host(value: Any) -> str | None:
 
 
 def parse_cpu_info(value: str) -> dict[str, Any]:
-    """Parse Hubitat's local /hub/cpuInfo text without inventing a percentage."""
+    """Parse Hubitat's local /hub/cpuInfo text and report CPU percentage.
+
+    Hubitat installations expose CPU data in more than one format. Some return an
+    explicit percentage, some return ``load/load%`` and others only return a
+    one-minute load average plus processor count. In the final case the percentage
+    is calculated as ``load_average / processors * 100`` and clearly marked as a
+    derived value.
+    """
     text = str(value or "").strip()
     result: dict[str, Any] = {
         "available": False,
@@ -44,9 +53,27 @@ def parse_cpu_info(value: str) -> dict[str, Any]:
         result["error"] = "The hub CPU endpoint requires local hub authentication."
         return result
 
-    for pattern in _PERCENT_PATTERNS:
+    for index, pattern in enumerate(_PERCENT_PATTERNS):
         match = re.search(pattern, text, flags=re.I)
-        if match:
+        if not match:
+            continue
+
+        if index == 0:
+            load_average = float(match.group(1))
+            percent = float(match.group(2))
+            result.update(
+                {
+                    "available": True,
+                    "mode": "load-and-percent",
+                    "load_average": load_average,
+                    "percent": percent,
+                    "value": f"{percent:g}%",
+                    "label": "CPU load",
+                    "summary": f"{load_average:g} / {percent:g}%",
+                    "derived_percent": False,
+                }
+            )
+        else:
             percent = float(match.group(1))
             result.update(
                 {
@@ -55,27 +82,44 @@ def parse_cpu_info(value: str) -> dict[str, Any]:
                     "percent": percent,
                     "value": f"{percent:g}%",
                     "label": "CPU load",
+                    "derived_percent": False,
                 }
             )
-            return result
+        return result
 
-    processors_match = re.search(r"processors?\s*[:=]?\s*(\d+)", text, flags=re.I)
+    processors_match = re.search(
+        r"(?:processors?|cpu\s*cores?|cores?)\s*[:=]?\s*(\d+)",
+        text,
+        flags=re.I,
+    )
     load_match = re.search(
-        r"load\s+average\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)",
+        r"(?:1\s*(?:min(?:ute)?|m)\s*)?load(?:\s+average)?\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)",
         text,
         flags=re.I,
     )
     if load_match:
         load_average = float(load_match.group(1))
         processors = int(processors_match.group(1)) if processors_match else None
+        percent = (
+            min(100.0, max(0.0, (load_average / processors) * 100.0))
+            if processors and processors > 0
+            else None
+        )
         result.update(
             {
                 "available": True,
-                "mode": "load-average",
+                "mode": "load-average-percent" if percent is not None else "load-average",
                 "load_average": load_average,
                 "processors": processors,
-                "value": f"{load_average:g}",
-                "label": "CPU load avg",
+                "percent": percent,
+                "value": f"{percent:.1f}%" if percent is not None else f"{load_average:g}",
+                "label": "CPU load" if percent is not None else "CPU load avg",
+                "summary": (
+                    f"{load_average:g} / {percent:.1f}%"
+                    if percent is not None
+                    else f"{load_average:g}"
+                ),
+                "derived_percent": percent is not None,
             }
         )
         return result
