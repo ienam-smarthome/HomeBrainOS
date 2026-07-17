@@ -88,6 +88,19 @@ _CONTROL_VERBS = (
     "stop ",
 )
 
+_DEVICE_TYPE_PHRASE = (
+    r"(?:motion\s+(?:sensors?|detectors?)|contact\s+sensors?|door\s+sensors?|window\s+sensors?|"
+    r"temperature\s+(?:sensors?|devices?)|humidity\s+(?:sensors?|devices?)|presence\s+sensors?|"
+    r"occupancy\s+sensors?|illuminance\s+sensors?|light\s+sensors?|lux\s+sensors?|"
+    r"battery\s+(?:devices?|sensors?)|thermostats?|trvs?|radiator\s+valves?|locks?|"
+    r"smoke\s+(?:detectors?|alarms?)|carbon\s+monoxide\s+(?:detectors?|sensors?)|co\s+detectors?|"
+    r"water\s+sensors?|leak\s+sensors?|moisture\s+sensors?|soil\s+sensors?|"
+    r"power\s+(?:meters?|monitors?|devices?)|energy\s+(?:meters?|monitors?|devices?)|"
+    r"lights?|lamps?|bulbs?|dimmers?|switches?|sockets?|outlets?|smart\s+plugs?|plugs?|"
+    r"cameras?|cams?|fans?|valves?|buttons?|scene\s+buttons?|sirens?|alarms?|"
+    r"acceleration\s+sensors?|vibration\s+sensors?|sensors?)"
+)
+
 _FAST_READ_PATTERNS = (
     r"^(?:which|what|list|show)?\s*(?:lights?)\s+(?:are\s+)?on\??$",
     r"^(?:which|what|list|show)?\s*(?:switches?)\s+(?:are\s+)?on\??$",
@@ -101,6 +114,9 @@ _FAST_READ_PATTERNS = (
     r"^(?:what\s+time\s+(?:is|does)|when\s+(?:is|does)|tell\s+me\s+(?:the\s+)?)\s*(?:fajr|fajar|sunrise|shuruq|ishraq|dhuhr|dhur|zuhr|zohar|asr|maghrib|magrib|isha|ishaa)(?:\s+(?:start|begin|starts|begins))?(?:\s+(?:today|tonight))?\??$",
     r"^(?:fajr|fajar|sunrise|shuruq|ishraq|dhuhr|dhur|zuhr|zohar|asr|maghrib|magrib|isha|ishaa)(?:\s+prayer)?\s+time(?:\s+(?:today|tonight))?\??$",
     r"^(?:show|list|display|give\s+me|what\s+are|what(?:'s|\s+is))\s+(?:today(?:'s)?\s+)?(?:pray|prayer)\s+times(?:\s+today)?\??$",
+    # Device-class inventories must not be interpreted as one device name.
+    rf"^(?:show|list|find|get|display)\s+(?:me\s+)?(?:(?:all|every|the)\s+)?{_DEVICE_TYPE_PHRASE}\??$",
+    rf"^(?:what|which)\s+{_DEVICE_TYPE_PHRASE}\s+(?:devices?\s+)?(?:do\s+i\s+have|are\s+(?:there|available|selected|configured))\??$",
     r"^(?:list|show)\s+(?:all\s+)?devices\??$",
     r"^(?:list|show)\s+(?:all\s+)?lights\??$",
     r"^compare\s+(?:humidity|temperature)\s+(?:in|between)\s+(?:the\s+)?.+?\s+and\s+(?:the\s+)?.+?\??$",
@@ -181,7 +197,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
-            "authoritative live-state, gateway read, room inventory, comparison or diagnostic query",
+            "authoritative live-state, device-type inventory, gateway read, room inventory, comparison or diagnostic query",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
