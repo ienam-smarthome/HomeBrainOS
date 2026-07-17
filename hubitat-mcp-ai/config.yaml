@@ -43,6 +43,7 @@ options:
   mcp_hub_cache_seconds: 20
   device_index_ttl_seconds: 15
   device_index_capability_ttl_seconds: 60
+  device_index_metadata_ttl_seconds: 120
   request_trace_limit: 20
   attention_stale_hours: 48
   hub_cpu_probe_enabled: true
@@ -78,6 +79,7 @@ schema:
   mcp_hub_cache_seconds: int
   device_index_ttl_seconds: int
   device_index_capability_ttl_seconds: int
+  device_index_metadata_ttl_seconds: int
   request_trace_limit: int
   attention_stale_hours: int
   hub_cpu_probe_enabled: bool
