@@ -37,7 +37,7 @@ def parse_cpu_info(value: str) -> dict[str, Any]:
     explicit percentage, some return ``load/load%`` and others only return a
     one-minute load average plus processor count. In the final case the percentage
     is calculated as ``load_average / processors * 100`` and clearly marked as a
-    derived value.
+    derived value in technical details.
     """
     text = str(value or "").strip()
     result: dict[str, Any] = {
@@ -64,12 +64,13 @@ def parse_cpu_info(value: str) -> dict[str, Any]:
             result.update(
                 {
                     "available": True,
-                    "mode": "load-and-percent",
+                    "mode": "percent",
                     "load_average": load_average,
                     "percent": percent,
                     "value": f"{percent:g}%",
                     "label": "CPU load",
                     "summary": f"{load_average:g} / {percent:g}%",
+                    "percent_source": "hub-reported-load-percent",
                     "derived_percent": False,
                 }
             )
@@ -82,6 +83,7 @@ def parse_cpu_info(value: str) -> dict[str, Any]:
                     "percent": percent,
                     "value": f"{percent:g}%",
                     "label": "CPU load",
+                    "percent_source": "hub-reported-percent",
                     "derived_percent": False,
                 }
             )
@@ -108,7 +110,7 @@ def parse_cpu_info(value: str) -> dict[str, Any]:
         result.update(
             {
                 "available": True,
-                "mode": "load-average-percent" if percent is not None else "load-average",
+                "mode": "percent" if percent is not None else "load-average",
                 "load_average": load_average,
                 "processors": processors,
                 "percent": percent,
@@ -119,6 +121,7 @@ def parse_cpu_info(value: str) -> dict[str, Any]:
                     if percent is not None
                     else f"{load_average:g}"
                 ),
+                "percent_source": "derived-from-load-and-processors" if percent is not None else None,
                 "derived_percent": percent is not None,
             }
         )
