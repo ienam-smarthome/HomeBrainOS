@@ -107,6 +107,11 @@ _FAST_READ_PATTERNS = (
     r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
     r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
     r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
+    # Exact room inventories. The fallback verifies the requested name against
+    # Hubitat rooms before returning devices, so "List Apps" can mean the Apps room.
+    r"^(?:list|show|display)\s+(?:all\s+)?devices\s+(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
+    r"^(?:what|which)\s+devices\s+(?:are\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
+    r"^(?:list|show|display)\s+(?:the\s+)?[a-z0-9][a-z0-9 &'_\-]{0,50}(?:\s+room(?:\s+devices)?)?\??$",
 )
 
 
@@ -157,7 +162,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
-            "authoritative live-state, weather, inventory, comparison or diagnostic query",
+            "authoritative live-state, weather, room inventory, comparison or diagnostic query",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):

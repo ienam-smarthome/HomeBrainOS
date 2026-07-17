@@ -7,14 +7,14 @@ import uvicorn
 import app as application
 from cancellable_requests import install_cancellable_ask
 from dashboard_api import install_dashboard_api
-from fast_fallback_essentials import FastFallbackRouter
+from fast_fallback_room_inventory import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from mcp_state_broker import MCPStateBroker
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.3.0-alpha"
+RELEASE_VERSION = "0.3.1-alpha"
 
 
 def _replace_mcp_client() -> None:
