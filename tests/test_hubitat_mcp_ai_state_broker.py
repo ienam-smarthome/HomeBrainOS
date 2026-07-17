@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+import asyncio
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+from fastapi import FastAPI
+
+
+APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
+sys.path.insert(0, str(APP_DIR))
+
+from mcp_client import MCPToolResult  # noqa: E402
+from mcp_state_broker import MCPStateBroker  # noqa: E402
+from request_tracing import install_request_tracing  # noqa: E402
+from webui import render_page  # noqa: E402
+
+
+class FakeMCP:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+        self.command_count = 0
+        self._initialized = False
+        self.configured = True
+        self.server_info = {"name": "fake"}
+
+    async def initialize(self, force: bool = False) -> None:
+        self._initialized = True
+
+    async def close(self) -> None:
+        return None
+
+    async def call_tool(self, name: str, arguments: dict | None = None) -> MCPToolResult:
+        arguments = dict(arguments or {})
+        self.calls.append((name, arguments))
+        if name == "hub_list_devices":
+            await asyncio.sleep(0.02)
+            data = {
+                "devices": [
+                    {
+                        "id": "1",
+                        "label": "Bedroom 1 Light",
+                        "currentStates": {
+                            "switch": "on" if self.command_count else "off"
+                        },
+                    }
+                ]
+            }
+        elif name == "hub_call_device_command":
+            self.command_count += 1
+            data = {"success": True}
+        else:
+            data = {"success": True}
+        return MCPToolResult(
+            name=name,
+            arguments=arguments,
+            raw={},
+            text="",
+            data=data,
+            is_error=False,
+        )
+
+
+def test_identical_reads_are_coalesced_and_cached():
+    async def scenario():
+        raw = FakeMCP()
+        broker = MCPStateBroker(raw, device_ttl_seconds=30)
+        args = {"detailed": False, "format": "summary"}
+        first, second = await asyncio.gather(
+            broker.call_tool("hub_list_devices", args),
+            broker.call_tool("hub_list_devices", args),
+        )
+        third = await broker.call_tool("hub_list_devices", args)
+
+        assert first.data == second.data == third.data
+        assert [name for name, _args in raw.calls].count("hub_list_devices") == 1
+        stats = broker.stats()
+        assert stats["misses"] == 1
+        assert stats["coalesced"] == 1
+        assert stats["hits"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_device_write_invalidates_cached_state_before_verification_read():
+    async def scenario():
+        raw = FakeMCP()
+        broker = MCPStateBroker(raw, device_ttl_seconds=30)
+        args = {"detailed": False, "format": "summary"}
+
+        before = await broker.call_tool("hub_list_devices", args)
+        assert before.data["devices"][0]["currentStates"]["switch"] == "off"
+
+        await broker.call_tool(
+            "hub_call_device_command",
+            {"deviceId": "1", "command": "on", "params": []},
+        )
+        after = await broker.call_tool("hub_list_devices", args)
+
+        assert after.data["devices"][0]["currentStates"]["switch"] == "on"
+        assert [name for name, _args in raw.calls].count("hub_list_devices") == 2
+        assert broker.stats()["invalidations"] >= 1
+
+    asyncio.run(scenario())
+
+
+def test_request_trace_attaches_route_cache_and_tool_timings():
+    async def scenario():
+        raw = FakeMCP()
+        broker = MCPStateBroker(raw, device_ttl_seconds=30)
+
+        async def ask(request):
+            await broker.call_tool(
+                "hub_list_devices",
+                {"detailed": False, "format": "summary"},
+            )
+            return {
+                "success": True,
+                "route": "mcp-fast",
+                "message": "Bedroom 1 Light is off.",
+            }
+
+        application = SimpleNamespace(app=FastAPI(), ask=ask)
+        store = install_request_tracing(application, broker, limit=10)
+        request = SimpleNamespace(query="Which lights are on?")
+        answer = await application.ask(request)
+
+        assert answer["performance"]["route_selected"] == "mcp-fast"
+        assert answer["performance"]["final_route"] == "mcp-fast"
+        assert answer["performance"]["mcp_calls"] == 1
+        assert answer["performance"]["cache_misses"] == 1
+        assert "Request performance" in answer["technical"]
+        recent = store.response()
+        assert recent["count"] == 1
+        assert recent["requests"][0]["query"] == "Which lights are on?"
+
+    asyncio.run(scenario())
+
+
+def test_webui_exposes_cache_and_recent_request_diagnostics():
+    page = render_page("Hubitat MCP AI", "0.3.0-alpha")
+    assert 'id="recentRequests"' in page
+    assert 'id="clearMcpCache"' in page
+    assert "fetch('/api/recent-requests')" in page
+    assert "fetch('/api/mcp-cache')" in page
+    assert "State cache" in page

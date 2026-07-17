@@ -19,6 +19,8 @@ required = [
     'hubitat-mcp-ai/rootfs/app/app.py',
     'hubitat-mcp-ai/rootfs/app/entrypoint.py',
     'hubitat-mcp-ai/rootfs/app/mcp_client.py',
+    'hubitat-mcp-ai/rootfs/app/mcp_state_broker.py',
+    'hubitat-mcp-ai/rootfs/app/request_tracing.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_fast.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_resilient.py',
