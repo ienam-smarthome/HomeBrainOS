@@ -9,7 +9,7 @@ from cancellable_requests import install_cancellable_ask
 from dashboard_api import install_dashboard_api
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
-from device_intelligence_catalogue import CapabilityCatalogueDeviceIndex
+from device_intelligence_catalogue_safe import SafeCapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
 from fast_fallback_device_index import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
@@ -35,9 +35,9 @@ def _replace_mcp_client() -> None:
     )
 
 
-def _create_device_index() -> CapabilityCatalogueDeviceIndex:
+def _create_device_index() -> SafeCapabilityCatalogueDeviceIndex:
     options = application.OPTIONS
-    index = CapabilityCatalogueDeviceIndex(
+    index = SafeCapabilityCatalogueDeviceIndex(
         application.mcp,
         ttl_seconds=float(options.get("device_index_ttl_seconds") or 15),
         capability_ttl_seconds=float(
@@ -51,7 +51,7 @@ def _create_device_index() -> CapabilityCatalogueDeviceIndex:
     return index
 
 
-def _replace_fallback_router(index: CapabilityCatalogueDeviceIndex) -> None:
+def _replace_fallback_router(index: SafeCapabilityCatalogueDeviceIndex) -> None:
     application.fallback = FastFallbackRouter(
         application.mcp,
         device_index=index,
