@@ -10,26 +10,62 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from cancellable_requests import ActiveRequestRegistry  # noqa: E402
+from fast_fallback_routine import FastFallbackRouter  # noqa: E402
 from fastpath_ai_handoff import install_fastpath_ai_handoff  # noqa: E402
+from mcp_client import MCPToolResult  # noqa: E402
 from ollama_agent_quality import QualityNaturalHubitatOllamaAgent  # noqa: E402
 from routing_policy import classify_query  # noqa: E402
 from webui import render_page  # noqa: E402
+
+
+class MotionMCP:
+    async def call_tool(self, name, arguments):
+        assert name == "hub_list_devices"
+        return MCPToolResult(
+            name=name,
+            arguments=arguments,
+            raw={},
+            text="",
+            data={
+                "devices": [
+                    {
+                        "id": "1",
+                        "label": "Kitchen Motion",
+                        "currentStates": {"motion": "active"},
+                    },
+                    {
+                        "id": "2",
+                        "label": "Hall Motion",
+                        "currentStates": {"motion": "inactive"},
+                    },
+                ]
+            },
+            is_error=False,
+        )
+
+    async def get_tool(self, name):
+        return None
+
+    async def supported_arguments(self, name, desired):
+        return desired
 
 
 def test_balanced_routing_policy():
     fast = {
         "Turn off Hallway Light 1",
         "Turn off Hallway Lights",
-        "Which lights are on?",
-        "Which batteries are low?",
-        "Show hub CPU and free memory",
-        "List devices that are offline or stale",
-        "Find devices that need attention",
+        "Turn on bedroom one light",
     }
     verified = {
         "What's happening at home?",
         "What is the weather tomorrow?",
         "Are any lights still on downstairs?",
+        "Which lights are on?",
+        "Which batteries are low?",
+        "Which motion sensors are active?",
+        "Show hub CPU and free memory",
+        "List devices that are offline or stale",
+        "Find devices that need attention",
         "List my Hubitat rooms",
     }
     planner = {
@@ -47,6 +83,17 @@ def test_balanced_routing_policy():
         assert classify_query(query).route == "ollama-verified", query
     for query in planner:
         assert classify_query(query).route == "ollama-planner", query
+
+
+def test_active_motion_is_authoritative_routine_evidence():
+    answer = asyncio.run(
+        FastFallbackRouter(MotionMCP()).answer("Which motion sensors are active?")
+    )
+    assert answer["success"] is True
+    assert answer["intent"] == "fallback-active-motion"
+    assert answer["display"]["metrics"][0]["value"] == "1"
+    assert "Kitchen Motion" in answer["message"]
+    assert "Hall Motion" not in answer["message"]
 
 
 def test_routine_model_prefers_qwen_family_not_unrelated_llama():
