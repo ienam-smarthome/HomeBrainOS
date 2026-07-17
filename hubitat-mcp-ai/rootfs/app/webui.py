@@ -57,10 +57,8 @@ OLD_STATUS_FUNCTION = """async function status(){try{const response=await fetch(
 
 NEW_STATUS_FUNCTION = """function setDash(id,value){const node=document.getElementById(id);if(node)node.textContent=value===null||value===undefined?'—':String(value)}async function status(){const results=await Promise.allSettled([fetch('/api/status'),fetch('/api/dashboard'),fetch('/api/mcp-cache')]);if(results[0].status==='fulfilled'){try{const data=await results[0].value.json();const runtime=data.ollama||{};setPill('mcpStatus',data.mcp?.online,data.mcp?.online?`Hubitat MCP · ${data.mcp.tools||0} tools`:`Hubitat MCP offline · ${data.mcp?.error||'unavailable'}`);let aiState=false,aiText='Ollama offline · '+(runtime.error||'unavailable');if(runtime.online){if(runtime.model_loaded){aiState=true;aiText=`AI ready · ${runtime.model}`;}else if(runtime.model_present){aiState=null;aiText=`AI available · ${runtime.model} loads on demand`;}else{aiText=`AI model missing · ${runtime.model||'not configured'}`;}}setPill('ollamaStatus',aiState,aiText);document.getElementById('model').textContent=runtime.routine_model||runtime.model||'—'}catch(error){setPill('mcpStatus',false,'Status error · '+error.message)}}else setPill('mcpStatus',false,'Status request failed');if(results[1].status==='fulfilled'){try{const dash=await results[1].value.json();setDash('dashLights',dash.lights_on);setDash('dashMotion',dash.motion_active);setDash('dashSwitches',dash.switches_on);setDash('dashBatteries',dash.low_batteries);const battery=document.getElementById('batterySummary');battery?.classList.toggle('warning',Number(dash.low_batteries)>0);const age=document.getElementById('dashAge');if(age)age.textContent=dash.success?'Live':'Unavailable'}catch(error){const age=document.getElementById('dashAge');if(age)age.textContent='Unavailable'}}if(results[2].status==='fulfilled'){try{const cache=(await results[2].value.json()).cache||{};const node=document.getElementById('dashCache');if(node)node.textContent=`${cache.entries||0} entries · ${cache.hits||0} hits`;}catch(error){const node=document.getElementById('dashCache');if(node)node.textContent='Unavailable'}}}"""
 
-
 CLIENT_STATE_MARKER = """document.getElementById('readAnswers').checked=readAnswers;"""
 CLIENT_STATE_REPLACEMENT = """document.getElementById('readAnswers').checked=readAnswers;input.value=localStorage.getItem('hmcp_last_query')||'';let activeController=null,activeRequestSerial=0,pendingUser=null;let clientId=localStorage.getItem('hmcp_client_id');if(!clientId){clientId=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():'hmcp-'+Date.now()+'-'+Math.random().toString(16).slice(2);localStorage.setItem('hmcp_client_id',clientId);}"""
-
 
 OLD_SUBMIT_FUNCTION = """async function submit(query){query=(query||input.value).trim();if(!query)return;input.value='';const prior=history.slice(-10);history.push({role:'user',content:query});save();working.classList.add('show');ask.disabled=true;ask.textContent='Working…';clearOutput();output.appendChild(el('div','answer-text','Working on: '+query));try{const response=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,history:prior})});const answer=await response.json();showAnswer(answer);history.push({role:'assistant',content:answer.message||''});save()}catch(error){showAnswer({success:false,route:'error',message:'Request failed: '+error.message})}finally{working.classList.remove('show');ask.disabled=false;ask.textContent='Ask';status()}}"""
 
@@ -73,6 +71,14 @@ RECENT_HANDLER = """document.getElementById('recentRequests').onclick=async()=>{
 def render_page(title: str, version: str) -> str:
     """Render a compact HomeBrain-style interface with live cache diagnostics."""
     page = render_homebrain_page(title, version)
+    page = page.replace(
+        '<button class="secondary" data-q="Which lights are on?">💡 Lights</button>',
+        "",
+    )
+    page = page.replace(
+        '<button class="secondary" data-q="Which batteries are low?">🪫 Low batteries</button>',
+        "",
+    )
     page = page.replace(OLD_SUMMARY, NEW_SUMMARY)
     page = page.replace(OLD_STATUS_FUNCTION, NEW_STATUS_FUNCTION)
     page = page.replace(
