@@ -9,10 +9,26 @@ from cancellable_requests import install_cancellable_ask
 from dashboard_api import install_dashboard_api
 from fast_fallback_essentials import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
+from mcp_state_broker import MCPStateBroker
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
+from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.2.9-alpha"
+RELEASE_VERSION = "0.3.0-alpha"
+
+
+def _replace_mcp_client() -> None:
+    options = application.OPTIONS
+    application.mcp = MCPStateBroker(
+        application.mcp,
+        device_ttl_seconds=float(
+            options.get("mcp_device_cache_seconds") or 12
+        ),
+        catalog_ttl_seconds=float(
+            options.get("mcp_catalog_cache_seconds") or 60
+        ),
+        hub_ttl_seconds=float(options.get("mcp_hub_cache_seconds") or 20),
+    )
 
 
 def _replace_fallback_router() -> None:
@@ -73,9 +89,15 @@ def _replace_ollama_agent() -> None:
         pass
 
 
+_replace_mcp_client()
 _replace_fallback_router()
 _replace_ollama_agent()
 install_fastpath_ai_handoff(application)
+request_traces = install_request_tracing(
+    application,
+    application.mcp,
+    limit=int(application.OPTIONS.get("request_trace_limit") or 20),
+)
 dashboard_snapshot = install_dashboard_api(
     application,
     ttl_seconds=float(application.OPTIONS.get("dashboard_refresh_seconds") or 30),
