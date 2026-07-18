@@ -67,14 +67,15 @@ A future provider adapter can support an OpenAI-compatible local endpoint withou
 
 ## Current comparison build
 
-### v0.4.10-alpha
+### v0.4.12-alpha
 
-- Changes the recommended local model from `qwen3.5:9b` to `qwen3.5:4b` for substantially lower memory pressure and response latency.
-- Targets the installed Qwen 3.5 model closest to 4B, preventing an accidental downgrade to weak 0.8B or 2B variants.
-- Reduces routine and quick-insight limits to 15 seconds, planner limit to 20 seconds, context to 2048 tokens and general tool rounds to two.
-- Keeps Qwen thinking disabled and keeps the model warm for 30 minutes.
-- Adds a Windows model installer and API response check.
-- Keeps the bounded bedroom-temperature route, explicit answer ownership badges, blank-renderer fix, room lists, device-specific icons and direct control verification.
+- Fixes Home Snapshot reporting zero motion and zero lights when Hubitat returned device identities without compact `currentStates`.
+- Includes detailed device `attributes` in the shared capability catalogue and prevents empty compact fields from erasing richer states.
+- Forces one state refresh when an initial Home Snapshot contains no readable states.
+- Never converts missing state coverage into factual zeros: unrecoverable scans display dashes and a clear `state scan unavailable` warning instead.
+- Skips Ollama entirely when no verified state evidence is available, preventing an AI-written false all-clear answer.
+- Keeps the 0.4.11 bedroom grouping fix: TRV categories are not treated as rooms, and alternate same-room sensors are preserved.
+- Keeps the responsive `qwen3.5:4b` profile, direct control verification, exact room lists and device-specific icons.
 
 Ollama is never the source of device state. Hubitat MCP supplies authoritative live evidence; Ollama interprets, compares and phrases that evidence. Possible causes are presented as possibilities unless a corresponding live state proves them.
 
