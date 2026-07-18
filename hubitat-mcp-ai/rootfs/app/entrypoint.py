@@ -7,6 +7,7 @@ from pydantic import Field
 
 import app as application
 import ollama_engagement as ollama_engagement_module
+from automation_recommendation import install_automation_recommendation
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
 from control_language import install_control_language
@@ -28,7 +29,7 @@ from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
-RELEASE_VERSION = "0.4.13-alpha"
+RELEASE_VERSION = "0.4.14-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
@@ -135,6 +136,13 @@ ollama_engagement_module.TemperatureInsightService = HybridTemperatureInsightSer
 ollama_engagement_module.ollama_help = hybrid_ollama_help
 ollama_engagement = install_ollama_engagement(application, home_snapshot)
 motion_light_insight = install_motion_light_insight(
+    application,
+    device_index,
+    ai_timeout_seconds=float(
+        application.OPTIONS.get("ollama_quick_insight_timeout_seconds") or 20
+    ),
+)
+automation_recommendation = install_automation_recommendation(
     application,
     device_index,
     ai_timeout_seconds=float(
