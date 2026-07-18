@@ -20,6 +20,7 @@ from fast_fallback_engagement import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
 from mcp_tool_catalogue import install_mcp_tool_catalogue
+from motion_light_insight import install_motion_light_insight
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from ollama_engagement import install_ollama_engagement
 from request_tracing import install_request_tracing
@@ -131,6 +132,13 @@ home_snapshot = install_hybrid_home_snapshot(
 # wrapper receives accurate Cloud-versus-local model ownership metadata.
 ollama_engagement_module.TemperatureInsightService = HybridTemperatureInsightService
 ollama_engagement = install_ollama_engagement(application, home_snapshot)
+motion_light_insight = install_motion_light_insight(
+    application,
+    device_index,
+    ai_timeout_seconds=float(
+        application.OPTIONS.get("ollama_quick_insight_timeout_seconds") or 20
+    ),
+)
 conversation_context = install_safe_conversation_context(
     application,
     device_index,
