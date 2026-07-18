@@ -31,8 +31,7 @@ _ACTION_CSS = r"""
 .rule-action:disabled{opacity:.55}
 """
 
-_ACTION_FUNCTION = r"""function ruleActionButtons(items){if(!Array.isArray(items)||!items.length)return null;const box=el('div','rule-actions');items.forEach(item=>{const button=el('button','rule-action '+String(item.tone||'secondary'),(item.icon?String(item.icon)+' ':'')+String(item.label||'Continue'));button.type='button';button.onclick=()=>{const query=String(item.query||'').trim();if(!query)return;input.value=query;submit(query)};box.appendChild(button)});return box}"
-"""
+_ACTION_FUNCTION = r"""function ruleActionButtons(items){if(!Array.isArray(items)||!items.length)return null;const box=el('div','rule-actions');items.forEach(item=>{const button=el('button','rule-action '+String(item.tone||'secondary'),(item.icon?String(item.icon)+' ':'')+String(item.label||'Continue'));button.type='button';button.onclick=()=>{const query=String(item.query||'').trim();if(!query)return;input.value=query;submit(query)};box.appendChild(button)});return box}"""
 
 
 def install_automation_recommendation_webui(module: Any) -> Callable[[str], str]:
