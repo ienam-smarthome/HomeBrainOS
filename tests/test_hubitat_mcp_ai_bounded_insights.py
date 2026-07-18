@@ -102,6 +102,8 @@ def test_temperature_comparison_skips_planner_and_uses_bounded_evidence():
 
     assert answer["route"] == "ollama+temperature-insight"
     assert answer["ai_used"] is True
+    assert answer["answered_by"] == "Ollama"
+    assert answer["evidence_source"] == "Hubitat MCP"
     assert [item["room"] for item in answer["readings"]] == [
         "Bedroom 1",
         "Bedroom 2",
@@ -129,6 +131,8 @@ def test_temperature_comparison_remains_complete_when_ollama_times_out():
     assert answer["route"] == "mcp-temperature-insight-ai-fallback"
     assert answer["ai_attempted"] is True
     assert answer["ai_used"] is False
+    assert answer["answered_by"] == "HomeBrain comparison"
+    assert answer["evidence_source"] == "Hubitat MCP"
     assert "Bedroom 1 is 2°C warmer than Bedroom 3" in answer["message"]
     assert "Ollama was attempted but did not finish" in answer["display"]["note"]
 
@@ -153,6 +157,8 @@ def test_snapshot_fallback_explicitly_identifies_who_answered():
     assert answer["ai_attempted"] is True
     assert answer["ai_used"] is False
     assert answer["ai_status"] == "fallback"
+    assert answer["answered_by"] == "Home Snapshot"
+    assert answer["evidence_source"] == "Hubitat MCP"
     assert answer["model"] == "qwen3.5:9b"
     assert "deterministic Home Snapshot" in answer["display"]["note"]
 
@@ -165,3 +171,5 @@ def test_webui_labels_ai_used_and_ai_fallback_routes():
     assert "Hubitat snapshot (AI fallback)" in page
     assert "AI attempted → fallback" in page
     assert "answer.ai_used?'AI used'" in page
+    assert "Answered by "+"'" not in page
+    assert "'Answered by '+String(answer.answered_by)" in page
