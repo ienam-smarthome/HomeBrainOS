@@ -171,5 +171,4 @@ def test_webui_labels_ai_used_and_ai_fallback_routes():
     assert "Hubitat snapshot (AI fallback)" in page
     assert "AI attempted → fallback" in page
     assert "answer.ai_used?'AI used'" in page
-    assert "Answered by "+"'" not in page
     assert "'Answered by '+String(answer.answered_by)" in page
