@@ -88,6 +88,7 @@ class TemperatureInsightService:
                 ai_error = str(exc) or exc.__class__.__name__
 
         ai_used = bool(ai_message)
+        ai_attempted = bool(readings)
         message = ai_message or deterministic
         if readings:
             low = min(readings, key=lambda item: item["temperature"])
@@ -136,15 +137,21 @@ class TemperatureInsightService:
                 "ollama+temperature-insight"
                 if ai_used
                 else "mcp-temperature-insight-ai-fallback"
+                if ai_attempted
+                else "mcp-temperature-insight"
             ),
             "intent": "temperature-comparison",
             "message": message,
             "model": model or None,
+            "answered_by": "Ollama" if ai_used else "HomeBrain comparison",
+            "evidence_source": "Hubitat MCP",
             "display": display,
             "readings": readings,
-            "ai_attempted": bool(readings),
+            "ai_attempted": ai_attempted,
             "ai_used": ai_used,
-            "ai_status": "used" if ai_used else "fallback",
+            "ai_status": (
+                "used" if ai_used else "fallback" if ai_attempted else "not-attempted"
+            ),
             "synthesis_error": ai_error,
             "elapsed_ms": elapsed,
             "technical": safe_debug(
@@ -152,6 +159,8 @@ class TemperatureInsightService:
                     "readings": readings,
                     "ollama_synthesis_error": ai_error,
                     "model": model,
+                    "answered_by": "Ollama" if ai_used else "HomeBrain comparison",
+                    "evidence_source": "Hubitat MCP",
                 }
             ),
         }
@@ -290,10 +299,12 @@ class TemperatureInsightService:
                     "role": "system",
                     "content": (
                         "You are HomeBrain, a concise smart-home analyst. Compare only the "
-                        "verified temperatures supplied. State the coldest, warmest and exact "
-                        "difference. Explain plausible causes cautiously as possibilities, "
-                        "not facts. Do not claim knowledge of windows, heating, occupancy or "
-                        "sensor placement unless supplied. Use two or three short paragraphs."
+                        "verified temperatures supplied. State each bedroom reading, then the "
+                        "coldest, warmest and exact difference. Explain plausible causes "
+                        "cautiously as possibilities, not facts. Do not claim knowledge of "
+                        "windows, heating, occupancy or sensor placement unless supplied. "
+                        "Write a polished answer comparable to a strong general assistant, "
+                        "using two or three short paragraphs."
                     ),
                 },
                 {
@@ -308,7 +319,7 @@ class TemperatureInsightService:
             tools=None,
             timeout_seconds=self.timeout_seconds,
             num_ctx=min(int(getattr(ollama, "num_ctx", 2048)), 2048),
-            num_predict=150,
+            num_predict=170,
             temperature=0.15,
         )
         content = str((body.get("message") or {}).get("content") or "").strip()
