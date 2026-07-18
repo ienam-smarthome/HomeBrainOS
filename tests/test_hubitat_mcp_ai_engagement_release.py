@@ -128,7 +128,7 @@ def test_ollama_guide_insight_and_explicit_override():
             "ollama_model": "qwen3.5:9b",
             "ollama_agent_timeout_seconds": 60,
         },
-        VERSION="0.4.7-alpha",
+        VERSION="0.4.8-alpha",
     )
     install_ollama_engagement(application, FakeSnapshot())
 
@@ -167,11 +167,27 @@ def test_ollama_guide_insight_and_explicit_override():
 
 
 def test_webui_exposes_ai_shortcuts_and_friendly_route_labels():
-    page = patch_page(render_page("Hubitat MCP AI", "0.4.7-alpha"))
+    page = patch_page(render_page("Hubitat MCP AI", "0.4.8-alpha"))
 
     assert "AI home insight" in page
     assert "AI question guide" in page
     assert "Ask Hubitat, or start with Ask Ollama:" in page
-    assert "function routeLabel(route)" in page
+    assert page.count("function routeLabel(route)") == 1
     assert "Ollama + Hubitat" in page
     assert "Hubitat live" in page
+
+
+def test_webui_renderer_keeps_question_status_and_cannot_blank_on_route_label():
+    page = patch_page(render_page("Hubitat MCP AI", "0.4.8-alpha"))
+
+    route_helper = page.index("function routeLabel(route)")
+    answer_renderer = page.index("function showAnswer(answer)")
+
+    assert route_helper < answer_renderer
+    assert "typeof routeLabel==='function'" in page
+    assert "Asked: '+query" in page
+    assert "Asked: '+asked" in page
+    assert "Contacting Hubitat…" in page
+    assert "Working on: '+query" not in page
+    assert "function itemList(items)" in page
+    assert "function showAnswer(answer){clearOutput();const asked=" in page
