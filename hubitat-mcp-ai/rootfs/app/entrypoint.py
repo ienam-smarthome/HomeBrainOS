@@ -7,7 +7,7 @@ from pydantic import Field
 
 import app as application
 from cancellable_requests import install_cancellable_ask
-from conversation_context import install_conversation_context
+from conversation_context_safe import install_safe_conversation_context
 from dashboard_api import install_dashboard_api
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
@@ -126,7 +126,7 @@ device_index = _create_device_index()
 _replace_fallback_router(device_index)
 _replace_ollama_agent()
 install_fastpath_ai_handoff(application)
-conversation_context = install_conversation_context(
+conversation_context = install_safe_conversation_context(
     application,
     device_index,
     ttl_seconds=float(application.OPTIONS.get("conversation_context_ttl_seconds") or 600),
