@@ -17,11 +17,13 @@ _HELP_QUERY = re.compile(
     re.IGNORECASE,
 )
 _AI_INSIGHT_QUERY = re.compile(
-    r"^(?:what\s+looks\s+unusual|what\s+should\s+i\s+know|"
+    r"^(?:"
+    r"what\s+looks\s+unusual(?:\s+at\s+home)?|"
+    r"what\s+should\s+i\s+know(?:\s+about\s+(?:my\s+)?home)?|"
     r"give\s+me\s+(?:an\s+)?(?:ai\s+)?(?:home\s+)?insight|"
     r"analyse\s+(?:my\s+)?home|analyze\s+(?:my\s+)?home|"
-    r"summarise\s+(?:my\s+)?home|summarize\s+(?:my\s+)?home)"
-    r"(?:\s+(?:at\s+home|about\s+(?:my\s+)?home|right\s+now|now))?[?.!]*$",
+    r"summarise\s+(?:my\s+)?home|summarize\s+(?:my\s+)?home"
+    r")(?:\s+(?:right\s+now|now))?[?.!]*$",
     re.IGNORECASE,
 )
 _FORCE_OLLAMA = re.compile(
@@ -167,4 +169,10 @@ def install_ollama_engagement(
     return ask_with_ollama_engagement
 
 
-__all__ = ["install_ollama_engagement", "ollama_help"]
+__all__ = [
+    "_AI_INSIGHT_QUERY",
+    "_FORCE_OLLAMA",
+    "_HELP_QUERY",
+    "install_ollama_engagement",
+    "ollama_help",
+]
