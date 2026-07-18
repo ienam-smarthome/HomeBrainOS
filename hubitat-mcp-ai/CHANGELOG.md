@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.14-alpha
+
+- Adds a verified automation-recommendation route for questions such as `Suggest one useful automation for the devices I have`.
+- Reads the selected Hubitat device inventory directly instead of relying on the general Ollama planner to discover evidence.
+- Prioritises grounded washing-machine completion, fridge/freezer door, same-room motion-lighting and humidity-ventilation candidates.
+- Returns a complete deterministic trigger, action and safeguard when AI synthesis is unavailable.
+- Never creates or changes a rule automatically.
+
 ## 0.4.13-alpha
 
 - Adds `gemma4:31b-cloud` for AI response synthesis through a signed-in Windows Ollama service.
