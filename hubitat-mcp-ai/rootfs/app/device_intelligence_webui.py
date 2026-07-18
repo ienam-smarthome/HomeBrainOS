@@ -43,6 +43,11 @@ def patch_page(page: str) -> str:
         flags=re.S,
     )
     page = page.replace(SUMMARY_MARKER, SUMMARY_REPLACEMENT, 1)
+    # Relative API paths work both at http://host:8788/ and through Home
+    # Assistant's /api/hassio_ingress/<token>/ sidebar proxy. Absolute /api
+    # URLs escape the ingress prefix and are handled by Home Assistant instead.
+    page = page.replace("fetch('/api/", "fetch('api/")
+    page = page.replace('fetch("/api/', 'fetch("api/')
     return page
 
 
