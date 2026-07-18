@@ -1,5 +1,20 @@
 # Hubitat MCP AI changelog
 
+## 0.4.19-alpha
+
+- Adds native Hubitat Rule Machine creation for MCP Rule Server 3.4.x through `hub_set_rule` and `hub_set_rule_paused`.
+- Builds the fridge-door rule using the current native trigger/action schema rather than the legacy MCP child-rule engine.
+- Creates an empty Rule Machine shell, pauses it before adding triggers/actions, populates it while paused, and leaves Enable as a separate explicit action.
+- Reads the MCP best-practice acknowledgment key, verifies or creates the required recent hub backup, and uses stable operation tokens for retry-safe creation.
+- Uses Contact open-for-two-minutes and Contact closed triggers, Notification actions, a cancelable five-minute delay, and close-trigger cancellation.
+- Does not expose a misleading dry-run button because the current native Rule Machine API can execute actions but does not provide a genuine action-free simulation.
+
+## 0.4.18-alpha
+
+- Recovers automatically when the MCP server changes between consolidated category gateways and the flat tool catalogue.
+- Detects the server's explicit `useGateways is OFF` response, refreshes `tools/list`, clears the stale gateway map, and retries the original underlying tool directly.
+- Prevents a gateway-mode change from breaking live device reads until the HomeBrain add-on is restarted.
+
 ## 0.4.17-alpha
 
 - Adds `ollama_prefer_cloud_response`, enabled by default, so upgraded installations use `gemma4:31b-cloud` even when Home Assistant preserves an older saved `ollama_model: qwen3.5:4b` value.
