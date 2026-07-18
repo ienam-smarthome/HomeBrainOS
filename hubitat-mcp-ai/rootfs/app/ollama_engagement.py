@@ -112,6 +112,8 @@ def _decorate_snapshot_ai(
     result["ai_status"] = (
         "used" if ai_used else "fallback" if ai_attempted else "disabled"
     )
+    result["answered_by"] = "Ollama" if ai_used else "Home Snapshot"
+    result["evidence_source"] = "Hubitat MCP"
 
     if ai_attempted and not ai_used:
         result["route"] = "mcp-snapshot-ai-fallback"
@@ -207,6 +209,8 @@ def install_ollama_engagement(
             answer["ai_attempted"] = True
             answer["ai_used"] = True
             answer["ai_status"] = "used"
+            answer["answered_by"] = "Ollama"
+            answer["evidence_source"] = "Hubitat MCP"
             answer["original_query"] = query
             answer["resolved_query"] = clean_query
             answer.setdefault("version", application.VERSION)
@@ -225,6 +229,8 @@ def install_ollama_engagement(
             answer["ai_attempted"] = True
             answer["ai_used"] = False
             answer["ai_status"] = "fallback"
+            answer["answered_by"] = "HomeBrain fallback"
+            answer["evidence_source"] = "Hubitat MCP"
             answer["ollama_force_error"] = str(exc)
             answer["fallback_reason"] = (
                 "The explicitly requested Ollama answer failed, so HomeBrain used the "
