@@ -1,4 +1,5 @@
 name: Hubitat MCP AI
+# Previous version: '0.4.16-alpha'
 version: '0.4.17-alpha'
 slug: hubitat_mcp_ai
 description: Hybrid Ollama assistant with upgrade-safe Cloud response selection and guarded Hubitat rule workflows
