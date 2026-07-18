@@ -56,12 +56,6 @@ class Index:
             )
         return rows
 
-    async def exact_device(self, label: str):
-        target = str(label).strip().lower()
-        rows = await self.enriched_devices(force=True)
-        matches = [row for row in rows if str(row.get("label") or "").strip().lower() == target]
-        return (matches[0], []) if len(matches) == 1 else (None, matches)
-
 
 class CurrentMCP:
     configured = True
@@ -165,7 +159,7 @@ RECOMMENDATION = {
 
 def service(*, notifications: int = 1, backup_ok: bool = True):
     client = CurrentMCP(backup_ok=backup_ok)
-    app = SimpleNamespace(mcp=client, VERSION="0.4.19-alpha")
+    app = SimpleNamespace(mcp=client, VERSION="0.4.20-alpha")
     workflow = NativeRuleMachineAutomationWorkflow(app, Index(notifications))
     return workflow, client
 
@@ -322,10 +316,10 @@ def test_native_run_is_not_misrepresented_as_dry_run():
     assert "does not expose a genuine" in answer["message"]
 
 
-def test_release_metadata_is_0419():
+def test_release_metadata_is_0420():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.19-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.19-alpha"' in entrypoint
-    assert "install_native_rule_machine_workflow" in entrypoint
+    assert "version: '0.4.20-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.20-alpha"' in entrypoint
+    assert "install_notification_safe_native_rule_machine_workflow" in entrypoint
