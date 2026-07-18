@@ -10,7 +10,7 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
-from automation_rule_workflow import install_automation_rule_workflow
+from automation_rule_workflow_live import install_live_automation_rule_workflow
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
 from control_language import install_control_language
@@ -165,7 +165,7 @@ control_confirmations = install_control_confirmation(
     max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
 )
 install_control_language(application)
-automation_rule_workflow = install_automation_rule_workflow(
+automation_rule_workflow = install_live_automation_rule_workflow(
     application,
     device_index,
     ttl_seconds=float(application.OPTIONS.get("rule_workflow_ttl_seconds") or 600),
