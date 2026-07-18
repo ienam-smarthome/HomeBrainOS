@@ -24,7 +24,7 @@ from ollama_engagement import install_ollama_engagement
 from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.4.7-alpha"
+RELEASE_VERSION = "0.4.8-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
