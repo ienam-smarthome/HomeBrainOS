@@ -10,8 +10,8 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
-from automation_rule_workflow_release import (
-    install_release_automation_rule_workflow as install_automation_rule_workflow,
+from automation_rule_workflow_native_rm import (
+    install_native_rule_machine_workflow as install_automation_rule_workflow,
 )
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
@@ -36,8 +36,8 @@ from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.17-alpha"
-RELEASE_VERSION = "0.4.18-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.18-alpha"
+RELEASE_VERSION = "0.4.19-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
