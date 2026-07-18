@@ -3,9 +3,14 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any
 
-from device_intelligence_index import DeviceIntelligenceIndex, _label
+from device_intelligence_index import (
+    DeviceIntelligenceIndex,
+    _DETAILED_FIELDS,
+    _SUMMARY_FIELDS,
+    _label,
+)
 from fast_fallback_device_types_live import FastFallbackRouter as CapabilityDeviceRouter
-from mcp_client import MCPToolResult
+from mcp_client import MCPError, MCPToolResult
 
 
 _FRESH_CONTROL_READS: ContextVar[bool] = ContextVar(
@@ -47,13 +52,56 @@ class FastFallbackRouter(CapabilityDeviceRouter):
         """Return the request-local fresh-read state for the current task."""
         return bool(_FRESH_CONTROL_READS.get())
 
+    async def _direct_fresh_devices(
+        self,
+        capability_filter: str | None = None,
+        *,
+        detailed: bool = False,
+    ) -> MCPToolResult | None:
+        """Read Hubitat directly, beyond both index and broker caches.
+
+        ``DeviceIntelligenceIndex(force=True)`` skips its own snapshot, but its
+        client is normally the shared MCP broker. That broker may still return a
+        cached response or coalesce with a read that began before the command.
+        During control verification, use the broker's raw MCP client so every
+        poll is a distinct upstream Hubitat read. Non-control reads keep using
+        the normal shared caches.
+        """
+        if self.device_index is None:
+            return None
+
+        broker = getattr(self.device_index, "client", None)
+        raw_client = getattr(broker, "client", None)
+        raw_call = getattr(raw_client, "call_tool", None)
+        if not callable(raw_call):
+            return None
+
+        arguments: dict[str, Any] = {
+            "detailed": bool(detailed),
+            "format": "detailed" if detailed else "summary",
+            "fields": list(_DETAILED_FIELDS if detailed else _SUMMARY_FIELDS),
+        }
+        if capability_filter:
+            arguments["capabilityFilter"] = capability_filter
+
+        result = await raw_call("hub_list_devices", arguments)
+        if result.is_error:
+            raise MCPError(result.text or "Fresh Hubitat device lookup failed")
+        return result
+
     async def _live_devices(
         self,
         capability_filter: str | None = None,
     ) -> MCPToolResult:
         if self.device_index is None:
             return await super()._live_devices(capability_filter)
+
         force = self._fresh_control_reads_enabled()
+        if force:
+            fresh = await self._direct_fresh_devices(capability_filter, detailed=False)
+            if fresh is not None:
+                return fresh
+
         if capability_filter:
             return await self.device_index.capability_result(
                 capability_filter,
@@ -65,9 +113,13 @@ class FastFallbackRouter(CapabilityDeviceRouter):
     async def _summary_devices(self) -> MCPToolResult:
         if self.device_index is None:
             return await super()._summary_devices()
-        return await self.device_index.summary_result(
-            force=self._fresh_control_reads_enabled(),
-        )
+
+        force = self._fresh_control_reads_enabled()
+        if force:
+            fresh = await self._direct_fresh_devices(detailed=False)
+            if fresh is not None:
+                return fresh
+        return await self.device_index.summary_result(force=force)
 
     async def _capability_devices(
         self,
@@ -77,10 +129,19 @@ class FastFallbackRouter(CapabilityDeviceRouter):
     ) -> MCPToolResult:
         if self.device_index is None:
             return await super()._capability_devices(capability, detailed=detailed)
+
+        force = self._fresh_control_reads_enabled()
+        if force:
+            fresh = await self._direct_fresh_devices(
+                capability,
+                detailed=detailed,
+            )
+            if fresh is not None:
+                return fresh
         return await self.device_index.capability_result(
             capability,
             detailed=detailed,
-            force=self._fresh_control_reads_enabled(),
+            force=force,
         )
 
     async def _control_device(self, requested_name: str, action: str) -> dict[str, Any]:
