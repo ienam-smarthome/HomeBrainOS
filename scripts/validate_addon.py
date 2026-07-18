@@ -40,6 +40,8 @@ required = [
     'hubitat-mcp-ai/rootfs/app/ollama_agent_adaptive.py',
     'hubitat-mcp-ai/rootfs/app/cancellable_requests.py',
     'hubitat-mcp-ai/rootfs/app/conversation_context.py',
+    'hubitat-mcp-ai/rootfs/app/conversation_context_safe.py',
+    'hubitat-mcp-ai/rootfs/app/home_snapshot.py',
     'hubitat-mcp-ai/rootfs/app/dashboard_api.py',
     'hubitat-mcp-ai/rootfs/app/fastpath_ai_handoff.py',
     'hubitat-mcp-ai/rootfs/app/routing_policy.py',
