@@ -15,24 +15,47 @@ This add-on does not use HomeBrain's Maker API device engine for control. It con
 
 1. Install and configure `MCP Rule Server` on Hubitat.
 2. Open the Hubitat MCP app and copy the **Local Endpoint**.
-3. In this add-on's Configuration page:
+3. On the Windows Ollama PC, install the recommended model:
+   - Run `ollama pull qwen3.5:4b`, or
+   - Run `scripts/install-homebrain-qwen35-4b.ps1` from this repository for an automated pull and no-thinking response test.
+4. In this add-on's Configuration page:
    - Set `hubitat_mcp_url` to the endpoint without the `access_token` query parameter, for example:
      `http://192.168.1.100/apps/api/123/mcp`
    - Put the token in `hubitat_mcp_token`.
    - Set the Ollama address and model.
-4. Start the add-on and open it from the Home Assistant sidebar or port `8788`.
+5. Start the add-on and open it from the Home Assistant sidebar or port `8788`.
 
 You may alternatively paste the complete endpoint, including `?access_token=...`, into `hubitat_mcp_url` and leave `hubitat_mcp_token` empty.
+
+## Local AI profile
+
+The recommended profile for the GMKtec M6 Ultra with 16 GB shared system/GPU memory is `qwen3.5:4b`.
+
+- HomeBrain targets the installed Qwen 3.5 model closest to 4B rather than choosing the smallest model blindly.
+- Thinking is disabled in Ollama API calls.
+- Routine explanations use a 2K context, short output budget and 15-second limit.
+- Common analytical questions receive compact verified Hubitat evidence and skip the general tool planner.
+- The existing 9B model can remain installed as a fallback, but 4B is preferred when both are available.
 
 ## Routing
 
 - Exact live lists, room inventories and simple on/off controls stay on the fast deterministic Hubitat route.
 - Common analytical questions use bounded evidence routes: HomeBrain reads the required live Hubitat values first, then gives Ollama one small reasoning/writing request without MCP planning.
-- Open-ended diagnosis, recommendations and multi-step requests can still use the general Ollama MCP planner.
+- Open-ended diagnosis, recommendations and multi-step requests can still use the general Ollama MCP planner, with shorter limits and no more than two tool rounds.
 - Prefix a question with `Ask Ollama:` when an AI-written answer is specifically required.
 - `AI home insight` builds one authoritative Home Snapshot and lets Ollama phrase the most important or unusual conditions without planning extra MCP calls.
 - Per-browser conversation context supports natural follow-ups without allowing one browser session to control another session's devices.
 - Sensitive operations require explicit confirmation.
+
+## Other local runtimes
+
+HomeBrain currently talks to Ollama directly. Other local runtimes may improve GPU compatibility or operational convenience, but they do not make a 4B model comparable to Claude:
+
+- **LM Studio:** easiest Windows alternative and exposes OpenAI-compatible and Anthropic-compatible local APIs.
+- **llama.cpp server:** lightest and most configurable option, with Vulkan/HIP support and an OpenAI-compatible API.
+- **KoboldCpp:** simple single-file Windows runner; its maintainers recommend Vulkan for AMD systems.
+
+A future provider adapter can support an OpenAI-compatible local endpoint without changing Hubitat evidence and control routing.
 
 ## Recommended Hubitat settings
 
@@ -44,16 +67,14 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 
 ## Current comparison build
 
-### v0.4.9-alpha
+### v0.4.10-alpha
 
-- Adds a bounded bedroom-temperature comparison route modelled on a strong natural assistant answer: exact per-bedroom readings, warmest and coolest rooms, the precise spread, and cautious possible explanations.
-- Reads temperature evidence directly from the shared Hubitat device index and skips the slow general MCP planner.
-- Selects one representative ambient reading per bedroom, preferring room meters and temperature sensors over TRV or unrelated child readings.
-- Returns a complete deterministic live comparison even when Ollama times out, instead of the previous unsupported-question error.
-- Raises the bounded Home Snapshot/Ollama wording allowance from 12 to 25 seconds so `qwen3.5:9b` can complete after a cold or idle start.
-- Makes answer ownership explicit with route labels and badges: `Ollama comparison`, `Hubitat comparison (AI fallback)`, `Ollama insight`, `Hubitat snapshot (AI fallback)`, `AI used`, and `AI attempted → fallback`.
-- Keeps the 0.4.8 blank-answer renderer fix and persistent `Asked:`/`Contacting Hubitat…` status.
-- Keeps room-list execution, per-device icons, exact control verification and safe follow-up confirmations.
+- Changes the recommended local model from `qwen3.5:9b` to `qwen3.5:4b` for substantially lower memory pressure and response latency.
+- Targets the installed Qwen 3.5 model closest to 4B, preventing an accidental downgrade to weak 0.8B or 2B variants.
+- Reduces routine and quick-insight limits to 15 seconds, planner limit to 20 seconds, context to 2048 tokens and general tool rounds to two.
+- Keeps Qwen thinking disabled and keeps the model warm for 30 minutes.
+- Adds a Windows model installer and API response check.
+- Keeps the bounded bedroom-temperature route, explicit answer ownership badges, blank-renderer fix, room lists, device-specific icons and direct control verification.
 
 Ollama is never the source of device state. Hubitat MCP supplies authoritative live evidence; Ollama interprets, compares and phrases that evidence. Possible causes are presented as possibilities unless a corresponding live state proves them.
 
