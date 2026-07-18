@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from typing import Any
 
 from device_intelligence_index import DeviceIntelligenceIndex, _label
 from fast_fallback_device_types_live import FastFallbackRouter as CapabilityDeviceRouter
 from mcp_client import MCPToolResult
+
+
+_FRESH_CONTROL_READS: ContextVar[bool] = ContextVar(
+    "hubitat_mcp_ai_fresh_control_reads",
+    default=False,
+)
 
 
 class FastFallbackRouter(CapabilityDeviceRouter):
@@ -13,7 +20,7 @@ class FastFallbackRouter(CapabilityDeviceRouter):
     The final router owns release-specific control settings because the long
     fallback mixin chain does not expose one consistent ``__init__`` signature.
     It also resolves exact spoken aliases through the shared index before fuzzy
-    matching and forces fresh state reads throughout an active control request.
+    matching and forces fresh state reads throughout each active control request.
     """
 
     def __init__(
@@ -34,7 +41,11 @@ class FastFallbackRouter(CapabilityDeviceRouter):
             0.05,
             min(2.0, float(control_verification_initial_delay_seconds)),
         )
-        self._force_fresh_control_reads = False
+
+    @staticmethod
+    def _fresh_control_reads_enabled() -> bool:
+        """Return the request-local fresh-read state for the current task."""
+        return bool(_FRESH_CONTROL_READS.get())
 
     async def _live_devices(
         self,
@@ -42,7 +53,7 @@ class FastFallbackRouter(CapabilityDeviceRouter):
     ) -> MCPToolResult:
         if self.device_index is None:
             return await super()._live_devices(capability_filter)
-        force = bool(self._force_fresh_control_reads)
+        force = self._fresh_control_reads_enabled()
         if capability_filter:
             return await self.device_index.capability_result(
                 capability_filter,
@@ -54,7 +65,9 @@ class FastFallbackRouter(CapabilityDeviceRouter):
     async def _summary_devices(self) -> MCPToolResult:
         if self.device_index is None:
             return await super()._summary_devices()
-        return await self.device_index.summary_result()
+        return await self.device_index.summary_result(
+            force=self._fresh_control_reads_enabled(),
+        )
 
     async def _capability_devices(
         self,
@@ -67,6 +80,7 @@ class FastFallbackRouter(CapabilityDeviceRouter):
         return await self.device_index.capability_result(
             capability,
             detailed=detailed,
+            force=self._fresh_control_reads_enabled(),
         )
 
     async def _control_device(self, requested_name: str, action: str) -> dict[str, Any]:
@@ -76,6 +90,10 @@ class FastFallbackRouter(CapabilityDeviceRouter):
         to a fuzzy one-candidate confirmation when the capability response uses a
         slightly different label form. Duplicate aliases remain ambiguous because
         ``exact_device`` only returns a device when one ID owns that alias.
+
+        A ContextVar keeps the fresh-read override local to this asyncio task. Two
+        simultaneous controls therefore cannot clear each other's verification
+        state while either command is still polling Hubitat.
         """
         resolved_name = requested_name
         if self.device_index is not None:
@@ -89,11 +107,11 @@ class FastFallbackRouter(CapabilityDeviceRouter):
                 # optional identity index cannot resolve the alias.
                 pass
 
-        self._force_fresh_control_reads = True
+        token = _FRESH_CONTROL_READS.set(True)
         try:
             answer = await super()._control_device(resolved_name, action)
         finally:
-            self._force_fresh_control_reads = False
+            _FRESH_CONTROL_READS.reset(token)
 
         if resolved_name != requested_name:
             answer["requested_name"] = requested_name
