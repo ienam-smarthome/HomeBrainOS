@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.22-alpha
+
+- Recovers `hub_create_backup` when the MCP server hides it inside a generic management gateway whose compact description does not enumerate every child tool.
+- Falls back from direct-tool and cached gateway-map lookup to live catalogue probing across safe MCP management gateways.
+- Invokes the discovered backup tool through its owning gateway with the best-practice key intact.
+- Keeps the washing-machine Rule Machine creation blocked until a recent backup is verified or successfully created.
+- Improves the blocked message so it distinguishes a genuine disabled backup/admin tool from a HomeBrain discovery miss.
+
 ## 0.4.21-alpha
 
 - Compiles the grounded `washing-complete` recommendation into a native Hubitat Rule Machine rule.
