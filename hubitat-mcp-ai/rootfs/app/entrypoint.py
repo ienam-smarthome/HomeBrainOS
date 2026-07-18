@@ -10,8 +10,8 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
-from automation_rule_workflow_live import (
-    install_live_automation_rule_workflow as install_automation_rule_workflow,
+from automation_rule_workflow_release import (
+    install_release_automation_rule_workflow as install_automation_rule_workflow,
 )
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
