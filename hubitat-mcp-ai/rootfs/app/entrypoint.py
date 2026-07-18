@@ -22,6 +22,7 @@ from home_snapshot_hybrid import install_hybrid_home_snapshot
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from motion_light_insight import install_motion_light_insight
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
+from ollama_cloud_help import hybrid_ollama_help
 from ollama_engagement import install_ollama_engagement
 from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
@@ -127,10 +128,11 @@ home_snapshot = install_hybrid_home_snapshot(
     ai_timeout_seconds=float(application.OPTIONS.get("home_snapshot_ai_timeout_seconds") or 20),
     max_items_per_group=int(application.OPTIONS.get("home_snapshot_max_items_per_group") or 8),
 )
-# The engagement installer constructs the bounded comparison service from its
-# module global. Replace that class before installation so the same UI/routing
-# wrapper receives accurate Cloud-versus-local model ownership metadata.
+# The engagement installer constructs bounded services and help from its module
+# globals. Replace those before installation so all responses use the hybrid
+# Cloud/local implementations and accurate ownership labels.
 ollama_engagement_module.TemperatureInsightService = HybridTemperatureInsightService
+ollama_engagement_module.ollama_help = hybrid_ollama_help
 ollama_engagement = install_ollama_engagement(application, home_snapshot)
 motion_light_insight = install_motion_light_insight(
     application,
