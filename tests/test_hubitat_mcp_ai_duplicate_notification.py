@@ -43,6 +43,9 @@ class DuplicateIndex(DuplicateAwareCapabilityCatalogueDeviceIndex):
 
 
 class DraftIndex:
+    def __init__(self, phone_ids: list[str] | None = None) -> None:
+        self.phone_ids = list(phone_ids or ["845"])
+
     async def exact_device(self, label: str):
         if label == "Fridge Door":
             return {
@@ -54,8 +57,8 @@ class DraftIndex:
         return None, []
 
     async def enriched_devices(self, force: bool = False):
-        # Simulate a gateway catalogue that includes the selected phone but omits
-        # capabilities/commands, which previously made the rule builder miss it.
+        # Simulate a gateway catalogue that includes selected phone records but
+        # omits capabilities/commands, which previously made the builder miss them.
         return [
             {
                 "id": "77",
@@ -63,7 +66,10 @@ class DraftIndex:
                 "room": "Appliances",
                 "currentStates": {"contact": "closed"},
             },
-            {"id": "845", "label": "SM-S938B", "room": "Mobile"},
+            *[
+                {"id": device_id, "label": "SM-S938B", "room": "Mobile"}
+                for device_id in self.phone_ids
+            ],
         ]
 
     async def summary_devices(self, force: bool = False):
@@ -120,7 +126,7 @@ def test_duplicate_exact_name_lists_device_ids():
 def test_direct_notification_probe_recovers_selected_mobile_device():
     client = NotificationClient(["845"])
     app = SimpleNamespace(mcp=client, VERSION="0.4.20-alpha")
-    workflow = NotificationSafeNativeRuleMachineWorkflow(app, DraftIndex())
+    workflow = NotificationSafeNativeRuleMachineWorkflow(app, DraftIndex(["845"]))
 
     draft = asyncio.run(workflow._draft(RECOMMENDATION))
 
@@ -135,7 +141,7 @@ def test_direct_notification_probe_recovers_selected_mobile_device():
 def test_multiple_notification_devices_show_ids_instead_of_none_found():
     client = NotificationClient(["701", "845"])
     app = SimpleNamespace(mcp=client, VERSION="0.4.20-alpha")
-    workflow = NotificationSafeNativeRuleMachineWorkflow(app, DraftIndex())
+    workflow = NotificationSafeNativeRuleMachineWorkflow(app, DraftIndex(["701", "845"]))
 
     draft = asyncio.run(workflow._draft(RECOMMENDATION))
     message = " ".join(draft["unresolved"])
