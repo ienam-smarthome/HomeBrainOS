@@ -82,7 +82,7 @@ def test_screenshot_query_matches_bounded_recommendation_route():
         "Suggest one useful automation for the devices I have"
     )
     assert AutomationRecommendationService.matches(
-        "Recommend a practical automation using my devices."
+        "Recommend a practical automation using the devices I have."
     )
     assert AutomationRecommendationService.matches(
         "What automation should I create?"
@@ -184,7 +184,9 @@ def test_same_room_motion_and_light_become_a_safe_candidate():
         fail=True,
     )
 
-    answer = asyncio.run(service.answer("Recommend one automation using my devices"))
+    answer = asyncio.run(
+        service.answer("Recommend one automation using the devices I have")
+    )
 
     recommendation = answer["recommendation"]
     assert recommendation["type"] == "motion-lighting"
