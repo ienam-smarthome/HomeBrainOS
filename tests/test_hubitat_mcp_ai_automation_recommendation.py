@@ -195,12 +195,12 @@ def test_same_room_motion_and_light_become_a_safe_candidate():
     assert "3 minutes with no motion" in recommendation["action"]
 
 
-def test_release_metadata_is_0414():
+def test_release_metadata_is_0415():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (
         ROOT / "hubitat-mcp-ai" / "rootfs" / "app" / "entrypoint.py"
     ).read_text(encoding="utf-8")
 
-    assert "version: '0.4.14-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.14-alpha"' in entrypoint
+    assert "version: '0.4.15-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.15-alpha"' in entrypoint
     assert "install_automation_recommendation" in entrypoint
