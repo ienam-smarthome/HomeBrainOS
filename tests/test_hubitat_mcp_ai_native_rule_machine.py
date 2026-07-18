@@ -56,6 +56,12 @@ class Index:
             )
         return rows
 
+    async def exact_device(self, label: str):
+        target = str(label).strip().lower()
+        rows = await self.enriched_devices(force=True)
+        matches = [row for row in rows if str(row.get("label") or "").strip().lower() == target]
+        return (matches[0], []) if len(matches) == 1 else (None, matches)
+
 
 class CurrentMCP:
     configured = True
