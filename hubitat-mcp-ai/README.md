@@ -27,9 +27,10 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 ## Routing
 
 - Exact live lists, room inventories and simple on/off controls stay on the fast deterministic Hubitat route.
-- Ollama handles explanations, comparisons, diagnosis, recommendations, multi-step questions, contextual controls and natural summaries grounded in live Hubitat MCP evidence.
-- Prefix a question with `Ask Ollama:` when an AI-written answer is specifically required, even for a question that would normally use the deterministic route.
-- `AI home insight` builds one authoritative Home Snapshot and lets Ollama identify and phrase the most important or unusual conditions without planning extra MCP calls.
+- Common analytical questions use bounded evidence routes: HomeBrain reads the required live Hubitat values first, then gives Ollama one small reasoning/writing request without MCP planning.
+- Open-ended diagnosis, recommendations and multi-step requests can still use the general Ollama MCP planner.
+- Prefix a question with `Ask Ollama:` when an AI-written answer is specifically required.
+- `AI home insight` builds one authoritative Home Snapshot and lets Ollama phrase the most important or unusual conditions without planning extra MCP calls.
 - Per-browser conversation context supports natural follow-ups without allowing one browser session to control another session's devices.
 - Sensitive operations require explicit confirmation.
 
@@ -43,19 +44,17 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 
 ## Current comparison build
 
-### v0.4.8-alpha
+### v0.4.9-alpha
 
-- Fixes the blank answer panel introduced by the 0.4.7 friendly-route badge patch.
-- Defines the route-label helper independently from the grouped item renderer and guards its use so a presentation enhancement cannot break all answers.
-- Restores a persistent `Asked:` line for both in-progress and completed responses.
-- Shows `Contacting Hubitat…` immediately after submitting a question.
-- Keeps the 0.4.7 room-list execution fix, per-device icons, AI home insight shortcut, AI question guide and explicit `Ask Ollama:` mode.
-- Keeps normal dashboard and inventory reads cached to minimise Hubitat load while control verification bypasses all caches.
-- Keeps fresh verification state isolated per asynchronous request, so simultaneous phone or browser commands cannot interfere with each other.
-- Supports safe Yes/No and numbered follow-up confirmations for ambiguous device names.
-- Supports Home Assistant ingress/sidebar display with relative API paths.
-- Provides time-bounded mobile speech capture, interim transcript display, tap-to-stop controls and clear microphone error messages.
+- Adds a bounded bedroom-temperature comparison route modelled on a strong natural assistant answer: exact per-bedroom readings, warmest and coolest rooms, the precise spread, and cautious possible explanations.
+- Reads temperature evidence directly from the shared Hubitat device index and skips the slow general MCP planner.
+- Selects one representative ambient reading per bedroom, preferring room meters and temperature sensors over TRV or unrelated child readings.
+- Returns a complete deterministic live comparison even when Ollama times out, instead of the previous unsupported-question error.
+- Raises the bounded Home Snapshot/Ollama wording allowance from 12 to 25 seconds so `qwen3.5:9b` can complete after a cold or idle start.
+- Makes answer ownership explicit with route labels and badges: `Ollama comparison`, `Hubitat comparison (AI fallback)`, `Ollama insight`, `Hubitat snapshot (AI fallback)`, `AI used`, and `AI attempted → fallback`.
+- Keeps the 0.4.8 blank-answer renderer fix and persistent `Asked:`/`Contacting Hubitat…` status.
+- Keeps room-list execution, per-device icons, exact control verification and safe follow-up confirmations.
 
-Ollama is never the source of device state. Hubitat MCP supplies authoritative live evidence; Ollama interprets, compares and phrases that evidence.
+Ollama is never the source of device state. Hubitat MCP supplies authoritative live evidence; Ollama interprets, compares and phrases that evidence. Possible causes are presented as possibilities unless a corresponding live state proves them.
 
 The project intentionally remains separate from HomeBrain so both assistants can be tested side by side.
