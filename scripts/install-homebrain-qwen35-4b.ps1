@@ -20,6 +20,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to pull $model."
 }
 
+Write-Host 'Unloading the previous 9B model to free shared GPU memory...'
+ollama stop qwen3.5:9b 2>$null
+
 Write-Host 'Running a short no-thinking response test...' -ForegroundColor Yellow
 $body = @{
     model = $model
@@ -58,3 +61,4 @@ Write-Host 'Installed models:' -ForegroundColor Cyan
 ollama list
 Write-Host ''
 Write-Host 'Qwen 3.5 4B is ready. Restart the Hubitat MCP AI add-on after updating to 0.4.10-alpha.' -ForegroundColor Green
+Write-Host 'Keep qwen3.5:9b installed until HomeBrain has been tested. Remove it later with: ollama rm qwen3.5:9b' -ForegroundColor DarkGray
