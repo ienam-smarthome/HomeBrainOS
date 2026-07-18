@@ -14,16 +14,17 @@ class IndexedMCPStateBroker(MCPStateBroker):
     """MCP state broker that notifies dependent indexes after invalidation."""
 
     _RULE_WRITE_ACTION_PREFIXES = (
-        "hub_create_",
-        "hub_update_",
-        "hub_delete_",
-        "hub_pause_",
-        "hub_resume_",
-        "hub_enable_",
-        "hub_disable_",
-        "hub_run_",
-        "hub_call_",
-        "hub_set_",
+        "create_",
+        "update_",
+        "delete_",
+        "pause_",
+        "resume_",
+        "enable_",
+        "disable_",
+        "run_",
+        "test_",
+        "call_",
+        "set_",
     )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -35,12 +36,13 @@ class IndexedMCPStateBroker(MCPStateBroker):
             self._invalidation_callbacks.append(callback)
 
     async def _invalidate_for_write(self, name: str) -> None:
-        # Gateway-hidden tools may be called hub_create_visual_rule,
-        # hub_run_visual_rule, etc. The base broker's legacy rule prefixes only
-        # cover hub_create_rule*. Treat any write-shaped Hubitat tool containing
-        # "rule" as a catalogue write so list/duplicate checks refresh immediately.
+        # Current MCP releases use create_rule/update_rule/test_rule, while older
+        # releases use hub_create_visual_rule and other hub_* names. Strip the
+        # optional namespace before classifying the write so both refresh the rule
+        # catalogue immediately after a successful operation.
         lowered = str(name or "").lower()
-        if "rule" in lowered and lowered.startswith(self._RULE_WRITE_ACTION_PREFIXES):
+        unprefixed = lowered[4:] if lowered.startswith("hub_") else lowered
+        if "rule" in unprefixed and unprefixed.startswith(self._RULE_WRITE_ACTION_PREFIXES):
             await self.invalidate("catalog")
             return
         await super()._invalidate_for_write(name)
