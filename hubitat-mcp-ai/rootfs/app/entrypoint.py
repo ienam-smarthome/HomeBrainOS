@@ -15,15 +15,16 @@ from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_catalogue_safe import SafeCapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
-from fast_fallback_device_index import FastFallbackRouter
+from fast_fallback_engagement import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot import install_home_snapshot
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
+from ollama_engagement import install_ollama_engagement
 from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.4.6-alpha"
+RELEASE_VERSION = "0.4.7-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
@@ -111,6 +112,7 @@ home_snapshot = install_home_snapshot(
     ai_timeout_seconds=float(application.OPTIONS.get("home_snapshot_ai_timeout_seconds") or 12),
     max_items_per_group=int(application.OPTIONS.get("home_snapshot_max_items_per_group") or 8),
 )
+ollama_engagement = install_ollama_engagement(application, home_snapshot)
 conversation_context = install_safe_conversation_context(
     application,
     device_index,
