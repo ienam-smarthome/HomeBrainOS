@@ -11,7 +11,7 @@ import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
 from automation_rule_workflow_washing_final import (
-    install_final_washing_rule_machine_workflow as install_automation_rule_workflow,
+    install_final_washing_rule_machine_workflow as install_washing_rule_machine_workflow,
 )
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
@@ -38,6 +38,7 @@ from temperature_insight_hybrid import HybridTemperatureInsightService
 
 PREVIOUS_RELEASE_VERSION = "0.4.20-alpha"
 RELEASE_VERSION = "0.4.21-alpha"
+install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
 class ContextAskRequest(application.AskRequest):
