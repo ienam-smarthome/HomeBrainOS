@@ -179,7 +179,7 @@ RECOMMENDATION = {
 
 def make_service(*, existing=None, safe_create=True):
     client = FakeClient(existing=existing, safe_create=safe_create)
-    app = SimpleNamespace(mcp=client, VERSION="0.4.16-alpha")
+    app = SimpleNamespace(mcp=client, VERSION="0.4.21-alpha")
     service = AutomationRuleWorkflow(app, FakeIndex())
     return service, client
 
@@ -313,7 +313,7 @@ def test_recommendation_wrapper_adds_build_action_and_remembers_per_session():
 
     app = SimpleNamespace(
         mcp=client,
-        VERSION="0.4.16-alpha",
+        VERSION="0.4.21-alpha",
         ask=original_ask,
     )
     service = install_automation_rule_workflow(app, FakeIndex())
@@ -349,6 +349,6 @@ def test_rule_action_renderer_and_release_metadata():
     assert "submit(query)" in page
     assert "workflowActions" in page
     assert 'return box}"' not in page
-    assert "version: '0.4.16-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.16-alpha"' in entrypoint
-    assert "install_automation_rule_workflow" in entrypoint
+    assert "version: '0.4.21-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.21-alpha"' in entrypoint
+    assert "install_washing_rule_machine_workflow" in entrypoint
