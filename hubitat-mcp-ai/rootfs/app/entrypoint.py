@@ -36,8 +36,8 @@ from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.16-alpha"
-RELEASE_VERSION = "0.4.17-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.17-alpha"
+RELEASE_VERSION = "0.4.18-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
