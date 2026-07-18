@@ -12,7 +12,11 @@ ASK_PAYLOAD_REPLACEMENT = "JSON.stringify({query,history:prior,session_id:client
 SUMMARY_MARKER = "if(answer.display.subtitle)output.appendChild(el('div','result-subtitle',answer.display.subtitle));const metrics=metricGrid(answer.display.metrics);"
 SUMMARY_REPLACEMENT = "if(answer.display.subtitle)output.appendChild(el('div','result-subtitle',answer.display.subtitle));if(answer.display.summary)output.appendChild(el('div','result-summary',answer.display.summary));const metrics=metricGrid(answer.display.metrics);"
 ROUTE_BADGE_MARKER = "meta.appendChild(el('span','badge',answer.route||'unknown'));"
-ROUTE_BADGE_REPLACEMENT = "meta.appendChild(el('span','badge',routeLabel(answer.route)));"
+ROUTE_BADGE_REPLACEMENT = "meta.appendChild(el('span','badge',(typeof routeLabel==='function'?routeLabel(answer.route):String(answer.route||'unknown'))));"
+SHOW_ANSWER_MARKER = "function showAnswer(answer){clearOutput();"
+SHOW_ANSWER_REPLACEMENT = "function showAnswer(answer){clearOutput();const asked=localStorage.getItem('hmcp_last_query')||'';if(asked)output.appendChild(el('div','result-question','Asked: '+asked));"
+WORKING_MARKER = "clearOutput();output.appendChild(el('div','answer-text','Working on: '+query));"
+WORKING_REPLACEMENT = "clearOutput();output.appendChild(el('div','result-question','Asked: '+query));output.appendChild(el('div','answer-text','Contacting Hubitat…'));"
 
 OLD_VOICE_HANDLER = r"""function startVoice(){const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){showAnswer({success:false,route:'browser',message:'Speech recognition is not supported by this browser.'});return}const recognition=new Recognition();recognition.lang='en-GB';recognition.interimResults=false;const fab=document.getElementById('micFab');fab.classList.add('listening');fab.textContent='■';recognition.onresult=event=>{const query=event.results[0][0].transcript;input.value=query;submit(query)};recognition.onerror=event=>showAnswer({success:false,route:'browser',message:'Speech recognition error: '+event.error});recognition.onend=()=>{fab.classList.remove('listening');fab.textContent='🎤'};recognition.start()}document.getElementById('speak').onclick=startVoice;document.getElementById('micFab').onclick=startVoice;"""
 
@@ -20,12 +24,16 @@ NEW_VOICE_HANDLER = r"""let activeRecognition=null,activeVoiceStop=null;function
 
 SNAPSHOT_CSS = r"""
 .result-summary{font-size:14px;line-height:1.5;margin:8px 0 12px;padding:10px 12px;background:#111;border-left:3px solid rgba(34,197,94,.8);border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere}
+.result-question{font-size:13px;line-height:1.4;margin:0 0 10px;padding:8px 10px;background:#111827;border:1px solid #263752;border-radius:8px;color:#dbeafe;white-space:pre-wrap;overflow-wrap:anywhere}
 .result-section{grid-column:1/-1;color:#d7d7db;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:7px 2px 0;padding-top:5px;border-top:1px solid #29292d}
 .result-section:first-child{border-top:0;margin-top:0;padding-top:0}
 #speak.listening{background:#b91c1c}
 """
 
-GROUPED_ITEM_LIST = r"""function routeLabel(route){const key=String(route||'unknown');const labels={'mcp-fast':'Hubitat live','ollama+mcp':'Ollama + Hubitat','ollama+snapshot':'Ollama insight','mcp-snapshot':'Hubitat snapshot','fallback-compact':'Hubitat fallback','fallback':'Hubitat fallback','mcp-confirmation':'Hubitat confirmation','system':'System','browser':'Browser','error':'Error'};return labels[key]||key.replaceAll('-',' ')}function itemList(items){if(!Array.isArray(items)||!items.length)return null;const list=el('div','result-list');let lastGroup='';items.forEach(item=>{const group=String(item.group||'');if(group&&group!==lastGroup){list.appendChild(el('div','result-section',group));lastGroup=group}const row=el('div','result-item '+(item.tone||''));row.appendChild(el('div','',item.icon||'•'));const main=el('div','result-main');main.appendChild(el('div','result-name',item.title||''));if(item.subtitle)main.appendChild(el('div','result-sub',item.subtitle));row.appendChild(main);if(item.value!==undefined&&item.value!==null&&item.value!=='')row.appendChild(el('div','result-side',String(item.value)));list.appendChild(row)});return list}function showAnswer(answer){"""
+ROUTE_LABEL_FUNCTION = r"""function routeLabel(route){const key=String(route||'unknown');const labels={'mcp-fast':'Hubitat live','ollama+mcp':'Ollama + Hubitat','ollama+snapshot':'Ollama insight','mcp-snapshot':'Hubitat snapshot','fallback-compact':'Hubitat fallback','fallback':'Hubitat fallback','mcp-confirmation':'Hubitat confirmation','system':'System','browser':'Browser','error':'Error'};return labels[key]||key.split('-').join(' ')}"""
+
+GROUPED_ITEM_LIST = r"""function itemList(items){if(!Array.isArray(items)||!items.length)return null;const list=el('div','result-list');let lastGroup='';items.forEach(item=>{const group=String(item.group||'');if(group&&group!==lastGroup){list.appendChild(el('div','result-section',group));lastGroup=group}const row=el('div','result-item '+(item.tone||''));row.appendChild(el('div','',item.icon||'•'));const main=el('div','result-main');main.appendChild(el('div','result-name',item.title||''));if(item.subtitle)main.appendChild(el('div','result-sub',item.subtitle));row.appendChild(main);if(item.value!==undefined&&item.value!==null&&item.value!=='')row.appendChild(el('div','result-side',String(item.value)));list.appendChild(row)});return list}
+function showAnswer(answer){"""
 
 DEVICE_HANDLER = r"""document.getElementById('deviceCatalogue').onclick=async()=>{working.classList.add('show');try{const response=await fetch('/api/device-catalogue?force=true');const data=await response.json();const groups=Object.entries(data.groups||{}).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));const items=groups.map(([name,count])=>({icon:'📂',title:name.replaceAll('-',' '),value:String(count),subtitle:'Selected devices identified in this group'}));for(const name of (data.without_room||[]).slice(0,10))items.push({icon:'🏷️',title:name,value:'No room',subtitle:'Assign a Hubitat room for clearer natural answers',tone:'warning'});for(const [alias,names] of Object.entries(data.ambiguous_aliases||{}).slice(0,10))items.push({icon:'⚠️',title:alias,value:names.length+' matches',subtitle:names.join(', '),tone:'warning'});showAnswer({success:true,route:'system',message:`Indexed ${data.selected_count||0} selected Hubitat devices.`,display:{title:'Device intelligence catalogue',subtitle:`Refreshed ${Number(data.last_refresh_age_seconds||0).toFixed(1)}s ago · ${data.rooms?.length||0} rooms`,metrics:[{label:'Selected devices',value:data.selected_count||0,icon:'📱'},{label:'Device groups',value:groups.length,icon:'📂'},{label:'Without room',value:(data.without_room||[]).length,icon:'🏷️'},{label:'Ambiguous aliases',value:Object.keys(data.ambiguous_aliases||{}).length,icon:'⚠️'}],items,note:'The dashboard, device status and device-type questions now share this cached live-state index. A successful control command invalidates it before the next read.'},technical:JSON.stringify(data,null,2)});}catch(error){showAnswer({success:false,route:'error',message:'Could not load the device catalogue: '+error.message})}finally{working.classList.remove('show')}};document.getElementById('clearConversation').onclick=async()=>{working.classList.add('show');try{const response=await fetch('/api/conversation-context/clear',{method:'POST',headers:{'Content-Type':'application/json','X-HMCP-Client':clientId},body:JSON.stringify({session_id:clientId})});const data=await response.json();history=[];save();input.value='';localStorage.removeItem('hmcp_last_query');window.speechSynthesis?.cancel();showAnswer({success:true,route:'system',message:'Conversation context cleared.',display:{title:'Conversation cleared',subtitle:'Follow-up references will start fresh',metrics:[{label:'Context',value:'Cleared',icon:'🧹'}],note:'Device states and the shared MCP cache were not cleared.'},technical:JSON.stringify(data,null,2)});}catch(error){showAnswer({success:false,route:'error',message:'Could not clear conversation context: '+error.message})}finally{working.classList.remove('show')}};document.getElementById('refreshMcp').onclick=async()=>{"""
 
@@ -53,15 +61,28 @@ def patch_page(page: str) -> str:
     page = page.replace(DEVICE_HANDLER_MARKER, DEVICE_HANDLER)
     page = page.replace(OLD_VOICE_HANDLER, NEW_VOICE_HANDLER, 1)
     page = page.replace("</style>", SNAPSHOT_CSS + "</style>", 1)
+
+    # Allow whitespace/newlines between the two functions. The previous exact
+    # ``}function`` match failed on the real page and left routeLabel undefined.
     page = re.sub(
-        r"function itemList\(items\)\{.*?\}function showAnswer\(answer\)\{",
+        r"function itemList\(items\)\{.*?\}\s*function showAnswer\(answer\)\{",
         GROUPED_ITEM_LIST,
         page,
         count=1,
         flags=re.S,
     )
+    # Define the route helper independently of the item-list enhancement so a
+    # future item renderer change cannot break all answers again.
+    page = page.replace(
+        "function showAnswer(answer){",
+        ROUTE_LABEL_FUNCTION + "\nfunction showAnswer(answer){",
+        1,
+    )
+    page = page.replace(SHOW_ANSWER_MARKER, SHOW_ANSWER_REPLACEMENT, 1)
+    page = page.replace(WORKING_MARKER, WORKING_REPLACEMENT, 1)
     page = page.replace(SUMMARY_MARKER, SUMMARY_REPLACEMENT, 1)
     page = page.replace(ROUTE_BADGE_MARKER, ROUTE_BADGE_REPLACEMENT, 1)
+
     # Relative API paths work both at http://host:8788/ and through Home
     # Assistant's /api/hassio_ingress/<token>/ sidebar proxy. Absolute /api
     # URLs escape the ingress prefix and are handled by Home Assistant instead.
