@@ -7,7 +7,11 @@ from fast_fallback_live import _looks_like_light, live_attributes
 
 
 def _normalise(value: Any) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())).strip()
+    return re.sub(
+        r"\s+",
+        " ",
+        re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()),
+    ).strip()
 
 
 def _capability_text(item: dict[str, Any]) -> str:
@@ -41,9 +45,20 @@ def device_icon(
     item: dict[str, Any],
     attrs: dict[str, Any] | None = None,
 ) -> str:
-    """Return a stable, recognisable icon from live state and device metadata."""
+    """Return a stable, recognisable icon from live state and device metadata.
+
+    Dedicated child sensors such as ``FP300 battery`` and ``FP300 Lux`` are
+    detected before their parent device's broader presence/motion metadata. This
+    prevents every multi-sensor child from inheriting the same generic icon.
+    """
     attrs = attrs if isinstance(attrs, dict) else live_attributes(item)
     keys = {_normalise(key).replace(" ", "") for key in attrs}
+    label_text = _normalise(
+        " ".join(
+            str(item.get(key) or "")
+            for key in ("label", "name", "displayName")
+        )
+    )
     text = _normalise(
         " ".join(
             [
@@ -62,16 +77,44 @@ def device_icon(
         )
     )
     words = set(text.split())
+    label_words = set(label_text.split())
 
     if any(term in text for term in ("hub info", "hubitat hub", "c8 pro", "c 8 pro")):
         return "🧠"
     if "weather" in words or "forecast" in words:
         return "🌦️"
-    if any(term in words for term in ("prayer", "pray", "fajr", "dhuhr", "maghrib", "isha")):
+    if any(
+        term in words
+        for term in ("prayer", "pray", "fajr", "dhuhr", "maghrib", "isha")
+    ):
         return "🕌"
+
+    # Prefer the explicitly named child/sensor function over parent metadata.
+    if "battery" in label_words or ("battery" in keys and len(keys) <= 3):
+        return "🔋"
+    if (
+        "lux" in label_words
+        or "illuminance" in label_words
+        or "illuminance" in keys
+        or "light sensor" in label_text
+    ):
+        return "☀️"
+    if "humidity" in label_words or (
+        "humidity" in keys and "temperature" not in keys
+    ):
+        return "💧"
+    if "temperature" in label_words or (
+        "temperature" in keys
+        and not ({"power", "energy"} & keys)
+        and "humidity" not in keys
+    ):
+        return "🌡️"
+
     if _looks_like_light(item):
         return "💡"
-    if "camera" in words or "cam" in words or any(word.endswith("cam") for word in words):
+    if "camera" in words or "cam" in words or any(
+        word.endswith("cam") for word in words
+    ):
         return "📷"
     if "thermostat" in text or " trv " in f" {text} " or {
         "thermostatmode",
@@ -112,20 +155,16 @@ def device_icon(
         "numberofbuttons",
     } & keys:
         return "🔘"
-    if "illuminance" in keys or "lux" in words or "illuminance" in words:
-        return "☀️"
-    if "humidity" in keys or "humidity" in words:
-        return "💧"
-    if "temperature" in keys or "temperature" in words or "meter" in words:
-        return "🌡️"
-    if "battery" in keys and len(keys) <= 3:
-        return "🔋"
+    if any(word in label_words for word in ("socket", "outlet", "plug")):
+        return "🔌"
     if {"power", "energy"} & keys or any(
-        word in words for word in ("power", "energy", "meter")
+        word in label_words for word in ("power", "energy")
     ):
         return "⚡"
-    if any(word in words for word in ("socket", "outlet", "plug")):
-        return "🔌"
+    if "temperature" in keys:
+        return "🌡️"
+    if "humidity" in keys:
+        return "💧"
     if "switch" in keys or "switch" in words:
         return "🎚️"
     if "battery" in keys:
