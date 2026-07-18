@@ -10,8 +10,8 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
-from automation_rule_workflow_native_rm import (
-    install_native_rule_machine_workflow as install_automation_rule_workflow,
+from automation_rule_workflow_notification_safe import (
+    install_notification_safe_native_rule_machine_workflow as install_automation_rule_workflow,
 )
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
@@ -20,7 +20,7 @@ from conversation_context_safe import install_safe_conversation_context
 from dashboard_api import install_dashboard_api
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
-from device_intelligence_catalogue_safe import SafeCapabilityCatalogueDeviceIndex
+from device_intelligence_duplicate_safe import DuplicateAwareCapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
 from fast_fallback_engagement import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
@@ -36,8 +36,8 @@ from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.18-alpha"
-RELEASE_VERSION = "0.4.19-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.19-alpha"
+RELEASE_VERSION = "0.4.20-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
@@ -59,9 +59,9 @@ def _replace_mcp_client() -> None:
     )
 
 
-def _create_device_index() -> SafeCapabilityCatalogueDeviceIndex:
+def _create_device_index() -> DuplicateAwareCapabilityCatalogueDeviceIndex:
     options = application.OPTIONS
-    index = SafeCapabilityCatalogueDeviceIndex(
+    index = DuplicateAwareCapabilityCatalogueDeviceIndex(
         application.mcp,
         ttl_seconds=float(options.get("device_index_ttl_seconds") or 15),
         capability_ttl_seconds=float(options.get("device_index_capability_ttl_seconds") or 60),
@@ -71,7 +71,7 @@ def _create_device_index() -> SafeCapabilityCatalogueDeviceIndex:
     return index
 
 
-def _replace_fallback_router(index: SafeCapabilityCatalogueDeviceIndex) -> None:
+def _replace_fallback_router(index: DuplicateAwareCapabilityCatalogueDeviceIndex) -> None:
     application.fallback = FastFallbackRouter(
         application.mcp,
         device_index=index,
