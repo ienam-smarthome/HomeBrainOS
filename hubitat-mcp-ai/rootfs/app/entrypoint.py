@@ -93,7 +93,7 @@ def _replace_ollama_agent() -> None:
             True,
         ),
         cloud_timeout_seconds=float(
-            options.get("ollama_cloud_timeout_seconds") or 25
+            options.get("ollama_cloud_timeout_seconds") or 12
         ),
         health_timeout_seconds=float(options.get("ollama_health_timeout_seconds") or 3),
         planner_timeout_seconds=max(10.0, float(options.get("ollama_planner_timeout_seconds") or 20)),
