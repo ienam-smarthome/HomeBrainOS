@@ -45,7 +45,7 @@ def test_local_model_selection_does_not_cross_qwen_generations():
 def test_addon_defaults_use_responsive_4b_profile():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
 
-    assert "version: '0.4.10-alpha'" in config
+    assert "version: '0.4.12-alpha'" in config
     assert 'ollama_model: "qwen3.5:4b"' in config
     assert "ollama_planner_timeout_seconds: 20" in config
     assert "ollama_routine_response_timeout_seconds: 15" in config
