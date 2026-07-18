@@ -1,7 +1,7 @@
 name: Hubitat MCP AI
-version: '0.4.16-alpha'
+version: '0.4.17-alpha'
 slug: hubitat_mcp_ai
-description: Hybrid Ollama assistant with guarded draft-confirm-create Hubitat rule workflows
+description: Hybrid Ollama assistant with upgrade-safe Cloud response selection and guarded Hubitat rule workflows
 url: https://github.com/ienam-smarthome/HomeBrainOS
 arch:
   - amd64
@@ -28,6 +28,7 @@ options:
   ollama_planner_model: "qwen3.5:4b"
   ollama_routine_model: "gemma4:31b-cloud"
   ollama_cloud_enabled: true
+  ollama_prefer_cloud_response: true
   ollama_cloud_model: "gemma4:31b-cloud"
   ollama_local_fallback_model: "qwen3.5:4b"
   ollama_cloud_fallback_local: true
@@ -81,6 +82,7 @@ schema:
   ollama_planner_model: str
   ollama_routine_model: str
   ollama_cloud_enabled: bool
+  ollama_prefer_cloud_response: bool
   ollama_cloud_model: str
   ollama_local_fallback_model: str
   ollama_cloud_fallback_local: bool
