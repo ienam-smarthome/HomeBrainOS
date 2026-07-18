@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from device_intelligence_catalogue import (
@@ -19,6 +20,23 @@ from device_intelligence_catalogue import (
 
 class SafeCapabilityCatalogueDeviceIndex(CapabilityCatalogueDeviceIndex):
     """Capability catalogue with conservative custom-driver name matching."""
+
+    def stats(self) -> dict[str, Any]:
+        value = super().stats()
+        now = time.monotonic()
+        metadata = getattr(self, "_metadata", None)
+        value.update(
+            {
+                "metadata_loaded": metadata is not None,
+                "metadata_age_seconds": (
+                    round(max(0.0, now - metadata.stored_at), 2)
+                    if metadata is not None
+                    else None
+                ),
+                "metadata_ttl_seconds": self.metadata_ttl_seconds,
+            }
+        )
+        return value
 
     @staticmethod
     def _groups(item: dict[str, Any]) -> set[str]:
