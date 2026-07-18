@@ -42,7 +42,7 @@ ollama_cloud_enabled: true
 ollama_cloud_model: gemma4:31b-cloud
 ollama_local_fallback_model: qwen3.5:4b
 ollama_cloud_fallback_local: true
-ollama_cloud_timeout_seconds: 25
+ollama_cloud_timeout_seconds: 12
 ollama_num_ctx: 2048
 ```
 
@@ -52,6 +52,7 @@ This arrangement conserves Free cloud usage:
 - The local 4B model performs MCP tool planning for open-ended requests.
 - Gemma Cloud receives only compact verified evidence for explanations, comparisons, diagnosis, recommendations and natural summaries.
 - If Cloud is unavailable, limited or offline, the same synthesis request is retried through local Qwen before deterministic fallback.
+- Cloud is given 12 seconds on bounded insights, preserving enough of the 20-second insight window for the local 4B retry.
 
 ## Bounded evidence routes
 
