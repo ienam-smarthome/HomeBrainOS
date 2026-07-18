@@ -1,6 +1,7 @@
 name: Hubitat MCP AI tests
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - "hubitat-mcp-ai/**"
