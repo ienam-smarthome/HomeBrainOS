@@ -23,7 +23,7 @@ from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.4.5-alpha"
+RELEASE_VERSION = "0.4.6-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
