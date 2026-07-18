@@ -39,7 +39,7 @@ class FakeIndex(SafeCapabilityCatalogueDeviceIndex):
         return list(self.metadata_rows)
 
 
-def test_metadata_only_removed_device_is_not_reintroduced():
+def test_metadata_only_removed_device_is_not_reintroduced_and_live_state_wins():
     index = FakeIndex(
         summary=[
             {
@@ -55,7 +55,9 @@ def test_metadata_only_removed_device_is_not_reintroduced():
                 "label": "Hallway Motion",
                 "room": "Hallway",
                 "capabilities": ["MotionSensor"],
-                "attributes": {"motion": "inactive"},
+                # Simulate an older detailed metadata record. The compact live
+                # summary above must remain authoritative for the same attribute.
+                "attributes": {"motion": "active"},
             },
             {
                 "id": "2",
@@ -71,6 +73,7 @@ def test_metadata_only_removed_device_is_not_reintroduced():
 
     assert [item["id"] for item in devices] == ["1"]
     assert devices[0]["capabilities"] == ["MotionSensor"]
+    assert devices[0]["attributes"]["motion"] == "inactive"
     assert index._last_metadata_orphans_dropped == 1
 
 
@@ -145,7 +148,7 @@ def test_dashboard_uses_capabilities_and_excludes_removed_metadata_states():
                 "label": "Hallway Motion",
                 "room": "Hallway",
                 "capabilities": ["MotionSensor", "Battery"],
-                "attributes": {"motion": "active", "battery": 19},
+                "attributes": {"motion": "inactive", "battery": 21},
             },
             {
                 "id": "4",
@@ -165,3 +168,13 @@ def test_dashboard_uses_capabilities_and_excludes_removed_metadata_states():
     assert metrics["low_batteries"] == 1
     assert metrics["metadata_orphans_dropped"] == 1
     assert metrics["state_records"] == 3
+
+
+def test_release_metadata_is_0415():
+    config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
+    entrypoint = (
+        ROOT / "hubitat-mcp-ai" / "rootfs" / "app" / "entrypoint.py"
+    ).read_text(encoding="utf-8")
+
+    assert "version: '0.4.15-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.15-alpha"' in entrypoint
