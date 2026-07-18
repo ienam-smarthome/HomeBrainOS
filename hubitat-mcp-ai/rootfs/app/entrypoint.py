@@ -6,6 +6,7 @@ import uvicorn
 from pydantic import Field
 
 import app as application
+import ollama_engagement as ollama_engagement_module
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
 from control_language import install_control_language
@@ -17,11 +18,12 @@ from device_intelligence_catalogue_safe import SafeCapabilityCatalogueDeviceInde
 from device_intelligence_webui import install_device_intelligence_webui
 from fast_fallback_engagement import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
-from home_snapshot_truthful import install_truthful_home_snapshot
+from home_snapshot_hybrid import install_hybrid_home_snapshot
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from ollama_engagement import install_ollama_engagement
 from request_tracing import install_request_tracing
+from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
 RELEASE_VERSION = "0.4.13-alpha"
@@ -117,13 +119,17 @@ device_index = _create_device_index()
 _replace_fallback_router(device_index)
 _replace_ollama_agent()
 install_fastpath_ai_handoff(application)
-home_snapshot = install_truthful_home_snapshot(
+home_snapshot = install_hybrid_home_snapshot(
     application,
     device_index,
     ai_enabled=application.option_bool("home_snapshot_ai_enabled", True),
     ai_timeout_seconds=float(application.OPTIONS.get("home_snapshot_ai_timeout_seconds") or 20),
     max_items_per_group=int(application.OPTIONS.get("home_snapshot_max_items_per_group") or 8),
 )
+# The engagement installer constructs the bounded comparison service from its
+# module global. Replace that class before installation so the same UI/routing
+# wrapper receives accurate Cloud-versus-local model ownership metadata.
+ollama_engagement_module.TemperatureInsightService = HybridTemperatureInsightService
 ollama_engagement = install_ollama_engagement(application, home_snapshot)
 conversation_context = install_safe_conversation_context(
     application,
