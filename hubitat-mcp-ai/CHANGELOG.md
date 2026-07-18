@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.20-alpha
+
+- Makes duplicate exact-device matches actionable by showing each Hubitat device ID and room instead of repeating the same label.
+- Adds a direct `capabilityFilter=Notification` lookup for fridge-door rule drafts when the general detailed-device catalogue omits a mobile device's capabilities or commands.
+- Intersects notification results with the current selected-device membership list so an unselected or stale metadata record cannot become a recipient.
+- Reports multiple selected Notification devices with IDs and refuses to guess which phone should receive alerts.
+- Keeps native Rule Machine creation paused and guarded exactly as in 0.4.19-alpha.
+
 ## 0.4.19-alpha
 
 - Adds native Hubitat Rule Machine creation for MCP Rule Server 3.4.x through `hub_set_rule` and `hub_set_rule_paused`.
