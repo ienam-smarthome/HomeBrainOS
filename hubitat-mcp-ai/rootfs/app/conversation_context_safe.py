@@ -24,14 +24,12 @@ class SafeConversationContextStore(ConversationContextStore):
 
     @staticmethod
     def _device_context_active(state: Any) -> bool:
-        intent = str(getattr(state, "last_intent", "") or "")
+        # capture() clears these fields after every unrelated answer, so their
+        # presence is the authoritative signal that a follow-up may reference
+        # devices. This also permits room inventories and other device displays.
         return bool(
             getattr(state, "devices", None)
             or getattr(state, "last_device_type", None)
-        ) and (
-            intent in _DEVICE_INTENTS
-            or intent.startswith("fallback-device")
-            or intent.startswith("context-")
         )
 
     async def resolve(self, request: Any) -> ContextResolution:
