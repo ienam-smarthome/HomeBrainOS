@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.17-alpha
+
+- Adds `ollama_prefer_cloud_response`, enabled by default, so upgraded installations use `gemma4:31b-cloud` even when Home Assistant preserves an older saved `ollama_model: qwen3.5:4b` value.
+- Keeps `qwen3.5:4b` as the local MCP planner and automatic Cloud fallback.
+- Replaces the local-only diagnostics card with hybrid diagnostics showing Cloud registration, effective response model, planner, fallback and last-agent state separately.
+- Clearly reports when an older saved response model is being overridden by the explicit Cloud preference.
+- Allows deliberate local-only synthesis by turning off Prefer Cloud response.
+
 ## 0.4.16-alpha
 
 - Adds a guarded automation rule workflow: recommendation → reviewable draft → explicit create confirmation → dry-run test → enable/disable.
