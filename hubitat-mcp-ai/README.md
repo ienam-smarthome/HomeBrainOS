@@ -43,18 +43,18 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 
 ## Current comparison build
 
-### v0.4.7-alpha
+### v0.4.8-alpha
 
-- Fixes `show rooms` and similar questions so the hidden `hub_list_rooms` operation executes through the room gateway instead of exposing gateway catalogue JSON.
-- Uses device-specific icons inferred from live attributes, capabilities and labels, including lights, motion, presence, lux, battery, humidity, temperature, Hub Info, power, sockets, cameras, locks and thermostats.
-- Adds `AI home insight` and `AI question guide` shortcuts.
-- Adds the explicit `Ask Ollama:` override and falls back safely to authoritative Hubitat output if local inference fails.
-- Shows friendly route badges such as `Hubitat live`, `Ollama + Hubitat` and `Ollama insight`, making AI participation visible.
+- Fixes the blank answer panel introduced by the 0.4.7 friendly-route badge patch.
+- Defines the route-label helper independently from the grouped item renderer and guards its use so a presentation enhancement cannot break all answers.
+- Restores a persistent `Asked:` line for both in-progress and completed responses.
+- Shows `Contacting Hubitat…` immediately after submitting a question.
+- Keeps the 0.4.7 room-list execution fix, per-device icons, AI home insight shortcut, AI question guide and explicit `Ask Ollama:` mode.
 - Keeps normal dashboard and inventory reads cached to minimise Hubitat load while control verification bypasses all caches.
 - Keeps fresh verification state isolated per asynchronous request, so simultaneous phone or browser commands cannot interfere with each other.
 - Supports safe Yes/No and numbered follow-up confirmations for ambiguous device names.
 - Supports Home Assistant ingress/sidebar display with relative API paths.
-- Provides time-bounded mobile speech capture, interim transcript display, tap-to-stop controls, and clear microphone error messages.
+- Provides time-bounded mobile speech capture, interim transcript display, tap-to-stop controls and clear microphone error messages.
 
 Ollama is never the source of device state. Hubitat MCP supplies authoritative live evidence; Ollama interprets, compares and phrases that evidence.
 
