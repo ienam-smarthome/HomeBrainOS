@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.4.21-alpha
+
+- Compiles the grounded `washing-complete` recommendation into a native Hubitat Rule Machine rule.
+- Uses a two-stage power guard: power above 10 W arms the cycle, then power below 5 W continuously for three minutes marks completion.
+- Creates a numeric Rule Machine local variable, `cycleArmed`, so ordinary standby power cannot send false finished notifications.
+- Creates the shell paused, adds and verifies the local variable, reasserts pause, then adds the two triggers and guarded actions while the rule remains paused.
+- Stops safely before adding triggers/actions when the local-variable write is rejected or partial.
+- Keeps the Notification recipient exact and requires review plus a separate Enable action.
+
 ## 0.4.20-alpha
 
 - Makes duplicate exact-device matches actionable by showing each Hubitat device ID and room instead of repeating the same label.
