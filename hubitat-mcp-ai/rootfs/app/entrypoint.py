@@ -29,12 +29,14 @@ from mcp_tool_catalogue import install_mcp_tool_catalogue
 from motion_light_insight import install_motion_light_insight
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from ollama_cloud_help import hybrid_ollama_help
+from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement
+from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
-RELEASE_VERSION = "0.4.16-alpha"
+RELEASE_VERSION = "0.4.17-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
@@ -82,18 +84,18 @@ def _replace_fallback_router(index: SafeCapabilityCatalogueDeviceIndex) -> None:
 def _replace_ollama_agent() -> None:
     previous = application.ollama
     options = application.OPTIONS
+    profile = resolve_hybrid_profile(options)
+    application.ollama_hybrid_profile = profile
 
     application.ollama = AdaptiveFinalAnswerAgent(
         client=application.mcp,
         base_url=str(options.get("ollama_base_url") or ""),
-        model=str(options.get("ollama_model") or "gemma4:31b-cloud"),
-        planner_model=str(options.get("ollama_planner_model") or "qwen3.5:4b"),
-        routine_model=str(options.get("ollama_routine_model") or "gemma4:31b-cloud"),
-        cloud_enabled=application.option_bool("ollama_cloud_enabled", True),
-        cloud_model=str(options.get("ollama_cloud_model") or "gemma4:31b-cloud"),
-        local_fallback_model=str(
-            options.get("ollama_local_fallback_model") or "qwen3.5:4b"
-        ),
+        model=str(profile["effective_response_model"]),
+        planner_model=str(profile["planner_model"]),
+        routine_model=str(profile["effective_routine_model"]),
+        cloud_enabled=bool(profile["cloud_enabled"]),
+        cloud_model=str(profile["cloud_model"]),
+        local_fallback_model=str(profile["local_fallback_model"]),
         cloud_fallback_local=application.option_bool(
             "ollama_cloud_fallback_local",
             True,
@@ -126,6 +128,7 @@ _replace_mcp_client()
 device_index = _create_device_index()
 _replace_fallback_router(device_index)
 _replace_ollama_agent()
+install_hybrid_ollama_diagnostics(application)
 install_fastpath_ai_handoff(application)
 home_snapshot = install_hybrid_home_snapshot(
     application,
