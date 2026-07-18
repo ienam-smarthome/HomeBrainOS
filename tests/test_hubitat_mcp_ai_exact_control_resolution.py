@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -13,11 +14,18 @@ from fast_fallback_device_index import (  # noqa: E402
     CapabilityDeviceRouter,
     FastFallbackRouter,
 )
+from mcp_client import MCPToolResult  # noqa: E402
 
 
 class FakeIndex:
-    def __init__(self, exact: dict[str, Any] | None) -> None:
+    def __init__(
+        self,
+        exact: dict[str, Any] | None,
+        *,
+        client: Any | None = None,
+    ) -> None:
         self.exact = exact
+        self.client = client
         self.calls: list[tuple[str, bool]] = []
 
     async def exact_device(self, requested_name: str):
@@ -30,6 +38,38 @@ class FakeIndex:
     async def summary_result(self, *, force: bool = False):
         self.calls.append(("summary", force))
         return {"summary": True, "force": force}
+
+
+class FakeRawMCP:
+    def __init__(self, states: list[str]) -> None:
+        self.states = list(states)
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> MCPToolResult:
+        arguments = dict(arguments or {})
+        self.calls.append((name, arguments))
+        index = min(len(self.calls) - 1, len(self.states) - 1)
+        state = self.states[index]
+        return MCPToolResult(
+            name=name,
+            arguments=arguments,
+            raw={},
+            text="",
+            data={
+                "devices": [
+                    {
+                        "id": "1",
+                        "label": "Test switch",
+                        "currentStates": {"switch": state},
+                    }
+                ]
+            },
+            is_error=False,
+        )
 
 
 def make_router(index: FakeIndex) -> FastFallbackRouter:
@@ -114,6 +154,37 @@ def test_all_index_read_paths_bypass_cache_during_control(monkeypatch):
         ("summary", True),
         ("Thermostat", True),
     ]
+
+
+def test_control_reads_bypass_broker_cache_and_inflight_coalescing(monkeypatch):
+    observed: list[str] = []
+
+    async def parent_control(self, requested_name: str, action: str):
+        for _ in range(2):
+            result = await self._live_devices("Switch")
+            observed.append(
+                result.data["devices"][0]["currentStates"]["switch"]
+            )
+        return {"success": True}
+
+    monkeypatch.setattr(CapabilityDeviceRouter, "_control_device", parent_control)
+    raw = FakeRawMCP(["off", "on"])
+    broker = SimpleNamespace(client=raw)
+    index = FakeIndex(None, client=broker)
+    router = make_router(index)
+
+    asyncio.run(router._control_device("Test switch", "on"))
+
+    assert observed == ["off", "on"]
+    assert [name for name, _ in raw.calls] == [
+        "hub_list_devices",
+        "hub_list_devices",
+    ]
+    assert all(
+        arguments["capabilityFilter"] == "Switch"
+        for _, arguments in raw.calls
+    )
+    assert index.calls == []
 
 
 def test_concurrent_controls_keep_fresh_reads_isolated(monkeypatch):
