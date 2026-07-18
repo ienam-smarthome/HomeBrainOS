@@ -1,5 +1,5 @@
 name: Hubitat MCP AI
-version: '0.4.2-alpha'
+version: '0.4.3-alpha'
 slug: hubitat_mcp_ai
 description: Ollama-first natural Hubitat assistant powered by kingpanther13's MCP Rule Server
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -10,6 +10,10 @@ arch:
 startup: services
 boot: auto
 init: false
+ingress: true
+ingress_port: 8788
+panel_icon: mdi:home-assistant
+panel_title: Hubitat MCP AI
 ports:
   8788/tcp: 8788
 ports_description:
