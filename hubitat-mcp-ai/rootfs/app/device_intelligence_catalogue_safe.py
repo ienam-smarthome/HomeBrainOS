@@ -35,6 +35,9 @@ class SafeCapabilityCatalogueDeviceIndex(CapabilityCatalogueDeviceIndex):
     allowed back into live answers after a device has been removed from the MCP
     allowlist. This prevents a stale 120-second catalogue entry from making a
     removed sensor reappear in motion, room, recommendation or snapshot results.
+
+    Detailed attributes may also be older than the compact live summary. They fill
+    missing fields only; a live summary value always wins for the same attribute.
     """
 
     async def enriched_devices(self, *, force: bool = False) -> list[dict[str, Any]]:
@@ -62,14 +65,15 @@ class SafeCapabilityCatalogueDeviceIndex(CapabilityCatalogueDeviceIndex):
             if detail.get("capabilities") is not None:
                 combined["capabilities"] = detail["capabilities"]
 
-            # A compact summary may contain empty state containers. Preserve the
-            # detailed live attributes in that case, but never preserve a device
-            # that is absent from the authoritative summary membership list.
-            for state_key in ("attributes", "currentStates", "states", "state"):
-                summary_value = item.get(state_key)
-                metadata_value = detail.get(state_key)
-                if summary_value in (None, {}, []) and metadata_value not in (None, {}, []):
-                    combined[state_key] = metadata_value
+            # Metadata supplies capabilities and any attributes omitted from the
+            # compact response. The compact summary is newer, so its values are
+            # applied last and therefore remain authoritative.
+            detail_attrs = _attributes(detail)
+            summary_attrs = _attributes(item)
+            merged_attrs = {**detail_attrs, **summary_attrs}
+            if merged_attrs:
+                combined["attributes"] = merged_attrs
+
             enriched.append(combined)
 
         self._last_metadata_orphans_dropped = len(
