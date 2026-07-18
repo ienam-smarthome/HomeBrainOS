@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
+
+
+AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,4 +60,31 @@ def canonicalise_basic_control(query: str) -> BasicControl | None:
     )
 
 
-__all__ = ["BasicControl", "canonicalise_basic_control"]
+def install_control_language(application: Any) -> AskHandler:
+    """Canonicalise only explicit on/off commands before routing."""
+    original_ask: AskHandler = application.ask
+
+    async def ask_with_control_language(request: Any) -> dict[str, Any]:
+        original_query = str(getattr(request, "query", "") or "").strip()
+        control = canonicalise_basic_control(original_query)
+        if control is None:
+            return await original_ask(request)
+
+        request.query = control.canonical_query
+        answer = await original_ask(request)
+        if control.correction:
+            answer["control_language_correction"] = control.correction
+            answer["original_query"] = original_query
+            answer["resolved_query"] = control.canonical_query
+        return answer
+
+    application.ask = ask_with_control_language
+    return ask_with_control_language
+
+
+__all__ = [
+    "AskHandler",
+    "BasicControl",
+    "canonicalise_basic_control",
+    "install_control_language",
+]
