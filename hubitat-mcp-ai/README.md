@@ -67,6 +67,12 @@ The motion/light route defines **nearby** as the same assigned Hubitat room. It 
 
 The automation recommendation route scans the selected device inventory directly. It prioritises washing-machine power completion alerts, fridge/freezer door alerts, same-room motion lighting and humidity ventilation. AI may improve the wording, but HomeBrain itself selects the compatible device pairing and always retains a deterministic recommendation. Recommendations are review-only and never create or change a rule automatically.
 
+## Selected-device membership
+
+The compact live MCP device summary is the authoritative membership list. Detailed metadata is used only to add capabilities and attributes to devices still present in that live summary. A device removed from the MCP allowlist therefore cannot remain visible merely because an older metadata record is cached.
+
+Dashboard counters use the same enriched selected-device view. Capability-defined dimmers and custom lights are counted as lights even when their labels do not contain the word `light`.
+
 ## Routing
 
 - Exact live lists, room inventories and simple on/off controls stay on the fast deterministic Hubitat route.
@@ -90,16 +96,14 @@ Ollama Free is intended for light cloud usage and applies rolling session and we
 
 ## Current comparison build
 
-### v0.4.14-alpha
+### v0.4.15-alpha
 
-- Adds a verified automation-recommendation route that bypasses the failing general planner for common suggestion questions.
-- Selects one practical candidate from actual selected Hubitat devices before invoking AI.
-- Returns a complete trigger, action and safeguard even when Cloud and local Ollama synthesis fail.
-- Never creates a rule automatically and tells the user to check for an existing similar automation first.
+- Makes the live MCP summary authoritative for which devices are currently selected.
+- Drops metadata-only records from snapshots, motion lists, recommendations and room/device inventories.
+- Adds diagnostics showing how many stale metadata orphans were discarded.
+- Makes dashboard light/switch counters capability-aware.
+- Keeps the grounded automation-recommendation route with deterministic fallback.
 - Keeps `gemma4:31b-cloud` as the preferred response model with `qwen3.5:4b` as local planner and fallback.
-- Keeps the verified active-motion/nearby-off-light route using same-room Hubitat assignments.
-- Keeps truthful state recovery: missing Hubitat state coverage is never converted into factual zero counts.
-- Keeps corrected bedroom grouping and alternate same-room temperature sensors.
-- Keeps direct control verification, exact room lists, safe confirmations and device-specific icons.
+- Keeps truthful state recovery, corrected bedroom grouping, direct control verification, exact room lists, safe confirmations and device-specific icons.
 
 Ollama is never the source of device state. Hubitat MCP supplies authoritative live evidence; AI interprets, compares and phrases that evidence. Possible causes are presented as possibilities unless a corresponding live state proves them.
