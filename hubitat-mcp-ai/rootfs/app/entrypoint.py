@@ -24,7 +24,7 @@ from ollama_engagement import install_ollama_engagement
 from request_tracing import install_request_tracing
 
 
-RELEASE_VERSION = "0.4.12-alpha"
+RELEASE_VERSION = "0.4.13-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
@@ -76,15 +76,27 @@ def _replace_ollama_agent() -> None:
     application.ollama = AdaptiveFinalAnswerAgent(
         client=application.mcp,
         base_url=str(options.get("ollama_base_url") or ""),
-        model=str(options.get("ollama_model") or "qwen3.5:4b"),
-        planner_model=str(options.get("ollama_planner_model") or ""),
-        routine_model=str(options.get("ollama_routine_model") or ""),
+        model=str(options.get("ollama_model") or "gemma4:31b-cloud"),
+        planner_model=str(options.get("ollama_planner_model") or "qwen3.5:4b"),
+        routine_model=str(options.get("ollama_routine_model") or "gemma4:31b-cloud"),
+        cloud_enabled=application.option_bool("ollama_cloud_enabled", True),
+        cloud_model=str(options.get("ollama_cloud_model") or "gemma4:31b-cloud"),
+        local_fallback_model=str(
+            options.get("ollama_local_fallback_model") or "qwen3.5:4b"
+        ),
+        cloud_fallback_local=application.option_bool(
+            "ollama_cloud_fallback_local",
+            True,
+        ),
+        cloud_timeout_seconds=float(
+            options.get("ollama_cloud_timeout_seconds") or 25
+        ),
         health_timeout_seconds=float(options.get("ollama_health_timeout_seconds") or 3),
         planner_timeout_seconds=max(10.0, float(options.get("ollama_planner_timeout_seconds") or 20)),
-        response_timeout_seconds=float(options.get("ollama_response_timeout_seconds") or 25),
-        routine_response_timeout_seconds=float(options.get("ollama_routine_response_timeout_seconds") or 15),
+        response_timeout_seconds=float(options.get("ollama_response_timeout_seconds") or 30),
+        routine_response_timeout_seconds=float(options.get("ollama_routine_response_timeout_seconds") or 20),
         num_ctx=int(options.get("ollama_num_ctx") or 2048),
-        num_predict=int(options.get("ollama_num_predict") or 140),
+        num_predict=int(options.get("ollama_num_predict") or 160),
         keep_alive=str(options.get("ollama_keep_alive") or "30m"),
         planner_tool_limit=int(options.get("ollama_planner_tool_limit") or 4),
         tool_result_limit_chars=int(options.get("ollama_tool_result_limit_chars") or 4000),
@@ -109,7 +121,7 @@ home_snapshot = install_truthful_home_snapshot(
     application,
     device_index,
     ai_enabled=application.option_bool("home_snapshot_ai_enabled", True),
-    ai_timeout_seconds=float(application.OPTIONS.get("home_snapshot_ai_timeout_seconds") or 15),
+    ai_timeout_seconds=float(application.OPTIONS.get("home_snapshot_ai_timeout_seconds") or 20),
     max_items_per_group=int(application.OPTIONS.get("home_snapshot_max_items_per_group") or 8),
 )
 ollama_engagement = install_ollama_engagement(application, home_snapshot)
