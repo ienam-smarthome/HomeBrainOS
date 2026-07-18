@@ -96,15 +96,15 @@ def test_hybrid_diagnostics_reports_cloud_response_planner_and_fallback():
     assert metrics["Fallback"] == "qwen3.5:4b"
 
 
-def test_release_exposes_cloud_preference_and_0417_version():
+def test_release_exposes_cloud_preference_and_current_version():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (
         ROOT / "hubitat-mcp-ai" / "rootfs" / "app" / "entrypoint.py"
     ).read_text(encoding="utf-8")
 
-    assert "version: '0.4.17-alpha'" in config
+    assert "version: '0.4.21-alpha'" in config
     assert "ollama_prefer_cloud_response: true" in config
     assert "ollama_prefer_cloud_response: bool" in config
-    assert 'RELEASE_VERSION = "0.4.17-alpha"' in entrypoint
+    assert 'RELEASE_VERSION = "0.4.21-alpha"' in entrypoint
     assert "resolve_hybrid_profile" in entrypoint
     assert "install_hybrid_ollama_diagnostics" in entrypoint
