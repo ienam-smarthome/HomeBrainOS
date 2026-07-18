@@ -29,9 +29,11 @@ def result(name: str, data: Any, *, error: bool = False) -> MCPToolResult:
 
 
 class Client:
-    def __init__(self) -> None:
+    def __init__(self, *, omit_create_id: bool = False) -> None:
         self.invalidations: list[str] = []
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.rules: list[dict[str, Any]] = []
+        self.omit_create_id = omit_create_id
 
     async def list_tools(self, refresh: bool = False):
         return [
@@ -59,19 +61,19 @@ class Client:
         args = dict(arguments or {})
         self.calls.append((name, args))
         if name == "list_rules":
-            return result(name, {"rules": []})
+            return result(name, {"rules": list(self.rules)})
         if name == "create_rule":
-            return result(
-                name,
-                {
-                    "rule": {
-                        "id": "1",
-                        "name": args["name"],
-                        "enabled": False,
-                        "status": "Disabled",
-                    }
-                },
-            )
+            created = {
+                "id": "1",
+                "name": args["name"],
+                "enabled": False,
+                "status": "Disabled",
+            }
+            self.rules.append(created)
+            returned = dict(created)
+            if self.omit_create_id:
+                returned.pop("id")
+            return result(name, {"rule": returned})
         return result(name, {})
 
     async def invalidate(self, category: str):
@@ -80,8 +82,9 @@ class Client:
 
 
 class Index:
-    def __init__(self, include_notifier: bool) -> None:
+    def __init__(self, include_notifier: bool, *, speaker_only: bool = False) -> None:
         self.include_notifier = include_notifier
+        self.speaker_only = speaker_only
 
     async def exact_device(self, label: str):
         return (
@@ -109,9 +112,9 @@ class Index:
             rows.append(
                 {
                     "id": "800",
-                    "label": "Enamul Phone",
-                    "capabilities": ["Notification"],
-                    "supportedCommands": ["deviceNotification"],
+                    "label": "Living Room Speaker" if self.speaker_only else "Enamul Phone",
+                    "capabilities": ["SpeechSynthesis"] if self.speaker_only else ["Notification"],
+                    "supportedCommands": ["speak"] if self.speaker_only else ["deviceNotification"],
                 }
             )
         return rows
@@ -129,10 +132,21 @@ RECOMMENDATION = {
 }
 
 
-def workflow(include_notifier: bool):
-    client = Client()
+def workflow(
+    include_notifier: bool,
+    *,
+    speaker_only: bool = False,
+    omit_create_id: bool = False,
+):
+    client = Client(omit_create_id=omit_create_id)
     app = SimpleNamespace(mcp=client, VERSION="0.4.16-alpha")
-    return ReleaseAutomationRuleWorkflow(app, Index(include_notifier)), client
+    return (
+        ReleaseAutomationRuleWorkflow(
+            app,
+            Index(include_notifier, speaker_only=speaker_only),
+        ),
+        client,
+    )
 
 
 def test_recommendation_wording_is_aligned_with_supported_notification_action():
@@ -171,6 +185,20 @@ def test_missing_notification_reason_is_visible_in_main_summary():
     assert "No selected Notification-capable device" in answer["display"]["note"]
 
 
+def test_speech_synthesis_device_is_not_treated_as_notification_recipient():
+    service, _ = workflow(include_notifier=True, speaker_only=True)
+
+    async def run():
+        await service.store.remember("phone", RECOMMENDATION)
+        return await service.handle(SimpleNamespace(session_id="phone"), "build")
+
+    answer = asyncio.run(run())
+
+    assert answer["write_ready"] is False
+    assert "No selected Notification-capable device" in answer["message"]
+    assert "Living Room Speaker" not in str(answer["rule_draft"].get("notification_candidates"))
+
+
 def test_successful_create_invalidates_rule_catalogue():
     service, client = workflow(include_notifier=True)
 
@@ -183,3 +211,19 @@ def test_successful_create_invalidates_rule_catalogue():
 
     assert answer["success"] is True
     assert "catalog" in client.invalidations
+
+
+def test_missing_create_response_id_is_resolved_by_exact_rule_name():
+    service, _ = workflow(include_notifier=True, omit_create_id=True)
+
+    async def run():
+        await service.store.remember("phone", RECOMMENDATION)
+        await service.handle(SimpleNamespace(session_id="phone"), "build")
+        return await service.handle(SimpleNamespace(session_id="phone"), "create")
+
+    answer = asyncio.run(run())
+
+    assert answer["success"] is True
+    assert answer["created_rule"]["id"] == "1"
+    assert answer["display"]["actions"]
+    assert answer["technical"]["created_rule_id_resolved_by_name"] is True
