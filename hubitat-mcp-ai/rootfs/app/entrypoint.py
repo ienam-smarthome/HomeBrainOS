@@ -10,6 +10,7 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
+from automation_rule_workflow import install_automation_rule_workflow
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
 from control_language import install_control_language
@@ -31,7 +32,7 @@ from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
-RELEASE_VERSION = "0.4.15-alpha"
+RELEASE_VERSION = "0.4.16-alpha"
 
 
 class ContextAskRequest(application.AskRequest):
@@ -164,6 +165,14 @@ control_confirmations = install_control_confirmation(
     max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
 )
 install_control_language(application)
+automation_rule_workflow = install_automation_rule_workflow(
+    application,
+    device_index,
+    ttl_seconds=float(application.OPTIONS.get("rule_workflow_ttl_seconds") or 600),
+    max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
+    write_enabled=application.option_bool("rule_write_enabled", True),
+    require_paused_create=application.option_bool("rule_create_paused_required", True),
+)
 request_traces = install_request_tracing(
     application,
     application.mcp,
