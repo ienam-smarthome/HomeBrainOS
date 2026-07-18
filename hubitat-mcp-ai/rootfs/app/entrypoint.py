@@ -6,8 +6,10 @@ import uvicorn
 from pydantic import Field
 
 import app as application
+import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
+from automation_recommendation_webui import install_automation_recommendation_webui
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
 from control_language import install_control_language
@@ -185,6 +187,7 @@ install_mcp_tool_catalogue(application, application.mcp)
 request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
+install_automation_recommendation_webui(device_intelligence_webui_module)
 install_device_intelligence_webui(application)
 app = application.app
 
