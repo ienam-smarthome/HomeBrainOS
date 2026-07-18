@@ -65,8 +65,13 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
         payload = await request.json()
         body = application.AskRequest.model_validate(payload)
         client_id = request.headers.get("X-HMCP-Client")
+        body_session = str(getattr(body, "session_id", "") or "").strip()
+        if not client_id and body_session:
+            client_id = body_session
         if not client_id and request.client:
             client_id = request.client.host
+        if hasattr(body, "session_id") and not body_session:
+            body.session_id = client_id or "default"
         try:
             return await registry.run(
                 client_id or "default",
