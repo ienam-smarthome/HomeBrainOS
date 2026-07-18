@@ -31,7 +31,7 @@ options:
   ollama_cloud_model: "gemma4:31b-cloud"
   ollama_local_fallback_model: "qwen3.5:4b"
   ollama_cloud_fallback_local: true
-  ollama_cloud_timeout_seconds: 25
+  ollama_cloud_timeout_seconds: 12
   ollama_health_timeout_seconds: 3
   ollama_planner_timeout_seconds: 20
   ollama_response_timeout_seconds: 30
