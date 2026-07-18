@@ -1,5 +1,23 @@
 # Hubitat MCP AI changelog
 
+## 0.4.13-alpha
+
+- Adds `gemma4:31b-cloud` for AI response synthesis through a signed-in Windows Ollama service.
+- Keeps `qwen3.5:4b` as the local MCP planner and automatic Cloud retry model.
+- Keeps exact device reads, lists and controls deterministic and local to conserve Free cloud usage.
+- Adds explicit Ollama Cloud/local provider badges.
+- Adds a verified active-motion/nearby-off-light route using same-room Hubitat assignments.
+- Adds a Windows setup script that registers and tests Cloud without storing an API key in Home Assistant.
+
+## 0.4.12-alpha
+
+- Recovers missing live states from the detailed device catalogue.
+- Prevents missing state coverage from appearing as zero motion, zero lights or an AI-written all-clear.
+
+## 0.4.11-alpha
+
+- Corrects bedroom temperature grouping and preserves alternate same-room sensor readings.
+
 ## 0.1.11-alpha
 
 - Routes offline/stale device questions directly through the MCP fast path.
