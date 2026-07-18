@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.4.16-alpha
+
+- Adds a guarded automation rule workflow: recommendation → reviewable draft → explicit create confirmation → dry-run test → enable/disable.
+- Learns rule tool names and input schemas from the connected MCP server at runtime, supporting current `create_rule`/`update_rule`/`test_rule` tools and older gateway-prefixed variants.
+- Creates rules with `enabled=false` or an equivalent paused/draft flag and refuses writes when the server schema cannot guarantee a disabled initial state.
+- Compiles the fridge-door recommendation into documented MCP rule JSON with open-duration and close triggers, notification actions, a delayed repeat, and cancellation when the contact closes.
+- Requires exactly one selected Notification-capable device before compiling a phone-notification rule; HomeBrain never guesses the recipient.
+- Blocks duplicate rule names and keeps dry-run, enable, and disable as separate explicit operations.
+- Adds mobile action buttons for Build rule, Create disabled rule, Dry-run test, Enable rule, Disable rule, and Cancel.
+
 ## 0.4.15-alpha
 
 - Makes the compact live MCP device summary the authoritative selected-device membership list.
