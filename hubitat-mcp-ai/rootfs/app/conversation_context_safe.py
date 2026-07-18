@@ -9,6 +9,7 @@ from conversation_context import (
     ContextResolution,
     ConversationContextStore,
 )
+from device_intelligence_index import _normalise
 
 
 _DEVICE_INTENTS = {
@@ -77,6 +78,21 @@ class SafeConversationContextStore(ConversationContextStore):
                 state.last_room = None
             self._items[state.session_id] = state
         return state
+
+    @staticmethod
+    def _comparison_metric(query: str) -> str | None:
+        q = _normalise(query)
+        reordered = (
+            (r"\bbattery\b.*\b(?:lowest|weakest)\b", "lowest battery"),
+            (r"\bbattery\b.*\bhighest\b", "highest battery"),
+            (r"\bpower\b.*\b(?:most|highest)\b", "most power"),
+            (r"\bhumidity\b.*\b(?:highest|most humid)\b", "highest humidity"),
+            (r"\bhumidity\b.*\b(?:lowest|driest)\b", "lowest humidity"),
+        )
+        for pattern, metric in reordered:
+            if re.search(pattern, q):
+                return metric
+        return ConversationContextStore._comparison_metric(query)
 
     @staticmethod
     def _room_follow_up(query: str) -> str | None:
