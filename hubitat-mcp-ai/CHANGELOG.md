@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.15-alpha
+
+- Makes the compact live MCP device summary the authoritative selected-device membership list.
+- Prevents metadata-only devices removed from the MCP allowlist from reappearing until the 120-second metadata cache expires.
+- Keeps detailed capabilities and attributes only for devices still present in the live selected list.
+- Makes dashboard light/switch classification capability-aware, so dimmers and custom lights are not counted as generic switches solely because their labels omit the word `light`.
+- Adds diagnostics for dropped metadata orphans and focused regression coverage for removed active sensors.
+
 ## 0.4.14-alpha
 
 - Adds a verified automation-recommendation route for questions such as `Suggest one useful automation for the devices I have`.
