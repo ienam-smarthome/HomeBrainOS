@@ -157,10 +157,19 @@ def install_ollama_engagement(
         float(getattr(home_snapshot, "ai_timeout_seconds", 0) or 0),
         quick_timeout,
     )
-    temperature_insight = TemperatureInsightService(
-        application,
-        application.device_index,
-        timeout_seconds=quick_timeout,
+    device_index = getattr(application, "device_index", None) or getattr(
+        home_snapshot,
+        "device_index",
+        None,
+    )
+    temperature_insight = (
+        TemperatureInsightService(
+            application,
+            device_index,
+            timeout_seconds=quick_timeout,
+        )
+        if device_index is not None
+        else None
     )
 
     async def ask_with_ollama_engagement(request: Any) -> dict[str, Any]:
@@ -171,7 +180,7 @@ def install_ollama_engagement(
             answer.setdefault("version", application.VERSION)
             return answer
 
-        if temperature_insight.matches(query):
+        if temperature_insight is not None and temperature_insight.matches(query):
             answer = await temperature_insight.answer(query)
             answer["engagement_mode"] = "bounded-temperature-insight"
             answer.setdefault("version", application.VERSION)
