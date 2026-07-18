@@ -5,12 +5,18 @@ from typing import Any, Awaitable, Callable
 from automation_rule_workflow import _session_id
 from automation_rule_workflow_native_rm import NativeRuleMachineAutomationWorkflow
 from device_intelligence_catalogue import _rows
-from device_intelligence_index import _device_id, _label, _room_name
+from device_intelligence_index import _attributes, _device_id, _label, _normalise, _room_name
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 _NO_NOTIFICATION = "No selected Notification-capable device was found."
 _MULTIPLE_NOTIFICATION = "More than one Notification-capable device is selected."
+_NOTIFICATION_RULE_TYPES = {"cold-storage-door", "washing-complete"}
+_GENERIC_COMPILE_ERRORS = (
+    "Automatic rule compilation is not implemented yet for candidate type",
+    "No valid MCP rule trigger was compiled.",
+    "No valid MCP rule action was compiled.",
+)
 
 
 def _candidate_label(item: dict[str, Any]) -> str:
@@ -33,6 +39,14 @@ def _without_notification_errors(values: list[Any]) -> list[str]:
     ]
 
 
+def _without_generic_compile_errors(values: list[Any]) -> list[str]:
+    return [
+        str(value)
+        for value in values
+        if not str(value).startswith(_GENERIC_COMPILE_ERRORS)
+    ]
+
+
 def _multiple_message(items: list[dict[str, Any]]) -> str:
     names = ", ".join(_candidate_label(item) for item in items[:8])
     return (
@@ -43,21 +57,84 @@ def _multiple_message(items: list[dict[str, Any]]) -> str:
 
 
 class NotificationSafeNativeRuleMachineWorkflow(NativeRuleMachineAutomationWorkflow):
-    """Native RM workflow with an authoritative Notification capability probe.
+    """Native RM workflow with authoritative notification-device discovery.
 
     The general detailed-device catalogue may be incomplete on some MCP gateway
     combinations even though the selected mobile-app device is present in the
-    compact list. For notification rules, query the server's exact Notification
-    capability filter and intersect it with the current selected-device IDs.
+    compact list. Notification rules therefore query the server's exact
+    Notification capability filter and intersect it with the current selected IDs.
     """
+
+    @staticmethod
+    def _prepare_washing_draft(draft: dict[str, Any]) -> None:
+        unresolved = _without_generic_compile_errors(list(draft.get("unresolved") or []))
+        devices = [item for item in (draft.get("devices") or []) if isinstance(item, dict)]
+        power_device = next(
+            (
+                item
+                for item in devices
+                if item.get("id")
+                and "power" in {_normalise(name) for name in _attributes(item)}
+            ),
+            None,
+        )
+        if power_device is None:
+            power_device = next(
+                (
+                    item
+                    for item in devices
+                    if item.get("id")
+                    and any(
+                        token in _normalise(item.get("label"))
+                        for token in ("washing", "washer", "laundry")
+                    )
+                ),
+                None,
+            )
+        if power_device is None:
+            unresolved.append(
+                "The washing-machine power meter could not be resolved to one selected MCP device ID."
+            )
+        else:
+            draft["washing_power_device"] = dict(power_device)
+            # These compact review shapes are not sent to Rule Machine. The native
+            # compiler converts them into the guarded two-threshold RM plan.
+            draft["triggers"] = [
+                {
+                    "type": "power_above",
+                    "deviceId": str(power_device["id"]),
+                    "watts": 10,
+                },
+                {
+                    "type": "power_below_stable",
+                    "deviceId": str(power_device["id"]),
+                    "watts": 5,
+                    "duration": 180,
+                },
+            ]
+            draft["actions"] = [
+                {"type": "arm_cycle"},
+                {"type": "notify_when_finished"},
+                {"type": "reset_cycle_arm"},
+            ]
+        draft["unresolved"] = list(dict.fromkeys(unresolved))
 
     async def _draft(self, recommendation: dict[str, Any]) -> dict[str, Any]:
         draft = await super()._draft(recommendation)
-        if str(draft.get("type") or "") != "cold-storage-door":
+        kind = str(draft.get("type") or "")
+        if kind not in _NOTIFICATION_RULE_TYPES:
             return draft
+
+        if kind == "washing-complete":
+            self._prepare_washing_draft(draft)
 
         existing = list(draft.get("notification_candidates") or [])
         if len(existing) == 1:
+            unresolved = _without_notification_errors(list(draft.get("unresolved") or []))
+            draft["devices"] = self._dedupe_refs(
+                list(draft.get("devices") or []) + existing
+            )
+            draft["unresolved"] = list(dict.fromkeys(unresolved))
             return draft
         if len(existing) > 1:
             unresolved = _without_notification_errors(list(draft.get("unresolved") or []))
