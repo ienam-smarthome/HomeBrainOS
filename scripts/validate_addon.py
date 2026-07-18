@@ -39,6 +39,8 @@ required = [
     'hubitat-mcp-ai/rootfs/app/ollama_agent_final_answer.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_adaptive.py',
     'hubitat-mcp-ai/rootfs/app/cancellable_requests.py',
+    'hubitat-mcp-ai/rootfs/app/control_language.py',
+    'hubitat-mcp-ai/rootfs/app/control_confirmation.py',
     'hubitat-mcp-ai/rootfs/app/conversation_context.py',
     'hubitat-mcp-ai/rootfs/app/conversation_context_safe.py',
     'hubitat-mcp-ai/rootfs/app/home_snapshot.py',
