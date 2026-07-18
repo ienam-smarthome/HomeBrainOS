@@ -1,7 +1,7 @@
 name: Hubitat MCP AI
-version: '0.4.13-alpha'
+version: '0.4.14-alpha'
 slug: hubitat_mcp_ai
-description: Hybrid Ollama Cloud and local natural Hubitat assistant powered by kingpanther13's MCP Rule Server
+description: Hybrid Ollama Cloud and local natural Hubitat assistant with grounded device recommendations
 url: https://github.com/ienam-smarthome/HomeBrainOS
 arch:
   - amd64
