@@ -25,7 +25,7 @@ class FakeIndex:
 
     async def capability_result(self, capability: str, *, detailed: bool, force: bool = False):
         self.calls.append((capability, force))
-        return {"capability": capability, "force": force}
+        return {"capability": capability, "detailed": detailed, "force": force}
 
     async def summary_result(self, *, force: bool = False):
         self.calls.append(("summary", force))
@@ -35,7 +35,6 @@ class FakeIndex:
 def make_router(index: FakeIndex) -> FastFallbackRouter:
     router = object.__new__(FastFallbackRouter)
     router.device_index = index
-    router._force_fresh_control_reads = False
     router.control_verification_timeout_seconds = 7.0
     router.control_verification_initial_delay_seconds = 0.2
     return router
@@ -45,11 +44,12 @@ def test_exact_index_alias_executes_without_fuzzy_confirmation(monkeypatch):
     observed: dict[str, Any] = {}
 
     async def parent_control(self, requested_name: str, action: str):
+        live = await self._live_devices("Switch")
         observed.update(
             {
                 "requested_name": requested_name,
                 "action": action,
-                "fresh": self._force_fresh_control_reads,
+                "fresh": live["force"],
             }
         )
         return {"success": True, "intent": "fallback-device-control-confirmed"}
@@ -67,7 +67,7 @@ def test_exact_index_alias_executes_without_fuzzy_confirmation(monkeypatch):
     assert answer["device_index_exact_match"] is True
     assert answer["requested_name"] == "dehumidifier two"
     assert answer["resolved_device_name"] == "Dehumidifier 2"
-    assert router._force_fresh_control_reads is False
+    assert asyncio.run(router._live_devices("Switch"))["force"] is False
 
 
 def test_ambiguous_index_name_is_not_silently_rewritten(monkeypatch):
@@ -75,6 +75,7 @@ def test_ambiguous_index_name_is_not_silently_rewritten(monkeypatch):
 
     async def parent_control(self, requested_name: str, action: str):
         observed["requested_name"] = requested_name
+        observed["fresh"] = (await self._live_devices("Switch"))["force"]
         return {"success": False, "confirmation_required": True}
 
     monkeypatch.setattr(CapabilityDeviceRouter, "_control_device", parent_control)
@@ -82,17 +83,71 @@ def test_ambiguous_index_name_is_not_silently_rewritten(monkeypatch):
 
     answer = asyncio.run(router._control_device("dehumidifier", "off"))
 
-    assert observed["requested_name"] == "dehumidifier"
+    assert observed == {"requested_name": "dehumidifier", "fresh": True}
     assert "device_index_exact_match" not in answer
-    assert router._force_fresh_control_reads is False
+    assert asyncio.run(router._live_devices("Switch"))["force"] is False
 
 
-def test_all_control_reads_bypass_the_device_index_cache():
+def test_all_index_read_paths_bypass_cache_during_control(monkeypatch):
+    observed: dict[str, Any] = {}
+
+    async def parent_control(self, requested_name: str, action: str):
+        observed["live"] = await self._live_devices("Switch")
+        observed["summary"] = await self._summary_devices()
+        observed["detailed"] = await self._capability_devices(
+            "Thermostat",
+            detailed=True,
+        )
+        return {"success": True}
+
+    monkeypatch.setattr(CapabilityDeviceRouter, "_control_device", parent_control)
     index = FakeIndex(None)
     router = make_router(index)
-    router._force_fresh_control_reads = True
 
-    result = asyncio.run(router._live_devices("Switch"))
+    asyncio.run(router._control_device("Test switch", "off"))
 
-    assert result == {"capability": "Switch", "force": True}
-    assert index.calls == [("Switch", True)]
+    assert observed["live"]["force"] is True
+    assert observed["summary"]["force"] is True
+    assert observed["detailed"]["force"] is True
+    assert index.calls == [
+        ("Switch", True),
+        ("summary", True),
+        ("Thermostat", True),
+    ]
+
+
+def test_concurrent_controls_keep_fresh_reads_isolated(monkeypatch):
+    first_started = asyncio.Event()
+    second_finished = asyncio.Event()
+    observed: dict[str, bool] = {}
+
+    async def parent_control(self, requested_name: str, action: str):
+        if requested_name == "First switch":
+            first_started.set()
+            await second_finished.wait()
+            observed["first_after_second"] = (
+                await self._live_devices("Switch")
+            )["force"]
+        else:
+            await first_started.wait()
+            observed["second"] = (await self._live_devices("Switch"))["force"]
+            second_finished.set()
+        return {"success": True}
+
+    monkeypatch.setattr(CapabilityDeviceRouter, "_control_device", parent_control)
+    router = make_router(FakeIndex(None))
+
+    async def run_controls():
+        await asyncio.gather(
+            router._control_device("First switch", "off"),
+            router._control_device("Second switch", "off"),
+        )
+        observed["outside"] = (await router._live_devices("Switch"))["force"]
+
+    asyncio.run(run_controls())
+
+    assert observed == {
+        "second": True,
+        "first_after_second": True,
+        "outside": False,
+    }
