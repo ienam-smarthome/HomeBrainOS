@@ -135,12 +135,12 @@ def test_unrelated_gateway_error_is_not_retried():
     assert [name for name, _ in client.calls] == ["hub_read_devices"]
 
 
-def test_release_metadata_is_0418():
+def test_release_metadata_is_0421():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.18-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.18-alpha"' in entrypoint
+    assert "version: '0.4.21-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.21-alpha"' in entrypoint
     assert "AdaptiveGatewayMCPStateBroker" in (
         APP_DIR / "device_index_broker.py"
     ).read_text(encoding="utf-8")
