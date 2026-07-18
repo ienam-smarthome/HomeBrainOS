@@ -2,11 +2,64 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
-from automation_rule_workflow import _session_id
+import automation_rule_workflow_live as live_module
+from automation_rule_workflow import _normalise, _session_id
 from automation_rule_workflow_live import LiveSchemaAutomationRuleWorkflow
+from device_intelligence_catalogue import _capability_names
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
+
+
+def _strict_notification_device(item: dict[str, Any]) -> bool:
+    """Accept only devices that can receive Hubitat notification actions.
+
+    Speech-synthesis devices are intentionally excluded: ``send_notification``
+    requires a Notification-capable target and must not silently become text to
+    speech on a speaker. Custom notification drivers remain supported when they
+    expose a recognised notification command.
+    """
+    capabilities = {
+        _normalise(name).replace(" ", "")
+        for name in _capability_names(item)
+    }
+    commands: set[str] = set()
+    for key in ("supportedCommands", "commands"):
+        value = item.get(key)
+        if isinstance(value, str):
+            commands.add(value)
+        elif isinstance(value, list):
+            for entry in value:
+                if isinstance(entry, dict):
+                    name = entry.get("name") or entry.get("command")
+                    if name:
+                        commands.add(str(name))
+                elif entry not in (None, ""):
+                    commands.add(str(entry))
+        elif isinstance(value, dict):
+            commands.update(str(name) for name in value)
+    commands = {_normalise(name).replace(" ", "") for name in commands}
+    return bool(
+        capabilities.intersection(
+            {
+                "notification",
+                "devicenotification",
+                "pushnotification",
+            }
+        )
+        or commands.intersection(
+            {
+                "devicenotification",
+                "sendnotification",
+                "notify",
+            }
+        )
+    )
+
+
+# LiveSchemaAutomationRuleWorkflow resolves this module global when compiling a
+# draft. Tighten it for the release without duplicating the full compiler.
+live_module._is_notification_device = _strict_notification_device
 
 
 class ReleaseAutomationRuleWorkflow(LiveSchemaAutomationRuleWorkflow):
@@ -54,6 +107,48 @@ class ReleaseAutomationRuleWorkflow(LiveSchemaAutomationRuleWorkflow):
             if unresolved:
                 display["note"] = " ".join(str(item) for item in unresolved)
         return answer
+
+    async def _create(self, pending):
+        answer = await super()._create(pending)
+        if not answer.get("success") or pending.created_rule is None:
+            return answer
+
+        # Some MCP releases confirm creation but omit the child app/rule ID from
+        # the create response. Resolve the exact new name immediately so Dry-run,
+        # Enable and Disable never send a rule name where the schema requires ID.
+        if not str(pending.created_rule.get("id") or "").strip():
+            draft_name = str((pending.draft or {}).get("name") or "").strip()
+            resolved = await self._existing_rule(draft_name) if draft_name else None
+            if resolved and resolved.get("id"):
+                pending.created_rule.update(resolved)
+                answer["created_rule"] = dict(pending.created_rule)
+                answer["display"] = self._created_display(pending)
+                technical = answer.get("technical")
+                if isinstance(technical, dict):
+                    technical["created_rule_id_resolved_by_name"] = True
+            else:
+                pending.stage = "created"
+                warning = (
+                    "The rule was created, but Hubitat did not return its ID and an exact "
+                    "name lookup could not resolve it. Review the rule in Hubitat before "
+                    "testing or enabling it."
+                )
+                pending.created_rule["warning"] = warning
+                answer["message"] = str(answer.get("message") or "") + " " + warning
+                display = answer.get("display")
+                if isinstance(display, dict):
+                    display["actions"] = []
+                    display["note"] = warning
+        return answer
+
+    async def _operate(self, pending, operation: str):
+        if pending.created_rule is not None and not str(
+            pending.created_rule.get("id") or ""
+        ).strip():
+            return self._wrong_stage(
+                "The created rule ID could not be verified. Review it in Hubitat before testing or enabling it."
+            )
+        return await super()._operate(pending, operation)
 
     async def _call_rule_tool(self, tool, arguments):
         result = await super()._call_rule_tool(tool, arguments)
