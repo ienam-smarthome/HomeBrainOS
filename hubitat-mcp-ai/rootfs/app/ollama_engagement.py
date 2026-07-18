@@ -5,6 +5,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 from presenter import display_payload, safe_debug
+from temperature_insight import TemperatureInsightService
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -62,8 +63,10 @@ def ollama_help(application: Any) -> dict[str, Any]:
         "intent": "ollama-question-guide",
         "message": (
             "Ollama handles explanations, comparisons, diagnosis, recommendations, "
-            "multi-step questions and natural summaries. Exact lists and simple on/off "
-            "commands normally stay on the faster deterministic Hubitat route."
+            "multi-step questions and natural summaries. Common analytical reads, such "
+            "as bedroom temperature comparison, now use bounded live evidence instead "
+            "of waiting for the general MCP planner. Exact lists and simple on/off "
+            "commands stay on the faster deterministic Hubitat route."
         ),
         "model": model,
         "display": display_payload(
@@ -72,8 +75,8 @@ def ollama_help(application: Any) -> dict[str, Any]:
             subtitle=f"Local model: {model}",
             metrics=[
                 {"label": "Exact live reads", "value": "Hubitat fast", "icon": "⚡"},
-                {"label": "Natural summaries", "value": "Ollama + MCP", "icon": "🤖"},
-                {"label": "Reasoning", "value": "Ollama planner", "icon": "🧠"},
+                {"label": "Bounded analysis", "value": "Ollama + MCP", "icon": "🤖"},
+                {"label": "Open reasoning", "value": "Ollama planner", "icon": "🧠"},
             ],
             items=[
                 {
@@ -92,12 +95,71 @@ def ollama_help(application: Any) -> dict[str, Any]:
     }
 
 
+def _decorate_snapshot_ai(
+    application: Any,
+    home_snapshot: Any,
+    answer: dict[str, Any],
+) -> dict[str, Any]:
+    """Make it explicit whether the snapshot wording came from Ollama."""
+    result = dict(answer)
+    ai_used = result.get("route") == "ollama+snapshot"
+    ai_attempted = bool(
+        getattr(home_snapshot, "ai_enabled", False)
+        and result.get("success")
+    )
+    result["ai_attempted"] = ai_attempted
+    result["ai_used"] = ai_used
+    result["ai_status"] = (
+        "used" if ai_used else "fallback" if ai_attempted else "disabled"
+    )
+
+    if ai_attempted and not ai_used:
+        result["route"] = "mcp-snapshot-ai-fallback"
+        result["model"] = str(
+            application.OPTIONS.get("ollama_model") or result.get("model") or ""
+        ) or None
+        display = result.get("display")
+        if isinstance(display, dict):
+            display = dict(display)
+            note = str(display.get("note") or "").strip()
+            fallback_note = (
+                "Ollama wording was attempted but did not finish, so this answer was "
+                "written by the deterministic Home Snapshot from live Hubitat data."
+            )
+            display["note"] = f"{note} {fallback_note}".strip()
+            result["display"] = display
+    return result
+
+
 def install_ollama_engagement(
     application: Any,
     home_snapshot: Any,
 ) -> AskHandler:
-    """Add visible AI help, AI home insights and an explicit Ollama override."""
+    """Add visible AI help, bounded insights and an explicit Ollama override."""
     original_ask: AskHandler = application.ask
+
+    quick_timeout = max(
+        15.0,
+        min(
+            60.0,
+            float(
+                application.OPTIONS.get("ollama_quick_insight_timeout_seconds")
+                or 25
+            ),
+        ),
+    )
+    # Existing installations may retain the old 12-second snapshot value. A local
+    # 9B model often needs longer after keep-alive expiry, so bounded insight routes
+    # receive the new quick-analysis allowance without extending the general planner.
+    home_snapshot.ai_timeout_seconds = max(
+        float(getattr(home_snapshot, "ai_timeout_seconds", 0) or 0),
+        quick_timeout,
+    )
+    temperature_insight = TemperatureInsightService(
+        application,
+        application.device_index,
+        timeout_seconds=quick_timeout,
+    )
 
     async def ask_with_ollama_engagement(request: Any) -> dict[str, Any]:
         query = str(getattr(request, "query", "") or "").strip()
@@ -107,8 +169,15 @@ def install_ollama_engagement(
             answer.setdefault("version", application.VERSION)
             return answer
 
+        if temperature_insight.matches(query):
+            answer = await temperature_insight.answer(query)
+            answer["engagement_mode"] = "bounded-temperature-insight"
+            answer.setdefault("version", application.VERSION)
+            return answer
+
         if _AI_INSIGHT_QUERY.match(query):
             answer = await home_snapshot.answer(query)
+            answer = _decorate_snapshot_ai(application, home_snapshot, answer)
             answer["engagement_mode"] = "ai-home-insight"
             answer.setdefault("version", application.VERSION)
             return answer
@@ -135,6 +204,9 @@ def install_ollama_engagement(
             )
             answer = dict(answer)
             answer["forced_ollama"] = True
+            answer["ai_attempted"] = True
+            answer["ai_used"] = True
+            answer["ai_status"] = "used"
             answer["original_query"] = query
             answer["resolved_query"] = clean_query
             answer.setdefault("version", application.VERSION)
@@ -150,6 +222,9 @@ def install_ollama_engagement(
                 request.query = original_query
             answer = dict(answer)
             answer["forced_ollama"] = True
+            answer["ai_attempted"] = True
+            answer["ai_used"] = False
+            answer["ai_status"] = "fallback"
             answer["ollama_force_error"] = str(exc)
             answer["fallback_reason"] = (
                 "The explicitly requested Ollama answer failed, so HomeBrain used the "
@@ -166,6 +241,7 @@ def install_ollama_engagement(
 
     application.ask = ask_with_ollama_engagement
     application.ollama_help = lambda: ollama_help(application)
+    application.temperature_insight = temperature_insight
     return ask_with_ollama_engagement
 
 
@@ -173,6 +249,7 @@ __all__ = [
     "_AI_INSIGHT_QUERY",
     "_FORCE_OLLAMA",
     "_HELP_QUERY",
+    "_decorate_snapshot_ai",
     "install_ollama_engagement",
     "ollama_help",
 ]
