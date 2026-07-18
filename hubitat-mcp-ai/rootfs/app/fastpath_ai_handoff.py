@@ -4,6 +4,7 @@ import asyncio
 import re
 from typing import Any, Awaitable, Callable
 
+from control_language import canonicalise_basic_control
 from fast_fallback_speech import normalise_spoken_device_name
 
 
@@ -43,24 +44,48 @@ def _opposite_humidity_name(requested: str, candidate: str) -> bool:
     return requested_hum and candidate_hum and requested_de != candidate_de
 
 
-def _clarification_message(requested: str, alternatives: list[str]) -> str:
-    candidates = [item for item in alternatives if item][:3]
+def _confirmation_candidates(requested: str, alternatives: list[str]) -> list[str]:
+    candidates = list(dict.fromkeys(item for item in alternatives if item))[:5]
+    requested_number = _number_suffix(requested)
+    if requested_number:
+        numbered = [item for item in candidates if _number_suffix(item) == requested_number]
+        if len(numbered) == 1:
+            return numbered
+    return candidates
+
+
+def _clarification_message(
+    requested: str,
+    alternatives: list[str],
+    *,
+    action: str | None = None,
+) -> str:
+    candidates = _confirmation_candidates(requested, alternatives)
     if not candidates:
         return f'I could not find a device matching "{requested}". What is its exact Hubitat label?'
-
-    requested_number = _number_suffix(requested)
-    numbered = [
-        item for item in candidates if _number_suffix(item) == requested_number
-    ] if requested_number else []
-    if len(numbered) == 1:
-        return f'Did you mean {numbered[0]}? Say “turn on {numbered[0]}” to confirm.'
     if len(candidates) == 1:
-        return f'Did you mean {candidates[0]}? Say the full command to confirm.'
-    if len(candidates) == 2:
-        choices = f"{candidates[0]} or {candidates[1]}"
-    else:
-        choices = ", ".join(candidates[:-1]) + f", or {candidates[-1]}"
-    return f"Which device did you mean: {choices}?"
+        if action in {"on", "off"}:
+            return f"Did you mean {candidates[0]}? Reply Yes to turn it {action}, or No to cancel."
+        return f"Did you mean {candidates[0]}? Reply Yes to confirm, or No to cancel."
+    lines = ["Which device did you mean?"]
+    lines.extend(f"{index}. {label}" for index, label in enumerate(candidates, start=1))
+    lines.append("Reply with the number or exact device name. Reply No to cancel.")
+    return "\n".join(lines)
+
+
+def _confirmation_payload(
+    requested: str,
+    alternatives: list[str],
+    action: str | None,
+) -> dict[str, Any] | None:
+    candidates = _confirmation_candidates(requested, alternatives)
+    if action not in {"on", "off"} or not candidates:
+        return None
+    return {
+        "action": action,
+        "requested_name": requested,
+        "candidates": candidates,
+    }
 
 
 def install_fastpath_ai_handoff(application: Any) -> AskHandler:
@@ -73,12 +98,39 @@ def install_fastpath_ai_handoff(application: Any) -> AskHandler:
         if intent not in _HANDOFF_INTENTS:
             return answer
 
-        requested_name = str(answer.get("requested_name") or request.query).strip()
+        control = canonicalise_basic_control(str(request.query or ""))
+        requested_name = str(
+            answer.get("requested_name")
+            or (control.target if control else request.query)
+        ).strip()
+        action = control.action if control else None
         alternatives = [
             str(item).strip()
             for item in (answer.get("alternatives") or [])
             if str(item).strip()
         ]
+        confirmation = _confirmation_payload(requested_name, alternatives, action)
+
+        # One uniquely numbered/labelled suggestion should be confirmed locally,
+        # not sent through a long Ollama planning round. No command is executed here.
+        if confirmation and len(confirmation["candidates"]) == 1:
+            clarified = dict(answer)
+            clarified.update(
+                {
+                    "success": False,
+                    "route": "mcp-fast",
+                    "intent": "fallback-device-confirmation-required",
+                    "message": _clarification_message(
+                        requested_name,
+                        alternatives,
+                        action=action,
+                    ),
+                    "confirmation_required": True,
+                    "confirmation": confirmation,
+                    "alternatives": confirmation["candidates"],
+                }
+            )
+            return clarified
 
         # Humidifier and dehumidifier are opposite appliance meanings. A speech
         # transcript that loses the "de" prefix must never silently operate the
@@ -92,10 +144,17 @@ def install_fastpath_ai_handoff(application: Any) -> AskHandler:
                     "success": False,
                     "route": "mcp-fast",
                     "intent": "fallback-device-confirmation-required",
-                    "message": _clarification_message(requested_name, alternatives),
+                    "message": _clarification_message(
+                        requested_name,
+                        alternatives,
+                        action=action,
+                    ),
                     "confirmation_required": True,
                 }
             )
+            if confirmation:
+                clarified["confirmation"] = confirmation
+                clarified["alternatives"] = confirmation["candidates"]
             return clarified
 
         history = [
@@ -132,29 +191,41 @@ def install_fastpath_ai_handoff(application: Any) -> AskHandler:
             natural["fast_match_message"] = answer.get("message")
             natural.setdefault("version", application.VERSION)
             if alternatives and not _control_executed(natural):
+                candidates = _confirmation_candidates(requested_name, alternatives)
                 natural.update(
                     {
                         "success": False,
                         "intent": "ollama-device-clarification",
                         "message": _clarification_message(
                             requested_name,
-                            alternatives,
+                            candidates,
+                            action=action,
                         ),
                         "confirmation_required": True,
+                        "alternatives": candidates,
                     }
                 )
+                confirmation = _confirmation_payload(requested_name, candidates, action)
+                if confirmation:
+                    natural["confirmation"] = confirmation
             return natural
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             fallback = dict(answer)
+            candidates = _confirmation_candidates(requested_name, alternatives)
             fallback["ai_handoff_attempted"] = True
             fallback["ai_handoff_error"] = str(exc)
             fallback["message"] = _clarification_message(
                 requested_name,
-                alternatives,
+                candidates,
+                action=action,
             )
             fallback["confirmation_required"] = True
+            fallback["alternatives"] = candidates
+            confirmation = _confirmation_payload(requested_name, candidates, action)
+            if confirmation:
+                fallback["confirmation"] = confirmation
             return fallback
 
     application.ask = ask_with_handoff
