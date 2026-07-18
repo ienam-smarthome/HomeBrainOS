@@ -62,3 +62,6 @@ def test_windows_setup_script_disables_thinking_and_uses_2k_context():
     assert "$model = 'qwen3.5:4b'" in script
     assert "think = $false" in script
     assert "num_ctx = 2048" in script
+    assert "Start-Process" in script
+    assert "2>$null" not in script
+    assert "Thinking disabled: confirmed." in script
