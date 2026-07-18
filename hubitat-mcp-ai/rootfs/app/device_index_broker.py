@@ -4,13 +4,13 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from mcp_state_broker import MCPStateBroker
+from mcp_state_broker_adaptive import AdaptiveGatewayMCPStateBroker
 
 
 InvalidationCallback = Callable[[str], Awaitable[None] | None]
 
 
-class IndexedMCPStateBroker(MCPStateBroker):
+class IndexedMCPStateBroker(AdaptiveGatewayMCPStateBroker):
     """MCP state broker that notifies dependent indexes after invalidation."""
 
     _RULE_WRITE_ACTION_PREFIXES = (
