@@ -33,6 +33,15 @@ def _without_notification_errors(values: list[Any]) -> list[str]:
     ]
 
 
+def _multiple_message(items: list[dict[str, Any]]) -> str:
+    names = ", ".join(_candidate_label(item) for item in items[:8])
+    return (
+        _MULTIPLE_NOTIFICATION
+        + " HomeBrain will not guess the recipient. Keep only the intended phone/push device in the MCP selected-device list. Candidates: "
+        + names
+    )
+
+
 class NotificationSafeNativeRuleMachineWorkflow(NativeRuleMachineAutomationWorkflow):
     """Native RM workflow with an authoritative Notification capability probe.
 
@@ -48,7 +57,12 @@ class NotificationSafeNativeRuleMachineWorkflow(NativeRuleMachineAutomationWorkf
             return draft
 
         existing = list(draft.get("notification_candidates") or [])
-        if existing:
+        if len(existing) == 1:
+            return draft
+        if len(existing) > 1:
+            unresolved = _without_notification_errors(list(draft.get("unresolved") or []))
+            unresolved.append(_multiple_message(existing))
+            draft["unresolved"] = list(dict.fromkeys(unresolved))
             return draft
 
         try:
@@ -114,12 +128,7 @@ class NotificationSafeNativeRuleMachineWorkflow(NativeRuleMachineAutomationWorkf
             return draft
 
         if len(refs) > 1:
-            names = ", ".join(_candidate_label(item) for item in candidates[:8])
-            unresolved.append(
-                _MULTIPLE_NOTIFICATION
-                + " HomeBrain will not guess the recipient. Keep only the intended phone/push device in the MCP selected-device list. Candidates: "
-                + names
-            )
+            unresolved.append(_multiple_message(candidates))
         else:
             unresolved.append(
                 _NO_NOTIFICATION
