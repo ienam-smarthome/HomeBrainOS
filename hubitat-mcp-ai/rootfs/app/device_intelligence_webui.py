@@ -12,7 +12,7 @@ ASK_PAYLOAD_REPLACEMENT = "JSON.stringify({query,history:prior,session_id:client
 SUMMARY_MARKER = "if(answer.display.subtitle)output.appendChild(el('div','result-subtitle',answer.display.subtitle));const metrics=metricGrid(answer.display.metrics);"
 SUMMARY_REPLACEMENT = "if(answer.display.subtitle)output.appendChild(el('div','result-subtitle',answer.display.subtitle));if(answer.display.summary)output.appendChild(el('div','result-summary',answer.display.summary));const metrics=metricGrid(answer.display.metrics);"
 ROUTE_BADGE_MARKER = "meta.appendChild(el('span','badge',answer.route||'unknown'));"
-ROUTE_BADGE_REPLACEMENT = "meta.appendChild(el('span','badge',(typeof routeLabel==='function'?routeLabel(answer.route):String(answer.route||'unknown'))));"
+ROUTE_BADGE_REPLACEMENT = "meta.appendChild(el('span','badge',(typeof routeLabel==='function'?routeLabel(answer.route):String(answer.route||'unknown'))));if(answer.ai_attempted)meta.appendChild(el('span','badge',answer.ai_used?'AI used':'AI attempted → fallback'));"
 SHOW_ANSWER_MARKER = "function showAnswer(answer){clearOutput();"
 SHOW_ANSWER_REPLACEMENT = "function showAnswer(answer){clearOutput();const asked=localStorage.getItem('hmcp_last_query')||'';if(asked)output.appendChild(el('div','result-question','Asked: '+asked));"
 WORKING_MARKER = "clearOutput();output.appendChild(el('div','answer-text','Working on: '+query));"
@@ -30,7 +30,7 @@ SNAPSHOT_CSS = r"""
 #speak.listening{background:#b91c1c}
 """
 
-ROUTE_LABEL_FUNCTION = r"""function routeLabel(route){const key=String(route||'unknown');const labels={'mcp-fast':'Hubitat live','ollama+mcp':'Ollama + Hubitat','ollama+snapshot':'Ollama insight','mcp-snapshot':'Hubitat snapshot','fallback-compact':'Hubitat fallback','fallback':'Hubitat fallback','mcp-confirmation':'Hubitat confirmation','system':'System','browser':'Browser','error':'Error'};return labels[key]||key.split('-').join(' ')}"""
+ROUTE_LABEL_FUNCTION = r"""function routeLabel(route){const key=String(route||'unknown');const labels={'mcp-fast':'Hubitat live','ollama+mcp':'Ollama + Hubitat','ollama+snapshot':'Ollama insight','mcp-snapshot':'Hubitat snapshot','mcp-snapshot-ai-fallback':'Hubitat snapshot (AI fallback)','ollama+temperature-insight':'Ollama comparison','mcp-temperature-insight-ai-fallback':'Hubitat comparison (AI fallback)','fallback-compact':'Hubitat fallback','fallback':'Hubitat fallback','mcp-confirmation':'Hubitat confirmation','system':'System','browser':'Browser','error':'Error'};return labels[key]||key.split('-').join(' ')}"""
 
 GROUPED_ITEM_LIST = r"""function itemList(items){if(!Array.isArray(items)||!items.length)return null;const list=el('div','result-list');let lastGroup='';items.forEach(item=>{const group=String(item.group||'');if(group&&group!==lastGroup){list.appendChild(el('div','result-section',group));lastGroup=group}const row=el('div','result-item '+(item.tone||''));row.appendChild(el('div','',item.icon||'•'));const main=el('div','result-main');main.appendChild(el('div','result-name',item.title||''));if(item.subtitle)main.appendChild(el('div','result-sub',item.subtitle));row.appendChild(main);if(item.value!==undefined&&item.value!==null&&item.value!=='')row.appendChild(el('div','result-side',String(item.value)));list.appendChild(row)});return list}
 function showAnswer(answer){"""
@@ -55,15 +55,11 @@ def patch_page(page: str) -> str:
         'placeholder="Ask your Hubitat…"',
         'placeholder="Ask Hubitat, or start with Ask Ollama: …"',
     )
-    # webui.py already creates a stable clientId and sends it in X-HMCP-Client.
-    # Add the same ID to the validated JSON body without declaring it twice.
     page = page.replace(ASK_PAYLOAD_MARKER, ASK_PAYLOAD_REPLACEMENT)
     page = page.replace(DEVICE_HANDLER_MARKER, DEVICE_HANDLER)
     page = page.replace(OLD_VOICE_HANDLER, NEW_VOICE_HANDLER, 1)
     page = page.replace("</style>", SNAPSHOT_CSS + "</style>", 1)
 
-    # Allow whitespace/newlines between the two functions. The previous exact
-    # ``}function`` match failed on the real page and left routeLabel undefined.
     page = re.sub(
         r"function itemList\(items\)\{.*?\}\s*function showAnswer\(answer\)\{",
         GROUPED_ITEM_LIST,
@@ -71,8 +67,6 @@ def patch_page(page: str) -> str:
         count=1,
         flags=re.S,
     )
-    # Define the route helper independently of the item-list enhancement so a
-    # future item renderer change cannot break all answers again.
     page = page.replace(
         "function showAnswer(answer){",
         ROUTE_LABEL_FUNCTION + "\nfunction showAnswer(answer){",
@@ -83,9 +77,6 @@ def patch_page(page: str) -> str:
     page = page.replace(SUMMARY_MARKER, SUMMARY_REPLACEMENT, 1)
     page = page.replace(ROUTE_BADGE_MARKER, ROUTE_BADGE_REPLACEMENT, 1)
 
-    # Relative API paths work both at http://host:8788/ and through Home
-    # Assistant's /api/hassio_ingress/<token>/ sidebar proxy. Absolute /api
-    # URLs escape the ingress prefix and are handled by Home Assistant instead.
     page = page.replace("fetch('/api/", "fetch('api/")
     page = page.replace('fetch("/api/', 'fetch("api/')
     return page
