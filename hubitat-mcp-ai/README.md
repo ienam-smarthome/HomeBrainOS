@@ -61,8 +61,11 @@ Common analytical requests skip the general planner entirely:
 - `Compare the bedroom temperatures and explain the difference`
 - `What looks unusual at home right now?`
 - `Find active motion and tell me which nearby lights are off`
+- `Suggest one useful automation for the devices I have`
 
 The motion/light route defines **nearby** as the same assigned Hubitat room. It reads motion and switch states directly from the shared index, then asks AI only to phrase the verified result.
+
+The automation recommendation route scans the selected device inventory directly. It prioritises washing-machine power completion alerts, fridge/freezer door alerts, same-room motion lighting and humidity ventilation. AI may improve the wording, but HomeBrain itself selects the compatible device pairing and always retains a deterministic recommendation. Recommendations are review-only and never create or change a rule automatically.
 
 ## Routing
 
@@ -87,13 +90,14 @@ Ollama Free is intended for light cloud usage and applies rolling session and we
 
 ## Current comparison build
 
-### v0.4.13-alpha
+### v0.4.14-alpha
 
-- Adds `gemma4:31b-cloud` as the primary AI response model.
-- Keeps `qwen3.5:4b` as the local MCP planner and automatic Cloud retry model.
-- Adds explicit **Ollama Cloud**, **Local Ollama**, and **Local Ollama fallback** response badges.
-- Adds a Windows Cloud setup and response-test script without storing an API key in Home Assistant.
-- Adds a verified active-motion/nearby-off-light route using same-room Hubitat assignments.
+- Adds a verified automation-recommendation route that bypasses the failing general planner for common suggestion questions.
+- Selects one practical candidate from actual selected Hubitat devices before invoking AI.
+- Returns a complete trigger, action and safeguard even when Cloud and local Ollama synthesis fail.
+- Never creates a rule automatically and tells the user to check for an existing similar automation first.
+- Keeps `gemma4:31b-cloud` as the preferred response model with `qwen3.5:4b` as local planner and fallback.
+- Keeps the verified active-motion/nearby-off-light route using same-room Hubitat assignments.
 - Keeps truthful state recovery: missing Hubitat state coverage is never converted into factual zero counts.
 - Keeps corrected bedroom grouping and alternate same-room temperature sensors.
 - Keeps direct control verification, exact room lists, safe confirmations and device-specific icons.
