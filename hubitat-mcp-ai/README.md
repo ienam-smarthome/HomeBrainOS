@@ -26,8 +26,10 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 
 ## Routing
 
-- When Ollama is healthy, the model receives a ranked subset of the live MCP tool catalogue and can perform multi-step tool calls.
-- When Ollama is unavailable, the fallback handles common device on/off requests, lights/switches on, low batteries, weather, rooms, home status, hub health, prayer times, device inventories, and Home Snapshot summaries.
+- Exact live lists, room inventories and simple on/off controls stay on the fast deterministic Hubitat route.
+- Ollama handles explanations, comparisons, diagnosis, recommendations, multi-step questions, contextual controls and natural summaries grounded in live Hubitat MCP evidence.
+- Prefix a question with `Ask Ollama:` when an AI-written answer is specifically required, even for a question that would normally use the deterministic route.
+- `AI home insight` builds one authoritative Home Snapshot and lets Ollama identify and phrase the most important or unusual conditions without planning extra MCP calls.
 - Per-browser conversation context supports natural follow-ups without allowing one browser session to control another session's devices.
 - Sensitive operations require explicit confirmation.
 
@@ -41,16 +43,19 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 
 ## Current comparison build
 
-### v0.4.6-alpha
+### v0.4.7-alpha
 
-- Uses one shared live device intelligence index for dashboard summaries, device inventories, exact aliases, and control resolution.
-- Keeps normal dashboard and inventory reads cached to minimise Hubitat load.
-- Bypasses both the device index and MCP broker cache during active control verification, including any older in-flight read, so every poll reaches Hubitat directly.
+- Fixes `show rooms` and similar questions so the hidden `hub_list_rooms` operation executes through the room gateway instead of exposing gateway catalogue JSON.
+- Uses device-specific icons inferred from live attributes, capabilities and labels, including lights, motion, presence, lux, battery, humidity, temperature, Hub Info, power, sockets, cameras, locks and thermostats.
+- Adds `AI home insight` and `AI question guide` shortcuts.
+- Adds the explicit `Ask Ollama:` override and falls back safely to authoritative Hubitat output if local inference fails.
+- Shows friendly route badges such as `Hubitat live`, `Ollama + Hubitat` and `Ollama insight`, making AI participation visible.
+- Keeps normal dashboard and inventory reads cached to minimise Hubitat load while control verification bypasses all caches.
 - Keeps fresh verification state isolated per asynchronous request, so simultaneous phone or browser commands cannot interfere with each other.
-- Applies the same direct fresh-read path to individual and grouped light/switch controls.
 - Supports safe Yes/No and numbered follow-up confirmations for ambiguous device names.
 - Supports Home Assistant ingress/sidebar display with relative API paths.
 - Provides time-bounded mobile speech capture, interim transcript display, tap-to-stop controls, and clear microphone error messages.
-- Provides fast structured Home Snapshot summaries with optional bounded Ollama synthesis.
+
+Ollama is never the source of device state. Hubitat MCP supplies authoritative live evidence; Ollama interprets, compares and phrases that evidence.
 
 The project intentionally remains separate from HomeBrain so both assistants can be tested side by side.
