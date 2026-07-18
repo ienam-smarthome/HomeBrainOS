@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Awaitable, Callable
 
+from automation_rule_workflow import _session_id
 from automation_rule_workflow_native_rm import NativeRuleMachineAutomationWorkflow
 from device_intelligence_catalogue import _rows
 from device_intelligence_index import _device_id, _label, _room_name
 
 
+AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 _NO_NOTIFICATION = "No selected Notification-capable device was found."
 _MULTIPLE_NOTIFICATION = "More than one Notification-capable device is selected."
 
@@ -130,4 +132,42 @@ class NotificationSafeNativeRuleMachineWorkflow(NativeRuleMachineAutomationWorkf
         return draft
 
 
-__all__ = ["NotificationSafeNativeRuleMachineWorkflow"]
+def install_notification_safe_native_rule_machine_workflow(
+    application: Any,
+    device_index: Any,
+    *,
+    ttl_seconds: float = 600.0,
+    max_sessions: int = 128,
+    write_enabled: bool = True,
+    require_paused_create: bool = True,
+) -> NotificationSafeNativeRuleMachineWorkflow:
+    original_ask: AskHandler = application.ask
+    service = NotificationSafeNativeRuleMachineWorkflow(
+        application,
+        device_index,
+        ttl_seconds=ttl_seconds,
+        max_sessions=max_sessions,
+        write_enabled=write_enabled,
+        require_paused_create=require_paused_create,
+    )
+
+    async def ask_with_rule_workflow(request: Any) -> dict[str, Any]:
+        query = str(getattr(request, "query", "") or "").strip()
+        command = service.command(query)
+        if command:
+            answer = await service.handle(request, command)
+            answer.setdefault("version", application.VERSION)
+            return answer
+        answer = await original_ask(request)
+        await service.remember_answer(_session_id(request), answer)
+        return answer
+
+    application.ask = ask_with_rule_workflow
+    application.automation_rule_workflow = service
+    return service
+
+
+__all__ = [
+    "NotificationSafeNativeRuleMachineWorkflow",
+    "install_notification_safe_native_rule_machine_workflow",
+]
