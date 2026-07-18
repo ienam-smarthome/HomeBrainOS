@@ -6,12 +6,17 @@ from ollama_agent_final_answer import FinalAnswerNaturalAgent
 from ollama_agent_fast import OllamaUnavailable
 
 
-class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
-    """Final-answer agent that never crosses model generations automatically.
+_TARGET_LOCAL_MODEL_BILLIONS = 4.0
 
-    A configured qwen3.5 assistant may use a smaller installed qwen3.5 helper, but
-    it will not silently fall back to qwen3:4b. That older helper was responsible
-    for the repeated 25-second planner timeouts seen while qwen3.5:9b was healthy.
+
+class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
+    """Final-answer agent tuned for a 16 GB shared-memory local AI PC.
+
+    A configured Qwen 3.5 assistant may use another installed Qwen 3.5 model, but
+    it never crosses model generations automatically. Model selection targets 4B
+    rather than blindly choosing the smallest installed model: 0.8B/2B variants
+    are faster but materially weaker for natural smart-home explanations, while
+    9B is too slow on the GMKtec M6 Ultra for routine interactive responses.
     """
 
     def _preferred_family_model(self, installed_models: list[str]) -> str:
@@ -26,11 +31,19 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
         if not candidates:
             return self.model
 
-        def size_key(name: str) -> tuple[float, str]:
+        def model_size(name: str) -> float:
             match = re.search(r"(?<!\d)(\d+(?:\.\d+)?)b(?:\b|$)", name.lower())
-            return (float(match.group(1)) if match else 999.0, name.lower())
+            return float(match.group(1)) if match else 999.0
 
-        candidates.sort(key=size_key)
+        def preference_key(name: str) -> tuple[float, int, float, str]:
+            size = model_size(name)
+            # Prefer the exact 4B target. On a tie, avoid going below 4B before
+            # choosing a larger model, then prefer the smaller memory footprint.
+            distance = abs(size - _TARGET_LOCAL_MODEL_BILLIONS)
+            below_target = 1 if size < _TARGET_LOCAL_MODEL_BILLIONS else 0
+            return distance, below_target, size, name.lower()
+
+        candidates.sort(key=preference_key)
         return candidates[0]
 
 
