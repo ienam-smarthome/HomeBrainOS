@@ -1,5 +1,5 @@
 name: Hubitat MCP AI
-version: '0.4.1-alpha'
+version: '0.4.2-alpha'
 slug: hubitat_mcp_ai
 description: Ollama-first natural Hubitat assistant powered by kingpanther13's MCP Rule Server
 url: https://github.com/ienam-smarthome/HomeBrainOS
@@ -50,6 +50,8 @@ options:
   conversation_context_ttl_seconds: 600
   conversation_context_max_sessions: 128
   conversation_context_max_group_control: 8
+  control_confirmation_ttl_seconds: 120
+  control_verification_timeout_seconds: 7
   request_trace_limit: 20
   attention_stale_hours: 48
   hub_cpu_probe_enabled: true
@@ -92,6 +94,8 @@ schema:
   conversation_context_ttl_seconds: int
   conversation_context_max_sessions: int
   conversation_context_max_group_control: int
+  control_confirmation_ttl_seconds: int
+  control_verification_timeout_seconds: int
   request_trace_limit: int
   attention_stale_hours: int
   hub_cpu_probe_enabled: bool
