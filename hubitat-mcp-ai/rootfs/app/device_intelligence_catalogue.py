@@ -16,6 +16,10 @@ _METADATA_FIELDS = [
     "label",
     "room",
     "capabilities",
+    # Kingpanther's compact summary can legitimately omit currentStates. Keep the
+    # detailed attributes in the catalogue so enriched_devices always has a live
+    # state source instead of becoming metadata-only.
+    "attributes",
     "disabled",
     "lastActivity",
 ]
@@ -228,8 +232,8 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
     Kingpanther's capabilityFilter is an exact capability-name match. Custom drivers
     can expose equivalent names without spaces (for example ``ContactSensor``), so
     an exact filter may return zero even though the device is selected. This index
-    loads the selected devices' capability names once, normalises them locally and
-    merges that metadata with the compact live-state snapshot.
+    loads the selected devices' capability names and detailed attributes once,
+    normalises them locally and merges that data with the compact live snapshot.
     """
 
     def __init__(
@@ -323,6 +327,13 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
             combined.update(item)
             if key in merged and merged[key].get("capabilities") is not None:
                 combined["capabilities"] = merged[key]["capabilities"]
+            # A compact summary may contain an empty attributes/currentStates field.
+            # Do not let that erase richer live attributes from the detailed catalogue.
+            for state_key in ("attributes", "currentStates", "states", "state"):
+                summary_value = item.get(state_key)
+                metadata_value = (merged.get(key) or {}).get(state_key)
+                if summary_value in (None, {}, []) and metadata_value not in (None, {}, []):
+                    combined[state_key] = metadata_value
             merged[key] = combined
         return list(merged.values())
 
@@ -340,8 +351,6 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
             if matched:
                 self._stats["local_capability_matches"] += 1
                 if detailed:
-                    # Preserve richer attributes when the exact upstream filter works,
-                    # but never lose locally identified devices when it does not.
                     try:
                         upstream = await super().capability_result(
                             capability,
@@ -354,7 +363,6 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
                     except Exception:
                         pass
                 return self._synthetic_result(capability, matched, source="capability-catalogue")
-
         self._stats["server_capability_fallbacks"] += 1
         return await super().capability_result(
             capability,
@@ -377,139 +385,54 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
         return self._dedupe(_rows(result.data))
 
     async def diagnostics(self, *, force: bool = False) -> dict[str, Any]:
-        devices = await self.enriched_devices(force=force)
-        now = time.monotonic()
+        enriched, base = await asyncio.gather(
+            self.enriched_devices(force=force),
+            super().diagnostics(force=force),
+        )
         groups: dict[str, set[str]] = {}
-        no_room: list[str] = []
-        disabled: list[str] = []
-        aliases: dict[str, set[str]] = {}
-        labels: dict[str, list[str]] = {}
-
-        for item in devices:
+        for item in enriched:
             device_id = _device_id(item) or _label(item)
-            label = _label(item) or device_id
-            room = str(item.get("room") or "").strip()
-            if not room:
-                no_room.append(label)
-            if bool(item.get("disabled")):
-                disabled.append(label)
             for group in self._groups(item):
                 groups.setdefault(group, set()).add(device_id)
-            normal_label = _normalise(label)
-            labels.setdefault(normal_label, []).append(_device_id(item))
-            for alias in self._alias_forms(label):
-                aliases.setdefault(alias, set()).add(device_id)
+        base = dict(base)
+        base["groups"] = {key: len(value) for key, value in sorted(groups.items())}
+        base["metadata_ttl_seconds"] = self.metadata_ttl_seconds
+        base["state_records"] = sum(1 for item in enriched if _attributes(item))
+        return base
 
-        ambiguous_aliases = {
-            alias: sorted(
-                _label(item)
-                for item in devices
-                if _device_id(item) in ids
-            )
-            for alias, ids in aliases.items()
-            if len(ids) > 1
-        }
-        duplicate_labels = {
-            label: sorted(ids)
-            for label, ids in labels.items()
-            if label and len(ids) > 1
-        }
-        metadata_age = (
-            round(max(0.0, now - self._metadata.stored_at), 2)
-            if self._metadata is not None
-            else None
-        )
-        summary_age = (
-            round(max(0.0, now - self._snapshot.stored_at), 2)
-            if self._snapshot is not None
-            else None
-        )
-        return {
-            "success": True,
-            "selected_count": len(devices),
-            "groups": {key: len(value) for key, value in sorted(groups.items())},
-            "rooms": sorted({str(item.get("room") or "").strip() for item in devices if str(item.get("room") or "").strip()}),
-            "without_room": sorted(no_room, key=str.lower),
-            "disabled": sorted(disabled, key=str.lower),
-            "duplicate_labels": duplicate_labels,
-            "ambiguous_aliases": ambiguous_aliases,
-            "last_refresh_age_seconds": summary_age,
-            "metadata_age_seconds": metadata_age,
-            "ttl_seconds": self.ttl_seconds,
-            "capability_ttl_seconds": self.capability_ttl_seconds,
-            "metadata_ttl_seconds": self.metadata_ttl_seconds,
-            "last_error": self._last_error,
-            "stats": dict(self._stats),
-        }
-
-    def stats(self) -> dict[str, Any]:
-        value = super().stats()
-        now = time.monotonic()
-        value.update(
-            {
-                "metadata_loaded": self._metadata is not None,
-                "metadata_age_seconds": (
-                    round(max(0.0, now - self._metadata.stored_at), 2)
-                    if self._metadata is not None
-                    else None
-                ),
-                "metadata_ttl_seconds": self.metadata_ttl_seconds,
-            }
-        )
-        return value
-
-    @staticmethod
+    @classmethod
     def _synthetic_result(
+        cls,
         capability: str,
         devices: list[dict[str, Any]],
         *,
         source: str,
     ) -> MCPToolResult:
+        data = {
+            "devices": devices,
+            "count": len(devices),
+            "capabilityFilter": capability,
+            "source": source,
+        }
         return MCPToolResult(
             name="hub_list_devices",
-            arguments={"capabilityFilter": capability},
-            raw={"source": source, "capabilityFilter": capability},
+            arguments={"capabilityFilter": capability, "source": source},
+            raw=data,
             text="",
-            data={
-                "devices": devices,
-                "count": len(devices),
-                "total": len(devices),
-                "capabilityFilter": capability,
-                "capabilityFilterMatchedKnownCapability": True,
-                "source": source,
-            },
+            data=data,
             is_error=False,
         )
-
-    @staticmethod
-    def _alias_forms(label: str) -> set[str]:
-        base = _normalise(label)
-        if not base:
-            return set()
-        number_words = {
-            "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
-            "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
-        }
-        number_digits = {value: key for key, value in number_words.items()}
-        words = base.split()
-        return {
-            base,
-            " ".join(number_words.get(word, word) for word in words),
-            " ".join(number_digits.get(word, word) for word in words),
-            _normalise(re.sub(r"\([^)]*\)", " ", label)),
-        }
 
     @staticmethod
     def _groups(item: dict[str, Any]) -> set[str]:
         groups: set[str] = set()
         for capability in _capability_names(item):
             compact = _compact(capability)
-            group = _CAPABILITY_GROUPS.get(compact)
-            if group:
-                groups.add(group)
-            # Some custom drivers append words such as Capability or Sensor.
+            exact = _CAPABILITY_GROUPS.get(compact)
+            if exact:
+                groups.add(exact)
             for known, candidate in _CAPABILITY_GROUPS.items():
-                if known and (compact.endswith(known) or known.endswith(compact)):
+                if len(known) >= 6 and known in compact:
                     groups.add(candidate)
 
         attrs = _attributes(item)
@@ -535,4 +458,16 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
         return groups
 
 
-__all__ = ["CapabilityCatalogueDeviceIndex"]
+__all__ = [
+    "CapabilityCatalogueDeviceIndex",
+    "_ATTRIBUTE_GROUPS",
+    "_CAPABILITY_GROUPS",
+    "_attributes",
+    "_capability_names",
+    "_compact",
+    "_label",
+    "_looks_like_camera",
+    "_looks_like_light",
+    "_looks_like_outlet",
+    "_normalise",
+]
