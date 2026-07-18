@@ -19,6 +19,15 @@ _TEMPERATURE_COMPARE_QUERY = re.compile(
     re.IGNORECASE,
 )
 
+_BEDROOM_NUMBERS = {
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+}
+
 
 def _value(raw: Any) -> Any:
     if isinstance(raw, dict):
@@ -37,11 +46,16 @@ def _number(raw: Any) -> float | None:
         return None
 
 
-def _inferred_room(label: str) -> str:
-    match = re.search(r"\bbedroom\s*([0-9]+|one|two|three|four)\b", label, re.I)
+def _inferred_room(value: str) -> str:
+    match = re.search(
+        r"\bbedroom\s*([0-9]+|one|two|three|four|five|six)\b",
+        str(value or ""),
+        re.I,
+    )
     if not match:
         return ""
-    return f"Bedroom {match.group(1).title()}"
+    token = match.group(1).lower()
+    return f"Bedroom {_BEDROOM_NUMBERS.get(token, token)}"
 
 
 class TemperatureInsightService:
@@ -61,7 +75,7 @@ class TemperatureInsightService:
     ) -> None:
         self.application = application
         self.device_index = device_index
-        self.timeout_seconds = max(12.0, min(60.0, float(timeout_seconds)))
+        self.timeout_seconds = max(8.0, min(60.0, float(timeout_seconds)))
 
     @staticmethod
     def matches(query: str) -> bool:
@@ -116,16 +130,7 @@ class TemperatureInsightService:
                 else "No bedroom temperature readings were available"
             ),
             metrics=metrics,
-            items=[
-                {
-                    "icon": "🌡️",
-                    "title": item["room"],
-                    "value": f"{item['temperature']:g}°C",
-                    "subtitle": f"Source: {item['device']}",
-                    "tone": None,
-                }
-                for item in readings
-            ],
+            items=self._display_items(readings),
             note=note,
         )
         display["summary"] = message
@@ -180,12 +185,23 @@ class TemperatureInsightService:
             temperature = _number(attrs.get("temperature"))
             if temperature is None:
                 continue
+
             label = _label(item) or "Unnamed temperature device"
-            room = _room_name(item) or _inferred_room(label)
-            searchable = _normalise(f"{room} {label}")
-            if bedrooms_only and "bedroom" not in searchable:
-                continue
-            room = room or label
+            assigned_room = _room_name(item)
+            inferred_from_label = _inferred_room(label)
+
+            if bedrooms_only:
+                # Some Hubitat setups expose a category such as "Thermostat & TRV's"
+                # in the room field. For bedroom comparisons, an explicit bedroom in
+                # the device label is more trustworthy than that category. A genuine
+                # assigned Bedroom room remains the fallback for generically named
+                # devices such as "TRV" or "Room sensor".
+                room = inferred_from_label or _inferred_room(assigned_room)
+                if not room:
+                    continue
+            else:
+                room = assigned_room or inferred_from_label or label
+
             grouped.setdefault(room, []).append(
                 {
                     "room": room,
@@ -203,10 +219,49 @@ class TemperatureInsightService:
             chosen = dict(candidates[0])
             chosen.pop("score", None)
             chosen["available_sources"] = len(candidates)
+            chosen["alternate_sources"] = [
+                {
+                    "device": candidate["device"],
+                    "temperature": candidate["temperature"],
+                }
+                for candidate in candidates[1:]
+            ]
             selected.append(chosen)
 
         selected.sort(key=lambda item: _normalise(item["room"]))
         return selected
+
+    @staticmethod
+    def _display_items(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for reading in readings:
+            room = reading["room"]
+            representative = reading["temperature"]
+            items.append(
+                {
+                    "icon": "🌡️",
+                    "title": room,
+                    "value": f"{representative:g}°C",
+                    "subtitle": f"Representative: {reading['device']}",
+                    "group": room,
+                    "tone": None,
+                }
+            )
+            for alternate in reading.get("alternate_sources") or []:
+                difference = abs(float(alternate["temperature"]) - float(representative))
+                label_text = _normalise(alternate["device"])
+                icon = "♨️" if "trv" in label_text or "thermostat" in label_text else "🌡️"
+                items.append(
+                    {
+                        "icon": icon,
+                        "title": alternate["device"],
+                        "value": f"{alternate['temperature']:g}°C",
+                        "subtitle": "Additional sensor in this room",
+                        "group": room,
+                        "tone": "warning" if difference >= 1.5 else None,
+                    }
+                )
+        return items
 
     @staticmethod
     def _source_score(
@@ -254,17 +309,33 @@ class TemperatureInsightService:
             f"{item['room']} {item['temperature']:g}°C" for item in readings
         )
         if spread < 0.5:
-            comparison = "The readings are effectively the same."
+            comparison = "The representative readings are effectively the same."
         elif spread < 1.5:
-            comparison = f"The spread is small at {spread:g}°C."
+            comparison = f"The representative-room spread is small at {spread:g}°C."
         else:
             comparison = (
-                f"{high['room']} is {spread:g}°C warmer than {low['room']}."
+                f"{high['room']} is {spread:g}°C warmer than {low['room']} "
+                "using the representative room sensors."
             )
+
+        alternate_values: list[str] = []
+        for item in readings:
+            for alternate in item.get("alternate_sources") or []:
+                alternate_values.append(
+                    f"{item['room']} also has {alternate['device']} at "
+                    f"{alternate['temperature']:g}°C"
+                )
+        alternate_text = (
+            " Additional sensor readings: " + "; ".join(alternate_values) + "."
+            if alternate_values
+            else ""
+        )
+
         return (
-            f"Bedroom temperatures: {values}. {comparison} Possible reasons include "
-            "different heating demand, radiator proximity, sunlight, airflow, door "
-            "position or sensor placement; the live readings do not prove one cause."
+            f"Bedroom temperatures: {values}. {comparison}{alternate_text} Possible "
+            "reasons include different heating demand, radiator proximity, sunlight, "
+            "airflow, door position or sensor placement; the live readings do not "
+            "prove one cause."
         )
 
     async def _natural_answer(
@@ -287,8 +358,15 @@ class TemperatureInsightService:
         evidence = [
             {
                 "room": item["room"],
-                "temperature_c": item["temperature"],
-                "source_device": item["device"],
+                "representative_temperature_c": item["temperature"],
+                "representative_device": item["device"],
+                "alternate_sensors": [
+                    {
+                        "device": alternate["device"],
+                        "temperature_c": alternate["temperature"],
+                    }
+                    for alternate in item.get("alternate_sources") or []
+                ],
             }
             for item in readings
         ]
@@ -299,12 +377,15 @@ class TemperatureInsightService:
                     "role": "system",
                     "content": (
                         "You are HomeBrain, a concise smart-home analyst. Compare only the "
-                        "verified temperatures supplied. State each bedroom reading, then the "
-                        "coldest, warmest and exact difference. Explain plausible causes "
-                        "cautiously as possibilities, not facts. Do not claim knowledge of "
-                        "windows, heating, occupancy or sensor placement unless supplied. "
-                        "Write a polished answer comparable to a strong general assistant, "
-                        "using two or three short paragraphs."
+                        "verified temperatures supplied. Count each room once using its "
+                        "representative temperature. Alternate sensors belong to the same room "
+                        "and must never be described as separate rooms. State each bedroom's "
+                        "representative reading, then the coldest, warmest and exact room-to-room "
+                        "difference. Mention any meaningful same-room sensor discrepancy, "
+                        "especially a warmer TRV versus an ambient meter. Explain plausible "
+                        "causes cautiously as possibilities, not facts. Do not claim knowledge "
+                        "of windows, heating, occupancy or sensor placement unless supplied. "
+                        "Use two or three short paragraphs."
                     ),
                 },
                 {
