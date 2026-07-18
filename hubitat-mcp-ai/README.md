@@ -41,11 +41,13 @@ You may alternatively paste the complete endpoint, including `?access_token=...`
 
 ## Current comparison build
 
-### v0.4.5-alpha
+### v0.4.6-alpha
 
 - Uses one shared live device intelligence index for dashboard summaries, device inventories, exact aliases, and control resolution.
-- Performs fresh pre-command and post-command Hubitat reads so a command is not falsely reported from cached state.
+- Keeps normal dashboard and inventory reads cached to minimise Hubitat load.
+- Bypasses both the device index and MCP broker cache during active control verification, including any older in-flight read, so every poll reaches Hubitat directly.
 - Keeps fresh verification state isolated per asynchronous request, so simultaneous phone or browser commands cannot interfere with each other.
+- Applies the same direct fresh-read path to individual and grouped light/switch controls.
 - Supports safe Yes/No and numbered follow-up confirmations for ambiguous device names.
 - Supports Home Assistant ingress/sidebar display with relative API paths.
 - Provides time-bounded mobile speech capture, interim transcript display, tap-to-stop controls, and clear microphone error messages.
