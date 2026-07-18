@@ -150,6 +150,30 @@ class ReleaseAutomationRuleWorkflow(LiveSchemaAutomationRuleWorkflow):
             )
         return await super()._operate(pending, operation)
 
+    @staticmethod
+    def _choose_operation_tool(tools, operation: str):
+        if operation == "run":
+            # The UI promises a dry-run. Never substitute run_rule/call_rule, which
+            # may execute real actions on older servers.
+            candidates = [
+                tool
+                for tool in tools.values()
+                if "test_rule" in tool.name.lower()
+                or "dry_run_rule" in tool.name.lower()
+                or "dry run" in str(tool.description or "").lower()
+            ]
+            candidates.sort(
+                key=lambda tool: (
+                    0 if "test_rule" in tool.name.lower() else 1,
+                    tool.name,
+                )
+            )
+            return candidates[0] if candidates else None
+        return LiveSchemaAutomationRuleWorkflow._choose_operation_tool(
+            tools,
+            operation,
+        )
+
     async def _call_rule_tool(self, tool, arguments):
         result = await super()._call_rule_tool(tool, arguments)
         if result.is_error:
