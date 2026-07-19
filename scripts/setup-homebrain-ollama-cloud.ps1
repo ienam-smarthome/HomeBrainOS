@@ -89,6 +89,6 @@ Write-Host 'Installed and registered models:' -ForegroundColor Cyan
 & $ollamaExe list
 Write-Host ''
 Write-Host 'Hybrid AI is ready:' -ForegroundColor Green
-Write-Host "  Cloud answers: $cloudModel"
-Write-Host "  Local planner/semantic intent/fallback: $localModel"
-Write-Host 'Update and restart Hubitat MCP AI 0.4.43.'
+Write-Host "  Cloud answers/explanations: $cloudModel"
+Write-Host "  Local Control Agent/planner/read intent/fallback: $localModel"
+Write-Host 'Update and restart Hubitat MCP AI 0.5.0.'
