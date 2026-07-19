@@ -10,8 +10,8 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
-from automation_rule_workflow_backup_filename_safe import (
-    install_filename_safe_backup_rule_machine_workflow as install_washing_rule_machine_workflow,
+from automation_rule_workflow_write_safe import (
+    install_write_safe_backup_rule_machine_workflow as install_washing_rule_machine_workflow,
 )
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
@@ -35,10 +35,11 @@ from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 from webui_clipboard_safe import install_clipboard_safe_webui
+from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.27-alpha"
-RELEASE_VERSION = "0.4.28-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.28-alpha"
+RELEASE_VERSION = "0.4.29-alpha"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -206,6 +207,7 @@ application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
 install_automation_recommendation_webui(device_intelligence_webui_module)
 install_clipboard_safe_webui(device_intelligence_webui_module)
+install_http_safe_webui(device_intelligence_webui_module)
 install_device_intelligence_webui(application)
 app = application.app
 
