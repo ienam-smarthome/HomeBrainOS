@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.5.4"
+version: "0.5.5"
 slug: hubitat_mcp_ai
-description: "HomeBrain Control Agent with exact level grammar, local AI rescue and verified Hubitat execution"
+description: "HomeBrain Control Agent with deterministic ordinal controls, exact level grammar, local AI rescue and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
