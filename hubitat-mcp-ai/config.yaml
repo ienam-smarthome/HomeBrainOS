@@ -1,8 +1,8 @@
 name: Hubitat MCP AI
-# Previous version: '0.4.28-alpha'
-version: '0.4.29-alpha'
+# Previous version: '0.4.29-alpha'
+version: '0.4.30-alpha'
 slug: hubitat_mcp_ai
-description: Hybrid Ollama assistant with resilient native Rule Machine writes and structured server errors
+description: Hybrid Ollama assistant with duplicate-safe split native Rule Machine creation and repair
 url: https://github.com/ienam-smarthome/HomeBrainOS
 arch:
   - amd64
