@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.4.29-alpha
+
+- Converts native Rule Machine HTTP exceptions into structured HomeBrain tool results instead of allowing FastAPI to return plain-text `Internal Server Error`.
+- When a write fails through `hub_manage_rule_machine`, retries the same idempotent operation token through the directly advertised native tool; the reverse gateway fallback is used when the direct route fails.
+- Keeps backup creation exceptions separate so long-running backup polling continues to work as designed.
+- Adds a backend exception boundary with trace ID, exception type and bounded traceback in Technical details.
+- Parses `/api/ask` as text before JSON so any remaining non-JSON HTTP response is displayed and copyable rather than producing `Unexpected token 'I'`.
+- Redacts best-practice keys from write-failure diagnostics.
+
 ## 0.4.28-alpha
 
 - Fixes the result Copy button on direct `http://` access and Home Assistant ingress by running the legacy clipboard command synchronously inside the user tap.
