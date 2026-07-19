@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.33-alpha
+
+- Resolves a spoken base name such as `fan switch` to a uniquely selected label such as `Fan Switch (Tuya Local)`.
+- Removes only trailing parenthetical or bracketed display qualifiers for matching; commands and verification still use the full Hubitat device label and ID.
+- Keeps multi-device control all-or-nothing: every requested target must resolve uniquely before any write is sent.
+- Blocks safely when two selected devices share the same suffix-free base label, listing the ambiguous full labels and sending zero commands.
+- Records `exact-label` or `unique-base-label` for each resolved target in Technical details.
+
 ## 0.4.32-alpha
 
 - Routes explicit named conjunctions such as `turn on fan switch and fan boost` through deterministic MCP control instead of the Cloud planner.
