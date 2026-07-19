@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.4.36
+
+- Uses a plain numeric add-on version so Home Assistant Supervisor does not need to compare custom `-alpha` prerelease strings.
+- Marks the add-on lifecycle separately with `stage: experimental`, following the current Home Assistant add-on manifest model.
+- Quotes the Supervisor-facing manifest strings consistently and removes the previous-version comment from `config.yaml`.
+- Retains the suffix-safe fan control, condition-aware weather icons and guarded Rule Machine workflow from 0.4.35-alpha.
+
 ## 0.4.35-alpha
 
 - Replaces the hard-coded rain-bearing `🌦️` condition icon with condition-aware weather icons.
