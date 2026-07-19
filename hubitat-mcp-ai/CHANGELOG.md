@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.4.43
+
+- Routes questions such as `total lights on time today` directly to deterministic historical event processing instead of the routine Cloud response path.
+- Reads the selected Hubitat light inventory, fetches each light's switch events and pairs `on`/`off` transitions in Python.
+- Carries a confirmed pre-midnight `on` state forward from midnight and includes a currently-on final interval up to the request time.
+- Reports per-light durations, the longest-running light and combined bulb-hours, explicitly distinguishing the total from wall-clock elapsed time.
+- Flags unmatched or incomplete event chains and excludes uncertain intervals rather than estimating them.
+- Keeps partial device-event failures visible and excludes affected lights from the total.
+- Blocks Cloud fallback when historical switch evidence is unavailable, showing the precise MCP event-read errors instead of a generic AI answer.
+
 ## 0.4.42
 
 - Resolves conservative speech and typing variants such as `liiving room light two` to the unique selected label `Livingroom Light 2`.

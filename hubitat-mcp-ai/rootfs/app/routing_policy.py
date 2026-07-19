@@ -140,6 +140,10 @@ _FAST_READ_PATTERNS = (
     rf"^(?:what|which)\s+{_DEVICE_TYPE_PHRASE}\s+(?:devices?\s+)?(?:do\s+i\s+have|are\s+(?:there|available|selected|configured))\??$",
     r"^(?:list|show)\s+(?:all\s+)?devices\??$",
     r"^(?:list|show)\s+(?:all\s+)?lights\??$",
+    r"^(?:the\s+)?(?:total\s+|combined\s+)?lights?\s+on\s+time\s+(?:for\s+)?today\??$",
+    r"^how\s+(?:long|much\s+time)\s+(?:have\s+)?(?:all\s+)?(?:the\s+)?lights?\s+(?:been\s+)?on\s+today\??$",
+    r"^(?:show|calculate|get|give\s+me)\s+(?:the\s+)?(?:total\s+|combined\s+)?(?:daily\s+)?light\s+(?:on\s+time|usage)\s+(?:for\s+)?today\??$",
+    r"^(?:which|what)\s+lights?\s+(?:were|have\s+been)\s+on\s+(?:the\s+)?longest\s+today\??$",
     r"^compare\s+(?:humidity|temperature)\s+(?:in|between)\s+(?:the\s+)?.+?\s+and\s+(?:the\s+)?.+?\??$",
     r"^(?:show|check)\s+(?:the\s+)?hub\s+(?:cpu|memory|free memory|resources|temperature|uptime)(?:\s+and\s+(?:cpu|memory|free memory|temperature|uptime))?\??$",
     r"^how much\s+free memory\s+(?:does\s+)?(?:the\s+)?hub\s+have\??$",
@@ -252,7 +256,7 @@ def classify_query(query: str) -> RouteDecision:
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
-            "authoritative live-state, device-type inventory, gateway read, room inventory, comparison or diagnostic query",
+            "authoritative live-state, historical event calculation, device inventory, gateway read, comparison or diagnostic query",
         )
 
     if is_semantic_read_candidate(q):
