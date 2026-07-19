@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import traceback
 import uuid
 from collections import deque
 from typing import Any, Awaitable, Callable
@@ -122,9 +123,31 @@ def install_request_tracing(
             trace["final_route"] = "cancelled"
             raise
         except Exception as exc:
-            trace["error"] = str(exc)
-            trace["final_route"] = "error"
-            raise
+            message = str(exc).strip() or type(exc).__name__
+            trace["error"] = message
+            trace["exception_type"] = type(exc).__name__
+            trace["final_route"] = "server-error"
+            answer = {
+                "success": False,
+                "route": "server-error",
+                "intent": "backend-exception",
+                "message": (
+                    "HomeBrain stopped safely because the backend raised "
+                    f"{type(exc).__name__}: {message}"
+                ),
+                "answered_by": "HomeBrain error boundary",
+                "technical": json.dumps(
+                    {
+                        "exception_type": type(exc).__name__,
+                        "error": message,
+                        "traceback": traceback.format_exc(limit=12),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                ),
+            }
+            return answer
         finally:
             trace["elapsed_ms"] = round((time.perf_counter() - started) * 1000)
             trace["completed_at"] = time.time()
@@ -150,6 +173,7 @@ def install_request_tracing(
                     "model": performance["model"],
                     "completed_at": trace["completed_at"],
                     "error": trace.get("error"),
+                    "exception_type": trace.get("exception_type"),
                 }
             )
             end_mcp_trace(token)
