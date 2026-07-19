@@ -14,6 +14,7 @@ sys.path.insert(0, str(APP_DIR))
 from automation_rule_workflow_repair_id_safe import (  # noqa: E402
     RepairIdSafeWashingRuleMachineWorkflow,
 )
+from automation_rule_workflow_split_repair import _REPAIR_RE  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 
@@ -116,6 +117,18 @@ def test_generic_rule_list_falls_back_to_health_labels_and_finds_newest_match():
     assert all(match["paused"] is True for match in matches)
     assert details["health_label_fallback"]["match_count"] == 2
     assert any(name == "hub_get_rule_health" for name, _ in calls)
+
+
+def test_repair_command_and_installer_dispatch_rule_4155():
+    match = _REPAIR_RE.fullmatch("Repair rule 4155")
+    source = (APP_DIR / "automation_rule_workflow_repair_id_safe.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert match is not None
+    assert match.group(1) == "4155"
+    assert "repair_match = _REPAIR_RE.fullmatch(query)" in source
+    assert "answer = await service.repair(request, requested)" in source
 
 
 def test_release_uses_id_safe_repair_workflow():
