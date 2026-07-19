@@ -13,7 +13,6 @@ from automation_rule_workflow_native_rm import (
     _nested_value,
 )
 from automation_rule_workflow_washing_final import FinalWashingRuleMachineWorkflow
-from presenter import display_payload, safe_debug
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -32,9 +31,9 @@ def _acknowledgment_key(value: Any) -> str | None:
         text = str(value or "")
 
     patterns = (
-        r"acknowledg(?:e)?ment\s+key\s*(?:is|=|:)\s*[`*\"']*([A-Za-z0-9._-]{4,128})",
-        r"acknowledg(?:e)?ment\s+token\s*(?:is|=|:)\s*[`*\"']*([A-Za-z0-9._-]{4,128})",
-        r"bestPracticeKey\s*[=:]\s*[`*\"']*([A-Za-z0-9._-]{4,128})",
+        r"acknowledg(?:e)?ment\s+key\s*(?:is|=|:)\s*[\s`*\"']*([A-Za-z0-9._-]{4,128})",
+        r"acknowledg(?:e)?ment\s+token\s*(?:is|=|:)\s*[\s`*\"']*([A-Za-z0-9._-]{4,128})",
+        r"bestPracticeKey\s*[=:]\s*[\s`*\"']*([A-Za-z0-9._-]{4,128})",
     )
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -143,22 +142,6 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
     async def _create(self, pending: PendingRule) -> dict[str, Any]:
         answer = await super()._create(pending)
         if answer.get("route") == "mcp-rule-preflight-blocked":
-            technical = answer.get("technical")
-            backup = None
-            if isinstance(technical, dict):
-                backup = technical.get("backup")
-            # safe_debug commonly serialises to a JSON-safe mapping; preserve the
-            # detailed backend reason while making the main card actionable.
-            error = ""
-            if isinstance(backup, dict):
-                error = str(backup.get("error") or "")
-            message = str(answer.get("message") or "")
-            if "confirm=true" in error or "confirm=true" in message:
-                answer["message"] = (
-                    "The MCP backup tool rejected the request because confirmation was missing. "
-                    "HomeBrain now sends confirm=true after your explicit Create command; refresh "
-                    "the add-on and try again."
-                )
             display = answer.get("display")
             if isinstance(display, dict):
                 display["note"] = (
