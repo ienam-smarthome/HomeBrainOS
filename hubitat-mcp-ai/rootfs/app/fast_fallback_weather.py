@@ -5,7 +5,7 @@ from typing import Any
 from fallback_router import _normalise
 from fast_fallback import FastFallbackRouter as BaseFastFallbackRouter
 from mcp_client import MCPError
-from weather_presenter_v2 import present_weather
+from weather_presenter_icons import present_weather
 
 
 _WEATHER_TERMS = (
