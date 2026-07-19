@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.4.40
+
+- Fixes semantic comparisons returning zero readings when the MCP detailed catalogue exposes attribute definitions but keeps current values in compact `currentStates`.
+- Requests `currentStates`, `states`, `attributes` and capabilities explicitly for detailed measurement reads.
+- Merges detailed metadata with a fresh capability-filtered summary by Hubitat device ID before Python compares or ranks values.
+- Retries compact no-space capability names such as `PowerMeter` for custom Hubitat drivers.
+- Falls back to merged all-device detailed and summary evidence while still refusing to guess when no numeric live value exists.
+- Keeps the local AI classifier unchanged: it interprets the read-only intent, while MCP and Python remain authoritative for the result.
+
 ## 0.4.39
 
 - Replaces the phrase-specific power comparison patch with a general semantic read-intent pipeline.
