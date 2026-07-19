@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -43,7 +44,17 @@ def _acknowledgment_key(value: Any) -> str | None:
 
 
 class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow):
-    """Final workflow using the MCP backup tool's actual confirmation contract."""
+    """Final workflow using the MCP backup tool's actual confirmation contract.
+
+    Hubitat backup creation can exceed the normal 25-second MCP request timeout.
+    A blank timeout exception does not prove the backup failed, so the workflow
+    polls the local backup list and prevents duplicate backup creation attempts
+    while the first confirmed request may still be running.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._backup_pending_until = 0.0
 
     async def _read_best_practice_key(self) -> str | None:
         now = time.monotonic()
@@ -73,7 +84,48 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
         self._best_practice_cache = (now, key)
         return key
 
+    async def _poll_recent_backup(
+        self,
+        delays: tuple[float, ...],
+    ) -> tuple[bool, list[dict[str, Any]]]:
+        checks: list[dict[str, Any]] = []
+        for delay in delays:
+            if delay > 0:
+                await asyncio.sleep(delay)
+            ok, details = await self._recent_listed_backup()
+            checks.append(details)
+            if ok:
+                return True, checks
+        return False, checks
+
     async def _ensure_backup(self, key: str | None) -> tuple[bool, dict[str, Any]]:
+        # A previous confirmed request may still be running on the hub. Recheck
+        # instead of starting another whole-hub backup immediately.
+        if time.monotonic() < self._backup_pending_until:
+            listed_ok, listed = await self._recent_listed_backup()
+            if listed_ok:
+                self._backup_pending_until = 0.0
+                return True, {
+                    "created": True,
+                    "recent": True,
+                    "verified_by": "hub_list_backups_after_pending_create",
+                    "listed": listed,
+                    "best_practice_key_found": bool(key),
+                }
+            return False, {
+                "created": False,
+                "recent": False,
+                "started": True,
+                "pending": True,
+                "listed_backup_check": listed,
+                "best_practice_key_found": bool(key),
+                "error": (
+                    "The confirmed backup request may still be running on Hubitat. "
+                    "Wait about 30 seconds, then press Create this rule again. "
+                    "HomeBrain will verify the completed backup before writing the rule."
+                ),
+            }
+
         listed_ok, listed = await self._recent_listed_backup()
         if listed_ok:
             return True, {
@@ -115,29 +167,73 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
             }
         )
 
+        result = None
         try:
             result = await self._call_rule_tool(tool, args)
         except Exception as exc:
-            details["error"] = str(exc)
+            # httpx timeout exceptions frequently stringify to an empty string.
+            details["exception_type"] = type(exc).__name__
+            details["error"] = str(exc).strip()
+
+        if result is not None:
+            details["result"] = result.data
+            details["result_is_error"] = bool(result.is_error)
+            if result.is_error or _nested_value(result.data, "success") is False:
+                details["error"] = result.text or str(
+                    _nested_value(result.data, "error") or "Backup failed"
+                )
+            elif str(_nested_value(result.data, "status") or "").lower() == "in_progress":
+                details["error"] = (
+                    "The hub backup started successfully and is still in progress."
+                )
+                details["started"] = True
+            else:
+                details["created"] = True
+                details["recent"] = True
+                self._backup_pending_until = 0.0
+                return True, details
+
+        error = str(details.get("error") or "").strip()
+        timeout_type = str(details.get("exception_type") or "").lower()
+        ambiguous_or_running = bool(
+            details.get("started")
+            or not error
+            or "timeout" in timeout_type
+            or "timed out" in error.lower()
+        )
+        if not ambiguous_or_running:
             return False, details
 
-        details["result"] = result.data
-        if result.is_error or _nested_value(result.data, "success") is False:
-            details["error"] = result.text or str(
-                _nested_value(result.data, "error") or "Backup failed"
-            )
-            return False, details
-        if str(_nested_value(result.data, "status") or "").lower() == "in_progress":
-            details["error"] = (
-                "The hub backup started successfully and is still in progress. Wait for it to "
-                "finish, then press Create this rule again."
-            )
-            details["started"] = True
-            return False, details
+        # The confirmed call reached the server but did not provide a final result.
+        # Poll for the backup that may still be completing in the background.
+        self._backup_pending_until = time.monotonic() + 120.0
+        verified, checks = await self._poll_recent_backup((2.0, 4.0, 6.0))
+        details["post_create_checks"] = checks
+        details["timeout_or_async_response"] = True
+        details["pending"] = not verified
 
-        details["created"] = True
-        details["recent"] = True
-        return True, details
+        if verified:
+            self._backup_pending_until = 0.0
+            details.update(
+                {
+                    "created": True,
+                    "recent": True,
+                    "verified_by": "hub_list_backups_after_create",
+                    "error": None,
+                }
+            )
+            return True, details
+
+        details["created"] = False
+        details["recent"] = False
+        details["started"] = True
+        details["error"] = (
+            "The confirmed backup call did not return a completion result before the "
+            "25-second MCP timeout. Hubitat may still be creating it. Wait about 30 "
+            "seconds and press Create this rule again; HomeBrain will check for the "
+            "new backup and will not write the rule until it is verified."
+        )
+        return False, details
 
     async def _create(self, pending: PendingRule) -> dict[str, Any]:
         answer = await super()._create(pending)
@@ -145,8 +241,8 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
             display = answer.get("display")
             if isinstance(display, dict):
                 display["note"] = (
-                    "HomeBrain first checks for a recent local backup. When it must create one, it "
-                    "reads the MCP acknowledgment key and sends hub_create_backup with confirm=true."
+                    "HomeBrain checks for a recent local backup, sends a confirmed backup request "
+                    "when needed, and polls for completion if Hubitat takes longer than the MCP timeout."
                 )
         return answer
 
