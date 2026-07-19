@@ -30,7 +30,7 @@ def result(name: str, data: Any) -> MCPToolResult:
 
 
 def service() -> RepairIdSafeWashingRuleMachineWorkflow:
-    app = SimpleNamespace(mcp=SimpleNamespace(), VERSION="0.4.33-alpha")
+    app = SimpleNamespace(mcp=SimpleNamespace(), VERSION="0.4.34-alpha")
     return RepairIdSafeWashingRuleMachineWorkflow(app, object())
 
 
@@ -135,6 +135,6 @@ def test_release_uses_id_safe_repair_workflow():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.33-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.33-alpha"' in entrypoint
+    assert "version: '0.4.34-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.34-alpha"' in entrypoint
     assert "install_repair_id_safe_rule_machine_workflow" in entrypoint
