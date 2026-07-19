@@ -294,7 +294,7 @@ def test_executor_exception_is_reported_without_calling_cloud_planner():
     assert answer["intent"] == "semantic-power-evidence-error"
     assert answer["semantic_intent_error"] == "unsupported detailed field"
     assert answer["display"]["metrics"][1]["value"] == "Not used"
-    assert answer["technical"]["cloud_fallback_blocked"] is True
+    assert '"cloud_fallback_blocked": true' in answer["technical"]
 
 
 def test_release_wires_live_state_semantic_executor():
