@@ -14,8 +14,8 @@ from automation_rule_workflow_repair_id_safe import (
     install_repair_id_safe_rule_machine_workflow as install_washing_rule_machine_workflow,
 )
 from cancellable_requests import install_cancellable_ask
-from control_agent import install_control_agent
 from control_agent_gate import install_control_agent_gate
+from control_agent_level_verified import install_control_agent
 from control_confirmation import install_control_confirmation
 from control_language import install_control_language
 from conversation_context_safe import install_safe_conversation_context
@@ -43,8 +43,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.43"
-RELEASE_VERSION = "0.5.0"
+PREVIOUS_RELEASE_VERSION = "0.5.0"
+RELEASE_VERSION = "0.5.1"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -188,6 +188,7 @@ control_agent = install_control_agent(
     auto_execute_confidence=float(application.OPTIONS.get("control_agent_auto_execute_confidence_percent") or 88) / 100.0,
     block_below_confidence=float(application.OPTIONS.get("control_agent_block_below_confidence_percent") or 50) / 100.0,
     group_confirmation_size=int(application.OPTIONS.get("control_agent_group_confirmation_size") or 6),
+    level_verification_timeout_seconds=float(application.OPTIONS.get("control_level_verification_timeout_seconds") or 3),
 )
 install_control_agent_gate(application, control_agent, legacy_control_ask)
 automation_rule_workflow = install_automation_rule_workflow(
