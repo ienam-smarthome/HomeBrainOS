@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.4.26-alpha
+
+- Fixes backup verification being falsely routed through `hub_read_apps_code` when generic gateway catalogue probing encountered the text `hub_list_backups` inside app source or documentation.
+- Allows backup listing only through the direct `hub_list_backups` core tool or the authoritative `hub_manage_backup` gateway.
+- Ignores stale or incorrect hidden-tool gateway mappings for backup safety checks.
+- Accepts both structured backup objects and plain local `.lzf`/`.zip` filenames when verifying a recent backup.
+- Adds diagnostics for the exact request tool, strict gateway mode, response shape, parsed rows and unparseable backup names.
+- Keeps the timeout-aware polling and duplicate-backup prevention introduced in 0.4.25-alpha.
+
 ## 0.4.25-alpha
 
 - Detects the blank timeout exception produced when whole-hub backup creation exceeds the normal 25-second MCP request timeout.
