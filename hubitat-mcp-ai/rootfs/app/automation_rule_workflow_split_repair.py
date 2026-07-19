@@ -11,7 +11,6 @@ from typing import Any, Awaitable, Callable
 from automation_rule_workflow import PendingRule, _normalise, _result_mapping, _session_id
 from automation_rule_workflow_native_rm import (
     _NATIVE_PAUSE_NAMES,
-    _nested_value,
     _positive_int,
 )
 from automation_rule_workflow_write_safe import (
@@ -73,6 +72,15 @@ def _failed(result: MCPToolResult) -> bool:
 def _digest_plan(plan: dict[str, Any]) -> str:
     payload = json.dumps(plan, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def _population_signature(plan: dict[str, Any]) -> str:
+    return _digest_plan(
+        {
+            "triggers": list(plan.get("triggers") or []),
+            "actions": list(plan.get("actions") or []),
+        }
+    )
 
 
 def _merge_results(
@@ -156,7 +164,9 @@ class SplitRepairWashingRuleMachineWorkflow(
             for key, value in arguments.items()
             if key not in {"addTriggers", "addActions", "opToken"}
         }
-        root_token = str(arguments.get("opToken") or "homebrain-populate")
+        app_id = _positive_int(arguments.get("appId")) or 0
+        signature = _digest_plan({"triggers": triggers, "actions": actions})
+        root_token = f"homebrain-rule-{app_id}-{signature}"
         results: list[MCPToolResult] = []
 
         trigger_args = {
@@ -178,7 +188,7 @@ class SplitRepairWashingRuleMachineWorkflow(
             action_args = {
                 **common,
                 "addAction": dict(action),
-                "opToken": root_token + f"-action-{index}",
+                "opToken": root_token + f"-create-action-{index}",
             }
             action_result = await self._idempotent_write(tool, action_args)
             results.append(action_result)
@@ -286,7 +296,7 @@ class SplitRepairWashingRuleMachineWorkflow(
         display = display_payload(
             "automation-rule-existing",
             str(pending.draft.get("name") or "Washing machine rule"),
-            subtitle="Existing paused Rule Machine rule found",
+            subtitle="Existing Rule Machine rule found",
             metrics=[
                 {"label": "Matching rules", "value": str(len(matches)), "icon": "🧩"},
                 {"label": "Newest rule ID", "value": str(newest_id or "—"), "icon": "🆔"},
@@ -312,9 +322,9 @@ class SplitRepairWashingRuleMachineWorkflow(
             "route": "mcp-native-rule-existing",
             "intent": "automation-rule-existing",
             "message": (
-                f"Found {len(matches)} paused Rule Machine rule(s) named "
+                f"Found {len(matches)} Rule Machine rule(s) named "
                 f"**{pending.draft.get('name')}**. No new shell was created. "
-                f"Use **Repair rule {newest_id}** to complete the newest one safely."
+                f"Use **Repair rule {newest_id}** to complete the newest paused one safely."
             ),
             "answered_by": "HomeBrain duplicate guard",
             "display": display,
@@ -368,7 +378,11 @@ class SplitRepairWashingRuleMachineWorkflow(
         )
         if selected is None:
             return self._wrong_stage(
-                "The requested rule ID is not an exact-name paused match. Build again and use the Repair button shown by HomeBrain."
+                "The requested rule ID is not an exact-name match. Build again and use the Repair button shown by HomeBrain."
+            )
+        if selected.get("paused") is not True:
+            return self._wrong_stage(
+                "HomeBrain could not verify that the selected existing rule is paused. Pause it in Rule Machine, refresh MCP tools, then build again."
             )
 
         rule_id = _positive_int(selected.get("id"))
@@ -376,6 +390,15 @@ class SplitRepairWashingRuleMachineWorkflow(
             return self._wrong_stage("The selected Rule Machine ID is invalid.")
 
         plan = pending.draft.get("native_rule_machine_plan") or {}
+        pending.created_rule = {
+            "id": str(rule_id),
+            "name": str(pending.draft.get("name") or "Washing machine rule"),
+            "status": "Paused",
+            "native_rule_machine": True,
+        }
+        pending.stage = "created-paused"
+        pending.expires_at = time.time() + self.store.ttl_seconds
+
         started = time.perf_counter()
         key = await self._read_best_practice_key()
         backup_ok, backup = await self._ensure_backup(key)
@@ -419,23 +442,16 @@ class SplitRepairWashingRuleMachineWorkflow(
                     {"variable_read": variable_read, "local": local_results},
                 )
 
-        signature = _digest_plan(plan)
+        signature = _population_signature(plan)
         trigger_args = {
             "appId": rule_id,
             "addTriggers": list(plan.get("triggers") or []),
             "confirm": True,
-            "opToken": f"homebrain-repair-{rule_id}-{signature}-triggers",
+            "opToken": f"homebrain-rule-{rule_id}-{signature}-triggers",
         }
         trigger_args = self._add_best_practice_key(pending.create_tool, trigger_args, key)
         trigger_result = await self._idempotent_write(pending.create_tool, trigger_args)
         if _failed(trigger_result):
-            pending.created_rule = {
-                "id": str(rule_id),
-                "name": str(pending.draft.get("name") or "Washing machine rule"),
-                "status": "Paused",
-                "native_rule_machine": True,
-            }
-            pending.stage = "created-paused"
             return self._native_partial_failure(
                 pending,
                 "The existing rule remains paused, but its two trigger events were not fully written.",
@@ -471,13 +487,6 @@ class SplitRepairWashingRuleMachineWorkflow(
             action_result = await self._idempotent_write(pending.create_tool, action_args)
             action_results.append(_result_mapping(action_result.data))
             if _failed(action_result):
-                pending.created_rule = {
-                    "id": str(rule_id),
-                    "name": str(pending.draft.get("name") or "Washing machine rule"),
-                    "status": "Paused",
-                    "native_rule_machine": True,
-                }
-                pending.stage = "created-paused"
                 return self._native_partial_failure(
                     pending,
                     f"The existing rule remains paused, but action {index} was not fully written.",
@@ -497,18 +506,30 @@ class SplitRepairWashingRuleMachineWorkflow(
             {"appId": rule_id, "source": "auto"},
         )
         health = health_result.data if health_result is not None else health_request
+        health_map = _result_mapping(health)
+        if (
+            health_result is not None
+            and health_map.get("ok") is False
+            and health_map.get("unreadable") is not True
+        ):
+            return self._native_partial_failure(
+                pending,
+                "The repaired rule remains paused because Hubitat's post-write health check found an issue.",
+                backup,
+                {
+                    "triggers": trigger_result.data,
+                    "actions": action_results,
+                    "health": health,
+                },
+            )
 
-        pending.created_rule = {
-            "id": str(rule_id),
-            "name": str(pending.draft.get("name") or "Washing machine rule"),
-            "status": "Paused",
-            "native_rule_machine": True,
-            "trigger_count": len(plan.get("triggers") or []),
-            "action_count": len(plan.get("actions") or []),
-            "local_variable_count": len(plan.get("local_variables") or []),
-        }
-        pending.stage = "created-paused"
-        pending.expires_at = time.time() + self.store.ttl_seconds
+        pending.created_rule.update(
+            {
+                "trigger_count": len(plan.get("triggers") or []),
+                "action_count": len(plan.get("actions") or []),
+                "local_variable_count": len(plan.get("local_variables") or []),
+            }
+        )
         display = self._created_display(pending, operation="Repaired")
         display["note"] = (
             "The selected existing rule was repaired in short idempotent steps and remains paused. "
