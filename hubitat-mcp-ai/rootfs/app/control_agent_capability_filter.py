@@ -4,7 +4,8 @@ import re
 from typing import Any, Callable
 
 from control_agent_graph import ControlDeviceGraph, DeviceNode
-from device_intelligence_index import _attributes
+from device_intelligence_index import _attributes, _device_id, _label, _room_name
+from spoken_device_name import spoken_name_key
 
 
 _CONTROL_ATTRIBUTES = {"switch", "level"}
@@ -69,15 +70,104 @@ def is_control_capable(raw: dict[str, Any]) -> bool:
     return bool(_CLEAR_ACTUATOR_LABEL.search(label_text))
 
 
+def _selected_aliases(raw: dict[str, Any]) -> set[str]:
+    aliases: set[str] = set()
+    for key in ("label", "name"):
+        value = str(raw.get(key) or "").strip()
+        if not value:
+            continue
+        aliases.add(value)
+        base = re.sub(r"\s*(?:\([^)]*\)|\[[^]]*\])\s*$", "", value).strip()
+        if base:
+            aliases.add(base)
+    label = _label(raw)
+    room = _room_name(raw)
+    if label and room:
+        aliases.add(f"{room} {label}")
+    return aliases
+
+
+def exact_non_control_matches(graph: ControlDeviceGraph, value: str) -> list[dict[str, Any]]:
+    """Return exact selected-device matches deliberately excluded from control.
+
+    This distinguishes a known read-only sensor from an unknown or misspelt target.
+    It must never perform fuzzy matching: only a canonical spoken-name equality is
+    strong enough to suppress normal device clarification.
+    """
+
+    key = spoken_name_key(value)
+    if not key:
+        return []
+    index = getattr(graph, "_non_control_alias_index", {})
+    rows = index.get(key, []) if isinstance(index, dict) else []
+    return [dict(item) for item in rows if isinstance(item, dict)]
+
+
+def non_control_kind(raw: dict[str, Any]) -> str:
+    """Describe a selected read-only device without claiming unsupported metadata."""
+
+    attributes = {str(key).strip().lower() for key in _attributes(raw)}
+    text = " ".join(str(raw.get(key) or "") for key in ("label", "name")).lower()
+    if "illuminance" in attributes or re.search(r"\b(?:lux|illuminance|light\s+sensor)\b", text):
+        return "illuminance (Lux) sensor"
+    if "motion" in attributes or re.search(r"\bmotion\b", text):
+        return "motion sensor"
+    if "presence" in attributes or "occupancy" in attributes or re.search(r"\b(?:presence|occupancy)\b", text):
+        return "presence sensor"
+    if "contact" in attributes or re.search(r"\b(?:contact|door\s+sensor)\b", text):
+        return "contact sensor"
+    if "temperature" in attributes and "humidity" in attributes:
+        return "temperature and humidity sensor"
+    if "temperature" in attributes or re.search(r"\b(?:temperature|temp)\b", text):
+        return "temperature sensor"
+    if "humidity" in attributes or re.search(r"\bhumidity\b", text):
+        return "humidity sensor"
+    if "battery" in attributes or re.search(r"\bbattery\b", text):
+        return "battery sensor"
+    return "read-only selected device"
+
+
+def non_control_public(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(_device_id(raw) or ""),
+        "label": _label(raw),
+        "room": _room_name(raw),
+        "kind": non_control_kind(raw),
+        "attributes": sorted(str(key) for key in _attributes(raw)),
+    }
+
+
 def install_control_graph_capability_filter() -> None:
-    """Restrict the Control Agent graph to devices it can actually command."""
+    """Restrict control resolution while retaining exact read-only device evidence."""
 
     if getattr(ControlDeviceGraph, "_capability_filter_installed", False):
         return
 
-    original: Callable[[list[dict[str, Any]], dict[str, str]], list[DeviceNode]] = (
+    original_init = ControlDeviceGraph.__init__
+    original_build: Callable[[list[dict[str, Any]], dict[str, str]], list[DeviceNode]] = (
         ControlDeviceGraph._build_nodes
     )
+
+    def init_control_graph(
+        self: ControlDeviceGraph,
+        devices: Any,
+        *,
+        learned_aliases: dict[str, str] | None = None,
+    ) -> None:
+        selected = [dict(item) for item in list(devices) if isinstance(item, dict)]
+        non_control_index: dict[str, list[dict[str, Any]]] = {}
+        for raw in selected:
+            if bool(raw.get("disabled")) or is_control_capable(raw):
+                continue
+            seen_keys: set[str] = set()
+            for alias in _selected_aliases(raw):
+                key = spoken_name_key(alias)
+                if not key or key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                non_control_index.setdefault(key, []).append(raw)
+        self._non_control_alias_index = non_control_index
+        original_init(self, selected, learned_aliases=learned_aliases)
 
     def build_control_nodes(
         cls: type[ControlDeviceGraph],
@@ -86,10 +176,17 @@ def install_control_graph_capability_filter() -> None:
     ) -> list[DeviceNode]:
         del cls
         eligible = [raw for raw in devices if is_control_capable(raw)]
-        return original(eligible, learned_aliases)
+        return original_build(eligible, learned_aliases)
 
+    ControlDeviceGraph.__init__ = init_control_graph
     ControlDeviceGraph._build_nodes = classmethod(build_control_nodes)
     ControlDeviceGraph._capability_filter_installed = True
 
 
-__all__ = ["install_control_graph_capability_filter", "is_control_capable"]
+__all__ = [
+    "exact_non_control_matches",
+    "install_control_graph_capability_filter",
+    "is_control_capable",
+    "non_control_kind",
+    "non_control_public",
+]
