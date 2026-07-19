@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.4.39
+
+- Replaces the phrase-specific power comparison patch with a general semantic read-intent pipeline.
+- Uses the local `qwen3.5:4b` planner only to convert analytical read questions into a strict allowlisted JSON intent; the classifier has no MCP tools and cannot execute commands.
+- Executes power, temperature, humidity, battery, illuminance and energy comparisons deterministically from fresh detailed Hubitat capability evidence.
+- Supports highest, lowest and ranked results by device or room, with room averages for environmental readings and room sums for power/energy.
+- Separates Octopus and other whole-home aggregate meters from individual-device rankings.
+- Keeps exact controls and established fast shortcuts outside the semantic classifier, preserving verified execution and low latency.
+- Falls back to a small local parser if Ollama is unavailable and caches validated non-control intents briefly.
+
 ## 0.4.38
 
 - Marks Hubitat MCP AI as `stable` so Home Assistant no longer shows the Experimental lifecycle badge.

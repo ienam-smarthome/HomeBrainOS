@@ -34,13 +34,15 @@ from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
+from semantic_metric_comparison import SemanticMetricComparisonExecutor
+from semantic_read_pipeline import install_semantic_read_pipeline
 from temperature_insight_hybrid import HybridTemperatureInsightService
 from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.37"
-RELEASE_VERSION = "0.4.38"
+PREVIOUS_RELEASE_VERSION = "0.4.38"
+RELEASE_VERSION = "0.4.39"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -179,6 +181,13 @@ automation_rule_workflow = install_automation_rule_workflow(
     max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
     write_enabled=application.option_bool("rule_write_enabled", True),
     require_paused_create=application.option_bool("rule_create_paused_required", True),
+)
+semantic_metric_comparison = SemanticMetricComparisonExecutor(application.fallback)
+semantic_read_intents = install_semantic_read_pipeline(
+    application,
+    semantic_metric_comparison,
+    timeout_seconds=float(application.OPTIONS.get("semantic_intent_timeout_seconds") or 5),
+    cache_ttl_seconds=float(application.OPTIONS.get("semantic_intent_cache_seconds") or 300),
 )
 request_traces = install_request_tracing(
     application,

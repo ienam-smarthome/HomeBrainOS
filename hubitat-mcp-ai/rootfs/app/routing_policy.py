@@ -92,6 +92,25 @@ _CONTROL_VERBS = (
     "stop ",
 )
 
+# This gate is deliberately generic rather than metric-specific. The local AI
+# classifier decides whether the user means power, temperature, humidity, battery,
+# illuminance or energy.
+_SEMANTIC_COMPARISON_MARKERS = re.compile(
+    r"\b(?:most|least|highest|lowest|largest|smallest|biggest|top|bottom|"
+    r"rank|ranking|compare|comparison|warmest|coldest|hottest|coolest|"
+    r"driest|wettest|greediest)\b",
+    re.IGNORECASE,
+)
+_SEMANTIC_RELATIVE_COMPARISON = re.compile(
+    r"\b(?:more|less|higher|lower|warmer|colder|hotter|cooler)\b.+\bthan\b",
+    re.IGNORECASE,
+)
+_SEMANTIC_ENTITY_QUESTION = re.compile(
+    r"^(?:which|what)\b.*\b(?:device|appliance|room|sensor|meter|socket|"
+    r"outlet|plug|reading|usage|consumption|load|level|value)s?\b",
+    re.IGNORECASE,
+)
+
 _DEVICE_TYPE_PHRASE = (
     r"(?:motion\s+(?:sensors?|detectors?)|contact\s+sensors?|door\s+sensors?|window\s+sensors?|"
     r"temperature\s+(?:sensors?|devices?)|humidity\s+(?:sensors?|devices?)|presence\s+sensors?|"
@@ -152,6 +171,21 @@ def normalise(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def is_semantic_read_candidate(query: str) -> bool:
+    """Identify analytical reads without encoding individual metrics."""
+
+    q = normalise(query).strip(" .!?")
+    if not q or _SIMPLE_CONTROL.match(q):
+        return False
+    if any(q.startswith(verb) for verb in _CONTROL_VERBS):
+        return False
+    return bool(
+        _SEMANTIC_COMPARISON_MARKERS.search(q)
+        or _SEMANTIC_RELATIVE_COMPARISON.search(q)
+        or _SEMANTIC_ENTITY_QUESTION.search(q)
+    )
+
+
 def _contextual_control_target(target: str) -> bool:
     words = set(re.findall(r"[a-z0-9]+", target))
     if words & _CONTEXTUAL_TARGET_WORDS:
@@ -184,7 +218,7 @@ def _explicit_multi_control_targets(target: str) -> list[str] | None:
 
 
 def classify_query(query: str) -> RouteDecision:
-    """Choose deterministic MCP, verified natural AI, or full AI planning."""
+    """Choose deterministic MCP, semantic read execution, or full AI planning."""
 
     q = normalise(query)
     if not q:
@@ -213,10 +247,18 @@ def classify_query(query: str) -> RouteDecision:
             "on/off command requires context or multi-device interpretation",
         )
 
+    # Preserve established low-latency exact shortcuts. Semantic interpretation is
+    # used only when the question does not already match an authoritative fast read.
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
             "authoritative live-state, device-type inventory, gateway read, room inventory, comparison or diagnostic query",
+        )
+
+    if is_semantic_read_candidate(q):
+        return RouteDecision(
+            "semantic-read",
+            "AI interprets a read-only analytical intent; deterministic MCP code gathers and calculates the evidence",
         )
 
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
@@ -249,6 +291,7 @@ __all__ = [
     "RouteDecision",
     "classify_query",
     "is_mcp_fast",
+    "is_semantic_read_candidate",
     "normalise",
     "requires_planner",
 ]

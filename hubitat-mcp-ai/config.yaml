@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.4.38"
+version: "0.4.39"
 slug: hubitat_mcp_ai
-description: "Hybrid Ollama assistant with atomic Hubitat device refresh, verified controls and guarded Rule Machine repair"
+description: "AI-interpreted smart-home reads with deterministic MCP evidence, verified controls and guarded Rule Machine repair"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -49,6 +49,9 @@ options:
   ollama_max_tool_rounds: 2
   fast_path_enabled: true
   fallback_enabled: true
+  semantic_intent_enabled: true
+  semantic_intent_timeout_seconds: 5
+  semantic_intent_cache_seconds: 300
   mcp_timeout_seconds: 25
   mcp_device_cache_seconds: 12
   mcp_catalog_cache_seconds: 60
@@ -103,6 +106,9 @@ schema:
   ollama_max_tool_rounds: int
   fast_path_enabled: bool
   fallback_enabled: bool
+  semantic_intent_enabled: bool
+  semantic_intent_timeout_seconds: int
+  semantic_intent_cache_seconds: int
   mcp_timeout_seconds: int
   mcp_device_cache_seconds: int
   mcp_catalog_cache_seconds: int
