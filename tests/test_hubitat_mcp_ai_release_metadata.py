@@ -32,7 +32,8 @@ def test_supervisor_version_is_plain_numeric_and_matches_runtime_release():
 
     assert manifest_version == runtime_version
     assert re.fullmatch(r"\d+\.\d+\.\d+", manifest_version)
-    assert "stage: experimental" in config
+    assert "stage: stable" in config
+    assert "stage: experimental" not in config
     assert "# Previous version:" not in config
     assert "application.VERSION = RELEASE_VERSION" in entrypoint
     assert "application.app.version = RELEASE_VERSION" in entrypoint
