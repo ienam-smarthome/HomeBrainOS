@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.24-alpha
+
+- Fixes the native Rule Machine backup preflight to call `hub_create_backup` with the MCP-required `confirm=true` after the user explicitly presses Create.
+- Reads the mandatory best-practice acknowledgment key from both `best_practice_reference` and the tool-specific `backup` guide.
+- Accepts current MCP guide wording such as `Acknowledgment key:` in addition to older `bestPracticeKey` fields.
+- Records whether confirmation and the acknowledgment key were sent without exposing the key value in technical details.
+- Keeps all rule writes blocked until the backup call succeeds or a recent local backup is verified.
+
 ## 0.4.23-alpha
 
 - Verifies existing whole-hub local backups through `hub_list_backups(scope='hub_local')` before requiring a new backup.
