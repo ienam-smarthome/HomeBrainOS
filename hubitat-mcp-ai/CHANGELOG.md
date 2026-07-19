@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.4.38
+
+- Marks Hubitat MCP AI as `stable` so Home Assistant no longer shows the Experimental lifecycle badge.
+- Keeps the Supervisor-facing release version in plain numeric form and aligns the running backend at `0.4.38`.
+- Documents the required Supervisor/store reload when Home Assistant release notes are current but the update entity still caches an older `version_latest` value.
+- Retains the atomic Hubitat device refresh, verified controls and guarded Rule Machine workflow from 0.4.37.
+
 ## 0.4.37
 
 - Adds a visible `Refresh Hubitat devices` action in the web interface.
