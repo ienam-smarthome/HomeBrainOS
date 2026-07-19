@@ -34,15 +34,15 @@ from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
-from semantic_metric_comparison import SemanticMetricComparisonExecutor
+from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 from semantic_read_pipeline import install_semantic_read_pipeline
 from temperature_insight_hybrid import HybridTemperatureInsightService
 from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.38"
-RELEASE_VERSION = "0.4.39"
+PREVIOUS_RELEASE_VERSION = "0.4.39"
+RELEASE_VERSION = "0.4.40"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
