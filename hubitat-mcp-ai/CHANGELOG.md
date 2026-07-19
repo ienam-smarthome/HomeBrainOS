@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.4.42
+
+- Resolves conservative speech and typing variants such as `liiving room light two` to the unique selected label `Livingroom Light 2`.
+- Uses one shared spoken-name key across the selected-device index, deterministic fast controls and confirmation recovery.
+- Normalises number words, harmless spacing differences and duplicated alphabetic letters without using phonetic or semantic guessing.
+- Reissues the command through the exact deterministic control path and still verifies the final Hubitat switch state.
+- Skips the confirmation menu only when exactly one selected candidate owns the spoken key.
+- Keeps numberless requests such as `Livingroom Light` ambiguous when Light 1 and Light 2 both exist, and sends no command until the user chooses.
+
 ## 0.4.41
 
 - Keeps a validated semantic metric comparison on the deterministic MCP executor even when one evidence request shape fails.
