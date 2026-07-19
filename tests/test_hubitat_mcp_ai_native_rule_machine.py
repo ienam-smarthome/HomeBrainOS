@@ -159,7 +159,7 @@ RECOMMENDATION = {
 
 def service(*, notifications: int = 1, backup_ok: bool = True):
     client = CurrentMCP(backup_ok=backup_ok)
-    app = SimpleNamespace(mcp=client, VERSION="0.4.21-alpha")
+    app = SimpleNamespace(mcp=client, VERSION="0.4.24-alpha")
     workflow = NativeRuleMachineAutomationWorkflow(app, Index(notifications))
     return workflow, client
 
@@ -316,10 +316,10 @@ def test_native_run_is_not_misrepresented_as_dry_run():
     assert "does not expose a genuine" in answer["message"]
 
 
-def test_release_metadata_is_0421():
+def test_release_metadata_is_0424():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.21-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.21-alpha"' in entrypoint
-    assert "install_washing_rule_machine_workflow" in entrypoint
+    assert "version: '0.4.24-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.24-alpha"' in entrypoint
+    assert "install_confirmed_backup_rule_machine_workflow" in entrypoint
