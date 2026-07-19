@@ -9,6 +9,7 @@ from device_intelligence_index import (
     _normalise,
     _room_name,
 )
+from spoken_device_name import spoken_name_key
 
 
 def _descriptor(item: dict[str, Any]) -> str:
@@ -31,6 +32,10 @@ class DuplicateAwareCapabilityCatalogueDeviceIndex(SafeCapabilityCatalogueDevice
     returning the same label twice is not actionable. Ambiguous results include
     the Hubitat device ID and room so the user can identify the active record and
     remove the stale one from the MCP allowlist.
+
+    A conservative spoken-name key is checked before fuzzy alternatives. It handles
+    number words, spacing and duplicated letters, but only resolves when exactly one
+    selected device owns the resulting alias.
     """
 
     async def exact_device(
@@ -51,6 +56,33 @@ class DuplicateAwareCapabilityCatalogueDeviceIndex(SafeCapabilityCatalogueDevice
 
         if len(ids) > 1:
             matches = [item for item in devices if _device_id(item) in ids]
+            matches.sort(key=lambda item: (_label(item).lower(), _device_id(item)))
+            return None, [_descriptor(item) for item in matches]
+
+        spoken_target = spoken_name_key(requested_name)
+        spoken_ids: set[str] = set()
+        if spoken_target:
+            for item in devices:
+                device_id = _device_id(item)
+                if not device_id:
+                    continue
+                names = (
+                    _label(item),
+                    str(item.get("name") or ""),
+                    str(item.get("displayName") or ""),
+                )
+                if any(spoken_name_key(name) == spoken_target for name in names if name):
+                    spoken_ids.add(device_id)
+
+        if len(spoken_ids) == 1:
+            wanted = next(iter(spoken_ids))
+            return next(
+                (item for item in devices if _device_id(item) == wanted),
+                None,
+            ), []
+
+        if len(spoken_ids) > 1:
+            matches = [item for item in devices if _device_id(item) in spoken_ids]
             matches.sort(key=lambda item: (_label(item).lower(), _device_id(item)))
             return None, [_descriptor(item) for item in matches]
 
