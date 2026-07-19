@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.4.43"
+version: "0.5.0"
 slug: hubitat_mcp_ai
-description: "AI-interpreted smart-home reads with deterministic light usage history, verified controls and guarded Rule Machine repair"
+description: "HomeBrain Control Agent with local structured intent, deterministic device graph resolution and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -49,6 +49,11 @@ options:
   ollama_max_tool_rounds: 2
   fast_path_enabled: true
   fallback_enabled: true
+  control_agent_enabled: true
+  control_agent_intent_timeout_seconds: 5
+  control_agent_auto_execute_confidence_percent: 88
+  control_agent_block_below_confidence_percent: 50
+  control_agent_group_confirmation_size: 6
   semantic_intent_enabled: true
   semantic_intent_timeout_seconds: 5
   semantic_intent_cache_seconds: 300
@@ -106,6 +111,11 @@ schema:
   ollama_max_tool_rounds: int
   fast_path_enabled: bool
   fallback_enabled: bool
+  control_agent_enabled: bool
+  control_agent_intent_timeout_seconds: int
+  control_agent_auto_execute_confidence_percent: int
+  control_agent_block_below_confidence_percent: int
+  control_agent_group_confirmation_size: int
   semantic_intent_enabled: bool
   semantic_intent_timeout_seconds: int
   semantic_intent_cache_seconds: int

@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.5.0
+
+- Introduces **HomeBrain Control Agent v1** for direct device control.
+- Keeps exact single-device controls deterministic while using local `qwen3.5:4b` only to produce a strict, tool-free `ControlIntent` for contextual, grouped, ordinal and exclusion-based commands.
+- Builds a selected-device graph containing authoritative Hubitat IDs, labels, rooms, inferred device types, ordinals, conservative spoken forms and explicit learned aliases.
+- Resolves every requested target before the first write and preflights the complete plan against a fresh selected Switch inventory.
+- Applies confidence and risk policy: unique low-risk controls can execute automatically; sensitive devices, large groups and lower-confidence plans require confirmation; unresolved plans send zero commands.
+- Reuses the existing cache-bypassed MCP command and final-state verification engine, so AI cannot claim control success.
+- Adds structured per-browser references for `it`, `other`, `both` and follow-up commands without asking the model to reconstruct raw chat history.
+- Adds explicit persistent aliases, for example `remember "big light" means "My Floor Lamp"`, with `forget alias big light` for removal.
+- Adds verified `setLevel` execution with fresh level readback.
+- Keeps Cloud outside device-ID selection, command execution and verification.
+
 ## 0.4.43
 
 - Routes questions such as `total lights on time today` directly to deterministic historical event processing instead of the routine Cloud response path.
