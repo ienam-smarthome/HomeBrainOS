@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable
 from control_language import canonicalise_basic_control
 from device_intelligence_index import _normalise
 from presenter import display_payload, safe_debug
+from spoken_device_name import unique_spoken_match
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -151,13 +152,52 @@ def _confirmation_display(action: str, candidates: list[str]) -> dict[str, Any]:
     )
 
 
+def _mark_spoken_resolution(
+    answer: dict[str, Any],
+    *,
+    original_query: str,
+    requested_name: str,
+    resolved_name: str,
+    action: str,
+) -> dict[str, Any]:
+    updated = dict(answer)
+    updated["spoken_name_resolution"] = {
+        "requested_name": requested_name,
+        "resolved_name": resolved_name,
+        "method": "unique-spoken-key",
+        "automatic": True,
+    }
+    updated["original_query"] = original_query
+    updated["resolved_query"] = f"turn {action} {resolved_name}"
+    updated["resolved_device_name"] = resolved_name
+    updated["auto_resolved_confirmation"] = True
+
+    display = updated.get("display")
+    if isinstance(display, dict):
+        display = dict(display)
+        existing = str(display.get("note") or "").strip()
+        resolution_note = (
+            f"Speech name resolved uniquely: {requested_name} → {resolved_name}. "
+            "The final state was still verified from Hubitat."
+        )
+        display["note"] = f"{existing} {resolution_note}".strip()
+        updated["display"] = display
+    return updated
+
+
 def install_control_confirmation(
     application: Any,
     *,
     ttl_seconds: float = 120.0,
     max_sessions: int = 128,
 ) -> ControlConfirmationStore:
-    """Allow safe Yes/No and numbered follow-ups for pending controls."""
+    """Allow safe Yes/No and numbered follow-ups for pending controls.
+
+    Before displaying an ambiguity menu, obvious speech variations are compared with
+    the returned selected-device labels. Automatic execution is allowed only when one
+    candidate has an identical conservative spoken-name key. General fuzzy scores are
+    never used to choose a device.
+    """
     original_ask: AskHandler = application.ask
     store = ControlConfirmationStore(
         ttl_seconds=ttl_seconds,
@@ -231,6 +271,22 @@ def install_control_confirmation(
         candidates = [str(item).strip() for item in candidates if str(item).strip()]
         if action not in {"on", "off"} or not candidates:
             return answer
+
+        spoken_candidate = unique_spoken_match(requested_name, candidates)
+        if spoken_candidate:
+            original_query = query
+            request.query = f"turn {action} {spoken_candidate}"
+            resolved = dict(await original_ask(request))
+            if not resolved.get("confirmation_required"):
+                await store.clear(session_id)
+                return _mark_spoken_resolution(
+                    resolved,
+                    original_query=original_query,
+                    requested_name=requested_name,
+                    resolved_name=spoken_candidate,
+                    action=action,
+                )
+            request.query = original_query
 
         pending = await store.put(
             session_id,
