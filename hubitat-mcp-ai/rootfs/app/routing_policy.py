@@ -14,6 +14,11 @@ _SIMPLE_CONTROL = re.compile(
     r"^(?:please\s+)?(?:turn|switch)\s+(on|off)\s+(?:the\s+)?(.+?)[.!?]*$",
     re.IGNORECASE,
 )
+_SIMPLE_LEVEL_CONTROL = re.compile(
+    r"^(?:please\s+)?(?:set|dim)\s+(?:the\s+)?(.+?)\s+(?:to|at)\s+"
+    r"(\d{1,3})(?:\s*%|\s+percent)?[.!?]*$",
+    re.IGNORECASE,
+)
 
 _CONTEXTUAL_TARGET_WORDS = {
     "it",
@@ -179,7 +184,7 @@ def is_semantic_read_candidate(query: str) -> bool:
     """Identify analytical reads without encoding individual metrics."""
 
     q = normalise(query).strip(" .!?")
-    if not q or _SIMPLE_CONTROL.match(q):
+    if not q or _SIMPLE_CONTROL.match(q) or _SIMPLE_LEVEL_CONTROL.match(q):
         return False
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
         return False
@@ -227,6 +232,23 @@ def classify_query(query: str) -> RouteDecision:
     q = normalise(query)
     if not q:
         return RouteDecision("ollama-verified", "empty-or-routine")
+
+    level_control = _SIMPLE_LEVEL_CONTROL.match(q)
+    if level_control:
+        target = normalise(level_control.group(1)).strip(" .!?")
+        value = int(level_control.group(2))
+        words = set(re.findall(r"[a-z0-9]+", target))
+        contextual = _contextual_control_target(target)
+        complex_target = any(term in f" {target} " for term in _COMPLEX_CONTROL_TERMS)
+        if target and 0 <= value <= 100 and not contextual and not complex_target and len(words) <= 8:
+            return RouteDecision(
+                "mcp-fast",
+                "single explicit absolute level target; use deterministic Control Agent and MCP convergence verification",
+            )
+        return RouteDecision(
+            "ollama-planner",
+            "level command requires context, range validation or multi-device interpretation",
+        )
 
     control = _SIMPLE_CONTROL.match(q)
     if control:
