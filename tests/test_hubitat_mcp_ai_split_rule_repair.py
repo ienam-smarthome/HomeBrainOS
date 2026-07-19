@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from types import MethodType, SimpleNamespace
+from types import MethodType
 from typing import Any
 
 
@@ -16,6 +16,7 @@ from automation_rule_workflow_split_repair import (  # noqa: E402
     SplitRepairWashingRuleMachineWorkflow,
     _clean_rule_label,
 )
+from automation_rule_workflow_washing import _washing_rule_plan  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 
@@ -36,6 +37,26 @@ def test_html_paused_label_is_normalised_to_exact_rule_name():
     assert _clean_rule_label(raw) == "Washing machine finished notification"
 
 
+def test_washing_plan_uses_exact_native_power_meter_trigger_capability():
+    draft = {
+        "type": "washing-complete",
+        "name": "Washing machine finished notification",
+        "washing_power_device": {"id": 7107, "label": "Washing Machine (MQTT)"},
+        "notification_candidates": [{"id": 7485, "label": "SM-S938B"}],
+        "unresolved": [],
+    }
+
+    plan, error = _washing_rule_plan(draft)
+
+    assert error is None
+    assert plan is not None
+    assert [trigger["capability"] for trigger in plan["triggers"]] == [
+        "Power meter",
+        "Power meter",
+    ]
+    assert plan["triggers"][1]["andStays"] == {"seconds": 180}
+
+
 def test_combined_population_is_split_into_one_trigger_write_and_short_action_writes():
     service = object.__new__(SplitRepairWashingRuleMachineWorkflow)
     calls: list[dict[str, Any]] = []
@@ -54,9 +75,14 @@ def test_combined_population_is_split_into_one_trigger_write_and_short_action_wr
     arguments = {
         "appId": 4154,
         "addTriggers": [
-            {"capability": "Power", "deviceIds": [7107], "comparator": ">", "value": 10},
             {
-                "capability": "Power",
+                "capability": "Power meter",
+                "deviceIds": [7107],
+                "comparator": ">",
+                "value": 10,
+            },
+            {
+                "capability": "Power meter",
                 "deviceIds": [7107],
                 "comparator": "<",
                 "value": 5,
@@ -135,11 +161,11 @@ def test_matching_rules_finds_all_html_paused_duplicates_and_selects_newest():
     assert details["match_count"] == 3
 
 
-def test_release_installs_split_repair_workflow():
+def test_release_installs_health_verified_repair_workflow():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.30-alpha'" in config
-    assert 'PREVIOUS_RELEASE_VERSION = "0.4.29-alpha"' in entrypoint
-    assert 'RELEASE_VERSION = "0.4.30-alpha"' in entrypoint
-    assert "install_split_repair_rule_machine_workflow" in entrypoint
+    assert "version: '0.4.31-alpha'" in config
+    assert 'PREVIOUS_RELEASE_VERSION = "0.4.30-alpha"' in entrypoint
+    assert 'RELEASE_VERSION = "0.4.31-alpha"' in entrypoint
+    assert "install_repair_id_safe_rule_machine_workflow" in entrypoint
