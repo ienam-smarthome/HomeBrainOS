@@ -9,8 +9,10 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from control_agent_capability_filter import (  # noqa: E402
+    exact_non_control_matches,
     install_control_graph_capability_filter,
     is_control_capable,
+    non_control_kind,
 )
 from control_agent_graph import ControlDeviceGraph  # noqa: E402
 from control_agent_intent import ControlTargetIntent  # noqa: E402
@@ -82,6 +84,29 @@ def test_lux_and_light_sensors_are_absent_from_control_graph_and_candidates():
     candidate_labels = [node.label for node in unresolved.candidates]
     assert "FP2 Bedroom 3 Lux" not in candidate_labels
     assert "Aqara Light Sensor T1" not in candidate_labels
+
+
+def test_exact_non_control_name_is_retained_as_read_only_evidence():
+    install_control_graph_capability_filter()
+    graph = ControlDeviceGraph([BEDROOM_LIGHT, BEDROOM_LUX, LIGHT_SENSOR])
+
+    lux_matches = exact_non_control_matches(graph, "FP2 Bedroom 3 Lux")
+    illuminance_matches = exact_non_control_matches(graph, "Aqara Light Sensor T1")
+
+    assert [item["id"] for item in lux_matches] == ["7381"]
+    assert [item["id"] for item in illuminance_matches] == ["9001"]
+    assert non_control_kind(lux_matches[0]) == "illuminance (Lux) sensor"
+    assert non_control_kind(illuminance_matches[0]) == "illuminance (Lux) sensor"
+
+
+def test_non_control_matching_is_exact_and_never_fuzzy():
+    install_control_graph_capability_filter()
+    graph = ControlDeviceGraph([BEDROOM_LIGHT, BEDROOM_LUX])
+
+    assert exact_non_control_matches(graph, "FP2 Bedroom 3 Lux")
+    assert exact_non_control_matches(graph, "fp2-bedroom-3-lux")
+    assert exact_non_control_matches(graph, "FP2 Bedroom Lux") == []
+    assert exact_non_control_matches(graph, "Bedroom 3 Light") == []
 
 
 def test_real_screenshot_candidate_set_keeps_only_controllable_devices():

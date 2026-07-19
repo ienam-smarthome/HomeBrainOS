@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.5.6
+
+- Fixes exact read-only device controls such as `Turn off FP2 Bedroom 3 Lux` opening a nearby-light choice menu.
+- Retains exact selected-device evidence for Lux, illuminance, motion, presence, contact, temperature, humidity and battery sensors while keeping them outside the actuator graph.
+- Distinguishes a known non-controllable device from an unknown or misspelt target using exact canonical spoken-name matching only.
+- Stops before local AI rescue, fuzzy candidates, confirmation or command execution when the exact selected device does not expose switch or level control.
+- Returns a direct explanation such as `FP2 Bedroom 3 Lux is an illuminance (Lux) sensor and cannot be turned off`.
+- Records that AI rescue was not attempted and that no substitute actuator was offered or changed.
+- Keeps normal fuzzy clarification and AI rescue available for genuinely unknown or malformed targets.
+
 ## 0.5.5
 
 - Fixes target-before-action commands such as `Switch the second living-room light off` being sent to the Cloud planner and broad legacy confirmation list.
