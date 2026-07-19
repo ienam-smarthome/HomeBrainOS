@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from control_postfix_language import parse_postfix_control
+
 
 @dataclass(frozen=True)
 class RouteDecision:
@@ -97,9 +99,6 @@ _CONTROL_VERBS = (
     "stop ",
 )
 
-# This gate is deliberately generic rather than metric-specific. The local AI
-# classifier decides whether the user means power, temperature, humidity, battery,
-# illuminance or energy.
 _SEMANTIC_COMPARISON_MARKERS = re.compile(
     r"\b(?:most|least|highest|lowest|largest|smallest|biggest|top|bottom|"
     r"rank|ranking|compare|comparison|warmest|coldest|hottest|coolest|"
@@ -184,7 +183,12 @@ def is_semantic_read_candidate(query: str) -> bool:
     """Identify analytical reads without encoding individual metrics."""
 
     q = normalise(query).strip(" .!?")
-    if not q or _SIMPLE_CONTROL.match(q) or _SIMPLE_LEVEL_CONTROL.match(q):
+    if (
+        not q
+        or _SIMPLE_CONTROL.match(q)
+        or _SIMPLE_LEVEL_CONTROL.match(q)
+        or parse_postfix_control(q) is not None
+    ):
         return False
     if any(q.startswith(verb) for verb in _CONTROL_VERBS):
         return False
@@ -250,6 +254,13 @@ def classify_query(query: str) -> RouteDecision:
             "level command requires context, range validation or multi-device interpretation",
         )
 
+    postfix_control = parse_postfix_control(q)
+    if postfix_control is not None:
+        return RouteDecision(
+            "mcp-fast",
+            "single postfix on/off target; resolve room, device type and ordinal deterministically",
+        )
+
     control = _SIMPLE_CONTROL.match(q)
     if control:
         target = normalise(control.group(2)).strip(" .!?")
@@ -273,8 +284,6 @@ def classify_query(query: str) -> RouteDecision:
             "on/off command requires context or multi-device interpretation",
         )
 
-    # Preserve established low-latency exact shortcuts. Semantic interpretation is
-    # used only when the question does not already match an authoritative fast read.
     if any(re.match(pattern, q) for pattern in _FAST_READ_PATTERNS):
         return RouteDecision(
             "mcp-fast",
