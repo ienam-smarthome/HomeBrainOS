@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.4.35-alpha
+
+- Replaces the hard-coded rain-bearing `🌦️` condition icon with condition-aware weather icons.
+- Uses `🌤️` for mostly sunny, `☀️` for sunny/clear, `⛅` for partly cloudy, `🌥️` for mostly cloudy and `☁️` for cloudy/overcast conditions.
+- Keeps rain, showers, drizzle, thunder, snow and fog icons only for matching weather conditions.
+- Leaves weather parsing, temperatures, humidity and precipitation values unchanged.
+
 ## 0.4.34-alpha
 
 - Republishes the unchanged 0.4.33 suffix-safe multi-device control code under a fresh add-on version to test Home Assistant Supervisor repository-version detection.
