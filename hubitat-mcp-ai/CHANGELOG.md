@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.4.34-alpha
+
+- Republishes the unchanged 0.4.33 suffix-safe multi-device control code under a fresh add-on version to test Home Assistant Supervisor repository-version detection.
+- Aligns the Supervisor-facing `config.yaml` version and the running backend version at `0.4.34-alpha`.
+- Contains no control-logic change from 0.4.33-alpha.
+
 ## 0.4.33-alpha
 
 - Resolves a spoken base name such as `fan switch` to a uniquely selected label such as `Fan Switch (Tuya Local)`.
