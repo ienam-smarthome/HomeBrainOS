@@ -35,7 +35,7 @@ from ollama_engagement import install_ollama_engagement
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
 from semantic_metric_comparison import SemanticMetricComparisonExecutor
-from semantic_read_intent import install_semantic_read_intent
+from semantic_read_pipeline import install_semantic_read_pipeline
 from temperature_insight_hybrid import HybridTemperatureInsightService
 from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
@@ -183,7 +183,7 @@ automation_rule_workflow = install_automation_rule_workflow(
     require_paused_create=application.option_bool("rule_create_paused_required", True),
 )
 semantic_metric_comparison = SemanticMetricComparisonExecutor(application.fallback)
-semantic_read_intents = install_semantic_read_intent(
+semantic_read_intents = install_semantic_read_pipeline(
     application,
     semantic_metric_comparison,
     timeout_seconds=float(application.OPTIONS.get("semantic_intent_timeout_seconds") or 5),
