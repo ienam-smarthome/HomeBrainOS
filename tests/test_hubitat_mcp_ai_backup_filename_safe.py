@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -81,9 +82,41 @@ class OldestFirstBackupClient:
         return result(name, {"backups": rows})
 
 
-def workflow():
-    client = OldestFirstBackupClient()
-    app = SimpleNamespace(mcp=client, VERSION="0.4.27-alpha")
+class HubInfoFallbackClient(OldestFirstBackupClient):
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None):
+        args = dict(arguments or {})
+        self.calls.append((name, args))
+        if name == "hub_get_info":
+            return result(
+                name,
+                {
+                    "hub": {
+                        "backups": {
+                            "lastBackupEpoch": int(time.time() * 1000) - 5 * 60 * 1000
+                        }
+                    }
+                },
+            )
+
+        assert name == "hub_manage_backup"
+        assert args.get("tool") == "hub_list_backups"
+        old_date = datetime.now().astimezone().date() - timedelta(days=2)
+        return result(
+            name,
+            {
+                "backups": [
+                    {
+                        "fileName": f"{old_date.isoformat()}~2.5.1.131.lzf",
+                        "location": "local",
+                    }
+                ]
+            },
+        )
+
+
+def workflow(client: Any | None = None):
+    client = client or OldestFirstBackupClient()
+    app = SimpleNamespace(mcp=client, VERSION="0.4.28-alpha")
     return FilenameSafeBackupWashingRuleMachineWorkflow(app, object()), client
 
 
@@ -114,10 +147,28 @@ def test_newest_manual_backup_after_first_ten_is_still_verified():
     assert len(client.calls) == 1
 
 
-def test_release_metadata_is_0427():
+def test_recent_last_backup_epoch_is_accepted_when_list_omits_new_file():
+    service, client = workflow(HubInfoFallbackClient())
+
+    ok, details = asyncio.run(service._ensure_backup("BP-READY"))
+
+    assert ok is True
+    assert details["recent"] is True
+    assert details["created"] is False
+    assert details["verified_by"] == "hub_get_info_lastBackupEpoch"
+    assert details["hub_info_backup_check"]["epoch_found"] is True
+    assert details["hub_info_backup_check"]["age_ms"] < 10 * 60 * 1000
+    assert [name for name, _ in client.calls] == [
+        "hub_manage_backup",
+        "hub_get_info",
+    ]
+
+
+def test_release_metadata_is_0428():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.27-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.27-alpha"' in entrypoint
+    assert "version: '0.4.28-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.28-alpha"' in entrypoint
     assert "install_filename_safe_backup_rule_machine_workflow" in entrypoint
+    assert "install_clipboard_safe_webui" in entrypoint
