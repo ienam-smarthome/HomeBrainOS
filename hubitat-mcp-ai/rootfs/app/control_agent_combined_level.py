@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Callable
 
+from control_agent_capability_filter import install_control_graph_capability_filter
 from control_agent_intent import (
     ControlActionIntent,
     ControlIntent,
@@ -83,14 +84,14 @@ def _intent(target: str, value_text: str) -> ControlIntent | None:
 
 
 def install_combined_level_intent() -> None:
-    """Teach the deterministic interpreter that non-zero setLevel implies on.
+    """Install Control Agent language and actuable-device graph safeguards.
 
-    This must run before ``HomeBrainControlAgent`` is constructed. It wraps the
-    existing static parser so the rest of the Control Agent architecture remains
-    unchanged and all writes still flow through its resolver, preflight and
-    verified MCP executor.
+    This must run before ``HomeBrainControlAgent`` is constructed. It restricts
+    the graph to devices with live control evidence, then wraps the existing
+    static parser so combined on-and-level phrases become one setLevel action.
     """
 
+    install_control_graph_capability_filter()
     if getattr(ControlIntentInterpreter, "_combined_level_installed", False):
         return
 

@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.5.3
+
+- Adds a one-pass local AI rescue when a deterministic control intent cannot resolve safely against the selected-device graph.
+- Keeps exact successful controls AI-free; Qwen is called only after the first structured plan remains unresolved.
+- Supplies the failed intent and resolution reasons to the tool-free local interpreter, then accepts the rescued plan only when it resolves more devices or narrows clarification safely.
+- Never accepts device IDs from AI, never gives the rescue model MCP tools, and never retries a write automatically.
+- Preserves the original safe clarification when the rescued interpretation is unsupported, repeated or no better than the deterministic plan.
+- Adds `control_agent_ai_rescue_enabled`, enabled by default, so the rescue pass can be disabled independently.
+- Filters the Control Agent graph to actuators with switch/level evidence or clear actuator identity, excluding Lux, illuminance, motion, presence, battery, temperature and humidity sensors from control choices.
+- Retains clear actuators whose compact summary temporarily omits state metadata, such as fans and sockets, without allowing sensor-only labels into the graph.
+- Keeps the canonical `parameters` plus MCP `waitFor` dimmer execution and combined turn-on-at-level parsing introduced in 0.5.2.
+
 ## 0.5.2
 
 - Fixes `setLevel` calls that were accepted by MCP but left the dimmer unchanged because HomeBrain preferred a compatibility key such as `params` over the canonical `parameters` field.

@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.5.2"
+version: "0.5.3"
 slug: hubitat_mcp_ai
-description: "HomeBrain Control Agent with canonical setLevel parameters, server-side convergence and deterministic Hubitat execution"
+description: "HomeBrain Control Agent with local AI rescue, capability-filtered choices and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -50,6 +50,7 @@ options:
   fast_path_enabled: true
   fallback_enabled: true
   control_agent_enabled: true
+  control_agent_ai_rescue_enabled: true
   control_agent_intent_timeout_seconds: 5
   control_agent_auto_execute_confidence_percent: 88
   control_agent_block_below_confidence_percent: 50
@@ -113,6 +114,7 @@ schema:
   fast_path_enabled: bool
   fallback_enabled: bool
   control_agent_enabled: bool
+  control_agent_ai_rescue_enabled: bool
   control_agent_intent_timeout_seconds: int
   control_agent_auto_execute_confidence_percent: int
   control_agent_block_below_confidence_percent: int
