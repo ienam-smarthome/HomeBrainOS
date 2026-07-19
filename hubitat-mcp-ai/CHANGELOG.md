@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.5.2
+
+- Fixes `setLevel` calls that were accepted by MCP but left the dimmer unchanged because HomeBrain preferred a compatibility key such as `params` over the canonical `parameters` field.
+- Sends the MCP Rule Server's authoritative command shape: `parameters: ["30"]` for a 30% level request.
+- Uses `hub_call_device_command.waitFor` to block-poll the device's `level` attribute and confirm the resulting value in the same MCP call.
+- Returns immediately when server-side convergence succeeds; no separate device-catalogue verification call is required.
+- Performs only one independent fresh read after a server-side timeout and never blindly resends the command.
+- Keeps bounded local verification for older/custom MCP servers that do not advertise `waitFor`.
+- Routes exact absolute level commands as deterministic MCP-fast controls instead of labelling them as Ollama-planner requests.
+
 ## 0.5.1
 
 - Fixes deterministic `setLevel` commands being reported as failed when the MCP server exposes the Hubitat capability as `SwitchLevel` rather than `Switch Level`.
