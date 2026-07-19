@@ -9,6 +9,8 @@
 - Performs only one independent fresh read after a server-side timeout and never blindly resends the command.
 - Keeps bounded local verification for older/custom MCP servers that do not advertise `waitFor`.
 - Routes exact absolute level commands as deterministic MCP-fast controls instead of labelling them as Ollama-planner requests.
+- Interprets `turn on Bedroom 1 Light to 30%` and `turn Bedroom 1 Light on at 30%` as one deterministic `set_level` action, so the percentage is never included in the device name and no unnecessary device-choice menu is shown.
+- Rejects out-of-range level values instead of silently clamping and auto-executing them.
 
 ## 0.5.1
 
