@@ -10,8 +10,8 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
-from automation_rule_workflow_write_safe import (
-    install_write_safe_backup_rule_machine_workflow as install_washing_rule_machine_workflow,
+from automation_rule_workflow_split_repair import (
+    install_split_repair_rule_machine_workflow as install_washing_rule_machine_workflow,
 )
 from cancellable_requests import install_cancellable_ask
 from control_confirmation import install_control_confirmation
@@ -38,8 +38,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.28-alpha"
-RELEASE_VERSION = "0.4.29-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.29-alpha"
+RELEASE_VERSION = "0.4.30-alpha"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
