@@ -38,8 +38,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.34-alpha"
-RELEASE_VERSION = "0.4.35-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.35-alpha"
+RELEASE_VERSION = "0.4.36"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
