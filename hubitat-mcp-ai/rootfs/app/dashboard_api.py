@@ -30,40 +30,102 @@ class DashboardSnapshot:
             now = time.monotonic()
             if not force and self._value is not None and now < self._expires_at:
                 return dict(self._value)
-            try:
-                if self.device_index is not None:
-                    value = await self.device_index.dashboard_metrics(force=force)
-                    value["source"] = "device-intelligence-index"
-                else:
-                    answer = await self.fallback.answer("What's happening at home?")
-                    metrics = {
-                        str(item.get("label") or "").strip().lower(): item.get("value")
-                        for item in ((answer.get("display") or {}).get("metrics") or [])
-                        if isinstance(item, dict)
-                    }
-                    value = {
-                        "success": bool(answer.get("success", True)),
-                        "lights_on": self._integer(metrics.get("lights on")),
-                        "switches_on": self._integer(metrics.get("switches on")),
-                        "motion_active": self._integer(metrics.get("motion active")),
-                        "low_batteries": self._integer(metrics.get("low batteries")),
-                        "updated_at": time.time(),
-                        "source": "fallback-home-summary",
-                    }
-            except Exception as exc:
-                value = {
+
+            device_result, health_result = await asyncio.gather(
+                self._device_metrics(force=force),
+                self._health_metrics(),
+                return_exceptions=True,
+            )
+
+            if isinstance(device_result, Exception):
+                value: dict[str, Any] = {
                     "success": False,
                     "lights_on": None,
                     "switches_on": None,
                     "motion_active": None,
                     "low_batteries": None,
-                    "error": str(exc),
+                    "error": str(device_result),
                     "updated_at": time.time(),
                     "source": "unavailable",
                 }
+            else:
+                value = dict(device_result)
+
+            if isinstance(health_result, Exception):
+                value.update(
+                    {
+                        "health_success": False,
+                        "health_issues": None,
+                        "offline_devices": None,
+                        "stale_telemetry": None,
+                        "quiet_timestamps": None,
+                        "health_error": str(health_result),
+                        "health_source": "unavailable",
+                    }
+                )
+            else:
+                value.update(health_result)
+
             self._value = value
             self._expires_at = time.monotonic() + self.ttl_seconds
             return dict(value)
+
+    async def _device_metrics(self, *, force: bool) -> dict[str, Any]:
+        if self.device_index is not None:
+            value = await self.device_index.dashboard_metrics(force=force)
+            value["source"] = "device-intelligence-index"
+            return value
+
+        answer = await self.fallback.answer("What's happening at home?")
+        metrics = {
+            str(item.get("label") or "").strip().lower(): item.get("value")
+            for item in ((answer.get("display") or {}).get("metrics") or [])
+            if isinstance(item, dict)
+        }
+        return {
+            "success": bool(answer.get("success", True)),
+            "lights_on": self._integer(metrics.get("lights on")),
+            "switches_on": self._integer(metrics.get("switches on")),
+            "motion_active": self._integer(metrics.get("motion active")),
+            "low_batteries": self._integer(metrics.get("low batteries")),
+            "updated_at": time.time(),
+            "source": "fallback-home-summary",
+        }
+
+    async def _health_metrics(self) -> dict[str, Any]:
+        answer_method = getattr(self.fallback, "answer", None)
+        if not callable(answer_method):
+            raise RuntimeError("Device-health classifier is unavailable")
+
+        answer = await answer_method("Are any devices offline or stale?")
+        metrics = {
+            str(item.get("label") or "").strip().lower(): item.get("value")
+            for item in ((answer.get("display") or {}).get("metrics") or [])
+            if isinstance(item, dict)
+        }
+        offline = self._integer(answer.get("offline_count"))
+        if offline is None:
+            offline = self._integer(metrics.get("offline"))
+        stale = self._integer(answer.get("stale_telemetry_count"))
+        if stale is None:
+            stale = self._integer(metrics.get("stale telemetry"))
+        quiet = self._integer(answer.get("quiet_timestamp_count"))
+        if quiet is None:
+            quiet = self._integer(metrics.get("quiet timestamps"))
+
+        if offline is None and stale is None:
+            raise RuntimeError("Device-health response did not include issue counts")
+
+        offline = offline or 0
+        stale = stale or 0
+        return {
+            "health_success": bool(answer.get("success", True)),
+            "health_issues": offline + stale,
+            "offline_devices": offline,
+            "stale_telemetry": stale,
+            "quiet_timestamps": quiet,
+            "health_source": "authoritative-device-health",
+        }
 
     async def invalidate(self) -> None:
         async with self._lock:
