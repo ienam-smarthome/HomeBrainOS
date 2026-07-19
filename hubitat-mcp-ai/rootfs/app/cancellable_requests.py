@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import traceback
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -62,17 +64,17 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
 
     @api.post("/api/ask", response_model=None)
     async def cancellable_ask(request: Request):
-        payload = await request.json()
-        body = application.AskRequest.model_validate(payload)
-        client_id = request.headers.get("X-HMCP-Client")
-        body_session = str(getattr(body, "session_id", "") or "").strip()
-        if not client_id and body_session:
-            client_id = body_session
-        if not client_id and request.client:
-            client_id = request.client.host
-        if hasattr(body, "session_id") and not body_session:
-            body.session_id = client_id or "default"
         try:
+            payload = await request.json()
+            body = application.AskRequest.model_validate(payload)
+            client_id = request.headers.get("X-HMCP-Client")
+            body_session = str(getattr(body, "session_id", "") or "").strip()
+            if not client_id and body_session:
+                client_id = body_session
+            if not client_id and request.client:
+                client_id = request.client.host
+            if hasattr(body, "session_id") and not body_session:
+                body.session_id = client_id or "default"
             return await registry.run(
                 client_id or "default",
                 lambda: original_ask(body),
@@ -85,6 +87,31 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
                     "cancelled": True,
                     "route": "cancelled",
                     "message": "The previous question was stopped by a newer request.",
+                },
+            )
+        except Exception as exc:
+            message = str(exc).strip() or type(exc).__name__
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "route": "server-error",
+                    "intent": "api-exception",
+                    "message": (
+                        "HomeBrain returned a structured server error instead of a "
+                        f"blank Internal Server Error: {type(exc).__name__}: {message}"
+                    ),
+                    "answered_by": "HomeBrain API error boundary",
+                    "technical": json.dumps(
+                        {
+                            "exception_type": type(exc).__name__,
+                            "error": message,
+                            "traceback": traceback.format_exc(limit=12),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
+                    ),
                 },
             )
 
