@@ -10,6 +10,9 @@ from presenter import display_payload, safe_debug
 
 
 _TARGET_SEPARATOR = re.compile(r"\s*(?:,|\band\b)\s*", re.IGNORECASE)
+_TRAILING_DISPLAY_QUALIFIER = re.compile(
+    r"\s*(?:\([^()]{1,80}\)|\[[^\[\]]{1,80}\])\s*$"
+)
 _UNSAFE_TARGET_TERMS = (
     " if ",
     " unless ",
@@ -31,8 +34,8 @@ def split_explicit_control_targets(value: str) -> list[str] | None:
 
     This intentionally handles only conjunctions such as ``fan switch and fan
     boost``. Contextual pronouns, conditions and long natural-language clauses stay
-    on the planner route. Every returned target still has to exact-match one live
-    selected Hubitat device before any write is allowed.
+    on the planner route. Every returned target still has to resolve uniquely to one
+    live selected Hubitat device before any write is allowed.
     """
 
     text = re.sub(r"\s+", " ", str(value or "").strip(" .!?"))
@@ -42,7 +45,10 @@ def split_explicit_control_targets(value: str) -> list[str] | None:
     if any(term in lowered for term in _UNSAFE_TARGET_TERMS):
         return None
 
-    targets = [re.sub(r"^(?:the\s+)", "", item.strip(), flags=re.IGNORECASE) for item in _TARGET_SEPARATOR.split(text)]
+    targets = [
+        re.sub(r"^(?:the\s+)", "", item.strip(), flags=re.IGNORECASE)
+        for item in _TARGET_SEPARATOR.split(text)
+    ]
     if not 2 <= len(targets) <= 6 or any(not item for item in targets):
         return None
 
@@ -53,8 +59,52 @@ def split_explicit_control_targets(value: str) -> list[str] | None:
     return targets
 
 
+def base_device_label(value: str) -> str:
+    """Return a label without trailing display/integration qualifiers.
+
+    Hubitat labels commonly include source suffixes such as ``(Tuya Local)``.
+    Spoken commands may safely omit such a suffix only when the resulting base name
+    identifies exactly one currently selected device. Multiple matching base labels
+    remain ambiguous and are never controlled.
+    """
+
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    previous = None
+    while text and text != previous:
+        previous = text
+        text = _TRAILING_DISPLAY_QUALIFIER.sub("", text).strip()
+    return _normalise(text)
+
+
 class FastFallbackRouter(EngagementFastFallbackRouter):
     """Final fallback router with exact, verified named multi-device controls."""
+
+    def _match_named_target(
+        self,
+        requested_name: str,
+        candidates: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any] | None, list[str], str | None]:
+        """Resolve an exact label or one unique suffix-free label alias."""
+
+        match, alternatives = self._match_device(requested_name, candidates)
+        if match is not None:
+            return match, alternatives, "exact-label"
+
+        target = _normalise(requested_name)
+        base_matches = [
+            item
+            for item in candidates
+            if _label(item) and base_device_label(_label(item)) == target
+        ]
+        if len(base_matches) == 1:
+            return base_matches[0], [_label(base_matches[0])], "unique-base-label"
+        if len(base_matches) > 1:
+            return (
+                None,
+                sorted({_label(item) for item in base_matches if _label(item)}, key=str.lower),
+                "ambiguous-base-label",
+            )
+        return None, alternatives, None
 
     async def _control_device(self, requested_name: str, action: str) -> dict[str, Any]:
         targets = split_explicit_control_targets(requested_name)
@@ -68,21 +118,28 @@ class FastFallbackRouter(EngagementFastFallbackRouter):
 
             # A real selected device label may itself contain "and". Preserve that
             # exact single-device interpretation before treating the phrase as a list.
-            whole_match, _ = self._match_device(requested_name, candidates)
+            whole_match, _, _ = self._match_named_target(requested_name, candidates)
             if whole_match is not None:
                 return await super()._control_device(_label(whole_match), action)
 
             resolved: list[dict[str, Any]] = []
+            resolution_details: list[dict[str, Any]] = []
             failures: list[dict[str, Any]] = []
             seen_ids: set[str] = set()
             for target in targets:
-                match, alternatives = self._match_device(target, candidates)
+                match, alternatives, method = self._match_named_target(target, candidates)
                 if match is None:
+                    error = (
+                        "Base device name matches more than one selected device"
+                        if method == "ambiguous-base-label"
+                        else "No unique selected-device label or safe base-label match"
+                    )
                     failures.append(
                         {
                             "target": target,
                             "alternatives": alternatives[:5],
-                            "error": "No unique exact selected-device match",
+                            "error": error,
+                            "match_method": method,
                         }
                     )
                     continue
@@ -94,6 +151,7 @@ class FastFallbackRouter(EngagementFastFallbackRouter):
                             "target": target,
                             "alternatives": [],
                             "error": "Matched device has no ID",
+                            "match_method": method,
                         }
                     )
                     continue
@@ -103,11 +161,20 @@ class FastFallbackRouter(EngagementFastFallbackRouter):
                             "target": target,
                             "alternatives": [_label(match)],
                             "error": "Two requested names resolved to the same device",
+                            "match_method": method,
                         }
                     )
                     continue
                 seen_ids.add(key)
                 resolved.append(match)
+                resolution_details.append(
+                    {
+                        "target": target,
+                        "id": device_id,
+                        "label": _label(match),
+                        "match_method": method,
+                    }
+                )
 
             if failures:
                 items = []
@@ -133,17 +200,18 @@ class FastFallbackRouter(EngagementFastFallbackRouter):
                     subtitle="No commands sent",
                     metrics=[
                         {"label": "Requested", "value": str(len(targets)), "icon": "🎛️"},
-                        {"label": "Exact matches", "value": str(len(resolved)), "icon": "✅"},
+                        {"label": "Unique matches", "value": str(len(resolved)), "icon": "✅"},
                         {"label": "Unresolved", "value": str(len(failures)), "icon": "⚠️"},
                     ],
                     items=items,
                     note=(
                         "HomeBrain requires every named target to resolve uniquely before sending "
-                        "any command, preventing partial or guessed multi-device control."
+                        "any command. A trailing label qualifier such as (Tuya Local) may be "
+                        "omitted only when the remaining base name is unique."
                     ),
                 )
                 response = self._response(
-                    "No devices were changed because every requested target could not be matched exactly.\n"
+                    "No devices were changed because every requested target could not be matched uniquely.\n"
                     + "\n".join(lines),
                     "fallback-named-multi-control-unresolved",
                     False,
@@ -157,10 +225,7 @@ class FastFallbackRouter(EngagementFastFallbackRouter):
                         "technical": safe_debug(
                             {
                                 "requested_targets": targets,
-                                "resolved": [
-                                    {"id": _device_id(item), "label": _label(item)}
-                                    for item in resolved
-                                ],
+                                "resolved": resolution_details,
                                 "failures": failures,
                                 "commands_sent": 0,
                             }
@@ -185,10 +250,12 @@ class FastFallbackRouter(EngagementFastFallbackRouter):
             answer["resolved_targets"] = [
                 {"id": _device_id(item), "label": _label(item)} for item in resolved
             ]
+            answer["resolution_details"] = resolution_details
             display = answer.get("display")
             if isinstance(display, dict):
                 display["note"] = (
-                    "Every named target was exact-matched before any command was sent. "
+                    "Every named target was uniquely matched before any command was sent. "
+                    "Trailing display qualifiers may be omitted only for a unique base label. "
                     "Final switch states were read back from Hubitat using fresh MCP reads."
                 )
             return answer
@@ -196,4 +263,8 @@ class FastFallbackRouter(EngagementFastFallbackRouter):
             _FRESH_CONTROL_READS.reset(token)
 
 
-__all__ = ["FastFallbackRouter", "split_explicit_control_targets"]
+__all__ = [
+    "FastFallbackRouter",
+    "base_device_label",
+    "split_explicit_control_targets",
+]
