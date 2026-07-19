@@ -22,6 +22,7 @@ from control_confirmation import install_control_confirmation
 from control_language import install_control_language
 from conversation_context_safe import install_safe_conversation_context
 from dashboard_api import install_dashboard_api
+from dashboard_health_tile import install_dashboard_health_tile
 from device_health_fast_route import install_device_health_fast_route
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
@@ -46,8 +47,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.5.7"
-RELEASE_VERSION = "0.5.8"
+PREVIOUS_RELEASE_VERSION = "0.5.8"
+RELEASE_VERSION = "0.5.9"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -136,6 +137,7 @@ def _replace_ollama_agent() -> None:
         pass
 
 
+install_dashboard_health_tile()
 _replace_mcp_client()
 device_index = _create_device_index()
 _replace_fallback_router(device_index)
