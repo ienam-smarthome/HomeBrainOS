@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.5.5
+
+- Fixes target-before-action commands such as `Switch the second living-room light off` being sent to the Cloud planner and broad legacy confirmation list.
+- Parses postfix `on`/`off` grammar deterministically before any AI call.
+- Converts room, device type and ordinal language into structured constraints: `Living Room` + `light` + ordinal `2`.
+- Resolves the selected device through the Control Agent graph and executes through the existing verified MCP controller.
+- Routes clear postfix controls as MCP-fast requests, with no Cloud model and no unnecessary confirmation.
+- Keeps contextual or grouped forms such as `turn the other light off` and `turn all living-room lights off` on the guarded structured interpretation path.
+- Supports exact target-before-action forms such as `Switch Bedroom 1 Light off` without changing prefix commands such as `Switch off Bedroom 1 Light`.
+
 ## 0.5.4
 
 - Fixes `set Bedroom 1 Light at 30%` being parsed with the fake target name `Bedroom 1 Light at`.
