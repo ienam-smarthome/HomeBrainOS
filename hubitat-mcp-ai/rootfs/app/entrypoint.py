@@ -23,7 +23,7 @@ from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_duplicate_safe import DuplicateAwareCapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
 from device_refresh_webui import install_device_refresh_webui
-from fast_fallback_power_comparison import FastFallbackRouter
+from fast_fallback_multi_control import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
 from mcp_tool_catalogue import install_mcp_tool_catalogue
@@ -34,6 +34,8 @@ from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
+from semantic_metric_comparison import SemanticMetricComparisonExecutor
+from semantic_read_intent import install_semantic_read_intent
 from temperature_insight_hybrid import HybridTemperatureInsightService
 from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
@@ -179,6 +181,13 @@ automation_rule_workflow = install_automation_rule_workflow(
     max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
     write_enabled=application.option_bool("rule_write_enabled", True),
     require_paused_create=application.option_bool("rule_create_paused_required", True),
+)
+semantic_metric_comparison = SemanticMetricComparisonExecutor(application.fallback)
+semantic_read_intents = install_semantic_read_intent(
+    application,
+    semantic_metric_comparison,
+    timeout_seconds=float(application.OPTIONS.get("semantic_intent_timeout_seconds") or 5),
+    cache_ttl_seconds=float(application.OPTIONS.get("semantic_intent_cache_seconds") or 300),
 )
 request_traces = install_request_tracing(
     application,
