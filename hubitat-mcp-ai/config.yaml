@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.4.40"
+version: "0.4.41"
 slug: hubitat_mcp_ai
-description: "AI-interpreted smart-home reads with merged live MCP states, verified controls and guarded Rule Machine repair"
+description: "AI-interpreted smart-home reads with compatible live MCP evidence, verified controls and guarded Rule Machine repair"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
