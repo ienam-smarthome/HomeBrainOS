@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.5.2"
+version: "0.5.3"
 slug: hubitat_mcp_ai
-description: "HomeBrain Control Agent with canonical setLevel parameters, server-side convergence and deterministic Hubitat execution"
+description: "HomeBrain Control Agent with capability-filtered device choices, canonical dimmer commands and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
