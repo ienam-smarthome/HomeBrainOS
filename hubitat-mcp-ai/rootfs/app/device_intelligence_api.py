@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import device_intelligence_webui as device_intelligence_webui_module
 from device_intelligence_index import DeviceIntelligenceIndex
+from device_refresh_webui import install_device_refresh_webui
 
 
 async def refresh_selected_devices(index: DeviceIntelligenceIndex) -> dict[str, Any]:
@@ -36,6 +38,8 @@ def install_device_intelligence_api(
     application: Any,
     index: DeviceIntelligenceIndex,
 ) -> None:
+    install_device_refresh_webui(device_intelligence_webui_module)
+
     @application.app.get("/api/device-catalogue", response_model=None)
     async def device_catalogue(force: bool = False):
         if force:
