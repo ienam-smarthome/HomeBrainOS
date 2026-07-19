@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.5.0"
+version: "0.5.1"
 slug: hubitat_mcp_ai
-description: "HomeBrain Control Agent with local structured intent, deterministic device graph resolution and verified Hubitat execution"
+description: "HomeBrain Control Agent with fast capability-aware dimmer verification and deterministic Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -54,6 +54,7 @@ options:
   control_agent_auto_execute_confidence_percent: 88
   control_agent_block_below_confidence_percent: 50
   control_agent_group_confirmation_size: 6
+  control_level_verification_timeout_seconds: 3
   semantic_intent_enabled: true
   semantic_intent_timeout_seconds: 5
   semantic_intent_cache_seconds: 300
@@ -116,6 +117,7 @@ schema:
   control_agent_auto_execute_confidence_percent: int
   control_agent_block_below_confidence_percent: int
   control_agent_group_confirmation_size: int
+  control_level_verification_timeout_seconds: int
   semantic_intent_enabled: bool
   semantic_intent_timeout_seconds: int
   semantic_intent_cache_seconds: int
