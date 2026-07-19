@@ -187,7 +187,8 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
                 or item.get("name")
                 or index
             )
-            unique_rows[key] = item
+            existing = unique_rows.get(key, {})
+            unique_rows[key] = {**existing, **item}
 
         candidates: list[dict[str, Any]] = []
         unparseable_names: list[str] = []
