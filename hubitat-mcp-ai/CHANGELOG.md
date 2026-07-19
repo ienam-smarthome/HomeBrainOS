@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.32-alpha
+
+- Routes explicit named conjunctions such as `turn on fan switch and fan boost` through deterministic MCP control instead of the Cloud planner.
+- Requires every requested target to exact-match one selected Hubitat switch before sending any command; if one target is unresolved, no devices are changed.
+- Sends each command through the authoritative device-command tool and verifies final states with fresh, cache-bypassed Hubitat reads.
+- Reports confirmed, already-set and unverified devices individually and never allows an AI-only response to claim control success without a write tool call.
+- Keeps contextual or conditional controls such as `turn them on` or `turn on X and Y if...` on the planner route.
+
 ## 0.4.31-alpha
 
 - Fixes washing-machine Rule Machine triggers to use the MCP server's exact native capability name `Power meter` instead of the rejected `Power` token.
