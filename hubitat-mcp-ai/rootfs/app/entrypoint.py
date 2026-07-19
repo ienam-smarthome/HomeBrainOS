@@ -15,6 +15,7 @@ from automation_rule_workflow_repair_id_safe import (
 )
 from cancellable_requests import install_cancellable_ask
 from control_agent import install_control_agent
+from control_agent_gate import install_control_agent_gate
 from control_confirmation import install_control_confirmation
 from control_language import install_control_language
 from conversation_context_safe import install_safe_conversation_context
@@ -175,6 +176,7 @@ control_confirmations = install_control_confirmation(
     max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
 )
 install_control_language(application)
+legacy_control_ask = application.ask
 control_agent = install_control_agent(
     application,
     device_index,
@@ -187,6 +189,7 @@ control_agent = install_control_agent(
     block_below_confidence=float(application.OPTIONS.get("control_agent_block_below_confidence_percent") or 50) / 100.0,
     group_confirmation_size=int(application.OPTIONS.get("control_agent_group_confirmation_size") or 6),
 )
+install_control_agent_gate(application, control_agent, legacy_control_ask)
 automation_rule_workflow = install_automation_rule_workflow(
     application,
     device_index,
