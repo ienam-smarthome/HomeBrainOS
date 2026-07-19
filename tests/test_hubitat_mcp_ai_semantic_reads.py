@@ -21,8 +21,8 @@ from semantic_metric_comparison import (  # noqa: E402
 from semantic_read_intent import (  # noqa: E402
     SemanticReadIntent,
     SemanticReadIntentClassifier,
-    install_semantic_read_intent,
 )
+from semantic_read_pipeline import install_semantic_read_pipeline  # noqa: E402
 
 
 def result(data: Any) -> MCPToolResult:
@@ -123,10 +123,11 @@ def test_analytical_device_question_routes_to_semantic_read():
     assert is_semantic_read_candidate("What appliance is the greediest?") is True
 
 
-def test_controls_never_enter_semantic_read_classifier():
+def test_controls_and_exact_shortcuts_never_enter_semantic_route():
     assert is_semantic_read_candidate("Turn off the device using the most power") is False
     assert classify_query("turn off freezer").route == "mcp-fast"
     assert classify_query("what is the weather?").route == "mcp-fast"
+    assert classify_query("which power meters do I have?").route == "mcp-fast"
 
 
 def test_structured_payload_is_strictly_validated():
@@ -284,7 +285,7 @@ def test_measurement_parser_normalises_units_without_mixing_energy_and_power():
     assert format_measurement(_SPECS["power"], 1200) == "1.2 kW"
 
 
-def test_installer_uses_fallback_parser_when_ollama_is_disabled():
+def test_pipeline_uses_fallback_parser_when_ollama_is_disabled():
     calls: list[str] = []
 
     async def original(request: Any) -> dict[str, Any]:
@@ -303,7 +304,7 @@ def test_installer_uses_fallback_parser_when_ollama_is_disabled():
         ollama=SimpleNamespace(),
         option_bool=lambda name, default=True: False if name == "ollama_enabled" else default,
     )
-    install_semantic_read_intent(application, FakeExecutor())
+    install_semantic_read_pipeline(application, FakeExecutor())
     request = SimpleNamespace(
         query="Which device has the highest power?",
         history=[],
@@ -316,10 +317,36 @@ def test_installer_uses_fallback_parser_when_ollama_is_disabled():
     assert calls == []
 
 
+def test_pipeline_bypasses_existing_fast_inventory_without_ai_or_executor():
+    calls: list[str] = []
+
+    async def original(request: Any) -> dict[str, Any]:
+        calls.append(request.query)
+        return {"success": True, "route": "mcp-fast", "message": "inventory"}
+
+    class ForbiddenExecutor:
+        async def execute(self, parsed: SemanticReadIntent, *, query: str):
+            raise AssertionError("Exact fast inventory must bypass semantic execution")
+
+    application = SimpleNamespace(
+        ask=original,
+        ollama=SimpleNamespace(),
+        option_bool=lambda name, default=True: default,
+    )
+    install_semantic_read_pipeline(application, ForbiddenExecutor())
+
+    answer = asyncio.run(
+        application.ask(SimpleNamespace(query="which power meters do I have?", history=[]))
+    )
+
+    assert answer["route"] == "mcp-fast"
+    assert calls == ["which power meters do I have?"]
+
+
 def test_release_installs_semantic_pipeline_not_phrase_specific_power_router():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "install_semantic_read_intent" in entrypoint
+    assert "install_semantic_read_pipeline" in entrypoint
     assert "SemanticMetricComparisonExecutor" in entrypoint
     assert "from fast_fallback_multi_control import FastFallbackRouter" in entrypoint
     assert "fast_fallback_power_comparison" not in entrypoint
