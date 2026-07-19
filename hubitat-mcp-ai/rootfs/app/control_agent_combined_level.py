@@ -22,9 +22,16 @@ _TURN_TARGET_ON_THEN_LEVEL = re.compile(
     r"(?:to|at)\s+(\d{1,3})\s*(?:%|percent)?[.!?]*$",
     re.IGNORECASE,
 )
-_ABSOLUTE_LEVEL_PHRASE = re.compile(
+# Keep prepositional and bare forms separate. Making `to|at` optional in one
+# expression lets the regex engine absorb `at` into the non-greedy device name.
+_ABSOLUTE_LEVEL_WITH_PREPOSITION = re.compile(
     r"^(?:please\s+)?(?:set|dim|make)\s+(?:the\s+)?(.+?)\s+"
-    r"(?:to|at)?\s*(\d{1,3})\s*(?:%|percent)?[.!?]*$",
+    r"(?:to|at)\s+(\d{1,3})\s*(?:%|percent)?[.!?]*$",
+    re.IGNORECASE,
+)
+_ABSOLUTE_LEVEL_BARE = re.compile(
+    r"^(?:please\s+)?(?:set|dim|make)\s+(?:the\s+)?(.+?)\s+"
+    r"(\d{1,3})\s*(?:%|percent)?[.!?]*$",
     re.IGNORECASE,
 )
 _COMPLEX_TARGET_WORDS = {
@@ -47,11 +54,15 @@ _COMPLEX_TARGET_WORDS = {
     "fifth",
 }
 _COMPLEX_TARGET_TERMS = (" if ", " unless ", " when ", " before ", " after ", " and ")
+_TRAILING_CONTROL_SYNTAX = re.compile(
+    r"(?:\b(?:to|at|percent)\b|\d{1,3}\s*%?)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _safe_unique_target(target: str) -> bool:
     normalised = re.sub(r"\s+", " ", str(target or "").strip(" .!?"))
-    if not normalised:
+    if not normalised or _TRAILING_CONTROL_SYNTAX.search(normalised):
         return False
     words = set(re.findall(r"[a-z0-9]+", normalised.lower()))
     if not words or words.intersection(_COMPLEX_TARGET_WORDS):
@@ -88,7 +99,8 @@ def install_combined_level_intent() -> None:
 
     This must run before ``HomeBrainControlAgent`` is constructed. It restricts
     the graph to devices with live control evidence, then wraps the existing
-    static parser so combined on-and-level phrases become one setLevel action.
+    static parser so combined and absolute level phrases become one clean
+    ``setLevel`` action without leaking prepositions into device names.
     """
 
     install_control_graph_capability_filter()
@@ -106,15 +118,17 @@ def install_combined_level_intent() -> None:
             if match:
                 return _intent(match.group(1), match.group(2))
 
-        # Guard the existing absolute-level parser from silently clamping 101+
-        # to 100. Valid set/dim phrases continue through the original parser.
-        explicit = _ABSOLUTE_LEVEL_PHRASE.match(text)
-        if explicit:
-            try:
-                if not 0 <= float(explicit.group(2)) <= 100:
-                    return None
-            except Exception:
-                return None
+        # Parse valid absolute-level commands here instead of handing them to the
+        # older optional-preposition expression. Ordered patterns guarantee that
+        # `at` and `to` are consumed as grammar, never as part of the device label.
+        for pattern in (
+            _ABSOLUTE_LEVEL_WITH_PREPOSITION,
+            _ABSOLUTE_LEVEL_BARE,
+        ):
+            match = pattern.match(text)
+            if match:
+                return _intent(match.group(1), match.group(2))
+
         return original(query)
 
     ControlIntentInterpreter._deterministic_intent = staticmethod(

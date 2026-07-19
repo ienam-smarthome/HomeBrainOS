@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.5.4
+
+- Fixes `set Bedroom 1 Light at 30%` being parsed with the fake target name `Bedroom 1 Light at`.
+- Separates prepositional (`to`/`at`) and bare absolute-level grammar so prepositions cannot be absorbed into device labels.
+- Parses valid absolute level commands directly into one deterministic `set_level` intent before the older compatibility parser runs.
+- Rejects targets ending in leftover control syntax such as `at`, `to`, `percent` or another numeric level instead of opening an unrelated device-choice menu.
+- Keeps clear exact level instructions AI-free, so a local Ollama timeout cannot delay or block them.
+- Adds an end-to-end replay requiring the exact device to resolve, one verified level execution to begin, and no confirmation or AI rescue response.
+
 ## 0.5.3
 
 - Adds a one-pass local AI rescue when a deterministic control intent cannot resolve safely against the selected-device graph.

@@ -26,8 +26,8 @@ def parse(query: str):
     return ControlIntentInterpreter(FakeApplication())._deterministic_intent(query)
 
 
-def test_turn_on_device_to_level_becomes_one_set_level_action():
-    intent = parse("turn on Bedroom 1 Light to 30%")
+def assert_level(query: str, *, target: str, value: float):
+    intent = parse(query)
 
     assert intent is not None
     assert intent.model is None
@@ -35,34 +35,76 @@ def test_turn_on_device_to_level_becomes_one_set_level_action():
     assert len(intent.actions) == 1
     action = intent.actions[0]
     assert action.command == "set_level"
-    assert action.value == 30
-    assert action.target.name_hint == "Bedroom 1 Light"
+    assert action.value == value
+    assert action.target.name_hint == target
+    return intent
+
+
+def test_turn_on_device_to_level_becomes_one_set_level_action():
+    assert_level(
+        "turn on Bedroom 1 Light to 30%",
+        target="Bedroom 1 Light",
+        value=30,
+    )
 
 
 def test_turn_device_on_at_level_alternate_word_order_is_supported():
-    intent = parse("turn Bedroom 1 Light on at 45 percent")
+    assert_level(
+        "turn Bedroom 1 Light on at 45 percent",
+        target="Bedroom 1 Light",
+        value=45,
+    )
 
-    assert intent is not None
-    assert intent.actions[0].command == "set_level"
-    assert intent.actions[0].value == 45
-    assert intent.actions[0].target.name_hint == "Bedroom 1 Light"
+
+def test_absolute_set_at_level_strips_at_from_exact_device_name():
+    intent = assert_level(
+        "set Bedroom 1 Light at 30%",
+        target="Bedroom 1 Light",
+        value=30,
+    )
+
+    assert intent.actions[0].target.name_hint != "Bedroom 1 Light at"
+
+
+def test_absolute_set_to_level_strips_to_from_exact_device_name():
+    assert_level(
+        "set the Bedroom 1 Light to 35 percent",
+        target="Bedroom 1 Light",
+        value=35,
+    )
+
+
+def test_bare_absolute_level_remains_supported_without_preposition():
+    assert_level(
+        "dim Bedroom 1 Light 40%",
+        target="Bedroom 1 Light",
+        value=40,
+    )
 
 
 def test_combined_level_does_not_include_percentage_in_device_name():
-    intent = parse("switch on the Bedroom 1 Light to 25%")
+    intent = assert_level(
+        "switch on the Bedroom 1 Light to 25%",
+        target="Bedroom 1 Light",
+        value=25,
+    )
 
-    assert intent is not None
-    assert intent.actions[0].target.name_hint == "Bedroom 1 Light"
     assert "25" not in intent.actions[0].target.name_hint
 
 
 def test_out_of_range_level_is_not_clamped_or_deterministically_executed():
     assert parse("turn on Bedroom 1 Light to 130%") is None
     assert parse("set Bedroom 1 Light to 130%") is None
+    assert parse("set Bedroom 1 Light at 130%") is None
 
 
 def test_contextual_combined_level_still_requires_structured_context():
     assert parse("turn it on to 30%") is None
+
+
+def test_malformed_repeated_preposition_does_not_create_fake_device_name():
+    assert parse("set Bedroom 1 Light at at 30%") is None
+    assert parse("set Bedroom 1 Light to to 30%") is None
 
 
 def test_entrypoint_installs_combined_parser_before_control_agent():

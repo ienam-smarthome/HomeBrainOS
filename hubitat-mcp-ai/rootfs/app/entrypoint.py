@@ -44,8 +44,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.5.2"
-RELEASE_VERSION = "0.5.3"
+PREVIOUS_RELEASE_VERSION = "0.5.3"
+RELEASE_VERSION = "0.5.4"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
