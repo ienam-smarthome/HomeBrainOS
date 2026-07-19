@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.5.7"
+version: "0.5.8"
 slug: hubitat_mcp_ai
-description: "HomeBrain Control Agent with truthful offline, stale telemetry and quiet-device health classification"
+description: "HomeBrain Control Agent with authoritative detailed healthStatus scanning and conservative stale-device classification"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
