@@ -27,12 +27,12 @@ def result(data: Any, *, name: str = "hub_list_devices", error: bool = False, te
     )
 
 
-def device(level: float | None = 10.0) -> dict[str, Any]:
+def device(level: float | None = 80.0) -> dict[str, Any]:
     states: dict[str, Any] = {"switch": "on"}
     if level is not None:
         states["level"] = level
     return {
-        "id": "10",
+        "id": "7057",
         "label": "Bedroom 1 Light",
         "name": "Bedroom 1 Light",
         "room": "Bedroom 1",
@@ -65,33 +65,66 @@ class FakeIndex:
 
 
 class FakeCommandClient:
-    def __init__(self, fallback: "FakeFallback", *, string_params: bool) -> None:
+    def __init__(
+        self,
+        fallback: "FakeFallback",
+        *,
+        wait_for_supported: bool,
+        command_applies: bool,
+    ) -> None:
         self.fallback = fallback
-        self.string_params = string_params
+        self.wait_for_supported = wait_for_supported
+        self.command_applies = command_applies
 
     async def get_tool(self, name: str):
         assert name == "hub_call_device_command"
-        item_type = "string" if self.string_params else "number"
+        properties: dict[str, Any] = {
+            "deviceId": {"type": "string"},
+            "command": {"type": "string"},
+            # This mirrors the MCP Rule Server's authoritative schema.
+            "parameters": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        }
+        if self.wait_for_supported:
+            properties["waitFor"] = {"type": "object"}
         return SimpleNamespace(
             input_schema={
                 "type": "object",
-                "properties": {
-                    "deviceId": {"type": "string"},
-                    "command": {"type": "string"},
-                    "params": {
-                        "type": "array",
-                        "items": {"type": item_type},
-                    },
-                },
+                "properties": properties,
+                "required": ["deviceId", "command"],
             }
         )
 
     async def call_tool(self, name: str, arguments: dict[str, Any]):
         assert name == "hub_call_device_command"
         self.fallback.commands.append(dict(arguments))
-        raw_level = arguments["params"][0]
-        self.fallback.level = float(raw_level)
-        return result({"success": True}, name=name)
+
+        canonical = arguments.get("parameters")
+        requested = float(canonical[0]) if isinstance(canonical, list) and canonical else None
+        if self.command_applies and requested is not None:
+            self.fallback.level = requested
+
+        data: dict[str, Any] = {
+            "success": True,
+            "device": "Bedroom 1 Light",
+            "command": "setLevel",
+            "parameters": canonical,
+            "state": {"level": {"value": self.fallback.level}},
+        }
+        if self.wait_for_supported:
+            expected = str((arguments.get("waitFor") or {}).get("expectedValue") or "")
+            converged = requested is not None and str(int(self.fallback.level)) == expected
+            data["waitFor"] = {
+                "attribute": "level",
+                "expected": expected,
+                "converged": converged,
+                "finalValue": str(int(self.fallback.level)),
+                "elapsedMs": 180 if converged else 3000,
+                **({} if converged else {"timedOut": True, "transitioning": False}),
+            }
+        return result(data, name=name)
 
     async def invalidate(self, category: str):
         self.fallback.invalidations.append(category)
@@ -103,17 +136,22 @@ class FakeFallback:
         self,
         *,
         verification_mode: str,
-        string_params: bool = False,
+        wait_for_supported: bool = True,
+        command_applies: bool = True,
         inventory_has_level: bool = True,
     ) -> None:
         self.verification_mode = verification_mode
         self.inventory_has_level = inventory_has_level
-        self.level = 10.0
+        self.level = 80.0
         self.commands: list[dict[str, Any]] = []
         self.invalidations: list[str] = []
         self.reads: list[tuple[str | None, bool]] = []
         self.control_verification_initial_delay_seconds = 0.01
-        self.client = FakeCommandClient(self, string_params=string_params)
+        self.client = FakeCommandClient(
+            self,
+            wait_for_supported=wait_for_supported,
+            command_applies=command_applies,
+        )
 
     async def _direct_fresh_devices(self, capability: str | None = None, detailed: bool = False):
         self.reads.append((capability, detailed))
@@ -141,13 +179,15 @@ class FakeFallback:
 def make_agent(
     tmp_path: Path,
     *,
-    verification_mode: str,
-    string_params: bool = False,
+    verification_mode: str = "switchlevel",
+    wait_for_supported: bool = True,
+    command_applies: bool = True,
     inventory_has_level: bool = True,
 ):
     fallback = FakeFallback(
         verification_mode=verification_mode,
-        string_params=string_params,
+        wait_for_supported=wait_for_supported,
+        command_applies=command_applies,
         inventory_has_level=inventory_has_level,
     )
     index = FakeIndex(fallback)
@@ -170,12 +210,8 @@ async def unused(_request: Any):
     raise AssertionError("Exact level controls must not reach the AI or legacy planner")
 
 
-def test_exact_level_uses_schema_string_params_and_switchlevel_first(tmp_path: Path):
-    agent, fallback = make_agent(
-        tmp_path,
-        verification_mode="switchlevel",
-        string_params=True,
-    )
+def test_exact_level_uses_canonical_string_parameters_and_server_wait_for(tmp_path: Path):
+    agent, fallback = make_agent(tmp_path)
 
     answer = asyncio.run(
         agent.answer(request("set Bedroom 1 Light to 30%"), unused)
@@ -183,22 +219,58 @@ def test_exact_level_uses_schema_string_params_and_switchlevel_first(tmp_path: P
 
     assert answer["success"] is True
     assert answer["answered_by"] == "Deterministic Control Agent + verified Hubitat MCP"
-    assert fallback.commands == [
-        {"deviceId": "10", "command": "setLevel", "params": ["30"]}
-    ]
-    assert fallback.reads[:2] == [("Switch", False), ("SwitchLevel", False)]
-    assert ("Switch Level", False) not in fallback.reads
+    assert len(fallback.commands) == 1
+    command = fallback.commands[0]
+    assert command["deviceId"] == "7057"
+    assert command["command"] == "setLevel"
+    assert command["parameters"] == ["30"]
+    assert "params" not in command
+    assert command["waitFor"] == {
+        "attribute": "level",
+        "expectedValue": "30",
+        "comparator": "eq",
+        "timeoutMs": 3000,
+        "pollIntervalMs": 100,
+    }
+    # One selected-device preflight read; successful server-side waitFor needs no
+    # separate post-command catalogue read.
+    assert fallback.reads == [("Switch", False)]
     assert "30%" in answer["message"]
+    assert answer["tools_used"][0]["parameter_field"] == "parameters"
+    assert answer["tools_used"][0]["verification_source"] == "hub_call_device_command.waitFor"
 
 
-def test_level_falls_back_to_all_device_currentstates_without_waiting(tmp_path: Path):
-    agent, fallback = make_agent(tmp_path, verification_mode="summary")
+def test_server_wait_for_timeout_reports_stable_old_level_without_resending(tmp_path: Path):
+    agent, fallback = make_agent(tmp_path, command_applies=False)
+
+    answer = asyncio.run(
+        agent.answer(request("set Bedroom 1 Light to 30%"), unused)
+    )
+
+    assert answer["success"] is False
+    assert len(fallback.commands) == 1
+    assert fallback.commands[0]["parameters"] == ["30"]
+    assert "last reading was 80%" in answer["message"]
+    # After the MCP server's own three-second wait, only one independent fresh
+    # strategy chain is allowed; the command is never blindly repeated.
+    assert fallback.reads[:2] == [("Switch", False), ("SwitchLevel", False)]
+
+
+def test_older_server_without_wait_for_uses_bounded_local_verification(tmp_path: Path):
+    agent, fallback = make_agent(
+        tmp_path,
+        wait_for_supported=False,
+        verification_mode="summary",
+    )
 
     answer = asyncio.run(
         agent.answer(request("set Bedroom 1 Light to 45%"), unused)
     )
 
     assert answer["success"] is True
+    assert fallback.commands == [
+        {"deviceId": "7057", "command": "setLevel", "parameters": ["45"]}
+    ]
     assert fallback.reads[:3] == [
         ("Switch", False),
         ("SwitchLevel", False),
@@ -207,9 +279,10 @@ def test_level_falls_back_to_all_device_currentstates_without_waiting(tmp_path: 
     assert "45%" in answer["message"]
 
 
-def test_missing_level_field_returns_quickly_instead_of_waiting_seven_seconds(tmp_path: Path):
+def test_missing_level_field_returns_quickly_on_server_without_wait_for(tmp_path: Path):
     agent, fallback = make_agent(
         tmp_path,
+        wait_for_supported=False,
         verification_mode="missing",
         inventory_has_level=False,
     )
@@ -222,9 +295,8 @@ def test_missing_level_field_returns_quickly_instead_of_waiting_seven_seconds(tm
 
     assert answer["success"] is False
     assert answer["intent"] == "control-agent-failed"
-    assert "no numeric level field" in answer["message"]
+    assert "no numeric level was returned" in answer["message"]
     assert elapsed < 1.2
-    # One preflight, five compatibility reads, then two cheap retry reads.
     assert len(fallback.reads) <= 8
 
 

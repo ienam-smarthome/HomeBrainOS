@@ -17,11 +17,11 @@ _LEVEL_READ_STRATEGIES: tuple[tuple[str | None, bool, str], ...] = (
     (None, True, "all-detailed-attributes"),
 )
 _LEVEL_QUICK_RETRY_STRATEGIES = _LEVEL_READ_STRATEGIES[:2]
-_COMMAND_PARAMETER_KEYS = (
+_CANONICAL_PARAMETER_KEY = "parameters"
+_COMPATIBILITY_PARAMETER_KEYS = (
     "params",
     "arguments",
     "args",
-    "parameters",
     "commandParams",
     "commandArguments",
 )
@@ -30,7 +30,7 @@ _DEVICE_ID_KEYS = ("deviceId", "id", "device_id")
 
 def _level_number(value: Any) -> float | None:
     if isinstance(value, dict):
-        for key in ("currentValue", "value", "currentState", "level"):
+        for key in ("currentValue", "value", "currentState", "level", "finalValue"):
             if key in value:
                 parsed = _level_number(value.get(key))
                 if parsed is not None:
@@ -42,7 +42,16 @@ def _level_number(value: Any) -> float | None:
         return None
 
 
-def _command_parameter_value(schema: dict[str, Any], level: int) -> Any:
+def _parameter_value(schema: dict[str, Any], level: int, *, canonical: bool) -> Any:
+    """Build the ordered command arguments advertised by the MCP tool schema.
+
+    The MCP Rule Server's canonical ``hub_call_device_command`` contract is an
+    array of strings under ``parameters``. Compatibility keys are retained only
+    for older/custom servers that genuinely omit the canonical field.
+    """
+
+    if canonical:
+        return [str(level)]
     declared_type = str(schema.get("type") or "").strip().lower()
     if declared_type == "array" or not declared_type:
         item_schema = schema.get("items") if isinstance(schema.get("items"), dict) else {}
@@ -55,8 +64,19 @@ def _command_parameter_value(schema: dict[str, Any], level: int) -> Any:
     return [level]
 
 
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _response_state_level(data: dict[str, Any]) -> float | None:
+    state = data.get("state")
+    if not isinstance(state, dict):
+        return None
+    return _level_number(state.get("level"))
+
+
 class FastVerifiedControlAgent(HomeBrainControlAgent):
-    """Control Agent with schema-aware setLevel and fast live level verification."""
+    """Control Agent with canonical setLevel payload and authoritative verification."""
 
     def __init__(
         self,
@@ -109,24 +129,58 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
         arguments[device_key] = node.id
         arguments["command"] = "setLevel"
 
-        parameter_key = next(
-            (key for key in _COMMAND_PARAMETER_KEYS if key in properties),
-            None,
-        )
-        if parameter_key is None and not properties:
-            parameter_key = "params"
+        # The official MCP Rule Server contract is `parameters: ["30"]`.
+        # Never prefer a compatibility alias when the canonical field exists.
+        if not properties or _CANONICAL_PARAMETER_KEY in properties:
+            parameter_key = _CANONICAL_PARAMETER_KEY
+        else:
+            parameter_key = next(
+                (key for key in _COMPATIBILITY_PARAMETER_KEYS if key in properties),
+                None,
+            )
         if parameter_key is None:
             return self._command_error(
                 node.label,
                 requested,
                 (
-                    "The MCP command schema does not expose a parameter field for setLevel. "
-                    "Refresh the MCP tool catalogue and try again."
+                    "The MCP command schema does not expose the canonical parameters field "
+                    "or a recognised compatibility field for setLevel."
                 ),
             )
         parameter_schema = properties.get(parameter_key)
         parameter_schema = parameter_schema if isinstance(parameter_schema, dict) else {}
-        arguments[parameter_key] = _command_parameter_value(parameter_schema, requested)
+        arguments[parameter_key] = _parameter_value(
+            parameter_schema,
+            requested,
+            canonical=parameter_key == _CANONICAL_PARAMETER_KEY,
+        )
+
+        wait_for_supported = not properties or "waitFor" in properties
+        wait_for_request: dict[str, Any] | None = None
+        if wait_for_supported:
+            wait_for_request = {
+                "attribute": "level",
+                "expectedValue": str(requested),
+                "comparator": "eq",
+                "timeoutMs": max(
+                    800,
+                    min(7000, round(self.level_verification_timeout_seconds * 1000)),
+                ),
+                "pollIntervalMs": max(
+                    100,
+                    min(750, round(self.level_verification_poll_seconds * 1000)),
+                ),
+            }
+            arguments["waitFor"] = wait_for_request
+
+        safe_arguments = {
+            "deviceIdField": device_key,
+            "deviceId": str(node.id),
+            "command": "setLevel",
+            "parameterField": parameter_key,
+            "parameterValue": arguments[parameter_key],
+            "waitFor": wait_for_request,
+        }
 
         try:
             command_result = await client.call_tool("hub_call_device_command", arguments)
@@ -136,6 +190,7 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
                 requested,
                 f"The MCP command call failed: {str(exc).strip() or type(exc).__name__}",
                 parameter_key=parameter_key,
+                command_arguments=safe_arguments,
             )
         if command_result.is_error:
             return self._command_error(
@@ -143,6 +198,26 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
                 requested,
                 command_result.text or f"Failed to set {node.label} to {requested}%.",
                 parameter_key=parameter_key,
+                command_arguments=safe_arguments,
+            )
+
+        response = _mapping(command_result.data)
+        server_wait = _mapping(response.get("waitFor"))
+        wait_converged = server_wait.get("converged") is True
+        wait_final = _level_number(server_wait.get("finalValue"))
+        response_level = _response_state_level(response)
+        observed = wait_final if wait_final is not None else response_level
+
+        if wait_converged and observed is not None and abs(observed - requested) <= 1.0:
+            return self._confirmed_response(
+                node.label,
+                requested,
+                observed,
+                parameter_key=parameter_key,
+                command_arguments=safe_arguments,
+                source="hub_call_device_command.waitFor",
+                server_wait=server_wait,
+                attempts=[],
             )
 
         invalidate = getattr(client, "invalidate", None)
@@ -152,6 +227,36 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
             except Exception:
                 pass
 
+        # A current MCP server with waitFor has already spent the requested timeout
+        # polling. Perform one independent fresh read for honesty, but do not wait for
+        # another full timeout. Older servers without waitFor use the local polling path.
+        if wait_for_supported and server_wait:
+            independent, source, attempts = await self._read_level_once(node.id)
+            if independent is not None:
+                observed = independent
+            if observed is not None and abs(observed - requested) <= 1.0:
+                return self._confirmed_response(
+                    node.label,
+                    requested,
+                    observed,
+                    parameter_key=parameter_key,
+                    command_arguments=safe_arguments,
+                    source=source or "fresh-independent-read",
+                    server_wait=server_wait,
+                    attempts=attempts,
+                )
+            return self._unverified_response(
+                node.label,
+                requested,
+                observed,
+                parameter_key=parameter_key,
+                command_arguments=safe_arguments,
+                server_wait=server_wait,
+                attempts=attempts,
+            )
+
+        # Compatibility path for an older/custom MCP server that does not advertise
+        # or return waitFor. Verification remains fresh and bounded.
         initial_delay = min(
             0.2,
             max(
@@ -166,10 +271,70 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
             ),
         )
         await asyncio.sleep(initial_delay)
+        verified, source, attempts = await self._poll_live_level(node.id, requested)
+        if verified is not None and abs(verified - requested) <= 1.0:
+            return self._confirmed_response(
+                node.label,
+                requested,
+                verified,
+                parameter_key=parameter_key,
+                command_arguments=safe_arguments,
+                source=source or "fresh-live-read",
+                server_wait=server_wait,
+                attempts=attempts,
+            )
+        return self._unverified_response(
+            node.label,
+            requested,
+            verified if verified is not None else observed,
+            parameter_key=parameter_key,
+            command_arguments=safe_arguments,
+            server_wait=server_wait,
+            attempts=attempts,
+        )
 
+    async def _read_level_once(
+        self,
+        device_id: str,
+    ) -> tuple[float | None, str | None, list[dict[str, Any]]]:
+        attempts: list[dict[str, Any]] = []
+        for capability, detailed, source in _LEVEL_READ_STRATEGIES:
+            try:
+                reading, present = await self._read_live_level(
+                    device_id,
+                    capability=capability,
+                    detailed=detailed,
+                )
+                attempts.append(
+                    {
+                        "source": source,
+                        "device_present": present,
+                        "level": reading,
+                        "success": True,
+                    }
+                )
+            except Exception as exc:
+                attempts.append(
+                    {
+                        "source": source,
+                        "success": False,
+                        "error": str(exc).strip() or type(exc).__name__,
+                    }
+                )
+                continue
+            if reading is not None:
+                return reading, source, attempts
+        return None, None, attempts
+
+    async def _poll_live_level(
+        self,
+        device_id: str,
+        requested: int,
+    ) -> tuple[float | None, str | None, list[dict[str, Any]]]:
         deadline = time.monotonic() + self.level_verification_timeout_seconds
         preferred: tuple[str | None, bool, str] | None = None
         observed: float | None = None
+        observed_source: str | None = None
         attempts: list[dict[str, Any]] = []
         no_value_passes = 0
 
@@ -185,7 +350,7 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
             for capability, detailed, source in strategies:
                 try:
                     reading, present = await self._read_live_level(
-                        node.id,
+                        device_id,
                         capability=capability,
                         detailed=detailed,
                     )
@@ -206,64 +371,82 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
                         }
                     )
                     continue
-
                 if reading is None:
                     continue
                 numeric_seen = True
                 observed = reading
+                observed_source = source
                 preferred = (capability, detailed, source)
                 if abs(reading - requested) <= 1.0:
-                    return {
-                        "success": True,
-                        "intent": "control-agent-level-confirmed",
-                        "message": f"{node.label} is confirmed at {reading:g}%.",
-                        "tools_used": [
-                            {
-                                "name": "hub_call_device_command",
-                                "success": True,
-                                "command": "setLevel",
-                                "parameter_field": parameter_key,
-                            },
-                            {
-                                "name": "hub_list_devices",
-                                "success": True,
-                                "capability": capability,
-                                "detailed": detailed,
-                                "evidence_source": source,
-                                "observed_level": reading,
-                            },
-                        ],
-                        "level_verification": {
-                            "requested": requested,
-                            "observed": reading,
-                            "source": source,
-                            "attempts": attempts,
-                        },
-                    }
+                    return reading, source, attempts
 
             if numeric_seen:
                 await asyncio.sleep(self.level_verification_poll_seconds)
                 continue
-
-            # If every compatible source omitted level entirely, use one short retry
-            # of the two cheapest live shapes. Waiting for the full control timeout
-            # cannot make an unsupported field appear and only makes an exact command
-            # feel slow.
             no_value_passes += 1
             if no_value_passes >= 2:
                 break
             await asyncio.sleep(min(0.2, self.level_verification_poll_seconds))
 
+        return observed, observed_source, attempts
+
+    @staticmethod
+    def _confirmed_response(
+        label: str,
+        requested: int,
+        observed: float,
+        *,
+        parameter_key: str,
+        command_arguments: dict[str, Any],
+        source: str,
+        server_wait: dict[str, Any],
+        attempts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "success": True,
+            "intent": "control-agent-level-confirmed",
+            "message": f"{label} is confirmed at {observed:g}%.",
+            "tools_used": [
+                {
+                    "name": "hub_call_device_command",
+                    "success": True,
+                    "command": "setLevel",
+                    "parameter_field": parameter_key,
+                    "verification_source": source,
+                    "observed_level": observed,
+                }
+            ],
+            "level_verification": {
+                "requested": requested,
+                "observed": observed,
+                "source": source,
+                "command_arguments": command_arguments,
+                "server_wait_for": server_wait,
+                "fresh_read_attempts": attempts,
+            },
+        }
+
+    @staticmethod
+    def _unverified_response(
+        label: str,
+        requested: int,
+        observed: float | None,
+        *,
+        parameter_key: str,
+        command_arguments: dict[str, Any],
+        server_wait: dict[str, Any],
+        attempts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         reason = (
             f"; last reading was {observed:g}%."
             if observed is not None
-            else "; the MCP device responses exposed no numeric level field."
+            else "; no numeric level was returned by the command or fresh device reads."
         )
         return {
             "success": False,
             "intent": "control-agent-level-unverified",
             "message": (
-                f"{node.label} accepted setLevel {requested}%, but the final level could not be verified"
+                f"{label} received setLevel {requested}%, but the final level could not be verified"
                 + reason
             ),
             "tools_used": [
@@ -272,17 +455,19 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
                     "success": True,
                     "command": "setLevel",
                     "parameter_field": parameter_key,
-                },
-                {
-                    "name": "hub_list_devices",
-                    "success": False,
-                    "evidence_sources": [item[2] for item in _LEVEL_READ_STRATEGIES],
-                },
+                    "server_wait_converged": server_wait.get("converged"),
+                    "server_wait_final_value": server_wait.get("finalValue"),
+                }
             ],
             "level_verification": {
                 "requested": requested,
                 "observed": observed,
-                "attempts": attempts,
+                "source": "hub_call_device_command.waitFor"
+                if server_wait
+                else "fresh-live-read",
+                "command_arguments": command_arguments,
+                "server_wait_for": server_wait,
+                "fresh_read_attempts": attempts,
             },
         }
 
@@ -293,6 +478,7 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
         message: str,
         *,
         parameter_key: str | None = None,
+        command_arguments: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         tool: dict[str, Any] = {
             "name": "hub_call_device_command",
@@ -306,6 +492,11 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
             "intent": "control-agent-level-error",
             "message": message or f"Failed to set {label} to {requested}%.",
             "tools_used": [tool],
+            "level_verification": {
+                "requested": requested,
+                "command_arguments": command_arguments or {},
+                "error": message,
+            },
         }
 
     async def _read_live_level(
