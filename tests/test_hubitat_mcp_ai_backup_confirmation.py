@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -80,7 +81,7 @@ class ConfirmedBackupClient:
         args = dict(arguments or {})
         self.calls.append((name, args))
         if name == "hub_list_backups":
-            assert args.get("scope") == "hub_local"
+            assert args == {"scope": "hub_local"}
             return result(name, {"backups": [], "count": 0})
         if name == "hub_get_tool_guide":
             section = args.get("section")
@@ -101,7 +102,6 @@ class ConfirmedBackupClient:
                 "bestPracticeKey": "BP-CONFIRM-2401",
             }
             if self.backup_mode == "timeout":
-                # httpx.ReadTimeout commonly has an empty string representation.
                 raise TimeoutError()
             return result(
                 name,
@@ -114,9 +114,60 @@ class ConfirmedBackupClient:
         raise AssertionError(f"Unexpected call {name}: {args}")
 
 
+class StrictBackupGatewayClient:
+    configured = True
+    server_info: dict[str, Any] = {}
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def list_tools(self, refresh: bool = False):
+        gateway_schema = {
+            "type": "object",
+            "properties": {
+                "tool": {"type": "string"},
+                "args": {"type": "object"},
+            },
+        }
+        return [
+            MCPTool("hub_manage_backup", "Manage local and cloud backups", gateway_schema),
+            MCPTool("hub_read_apps_code", "Read app source code", gateway_schema),
+        ]
+
+    async def gateway_map(self, refresh: bool = False):
+        # Reproduce the erroneous generic association seen in the live trace.
+        return {"hub_list_backups": "hub_read_apps_code"}
+
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None):
+        args = dict(arguments or {})
+        self.calls.append((name, args))
+        if name == "hub_read_apps_code":
+            raise AssertionError("The app-code gateway must never be used for backup listing")
+        if name == "hub_manage_backup":
+            assert args == {
+                "tool": "hub_list_backups",
+                "args": {"scope": "hub_local", "limit": 10},
+            }
+            return result(
+                name,
+                {
+                    "scope": "hub_local",
+                    "backups": [
+                        {
+                            "fileName": "Hubitat_Hub_recent.lzf",
+                            "location": "local",
+                            "createdEpoch": int(time.time() * 1000) - 5000,
+                        }
+                    ],
+                    "count": 1,
+                },
+            )
+        raise AssertionError(f"Unexpected call {name}: {args}")
+
+
 def workflow(*, backup_mode: str = "complete"):
     client = ConfirmedBackupClient(backup_mode=backup_mode)
-    app = SimpleNamespace(mcp=client, VERSION="0.4.25-alpha")
+    app = SimpleNamespace(mcp=client, VERSION="0.4.26-alpha")
     return ConfirmedBackupWashingRuleMachineWorkflow(app, object()), client
 
 
@@ -196,10 +247,25 @@ def test_pending_timeout_does_not_launch_duplicate_backup_immediately():
     assert len([call for call in client.calls if call[0] == "hub_create_backup"]) == 1
 
 
-def test_release_metadata_is_0425():
+def test_backup_listing_rejects_false_app_code_gateway_mapping():
+    client = StrictBackupGatewayClient()
+    app = SimpleNamespace(mcp=client, VERSION="0.4.26-alpha")
+    service = ConfirmedBackupWashingRuleMachineWorkflow(app, object())
+
+    ok, details = asyncio.run(service._recent_listed_backup())
+
+    assert ok is True
+    assert details["recent"] is True
+    assert details["gateway"] == "hub_manage_backup"
+    assert details["request_tool"] == "hub_manage_backup"
+    assert details["candidate_count"] == 1
+    assert all(name != "hub_read_apps_code" for name, _ in client.calls)
+
+
+def test_release_metadata_is_0426():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.25-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.25-alpha"' in entrypoint
+    assert "version: '0.4.26-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.26-alpha"' in entrypoint
     assert "install_confirmed_backup_rule_machine_workflow" in entrypoint
