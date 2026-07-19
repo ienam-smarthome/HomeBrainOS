@@ -13,7 +13,13 @@ from automation_rule_workflow_native_rm import (
     _best_practice_key,
     _nested_value,
 )
-from automation_rule_workflow_washing_final import FinalWashingRuleMachineWorkflow
+from automation_rule_workflow_washing_final import (
+    FinalWashingRuleMachineWorkflow,
+    _BACKUP_MAX_AGE_MS,
+    _backup_timestamp_ms,
+    _looks_like_local_hub_backup,
+    _mapping_rows,
+)
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -43,13 +49,37 @@ def _acknowledgment_key(value: Any) -> str | None:
     return None
 
 
+def _plain_backup_rows(value: Any) -> list[dict[str, Any]]:
+    """Recover backup filenames when a server returns strings instead of objects."""
+
+    rows: list[dict[str, Any]] = []
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lower().endswith((".lzf", ".zip")):
+            rows.append({"fileName": text, "location": "local"})
+        return rows
+    if isinstance(value, list):
+        for item in value:
+            rows.extend(_plain_backup_rows(item))
+        return rows
+    if isinstance(value, dict):
+        for item in value.values():
+            rows.extend(_plain_backup_rows(item))
+    return rows
+
+
 class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow):
-    """Final workflow using the MCP backup tool's actual confirmation contract.
+    """Backup-safe Rule Machine workflow with strict gateway verification.
 
     Hubitat backup creation can exceed the normal 25-second MCP request timeout.
     A blank timeout exception does not prove the backup failed, so the workflow
     polls the local backup list and prevents duplicate backup creation attempts
     while the first confirmed request may still be running.
+
+    Backup listing deliberately bypasses generic catalogue probing. A source-code
+    gateway can mention ``hub_list_backups`` in app text and must never be accepted
+    as the owning gateway. Only the direct core tool or ``hub_manage_backup`` is
+    permitted for backup verification.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -68,8 +98,6 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
 
         section_field = self._argument_name(tool, "section", "section")
         key: str | None = None
-        # Current servers publish the mandatory key in best_practice_reference.
-        # Some builds additionally expose it in the tool-specific backup guide.
         for section in ("best_practice_reference", "backup"):
             try:
                 result = await self._call_rule_tool(tool, {section_field: section})
@@ -83,6 +111,117 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
 
         self._best_practice_cache = (now, key)
         return key
+
+    async def _recent_listed_backup(self) -> tuple[bool, dict[str, Any]]:
+        details: dict[str, Any] = {
+            "checked": False,
+            "recent": False,
+            "source": "hub_list_backups",
+            "strict_gateway": True,
+        }
+        try:
+            tools = await self.client.list_tools(refresh=True)
+        except Exception as exc:
+            details["error"] = f"Could not refresh MCP tools: {type(exc).__name__}: {str(exc).strip()}"
+            return False, details
+
+        visible = {str(getattr(tool, "name", "") or ""): tool for tool in tools}
+        list_args: dict[str, Any] = {"scope": "hub_local", "limit": 10}
+        gateway: str | None = None
+        request_name: str
+        request_args: dict[str, Any]
+
+        if "hub_list_backups" in visible:
+            request_name = "hub_list_backups"
+            schema = dict(getattr(visible[request_name], "input_schema", {}) or {})
+            properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+            if properties:
+                list_args = {key: value for key, value in list_args.items() if key in properties}
+            request_args = list_args
+        elif "hub_manage_backup" in visible:
+            request_name = "hub_manage_backup"
+            gateway = request_name
+            request_args = {"tool": "hub_list_backups", "args": list_args}
+        else:
+            details["error"] = (
+                "Neither the direct hub_list_backups tool nor the hub_manage_backup gateway "
+                "was advertised. HomeBrain will not use an unrelated gateway for backup verification."
+            )
+            details["visible_backup_tools"] = sorted(
+                name for name in visible if "backup" in name.lower()
+            )
+            return False, details
+
+        details.update(
+            {
+                "checked": True,
+                "tool": "hub_list_backups",
+                "gateway": gateway,
+                "request_tool": request_name,
+                "arguments": list_args,
+            }
+        )
+        try:
+            result = await self.client.call_tool(request_name, request_args)
+        except Exception as exc:
+            details["exception_type"] = type(exc).__name__
+            details["error"] = str(exc).strip() or f"{type(exc).__name__} while listing backups"
+            return False, details
+
+        details["result_is_error"] = bool(result.is_error)
+        details["response_type"] = type(result.data).__name__
+        if result.is_error:
+            details["error"] = result.text or "hub_list_backups failed"
+            return False, details
+
+        now_ms = int(time.time() * 1000)
+        raw_rows = _mapping_rows(result.data) + _plain_backup_rows(result.data)
+        unique_rows: dict[str, dict[str, Any]] = {}
+        for index, item in enumerate(raw_rows):
+            if not isinstance(item, dict) or not _looks_like_local_hub_backup(item):
+                continue
+            key = str(
+                item.get("id")
+                or item.get("fileName")
+                or item.get("filename")
+                or item.get("name")
+                or index
+            )
+            unique_rows[key] = item
+
+        candidates: list[dict[str, Any]] = []
+        unparseable_names: list[str] = []
+        for item in unique_rows.values():
+            timestamp_ms = _backup_timestamp_ms(item, now_ms)
+            name = item.get("fileName") or item.get("filename") or item.get("name") or item.get("id")
+            if timestamp_ms is None:
+                if name:
+                    unparseable_names.append(str(name))
+                continue
+            age_ms = now_ms - timestamp_ms
+            if age_ms < 0 or age_ms > 365 * 24 * 60 * 60 * 1000:
+                continue
+            candidates.append(
+                {
+                    "timestamp_ms": timestamp_ms,
+                    "age_ms": age_ms,
+                    "name": name,
+                }
+            )
+
+        candidates.sort(key=lambda item: item["timestamp_ms"], reverse=True)
+        details["row_count"] = len(unique_rows)
+        details["candidate_count"] = len(candidates)
+        if unparseable_names:
+            details["unparseable_names"] = unparseable_names[:5]
+        if candidates:
+            details["newest"] = candidates[0]
+            if candidates[0]["age_ms"] < _BACKUP_MAX_AGE_MS:
+                details["recent"] = True
+                return True, details
+
+        details["error"] = "No verifiable local hub backup from the last 24 hours was listed"
+        return False, details
 
     async def _poll_recent_backup(
         self,
@@ -99,8 +238,6 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
         return False, checks
 
     async def _ensure_backup(self, key: str | None) -> tuple[bool, dict[str, Any]]:
-        # A previous confirmed request may still be running on the hub. Recheck
-        # instead of starting another whole-hub backup immediately.
         if time.monotonic() < self._backup_pending_until:
             listed_ok, listed = await self._recent_listed_backup()
             if listed_ok:
@@ -171,7 +308,6 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
         try:
             result = await self._call_rule_tool(tool, args)
         except Exception as exc:
-            # httpx timeout exceptions frequently stringify to an empty string.
             details["exception_type"] = type(exc).__name__
             details["error"] = str(exc).strip()
 
@@ -183,9 +319,7 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
                     _nested_value(result.data, "error") or "Backup failed"
                 )
             elif str(_nested_value(result.data, "status") or "").lower() == "in_progress":
-                details["error"] = (
-                    "The hub backup started successfully and is still in progress."
-                )
+                details["error"] = "The hub backup started successfully and is still in progress."
                 details["started"] = True
             else:
                 details["created"] = True
@@ -204,8 +338,6 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
         if not ambiguous_or_running:
             return False, details
 
-        # The confirmed call reached the server but did not provide a final result.
-        # Poll for the backup that may still be completing in the background.
         self._backup_pending_until = time.monotonic() + 120.0
         verified, checks = await self._poll_recent_backup((2.0, 4.0, 6.0))
         details["post_create_checks"] = checks
@@ -241,8 +373,8 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
             display = answer.get("display")
             if isinstance(display, dict):
                 display["note"] = (
-                    "HomeBrain checks for a recent local backup, sends a confirmed backup request "
-                    "when needed, and polls for completion if Hubitat takes longer than the MCP timeout."
+                    "HomeBrain verifies backups only through hub_list_backups or the "
+                    "hub_manage_backup gateway, and polls after a long-running backup request."
                 )
         return answer
 
