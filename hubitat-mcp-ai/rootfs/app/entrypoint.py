@@ -22,6 +22,7 @@ from control_confirmation import install_control_confirmation
 from control_language import install_control_language
 from conversation_context_safe import install_safe_conversation_context
 from dashboard_api import install_dashboard_api
+from device_health_fast_route import install_device_health_fast_route
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_duplicate_safe import DuplicateAwareCapabilityCatalogueDeviceIndex
@@ -45,8 +46,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.5.5"
-RELEASE_VERSION = "0.5.6"
+PREVIOUS_RELEASE_VERSION = "0.5.6"
+RELEASE_VERSION = "0.5.7"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -210,6 +211,7 @@ semantic_read_intents = install_semantic_read_pipeline(
     timeout_seconds=float(application.OPTIONS.get("semantic_intent_timeout_seconds") or 5),
     cache_ttl_seconds=float(application.OPTIONS.get("semantic_intent_cache_seconds") or 300),
 )
+install_device_health_fast_route(application)
 request_traces = install_request_tracing(
     application,
     application.mcp,
