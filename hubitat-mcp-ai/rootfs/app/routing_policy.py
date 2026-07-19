@@ -48,6 +48,10 @@ _COMPLEX_CONTROL_TERMS = (
     " before ",
 )
 
+_UNSAFE_MULTI_CONTROL_TERMS = tuple(
+    term for term in _COMPLEX_CONTROL_TERMS if term != " and "
+)
+
 _PLANNER_TERMS = (
     "why ",
     "explain",
@@ -110,11 +114,9 @@ _FAST_READ_PATTERNS = (
     r"^(?:what(?:'s| is)\s+)?(?:the\s+)?weather(?:\s+(?:now|today|tomorrow))?\??$",
     r"^(?:what(?:'s| is)\s+)?(?:the\s+)?forecast(?:\s+(?:today|tomorrow))?\??$",
     r"^(?:will\s+it\s+rain|is\s+it\s+raining)(?:\s+(?:now|today|tomorrow))?\??$",
-    # Prayer times come from the selected Pray times device, not Ollama.
     r"^(?:what\s+time\s+(?:is|does)|when\s+(?:is|does)|tell\s+me\s+(?:the\s+)?)\s*(?:fajr|fajar|sunrise|shuruq|ishraq|dhuhr|dhur|zuhr|zohar|asr|maghrib|magrib|isha|ishaa)(?:\s+(?:start|begin|starts|begins))?(?:\s+(?:today|tonight))?\??$",
     r"^(?:fajr|fajar|sunrise|shuruq|ishraq|dhuhr|dhur|zuhr|zohar|asr|maghrib|magrib|isha|ishaa)(?:\s+prayer)?\s+time(?:\s+(?:today|tonight))?\??$",
     r"^(?:show|list|display|give\s+me|what\s+are|what(?:'s|\s+is))\s+(?:today(?:'s)?\s+)?(?:pray|prayer)\s+times(?:\s+today)?\??$",
-    # Device-class inventories must not be interpreted as one device name.
     rf"^(?:show|list|find|get|display)\s+(?:me\s+)?(?:(?:all|every|the)\s+)?{_DEVICE_TYPE_PHRASE}\??$",
     rf"^(?:what|which)\s+{_DEVICE_TYPE_PHRASE}\s+(?:devices?\s+)?(?:do\s+i\s+have|are\s+(?:there|available|selected|configured))\??$",
     r"^(?:list|show)\s+(?:all\s+)?devices\??$",
@@ -128,7 +130,6 @@ _FAST_READ_PATTERNS = (
     r"^(?:check\s+)?(?:the\s+)?hub\s+(?:health(?: status)?|status)\??$",
     r"^(?:list|show|what are)\s+(?:my\s+)?(?:hubitat\s+)?rooms\??$",
     r"^(?:list|show)\s+(?:my\s+)?(?:active\s+)?(?:automation\s+)?rules\??$",
-    # High-value read-only tools hidden behind Kingpanther category gateways.
     r"^(?:show|get|list|find)?\s*(?:recent\s+)?hub\s+(?:logs?|errors?|warnings?)(?:\s+and\s+(?:logs?|errors?|warnings?))?\??$",
     r"^(?:show|list|get|find)\s+(?:the\s+)?(?:slow|busy)\s+(?:apps?|devices?)\??$",
     r"^(?:show|list|get)\s+(?:the\s+)?(?:hub\s+)?performance(?:\s+stats?)?\??$",
@@ -141,9 +142,6 @@ _FAST_READ_PATTERNS = (
     r"^(?:show|get)\s+(?:the\s+)?(?:z-wave|zwave|zigbee|matter|radio)\s+details?\??$",
     r"^(?:show|list|get|find)\s+(?:the\s+)?(?:recent\s+)?events\s+(?:for|from|of)\s+.+?\??$",
     r"^(?:show|list|get)\s+.+?\s+events\??$",
-    # Exact room inventories. The fallback verifies the requested name against
-    # Hubitat rooms before returning devices, so ordinary phrases are not treated
-    # as room names. "Find devices listed under Apps" is accepted as well.
     r"^(?:list|show|display|find)\s+(?:all\s+)?devices\s+(?:listed\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
     r"^(?:what|which)\s+devices\s+(?:are\s+)?(?:listed\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?.+?(?:\s+room)?\??$",
     r"^(?:list|show|display)\s+(?:the\s+)?[a-z0-9][a-z0-9 &'_\-]{0,50}(?:\s+room(?:\s+devices)?)?\??$",
@@ -158,21 +156,36 @@ def _contextual_control_target(target: str) -> bool:
     words = set(re.findall(r"[a-z0-9]+", target))
     if words & _CONTEXTUAL_TARGET_WORDS:
         return True
-    # "one" is often a spoken number in a real device label (Bedroom One Light).
-    # Treat it as contextual only when it is being used as a pronoun, such as
-    # "turn off the one in the bedroom".
     return bool(_CONTEXTUAL_ONE.match(target))
 
 
-def classify_query(query: str) -> RouteDecision:
-    """Choose deterministic MCP, verified natural AI, or full AI planning.
+def _explicit_multi_control_targets(target: str) -> list[str] | None:
+    """Recognise only safe explicit named conjunctions for deterministic control."""
 
-    Exact state reads, inventories, simple room comparisons, weather and basic
-    on/off controls are deterministic because MCP already has the authoritative
-    answer. Natural summaries use MCP evidence plus one short model pass. Only
-    requests that genuinely require interpretation or multi-step reasoning use the
-    planner.
-    """
+    padded = f" {normalise(target)} "
+    if not ("," in target or " and " in padded):
+        return None
+    if any(term in padded for term in _UNSAFE_MULTI_CONTROL_TERMS):
+        return None
+
+    parts = [
+        re.sub(r"^(?:the\s+)", "", item.strip(), flags=re.IGNORECASE)
+        for item in re.split(r"\s*(?:,|\band\b)\s*", target, flags=re.IGNORECASE)
+    ]
+    if not 2 <= len(parts) <= 6 or any(not part for part in parts):
+        return None
+    for part in parts:
+        words = set(re.findall(r"[a-z0-9]+", normalise(part)))
+        if not words or len(words) > 8 or words & _CONTEXTUAL_TARGET_WORDS:
+            return None
+        if _CONTEXTUAL_ONE.match(normalise(part)):
+            return None
+    return parts
+
+
+def classify_query(query: str) -> RouteDecision:
+    """Choose deterministic MCP, verified natural AI, or full AI planning."""
+
     q = normalise(query)
     if not q:
         return RouteDecision("ollama-verified", "empty-or-routine")
@@ -182,6 +195,12 @@ def classify_query(query: str) -> RouteDecision:
         target = normalise(control.group(2)).strip(" .!?")
         words = set(re.findall(r"[a-z0-9]+", target))
         contextual = _contextual_control_target(target)
+        explicit_targets = _explicit_multi_control_targets(target)
+        if explicit_targets is not None:
+            return RouteDecision(
+                "mcp-fast",
+                "multiple explicit on/off targets; exact-match all and verify states deterministically",
+            )
         complex_target = any(term in f" {target} " for term in _COMPLEX_CONTROL_TERMS)
         too_long = len(words) > 8
         if target and not contextual and not complex_target and not too_long:
