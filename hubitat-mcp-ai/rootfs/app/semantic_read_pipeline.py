@@ -60,15 +60,21 @@ def install_semantic_read_pipeline(
             fallback["semantic_classifier"] = diagnostics
             return fallback
 
+        model = diagnostics.get("ai_model")
         answer.update(
             {
                 "route": "semantic+mcp",
                 "semantic_intent": intent.response_dict(),
                 "semantic_classifier": diagnostics,
-                "intent_model": diagnostics.get("ai_model"),
+                "intent_model": model,
                 "answered_by": "Local AI intent + deterministic Hubitat MCP",
             }
         )
+        if model:
+            # Reuse the existing model/provider badges and request-trace field while
+            # making clear that this model classified the intent, not the live values.
+            answer["model"] = model
+            answer["ai_provider"] = "Local Ollama intent classifier"
         return answer
 
     application.ask = semantic_ask
