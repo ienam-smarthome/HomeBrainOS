@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.28-alpha
+
+- Fixes the result Copy button on direct `http://` access and Home Assistant ingress by running the legacy clipboard command synchronously inside the user tap.
+- Uses the secure Clipboard API only when available and falls back to a visible, preselected full-result text box instead of failing silently.
+- Copies the result title, answer and Technical details together, with clear `Copied`, `Text selected` or failure feedback.
+- Accepts Hubitat's authoritative recent `lastBackupEpoch` when the backup-list gateway omits or misorders a newly created local backup.
+- Checks filename evidence first, then `hub_get_info`, and only then considers another confirmed backup request.
+
 ## 0.4.27-alpha
 
 - Recognises current Hubitat whole-hub manual backup filenames such as `Hub_C8_Pro_2026-07-19~2.5.1.131~manual.lzf`.
