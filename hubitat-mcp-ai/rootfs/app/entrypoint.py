@@ -36,8 +36,8 @@ from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.23-alpha"
-RELEASE_VERSION = "0.4.24-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.24-alpha"
+RELEASE_VERSION = "0.4.25-alpha"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
