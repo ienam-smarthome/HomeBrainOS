@@ -76,6 +76,25 @@ _LEVEL_RE = re.compile(
     r"^(?:please\s+)?(?:set|dim|make)\s+(?:the\s+)?(.+?)\s+(?:to\s+)?(\d{1,3})\s*(?:%|percent)?[.!?]*$",
     re.IGNORECASE,
 )
+_COMPLEX_TARGET_WORDS = {
+    "all",
+    "every",
+    "except",
+    "other",
+    "both",
+    "them",
+    "it",
+    "that",
+    "those",
+    "these",
+    "same",
+    "back",
+    "first",
+    "second",
+    "third",
+    "fourth",
+    "fifth",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,21 +216,30 @@ class ControlIntentInterpreter:
     def _deterministic_intent(query: str) -> ControlIntent | None:
         basic = canonicalise_basic_control(query)
         if basic is not None:
-            return ControlIntent(
-                intent="device_control",
-                actions=(
-                    ControlActionIntent(
-                        command=basic.action,
-                        value=None,
-                        target=ControlTargetIntent(name_hint=basic.target),
+            words = set(re.findall(r"[a-z0-9]+", basic.target.lower()))
+            if not words.intersection(_COMPLEX_TARGET_WORDS) and not any(
+                term in f" {basic.target.lower()} "
+                for term in (" if ", " unless ", " when ", " before ", " after ")
+            ):
+                return ControlIntent(
+                    intent="device_control",
+                    actions=(
+                        ControlActionIntent(
+                            command=basic.action,
+                            value=None,
+                            target=ControlTargetIntent(name_hint=basic.target),
+                        ),
                     ),
-                ),
-                confidence=1.0,
-                interpreter="deterministic-control-parser",
-            )
+                    confidence=1.0,
+                    interpreter="deterministic-control-parser",
+                )
 
         match = _LEVEL_RE.match(str(query or "").strip())
         if not match:
+            return None
+        target = match.group(1).strip()
+        words = set(re.findall(r"[a-z0-9]+", target.lower()))
+        if words.intersection(_COMPLEX_TARGET_WORDS):
             return None
         value = max(0.0, min(100.0, float(match.group(2))))
         return ControlIntent(
@@ -220,7 +248,7 @@ class ControlIntentInterpreter:
                 ControlActionIntent(
                     command="set_level",
                     value=value,
-                    target=ControlTargetIntent(name_hint=match.group(1).strip()),
+                    target=ControlTargetIntent(name_hint=target),
                 ),
             ),
             confidence=0.98,
@@ -266,7 +294,8 @@ class ControlIntentInterpreter:
             "one, other for the other one, and both for both/them when conversation context supports it. "
             "Use quantifier all for room/group controls and put exception names in exclusions. Return "
             "unsupported for conditions, schedules, rule creation, locks, alarms, doors, heating changes, "
-            "or anything outside these commands. Return JSON only."
+            "or anything outside these commands. Interpret lounge as Living Room when that room exists. "
+            "Return JSON only."
         )
         user = (
             f"Selected device inventory (label | room | inferred types):\n{inventory_text}\n\n"
