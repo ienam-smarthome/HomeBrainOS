@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.23-alpha
+
+- Verifies existing whole-hub local backups through `hub_list_backups(scope='hub_local')` before requiring a new backup.
+- Accepts a verifiable local backup from the last 24 hours, matching the MCP server's destructive-write safety requirement.
+- Corrects the backup-tool model: `hub_create_backup` is a separate flat core tool, while `hub_manage_backup` only lists, restores and deletes backups.
+- When no recent backup exists and the core create tool is absent, points directly to MCP Rule Server > Settings > Advanced: Per-tool Overrides and `Reset all overrides`.
+- Keeps all native Rule Machine writes blocked until backup preflight succeeds.
+
 ## 0.4.22-alpha
 
 - Recovers `hub_create_backup` when the MCP server hides it inside a generic management gateway whose compact description does not enumerate every child tool.
