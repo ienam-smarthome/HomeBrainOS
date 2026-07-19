@@ -39,10 +39,10 @@ class WriteSafeBackupWashingRuleMachineWorkflow(
 ):
     """Keep native Rule Machine HTTP errors inside structured HomeBrain results.
 
-    MCP Rule Server can expose native writes directly or through a category
-    gateway. A transient/stale route can return HTTP 500 before the tool result is
-    encoded. All create/update calls carry stable operation tokens, so retrying
-    the same arguments through the alternate advertised route is idempotent.
+    MCP Rule Server can expose native writes directly or through either native-RM
+    category gateway. All create/update calls carry stable operation tokens, so the
+    same arguments can be retried through another advertised route without creating
+    a second mutation.
     """
 
     async def _call_rule_tool(self, tool: Any, arguments: dict[str, Any]):
@@ -79,17 +79,24 @@ class WriteSafeBackupWashingRuleMachineWorkflow(
             )
 
         alternatives: list[tuple[str, dict[str, Any]]] = []
-        if primary_gateway:
-            if name in visible_names:
-                alternatives.append((name, dict(arguments)))
-        else:
-            for gateway in _RULE_GATEWAY_NAMES:
-                if gateway in visible_names:
-                    alternatives.append(
-                        (gateway, {"tool": name, "args": dict(arguments)})
-                    )
+        if primary_gateway and name in visible_names:
+            alternatives.append((name, dict(arguments)))
+        for gateway in _RULE_GATEWAY_NAMES:
+            if gateway in visible_names and gateway != primary_gateway:
+                alternatives.append(
+                    (gateway, {"tool": name, "args": dict(arguments)})
+                )
 
+        seen: set[tuple[str, str]] = set()
+        deduped: list[tuple[str, dict[str, Any]]] = []
         for request_name, request_args in alternatives:
+            signature = (request_name, repr(request_args))
+            if signature in seen:
+                continue
+            seen.add(signature)
+            deduped.append((request_name, request_args))
+
+        for request_name, request_args in deduped:
             try:
                 result = await self.client.call_tool(request_name, request_args)
                 result.raw.setdefault(
@@ -123,7 +130,7 @@ class WriteSafeBackupWashingRuleMachineWorkflow(
             "exceptionType": attempts[-1]["exception_type"] if attempts else "MCPError",
             "writeTool": name,
             "primaryGateway": primary_gateway,
-            "alternateRouteAttempted": len(alternatives) > 0,
+            "alternateRouteAttempted": len(deduped) > 0,
             "attempts": attempts,
             "arguments": _redacted(dict(arguments)),
         }
