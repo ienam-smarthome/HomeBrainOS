@@ -33,7 +33,8 @@ class ConfirmedBackupClient:
     configured = True
     server_info: dict[str, Any] = {}
 
-    def __init__(self) -> None:
+    def __init__(self, *, backup_mode: str = "complete") -> None:
+        self.backup_mode = backup_mode
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def list_tools(self, refresh: bool = False):
@@ -99,6 +100,9 @@ class ConfirmedBackupClient:
                 "confirm": True,
                 "bestPracticeKey": "BP-CONFIRM-2401",
             }
+            if self.backup_mode == "timeout":
+                # httpx.ReadTimeout commonly has an empty string representation.
+                raise TimeoutError()
             return result(
                 name,
                 {
@@ -110,9 +114,9 @@ class ConfirmedBackupClient:
         raise AssertionError(f"Unexpected call {name}: {args}")
 
 
-def workflow():
-    client = ConfirmedBackupClient()
-    app = SimpleNamespace(mcp=client, VERSION="0.4.24-alpha")
+def workflow(*, backup_mode: str = "complete"):
+    client = ConfirmedBackupClient(backup_mode=backup_mode)
+    app = SimpleNamespace(mcp=client, VERSION="0.4.25-alpha")
     return ConfirmedBackupWashingRuleMachineWorkflow(app, object()), client
 
 
@@ -145,10 +149,57 @@ def test_backup_preflight_reads_fallback_guide_and_sends_confirm_true():
     ) in client.calls
 
 
-def test_release_metadata_is_0424():
+def test_blank_timeout_is_verified_by_polling_before_rule_writes():
+    service, client = workflow(backup_mode="timeout")
+
+    async def verified_poll(delays):
+        assert delays == (2.0, 4.0, 6.0)
+        return True, [
+            {
+                "checked": True,
+                "recent": True,
+                "candidate_count": 1,
+                "newest": {"name": "HomeBrain-2026-07-19.lzf", "age_ms": 4000},
+            }
+        ]
+
+    service._poll_recent_backup = verified_poll
+    ok, details = asyncio.run(service._ensure_backup("BP-CONFIRM-2401"))
+
+    assert ok is True
+    assert details["created"] is True
+    assert details["recent"] is True
+    assert details["verified_by"] == "hub_list_backups_after_create"
+    assert details["exception_type"] == "TimeoutError"
+    assert details["timeout_or_async_response"] is True
+    assert len([call for call in client.calls if call[0] == "hub_create_backup"]) == 1
+
+
+def test_pending_timeout_does_not_launch_duplicate_backup_immediately():
+    service, client = workflow(backup_mode="timeout")
+
+    async def not_verified(delays):
+        return False, [{"checked": True, "recent": False, "candidate_count": 0}]
+
+    service._poll_recent_backup = not_verified
+
+    first_ok, first = asyncio.run(service._ensure_backup("BP-CONFIRM-2401"))
+    second_ok, second = asyncio.run(service._ensure_backup("BP-CONFIRM-2401"))
+
+    assert first_ok is False
+    assert first["pending"] is True
+    assert first["exception_type"] == "TimeoutError"
+    assert "25-second MCP timeout" in first["error"]
+    assert second_ok is False
+    assert second["pending"] is True
+    assert "may still be running" in second["error"]
+    assert len([call for call in client.calls if call[0] == "hub_create_backup"]) == 1
+
+
+def test_release_metadata_is_0425():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.24-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.24-alpha"' in entrypoint
+    assert "version: '0.4.25-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.25-alpha"' in entrypoint
     assert "install_confirmed_backup_rule_machine_workflow" in entrypoint
