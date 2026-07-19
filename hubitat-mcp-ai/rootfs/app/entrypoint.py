@@ -22,6 +22,7 @@ from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_duplicate_safe import DuplicateAwareCapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
+from device_refresh_webui import install_device_refresh_webui
 from fast_fallback_multi_control import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
@@ -38,8 +39,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.35-alpha"
-RELEASE_VERSION = "0.4.36"
+PREVIOUS_RELEASE_VERSION = "0.4.36"
+RELEASE_VERSION = "0.4.37"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -197,6 +198,7 @@ async def _invalidate_dashboard(category: str) -> None:
 
 
 application.mcp.register_invalidator(_invalidate_dashboard)
+install_device_refresh_webui(device_intelligence_webui_module)
 install_device_intelligence_api(application, device_index)
 install_mcp_tool_catalogue(application, application.mcp)
 request_registry = install_cancellable_ask(application)
