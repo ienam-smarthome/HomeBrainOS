@@ -116,7 +116,7 @@ class HubInfoFallbackClient(OldestFirstBackupClient):
 
 def workflow(client: Any | None = None):
     client = client or OldestFirstBackupClient()
-    app = SimpleNamespace(mcp=client, VERSION="0.4.28-alpha")
+    app = SimpleNamespace(mcp=client, VERSION="0.4.29-alpha")
     return FilenameSafeBackupWashingRuleMachineWorkflow(app, object()), client
 
 
@@ -164,11 +164,12 @@ def test_recent_last_backup_epoch_is_accepted_when_list_omits_new_file():
     ]
 
 
-def test_release_metadata_is_0428():
+def test_release_metadata_is_0429():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.28-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.28-alpha"' in entrypoint
-    assert "install_filename_safe_backup_rule_machine_workflow" in entrypoint
+    assert "version: '0.4.29-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.29-alpha"' in entrypoint
+    assert "install_write_safe_backup_rule_machine_workflow" in entrypoint
     assert "install_clipboard_safe_webui" in entrypoint
+    assert "install_http_safe_webui" in entrypoint
