@@ -1,6 +1,6 @@
 name: Hubitat MCP AI
-# Previous version: '0.4.32-alpha'
-version: '0.4.33-alpha'
+# Previous version: '0.4.33-alpha'
+version: '0.4.34-alpha'
 slug: hubitat_mcp_ai
 description: Hybrid Ollama assistant with unique suffix-safe verified device controls and guarded native Rule Machine repair
 url: https://github.com/ienam-smarthome/HomeBrainOS
