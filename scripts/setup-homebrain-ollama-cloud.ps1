@@ -91,4 +91,4 @@ Write-Host ''
 Write-Host 'Hybrid AI is ready:' -ForegroundColor Green
 Write-Host "  Cloud answers/explanations: $cloudModel"
 Write-Host "  Local Control Agent/planner/read intent/fallback: $localModel"
-Write-Host 'Update and restart Hubitat MCP AI 0.5.0.'
+Write-Host 'Update and restart Hubitat MCP AI 0.5.1.'
