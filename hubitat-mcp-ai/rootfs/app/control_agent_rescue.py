@@ -4,9 +4,10 @@ import asyncio
 from typing import Any
 
 from control_agent import AskHandler, ControlPlan
+from control_agent_capability_filter import exact_non_control_matches, non_control_public
 from control_agent_intent import is_control_candidate
 from control_agent_level_verified import FastVerifiedControlAgent
-from presenter import safe_debug
+from presenter import display_payload, safe_debug
 
 
 class RescueControlAgent(FastVerifiedControlAgent):
@@ -67,6 +68,14 @@ class RescueControlAgent(FastVerifiedControlAgent):
             graph,
             context.graph_context(),
         )
+
+        # A selected read-only sensor is not an ambiguous actuator. Check exact
+        # names before fuzzy clarification or local AI rescue so HomeBrain never
+        # substitutes nearby lights for a known Lux, motion or presence sensor.
+        non_control = self._exact_non_control_targets(plan, graph)
+        if non_control:
+            return self._non_control_response(plan, non_control)
+
         rescue: dict[str, Any] | None = None
         unresolved = [item for item in plan.actions if not item.nodes]
         if unresolved and not intent.model:
@@ -92,6 +101,102 @@ class RescueControlAgent(FastVerifiedControlAgent):
             return self._decorate_rescue(self._confirmation_response(plan, policy), rescue)
         answer = await self._execute_plan(session_id, plan, confirmed=False)
         return self._decorate_rescue(answer, rescue)
+
+    @staticmethod
+    def _exact_non_control_targets(plan: ControlPlan, graph: Any) -> list[dict[str, Any]]:
+        blocked: list[dict[str, Any]] = []
+        for index, action in enumerate(plan.actions):
+            if action.nodes:
+                continue
+            requested = str(action.intent.target.name_hint or "").strip()
+            if not requested:
+                continue
+            for raw in exact_non_control_matches(graph, requested):
+                blocked.append(
+                    {
+                        "action_index": index,
+                        "command": action.intent.command,
+                        "value": action.intent.value,
+                        "requested_name": requested,
+                        "device": non_control_public(raw),
+                    }
+                )
+        return blocked
+
+    @classmethod
+    def _non_control_response(
+        cls,
+        plan: ControlPlan,
+        blocked: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        lines: list[str] = []
+        items: list[dict[str, Any]] = []
+        for item in blocked:
+            device = item["device"]
+            label = str(device.get("label") or item.get("requested_name") or "This device")
+            kind = str(device.get("kind") or "read-only selected device")
+            article = "an" if kind[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
+            action = cls._blocked_action_text(str(item.get("command") or ""), item.get("value"))
+            lines.append(f"{label} is {article} {kind} and cannot be {action}.")
+            items.append(
+                {
+                    "icon": "📡",
+                    "title": label,
+                    "value": "Read-only",
+                    "subtitle": str(device.get("room") or kind),
+                    "tone": "warning",
+                }
+            )
+
+        message = "\n".join(lines)
+        message += "\nHomeBrain matched the exact selected device and did not substitute a different actuator."
+        return {
+            "success": False,
+            "route": "control-agent",
+            "intent": "control-agent-device-not-controllable",
+            "message": message,
+            "confirmation_required": False,
+            "alternatives": [],
+            "display": display_payload(
+                "control-agent-not-controllable",
+                "Device is not controllable",
+                subtitle="No command has been sent",
+                metrics=[
+                    {"label": "Matched", "value": str(len(blocked)), "icon": "🎯"},
+                    {"label": "Control", "value": "Unavailable", "icon": "🚫"},
+                ],
+                items=items,
+                note=(
+                    "The exact selected device is read-only and does not expose switch or level "
+                    "control. No nearby device was offered or changed."
+                ),
+            ),
+            "technical": safe_debug(
+                {
+                    "plan": plan.public_dict(),
+                    "exact_non_controllable_targets": blocked,
+                    "ai_rescue_attempted": False,
+                }
+            ),
+            "control_intent": plan.intent.response_dict(),
+            "answered_by": "Deterministic Control Agent capability guard",
+            "model": None,
+        }
+
+    @staticmethod
+    def _blocked_action_text(command: str, value: Any) -> str:
+        if command == "on":
+            return "turned on"
+        if command == "off":
+            return "turned off"
+        if command == "set_level":
+            try:
+                number = float(value)
+                shown = str(int(number)) if number.is_integer() else f"{number:g}"
+            except Exception:
+                shown = str(value or "the requested level")
+            return f"set to {shown}%"
+        return "controlled"
 
     async def _attempt_ai_rescue(
         self,
