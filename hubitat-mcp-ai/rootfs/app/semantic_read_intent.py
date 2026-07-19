@@ -5,12 +5,10 @@ import json
 import re
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from routing_policy import is_semantic_read_candidate, normalise
 
-
-AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 
 _SUPPORTED_METRICS = {
     "power",
@@ -105,12 +103,28 @@ class SemanticReadIntentClassifier:
         self.cache_ttl_seconds = max(10.0, min(3600.0, float(cache_ttl_seconds)))
         self._cache: dict[str, tuple[float, SemanticReadIntent, dict[str, Any]]] = {}
 
+    @staticmethod
+    def _cache_key(
+        query: str,
+        history: list[dict[str, str]] | None,
+    ) -> str:
+        """Include recent context so identical follow-ups cannot cross topics."""
+
+        parts = [normalise(query)]
+        for item in (history or [])[-4:]:
+            role = str(item.get("role") or "").strip().lower()
+            content = normalise(str(item.get("content") or ""))[:300]
+            if role in {"user", "assistant"} and content:
+                parts.append(f"{role}:{content}")
+        return "\n".join(parts)
+
     async def classify(
         self,
         query: str,
         history: list[dict[str, str]] | None = None,
     ) -> tuple[SemanticReadIntent | None, dict[str, Any]]:
-        key = normalise(query)
+        recent_history = list(history or [])[-4:]
+        key = self._cache_key(query, recent_history)
         cached = self._cache.get(key)
         now = time.monotonic()
         if cached and now - cached[0] <= self.cache_ttl_seconds:
@@ -121,12 +135,13 @@ class SemanticReadIntentClassifier:
         diagnostics: dict[str, Any] = {
             "cache": "miss",
             "classifier": "local-ollama-structured-intent",
+            "context_turns": len(recent_history),
         }
         intent: SemanticReadIntent | None = None
 
         if self.application.option_bool("ollama_enabled", True):
             try:
-                intent, ai_details = await self._classify_with_ai(query, history or [])
+                intent, ai_details = await self._classify_with_ai(query, recent_history)
                 diagnostics.update(ai_details)
             except asyncio.CancelledError:
                 raise
@@ -324,7 +339,7 @@ class SemanticReadIntentClassifier:
             )
         ):
             operation = "min"
-        if any(term in q for term in ("rank", "ranking", "top ", "bottom ", "list")):
+        if any(term in q for term in ("rank", "ranking", "top ", "list")):
             operation = "rank"
 
         top_n = 3
@@ -345,65 +360,7 @@ class SemanticReadIntentClassifier:
         )
 
 
-def install_semantic_read_intent(
-    application: Any,
-    executor: Any,
-    *,
-    timeout_seconds: float = 5.0,
-    cache_ttl_seconds: float = 300.0,
-) -> SemanticReadIntentClassifier:
-    original_ask: AskHandler = application.ask
-    classifier = SemanticReadIntentClassifier(
-        application,
-        timeout_seconds=timeout_seconds,
-        cache_ttl_seconds=cache_ttl_seconds,
-    )
-
-    async def semantic_ask(request: Any) -> dict[str, Any]:
-        query = str(request.query or "").strip()
-        if not application.option_bool("semantic_intent_enabled", True):
-            return await original_ask(request)
-        if not is_semantic_read_candidate(query):
-            return await original_ask(request)
-
-        history = [
-            {
-                "role": str(item.role or ""),
-                "content": str(item.content or ""),
-            }
-            for item in request.history[-4:]
-        ]
-        intent, diagnostics = await classifier.classify(query, history)
-        if intent is None:
-            return await original_ask(request)
-
-        try:
-            answer = dict(await executor.execute(intent, query=query))
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            fallback = dict(await original_ask(request))
-            fallback["semantic_intent_attempted"] = True
-            fallback["semantic_intent_error"] = str(exc).strip() or type(exc).__name__
-            fallback["semantic_classifier"] = diagnostics
-            return fallback
-
-        answer.update(
-            {
-                "route": "semantic+mcp",
-                "semantic_intent": intent.response_dict(),
-                "semantic_classifier": diagnostics,
-                "answered_by": "Local AI intent + deterministic Hubitat MCP",
-            }
-        )
-        return answer
-
-    application.ask = semantic_ask
-    return classifier
-
-
 __all__ = [
     "SemanticReadIntent",
     "SemanticReadIntentClassifier",
-    "install_semantic_read_intent",
 ]
