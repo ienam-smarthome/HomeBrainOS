@@ -23,7 +23,7 @@ from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_duplicate_safe import DuplicateAwareCapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
 from device_refresh_webui import install_device_refresh_webui
-from fast_fallback_multi_control import FastFallbackRouter
+from fast_fallback_power_comparison import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
 from mcp_tool_catalogue import install_mcp_tool_catalogue
@@ -39,8 +39,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.37"
-RELEASE_VERSION = "0.4.38"
+PREVIOUS_RELEASE_VERSION = "0.4.38"
+RELEASE_VERSION = "0.4.39"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
