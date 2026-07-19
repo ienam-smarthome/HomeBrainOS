@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.27-alpha
+
+- Recognises current Hubitat whole-hub manual backup filenames such as `Hub_C8_Pro_2026-07-19~2.5.1.131~manual.lzf`.
+- Requests up to 100 local backup records so a newly created backup cannot be hidden when the MCP server returns older backups first.
+- Treats a local whole-hub filename carrying today's date as verified recent backup evidence without guessing an exact creation time.
+- Separates older dated filenames from genuinely unparseable entries in diagnostics.
+- Reuses the existing timeout-aware backup creation and strict `hub_manage_backup` verification paths.
+
 ## 0.4.26-alpha
 
 - Fixes backup verification being falsely routed through `hub_read_apps_code` when generic gateway catalogue probing encountered the text `hub_list_backups` inside app source or documentation.
