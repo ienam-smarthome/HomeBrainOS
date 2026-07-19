@@ -13,6 +13,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from fast_fallback_multi_control import (  # noqa: E402
     FastFallbackRouter,
+    base_device_label,
     split_explicit_control_targets,
 )
 from mcp_client import MCPToolResult  # noqa: E402
@@ -107,7 +108,86 @@ def test_all_named_targets_are_resolved_before_group_control_runs():
             },
         ),
     ]
-    assert "exact-matched" in answer["display"]["note"]
+    assert "uniquely matched" in answer["display"]["note"]
+
+
+def test_unique_parenthetical_suffix_is_safe_alias_for_selected_device():
+    service = object.__new__(FastFallbackRouter)
+    devices = [
+        {
+            "id": "7101",
+            "label": "Fan Switch (Tuya Local)",
+            "currentStates": {"switch": "off"},
+        },
+        {"id": "7397", "label": "Fan Boost", "currentStates": {"switch": "off"}},
+    ]
+    selected_ids: list[str] = []
+
+    async def fake_live(self, capability=None):
+        return result({"devices": devices})
+
+    async def fake_group(self, requested_name, action, selected, initial_result):
+        selected_ids.extend(str(item["id"]) for item in selected)
+        return {
+            "success": True,
+            "intent": "fallback-device-group-control-confirmed",
+            "message": "Both confirmed on.",
+            "display": {},
+        }
+
+    service._live_devices = MethodType(fake_live, service)
+    service._device_rows = MethodType(lambda self, value: list(value["devices"]), service)
+    service._control_group = MethodType(fake_group, service)
+
+    answer = asyncio.run(service._control_device("fan switch and fan boost", "on"))
+
+    assert base_device_label("Fan Switch (Tuya Local)") == "fan switch"
+    assert answer["success"] is True
+    assert selected_ids == ["7101", "7397"]
+    assert answer["resolution_details"] == [
+        {
+            "target": "fan switch",
+            "id": "7101",
+            "label": "Fan Switch (Tuya Local)",
+            "match_method": "unique-base-label",
+        },
+        {
+            "target": "fan boost",
+            "id": "7397",
+            "label": "Fan Boost",
+            "match_method": "exact-label",
+        },
+    ]
+
+
+def test_duplicate_base_labels_remain_blocked_and_send_no_commands():
+    service = object.__new__(FastFallbackRouter)
+    devices = [
+        {"id": 101, "label": "Fan Switch (Tuya Local)", "currentStates": {"switch": "off"}},
+        {"id": 102, "label": "Fan Switch (Zigbee)", "currentStates": {"switch": "off"}},
+        {"id": 103, "label": "Fan Boost", "currentStates": {"switch": "off"}},
+    ]
+    group_calls = 0
+
+    async def fake_live(self, capability=None):
+        return result({"devices": devices})
+
+    async def forbidden_group(self, requested_name, action, selected, initial_result):
+        nonlocal group_calls
+        group_calls += 1
+        raise AssertionError("No device command should be sent")
+
+    service._live_devices = MethodType(fake_live, service)
+    service._device_rows = MethodType(lambda self, value: list(value["devices"]), service)
+    service._control_group = MethodType(forbidden_group, service)
+
+    answer = asyncio.run(service._control_device("fan switch and fan boost", "on"))
+
+    assert answer["success"] is False
+    assert group_calls == 0
+    assert "matches more than one" in answer["message"]
+    assert "Fan Switch (Tuya Local)" in answer["message"]
+    assert "Fan Switch (Zigbee)" in answer["message"]
 
 
 def test_unresolved_second_target_sends_no_commands():
@@ -144,7 +224,7 @@ def test_release_uses_multi_control_router():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.32-alpha'" in config
-    assert 'PREVIOUS_RELEASE_VERSION = "0.4.31-alpha"' in entrypoint
-    assert 'RELEASE_VERSION = "0.4.32-alpha"' in entrypoint
+    assert "version: '0.4.33-alpha'" in config
+    assert 'PREVIOUS_RELEASE_VERSION = "0.4.32-alpha"' in entrypoint
+    assert 'RELEASE_VERSION = "0.4.33-alpha"' in entrypoint
     assert "from fast_fallback_multi_control import FastFallbackRouter" in entrypoint
