@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.25-alpha
+
+- Detects the blank timeout exception produced when whole-hub backup creation exceeds the normal 25-second MCP request timeout.
+- Polls `hub_list_backups` after a timed-out or explicitly in-progress backup call and proceeds only when a recent backup is verified.
+- Records the exception type and post-create verification checks so an empty error string can no longer hide the cause.
+- Remembers that a confirmed backup may still be running and prevents repeated Create presses from launching duplicate backups for two minutes.
+- Keeps every Rule Machine write blocked until backup completion is verified.
+
 ## 0.4.24-alpha
 
 - Fixes the native Rule Machine backup preflight to call `hub_create_backup` with the MCP-required `confirm=true` after the user explicitly presses Create.
@@ -53,7 +61,7 @@
 ## 0.4.18-alpha
 
 - Recovers automatically when the MCP server changes between consolidated category gateways and the flat tool catalogue.
-- Detects the server's explicit `useGateways is OFF` response, refreshes `tools/list`, clears the stale gateway map, and retries the original underlying tool directly.
+- Detects the server's explicit `useGateways is OFF` response, refreshes `tools/list`, clears the stale gateway map, and retries the originally requested tool directly.
 - Prevents a gateway-mode change from breaking live device reads until the HomeBrain add-on is restarted.
 
 ## 0.4.17-alpha
