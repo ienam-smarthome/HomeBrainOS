@@ -36,8 +36,8 @@ class CatalogueOnlyBackupClient:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def list_tools(self, refresh: bool = False):
-        # The description intentionally omits hub_create_backup, reproducing the
-        # gateway-map gap seen on compact MCP server catalogues.
+        # Legacy compatibility fixture: a compact gateway catalogue contains the
+        # create tool even though the visible description does not enumerate it.
         return [
             MCPTool(
                 "hub_manage_system",
@@ -93,7 +93,7 @@ class CatalogueOnlyBackupClient:
 
 def workflow():
     client = CatalogueOnlyBackupClient()
-    app = SimpleNamespace(mcp=client, VERSION="0.4.22-alpha")
+    app = SimpleNamespace(mcp=client, VERSION="0.4.23-alpha")
     return FinalWashingRuleMachineWorkflow(app, object()), client
 
 
@@ -126,10 +126,10 @@ def test_backup_preflight_invokes_catalogue_only_tool_through_gateway():
     assert invocation["args"]["bestPracticeKey"] == "BP-BACKUP-1234"
 
 
-def test_release_metadata_is_0422():
+def test_release_metadata_is_0423():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.22-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.22-alpha"' in entrypoint
+    assert "version: '0.4.23-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.23-alpha"' in entrypoint
     assert "install_final_washing_rule_machine_workflow" in entrypoint
