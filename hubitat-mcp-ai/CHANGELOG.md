@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.5.8
+
+- Fixes explicit Hubitat `healthStatus: offline` values being missed when the separate MCP `Health Check` capability query returned no usable rows.
+- Reads detailed live states for every selected device and treats `healthStatus` as authoritative, even when the device also reports a benign general `Status` such as `clear`.
+- Restores live `currentStates`, detailed attributes and capabilities when the MCP stale filter omits them.
+- Correctly reports devices such as Roborock Q7 Max, Tuya button remotes and HealthCheck outlets as offline when their Hubitat device pages show `healthStatus: offline`.
+- Keeps `lastActivity` age separate so quiet FP sensors and unchanged switches are not called offline without a negative live health state.
+- Removes the dependency on the exact `Health Check` versus `HealthCheck` capability spelling.
+
 ## 0.5.7
 
 - Fixes false stale-device warnings caused by treating Hubitat `lastActivity` age as proof that a device is offline or malfunctioning.
