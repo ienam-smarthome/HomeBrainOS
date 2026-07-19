@@ -165,7 +165,7 @@ def test_release_installs_health_verified_repair_workflow():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.33-alpha'" in config
-    assert 'PREVIOUS_RELEASE_VERSION = "0.4.32-alpha"' in entrypoint
-    assert 'RELEASE_VERSION = "0.4.33-alpha"' in entrypoint
+    assert "version: '0.4.34-alpha'" in config
+    assert 'PREVIOUS_RELEASE_VERSION = "0.4.33-alpha"' in entrypoint
+    assert 'RELEASE_VERSION = "0.4.34-alpha"' in entrypoint
     assert "install_repair_id_safe_rule_machine_workflow" in entrypoint
