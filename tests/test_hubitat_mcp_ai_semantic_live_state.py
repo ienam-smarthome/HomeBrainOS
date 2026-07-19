@@ -16,6 +16,7 @@ from semantic_metric_comparison_live import (  # noqa: E402
     SemanticMetricComparisonExecutor,
 )
 from semantic_read_intent import SemanticReadIntent  # noqa: E402
+from semantic_read_pipeline import install_semantic_read_pipeline  # noqa: E402
 
 
 def result(data: Any, *, error: bool = False, text: str = "") -> MCPToolResult:
@@ -45,31 +46,6 @@ class LiveStateClient:
         capability = args.get("capabilityFilter")
         detailed = bool(args.get("detailed"))
 
-        if capability == "Power Meter" and detailed:
-            # Real MCP variants can return the attribute definition without its
-            # current value in detailed mode.
-            return result(
-                {
-                    "devices": [
-                        {
-                            "id": "1",
-                            "label": "Fridge",
-                            "room": "Appliances",
-                            "attributes": [
-                                {"name": "power", "dataType": "NUMBER", "unit": "W"}
-                            ],
-                        },
-                        {
-                            "id": "2",
-                            "label": "Computer",
-                            "room": "Multimedia",
-                            "attributes": [
-                                {"name": "power", "dataType": "NUMBER", "unit": "W"}
-                            ],
-                        },
-                    ]
-                }
-            )
         if capability == "Power Meter" and not detailed:
             return result(
                 {
@@ -89,6 +65,8 @@ class LiveStateClient:
                     ]
                 }
             )
+        if capability == "Power Meter" and detailed:
+            raise AssertionError("Detailed mode must not precede a valid compact live read")
         raise AssertionError(args)
 
 
@@ -99,7 +77,7 @@ class CompactCapabilityClient(LiveStateClient):
         self.calls.append(args)
         capability = args.get("capabilityFilter")
         detailed = bool(args.get("detailed"))
-        if capability == "Power Meter":
+        if capability == "Power Meter" and not detailed:
             return result({"devices": []})
         if capability == "PowerMeter" and not detailed:
             return result(
@@ -110,6 +88,31 @@ class CompactCapabilityClient(LiveStateClient):
                             "label": "Tasmota Freezer",
                             "room": "Appliances",
                             "currentStates": {"power": 72},
+                        }
+                    ]
+                }
+            )
+        raise AssertionError(args)
+
+
+class RejectedShapeThenAliasClient(CompactCapabilityClient):
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None):
+        assert name == "hub_list_devices"
+        args = dict(arguments or {})
+        self.calls.append(args)
+        capability = args.get("capabilityFilter")
+        detailed = bool(args.get("detailed"))
+        if capability == "Power Meter" and not detailed:
+            raise RuntimeError("unsupported capability spelling")
+        if capability == "PowerMeter" and not detailed:
+            return result(
+                {
+                    "devices": [
+                        {
+                            "id": "9",
+                            "label": "Fridge",
+                            "room": "Appliances",
+                            "currentStates": {"power": "89 W"},
                         }
                     ]
                 }
@@ -181,7 +184,7 @@ def power_intent() -> SemanticReadIntent:
     )
 
 
-def test_detailed_metadata_is_merged_with_compact_live_current_states():
+def test_compact_live_current_states_are_the_first_and_sufficient_evidence():
     client = LiveStateClient()
     executor = SemanticMetricComparisonExecutor(Router(client))
 
@@ -194,14 +197,18 @@ def test_detailed_metadata_is_merged_with_compact_live_current_states():
     assert answer["ranked_entities"][1]["value"] == 34
     assert "Fridge has the highest current power at 89 W" in answer["message"]
     assert client.invalidations == ["devices"]
-    assert [call.get("detailed") for call in client.calls] == [True, False]
-    assert "currentStates" in client.calls[0]["fields"]
-    assert "attributes" in client.calls[0]["fields"]
-    assert "currentStates" in client.calls[1]["fields"]
-    assert answer["source"]["evidenceSources"] == [
-        "detailed-currentStates+attributes",
-        "summary-currentStates",
+    assert len(client.calls) == 1
+    assert client.calls[0]["detailed"] is False
+    assert client.calls[0]["fields"] == [
+        "id",
+        "name",
+        "label",
+        "room",
+        "currentStates",
+        "disabled",
+        "lastActivity",
     ]
+    assert answer["source"]["evidenceSources"] == ["summary-currentStates"]
 
 
 def test_no_space_capability_alias_recovers_custom_power_meter_driver():
@@ -215,6 +222,20 @@ def test_no_space_capability_alias_recovers_custom_power_meter_driver():
     assert answer["ranked_entities"][0]["value"] == 72
     assert [call.get("capabilityFilter") for call in client.calls] == [
         "Power Meter",
+        "PowerMeter",
+    ]
+
+
+def test_one_rejected_request_shape_does_not_abort_the_compatible_alias_read():
+    client = RejectedShapeThenAliasClient()
+    executor = SemanticMetricComparisonExecutor(Router(client))
+
+    answer = asyncio.run(executor.execute(power_intent(), query="which device uses most power"))
+
+    assert answer["success"] is True
+    assert answer["ranked_entities"][0]["value"] == 89
+    assert "unsupported capability spelling" in " ".join(answer["source"]["evidenceErrors"])
+    assert [call.get("capabilityFilter") for call in client.calls] == [
         "Power Meter",
         "PowerMeter",
     ]
@@ -234,7 +255,50 @@ def test_missing_numeric_value_still_returns_unavailable_instead_of_guessing():
     assert "none returned a current numeric current power value" in answer["message"]
 
 
+def test_executor_exception_is_reported_without_calling_cloud_planner():
+    cloud_calls = 0
+
+    async def original_ask(_request: Any) -> dict[str, Any]:
+        nonlocal cloud_calls
+        cloud_calls += 1
+        return {"success": True, "message": "Cloud guessed a result", "route": "ollama+mcp"}
+
+    class FailingExecutor:
+        async def execute(self, _intent: Any, *, query: str = "") -> dict[str, Any]:
+            raise RuntimeError("unsupported detailed field")
+
+    application = SimpleNamespace(
+        ask=original_ask,
+        option_bool=lambda _name, _default=False: True,
+    )
+    classifier = install_semantic_read_pipeline(application, FailingExecutor())
+
+    async def classify(_query: str, _history: Any):
+        return power_intent(), {
+            "ai_success": True,
+            "ai_model": "qwen3.5:4b",
+            "ai_provider": "Local Ollama semantic classifier",
+        }
+
+    classifier.classify = classify
+    request = SimpleNamespace(
+        query="which device is using most power?",
+        history=[],
+    )
+
+    answer = asyncio.run(application.ask(request))
+
+    assert cloud_calls == 0
+    assert answer["success"] is False
+    assert answer["route"] == "semantic+mcp"
+    assert answer["intent"] == "semantic-power-evidence-error"
+    assert answer["semantic_intent_error"] == "unsupported detailed field"
+    assert answer["display"]["metrics"][1]["value"] == "Not used"
+    assert answer["technical"]["cloud_fallback_blocked"] is True
+
+
 def test_release_wires_live_state_semantic_executor():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
     assert "from semantic_metric_comparison_live import SemanticMetricComparisonExecutor" in entrypoint
+    assert 'RELEASE_VERSION = "0.4.41"' in entrypoint
