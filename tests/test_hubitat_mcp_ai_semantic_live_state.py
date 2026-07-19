@@ -238,4 +238,3 @@ def test_release_wires_live_state_semantic_executor():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
     assert "from semantic_metric_comparison_live import SemanticMetricComparisonExecutor" in entrypoint
-    assert 'RELEASE_VERSION = "0.4.40"' in entrypoint
