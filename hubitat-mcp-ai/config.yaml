@@ -1,9 +1,9 @@
-name: Hubitat MCP AI
-# Previous version: '0.4.34-alpha'
-version: '0.4.35-alpha'
+name: "Hubitat MCP AI"
+version: "0.4.36"
 slug: hubitat_mcp_ai
-description: Hybrid Ollama assistant with condition-aware weather icons, suffix-safe verified controls and guarded Rule Machine repair
-url: https://github.com/ienam-smarthome/HomeBrainOS
+description: "Hybrid Ollama assistant with condition-aware weather icons, suffix-safe verified controls and guarded Rule Machine repair"
+url: "https://github.com/ienam-smarthome/HomeBrainOS"
+stage: experimental
 arch:
   - amd64
   - aarch64
@@ -14,12 +14,12 @@ init: false
 ingress: true
 ingress_port: 8788
 panel_icon: mdi:home-assistant
-panel_title: Hubitat MCP AI
+panel_title: "Hubitat MCP AI"
 ports:
   8788/tcp: 8788
 ports_description:
-  8788/tcp: Hubitat MCP AI web interface
-webui: http://[HOST]:[PORT:8788]
+  8788/tcp: "Hubitat MCP AI web interface"
+webui: "http://[HOST]:[PORT:8788]"
 options:
   hubitat_mcp_url: ""
   hubitat_mcp_token: ""
