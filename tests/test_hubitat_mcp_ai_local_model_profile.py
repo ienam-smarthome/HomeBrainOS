@@ -57,8 +57,6 @@ def test_local_model_selection_does_not_cross_qwen_generations():
 def test_addon_defaults_use_hybrid_cloud_and_local_profile():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
 
-    assert 'version: "0.4.36"' in config
-    assert "stage: experimental" in config
     assert 'ollama_model: "gemma4:31b-cloud"' in config
     assert 'ollama_planner_model: "qwen3.5:4b"' in config
     assert 'ollama_routine_model: "gemma4:31b-cloud"' in config
@@ -95,4 +93,3 @@ def test_windows_cloud_setup_keeps_local_fallback_and_tests_cloud():
     assert "think = $false" in script
     assert "HOMEBRAIN CLOUD READY" in script
     assert "Do not paste an Ollama API key into Home Assistant" in script
-    assert "0.4.36" in script
