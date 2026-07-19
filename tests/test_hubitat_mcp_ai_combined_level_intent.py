@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+
+ROOT = Path(__file__).resolve().parents[1]
+APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
+sys.path.insert(0, str(APP_DIR))
+
+from control_agent_combined_level import install_combined_level_intent  # noqa: E402
+from control_agent_intent import ControlIntentInterpreter  # noqa: E402
+
+
+class FakeApplication:
+    ollama = SimpleNamespace()
+
+    @staticmethod
+    def option_bool(_name: str, default: bool = False) -> bool:
+        return default
+
+
+def parse(query: str):
+    install_combined_level_intent()
+    return ControlIntentInterpreter(FakeApplication())._deterministic_intent(query)
+
+
+def test_turn_on_device_to_level_becomes_one_set_level_action():
+    intent = parse("turn on Bedroom 1 Light to 30%")
+
+    assert intent is not None
+    assert intent.model is None
+    assert intent.interpreter == "deterministic-control-parser"
+    assert len(intent.actions) == 1
+    action = intent.actions[0]
+    assert action.command == "set_level"
+    assert action.value == 30
+    assert action.target.name_hint == "Bedroom 1 Light"
+
+
+def test_turn_device_on_at_level_alternate_word_order_is_supported():
+    intent = parse("turn Bedroom 1 Light on at 45 percent")
+
+    assert intent is not None
+    assert intent.actions[0].command == "set_level"
+    assert intent.actions[0].value == 45
+    assert intent.actions[0].target.name_hint == "Bedroom 1 Light"
+
+
+def test_combined_level_does_not_include_percentage_in_device_name():
+    intent = parse("switch on the Bedroom 1 Light to 25%")
+
+    assert intent is not None
+    assert intent.actions[0].target.name_hint == "Bedroom 1 Light"
+    assert "25" not in intent.actions[0].target.name_hint
+
+
+def test_out_of_range_level_is_not_clamped_or_deterministically_executed():
+    assert parse("turn on Bedroom 1 Light to 130%") is None
+    assert parse("set Bedroom 1 Light to 130%") is None
+
+
+def test_contextual_combined_level_still_requires_structured_context():
+    assert parse("turn it on to 30%") is None
+
+
+def test_entrypoint_installs_combined_parser_before_control_agent():
+    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+
+    assert "from control_agent_combined_level import install_combined_level_intent" in entrypoint
+    assert entrypoint.index("install_combined_level_intent()") < entrypoint.index(
+        "control_agent = install_control_agent("
+    )
