@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.31-alpha
+
+- Fixes washing-machine Rule Machine triggers to use the MCP server's exact native capability name `Power meter` instead of the rejected `Power` token.
+- Verifies a Repair button's target directly with `hub_get_rule_health(appId)` and the rendered Rule Machine label, so a generic `hub_list_rules` name such as `Rule-5.1` cannot reject the already-known paused rule ID.
+- Falls back to health-label probing for recent Rule Machine IDs when duplicate discovery returns only generic type names, preventing another same-name shell after an add-on restart.
+- Reasserts `paused=true` before repair writes and keeps the existing short, deterministic trigger/action operation tokens.
+- Repairs the selected existing rule only; older duplicate shells remain paused and untouched.
+
 ## 0.4.30-alpha
 
 - Detects existing Rule Machine rules even when Hubitat renders their labels with HTML and a trailing `(Paused)` marker, preventing repeated Create presses from producing another same-name shell.
