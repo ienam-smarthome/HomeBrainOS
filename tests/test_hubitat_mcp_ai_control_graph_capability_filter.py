@@ -31,13 +31,20 @@ BEDROOM_LIGHT = device("7057", "Bedroom 1 Light", "Bedroom 1", {"switch": "off",
 BEDROOM_LUX = device("7381", "FP2 Bedroom 3 Lux", "Bedroom 3", {})
 LIGHT_SENSOR = device("9001", "Aqara Light Sensor T1", "Bedroom 3", {"illuminance": 12})
 FAN = device("9002", "Standing Fan", "Living Room", {"switch": "on"})
+EMPTY_STATE_FAN = device("9003", "Ceiling Fan", "Bedroom 2", {})
+PRAYER_TIMES = device("9004", "Prayer times", "Apps", {})
 
 
-def test_control_capability_requires_actuation_evidence_not_label_words():
+def test_control_capability_prefers_actuation_evidence_and_rejects_sensor_labels():
     assert is_control_capable(BEDROOM_LIGHT) is True
     assert is_control_capable(FAN) is True
     assert is_control_capable(BEDROOM_LUX) is False
     assert is_control_capable(LIGHT_SENSOR) is False
+    assert is_control_capable(PRAYER_TIMES) is False
+
+
+def test_clear_actuator_survives_temporarily_empty_compact_state():
+    assert is_control_capable(EMPTY_STATE_FAN) is True
 
 
 def test_capability_and_command_metadata_are_valid_control_evidence():
@@ -58,9 +65,15 @@ def test_capability_and_command_metadata_are_valid_control_evidence():
 
 def test_lux_and_light_sensors_are_absent_from_control_graph_and_candidates():
     install_control_graph_capability_filter()
-    graph = ControlDeviceGraph([BEDROOM_LIGHT, BEDROOM_LUX, LIGHT_SENSOR, FAN])
+    graph = ControlDeviceGraph(
+        [BEDROOM_LIGHT, BEDROOM_LUX, LIGHT_SENSOR, FAN, EMPTY_STATE_FAN, PRAYER_TIMES]
+    )
 
-    assert [node.label for node in graph.nodes] == ["Bedroom 1 Light", "Standing Fan"]
+    assert [node.label for node in graph.nodes] == [
+        "Bedroom 1 Light",
+        "Standing Fan",
+        "Ceiling Fan",
+    ]
 
     exact = graph.resolve(ControlTargetIntent(name_hint="Bedroom 1 Light"))
     assert [node.id for node in exact.nodes] == ["7057"]
