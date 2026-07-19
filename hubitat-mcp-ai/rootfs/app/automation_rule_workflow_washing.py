@@ -80,13 +80,13 @@ def _washing_rule_plan(
         ],
         "triggers": [
             {
-                "capability": "Power",
+                "capability": "Power meter",
                 "deviceIds": [power_id],
                 "comparator": ">",
                 "value": 10,
             },
             {
-                "capability": "Power",
+                "capability": "Power meter",
                 "deviceIds": [power_id],
                 "comparator": "<",
                 "value": 5,
