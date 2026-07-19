@@ -22,7 +22,7 @@ from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_duplicate_safe import DuplicateAwareCapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
-from fast_fallback_engagement import FastFallbackRouter
+from fast_fallback_multi_control import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
 from mcp_tool_catalogue import install_mcp_tool_catalogue
@@ -38,8 +38,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.30-alpha"
-RELEASE_VERSION = "0.4.31-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.31-alpha"
+RELEASE_VERSION = "0.4.32-alpha"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -141,9 +141,6 @@ home_snapshot = install_hybrid_home_snapshot(
     ai_timeout_seconds=float(application.OPTIONS.get("home_snapshot_ai_timeout_seconds") or 20),
     max_items_per_group=int(application.OPTIONS.get("home_snapshot_max_items_per_group") or 8),
 )
-# The engagement installer constructs bounded services and help from its module
-# globals. Replace those before installation so all responses use the hybrid
-# Cloud/local implementations and accurate ownership labels.
 ollama_engagement_module.TemperatureInsightService = HybridTemperatureInsightService
 ollama_engagement_module.ollama_help = hybrid_ollama_help
 ollama_engagement = install_ollama_engagement(application, home_snapshot)
