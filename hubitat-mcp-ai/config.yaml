@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.4.36"
+version: "0.4.37"
 slug: hubitat_mcp_ai
-description: "Hybrid Ollama assistant with condition-aware weather icons, suffix-safe verified controls and guarded Rule Machine repair"
+description: "Hybrid Ollama assistant with atomic Hubitat device refresh, verified controls and guarded Rule Machine repair"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: experimental
 arch:
