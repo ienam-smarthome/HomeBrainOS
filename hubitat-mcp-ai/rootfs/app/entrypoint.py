@@ -34,10 +34,11 @@ from ollama_engagement import install_ollama_engagement
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
 from temperature_insight_hybrid import HybridTemperatureInsightService
+from webui_clipboard_safe import install_clipboard_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.4.26-alpha"
-RELEASE_VERSION = "0.4.27-alpha"
+PREVIOUS_RELEASE_VERSION = "0.4.27-alpha"
+RELEASE_VERSION = "0.4.28-alpha"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -204,6 +205,7 @@ request_registry = install_cancellable_ask(application)
 application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
 install_automation_recommendation_webui(device_intelligence_webui_module)
+install_clipboard_safe_webui(device_intelligence_webui_module)
 install_device_intelligence_webui(application)
 app = application.app
 
