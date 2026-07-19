@@ -16,6 +16,7 @@ _LEVEL_READ_STRATEGIES: tuple[tuple[str | None, bool, str], ...] = (
     ("SwitchLevel", True, "detailed-attributes:SwitchLevel"),
     (None, True, "all-detailed-attributes"),
 )
+_LEVEL_QUICK_RETRY_STRATEGIES = _LEVEL_READ_STRATEGIES[:2]
 _COMMAND_PARAMETER_KEYS = (
     "params",
     "arguments",
@@ -77,10 +78,19 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
     async def _set_level(self, node: Any, value: float) -> dict[str, Any]:
         requested = max(0, min(100, round(float(value))))
         client = self.fallback.client
-        tool = await client.get_tool("hub_call_device_command")
+        try:
+            tool = await client.get_tool("hub_call_device_command")
+        except Exception as exc:
+            return self._command_error(
+                node.label,
+                requested,
+                f"Could not read the MCP command schema: {str(exc).strip() or type(exc).__name__}",
+            )
+
+        input_schema = getattr(tool, "input_schema", {}) if tool is not None else {}
         properties = (
-            (tool.input_schema or {}).get("properties", {})
-            if tool is not None and isinstance(tool.input_schema, dict)
+            input_schema.get("properties", {})
+            if isinstance(input_schema, dict)
             else {}
         )
         properties = properties if isinstance(properties, dict) else {}
@@ -91,12 +101,11 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
             None,
         )
         if device_key is None:
-            return {
-                "success": False,
-                "intent": "control-agent-level-schema-error",
-                "message": "The MCP command schema does not expose a device ID field.",
-                "tools_used": [{"name": "hub_call_device_command", "success": False}],
-            }
+            return self._command_error(
+                node.label,
+                requested,
+                "The MCP command schema does not expose a device ID field.",
+            )
         arguments[device_key] = node.id
         arguments["command"] = "setLevel"
 
@@ -107,38 +116,41 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
         if parameter_key is None and not properties:
             parameter_key = "params"
         if parameter_key is None:
-            return {
-                "success": False,
-                "intent": "control-agent-level-schema-error",
-                "message": (
+            return self._command_error(
+                node.label,
+                requested,
+                (
                     "The MCP command schema does not expose a parameter field for setLevel. "
                     "Refresh the MCP tool catalogue and try again."
                 ),
-                "tools_used": [{"name": "hub_call_device_command", "success": False}],
-            }
+            )
         parameter_schema = properties.get(parameter_key)
         parameter_schema = parameter_schema if isinstance(parameter_schema, dict) else {}
         arguments[parameter_key] = _command_parameter_value(parameter_schema, requested)
 
-        command_result = await client.call_tool("hub_call_device_command", arguments)
+        try:
+            command_result = await client.call_tool("hub_call_device_command", arguments)
+        except Exception as exc:
+            return self._command_error(
+                node.label,
+                requested,
+                f"The MCP command call failed: {str(exc).strip() or type(exc).__name__}",
+                parameter_key=parameter_key,
+            )
         if command_result.is_error:
-            return {
-                "success": False,
-                "intent": "control-agent-level-error",
-                "message": command_result.text or f"Failed to set {node.label} to {requested}%.",
-                "tools_used": [
-                    {
-                        "name": "hub_call_device_command",
-                        "success": False,
-                        "command": "setLevel",
-                        "parameter_field": parameter_key,
-                    }
-                ],
-            }
+            return self._command_error(
+                node.label,
+                requested,
+                command_result.text or f"Failed to set {node.label} to {requested}%.",
+                parameter_key=parameter_key,
+            )
 
         invalidate = getattr(client, "invalidate", None)
         if callable(invalidate):
-            await invalidate("devices")
+            try:
+                await invalidate("devices")
+            except Exception:
+                pass
 
         initial_delay = min(
             0.2,
@@ -162,7 +174,13 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
         no_value_passes = 0
 
         while time.monotonic() < deadline:
-            strategies = (preferred,) if preferred is not None else _LEVEL_READ_STRATEGIES
+            if preferred is not None:
+                strategies = (preferred,)
+            elif no_value_passes:
+                strategies = _LEVEL_QUICK_RETRY_STRATEGIES
+            else:
+                strategies = _LEVEL_READ_STRATEGIES
+
             numeric_seen = False
             for capability, detailed, source in strategies:
                 try:
@@ -227,9 +245,10 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
                 await asyncio.sleep(self.level_verification_poll_seconds)
                 continue
 
-            # If every compatible source omitted level entirely, one short retry is
-            # enough. Waiting for the full control timeout cannot make an unsupported
-            # field appear and only makes an exact command feel slow.
+            # If every compatible source omitted level entirely, use one short retry
+            # of the two cheapest live shapes. Waiting for the full control timeout
+            # cannot make an unsupported field appear and only makes an exact command
+            # feel slow.
             no_value_passes += 1
             if no_value_passes >= 2:
                 break
@@ -265,6 +284,28 @@ class FastVerifiedControlAgent(HomeBrainControlAgent):
                 "observed": observed,
                 "attempts": attempts,
             },
+        }
+
+    @staticmethod
+    def _command_error(
+        label: str,
+        requested: int,
+        message: str,
+        *,
+        parameter_key: str | None = None,
+    ) -> dict[str, Any]:
+        tool: dict[str, Any] = {
+            "name": "hub_call_device_command",
+            "success": False,
+            "command": "setLevel",
+        }
+        if parameter_key:
+            tool["parameter_field"] = parameter_key
+        return {
+            "success": False,
+            "intent": "control-agent-level-error",
+            "message": message or f"Failed to set {label} to {requested}%.",
+            "tools_used": [tool],
         }
 
     async def _read_live_level(
