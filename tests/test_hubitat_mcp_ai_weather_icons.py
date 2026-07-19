@@ -67,12 +67,13 @@ def test_dry_condition_icon_mapping_covers_common_conditions():
     assert weather_condition_icon("Fog") == "🌫️"
 
 
-def test_release_metadata_is_0435():
+def test_release_metadata_is_0436():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     weather_route = (APP_DIR / "fast_fallback_weather.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.35-alpha'" in config
-    assert 'PREVIOUS_RELEASE_VERSION = "0.4.34-alpha"' in entrypoint
-    assert 'RELEASE_VERSION = "0.4.35-alpha"' in entrypoint
+    assert 'version: "0.4.36"' in config
+    assert "stage: experimental" in config
+    assert 'PREVIOUS_RELEASE_VERSION = "0.4.35-alpha"' in entrypoint
+    assert 'RELEASE_VERSION = "0.4.36"' in entrypoint
     assert "from weather_presenter_icons import present_weather" in weather_route
