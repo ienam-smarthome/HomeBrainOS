@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.4.30-alpha
+
+- Detects existing Rule Machine rules even when Hubitat renders their labels with HTML and a trailing `(Paused)` marker, preventing repeated Create presses from producing another same-name shell.
+- Replaces the long combined `addTriggers + addActions` call with one bulk trigger write and short individual action writes, each carrying a deterministic idempotency token.
+- Replays a timed-out native write with the same operation token and can retry through either authoritative Rule Machine gateway.
+- Adds `Repair rule <id>` for an existing exact-name paused washing-machine rule; repair targets that rule ID rather than creating a replacement.
+- Repair verifies the backup and paused state, preserves/adds `cycleArmed`, writes both triggers, clears and rebuilds the six actions, re-pauses, and runs `hub_get_rule_health`.
+- Leaves older same-name duplicates paused and does not delete them automatically; they can be removed after the repaired rule is manually verified.
+
 ## 0.4.29-alpha
 
 - Converts native Rule Machine HTTP exceptions into structured HomeBrain tool results instead of allowing FastAPI to return plain-text `Internal Server Error`.
