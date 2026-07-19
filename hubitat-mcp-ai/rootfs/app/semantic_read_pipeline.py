@@ -3,11 +3,18 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Callable
 
+from presenter import display_payload, safe_debug
 from routing_policy import classify_query
 from semantic_read_intent import SemanticReadIntentClassifier
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
+
+
+def _history_field(item: Any, name: str) -> str:
+    if isinstance(item, dict):
+        return str(item.get(name) or "")
+    return str(getattr(item, name, "") or "")
 
 
 def install_semantic_read_pipeline(
@@ -19,9 +26,10 @@ def install_semantic_read_pipeline(
 ) -> SemanticReadIntentClassifier:
     """Install semantic interpretation only for the semantic-read route.
 
-    Exact fast reads and every control route bypass the classifier entirely. This
-    keeps established shortcuts fast and prevents an analytical model from entering
-    the command path.
+    Exact fast reads and every control route bypass the classifier entirely. Once a
+    question has been validated as a supported metric comparison, it remains on the
+    deterministic MCP executor. An evidence error is reported directly and is never
+    handed to Cloud to estimate or invent a numeric answer.
     """
 
     original_ask: AskHandler = application.ask
@@ -40,13 +48,15 @@ def install_semantic_read_pipeline(
 
         history = [
             {
-                "role": str(item.role or ""),
-                "content": str(item.content or ""),
+                "role": _history_field(item, "role"),
+                "content": _history_field(item, "content"),
             }
-            for item in request.history[-4:]
+            for item in list(getattr(request, "history", None) or [])[-4:]
         ]
         intent, diagnostics = await classifier.classify(query, history)
         if intent is None:
+            # The semantic gate is intentionally broad. Unsupported analytical reads
+            # may still use the normal planner, but validated comparisons may not.
             return await original_ask(request)
 
         try:
@@ -54,11 +64,50 @@ def install_semantic_read_pipeline(
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            fallback = dict(await original_ask(request))
-            fallback["semantic_intent_attempted"] = True
-            fallback["semantic_intent_error"] = str(exc).strip() or type(exc).__name__
-            fallback["semantic_classifier"] = diagnostics
-            return fallback
+            error = str(exc).strip() or type(exc).__name__
+            model = diagnostics.get("ai_model")
+            metric = intent.metric.replace("_", " ")
+            answer = {
+                "success": False,
+                "message": (
+                    f"I understood this as a {metric} comparison, but the live Hubitat "
+                    "evidence request failed. No Cloud estimate was used."
+                ),
+                "intent": f"semantic-{intent.metric}-evidence-error",
+                "route": "semantic+mcp",
+                "semantic_intent_attempted": True,
+                "semantic_intent_error": error,
+                "semantic_intent": intent.response_dict(),
+                "semantic_classifier": diagnostics,
+                "intent_model": model,
+                "answered_by": "Local AI intent + deterministic Hubitat MCP",
+                "display": display_payload(
+                    "semantic-read-error",
+                    "Live comparison unavailable",
+                    subtitle="Hubitat evidence request failed",
+                    metrics=[
+                        {"label": "Metric", "value": metric.title(), "icon": "📊"},
+                        {"label": "Cloud estimate", "value": "Not used", "icon": "🛡️"},
+                    ],
+                    note=(
+                        "The read-only intent was understood, but deterministic MCP evidence "
+                        "could not be completed. Technical details contain the exact failure."
+                    ),
+                ),
+                "technical": safe_debug(
+                    {
+                        "query": query,
+                        "semantic_intent": intent.response_dict(),
+                        "semantic_classifier": diagnostics,
+                        "evidence_error": error,
+                        "cloud_fallback_blocked": True,
+                    }
+                ),
+            }
+            if model:
+                answer["model"] = model
+                answer["ai_provider"] = "Local Ollama intent classifier"
+            return answer
 
         model = diagnostics.get("ai_model")
         answer.update(
