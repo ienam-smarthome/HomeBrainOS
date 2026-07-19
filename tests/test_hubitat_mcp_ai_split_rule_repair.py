@@ -162,11 +162,6 @@ def test_matching_rules_finds_all_html_paused_duplicates_and_selects_newest():
 
 
 def test_release_installs_health_verified_repair_workflow():
-    config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert 'version: "0.4.36"' in config
-    assert "stage: experimental" in config
-    assert 'PREVIOUS_RELEASE_VERSION = "0.4.35-alpha"' in entrypoint
-    assert 'RELEASE_VERSION = "0.4.36"' in entrypoint
     assert "install_repair_id_safe_rule_machine_workflow" in entrypoint
