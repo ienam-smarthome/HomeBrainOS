@@ -73,29 +73,29 @@ _PERIODIC_STATE_KEYS = {
     "pressure",
     "moisture",
 }
-_PERIODIC_CAPABILITY_TERMS = {
-    "temperature measurement",
-    "relative humidity measurement",
-    "power meter",
-    "energy meter",
-    "voltage measurement",
-    "current meter",
-    "air quality",
-    "carbon dioxide measurement",
-    "pressure measurement",
-    "moisture measurement",
+_PERIODIC_CAPABILITY_IDS = {
+    "temperaturemeasurement",
+    "relativehumiditymeasurement",
+    "powermeter",
+    "energymeter",
+    "voltagemeasurement",
+    "currentmeter",
+    "airquality",
+    "carbondioxidemeasurement",
+    "pressuremeasurement",
+    "moisturemeasurement",
 }
-_EVENT_DRIVEN_CAPABILITY_TERMS = {
+_EVENT_DRIVEN_CAPABILITY_IDS = {
     "switch",
-    "pushable button",
-    "holdable button",
-    "double tappable button",
-    "motion sensor",
-    "contact sensor",
-    "presence sensor",
+    "pushablebutton",
+    "holdablebutton",
+    "doubletappablebutton",
+    "motionsensor",
+    "contactsensor",
+    "presencesensor",
     "lock",
-    "door control",
-    "window shade",
+    "doorcontrol",
+    "windowshade",
 }
 _QUIET_DEVICE_LABEL = re.compile(
     r"\b(?:button|mini\s+switch|remote|scene|socket|outlet|plug|switch|camera|cam|"
@@ -112,6 +112,17 @@ _UNUSABLE_STATE_TEXT = {
     "null",
     "n/a",
 }
+_DEVICE_HEALTH_FIELDS = [
+    "id",
+    "name",
+    "label",
+    "room",
+    "disabled",
+    "lastActivity",
+    "currentStates",
+    "attributes",
+    "capabilities",
+]
 
 
 def _capability_names(value: Any) -> set[str]:
@@ -133,7 +144,7 @@ def _capability_names(value: Any) -> set[str]:
             )
         else:
             raw = entry
-        text = _normalise(raw)
+        text = re.sub(r"[^a-z0-9]+", "", _normalise(raw))
         if text:
             names.add(text)
     return names
@@ -170,6 +181,41 @@ def _usable_state(value: Any) -> bool:
     return _normalise(value) not in _UNUSABLE_STATE_TEXT
 
 
+def _matching_device(
+    device: dict[str, Any],
+    indexed: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    for key in _device_keys(device):
+        if key in indexed:
+            return indexed[key]
+    return None
+
+
+def _index_devices(devices: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    indexed: dict[str, dict[str, Any]] = {}
+    for device in devices:
+        for key in _device_keys(device):
+            indexed[key] = device
+    return indexed
+
+
+def _enrich_stale_device(
+    stale_device: dict[str, Any],
+    live_device: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Keep stale-filter age metadata while restoring omitted live state evidence."""
+
+    if live_device is None:
+        return stale_device
+
+    enriched = dict(live_device)
+    for key, value in stale_device.items():
+        if key in {"currentStates", "attributes", "capabilities"} and not _usable_state(value):
+            continue
+        enriched[key] = value
+    return enriched
+
+
 def classify_age_only_device(
     device: dict[str, Any],
     *,
@@ -177,11 +223,10 @@ def classify_age_only_device(
 ) -> dict[str, Any]:
     """Classify a row returned by MCP's ``stale:<hours>`` event-age filter.
 
-    Hubitat ``lastActivity`` is the age of the last generated event, not a network
-    reachability test. Event-driven sensors, unchanged switches, sleeping buttons,
-    sockets and robots can therefore be healthy while appearing in this filter.
-    Only periodic telemetry without a positive Health Check is promoted to a stale
-    warning. Everything else is informational ``quiet`` evidence.
+    ``lastActivity`` is event age, not a reachability test. An explicit negative
+    ``healthStatus`` always wins. Event-driven or normally static devices with no
+    negative health state are informational quiet rows. Periodic telemetry may be
+    marked stale when it has stopped reporting.
     """
 
     attrs = live_attributes(device)
@@ -208,18 +253,18 @@ def classify_age_only_device(
         return {
             **base,
             "kind": "offline",
-            "reason": f"Health state is {health}.",
+            "reason": f"Live healthStatus is {health}.",
         }
     if health in _POSITIVE_HEALTH:
         return {
             **base,
             "kind": "quiet",
             "reason": (
-                f"Health Check reports {health}; lastActivity records event age, not connectivity."
+                f"Live healthStatus is {health}; lastActivity records event age, not connectivity."
             ),
         }
 
-    event_driven = bool(capabilities & _EVENT_DRIVEN_CAPABILITY_TERMS)
+    event_driven = bool(capabilities & _EVENT_DRIVEN_CAPABILITY_IDS)
     quiet_identity = bool(_QUIET_DEVICE_LABEL.search(searchable))
     if event_driven or quiet_identity:
         return {
@@ -232,7 +277,7 @@ def classify_age_only_device(
         }
 
     periodic_keys = _PERIODIC_STATE_KEYS.intersection(attrs)
-    periodic_capabilities = capabilities & _PERIODIC_CAPABILITY_TERMS
+    periodic_capabilities = capabilities & _PERIODIC_CAPABILITY_IDS
     if periodic_keys or periodic_capabilities:
         useful_periodic = {
             key: attrs.get(key)
@@ -381,70 +426,76 @@ class FastFallbackRouter(GroupFastFallbackRouter):
             "hub_list_devices",
             "hub_read_devices",
             {
-                "detailed": False,
-                "format": "summary",
+                "detailed": True,
+                "format": "detailed",
                 "filter": f"stale:{self.attention_stale_hours:g}",
-                "fields": [
-                    "id",
-                    "name",
-                    "label",
-                    "room",
-                    "disabled",
-                    "lastActivity",
-                    "currentStates",
-                    "capabilities",
-                ],
+                "fields": list(_DEVICE_HEALTH_FIELDS),
             },
         )
-        health_call = self._execute_catalog_tool(
+        # Do not depend on capabilityFilter=Health Check. Some drivers expose a
+        # real healthStatus current state without advertising that capability in
+        # the MCP catalogue, and some MCP builds use HealthCheck without a space.
+        live_call = self._execute_catalog_tool(
             "hub_list_devices",
             "hub_read_devices",
             {
                 "detailed": True,
                 "format": "detailed",
-                "capabilityFilter": "Health Check",
-                "fields": ["id", "name", "label", "room", "attributes"],
+                "fields": list(_DEVICE_HEALTH_FIELDS),
             },
         )
 
         outcomes = await asyncio.gather(
             self._safe_result("stale", stale_call),
-            self._safe_result("health", health_call),
+            self._safe_result("live", live_call),
         )
         results = {name: result for name, result, _error in outcomes}
         errors = {name: error for name, _result, error in outcomes if error}
 
         issues: dict[str, dict[str, Any]] = {}
         health_by_key: dict[str, str] = {}
-        health_rows: list[dict[str, Any]] = []
+        live_rows: list[dict[str, Any]] = []
+        health_evidence: list[dict[str, Any]] = []
 
-        health_result = results.get("health")
-        if health_result is not None:
-            for device in self._device_rows(health_result.data):
-                health_rows.append(device)
+        live_result = results.get("live")
+        if live_result is not None:
+            live_rows = self._device_rows(live_result.data)
+            for device in live_rows:
                 health = _health_state(device)
+                if health:
+                    health_evidence.append(
+                        {
+                            "id": _device_id(device),
+                            "label": _label(device),
+                            "health": health,
+                            "state_keys": sorted(live_attributes(device)),
+                        }
+                    )
                 for key in _device_keys(device):
                     health_by_key[key] = health
-                if health not in _NEGATIVE_HEALTH:
+                if health not in _NEGATIVE_HEALTH or device.get("disabled") is True:
                     continue
                 label = _label(device) or f"Device {_device_id(device)}"
                 issues[_normalise(label)] = {
                     "icon": "📡",
                     "title": label,
                     "value": "Offline",
-                    "subtitle": f"Hubitat Health Check reports {health}",
+                    "subtitle": f"Live Hubitat healthStatus: {health}",
                     "tone": "danger",
                     "kind": "offline",
-                    "reason": f"Health state is {health}.",
+                    "reason": f"Live healthStatus is {health}.",
                 }
 
+        live_index = _index_devices(live_rows)
         quiet: list[dict[str, Any]] = []
         classified_rows: list[dict[str, Any]] = []
         stale_result = results.get("stale")
         if stale_result is not None:
-            for device in self._device_rows(stale_result.data):
-                if device.get("disabled") is True:
+            for stale_device in self._device_rows(stale_result.data):
+                if stale_device.get("disabled") is True:
                     continue
+                live_device = _matching_device(stale_device, live_index)
+                device = _enrich_stale_device(stale_device, live_device)
                 label = _label(device) or f"Device {_device_id(device)}"
                 key = _normalise(label)
                 if key in issues:
@@ -514,20 +565,21 @@ class FastFallbackRouter(GroupFastFallbackRouter):
             if quiet:
                 message += (
                     f"\n{len(quiet)} other device{'' if len(quiet) == 1 else 's'} have an old "
-                    "lastActivity timestamp only. They were classified as quiet, not as faults."
+                    "lastActivity timestamp but no negative live health state."
                 )
+            if errors:
+                message += "\nThe scan was incomplete: " + ", ".join(sorted(errors)) + "."
+        elif errors:
+            message = (
+                "The device-health scan was incomplete, so I cannot confirm that no devices are "
+                "offline or stale. Failed checks: " + ", ".join(sorted(errors)) + "."
+            )
         elif quiet:
             message = (
                 "No devices are confirmed offline or stale. "
                 f"{len(quiet)} selected device{'' if len(quiet) == 1 else 's'} have not generated "
                 f"a Hubitat event for {self.attention_stale_hours:g} hours or longer, but "
-                "lastActivity is event age rather than a connectivity test. HomeBrain classified "
-                "them as quiet timestamps, not health faults."
-            )
-        elif errors:
-            message = (
-                "The device-health scan was incomplete, so I cannot confirm that all devices "
-                "are healthy. Failed checks: " + ", ".join(sorted(errors)) + "."
+                "lastActivity is event age rather than a connectivity test."
             )
         else:
             message = "No devices are confirmed offline or stale."
@@ -553,8 +605,8 @@ class FastFallbackRouter(GroupFastFallbackRouter):
             )
 
         note = (
-            "Offline requires an explicit negative Health Check state. The MCP stale filter uses "
-            "lastActivity, which records event age and does not prove that a device is unreachable."
+            "Offline is read from each selected device's detailed live healthStatus. The stale "
+            "filter is used only for lastActivity age and periodic-telemetry classification."
         )
         omitted_quiet = max(0, len(quiet) - len(quiet_shown))
         if omitted_quiet:
@@ -568,9 +620,9 @@ class FastFallbackRouter(GroupFastFallbackRouter):
             subtitle=(
                 f"{len(issue_items)} confirmed issue{'' if len(issue_items) == 1 else 's'}"
                 if issue_items
-                else "No confirmed offline or stale devices"
-                if not errors
                 else "Scan incomplete"
+                if errors
+                else "No confirmed offline or stale devices"
             ),
             metrics=[
                 {"label": "Offline", "value": str(offline_count), "icon": "📡"},
@@ -599,15 +651,20 @@ class FastFallbackRouter(GroupFastFallbackRouter):
         response["technical"] = safe_debug(
             {
                 "threshold_hours": self.attention_stale_hours,
-                "offline_devices": [item for item in issue_items if item["kind"] == "offline"],
-                "stale_telemetry": [item for item in issue_items if item["kind"] == "stale"],
+                "selected_devices_scanned": len(live_rows),
+                "offline_devices": [
+                    item for item in issue_items if item["kind"] == "offline"
+                ],
+                "stale_telemetry": [
+                    item for item in issue_items if item["kind"] == "stale"
+                ],
                 "quiet_timestamp_devices": quiet,
                 "classified_stale_filter_rows": classified_rows,
-                "health_check_rows": health_rows,
+                "live_health_evidence": health_evidence,
                 "scan_errors": errors,
                 "classification_rule": (
-                    "Negative Health Check states are offline. lastActivity age alone is quiet; "
-                    "only periodic telemetry without positive health is marked stale."
+                    "Detailed live healthStatus is authoritative. lastActivity age alone is quiet; "
+                    "only periodic telemetry without a positive health state is marked stale."
                 ),
             }
         )
