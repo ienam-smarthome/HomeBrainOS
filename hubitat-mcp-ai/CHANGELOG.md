@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.5.9
+
+- Replaces the dashboard's visible **Switches on** tile with an actionable **Offline / stale** device-health tile.
+- Uses the same authoritative detailed `healthStatus` classifier as the `Are any devices offline or stale?` fast route, so dashboard and conversational results stay aligned.
+- Displays the combined confirmed issue count, with a subtitle separating offline and stale-telemetry totals.
+- Excludes quiet timestamps from the warning count.
+- Highlights the tile when one or more confirmed health issues exist and opens the detailed device-health answer when tapped.
+- Keeps `switches_on` in `/api/dashboard` for backwards compatibility while no longer presenting it in the web interface.
+- Fetches device summary and health metrics concurrently and caches the combined dashboard snapshot using the existing refresh interval.
+- Leaves the rest of the dashboard available when the health scan fails, showing the health tile as unavailable instead of breaking all summary cards.
+
 ## 0.5.8
 
 - Fixes explicit Hubitat `healthStatus: offline` values being missed when the separate MCP `Health Check` capability query returned no usable rows.
