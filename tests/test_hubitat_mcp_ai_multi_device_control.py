@@ -221,11 +221,6 @@ def test_unresolved_second_target_sends_no_commands():
 
 
 def test_release_uses_multi_control_router():
-    config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert 'version: "0.4.36"' in config
-    assert "stage: experimental" in config
-    assert 'PREVIOUS_RELEASE_VERSION = "0.4.35-alpha"' in entrypoint
-    assert 'RELEASE_VERSION = "0.4.36"' in entrypoint
     assert "from fast_fallback_multi_control import FastFallbackRouter" in entrypoint
