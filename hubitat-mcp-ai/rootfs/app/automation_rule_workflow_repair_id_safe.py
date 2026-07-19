@@ -7,6 +7,7 @@ from automation_rule_workflow import PendingRule, _normalise, _result_mapping, _
 from automation_rule_workflow_native_rm import _positive_int
 from automation_rule_workflow_split_repair import (
     SplitRepairWashingRuleMachineWorkflow,
+    _REPAIR_RE,
     _clean_rule_label,
 )
 
@@ -214,6 +215,17 @@ def install_repair_id_safe_rule_machine_workflow(
 
     async def ask_with_rule_workflow(request: Any) -> dict[str, Any]:
         query = str(getattr(request, "query", "") or "").strip()
+        repair_match = _REPAIR_RE.fullmatch(query)
+        if repair_match:
+            requested = (
+                _positive_int(repair_match.group(1))
+                if repair_match.group(1)
+                else None
+            )
+            answer = await service.repair(request, requested)
+            answer.setdefault("version", application.VERSION)
+            return answer
+
         command = service.command(query)
         if command:
             answer = await service.handle(request, command)
