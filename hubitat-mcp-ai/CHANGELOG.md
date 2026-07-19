@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.5.7
+
+- Fixes false stale-device warnings caused by treating Hubitat `lastActivity` age as proof that a device is offline or malfunctioning.
+- Requires an explicit negative Health Check state such as `offline`, `unavailable`, `failed` or `unreachable` before reporting a device as offline.
+- Classifies event-driven or normally static devices—buttons, FP presence sensors, unchanged sockets and switches, cameras, robot vacuums and similar devices—as **quiet timestamps**, not health faults.
+- Keeps a separate **stale telemetry** category for periodic climate, power, energy, voltage and similar reporting that has genuinely stopped beyond the configured threshold.
+- Lets a positive Health Check state override an old activity timestamp.
+- Routes common questions such as `Are any devices offline or stale?` directly to deterministic MCP processing, with no Gemini or local-model wording pass.
+- Reports Offline, Stale telemetry and Quiet timestamps as separate metrics and exposes the classification evidence under Technical details.
+
 ## 0.5.6
 
 - Fixes exact read-only device controls such as `Turn off FP2 Bedroom 3 Lux` opening a nearby-light choice menu.
