@@ -55,6 +55,43 @@ def _row_name(item: dict[str, Any]) -> str | None:
     return str(value) if value not in (None, "") else None
 
 
+def _find_backup_epoch(value: Any) -> Any:
+    """Find Hubitat's last-backup epoch in nested MCP response shapes."""
+
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normal = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if normal in {
+                "lastbackupepoch",
+                "lastbackup",
+                "lastbackuptimestamp",
+                "backupepoch",
+            }:
+                return item
+        for item in value.values():
+            found = _find_backup_epoch(item)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_backup_epoch(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _normalise_epoch_ms(value: Any) -> int | None:
+    try:
+        number = float(str(value).strip())
+    except Exception:
+        return None
+    if number > 10_000_000_000:
+        return int(number)
+    if number > 1_000_000_000:
+        return int(number * 1000)
+    return None
+
+
 class FilenameSafeBackupWashingRuleMachineWorkflow(
     ConfirmedBackupWashingRuleMachineWorkflow
 ):
@@ -62,7 +99,9 @@ class FilenameSafeBackupWashingRuleMachineWorkflow(
 
     Some MCP releases return local backups oldest-first. A limit of ten can omit a
     manual backup created moments earlier. Request a larger local set and treat a
-    whole-hub filename carrying today's date as verified recent evidence.
+    whole-hub filename carrying today's date as verified recent evidence. If the
+    backup gateway still omits the newest file, use Hubitat's authoritative
+    ``lastBackupEpoch`` before attempting another backup.
     """
 
     async def _recent_listed_backup(self) -> tuple[bool, dict[str, Any]]:
@@ -220,6 +259,69 @@ class FilenameSafeBackupWashingRuleMachineWorkflow(
         )
         return False, details
 
+    async def _recent_hub_info_backup(self) -> tuple[bool, dict[str, Any]]:
+        details: dict[str, Any] = {
+            "checked": False,
+            "recent": False,
+            "source": "hub_get_info.lastBackupEpoch",
+        }
+        try:
+            result = await self.client.call_tool("hub_get_info", {})
+        except Exception as exc:
+            details["exception_type"] = type(exc).__name__
+            details["error"] = str(exc).strip() or f"{type(exc).__name__} reading hub info"
+            return False, details
+
+        details["checked"] = True
+        details["result_is_error"] = bool(result.is_error)
+        if result.is_error:
+            details["error"] = result.text or "hub_get_info failed"
+            return False, details
+
+        raw_epoch = _find_backup_epoch(result.data)
+        epoch_ms = _normalise_epoch_ms(raw_epoch)
+        details["epoch_found"] = raw_epoch is not None
+        if epoch_ms is None:
+            details["error"] = "hub_get_info did not return a usable lastBackupEpoch"
+            return False, details
+
+        now_ms = int(time.time() * 1000)
+        age_ms = now_ms - epoch_ms
+        details.update({"last_backup_epoch": epoch_ms, "age_ms": age_ms})
+        if 0 <= age_ms < _BACKUP_MAX_AGE_MS:
+            details["recent"] = True
+            return True, details
+
+        details["error"] = "Hubitat lastBackupEpoch is older than 24 hours"
+        return False, details
+
+    async def _ensure_backup(self, key: str | None) -> tuple[bool, dict[str, Any]]:
+        listed_ok, listed = await self._recent_listed_backup()
+        if listed_ok:
+            return True, {
+                "created": False,
+                "recent": True,
+                "verified_by": "hub_list_backups_filename_safe",
+                "listed": listed,
+                "best_practice_key_found": bool(key),
+            }
+
+        info_ok, hub_info = await self._recent_hub_info_backup()
+        if info_ok:
+            return True, {
+                "created": False,
+                "recent": True,
+                "verified_by": "hub_get_info_lastBackupEpoch",
+                "listed_backup_check": listed,
+                "hub_info_backup_check": hub_info,
+                "best_practice_key_found": bool(key),
+            }
+
+        ok, details = await super()._ensure_backup(key)
+        details.setdefault("listed_backup_check", listed)
+        details["hub_info_backup_check"] = hub_info
+        return ok, details
+
     async def _create(self, pending: Any) -> dict[str, Any]:
         answer = await super()._create(pending)
         if answer.get("route") == "mcp-rule-preflight-blocked":
@@ -227,9 +329,9 @@ class FilenameSafeBackupWashingRuleMachineWorkflow(
             if isinstance(display, dict):
                 display["note"] = (
                     "HomeBrain checks up to 100 local backups through "
-                    "hub_list_backups or hub_manage_backup and recognises current "
-                    "Hubitat manual filenames such as "
-                    "Hub_C8_Pro_YYYY-MM-DD~firmware~manual.lzf."
+                    "hub_list_backups or hub_manage_backup, recognises current "
+                    "Hubitat manual filenames, and falls back to hub_get_info "
+                    "lastBackupEpoch before requesting another backup."
                 )
         return answer
 
@@ -271,6 +373,8 @@ def install_filename_safe_backup_rule_machine_workflow(
 
 __all__ = [
     "FilenameSafeBackupWashingRuleMachineWorkflow",
+    "_find_backup_epoch",
     "_hubitat_backup_filename_date",
+    "_normalise_epoch_ms",
     "install_filename_safe_backup_rule_machine_workflow",
 ]
