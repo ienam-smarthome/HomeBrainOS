@@ -14,6 +14,7 @@ from automation_rule_workflow_repair_id_safe import (
     install_repair_id_safe_rule_machine_workflow as install_washing_rule_machine_workflow,
 )
 from cancellable_requests import install_cancellable_ask
+from control_agent_combined_level import install_combined_level_intent
 from control_agent_gate import install_control_agent_gate
 from control_agent_level_verified import install_control_agent
 from control_confirmation import install_control_confirmation
@@ -176,6 +177,7 @@ control_confirmations = install_control_confirmation(
     max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
 )
 install_control_language(application)
+install_combined_level_intent()
 legacy_control_ask = application.ask
 control_agent = install_control_agent(
     application,
