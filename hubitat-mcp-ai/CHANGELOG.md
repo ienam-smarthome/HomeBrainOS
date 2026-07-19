@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.4.41
+
+- Keeps a validated semantic metric comparison on the deterministic MCP executor even when one evidence request shape fails.
+- Starts with the known-compatible compact capability read carrying live `currentStates`, instead of making live evidence depend on optional detailed fields.
+- Treats detailed attributes as optional enrichment and catches each MCP request-shape failure independently.
+- Continues to compact no-space capability aliases such as `PowerMeter` when the canonical capability spelling is rejected or empty.
+- Blocks Cloud fallback after a metric intent has been validated, so Cloud can no longer replace an MCP evidence error with an unsupported numeric claim.
+- Shows a structured `Live comparison unavailable` result with the exact evidence failure in Technical details when no compatible MCP read succeeds.
+
 ## 0.4.40
 
 - Fixes semantic comparisons returning zero readings when the MCP detailed catalogue exposes attribute definitions but keeps current values in compact `currentStates`.
