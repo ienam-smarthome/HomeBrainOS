@@ -6,6 +6,7 @@ from typing import Any
 
 from fallback_router import _label, _normalise
 from fast_fallback_device_health import FastFallbackRouter as DeviceHealthFastFallbackRouter
+from spoken_device_name import unique_spoken_match
 
 
 _NUMBER_WORDS = {
@@ -78,6 +79,18 @@ class FastFallbackRouter(DeviceHealthFastFallbackRouter):
         if len(exact) == 1:
             return exact[0], []
 
+        # Handle only conservative speech variations (number words, spacing and
+        # duplicated letters) and require one unique full-label key. This resolves
+        # "liiving room light two" to "Livingroom Light 2" without guessing between
+        # Light 1 and Light 2 when the number is omitted.
+        spoken = unique_spoken_match(
+            requested_name,
+            candidates,
+            label_of=_label,
+        )
+        if spoken is not None:
+            return spoken, []
+
         scored = sorted(
             (
                 (
@@ -126,7 +139,19 @@ class FastFallbackRouter(DeviceHealthFastFallbackRouter):
         candidates = self._device_rows(live_result.data)
         match, alternatives = self._match_device(requested_name, candidates)
         if match:
-            return await super()._control_device(_label(match), action)
+            resolved_label = _label(match)
+            resolved = dict(await super()._control_device(resolved_label, action))
+            if normalise_spoken_device_name(requested_name) != normalise_spoken_device_name(
+                resolved_label
+            ):
+                resolved.update(
+                    {
+                        "speech_alias_applied": True,
+                        "heard_device_name": requested_name,
+                        "resolved_device_name": resolved_label,
+                    }
+                )
+            return resolved
 
         # Speech-to-text often hears "dehumidifier" as "humidifier". Treat those
         # words as equivalent only when every other label token (including its
