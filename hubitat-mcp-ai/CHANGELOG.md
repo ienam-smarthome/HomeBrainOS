@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.4.37
+
+- Adds a visible `Refresh Hubitat devices` action in the web interface.
+- Clears shared Hubitat device-read caches before rebuilding the selected-device catalogue, detailed metadata and dashboard counters.
+- Returns the number of cached reads cleared so a refresh is visibly distinguishable from a cached catalogue view.
+- Centralises release metadata validation so the Supervisor manifest must stay plain numeric and match the running backend, changelog and Cloud setup script.
+- Removes release-number literals from feature tests so a future version bump cannot silently leave conflicting metadata behind.
+
 ## 0.4.36
 
 - Uses a plain numeric add-on version so Home Assistant Supervisor does not need to compare custom `-alpha` prerelease strings.
