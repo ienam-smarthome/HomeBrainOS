@@ -93,7 +93,7 @@ class CatalogueOnlyBackupClient:
 
 def workflow():
     client = CatalogueOnlyBackupClient()
-    app = SimpleNamespace(mcp=client, VERSION="0.4.23-alpha")
+    app = SimpleNamespace(mcp=client, VERSION="0.4.24-alpha")
     return FinalWashingRuleMachineWorkflow(app, object()), client
 
 
@@ -126,10 +126,10 @@ def test_backup_preflight_invokes_catalogue_only_tool_through_gateway():
     assert invocation["args"]["bestPracticeKey"] == "BP-BACKUP-1234"
 
 
-def test_release_metadata_is_0423():
+def test_release_metadata_is_0424():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert "version: '0.4.23-alpha'" in config
-    assert 'RELEASE_VERSION = "0.4.23-alpha"' in entrypoint
-    assert "install_final_washing_rule_machine_workflow" in entrypoint
+    assert "version: '0.4.24-alpha'" in config
+    assert 'RELEASE_VERSION = "0.4.24-alpha"' in entrypoint
+    assert "install_confirmed_backup_rule_machine_workflow" in entrypoint
