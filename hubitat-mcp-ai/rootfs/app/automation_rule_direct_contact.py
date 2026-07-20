@@ -20,7 +20,7 @@ _DIRECT_CONTACT_RULE = re.compile(
     r"(?:(?:send|give)(?:\s+me)?\s+(?:an?\s+)?(?:alert|notification)|"
     r"(?:alert|notify)(?:\s+me)?)\s+when\s+(?:the\s+)?(.+?)\s+"
     r"(?:has\s+been\s+|is\s+)?(?:left\s+)?open"
-    r"(?:\s+for\s+(\d{1,3})\s*(seconds?|secs?|minutes?|mins?))?[.!?]*$",
+    r"(?:\s+for\s+(?:(?:more|longer)\s+than\s+|over\s+)?(\d{1,3})\s*(seconds?|secs?|minutes?|mins?))?[.!?]*$",
     re.IGNORECASE,
 )
 _FIND_DEVICE = re.compile(
