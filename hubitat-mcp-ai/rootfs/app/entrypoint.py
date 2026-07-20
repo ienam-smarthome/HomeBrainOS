@@ -12,8 +12,8 @@ from ai_evidence_domains import install_ai_evidence_domains
 from ai_evidence_planner import install_ai_evidence_planner
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
-from automation_rule_workflow_repair_id_safe import (
-    install_repair_id_safe_rule_machine_workflow as install_washing_rule_machine_workflow,
+from automation_rule_direct_contact import (
+    install_direct_contact_rule_workflow as install_washing_rule_machine_workflow,
 )
 from cancellable_requests import install_cancellable_ask
 from control_agent_combined_level import install_combined_level_intent
@@ -53,8 +53,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.8.1"
-RELEASE_VERSION = "0.8.2"
+PREVIOUS_RELEASE_VERSION = "0.8.2"
+RELEASE_VERSION = "0.8.3"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
