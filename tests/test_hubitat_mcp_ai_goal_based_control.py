@@ -38,7 +38,7 @@ class GoalHTTP:
         self.models.append(str(json.get("model") or ""))
         self.requests.append(json)
         assert json.get("tools") is None
-        assert "watching TV or a movie 30" in json["messages"][0]["content"]
+        assert "TV/movie 30" in json["messages"][0]["content"]
         content = {
             "intent": "device_control",
             "actions": [
