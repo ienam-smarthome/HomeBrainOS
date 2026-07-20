@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any, Awaitable, Callable
 
@@ -30,6 +31,30 @@ _UNSAFE_MULTI_TERMS = (
     " but ",
     " then ",
 )
+_FAST_PATH_COMPLEX_TERMS = (
+    " whichever ",
+    " which ",
+    " that ",
+    " near ",
+    " beside ",
+    " next to ",
+    " except ",
+    " unless ",
+    " if ",
+    " when ",
+    " and ",
+    ",",
+)
+_EXACT_FAST_CONTROL = re.compile(
+    r"^(?:please\s+)?(?:turn|switch)\s+(?:the\s+)?[^,]+?\s+(?:on|off)[.!?]*$|"
+    r"^(?:please\s+)?(?:turn|switch)\s+(?:on|off)\s+(?:the\s+)?[^,]+?[.!?]*$",
+    re.IGNORECASE,
+)
+_EXACT_FAST_LEVEL = re.compile(
+    r"^(?:please\s+)?(?:set|dim)\s+(?:the\s+)?[^,]+?\s+(?:to|at)\s+"
+    r"\d{1,3}(?:\s*%|\s+percent)[.!?]*$",
+    re.IGNORECASE,
+)
 
 
 def is_explicit_named_multi_control(query: str) -> bool:
@@ -55,17 +80,82 @@ def is_explicit_named_multi_control(query: str) -> bool:
     return 2 <= len(parts) <= 6 and all(len(item.split()) <= 8 for item in parts)
 
 
+def is_exact_fast_control(query: str) -> bool:
+    """Return True only for the tiny, latency-sensitive deterministic fast path."""
+
+    text = re.sub(r"\s+", " ", str(query or "").strip())
+    padded = f" {text.lower()} "
+    if any(term in padded for term in _FAST_PATH_COMPLEX_TERMS):
+        return False
+    return bool(_EXACT_FAST_CONTROL.match(text) or _EXACT_FAST_LEVEL.match(text))
+
+
+async def _ai_first_control(
+    application: Any,
+    request: Any,
+    fallback: AskHandler,
+) -> dict[str, Any]:
+    """Let the model resolve non-trivial controls using the live MCP tool catalogue.
+
+    Tool implementations remain the safety boundary: capability checks, setpoint
+    clamps, confirmation requirements and post-command verification are enforced by
+    the MCP executor regardless of what the model requests. Any AI timeout or error
+    falls back to the existing deterministic control agent.
+    """
+
+    history = [
+        {"role": item.role, "content": item.content}
+        for item in list(getattr(request, "history", []) or [])[-6:]
+    ]
+    query = str(getattr(request, "query", "") or "").strip()
+    planner_query = (
+        f"{query}\n\n"
+        "Handle this as a smart-home control request using live Hubitat MCP tools. "
+        "Resolve device names with discovery tools rather than guessing. Execute only "
+        "when the target and action are sufficiently clear; otherwise change nothing "
+        "and ask one concise clarification question. Always rely on tool-side safety "
+        "checks and verify the resulting state."
+    )
+    timeout = max(
+        8.0,
+        min(
+            45.0,
+            float(application.OPTIONS.get("ai_first_control_timeout_seconds") or 20),
+        ),
+    )
+    try:
+        answer = dict(
+            await asyncio.wait_for(
+                application.ollama.answer_with_planner(planner_query, history),
+                timeout=timeout,
+            )
+        )
+        answer["route"] = "ollama+mcp"
+        answer["route_reason"] = "non-trivial control resolved by AI tool-calling agent"
+        answer["ai_first_control"] = True
+        answer.setdefault("version", application.VERSION)
+        return answer
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        answer = dict(await fallback(request))
+        answer["ai_first_control_attempted"] = True
+        answer["ai_first_control_fallback"] = True
+        answer["ai_first_control_error"] = str(exc)
+        return answer
+
+
 def install_control_agent_gate(
     application: Any,
     control_agent: Any,
     legacy_ask: AskHandler,
 ) -> AskHandler:
-    """Avoid graph work for non-controls and preserve proven compatibility routes.
+    """Use one exact fast path, then AI tools, then deterministic fallback.
 
-    ``install_control_agent`` has already wrapped ``application.ask`` when this is
-    called. The gate keeps that wrapped handler only for actual control/alias/pending
-    requests. Routine reads call the earlier handler directly, and simple explicit
-    named conjunctions use the existing all-or-nothing multi-device controller.
+    Pending confirmations and alias management stay deterministic. Exact single-device
+    on/off and percentage commands retain the proven low-latency control path. More
+    natural or complex control language is sent to the Ollama MCP planner first, with
+    the existing control-agent chain retained strictly as an offline/timeout fallback.
     """
 
     control_agent_ask: AskHandler = application.ask
@@ -84,6 +174,12 @@ def install_control_agent_gate(
             answer["control_agent_bypass"] = "verified-named-multi-control"
             return answer
         if is_control_candidate(query):
+            if is_exact_fast_control(query):
+                answer = dict(await control_agent_ask(request))
+                answer.setdefault("route_reason", "exact control fast path")
+                return answer
+            if application.option_bool("ai_first_control_enabled", True):
+                return await _ai_first_control(application, request, control_agent_ask)
             return await control_agent_ask(request)
         return await legacy_ask(request)
 
@@ -93,5 +189,6 @@ def install_control_agent_gate(
 
 __all__ = [
     "install_control_agent_gate",
+    "is_exact_fast_control",
     "is_explicit_named_multi_control",
 ]
