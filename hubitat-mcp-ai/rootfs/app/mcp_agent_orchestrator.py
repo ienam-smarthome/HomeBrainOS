@@ -25,6 +25,26 @@ def _normalise(value: str) -> str:
     return " ".join(str(value or "").strip().lower().strip(" .!?").split())
 
 
+def _normalise_history(items: Any) -> list[dict[str, str]]:
+    """Convert Pydantic history models and mappings to the agent's stable format."""
+
+    normalised: list[dict[str, str]] = []
+    for item in list(items or []):
+        if isinstance(item, dict):
+            role = item.get("role")
+            content = item.get("content")
+        elif hasattr(item, "model_dump"):
+            value = item.model_dump()
+            role = value.get("role")
+            content = value.get("content")
+        else:
+            role = getattr(item, "role", None)
+            content = getattr(item, "content", None)
+        if role in {"user", "assistant"} and content:
+            normalised.append({"role": str(role), "content": str(content)})
+    return normalised
+
+
 def should_use_unified_agent(query: str) -> bool:
     """Use AI for every substantive non-fast request.
 
@@ -42,9 +62,10 @@ def should_use_unified_agent(query: str) -> bool:
 def install_unified_mcp_agent_orchestrator(application: Any) -> None:
     """Install one AI-first decision point above the legacy route stack.
 
-    The wrapped legacy stack is now an offline/timeout fallback. It is no longer the
-    primary natural-language interpreter. Safety remains in MCP tool execution and
-    the existing confirmation and verification layers.
+    Substantive requests remain in the unified agent. A planner failure is returned
+    transparently instead of being silently rerouted to the restricted read-only
+    evidence planner. Exact fast paths and pending confirmation replies still use the
+    existing deterministic handlers.
     """
 
     original_ask: AskHandler = application.ask
@@ -54,7 +75,7 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
         if not should_use_unified_agent(query):
             return await original_ask(request)
 
-        history = list(getattr(request, "history", None) or [])
+        history = _normalise_history(getattr(request, "history", None))
         try:
             planner = getattr(application.ollama, "answer_with_planner", None)
             if callable(planner):
@@ -68,23 +89,34 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
             result.setdefault("version", application.VERSION)
             return result
         except Exception as exc:
-            fallback = dict(await original_ask(request))
-            fallback["agent_orchestrator"] = "unified-mcp-ai-first"
-            fallback["legacy_fallback_used"] = True
-            fallback["unified_agent_error"] = str(exc) or exc.__class__.__name__
-            fallback.setdefault("version", application.VERSION)
-            technical = fallback.get("technical")
-            if not isinstance(technical, dict):
-                technical = {}
-            technical["unified_agent"] = {
-                "attempted": True,
-                "fallback": True,
-                "error": fallback["unified_agent_error"],
+            error = str(exc) or exc.__class__.__name__
+            return {
+                "success": False,
+                "route": "unified-agent-error",
+                "intent": "unified-agent-failed",
+                "message": (
+                    "The unified Hubitat MCP agent could not complete this request. "
+                    "It was not redirected to the read-only evidence planner. "
+                    f"Technical error: {error}"
+                ),
+                "agent_orchestrator": "unified-mcp-ai-first",
+                "legacy_fallback_used": False,
+                "unified_agent_error": error,
+                "version": application.VERSION,
+                "technical": {
+                    "unified_agent": {
+                        "attempted": True,
+                        "fallback": False,
+                        "error": error,
+                    }
+                },
             }
-            fallback["technical"] = technical
-            return fallback
 
     application.ask = ask_with_unified_agent
 
 
-__all__ = ["install_unified_mcp_agent_orchestrator", "should_use_unified_agent"]
+__all__ = [
+    "_normalise_history",
+    "install_unified_mcp_agent_orchestrator",
+    "should_use_unified_agent",
+]
