@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.8.0
+
+- Replaces Control Focus as the default with **Hybrid Assistant mode**: proven controls and verified reads stay fast, while every other connected-home question falls through to the AI Evidence Planner.
+- Prevents read verbs such as `show`, `list`, `what`, `why`, `how`, `check` and `tell me` from being mistaken for device-control targets.
+- Keeps clear commands such as `Turn on Bedroom 1 Light` and `Set Livingroom Light 1 to 30%` deterministic, AI-free and verified through Hubitat MCP.
+- Adds `hybrid_assistant_mode_enabled`, enabled by default, which overrides saved legacy Focus settings during upgrade so existing installations do not remain unintentionally restricted.
+- Retains Control Focus only as an optional restricted/troubleshooting mode when Hybrid Assistant is explicitly disabled.
+- Moves the current-power summary outside Control Focus so it remains a fast verified read in normal assistant mode.
+- Adds a grouped Octopus whole-house energy reader for Power, Today, Yesterday, Week, Month, rates and standing charge display sensors.
+- Routes requests such as `Total power consumption today` to the matching Octopus period display instead of returning a scope card.
+- Routes `Show octopus live meter display` to the complete Octopus display family instead of fuzzy-searching for one exact device.
+- Keeps all AI planning read-only and evidence-bound; Python remains authoritative for MCP calls, calculations, commands, confirmations and final-state verification.
+
 ## 0.7.2
 
 - Fixes `Show power consumption` failing after live MCP reads with `AttributeError: 'str' object has no attribute 'get'`.

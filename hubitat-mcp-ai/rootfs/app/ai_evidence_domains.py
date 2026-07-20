@@ -4,6 +4,7 @@ from typing import Any
 
 import ai_evidence_planner as planner_module
 from control_focus_mode import install_control_focus_mode
+from control_focus_octopus_energy import install_control_focus_octopus_energy
 from control_focus_power_summary_safe import install_control_focus_power_summary_safe
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 
@@ -22,18 +23,22 @@ _EXTRA_HOME_DOMAIN_TERMS = (
     "air purifier",
     "camera",
     "appliance",
+    "octopus",
+    "meter",
+    "tariff",
+    "cost",
+    "consumption",
 )
 _ORIGINAL_AI_EVIDENCE_QUERY = planner_module.is_ai_evidence_query
 
 
 def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, ...]:
-    """Install broad evidence domains or the safer default Control Focus scope.
+    """Install broad evidence domains and keep Control Focus as an opt-in restriction.
 
-    Control Focus is enabled by default. It keeps the proven control and verified-
-    read routes, adds a deterministic current-power summary, and prevents the later
-    AI Evidence Planner wrapper from capturing broad questions. Disabling
-    ``control_focus_mode_enabled`` restores the broader evidence-planner behaviour
-    without removing its code or settings.
+    Hybrid Assistant mode takes precedence over the legacy Focus option. This matters
+    for upgrades because Home Assistant preserves saved add-on options: a previously
+    saved ``control_focus_mode_enabled: true`` must not keep blocking AI after the new
+    hybrid mode has been enabled.
 
     ``activate_runtime=False`` is intended for side-effect-free domain validation
     in regression tests; production entrypoint installation uses the default.
@@ -47,10 +52,11 @@ def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, 
 
     import app as application
 
-    control_focus_enabled = application.option_bool("control_focus_mode_enabled", True)
-    if control_focus_enabled:
-        # AIEvidencePlanner.matches resolves this module global at runtime. Keeping
-        # it false prevents the outer planner wrapper from bypassing Control Focus.
+    hybrid_enabled = application.option_bool("hybrid_assistant_mode_enabled", True)
+    legacy_focus_enabled = application.option_bool("control_focus_mode_enabled", False)
+    restricted_focus_enabled = bool(legacy_focus_enabled and not hybrid_enabled)
+
+    if restricted_focus_enabled:
         planner_module.is_ai_evidence_query = lambda _query: False
         install_control_focus_power_summary_safe()
         metric_executor = SemanticMetricComparisonExecutor(application.fallback)
@@ -63,6 +69,7 @@ def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, 
                 True,
             ),
         )
+        install_control_focus_octopus_energy(application)
     else:
         planner_module.is_ai_evidence_query = _ORIGINAL_AI_EVIDENCE_QUERY
     return merged

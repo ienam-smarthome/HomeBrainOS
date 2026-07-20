@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.7.2"
+version: "0.8.0"
 slug: hubitat_mcp_ai
-description: "HomeBrain Control Focus with verified device control, live reads and optional broader AI planning"
+description: "HomeBrain hybrid AI assistant with fast verified controls, live reads and evidence-bound AI answers"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -54,7 +54,8 @@ options:
   ollama_max_tool_rounds: 2
   fast_path_enabled: true
   fallback_enabled: true
-  control_focus_mode_enabled: true
+  hybrid_assistant_mode_enabled: true
+  control_focus_mode_enabled: false
   control_focus_allow_verified_reads: true
   control_agent_enabled: true
   control_agent_ai_rescue_enabled: true
@@ -136,6 +137,7 @@ schema:
   ollama_max_tool_rounds: int
   fast_path_enabled: bool
   fallback_enabled: bool
+  hybrid_assistant_mode_enabled: bool
   control_focus_mode_enabled: bool
   control_focus_allow_verified_reads: bool
   control_agent_enabled: bool
