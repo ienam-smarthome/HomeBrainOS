@@ -79,8 +79,13 @@ def _uses_conversation_context(query: str) -> bool:
     return bool(words & _CONTEXT_WORDS)
 
 
-def _tool_names(answer: Any) -> set[str]:
-    """Extract executed tool names from the stable agent response shape."""
+def _executed_tool_names(answer: Any) -> set[str]:
+    """Return only tools that actually executed, never tools merely offered to the model.
+
+    ``selected_tools`` is the planner catalogue subset. It can contain
+    ``homebrain_search_devices`` even when the model actually called only
+    ``hub_list_devices``. Mixing the two caused targeted lookup correction to be skipped.
+    """
 
     if not isinstance(answer, dict):
         return set()
@@ -90,9 +95,6 @@ def _tool_names(answer: Any) -> set[str]:
             names.add(str(item["name"]))
         elif isinstance(item, str):
             names.add(item)
-    for item in answer.get("selected_tools") or []:
-        if item:
-            names.add(str(item))
     return names
 
 
@@ -106,13 +108,13 @@ async def _apply_device_tool_policy(
 
     The model remains responsible for understanding the request. The execution layer is
     responsible for tool semantics: ``hub_list_devices`` is authoritative inventory data,
-    but it is not a completed entity lookup. If the planner used only that broad tool for a
-    non-broad request, run the MCP-backed targeted search over the complete structured
-    inventory before allowing final synthesis.
+    but it is not a completed entity lookup. If the planner executed only that broad tool
+    for a non-broad request, run the MCP-backed targeted search over the complete structured
+    inventory before allowing the answer to stand.
     """
 
-    names = _tool_names(answer)
-    if "hub_list_devices" not in names or "homebrain_search_devices" in names:
+    executed = _executed_tool_names(answer)
+    if "hub_list_devices" not in executed or "homebrain_search_devices" in executed:
         return answer
 
     agent = getattr(application, "ollama", None)
@@ -127,11 +129,14 @@ async def _apply_device_tool_policy(
     corrected = await targeted(
         query,
         history,
-        RuntimeError("Planner selected broad inventory for a targeted device task"),
+        RuntimeError("Planner executed broad inventory for a targeted device task"),
     )
     result = dict(corrected)
     result["tool_policy_corrected"] = True
-    result["original_selected_tools"] = sorted(names)
+    result["original_executed_tools"] = sorted(executed)
+    result["original_selected_tools"] = [
+        str(item) for item in answer.get("selected_tools") or [] if item
+    ]
     return result
 
 
@@ -206,8 +211,8 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
 
 __all__ = [
     "_apply_device_tool_policy",
+    "_executed_tool_names",
     "_normalise_history",
-    "_tool_names",
     "_uses_conversation_context",
     "install_unified_mcp_agent_orchestrator",
     "should_use_unified_agent",
