@@ -38,6 +38,11 @@ _GENERIC_DEVICE_QUERY_WORDS = {
     "show",
     "the",
 }
+_TARGETED_DEVICE_LOOKUP = re.compile(
+    r"^(?:please\s+)?(?:find|search(?:\s+for)?|locate|look\s+(?:up|for)|"
+    r"show\s+(?:me\s+)?(?:matches\s+for\s+)?)(?:the\s+)?(?:device\s+)?(.+?)[.!?]*$",
+    re.IGNORECASE,
+)
 
 
 def _normalise_words(value: str) -> list[str]:
@@ -88,13 +93,56 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
             "physical devices. Tool-catalogue discovery is never authoritative home data."
         )
 
-    @staticmethod
-    def _is_broad_device_inventory_request(query: str) -> bool:
+    def _is_broad_device_inventory_request(self, query: str) -> bool:
         words = _normalise_words(query)
         if not words or not any(word in {"device", "devices", "inventory"} for word in words):
             return False
         distinguishing = [word for word in words if word not in _GENERIC_DEVICE_QUERY_WORDS]
         return not distinguishing
+
+    @staticmethod
+    def _targeted_device_lookup(query: str) -> str | None:
+        """Return the requested device description for an explicit lookup request."""
+
+        match = _TARGETED_DEVICE_LOOKUP.fullmatch(str(query or "").strip())
+        if not match:
+            return None
+        requested = " ".join(match.group(1).strip(" .!?").split())
+        requested = re.sub(
+            r"^(?:the\s+)?(?:device\s+)?",
+            "",
+            requested,
+            flags=re.IGNORECASE,
+        ).strip()
+        if not requested:
+            return None
+        words = _normalise_words(requested)
+        if not words or all(word in _GENERIC_DEVICE_QUERY_WORDS for word in words):
+            return None
+        return requested
+
+    async def _execute_tool_call(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        query: str,
+    ) -> tuple[dict[str, Any], str]:
+        """Repair a planner inventory call when the user requested one device.
+
+        Small planning models occasionally choose ``hub_list_devices`` for requests such
+        as "find front door". That tool is the authoritative inventory source but does not
+        perform entity resolution. Redirect the call through HomeBrain's structured search
+        broker before synthesis, keeping the model in the same multi-step agent loop.
+        """
+
+        requested = self._targeted_device_lookup(query)
+        if name == "hub_list_devices" and requested:
+            return await super()._execute_tool_call(
+                _TARGETED_DEVICE_SEARCH,
+                {"query": requested, "limit": 8},
+                query,
+            )
+        return await super()._execute_tool_call(name, arguments, query)
 
     @staticmethod
     def _should_recover_with_inventory(error: Exception | str) -> bool:

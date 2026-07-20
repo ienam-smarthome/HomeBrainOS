@@ -19,6 +19,10 @@ from mcp_agent_orchestrator import (  # noqa: E402
 
 class FakeAgent:
     @staticmethod
+    def _targeted_device_lookup(query: str) -> str | None:
+        return "front door" if query.strip().lower() == "find front door" else None
+
+    @staticmethod
     def _is_broad_device_inventory_request(query: str) -> bool:
         return query.strip().lower() in {"find devices", "list devices"}
 
@@ -79,5 +83,18 @@ async def test_broad_inventory_request_keeps_hub_list_devices_answer():
         "message": "I found 106 devices.",
     }
     result = await _apply_device_tool_policy(app, "find devices", [], answer)
+    assert result is answer
+    assert "tool_policy_corrected" not in result
+
+
+@pytest.mark.asyncio
+async def test_non_lookup_inventory_read_is_not_forced_into_targeted_search():
+    app = SimpleNamespace(ollama=FakeAgent())
+    answer = {
+        "tools_used": [{"name": "hub_list_devices", "arguments": {}}],
+        "selected_tools": ["homebrain_search_devices", "hub_list_devices"],
+        "message": "The front door is closed.",
+    }
+    result = await _apply_device_tool_policy(app, "what doors are open?", [], answer)
     assert result is answer
     assert "tool_policy_corrected" not in result
