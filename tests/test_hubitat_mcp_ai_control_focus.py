@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +15,12 @@ from control_focus_mode import (  # noqa: E402
     is_power_summary_query,
     is_verified_read_query,
 )
+from control_focus_power_summary_safe import (  # noqa: E402
+    install_control_focus_power_summary_safe,
+)
+
+
+install_control_focus_power_summary_safe()
 
 
 class FakeMetricExecutor:
@@ -55,21 +59,21 @@ class FakeMetricExecutor:
                     "value": 0.0,
                     "aggregate": False,
                 },
+                {
+                    "id": "whole-home",
+                    "label": "Whole home meter",
+                    "room": "Energy",
+                    "value": 110.0,
+                    "aggregate": True,
+                },
             ],
-            "technical": {
-                "aggregate_readings": [
-                    {
-                        "label": "Whole home meter",
-                        "value": 110.0,
-                        "aggregate": True,
-                    }
-                ]
-            },
+            # This reproduces production: safe_debug can serialize diagnostics.
+            "technical": '{"aggregate_readings":[{"value":110.0}]}',
         }
 
 
 class FakeApplication:
-    VERSION = "0.7.1"
+    VERSION = "0.7.2"
 
 
 def make_service(*, enabled: bool = True, reads: bool = True) -> ControlFocusMode:
@@ -99,6 +103,9 @@ def test_show_power_consumption_is_a_verified_summary_not_a_device_name():
         "Halo3000x socket power",
     ]
     assert [item["label"] for item in answer["idle_power_readings"]] == ["Fridge"]
+    assert [item["label"] for item in answer["aggregate_power_readings"]] == [
+        "Whole home meter"
+    ]
     assert "Computer: 77 W" in answer["message"]
     assert "Total across 3 active individual readings: 99.2 W" in answer["message"]
     assert "0 W / idle readings: Fridge" in answer["message"]
@@ -143,13 +150,18 @@ def test_control_focus_helpers_do_not_break_confirmation_or_status_queries():
 def test_release_configuration_and_late_installation_are_aligned():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     domains = (APP_DIR / "ai_evidence_domains.py").read_text(encoding="utf-8")
+    safe_power = (APP_DIR / "control_focus_power_summary_safe.py").read_text(
+        encoding="utf-8"
+    )
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     changelog = (ROOT / "hubitat-mcp-ai" / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert 'version: "0.7.1"' in config
-    assert 'RELEASE_VERSION = "0.7.1"' in entrypoint
+    assert 'version: "0.7.2"' in config
+    assert 'RELEASE_VERSION = "0.7.2"' in entrypoint
     assert "control_focus_mode_enabled: true" in config
     assert "control_focus_allow_verified_reads: true" in config
-    assert "install_control_focus_mode(" in domains
+    assert "install_control_focus_power_summary_safe()" in domains
     assert "planner_module.is_ai_evidence_query = lambda _query: False" in domains
-    assert "## 0.7.1" in changelog
+    assert 'isinstance(technical, dict)' in safe_power
+    assert 'answer.get("measurement_readings")' in safe_power
+    assert "## 0.7.2" in changelog
