@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.6.5
+
+- Adds a dedicated **whole-home priority insight** route for questions such as `What are the three most important issues at home right now?`, `What looks unusual at home?` and `What needs attention at home?`.
+- Installs the route after the broad semantic-read pipeline so words such as `most` and `important` can no longer misroute a whole-home diagnostic request into metric comparison.
+- Gathers a truthful live Hubitat snapshot before any AI call, including explicit health alerts, offline states, low batteries, alarms and open contacts.
+- Uses Direct/Hybrid Ollama only to rank and phrase the already-confirmed issue rows; the model receives no MCP tools and cannot invent device states.
+- Honours requested counts from one to five and refuses to invent extra problems when fewer confirmed issues exist.
+- Returns the same ranked evidence deterministically when Direct Cloud is unavailable instead of falling through to the unsupported natural-agent error.
+- Reports a dedicated `home-insight` trace and the actual provider, including `Ollama Cloud Direct` when the Windows PC is off.
+- Adds regression coverage for the exact reported question, Direct Cloud synthesis, deterministic Cloud failure fallback and late-route installation order.
+
 ## 0.6.4
 
 - Fixes semantic-read questions failing with `qwen3.5:4b ... All connection attempts failed` when the Windows Ollama PC is offline.
