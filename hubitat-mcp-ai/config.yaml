@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.8.5"
+version: "0.9.0"
 slug: hubitat_mcp_ai
-description: "HomeBrain hybrid AI assistant with fast verified controls, live reads and evidence-bound AI answers"
+description: "HomeBrain AI-first Hubitat assistant with unified MCP tool calling, guarded writes and verified fallback"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -40,18 +40,20 @@ options:
   ollama_direct_cloud_model: ""
   ollama_direct_cloud_fallback_local_proxy: true
   ollama_health_timeout_seconds: 3
-  ollama_planner_timeout_seconds: 20
-  ollama_response_timeout_seconds: 30
-  ollama_routine_response_timeout_seconds: 20
-  ollama_agent_timeout_seconds: 50
+  ollama_planner_timeout_seconds: 25
+  ollama_response_timeout_seconds: 35
+  ollama_routine_response_timeout_seconds: 25
+  ollama_agent_timeout_seconds: 60
   ollama_quick_insight_timeout_seconds: 20
-  ollama_num_ctx: 2048
-  ollama_num_predict: 160
+  ollama_num_ctx: 8192
+  ollama_num_predict: 240
   ollama_keep_alive: "30m"
-  ollama_planner_tool_limit: 4
-  ollama_tool_result_limit_chars: 4000
+  ollama_planner_tool_limit: 40
+  unified_mcp_agent_enabled: true
+  unified_mcp_tool_limit: 48
+  ollama_tool_result_limit_chars: 8000
   ollama_evidence_item_limit: 8
-  ollama_max_tool_rounds: 2
+  ollama_max_tool_rounds: 6
   fast_path_enabled: true
   fallback_enabled: true
   hybrid_assistant_mode_enabled: true
@@ -132,6 +134,8 @@ schema:
   ollama_num_predict: int
   ollama_keep_alive: str
   ollama_planner_tool_limit: int
+  unified_mcp_agent_enabled: bool
+  unified_mcp_tool_limit: int
   ollama_tool_result_limit_chars: int
   ollama_evidence_item_limit: int
   ollama_max_tool_rounds: int
