@@ -219,7 +219,7 @@ semantic_read_intents = install_semantic_read_pipeline(
 )
 install_device_health_fast_route(application)
 install_ai_evidence_domains()
-if not application.option_bool("control_focus_mode_enabled", False):
+if application.option_bool("hybrid_assistant_mode_enabled", True):
     install_hybrid_assistant_query_policy()
 ai_evidence_planner = install_ai_evidence_planner(
     application,
