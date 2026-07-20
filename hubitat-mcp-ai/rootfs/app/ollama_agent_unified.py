@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import re
 import time
+from collections import Counter
 from typing import Any
 
+from device_intelligence_index import _attributes, _device_id, _device_rows, _label, _room_name
 from mcp_client import MCPTool
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from ollama_agent_claude import ClaudeStyleOllamaAgent
@@ -17,10 +21,31 @@ _DISCOVERY_TOOLS = {
     "hub_list_devices",
     "hub_read_devices",
 }
+_GENERIC_DEVICE_QUERY_WORDS = {
+    "all",
+    "any",
+    "available",
+    "device",
+    "devices",
+    "discover",
+    "find",
+    "get",
+    "inventory",
+    "list",
+    "my",
+    "please",
+    "selected",
+    "show",
+    "the",
+}
+
+
+def _normalise_words(value: str) -> list[str]:
+    return [item for item in re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).split() if item]
 
 
 class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
-    """AI-first Hubitat agent with targeted structured device resolution."""
+    """AI-first Hubitat agent with structured device resolution."""
 
     def __init__(self, *args: Any, unified_tool_limit: int = 48, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -53,15 +78,23 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
     def _planner_prompt(self) -> str:
         return (
             super()._planner_prompt()
-            + "\n\nUnified-agent rules: for any request that names, describes, locates "
-            "or asks about a device, call homebrain_search_devices first with the user's "
-            "natural description. It searches the complete structured Hubitat MCP device "
-            "inventory without character truncation and returns exact IDs, labels, rooms, "
-            "capabilities and current states. Use hub_read_devices after that when additional "
-            "live detail is required. Do not use hub_search_tools to search for a physical "
-            "device, and do not ask the response model to search a truncated whole-home list. "
-            "Tool-catalogue discovery is never authoritative home data."
+            + "\n\nUnified-agent rules: when the user names or describes a particular "
+            "physical device, call homebrain_search_devices first with only the current "
+            "request's natural description. Use hub_read_devices afterwards when more live "
+            "detail is required. When the user asks broadly to list, find or show devices "
+            "without a distinguishing name, room or capability, call hub_list_devices rather "
+            "than hub_read_devices. Do not reuse an entity from conversation history unless "
+            "the current request explicitly refers to it. Do not use hub_search_tools to find "
+            "physical devices. Tool-catalogue discovery is never authoritative home data."
         )
+
+    @staticmethod
+    def _is_broad_device_inventory_request(query: str) -> bool:
+        words = _normalise_words(query)
+        if not words or not any(word in {"device", "devices", "inventory"} for word in words):
+            return False
+        distinguishing = [word for word in words if word not in _GENERIC_DEVICE_QUERY_WORDS]
+        return not distinguishing
 
     @staticmethod
     def _should_recover_with_inventory(error: Exception | str) -> bool:
@@ -80,12 +113,87 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
         query: str,
         history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
+        safe_history = history or []
+        if self._is_broad_device_inventory_request(query):
+            return await self._answer_from_device_inventory(query, safe_history)
         try:
-            return await ClaudeStyleOllamaAgent.answer(self, query, history or [])
+            return await ClaudeStyleOllamaAgent.answer(self, query, safe_history)
         except OllamaUnavailable as exc:
             if not self._should_recover_with_inventory(exc):
                 raise
-            return await self._answer_from_targeted_device_search(query, history or [], exc)
+            return await self._answer_from_targeted_device_search(query, safe_history, exc)
+
+    async def _answer_from_device_inventory(
+        self,
+        query: str,
+        history: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        started = time.perf_counter()
+        result = await self.client.call_tool("hub_list_devices", {})
+        if result.is_error:
+            raise OllamaUnavailable(f"Device inventory failed: {result.text}")
+
+        rows = _device_rows(result.data)
+        room_counts: Counter[str] = Counter()
+        devices: list[dict[str, Any]] = []
+        for item in rows[:160]:
+            room = _room_name(item) or "No room assigned"
+            room_counts[room] += 1
+            devices.append(
+                {
+                    "id": _device_id(item),
+                    "label": _label(item),
+                    "room": room,
+                    "capabilities": item.get("capabilities") or [],
+                    "currentStates": _attributes(item),
+                    "disabled": bool(item.get("disabled") is True),
+                }
+            )
+
+        payload = {
+            "device_count": len(rows),
+            "room_counts": dict(sorted(room_counts.items())),
+            "devices": devices,
+        }
+        tool_text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
+        planner_messages = [
+            {"role": "tool", "tool_name": "hub_list_devices", "content": tool_text}
+        ]
+        body = await self._chat(
+            model=self.model,
+            messages=self._synthesis_messages(
+                query=query,
+                history=history,
+                planner_messages=planner_messages,
+            ),
+            tools=None,
+            timeout_seconds=self.response_timeout_seconds,
+            num_ctx=self.num_ctx,
+            num_predict=self.num_predict,
+            temperature=0.15,
+        )
+        content = str((body.get("message") or {}).get("content") or "").strip()
+        if not content:
+            content = f"I found {len(rows)} selected Hubitat devices."
+        elapsed = round((time.perf_counter() - started) * 1000)
+        return {
+            "success": True,
+            "route": "ollama+mcp",
+            "intent": "device-inventory",
+            "message": content,
+            "model": self.model,
+            "tools_used": [
+                {
+                    "name": "hub_list_devices",
+                    "arguments": {},
+                    "success": True,
+                    "preview": tool_text[:700],
+                }
+            ],
+            "selected_tools": ["hub_list_devices"],
+            "device_count": len(rows),
+            "elapsed_ms": elapsed,
+        }
 
     async def _answer_from_targeted_device_search(
         self,
