@@ -1,0 +1,41 @@
+name: Fix 0.9.7 runtime version metadata
+
+on:
+  push:
+    branches:
+      - release/0.9.7
+
+permissions:
+  contents: write
+
+jobs:
+  fix-version:
+    if: ${{ !contains(github.event.head_commit.message, '[runtime-version-fixed]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/0.9.7
+          fetch-depth: 0
+
+      - name: Set exact runtime version assignments
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('hubitat-mcp-ai/rootfs/app/entrypoint.py')
+          text = path.read_text(encoding='utf-8')
+          text = re.sub(r'^PREVIOUS_RELEASE_VERSION = ".*"$', 'PREVIOUS_RELEASE_VERSION = "0.9.6"', text, count=1, flags=re.MULTILINE)
+          text = re.sub(r'^RELEASE_VERSION = ".*"$', 'RELEASE_VERSION = "0.9.7"', text, count=1, flags=re.MULTILINE)
+          path.write_text(text, encoding='utf-8')
+          PY
+          git rm .github/workflows/fix-0.9.7-runtime-version.yml
+
+      - name: Commit correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hubitat-mcp-ai/rootfs/app/entrypoint.py
+          git commit -m "Fix 0.9.7 runtime version metadata [runtime-version-fixed]"
+          git push origin HEAD:release/0.9.7
