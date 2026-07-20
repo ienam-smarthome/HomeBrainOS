@@ -211,7 +211,10 @@ def is_ai_evidence_query(query: str) -> bool:
     return bool(
         home_domain
         and decision.route in {"ollama-planner", "ollama-verified"}
-        and q.startswith(("what", "which", "how", "is ", "are ", "tell me", "give me"))
+        and q.startswith((
+            "what", "which", "how", "is ", "are ", "tell me", "give me",
+            "find", "locate", "where", "show", "check", "look up", "look for",
+        ))
     )
 
 
