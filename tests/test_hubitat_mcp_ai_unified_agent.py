@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from mcp_agent_orchestrator import should_use_unified_agent  # noqa: E402
+from mcp_agent_orchestrator import _normalise_history, should_use_unified_agent  # noqa: E402
 from ollama_agent_unified import UnifiedAdaptiveMCPAgent  # noqa: E402
 
 
@@ -32,6 +32,24 @@ def test_exact_fast_control_and_protocol_followups_stay_deterministic():
     assert not should_use_unified_agent("Turn on Bedroom 1 Light")
     assert not should_use_unified_agent("yes")
     assert not should_use_unified_agent("Create paused rule")
+
+
+def test_typed_history_is_normalised_before_entering_agent_loop():
+    class PydanticLike:
+        def model_dump(self):
+            return {"role": "assistant", "content": "Previous answer"}
+
+    history = _normalise_history(
+        [
+            SimpleNamespace(role="user", content="Previous question"),
+            PydanticLike(),
+            {"role": "system", "content": "ignored"},
+        ]
+    )
+    assert history == [
+        {"role": "user", "content": "Previous question"},
+        {"role": "assistant", "content": "Previous answer"},
+    ]
 
 
 def test_unified_catalogue_exposes_discovery_core_and_gateways_without_keywords():
