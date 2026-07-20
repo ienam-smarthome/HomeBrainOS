@@ -1,0 +1,58 @@
+name: Bump Hubitat MCP AI to 0.9.7
+
+on:
+  push:
+    branches:
+      - release/0.9.7
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    if: ${{ !contains(github.event.head_commit.message, '[version-bumped]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/0.9.7
+          fetch-depth: 0
+
+      - name: Align add-on and runtime versions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          config = Path('hubitat-mcp-ai/config.yaml')
+          text = config.read_text(encoding='utf-8')
+          text = text.replace('version: "0.9.6"', 'version: "0.9.7"', 1)
+          config.write_text(text, encoding='utf-8')
+
+          entrypoint = Path('hubitat-mcp-ai/rootfs/app/entrypoint.py')
+          text = entrypoint.read_text(encoding='utf-8')
+          text = text.replace('PREVIOUS_RELEASE_VERSION = "0.9.5"', 'PREVIOUS_RELEASE_VERSION = "0.9.6"', 1)
+          text = text.replace('RELEASE_VERSION = "0.9.6"', 'RELEASE_VERSION = "0.9.7"', 1)
+          entrypoint.write_text(text, encoding='utf-8')
+
+          changelog = Path('hubitat-mcp-ai/CHANGELOG-0.9.7.md')
+          changelog.write_text(
+              '# 0.9.7\n\n'
+              '- Apply the uploaded front-door routing patch.\n'
+              '- Recognise find, locate, where, show, check, look-up and look-for home queries.\n'
+              '- Expand MCP device-tool selection across doors, locks, rooms, appliances, climate, cameras and energy domains.\n'
+              '- Require authoritative live-home evidence for the expanded domain vocabulary.\n',
+              encoding='utf-8',
+          )
+          PY
+          git rm .github/workflows/bump-0.9.7.yml
+
+      - name: Commit release metadata
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hubitat-mcp-ai/config.yaml \
+                  hubitat-mcp-ai/rootfs/app/entrypoint.py \
+                  hubitat-mcp-ai/CHANGELOG-0.9.7.md
+          git commit -m "Release Hubitat MCP AI 0.9.7 [version-bumped]"
+          git push origin HEAD:release/0.9.7
