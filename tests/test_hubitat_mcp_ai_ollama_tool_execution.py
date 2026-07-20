@@ -151,6 +151,7 @@ def test_json_printed_by_qwen_is_executed_as_a_tool_call():
         ("hub_list_devices", {"filter": "battery"})
     ]
     assert answer["tools_used"][0]["name"] == "hub_list_devices"
+    assert answer["tools_used"][0]["evidence"] == {"device_count": 2}
 
 
 def test_missing_native_tool_call_triggers_generic_mcp_discovery():

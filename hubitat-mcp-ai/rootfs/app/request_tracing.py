@@ -74,6 +74,40 @@ def _performance(trace: dict[str, Any], answer: dict[str, Any] | None) -> dict[s
     }
 
 
+def _agent_execution(answer: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact, safe account of what the agent actually executed."""
+
+    tools: list[dict[str, Any]] = []
+    for item in answer.get("tools_used") or []:
+        if isinstance(item, str):
+            tools.append({"name": item})
+            continue
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        record: dict[str, Any] = {"name": str(item["name"])}
+        for key in ("success", "blocked", "error", "evidence"):
+            if item.get(key) not in (None, "", {}):
+                record[key] = item[key]
+        tools.append(record)
+
+    execution: dict[str, Any] = {}
+    if tools:
+        execution["tools_used"] = tools
+    for key in (
+        "agent_orchestrator",
+        "tool_rounds",
+        "tool_policy_corrected",
+        "synthesis_policy_corrected",
+        "authoritative_recovery",
+        "targeted_device_search",
+        "conversation_history_used",
+        "legacy_fallback_used",
+    ):
+        if answer.get(key) not in (None, ""):
+            execution[key] = answer[key]
+    return execution
+
+
 def _attach_performance(answer: dict[str, Any], performance: dict[str, Any]) -> None:
     answer["trace_id"] = performance["trace_id"]
     answer["performance"] = performance
@@ -83,6 +117,14 @@ def _attach_performance(answer: dict[str, Any], performance: dict[str, Any]) -> 
         indent=2,
         default=str,
     )
+    execution = _agent_execution(answer)
+    if execution:
+        heading += "\n\nAgent execution\n" + json.dumps(
+            execution,
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        )
     technical = answer.get("technical")
     if technical not in (None, ""):
         answer["technical"] = heading + "\n\nMCP response\n" + str(technical)
@@ -200,4 +242,4 @@ def install_request_tracing(
     return store
 
 
-__all__ = ["RequestTraceStore", "install_request_tracing"]
+__all__ = ["RequestTraceStore", "_agent_execution", "install_request_tracing"]

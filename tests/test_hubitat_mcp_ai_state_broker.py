@@ -11,7 +11,7 @@ from fastapi import FastAPI
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from mcp_client import MCPToolResult  # noqa: E402
+from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from mcp_state_broker import MCPStateBroker  # noqa: E402
 from request_tracing import install_request_tracing  # noqa: E402
 from webui import render_page  # noqa: E402
@@ -30,6 +30,20 @@ class FakeMCP:
 
     async def close(self) -> None:
         return None
+
+    async def list_tools(self, refresh: bool = False):
+        return [
+            MCPTool(
+                name="hub_list_devices",
+                description="List selected devices",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            MCPTool(
+                name="hub_call_device_command",
+                description="Call a device command",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
 
     async def call_tool(self, name: str, arguments: dict | None = None) -> MCPToolResult:
         arguments = dict(arguments or {})
@@ -119,6 +133,20 @@ def test_request_trace_attaches_route_cache_and_tool_timings():
                 "success": True,
                 "route": "mcp-fast",
                 "message": "Bedroom 1 Light is off.",
+                "agent_orchestrator": "unified-mcp-ai-first",
+                "tool_policy_corrected": True,
+                "tools_used": [
+                    {
+                        "name": "homebrain_search_devices",
+                        "success": True,
+                        "preview": "sensitive payload omitted from diagnostics",
+                        "evidence": {
+                            "inventory_count": 12,
+                            "match_count": 1,
+                            "search_strategy": "unprojected-inventory-fallback",
+                        },
+                    }
+                ],
             }
 
         application = SimpleNamespace(app=FastAPI(), ask=ask)
@@ -131,6 +159,10 @@ def test_request_trace_attaches_route_cache_and_tool_timings():
         assert answer["performance"]["mcp_calls"] == 1
         assert answer["performance"]["cache_misses"] == 1
         assert "Request performance" in answer["technical"]
+        assert "Agent execution" in answer["technical"]
+        assert '"match_count": 1' in answer["technical"]
+        assert '"tool_policy_corrected": true' in answer["technical"]
+        assert "sensitive payload omitted" not in answer["technical"]
         recent = store.response()
         assert recent["count"] == 1
         assert recent["requests"][0]["query"] == "Which lights are on?"

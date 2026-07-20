@@ -236,6 +236,7 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
                     "arguments": {},
                     "success": True,
                     "preview": tool_text[:700],
+                    "evidence": {"device_count": len(rows)},
                 }
             ],
             "selected_tools": ["hub_list_devices"],
@@ -285,6 +286,7 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
             raise OllamaUnavailable("Targeted device recovery returned no user-facing answer")
 
         elapsed = round((time.perf_counter() - started) * 1000)
+        evidence = self._tool_evidence(result.data)
         return {
             "success": True,
             "route": "ollama+mcp",
@@ -298,6 +300,7 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
                     "arguments": {"query": query, "limit": 8},
                     "success": True,
                     "preview": tool_text[:700],
+                    **({"evidence": evidence} if evidence else {}),
                 }
             ],
             "selected_tools": [_TARGETED_DEVICE_SEARCH],
