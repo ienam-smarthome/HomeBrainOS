@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 import control_agent_gate
 import control_agent_intent
@@ -40,14 +40,16 @@ _LEVEL_CUE = re.compile(
 )
 
 _NATURAL_LEVEL = re.compile(
-    r"^(?:please\s+)?(?:put|set|make|bring|dim)\s+(?:the\s+)?(?P<target>.+?)\s+"
-    r"(?:(?:down|up)\s+)?(?:to|at)\s+(?:(?:about|around|roughly|approximately)\s+)?"
+    r"^(?:please\s+)?(?P<verb>put|set|make|bring|dim)\s+(?:the\s+)?"
+    r"(?P<target>.+?)\s+(?:(?:down|up)\s+)?(?:to|at)\s+"
+    r"(?P<approx>(?:about|around|roughly|approximately)\s+)?"
     r"(?P<value>[a-z0-9\-\s]+?)\s*(?:%|percent|per\s+cent|brightness)?[.!?]*$",
     re.IGNORECASE,
 )
 _NATURAL_LEVEL_BARE = re.compile(
-    r"^(?:please\s+)?(?:put|set|make|dim)\s+(?:the\s+)?(?P<target>.+?)\s+"
-    r"(?:(?:about|around|roughly|approximately)\s+)?(?P<value>\d{1,3})\s*%[.!?]*$",
+    r"^(?:please\s+)?(?P<verb>put|set|make|dim)\s+(?:the\s+)?(?P<target>.+?)\s+"
+    r"(?P<approx>(?:about|around|roughly|approximately)\s+)?"
+    r"(?P<value>\d{1,3})\s*%[.!?]*$",
     re.IGNORECASE,
 )
 
@@ -116,7 +118,6 @@ def percentage_value(value: str) -> int | None:
     tokens = [item for item in re.split(r"[\s-]+", text) if item and item != "and"]
     if not tokens:
         return None
-    total = 0
     current = 0
     for token in tokens:
         if token in _ONES:
@@ -127,17 +128,15 @@ def percentage_value(value: str) -> int | None:
             current = max(1, current) * 100
         else:
             return None
-    total += current
-    return total if 0 <= total <= 100 else None
+    return current if 0 <= current <= 100 else None
 
 
 def is_probable_control_request(query: str) -> bool:
-    """Broad, conservative control triage used before the read-only router.
+    """Recognise probable natural controls before the read-only router.
 
-    This deliberately recognises natural imperatives without deciding a device ID or
-    executing anything. Questions with an interrogative/read prefix remain on read
-    routes. Actual intent still has to pass the strict ControlIntent schema and the
-    deterministic selected-device resolver.
+    The function does not resolve or execute anything. Questions with a read prefix
+    remain on read routes; supported controls must still pass the strict schema,
+    selected-device resolution, safety policy and final-state verification.
     """
 
     text = _normalise(query).strip(" .!?")
@@ -157,8 +156,21 @@ def parse_natural_level(query: str) -> ControlIntent | None:
         return None
     target = re.sub(r"\s+", " ", match.group("target").strip(" .!?"))
     raw_value = match.group("value")
+    verb = str(match.group("verb") or "").lower()
+    approximate = bool(match.groupdict().get("approx"))
     if not target or _TRAILING_RELATIVE.search(raw_value):
         return None
+
+    # Preserve the proven exact numeric grammar for ordinary set/dim/make commands.
+    # This parser owns natural verbs, approximation, spoken numbers and brightness
+    # fractions that the older deterministic grammar cannot represent.
+    if (
+        verb in {"set", "dim", "make"}
+        and not approximate
+        and re.fullmatch(r"\d{1,3}", raw_value.strip())
+    ):
+        return None
+
     value = percentage_value(raw_value)
     if value is None:
         return None
@@ -187,16 +199,18 @@ def _model_candidates(interpreter: ControlIntentInterpreter) -> list[tuple[str, 
     cloud = str(getattr(agent, "cloud_model", "") or "").strip()
     values: list[tuple[str, str, float]] = []
     if local:
-        values.append((local, "Local Ollama control interpreter", interpreter.timeout_seconds))
+        values.append((local, "Local Ollama structured control interpreter", interpreter.timeout_seconds))
     if (
         application.option_bool("control_agent_cloud_fallback_enabled", True)
         and bool(getattr(agent, "cloud_enabled", False))
         and cloud
         and cloud != local
     ):
+        options = getattr(application, "OPTIONS", {})
+        options = options if isinstance(options, dict) else {}
         timeout = float(
-            application.OPTIONS.get("control_agent_cloud_timeout_seconds")
-            or application.OPTIONS.get("ollama_cloud_timeout_seconds")
+            options.get("control_agent_cloud_timeout_seconds")
+            or options.get("ollama_cloud_timeout_seconds")
             or 12
         )
         values.append((cloud, "Ollama Cloud structured control interpreter", max(5.0, timeout)))
