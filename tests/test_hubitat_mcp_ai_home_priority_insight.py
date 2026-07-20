@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
+from ai_evidence_domains import install_ai_evidence_domains  # noqa: E402
+from ai_evidence_planner import AIEvidencePlanner, is_ai_evidence_query  # noqa: E402
 from home_priority_insight import (  # noqa: E402
     WholeHomePriorityInsight,
     is_home_priority_query,
@@ -113,7 +115,7 @@ class FakeOllama:
 
 
 class FakeApplication:
-    VERSION = "0.6.5"
+    VERSION = "0.7.0"
 
     def __init__(self, *, fail_ai: bool = False) -> None:
         self.ollama = FakeOllama(fail=fail_ai)
@@ -180,7 +182,27 @@ def test_home_priority_keeps_deterministic_answer_when_cloud_is_unavailable():
     assert "local fallback does not support" not in answer["message"]
 
 
-def test_late_route_is_installed_after_semantic_pipeline_and_release_is_aligned():
+def test_ai_evidence_planner_domains_and_write_isolation_are_active():
+    terms = install_ai_evidence_domains()
+
+    assert "electricity" in terms
+    assert "bathroom" in terms
+    assert "ventilation" in terms
+    assert is_ai_evidence_query("Why is my electricity usage high right now?")
+    assert is_ai_evidence_query("What should I improve in the bathroom ventilation setup?")
+    assert not is_ai_evidence_query("Turn off Bedroom 1 Light")
+    assert not is_ai_evidence_query("Which device is using the most power?")
+    assert not is_ai_evidence_query("Are any devices offline or stale?")
+    assert not is_ai_evidence_query("Create automation to turn off the lights")
+
+    planner_source = (APP_DIR / "ai_evidence_planner.py").read_text(encoding="utf-8")
+    assert '"hub_call_device_command"' not in planner_source
+    assert 'tools=None' in planner_source
+    assert '"maximum_evidence_rounds": self.max_rounds' in planner_source
+    assert "self.max_rounds = max(1, min(2" in planner_source
+
+
+def test_late_routes_and_evidence_planner_release_are_aligned():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     route_source = (APP_DIR / "device_health_fast_route.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
@@ -188,7 +210,18 @@ def test_late_route_is_installed_after_semantic_pipeline_and_release_is_aligned(
     assert entrypoint.index("install_semantic_read_pipeline(") < entrypoint.index(
         "install_device_health_fast_route(application)"
     )
+    assert entrypoint.index("install_device_health_fast_route(application)") < entrypoint.index(
+        "install_ai_evidence_domains()"
+    )
+    assert entrypoint.index("install_ai_evidence_domains()") < entrypoint.index(
+        "install_ai_evidence_planner("
+    )
+    assert entrypoint.index("install_ai_evidence_planner(") < entrypoint.index(
+        "install_request_tracing("
+    )
     assert "is_home_priority_query(query)" in route_source
     assert 'RouteDecision(\n                "home-insight"' in route_source
-    assert 'version: "0.6.5"' in config
-    assert 'RELEASE_VERSION = "0.6.5"' in entrypoint
+    assert 'version: "0.7.0"' in config
+    assert 'RELEASE_VERSION = "0.7.0"' in entrypoint
+    assert "ai_evidence_planner_enabled: true" in config
+    assert "ai_evidence_planner_max_rounds: 2" in config
