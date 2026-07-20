@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.6.2
+
+- Adds **goal-based AI lighting control** for subjective requests such as `Make Livingroom Light 1 comfortable for watching TV`.
+- Sends these requests to the stronger configured Cloud structured-control model first, with the selected-device inventory and no command tools.
+- Lets AI translate low-risk lighting goals into a concrete proposed level, using conservative starting points for TV, relaxing, reading, cleaning and bedtime.
+- Caps goal-plan confidence below the automatic-execution threshold so HomeBrain always shows the chosen percentage and asks for confirmation before changing the light.
+- Keeps Python responsible for device resolution, policy, MCP execution and final-state verification; the model cannot select IDs or claim success.
+- Prevents failed subjective controls from falling through to the general natural-answer agent and producing `No authoritative MCP evidence` errors.
+- Returns a focused request for an explicit percentage when no configured structured model can produce a safe proposal.
+- Adds `control_agent_goal_prefer_cloud`, enabled by default, while preserving local fallback and all exact deterministic fast controls.
+
 ## 0.6.1
 
 - Fixes natural controls such as `Put living room one light at about thirty percent` being parsed as the literal device name `living room one light` and then opening a two-device choice menu.
