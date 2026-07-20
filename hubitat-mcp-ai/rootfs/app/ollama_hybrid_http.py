@@ -30,13 +30,7 @@ def direct_model_name(cloud_tag: str, override: str = "") -> str:
 
 
 class HybridOllamaHTTPClient:
-    """Route local and direct Ollama Cloud requests through one safe client.
-
-    Existing HomeBrain agents continue calling the normal Ollama URLs. Requests
-    whose JSON model matches the configured cloud tag are transparently sent to
-    ollama.com with bearer authentication. A failed direct request may retry the
-    original local Ollama URL, allowing a signed-in PC proxy to remain a backup.
-    """
+    """Route local and direct Ollama Cloud requests through one safe client."""
 
     def __init__(
         self,
@@ -59,6 +53,8 @@ class HybridOllamaHTTPClient:
         self.fallback_local_proxy = bool(fallback_local_proxy)
         self._client = client or httpx.AsyncClient(follow_redirects=True)
         self._last_direct_error: str | None = None
+        self._local_tags_online: bool | None = None
+        self._direct_tags_online: bool | None = None
 
     @property
     def direct_ready(self) -> bool:
@@ -77,6 +73,14 @@ class HybridOllamaHTTPClient:
     @property
     def last_direct_error(self) -> str | None:
         return self._last_direct_error
+
+    @property
+    def local_tags_online(self) -> bool | None:
+        return self._local_tags_online
+
+    @property
+    def direct_tags_online(self) -> bool | None:
+        return self._direct_tags_online
 
     def last_provider(self, default: str | None = None) -> str | None:
         return _PROVIDER.get() or default
@@ -107,7 +111,6 @@ class HybridOllamaHTTPClient:
     def _direct_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         value = copy.deepcopy(payload)
         value["model"] = self.direct_model
-        # keep_alive is meaningful to a local runtime, not the hosted API.
         value.pop("keep_alive", None)
         return value
 
@@ -121,18 +124,22 @@ class HybridOllamaHTTPClient:
             direct_kwargs = dict(kwargs)
             direct_kwargs["json"] = self._direct_payload(dict(payload))
             direct_kwargs["headers"] = self._direct_headers(kwargs.get("headers"))
-            direct_url = f"{self.direct_base_url}/api/chat"
             try:
-                response = await self._client.post(direct_url, **direct_kwargs)
+                response = await self._client.post(
+                    f"{self.direct_base_url}/api/chat",
+                    **direct_kwargs,
+                )
                 if not self._response_ok(response):
                     response.raise_for_status()
                 self._last_direct_error = None
+                self._direct_tags_online = True
                 _PROVIDER.set("Ollama Cloud Direct")
                 return response
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 self._last_direct_error = str(exc).strip() or type(exc).__name__
+                self._direct_tags_online = False
                 if not self.fallback_local_proxy:
                     raise
 
@@ -142,6 +149,7 @@ class HybridOllamaHTTPClient:
             if self._is_cloud_request(payload)
             else "Local Ollama"
         )
+        self._local_tags_online = True
         _PROVIDER.set(provider)
         return response
 
@@ -153,11 +161,13 @@ class HybridOllamaHTTPClient:
                 local_response = await self._client.get(url, **kwargs)
                 if not self._response_ok(local_response):
                     local_response.raise_for_status()
+                self._local_tags_online = True
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 local_error = exc
                 local_response = None
+                self._local_tags_online = False
 
             direct_response: httpx.Response | None = None
             direct_error: Exception | None = None
@@ -171,12 +181,14 @@ class HybridOllamaHTTPClient:
                 if not self._response_ok(direct_response):
                     direct_response.raise_for_status()
                 self._last_direct_error = None
+                self._direct_tags_online = True
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 direct_error = exc
                 self._last_direct_error = str(exc).strip() or type(exc).__name__
                 direct_response = None
+                self._direct_tags_online = False
 
             if local_response is None and direct_response is None:
                 raise direct_error or local_error or RuntimeError("No Ollama endpoint is reachable")
@@ -205,7 +217,6 @@ class HybridOllamaHTTPClient:
                         }
                     )
 
-            request = httpx.Request("GET", url)
             _PROVIDER.set(
                 "Hybrid local + direct Ollama"
                 if local_response is not None and direct_response is not None
@@ -213,9 +224,14 @@ class HybridOllamaHTTPClient:
                 if direct_response is not None
                 else "Local Ollama"
             )
-            return httpx.Response(200, json={"models": merged}, request=request)
+            return httpx.Response(
+                200,
+                json={"models": merged},
+                request=httpx.Request("GET", url),
+            )
 
         response = await self._client.get(url, **kwargs)
+        self._local_tags_online = True
         _PROVIDER.set("Local Ollama")
         return response
 
