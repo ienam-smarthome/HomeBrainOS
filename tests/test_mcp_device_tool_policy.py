@@ -12,6 +12,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from mcp_agent_orchestrator import (  # noqa: E402
+    _apply_automation_recommendation_policy,
     _apply_device_tool_policy,
     _executed_tool_names,
 )
@@ -98,3 +99,56 @@ async def test_non_lookup_inventory_read_is_not_forced_into_targeted_search():
     result = await _apply_device_tool_policy(app, "what doors are open?", [], answer)
     assert result is answer
     assert "tool_policy_corrected" not in result
+
+
+@pytest.mark.asyncio
+async def test_false_timeout_recommendation_is_replaced_with_grounded_service_answer():
+    class RecommendationService:
+        @staticmethod
+        def matches(query):
+            return "automation" in query.lower()
+
+        async def answer(self, query):
+            return {
+                "success": True,
+                "route": "mcp-automation-recommendation-ai-fallback",
+                "message": "Use Hallway Motion to turn on Hallway Light after dark.",
+            }
+
+    app = SimpleNamespace(automation_recommendation=RecommendationService())
+    original = {
+        "success": True,
+        "route": "ollama+mcp",
+        "message": (
+            "I'm having trouble retrieving your full device list because the system "
+            "is timing out with too many items."
+        ),
+        "tools_used": [{"name": "hub_read_devices", "success": True}],
+    }
+
+    result = await _apply_automation_recommendation_policy(
+        app,
+        "Suggest one useful automation for the devices I have",
+        original,
+    )
+
+    assert result["synthesis_policy_corrected"] is True
+    assert result["message"].startswith("Use Hallway Motion")
+    assert result["original_executed_tools"] == ["hub_read_devices"]
+
+
+@pytest.mark.asyncio
+async def test_real_mcp_failure_is_not_relabelled_as_false_timeout():
+    service = SimpleNamespace(matches=lambda query: True)
+    app = SimpleNamespace(automation_recommendation=service)
+    original = {
+        "message": "The device request is timing out.",
+        "tools_used": [{"name": "hub_read_devices", "success": False}],
+    }
+
+    result = await _apply_automation_recommendation_policy(
+        app,
+        "Suggest one useful automation",
+        original,
+    )
+    assert result is original
