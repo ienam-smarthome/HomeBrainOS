@@ -224,11 +224,12 @@ class HubitatMCPClient:
             elif item is not None:
                 text_parts.append(str(item))
 
-        if not text_parts and result.get("structuredContent") is not None:
-            text_parts.append(json.dumps(result["structuredContent"], ensure_ascii=False))
+        structured = result.get("structuredContent")
+        if not text_parts and structured is not None:
+            text_parts.append(json.dumps(structured, ensure_ascii=False))
 
         text = "\n".join(part for part in text_parts if part).strip()
-        data = self._decode_tool_text(text)
+        data = structured if structured is not None else self._decode_tool_text(text)
         is_error = bool(result.get("isError"))
         return MCPToolResult(
             name=name,
@@ -244,7 +245,7 @@ class HubitatMCPClient:
         payload: dict[str, Any],
         allow_empty: bool = False,
     ) -> dict[str, Any]:
-        headers: dict[str, str] = {}
+        headers: dict[str, Any] = {}
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
 
