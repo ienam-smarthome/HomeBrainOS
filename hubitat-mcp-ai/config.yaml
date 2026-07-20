@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.5.9"
+version: "0.6.0"
 slug: hubitat_mcp_ai
-description: "HomeBrain dashboard with authoritative offline and stale-device health summary"
+description: "HomeBrain Agent-First Control with inventory-aware natural interpretation and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -51,7 +51,9 @@ options:
   fallback_enabled: true
   control_agent_enabled: true
   control_agent_ai_rescue_enabled: true
+  control_agent_cloud_fallback_enabled: true
   control_agent_intent_timeout_seconds: 5
+  control_agent_cloud_timeout_seconds: 12
   control_agent_auto_execute_confidence_percent: 88
   control_agent_block_below_confidence_percent: 50
   control_agent_group_confirmation_size: 6
@@ -115,7 +117,9 @@ schema:
   fallback_enabled: bool
   control_agent_enabled: bool
   control_agent_ai_rescue_enabled: bool
+  control_agent_cloud_fallback_enabled: bool
   control_agent_intent_timeout_seconds: int
+  control_agent_cloud_timeout_seconds: int
   control_agent_auto_execute_confidence_percent: int
   control_agent_block_below_confidence_percent: int
   control_agent_group_confirmation_size: int
