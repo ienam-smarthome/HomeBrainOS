@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.7.1"
+version: "0.7.2"
 slug: hubitat_mcp_ai
 description: "HomeBrain Control Focus with verified device control, live reads and optional broader AI planning"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"

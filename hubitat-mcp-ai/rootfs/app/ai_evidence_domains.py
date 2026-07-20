@@ -4,6 +4,7 @@ from typing import Any
 
 import ai_evidence_planner as planner_module
 from control_focus_mode import install_control_focus_mode
+from control_focus_power_summary_safe import install_control_focus_power_summary_safe
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 
 
@@ -28,11 +29,11 @@ _ORIGINAL_AI_EVIDENCE_QUERY = planner_module.is_ai_evidence_query
 def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, ...]:
     """Install broad evidence domains or the safer default Control Focus scope.
 
-    Control Focus is enabled by default for release 0.7.1. It keeps the proven
-    control and verified-read routes, adds a deterministic current-power summary,
-    and prevents the later AI Evidence Planner wrapper from capturing broad
-    questions. Disabling ``control_focus_mode_enabled`` restores the 0.7.0 broad
-    evidence-planner behaviour without removing its code or settings.
+    Control Focus is enabled by default. It keeps the proven control and verified-
+    read routes, adds a deterministic current-power summary, and prevents the later
+    AI Evidence Planner wrapper from capturing broad questions. Disabling
+    ``control_focus_mode_enabled`` restores the broader evidence-planner behaviour
+    without removing its code or settings.
 
     ``activate_runtime=False`` is intended for side-effect-free domain validation
     in regression tests; production entrypoint installation uses the default.
@@ -51,6 +52,7 @@ def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, 
         # AIEvidencePlanner.matches resolves this module global at runtime. Keeping
         # it false prevents the outer planner wrapper from bypassing Control Focus.
         planner_module.is_ai_evidence_query = lambda _query: False
+        install_control_focus_power_summary_safe()
         metric_executor = SemanticMetricComparisonExecutor(application.fallback)
         install_control_focus_mode(
             application,

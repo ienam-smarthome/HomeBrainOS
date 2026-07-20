@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.7.2
+
+- Fixes `Show power consumption` failing after live MCP reads with `AttributeError: 'str' object has no attribute 'get'`.
+- Stops the Control Focus formatter from treating the serialized `technical` debug field as structured evidence.
+- Reads individual and whole-home Power Meter rows directly from the authoritative `measurement_readings` collection.
+- Keeps whole-home aggregate values separate from the individual-device total and preserves the active/idle breakdown.
+- Adds a production-shaped regression where `technical` is a string, proving the formatter cannot call mapping methods on debug text.
+
 ## 0.7.1
 
 - Introduces **Control Focus mode**, enabled by default, to keep HomeBrain centred on reliable device control and authoritative live device reads.
