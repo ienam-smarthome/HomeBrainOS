@@ -4,6 +4,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 import request_tracing
+from home_priority_insight import WholeHomePriorityInsight, is_home_priority_query
 from routing_policy import RouteDecision
 
 
@@ -28,18 +29,36 @@ def is_device_health_query(query: str) -> bool:
 
 
 def install_device_health_fast_route(application: Any) -> AskHandler:
-    """Install a deterministic route for offline/stale health questions.
+    """Install late authoritative health and whole-home priority routes.
 
-    The wrapper is installed after semantic and Control Agent routes but before
-    request tracing. It therefore avoids Cloud synthesis while keeping the final
-    trace accurate. The request-tracing module imports ``classify_query`` by name,
-    so its module global is patched explicitly with a narrow health-query override.
+    This wrapper is installed after semantic and Control Agent routes but before
+    request tracing. Whole-home insight questions therefore cannot be swallowed by
+    the broad semantic-comparison gate merely because they contain words such as
+    ``most`` or ``important``. Device-health questions remain deterministic.
     """
 
     original_ask: AskHandler = application.ask
     original_classifier = request_tracing.classify_query
+    priority_service = WholeHomePriorityInsight(
+        application,
+        application.home_snapshot,
+        ai_enabled=application.option_bool("home_snapshot_ai_enabled", True),
+        ai_timeout_seconds=float(
+            getattr(application, "OPTIONS", {}).get("home_snapshot_ai_timeout_seconds")
+            or 20
+        ),
+    )
+    application.home_priority_insight = priority_service
 
-    def classify_with_device_health(query: str) -> RouteDecision:
+    def classify_with_late_routes(query: str) -> RouteDecision:
+        if is_home_priority_query(query):
+            return RouteDecision(
+                "home-insight",
+                (
+                    "deterministic whole-home snapshot gathers confirmed issues first; "
+                    "Direct/Hybrid Ollama only ranks and phrases verified evidence"
+                ),
+            )
         if is_device_health_query(query):
             return RouteDecision(
                 "mcp-fast",
@@ -50,10 +69,14 @@ def install_device_health_fast_route(application: Any) -> AskHandler:
             )
         return original_classifier(query)
 
-    request_tracing.classify_query = classify_with_device_health
+    request_tracing.classify_query = classify_with_late_routes
 
-    async def ask_with_device_health(request: Any) -> dict[str, Any]:
+    async def ask_with_late_routes(request: Any) -> dict[str, Any]:
         query = str(getattr(request, "query", "") or "").strip()
+        if is_home_priority_query(query):
+            answer = dict(await priority_service.answer(query))
+            answer.setdefault("version", application.VERSION)
+            return answer
         if not is_device_health_query(query):
             return await original_ask(request)
 
@@ -64,8 +87,12 @@ def install_device_health_fast_route(application: Any) -> AskHandler:
         answer["selected_tools"] = ["hub_list_devices"]
         return answer
 
-    application.ask = ask_with_device_health
+    application.ask = ask_with_late_routes
     return original_ask
 
 
-__all__ = ["install_device_health_fast_route", "is_device_health_query"]
+__all__ = [
+    "install_device_health_fast_route",
+    "is_device_health_query",
+    "is_home_priority_query",
+]
