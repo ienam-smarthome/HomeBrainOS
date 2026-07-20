@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.6.2"
+version: "0.6.3"
 slug: hubitat_mcp_ai
-description: "HomeBrain Agent-First Control with AI lighting-goal planning, semantic device resolution and verified Hubitat execution"
+description: "HomeBrain Agent-First Control with PC-independent direct Ollama Cloud, local fallback and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -34,6 +34,11 @@ options:
   ollama_local_fallback_model: "qwen3.5:4b"
   ollama_cloud_fallback_local: true
   ollama_cloud_timeout_seconds: 12
+  ollama_direct_cloud_enabled: true
+  ollama_direct_cloud_base_url: "https://ollama.com"
+  ollama_direct_cloud_api_key: ""
+  ollama_direct_cloud_model: ""
+  ollama_direct_cloud_fallback_local_proxy: true
   ollama_health_timeout_seconds: 3
   ollama_planner_timeout_seconds: 20
   ollama_response_timeout_seconds: 30
@@ -101,6 +106,11 @@ schema:
   ollama_local_fallback_model: str
   ollama_cloud_fallback_local: bool
   ollama_cloud_timeout_seconds: int
+  ollama_direct_cloud_enabled: bool
+  ollama_direct_cloud_base_url: str
+  ollama_direct_cloud_api_key: password
+  ollama_direct_cloud_model: str
+  ollama_direct_cloud_fallback_local_proxy: bool
   ollama_health_timeout_seconds: int
   ollama_planner_timeout_seconds: int
   ollama_response_timeout_seconds: int

@@ -47,8 +47,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.6.1"
-RELEASE_VERSION = "0.6.2"
+PREVIOUS_RELEASE_VERSION = "0.6.2"
+RELEASE_VERSION = "0.6.3"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -115,6 +115,19 @@ def _replace_ollama_agent() -> None:
         ),
         cloud_timeout_seconds=float(
             options.get("ollama_cloud_timeout_seconds") or 12
+        ),
+        direct_cloud_enabled=application.option_bool(
+            "ollama_direct_cloud_enabled",
+            True,
+        ),
+        direct_cloud_base_url=str(
+            options.get("ollama_direct_cloud_base_url") or "https://ollama.com"
+        ),
+        direct_cloud_api_key=str(options.get("ollama_direct_cloud_api_key") or ""),
+        direct_cloud_model=str(options.get("ollama_direct_cloud_model") or ""),
+        direct_cloud_fallback_local_proxy=application.option_bool(
+            "ollama_direct_cloud_fallback_local_proxy",
+            True,
         ),
         health_timeout_seconds=float(options.get("ollama_health_timeout_seconds") or 3),
         planner_timeout_seconds=max(10.0, float(options.get("ollama_planner_timeout_seconds") or 20)),

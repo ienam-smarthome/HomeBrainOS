@@ -6,6 +6,7 @@ from typing import Any
 
 from ollama_agent_final_answer import FinalAnswerNaturalAgent
 from ollama_agent_fast import OllamaUnavailable
+from ollama_hybrid_http import HybridOllamaHTTPClient
 
 
 _TARGET_LOCAL_MODEL_BILLIONS = 4.0
@@ -24,15 +25,12 @@ _CHAT_CLOUD_ERROR: ContextVar[str | None] = ContextVar(
 
 
 class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
-    """Hybrid Ollama agent for Cloud synthesis with a local 4B safety net.
+    """Hybrid Ollama agent for direct Cloud synthesis with a local 4B safety net.
 
-    The configured primary response model may be an Ollama Cloud tag such as
-    ``gemma4:31b-cloud``. Qwen 3.5 4B remains the local MCP planner and is retried
-    automatically when Cloud is unavailable, rate-limited or out of Free usage.
-
-    Exact device reads and controls never reach this class; they remain local,
-    deterministic Hubitat routes. Cloud therefore receives only the compact live
-    evidence needed for questions that genuinely benefit from AI wording/reasoning.
+    Cloud-model requests can be sent directly from the Home Assistant add-on to
+    ollama.com, so they remain available when the PC-hosted Ollama service is off.
+    Local Qwen continues to use the configured LAN Ollama host. Direct Cloud may
+    fall back to the signed-in local Ollama proxy, then to the local safety model.
     """
 
     def __init__(
@@ -43,6 +41,11 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
         local_fallback_model: str = "",
         cloud_fallback_local: bool = True,
         cloud_timeout_seconds: float = 25.0,
+        direct_cloud_enabled: bool = False,
+        direct_cloud_base_url: str = "https://ollama.com",
+        direct_cloud_api_key: str = "",
+        direct_cloud_model: str = "",
+        direct_cloud_fallback_local_proxy: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -52,6 +55,18 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
         self.cloud_fallback_local = bool(cloud_fallback_local)
         self.cloud_timeout_seconds = max(8.0, min(90.0, float(cloud_timeout_seconds)))
         self._cloud_present_hint: bool | None = None
+
+        existing_http = self._http
+        self._http = HybridOllamaHTTPClient(
+            local_base_url=self.base_url,
+            cloud_model=self.cloud_model,
+            direct_enabled=bool(direct_cloud_enabled),
+            direct_base_url=str(direct_cloud_base_url or "https://ollama.com"),
+            direct_api_key=str(direct_cloud_api_key or ""),
+            direct_model=str(direct_cloud_model or ""),
+            fallback_local_proxy=bool(direct_cloud_fallback_local_proxy),
+            client=existing_http,
+        )
 
     @staticmethod
     def _exact_model_present(model: str, installed_models: list[str]) -> bool:
@@ -69,8 +84,21 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
 
     async def health(self, force: bool = False) -> dict[str, Any]:
         status = await super().health(force=force)
+        transport = self._http
         if not status.get("online"):
-            return status
+            result = dict(status)
+            result.update(
+                {
+                    "direct_cloud_enabled": bool(transport.direct_enabled),
+                    "direct_cloud_ready": bool(transport.direct_ready),
+                    "direct_cloud_api_key_configured": bool(
+                        transport.direct_api_key_configured
+                    ),
+                    "direct_cloud_model": transport.direct_model or None,
+                    "direct_cloud_error": transport.last_direct_error,
+                }
+            )
+            return result
 
         installed = list(status.get("models") or [])
         cloud_present = self._cloud_model_present(installed)
@@ -81,13 +109,20 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
         self._cloud_present_hint = cloud_present
 
         result = dict(status)
-        # Allow HomeBrain to remain usable when the cloud tag is missing but the
-        # explicitly configured local safety model is installed.
         result["model_present"] = bool(cloud_present or local_present)
         result["cloud_present"] = cloud_present
         result["local_fallback_present"] = local_present
         result["cloud_model"] = self.cloud_model or None
         result["local_fallback_model"] = self.local_fallback_model or None
+        result["direct_cloud_enabled"] = bool(transport.direct_enabled)
+        result["direct_cloud_ready"] = bool(transport.direct_ready)
+        result["direct_cloud_api_key_configured"] = bool(
+            transport.direct_api_key_configured
+        )
+        result["direct_cloud_base_url"] = transport.direct_base_url or None
+        result["direct_cloud_model"] = transport.direct_model or None
+        result["direct_cloud_error"] = transport.last_direct_error
+        result["ollama_provider"] = transport.last_provider()
         return result
 
     async def runtime_status(self, force: bool = False) -> dict[str, Any]:
@@ -98,6 +133,7 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
             self.local_fallback_model,
             installed,
         )
+        transport = self._http
         status.update(
             {
                 "cloud_enabled": self.cloud_enabled,
@@ -106,6 +142,18 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
                 "local_fallback_model": self.local_fallback_model or None,
                 "local_fallback_present": local_present,
                 "cloud_fallback_local": self.cloud_fallback_local,
+                "direct_cloud_enabled": bool(transport.direct_enabled),
+                "direct_cloud_ready": bool(transport.direct_ready),
+                "direct_cloud_api_key_configured": bool(
+                    transport.direct_api_key_configured
+                ),
+                "direct_cloud_base_url": transport.direct_base_url or None,
+                "direct_cloud_model": transport.direct_model or None,
+                "direct_cloud_fallback_local_proxy": bool(
+                    transport.fallback_local_proxy
+                ),
+                "direct_cloud_error": transport.last_direct_error,
+                "ollama_provider": transport.last_provider(),
                 "preferred_response_model": (
                     self.cloud_model
                     if cloud_present
@@ -173,9 +221,9 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
             )
             result = dict(body)
             result["_homebrain_model_used"] = requested_model
-            result["_homebrain_provider"] = "Local Ollama"
+            result["_homebrain_provider"] = self._http.last_provider("Local Ollama")
             _CHAT_MODEL_USED.set(requested_model)
-            _CHAT_PROVIDER_USED.set("Local Ollama")
+            _CHAT_PROVIDER_USED.set(self._http.last_provider("Local Ollama"))
             return result
 
         cloud_error: Exception | None = None
@@ -194,17 +242,18 @@ class AdaptiveFinalAnswerAgent(FinalAnswerNaturalAgent):
                     num_predict=num_predict,
                     temperature=temperature,
                 )
+                provider = self._http.last_provider("Ollama Cloud")
                 result = dict(body)
                 result["_homebrain_model_used"] = requested_model
-                result["_homebrain_provider"] = "Ollama Cloud"
+                result["_homebrain_provider"] = provider
                 _CHAT_MODEL_USED.set(requested_model)
-                _CHAT_PROVIDER_USED.set("Ollama Cloud")
+                _CHAT_PROVIDER_USED.set(provider)
                 return result
             except Exception as exc:
                 cloud_error = exc
         else:
             cloud_error = OllamaUnavailable(
-                f"Ollama Cloud model {requested_model} is not installed or signed in"
+                f"Ollama Cloud model {requested_model} is unavailable"
             )
 
         if (

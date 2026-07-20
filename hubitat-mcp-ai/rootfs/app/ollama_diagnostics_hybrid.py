@@ -11,14 +11,18 @@ def _state(value: Any) -> str:
     return str(value or "idle").replace("-", " ").title()
 
 
-def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
-    """Show Cloud, planner and fallback readiness independently.
+def _reachability(value: Any, *, ready: bool = True) -> str:
+    if not ready:
+        return "Not configured"
+    if value is True:
+        return "Online"
+    if value is False:
+        return "Offline"
+    return "Not checked"
 
-    The legacy diagnostics card only displayed ``runtime.model``. On upgraded
-    installations that value could still be the saved local Qwen tag even when the
-    Cloud tag was registered and preferred. This wrapper reports the effective
-    response model and all hybrid components separately.
-    """
+
+def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
+    """Show direct Cloud, local host, planner and fallback readiness independently."""
 
     original: DiagnosticsHandler = application.build_ollama_diagnostics
 
@@ -26,8 +30,17 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
         answer = dict(await original(force=force))
         runtime = dict(answer.get("runtime") or {})
         profile = dict(getattr(application, "ollama_hybrid_profile", {}) or {})
+        transport = getattr(getattr(application, "ollama", None), "_http", None)
 
         server_online = bool(runtime.get("online"))
+        local_online = getattr(transport, "local_tags_online", None)
+        direct_online = getattr(transport, "direct_tags_online", None)
+        direct_ready = bool(runtime.get("direct_cloud_ready"))
+        direct_enabled = bool(runtime.get("direct_cloud_enabled"))
+        direct_key = bool(runtime.get("direct_cloud_api_key_configured"))
+        direct_model = str(runtime.get("direct_cloud_model") or "")
+        direct_error = str(runtime.get("direct_cloud_error") or "").strip()
+
         cloud_model = str(
             runtime.get("cloud_model")
             or profile.get("cloud_model")
@@ -67,9 +80,15 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
             if response_model.lower() == cloud_model.lower() and cloud_present
             else "Local"
         )
+        local_status = _reachability(local_online)
+        direct_status = _reachability(direct_online, ready=direct_ready)
 
         lines = [
-            f"Ollama server: {'Online' if server_online else 'Offline'}",
+            f"AI transport: {'Online' if server_online else 'Offline'}",
+            f"Local Ollama host: {local_status.lower()}",
+            f"Direct Ollama Cloud: {direct_status.lower()}",
+            f"Direct Cloud API key: {'configured' if direct_key else 'missing'}",
+            f"Direct Cloud model: {direct_model or 'automatic'}",
             f"Effective response model: {response_model} ({response_status.lower()})",
             f"Cloud model: {cloud_model} ({cloud_status.lower()})",
             f"Planner model: {planner_model}",
@@ -80,6 +99,8 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
             lines.append(
                 f"Saved response setting: {configured_model} (overridden by Prefer Cloud response)"
             )
+        if direct_error:
+            lines.append(f"Last direct Cloud error: {direct_error}")
         if last_agent.get("error"):
             lines.append(f"Last agent error: {last_agent['error']}")
 
@@ -104,28 +125,28 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
                     "kind": "ollama-diagnostics",
                     "title": "Ollama hybrid diagnostics",
                     "subtitle": (
-                        f"Cloud {cloud_status.lower()} · response {response_model}"
+                        f"Direct Cloud {direct_status.lower()} · local {local_status.lower()}"
                     ),
                     "metrics": [
                         {
-                            "label": "Server",
+                            "label": "AI transport",
                             "value": "Online" if server_online else "Offline",
                             "icon": "🟢" if server_online else "🔴",
                         },
                         {
-                            "label": "Cloud",
-                            "value": cloud_status,
+                            "label": "Direct Cloud",
+                            "value": direct_status,
                             "icon": "☁️",
+                        },
+                        {
+                            "label": "Local Ollama",
+                            "value": local_status,
+                            "icon": "🖥️",
                         },
                         {
                             "label": "Response",
                             "value": response_model,
                             "icon": "🧠",
-                        },
-                        {
-                            "label": "Planner",
-                            "value": planner_model,
-                            "icon": "🧭",
                         },
                         {
                             "label": "Fallback",
@@ -140,8 +161,9 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
                     ],
                     "items": [],
                     "note": (
-                        "Cloud registration and local availability are read from Ollama "
-                        "/api/tags; loaded local models are read from /api/ps."
+                        "Direct Cloud calls use ollama.com with the configured bearer key. "
+                        "Local model calls remain on the configured LAN Ollama host. The API "
+                        "key is never included in diagnostics."
                         + migration_note
                     ),
                 },
@@ -152,6 +174,12 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
                         "configured_response_model": configured_model,
                         "effective_response_model": response_model,
                         "prefer_cloud_response": prefer_cloud,
+                        "local_ollama_online": local_online,
+                        "direct_cloud_enabled": direct_enabled,
+                        "direct_cloud_ready": direct_ready,
+                        "direct_cloud_online": direct_online,
+                        "direct_cloud_api_key_configured": direct_key,
+                        "direct_cloud_model": direct_model or None,
                     },
                     ensure_ascii=False,
                     indent=2,
