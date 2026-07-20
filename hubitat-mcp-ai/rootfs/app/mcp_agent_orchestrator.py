@@ -98,6 +98,60 @@ def _executed_tool_names(answer: Any) -> set[str]:
     return names
 
 
+def _has_successful_tool_call(answer: Any) -> bool:
+    if not isinstance(answer, dict):
+        return False
+    return any(
+        isinstance(item, dict) and item.get("success") is True
+        for item in answer.get("tools_used") or []
+    )
+
+
+def _looks_like_false_evidence_failure(message: Any) -> bool:
+    text = _normalise(str(message or ""))
+    return any(
+        marker in text
+        for marker in (
+            "trouble retrieving",
+            "timing out",
+            "system is timing out",
+            "too many items",
+            "could not retrieve the full device list",
+            "couldn't retrieve the full device list",
+        )
+    )
+
+
+async def _apply_automation_recommendation_policy(
+    application: Any,
+    query: str,
+    answer: dict[str, Any],
+) -> dict[str, Any]:
+    """Replace a false MCP timeout claim with the grounded recommendation service."""
+
+    service = getattr(application, "automation_recommendation", None)
+    matches = getattr(service, "matches", None)
+    if not callable(matches) or not matches(query):
+        return answer
+    if not _has_successful_tool_call(answer):
+        return answer
+    if not _looks_like_false_evidence_failure(answer.get("message")):
+        return answer
+
+    try:
+        corrected = await service.answer(query)
+    except Exception as exc:
+        result = dict(answer)
+        result["recommendation_policy_error"] = str(exc) or type(exc).__name__
+        return result
+
+    result = dict(corrected)
+    result["synthesis_policy_corrected"] = True
+    result["original_message"] = str(answer.get("message") or "")
+    result["original_executed_tools"] = sorted(_executed_tool_names(answer))
+    return result
+
+
 async def _apply_device_tool_policy(
     application: Any,
     query: str,
@@ -178,6 +232,11 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
                 history,
                 dict(answer),
             )
+            result = await _apply_automation_recommendation_policy(
+                application,
+                query,
+                result,
+            )
             result.setdefault("success", True)
             result["agent_orchestrator"] = "unified-mcp-ai-first"
             result["legacy_fallback_used"] = False
@@ -214,7 +273,10 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
 
 __all__ = [
     "_apply_device_tool_policy",
+    "_apply_automation_recommendation_policy",
     "_executed_tool_names",
+    "_has_successful_tool_call",
+    "_looks_like_false_evidence_failure",
     "_normalise_history",
     "_uses_conversation_context",
     "install_unified_mcp_agent_orchestrator",

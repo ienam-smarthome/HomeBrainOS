@@ -181,12 +181,33 @@ class IndexedMCPStateBroker(AdaptiveGatewayMCPStateBroker):
 
         rows = _device_rows(inventory.data)
         matches = self._rank_device_matches(query, rows, limit)
+        projected_inventory_count = len(rows)
+        search_strategy = "projected-inventory"
+
+        # Some Hubitat MCP versions accept a fields projection but return rows without
+        # searchable names, or an empty projected collection. Retry once with the plain
+        # authoritative inventory only when projection-based ranking found nothing.
+        if not matches:
+            try:
+                fallback_inventory = await super().call_tool("hub_list_devices", {})
+            except MCPError:
+                fallback_inventory = None
+            if fallback_inventory is not None and not fallback_inventory.is_error:
+                fallback_rows = _device_rows(fallback_inventory.data)
+                fallback_matches = self._rank_device_matches(query, fallback_rows, limit)
+                if fallback_matches or len(fallback_rows) > len(rows):
+                    rows = fallback_rows
+                    matches = fallback_matches
+                    search_strategy = "unprojected-inventory-fallback"
+
         payload = {
             "query": query,
             "source_tool": "hub_list_devices",
             "inventory_count": len(rows),
+            "projected_inventory_count": projected_inventory_count,
             "match_count": len(matches),
             "matches": matches,
+            "search_strategy": search_strategy,
         }
         text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
         return MCPToolResult(
