@@ -5,6 +5,7 @@ from typing import Callable
 
 from control_agent_capability_filter import install_control_graph_capability_filter
 from control_agent_claude_first import install_claude_first_control_interpreter
+from control_agent_goal_based import install_goal_based_control
 from control_agent_intent import (
     ControlActionIntent,
     ControlIntent,
@@ -101,7 +102,7 @@ def install_combined_level_intent() -> None:
 
     This must run before ``HomeBrainControlAgent`` is constructed. It restricts
     the graph to devices with live control evidence, installs clean absolute-level
-    grammar, then enables inventory-first natural control interpretation.
+    grammar, then enables inventory-first natural and goal-based control interpretation.
     """
 
     install_control_graph_capability_filter()
@@ -138,6 +139,7 @@ def install_combined_level_intent() -> None:
     # wrap every proven deterministic parser instead of replacing them.
     install_claude_first_control_interpreter()
     install_semantic_natural_targets()
+    install_goal_based_control()
 
 
 __all__ = ["install_combined_level_intent"]
