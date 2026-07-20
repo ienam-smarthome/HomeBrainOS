@@ -1,15 +1,26 @@
 # Hubitat MCP AI changelog
 
+## 0.6.4
+
+- Fixes semantic-read questions failing with `qwen3.5:4b ... All connection attempts failed` when the Windows Ollama PC is offline.
+- Gives the structured semantic-intent classifier a bounded model chain: local Qwen first, then the configured Ollama Cloud model through the direct Home Assistant transport.
+- Limits the local semantic attempt to 2.5 seconds so an unreachable PC cannot consume the entire request window before Direct Cloud is tried.
+- Keeps deterministic parsing as the final interpretation fallback and continues using deterministic MCP code for all live values, rankings and calculations.
+- Prevents successfully Cloud-classified semantic reads from falling through to the unrelated natural-agent fallback.
+- Reports the actual classifier provider, including `Ollama Cloud Direct`, rather than labelling every semantic intent as Local Ollama.
+- Adds `semantic_intent_cloud_fallback_enabled` and `semantic_intent_cloud_timeout_seconds`, enabled with a 12-second default.
+- Adds regression coverage for PC-offline Direct Cloud classification and the normal PC-online local path.
+
 ## 0.6.3
 
-- Adds direct Ollama Cloud API access from the Home Assistant add-on, so Cloud models remain available when the PC-hosted Ollama service is powered off or unreachable.
-- Uses `https://ollama.com/api` with bearer authentication from the new password setting `ollama_direct_cloud_api_key`.
-- Keeps local Qwen requests on the configured LAN Ollama host while transparently routing the configured Cloud model to the direct endpoint.
-- Converts local proxy tags such as `gemma4:31b-cloud` to the direct API model name `gemma4:31b` by default, with `ollama_direct_cloud_model` available as an explicit override.
-- Uses failover order: direct Cloud, signed-in local Ollama Cloud proxy, then local Qwen fallback.
-- Combines local and direct `/api/tags` results so existing planner and response-model selection continues to work when either endpoint is unavailable.
-- Lets the stronger Cloud model perform MCP tool planning when the PC is offline, while deterministic Python still executes Hubitat tools and verifies controls.
-- Adds separate diagnostics for Local Ollama and Direct Cloud reachability without exposing the API key.
+- Adds **PC-independent direct Ollama Cloud access** from the Home Assistant add-on using `https://ollama.com/api` and a password-protected API key setting.
+- Routes configured Cloud-model requests directly from Home Assistant while keeping local Qwen requests on the LAN Ollama PC.
+- Uses failover order: Direct Ollama Cloud, signed-in local Ollama Cloud proxy, then the existing local Qwen fallback and deterministic Hubitat output.
+- Converts local proxy tags such as `gemma4:31b-cloud` to direct API model names such as `gemma4:31b`, with an explicit model override option.
+- Combines local and direct `/api/tags` results so Cloud remains available to HomeBrain model selection when the Windows PC is switched off.
+- Adds separate Local Ollama and Direct Cloud diagnostics, including API-key configured state and the last selected transport, without exposing the secret.
+- Adds `ollama_direct_cloud_enabled`, `ollama_direct_cloud_base_url`, `ollama_direct_cloud_api_key`, `ollama_direct_cloud_model` and `ollama_direct_cloud_fallback_local_proxy` settings.
+- Adds offline-PC, bearer-authentication, model-rewrite, local-isolation and local-proxy-fallback regression tests.
 
 ## 0.6.2
 
@@ -123,7 +134,7 @@
 - Performs only one independent fresh read after a server-side timeout and never blindly resends the command.
 - Keeps bounded local verification for older/custom MCP servers that do not advertise `waitFor`.
 - Routes exact absolute level commands as deterministic MCP-fast controls instead of labelling them as Ollama-planner requests.
-- Interprets `turn on Bedroom 1 Light to 30%` and `turn Bedroom 1 Light on at 30%` as one deterministic `set_level` intent, so the percentage is never included in the device name and no unnecessary device-choice menu is shown.
+- Interprets `turn on Bedroom 1 Light to 30%` and `turn Bedroom 1 Light on at 30%` as one deterministic `set_level` action, so the percentage is never included in the device name and no unnecessary device-choice menu is shown.
 - Rejects out-of-range level values instead of silently clamping and auto-executing them.
 
 ## 0.5.1
