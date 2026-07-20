@@ -4,6 +4,7 @@ import re
 from typing import Callable
 
 from control_agent_capability_filter import install_control_graph_capability_filter
+from control_agent_claude_first import install_claude_first_control_interpreter
 from control_agent_intent import (
     ControlActionIntent,
     ControlIntent,
@@ -98,43 +99,43 @@ def install_combined_level_intent() -> None:
     """Install Control Agent language and actuable-device graph safeguards.
 
     This must run before ``HomeBrainControlAgent`` is constructed. It restricts
-    the graph to devices with live control evidence, then wraps the existing
-    static parser so combined and absolute level phrases become one clean
-    ``setLevel`` action without leaking prepositions into device names.
+    the graph to devices with live control evidence, installs clean absolute-level
+    grammar, then enables inventory-first natural control interpretation.
     """
 
     install_control_graph_capability_filter()
-    if getattr(ControlIntentInterpreter, "_combined_level_installed", False):
-        return
+    if not getattr(ControlIntentInterpreter, "_combined_level_installed", False):
+        original: Callable[[str], ControlIntent | None] = (
+            ControlIntentInterpreter._deterministic_intent
+        )
 
-    original: Callable[[str], ControlIntent | None] = (
-        ControlIntentInterpreter._deterministic_intent
-    )
+        def deterministic_with_combined_level(query: str) -> ControlIntent | None:
+            text = str(query or "").strip()
+            for pattern in (_TURN_ON_THEN_LEVEL, _TURN_TARGET_ON_THEN_LEVEL):
+                match = pattern.match(text)
+                if match:
+                    return _intent(match.group(1), match.group(2))
 
-    def deterministic_with_combined_level(query: str) -> ControlIntent | None:
-        text = str(query or "").strip()
-        for pattern in (_TURN_ON_THEN_LEVEL, _TURN_TARGET_ON_THEN_LEVEL):
-            match = pattern.match(text)
-            if match:
-                return _intent(match.group(1), match.group(2))
+            # Ordered patterns guarantee that `at` and `to` are consumed as grammar,
+            # never as part of the selected-device label.
+            for pattern in (
+                _ABSOLUTE_LEVEL_WITH_PREPOSITION,
+                _ABSOLUTE_LEVEL_BARE,
+            ):
+                match = pattern.match(text)
+                if match:
+                    return _intent(match.group(1), match.group(2))
 
-        # Parse valid absolute-level commands here instead of handing them to the
-        # older optional-preposition expression. Ordered patterns guarantee that
-        # `at` and `to` are consumed as grammar, never as part of the device label.
-        for pattern in (
-            _ABSOLUTE_LEVEL_WITH_PREPOSITION,
-            _ABSOLUTE_LEVEL_BARE,
-        ):
-            match = pattern.match(text)
-            if match:
-                return _intent(match.group(1), match.group(2))
+            return original(query)
 
-        return original(query)
+        ControlIntentInterpreter._deterministic_intent = staticmethod(
+            deterministic_with_combined_level
+        )
+        ControlIntentInterpreter._combined_level_installed = True
 
-    ControlIntentInterpreter._deterministic_intent = staticmethod(
-        deterministic_with_combined_level
-    )
-    ControlIntentInterpreter._combined_level_installed = True
+    # Install after the exact numeric grammar so natural phrasing and model fallback
+    # wrap every proven deterministic parser instead of replacing them.
+    install_claude_first_control_interpreter()
 
 
 __all__ = ["install_combined_level_intent"]

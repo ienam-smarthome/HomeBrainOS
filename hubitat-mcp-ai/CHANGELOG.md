@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.6.0
+
+- Introduces **Agent-First Control**, modelled on the successful Claude MCP workflow: understand the natural instruction, inspect the selected-device inventory, build a structured plan, then execute and verify through deterministic Hubitat code.
+- Sends probable natural device controls to Control Agent before any routine read-only or general answer route, preventing instructions from receiving unrelated room-only evidence.
+- Adds deterministic spoken brightness grammar for phrases such as `Put bedroom one light at about thirty percent`, including number words, approximate wording, half, quarter, three-quarters and full brightness.
+- Keeps proven exact on/off and numeric level commands AI-free and preserves their existing fast paths.
+- Uses the local planner model first for non-deterministic control interpretation and optionally retries the stronger configured Cloud model when local interpretation times out or fails.
+- Gives both interpretation models only the selected-device inventory and strict `ControlIntent` JSON schema—no MCP command tools and no authority to choose device IDs or claim success.
+- Keeps Python responsible for selected-device matching, risk policy, all-targets-before-write preflight, MCP execution and final-state verification.
+- Labels natural control requests as `control-agent` in request traces instead of misleadingly calling them routine reads or Cloud planner requests.
+- Adds `control_agent_cloud_fallback_enabled` and `control_agent_cloud_timeout_seconds` configuration options.
+
 ## 0.5.9
 
 - Replaces the dashboard's visible **Switches on** tile with an actionable **Offline / stale** device-health tile.
