@@ -370,12 +370,16 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
         try:
             result = await self.client.call_tool(name, arguments)
             tool_text = self._compact_tool_result(result)
-            return {
+            record = {
                 "name": name,
                 "arguments": arguments,
                 "success": not result.is_error,
                 "preview": tool_text[:700],
-            }, tool_text
+            }
+            evidence = self._tool_evidence(result.data)
+            if evidence:
+                record["evidence"] = evidence
+            return record, tool_text
         except Exception as exc:
             tool_text = f"MCP tool error: {exc}"
             return {
@@ -701,6 +705,38 @@ class ClaudeStyleOllamaAgent(InferenceOllamaMCPAgent):
             + "\n...[tool result compacted for the local model]...\n"
             + text[-tail:]
         )
+
+    @staticmethod
+    def _tool_evidence(data: Any) -> dict[str, Any]:
+        """Extract non-sensitive counts and strategy metadata for diagnostics."""
+
+        if isinstance(data, list):
+            return {"item_count": len(data)}
+        if not isinstance(data, dict):
+            return {}
+
+        summary: dict[str, Any] = {}
+        for key in (
+            "count",
+            "total",
+            "device_count",
+            "inventory_count",
+            "projected_inventory_count",
+            "fallback_inventory_count",
+            "match_count",
+            "search_strategy",
+            "fallback_attempted",
+            "source_tool",
+        ):
+            value = data.get(key)
+            if isinstance(value, (str, int, float, bool)) and value not in ("", None):
+                summary[key] = value
+
+        for key, label in (("devices", "device_count"), ("matches", "match_count"), ("items", "item_count")):
+            value = data.get(key)
+            if isinstance(value, list):
+                summary.setdefault(label, len(value))
+        return summary
 
     def _planner_prompt(self) -> str:
         return (

@@ -278,7 +278,10 @@ class HomeBrainControlAgent:
                 candidate_ids=[item.id for item in candidates],
             )
             lines = ["Which device did you mean?"]
-            lines.extend(f"{index}. {item.label}" for index, item in enumerate(candidates, start=1))
+            lines.extend(
+                f"{index}. {item.label} (Hubitat ID {item.id}{f', {item.room}' if item.room else ''})"
+                for index, item in enumerate(candidates, start=1)
+            )
             lines.append("Reply with the number or exact device name. Reply No to cancel.")
             return {
                 "success": False,
@@ -286,7 +289,7 @@ class HomeBrainControlAgent:
                 "intent": "control-agent-device-choice-required",
                 "message": "\n".join(lines),
                 "confirmation_required": True,
-                "alternatives": [item.label for item in candidates],
+                "alternatives": [f"{item.label} (Hubitat ID {item.id})" for item in candidates],
                 "display": display_payload(
                     "control-agent-choice",
                     "Choose device",
@@ -300,11 +303,18 @@ class HomeBrainControlAgent:
                             "icon": "📱",
                             "title": item.label,
                             "value": str(index),
-                            "subtitle": item.room or "No room assigned",
+                            "subtitle": (
+                                f"{item.room or 'No room assigned'} · Hubitat ID {item.id}"
+                                + (
+                                    f" · {str(item.current_states.get('switch')).title()}"
+                                    if item.current_states.get("switch") is not None
+                                    else ""
+                                )
+                            ),
                         }
                         for index, item in enumerate(candidates, start=1)
                     ],
-                    note="The Control Agent resolved the intent but not one unique selected device.",
+                    note="These are different Hubitat device IDs. Choose once; HomeBrain will remember this spoken target.",
                 ),
                 "technical": safe_debug(plan.public_dict()),
                 "control_intent": plan.intent.response_dict(),
@@ -436,7 +446,10 @@ class HomeBrainControlAgent:
                 if is_control_candidate(query):
                     return None
                 lines = ["Please choose one device:"]
-                lines.extend(f"{index}. {item.label}" for index, item in enumerate(candidates, start=1))
+                lines.extend(
+                    f"{index}. {item.label} (Hubitat ID {item.id})"
+                    for index, item in enumerate(candidates, start=1)
+                )
                 lines.append("Reply No to cancel.")
                 return {
                     "success": False,
@@ -451,6 +464,9 @@ class HomeBrainControlAgent:
             action.resolution_confidence = 1.0
             action.resolution_method = "user-selected-candidate"
             action.resolution_reason = "The user selected the exact candidate."
+            name_hint = action.intent.target.name_hint.strip()
+            if name_hint:
+                await self.aliases.add(name_hint, f"device-id:{selected.id}")
             await self.pending.clear(session_id)
             return await self._execute_plan(session_id, plan, confirmed=True)
         return None
@@ -724,7 +740,7 @@ class HomeBrainControlAgent:
                 "intent": "control-agent-alias-redundant",
                 "message": f'{node.label} already matches the spoken name "{alias}".',
             }
-        await self.aliases.add(alias, node.label)
+        await self.aliases.add(alias, f"device-id:{node.id}")
         return {
             "success": True,
             "route": "control-agent-alias",
