@@ -68,12 +68,7 @@ def _normalise_history(items: Any) -> list[dict[str, str]]:
 
 
 def _uses_conversation_context(query: str) -> bool:
-    """Return true only when the current request explicitly depends on prior turns.
-
-    Browser history is useful for pronouns and genuine follow-ups, but sending it for every
-    standalone request can leak stale device entities into a new task. The current request
-    remains authoritative unless it contains an explicit contextual reference.
-    """
+    """Return true only when the current request explicitly depends on prior turns."""
 
     q = _normalise(query)
     if not q:
@@ -84,13 +79,64 @@ def _uses_conversation_context(query: str) -> bool:
     return bool(words & _CONTEXT_WORDS)
 
 
-def should_use_unified_agent(query: str) -> bool:
-    """Use AI for every substantive non-fast request.
+def _tool_names(answer: Any) -> set[str]:
+    """Extract executed tool names from the stable agent response shape."""
 
-    Exact deterministic routes remain available for latency and offline operation.
-    Short protocol replies remain with the confirmation/workflow handlers because
-    they refer to pending server-side state rather than a new natural-language task.
+    if not isinstance(answer, dict):
+        return set()
+    names: set[str] = set()
+    for item in answer.get("tools_used") or []:
+        if isinstance(item, dict) and item.get("name"):
+            names.add(str(item["name"]))
+        elif isinstance(item, str):
+            names.add(item)
+    for item in answer.get("selected_tools") or []:
+        if item:
+            names.add(str(item))
+    return names
+
+
+async def _apply_device_tool_policy(
+    application: Any,
+    query: str,
+    history: list[dict[str, str]],
+    answer: dict[str, Any],
+) -> dict[str, Any]:
+    """Correct a broad inventory call when the task needs targeted device resolution.
+
+    The model remains responsible for understanding the request. The execution layer is
+    responsible for tool semantics: ``hub_list_devices`` is authoritative inventory data,
+    but it is not a completed entity lookup. If the planner used only that broad tool for a
+    non-broad request, run the MCP-backed targeted search over the complete structured
+    inventory before allowing final synthesis.
     """
+
+    names = _tool_names(answer)
+    if "hub_list_devices" not in names or "homebrain_search_devices" in names:
+        return answer
+
+    agent = getattr(application, "ollama", None)
+    broad_check = getattr(agent, "_is_broad_device_inventory_request", None)
+    if callable(broad_check) and bool(broad_check(query)):
+        return answer
+
+    targeted = getattr(agent, "_answer_from_targeted_device_search", None)
+    if not callable(targeted):
+        return answer
+
+    corrected = await targeted(
+        query,
+        history,
+        RuntimeError("Planner selected broad inventory for a targeted device task"),
+    )
+    result = dict(corrected)
+    result["tool_policy_corrected"] = True
+    result["original_selected_tools"] = sorted(names)
+    return result
+
+
+def should_use_unified_agent(query: str) -> bool:
+    """Use AI for every substantive non-fast request."""
 
     q = _normalise(query)
     if not q or q in _PROTOCOL_FOLLOWUPS:
@@ -118,7 +164,12 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
                 answer = await planner(query, history)
             else:
                 answer = await application.ollama.answer(query, history)
-            result = dict(answer)
+            result = await _apply_device_tool_policy(
+                application,
+                query,
+                history,
+                dict(answer),
+            )
             result.setdefault("success", True)
             result["agent_orchestrator"] = "unified-mcp-ai-first"
             result["legacy_fallback_used"] = False
@@ -154,7 +205,9 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
 
 
 __all__ = [
+    "_apply_device_tool_policy",
     "_normalise_history",
+    "_tool_names",
     "_uses_conversation_context",
     "install_unified_mcp_agent_orchestrator",
     "should_use_unified_agent",
