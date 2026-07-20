@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.6.0"
+version: "0.6.1"
 slug: hubitat_mcp_ai
-description: "HomeBrain Agent-First Control with inventory-aware natural interpretation and verified Hubitat execution"
+description: "HomeBrain Agent-First Control with semantic room, ordinal and device-type resolution plus verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:

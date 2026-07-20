@@ -92,4 +92,4 @@ Write-Host 'Agent-First Control is ready:' -ForegroundColor Green
 Write-Host "  Fast exact controls: deterministic Python + Hubitat MCP"
 Write-Host "  Natural control interpretation: $localModel"
 Write-Host "  Strong structured fallback and explanations: $cloudModel"
-Write-Host 'Update and restart Hubitat MCP AI 0.6.0.'
+Write-Host 'Update and restart Hubitat MCP AI 0.6.1.'

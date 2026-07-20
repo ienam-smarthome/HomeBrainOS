@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.6.1
+
+- Fixes natural controls such as `Put living room one light at about thirty percent` being parsed as the literal device name `living room one light` and then opening a two-device choice menu.
+- Decomposes common spoken targets into semantic fields before device matching: room, device type and ordinal.
+- Resolves `living room one light` as `Living Room` + `light` + ordinal `1`, and `living room light two` as ordinal `2`.
+- Treats numbered-bedroom phrases such as `bedroom one light` as the canonical device `Bedroom 1 Light` in room `Bedroom 1`.
+- Keeps these clear controls fully deterministic, avoiding the five-second AI rescue timeout and unnecessary confirmation.
+- Preserves Agent-First Control for genuinely ambiguous or unsupported natural language, with models still restricted to structured intent and no command tools.
+
 ## 0.6.0
 
 - Introduces **Agent-First Control**, modelled on the successful Claude MCP workflow: understand the natural instruction, inspect the selected-device inventory, build a structured plan, then execute and verify through deterministic Hubitat code.

@@ -11,6 +11,7 @@ from control_agent_intent import (
     ControlIntentInterpreter,
     ControlTargetIntent,
 )
+from control_agent_semantic_target import install_semantic_natural_targets
 
 
 _TURN_ON_THEN_LEVEL = re.compile(
@@ -136,6 +137,7 @@ def install_combined_level_intent() -> None:
     # Install after the exact numeric grammar so natural phrasing and model fallback
     # wrap every proven deterministic parser instead of replacing them.
     install_claude_first_control_interpreter()
+    install_semantic_natural_targets()
 
 
 __all__ = ["install_combined_level_intent"]
