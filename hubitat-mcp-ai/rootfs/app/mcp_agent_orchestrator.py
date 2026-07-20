@@ -118,6 +118,9 @@ async def _apply_device_tool_policy(
         return answer
 
     agent = getattr(application, "ollama", None)
+    targeted_check = getattr(agent, "_targeted_device_lookup", None)
+    if callable(targeted_check) and not targeted_check(query):
+        return answer
     broad_check = getattr(agent, "_is_broad_device_inventory_request", None)
     if callable(broad_check) and bool(broad_check(query)):
         return answer

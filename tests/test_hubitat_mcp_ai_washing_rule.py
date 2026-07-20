@@ -118,7 +118,7 @@ class WashingMCP:
             MCPTool(
                 "hub_create_backup",
                 "Create a hub database backup",
-                {"type": "object", "properties": {"bestPracticeKey": {"type": "string"}},
+                {"type": "object", "properties": {"bestPracticeKey": {"type": "string"}}},
             ),
             MCPTool("hub_get_info", "Get hub information", {"type": "object", "properties": {}}),
         ]

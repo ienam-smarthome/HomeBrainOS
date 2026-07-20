@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,46 @@ def test_natural_rule_requests_go_to_unified_agent_without_phrase_patches():
 def test_device_discovery_goes_to_the_same_agent():
     assert should_use_unified_agent("Find front door")
     assert should_use_unified_agent("Which sensor belongs to the main entrance?")
+
+
+def test_explicit_named_lookup_is_distinguished_from_broad_inventory():
+    lookup = UnifiedAdaptiveMCPAgent._targeted_device_lookup
+    assert lookup("find front door") == "front door"
+    assert lookup("Please search for the device Entrance Lock") == "Entrance Lock"
+    assert lookup("show all selected devices") is None
+    assert lookup("what doors are open?") is None
+
+
+def test_planner_broad_call_is_repaired_before_targeted_lookup_synthesis():
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return SimpleNamespace(
+                data={"matches": [{"id": "7399", "label": "Front Door"}]},
+                text="",
+                raw={},
+                is_error=False,
+            )
+
+    client = FakeClient()
+    agent = object.__new__(UnifiedAdaptiveMCPAgent)
+    agent.client = client
+    agent.require_sensitive_confirmation = False
+    agent.tool_result_limit_chars = 8000
+
+    record, tool_text = asyncio.run(
+        agent._execute_tool_call("hub_list_devices", {}, "find front door")
+    )
+
+    assert client.calls == [
+        ("homebrain_search_devices", {"query": "front door", "limit": 8})
+    ]
+    assert record["name"] == "homebrain_search_devices"
+    assert record["success"] is True
+    assert "Front Door" in tool_text
 
 
 def test_exact_fast_control_and_protocol_followups_stay_deterministic():
