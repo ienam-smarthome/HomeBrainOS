@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
+from ai_evidence_domains import install_ai_evidence_domains  # noqa: E402
 from ai_evidence_planner import (  # noqa: E402
     AIEvidencePlanner,
     EvidenceRequest,
@@ -80,7 +82,7 @@ class FakeHTTP:
             }
         return FakeResponse(
             {
-                "message": {"role": "assistant", "content": __import__("json").dumps(content)},
+                "message": {"role": "assistant", "content": json.dumps(content)},
                 "done_reason": "stop",
             }
         )
@@ -242,6 +244,7 @@ class FakeApplication:
 
 
 def make_service(*, fail_ai: bool = False) -> AIEvidencePlanner:
+    install_ai_evidence_domains()
     return AIEvidencePlanner(
         FakeApplication(fail_ai=fail_ai),
         FakeDeviceIndex(),
@@ -256,6 +259,7 @@ def make_service(*, fail_ai: bool = False) -> AIEvidencePlanner:
 
 
 def test_ai_evidence_candidate_is_broad_but_never_captures_controls_or_fast_reads():
+    install_ai_evidence_domains()
     assert is_ai_evidence_query(QUERY)
     assert is_ai_evidence_query("Why is my electricity usage high right now?")
     assert is_ai_evidence_query("What should I improve in the bathroom ventilation setup?")
@@ -299,9 +303,7 @@ def test_plan_validation_accepts_only_whitelisted_evidence_and_bounded_values():
 
 def test_direct_cloud_selects_evidence_then_requests_one_more_bounded_round():
     service = make_service()
-    request = SimpleNamespace(query=QUERY, history=[])
-
-    answer = asyncio.run(service.answer(request))
+    answer = asyncio.run(service.answer(SimpleNamespace(query=QUERY, history=[])))
 
     assert answer["success"] is True
     assert answer["route"] == "ollama+evidence-planner"
@@ -315,7 +317,7 @@ def test_direct_cloud_selects_evidence_then_requests_one_more_bounded_round():
     ]
     assert len(answer["evidence_rounds"]) == 2
     assert answer["review"]["status"] == "need_more"
-    assert answer["technical"]["write_tools_available_to_model"] is False
+    assert '"write_tools_available_to_model": false' in (answer["technical"] or "").lower()
     assert "Fridge Door" in answer["message"]
     assert "Fridge" in answer["message"]
     assert len(service.application.ollama._http.calls) == 2
@@ -324,9 +326,11 @@ def test_direct_cloud_selects_evidence_then_requests_one_more_bounded_round():
 
 def test_ai_failure_returns_deterministic_evidence_instead_of_legacy_agent_error():
     service = make_service(fail_ai=True)
-    request = SimpleNamespace(query="What are the most important issues at home?", history=[])
-
-    answer = asyncio.run(service.answer(request))
+    answer = asyncio.run(
+        service.answer(
+            SimpleNamespace(query="What are the most important issues at home?", history=[])
+        )
+    )
 
     assert answer["success"] is True
     assert answer["route"] == "mcp-evidence-planner"
@@ -337,11 +341,14 @@ def test_ai_failure_returns_deterministic_evidence_instead_of_legacy_agent_error
     assert "natural ollama agent could not complete" not in answer["message"].lower()
 
 
-def test_release_wiring_installs_planner_after_special_read_routes_and_before_tracing():
+def test_release_wiring_installs_domains_and_planner_before_tracing():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
 
     assert entrypoint.index("install_device_health_fast_route(application)") < entrypoint.index(
+        "install_ai_evidence_domains()"
+    )
+    assert entrypoint.index("install_ai_evidence_domains()") < entrypoint.index(
         "install_ai_evidence_planner("
     )
     assert entrypoint.index("install_ai_evidence_planner(") < entrypoint.index(
