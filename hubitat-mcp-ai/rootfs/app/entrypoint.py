@@ -38,9 +38,10 @@ from hybrid_assistant_mode import (
     install_hybrid_assistant_query_policy,
     install_hybrid_verified_read_routes,
 )
+from mcp_agent_orchestrator import install_unified_mcp_agent_orchestrator
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from motion_light_insight import install_motion_light_insight
-from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent
 from ollama_cloud_help import hybrid_ollama_help
 from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement
@@ -53,8 +54,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.8.4"
-RELEASE_VERSION = "0.8.5"
+PREVIOUS_RELEASE_VERSION = "0.8.5"
+RELEASE_VERSION = "0.9.0"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -106,7 +107,7 @@ def _replace_ollama_agent() -> None:
     profile = resolve_hybrid_profile(options)
     application.ollama_hybrid_profile = profile
 
-    application.ollama = AdaptiveFinalAnswerAgent(
+    application.ollama = UnifiedAdaptiveMCPAgent(
         client=application.mcp,
         base_url=str(options.get("ollama_base_url") or ""),
         model=str(profile["effective_response_model"]),
@@ -125,15 +126,16 @@ def _replace_ollama_agent() -> None:
             "ollama_direct_cloud_fallback_local_proxy", True
         ),
         health_timeout_seconds=float(options.get("ollama_health_timeout_seconds") or 3),
-        planner_timeout_seconds=max(10.0, float(options.get("ollama_planner_timeout_seconds") or 20)),
-        response_timeout_seconds=float(options.get("ollama_response_timeout_seconds") or 30),
-        routine_response_timeout_seconds=float(options.get("ollama_routine_response_timeout_seconds") or 20),
-        num_ctx=int(options.get("ollama_num_ctx") or 2048),
-        num_predict=int(options.get("ollama_num_predict") or 160),
+        planner_timeout_seconds=max(10.0, float(options.get("ollama_planner_timeout_seconds") or 25)),
+        response_timeout_seconds=float(options.get("ollama_response_timeout_seconds") or 35),
+        routine_response_timeout_seconds=float(options.get("ollama_routine_response_timeout_seconds") or 25),
+        num_ctx=int(options.get("ollama_num_ctx") or 8192),
+        num_predict=int(options.get("ollama_num_predict") or 240),
         keep_alive=str(options.get("ollama_keep_alive") or "30m"),
-        planner_tool_limit=int(options.get("ollama_planner_tool_limit") or 4),
-        tool_result_limit_chars=int(options.get("ollama_tool_result_limit_chars") or 4000),
-        max_tool_rounds=int(options.get("ollama_max_tool_rounds") or 2),
+        planner_tool_limit=int(options.get("ollama_planner_tool_limit") or 40),
+        unified_tool_limit=int(options.get("unified_mcp_tool_limit") or 48),
+        tool_result_limit_chars=int(options.get("ollama_tool_result_limit_chars") or 8000),
+        max_tool_rounds=int(options.get("ollama_max_tool_rounds") or 6),
         require_sensitive_confirmation=application.option_bool("require_sensitive_confirmation", True),
         fallback_provider=application.fallback.answer,
         evidence_item_limit=int(options.get("ollama_evidence_item_limit") or 8),
@@ -234,6 +236,8 @@ ai_evidence_planner = install_ai_evidence_planner(
     max_inventory_items=int(application.OPTIONS.get("ai_evidence_planner_max_inventory_items") or 120),
 )
 hybrid_verified_reads = install_hybrid_verified_read_routes(application, semantic_metric_comparison)
+if application.option_bool("unified_mcp_agent_enabled", True):
+    install_unified_mcp_agent_orchestrator(application)
 request_traces = install_request_tracing(
     application,
     application.mcp,
