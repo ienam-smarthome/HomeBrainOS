@@ -8,6 +8,7 @@ from pydantic import Field
 import app as application
 import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
+from ai_evidence_domains import install_ai_evidence_domains
 from ai_evidence_planner import install_ai_evidence_planner
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
@@ -228,6 +229,7 @@ semantic_read_intents = install_semantic_read_pipeline(
     cache_ttl_seconds=float(application.OPTIONS.get("semantic_intent_cache_seconds") or 300),
 )
 install_device_health_fast_route(application)
+install_ai_evidence_domains()
 ai_evidence_planner = install_ai_evidence_planner(
     application,
     device_index,
