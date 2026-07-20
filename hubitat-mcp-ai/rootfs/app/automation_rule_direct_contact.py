@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Awaitable, Callable
 
+import hybrid_assistant_mode as hybrid_module
 from automation_rule_workflow import _normalise, _session_id
 from automation_rule_workflow_repair_id_safe import (
     RepairIdSafeWashingRuleMachineWorkflow,
@@ -15,7 +16,7 @@ AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 
 _DIRECT_CONTACT_RULE = re.compile(
     r"^(?:please\s+)?(?:write|create|make|build|draft|prepare)\s+"
-    r"(?:me\s+)?(?:a\s+)?(?:rule|automation)\s+to\s+"
+    r"(?:me\s+)?(?:an?\s+)?(?:rule|automation)\s+to\s+"
     r"(?:(?:send|give)(?:\s+me)?\s+(?:an?\s+)?(?:alert|notification)|"
     r"(?:alert|notify)(?:\s+me)?)\s+when\s+(?:the\s+)?(.+?)\s+"
     r"(?:has\s+been\s+|is\s+)?(?:left\s+)?open"
@@ -57,6 +58,20 @@ def parse_device_search(query: str) -> str | None:
         return None
     requested = _spoken_name(match.group(1))
     return requested or None
+
+
+_original_hybrid_ai_query = hybrid_module.is_hybrid_ai_query
+
+
+def _hybrid_ai_query_with_specialist_precedence(query: str) -> bool:
+    if parse_direct_contact_rule(query) is not None or parse_device_search(query) is not None:
+        return False
+    return _original_hybrid_ai_query(query)
+
+
+# entrypoint installs the hybrid policy after importing this module. Replacing the
+# module global here ensures its later installer publishes this guarded predicate.
+hybrid_module.is_hybrid_ai_query = _hybrid_ai_query_with_specialist_precedence
 
 
 def _has_contact_capability(device: dict[str, Any]) -> bool:
