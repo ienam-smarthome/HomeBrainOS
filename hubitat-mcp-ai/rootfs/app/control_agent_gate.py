@@ -31,6 +31,20 @@ _UNSAFE_MULTI_TERMS = (
     " but ",
     " then ",
 )
+_FAST_PATH_COMPLEX_TERMS = (
+    " whichever ",
+    " which ",
+    " that ",
+    " near ",
+    " beside ",
+    " next to ",
+    " except ",
+    " unless ",
+    " if ",
+    " when ",
+    " and ",
+    ",",
+)
 _EXACT_FAST_CONTROL = re.compile(
     r"^(?:please\s+)?(?:turn|switch)\s+(?:the\s+)?[^,]+?\s+(?:on|off)[.!?]*$|"
     r"^(?:please\s+)?(?:turn|switch)\s+(?:on|off)\s+(?:the\s+)?[^,]+?[.!?]*$",
@@ -38,7 +52,7 @@ _EXACT_FAST_CONTROL = re.compile(
 )
 _EXACT_FAST_LEVEL = re.compile(
     r"^(?:please\s+)?(?:set|dim)\s+(?:the\s+)?[^,]+?\s+(?:to|at)\s+"
-    r"\d{1,3}(?:\s*%|\s+percent)?[.!?]*$",
+    r"\d{1,3}(?:\s*%|\s+percent)[.!?]*$",
     re.IGNORECASE,
 )
 
@@ -70,6 +84,9 @@ def is_exact_fast_control(query: str) -> bool:
     """Return True only for the tiny, latency-sensitive deterministic fast path."""
 
     text = re.sub(r"\s+", " ", str(query or "").strip())
+    padded = f" {text.lower()} "
+    if any(term in padded for term in _FAST_PATH_COMPLEX_TERMS):
+        return False
     return bool(_EXACT_FAST_CONTROL.match(text) or _EXACT_FAST_LEVEL.match(text))
 
 
@@ -136,9 +153,9 @@ def install_control_agent_gate(
     """Use one exact fast path, then AI tools, then deterministic fallback.
 
     Pending confirmations and alias management stay deterministic. Exact single-device
-    on/off and level commands retain the proven low-latency control path. More natural
-    or complex control language is sent to the Ollama MCP planner first, with the
-    existing control-agent chain retained strictly as an offline/timeout fallback.
+    on/off and percentage commands retain the proven low-latency control path. More
+    natural or complex control language is sent to the Ollama MCP planner first, with
+    the existing control-agent chain retained strictly as an offline/timeout fallback.
     """
 
     control_agent_ask: AskHandler = application.ask
