@@ -34,6 +34,10 @@ from device_refresh_webui import install_device_refresh_webui
 from fast_fallback_light_usage import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
+from hybrid_assistant_mode import (
+    install_hybrid_assistant_query_policy,
+    install_hybrid_verified_read_routes,
+)
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from motion_light_insight import install_motion_light_insight
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
@@ -49,8 +53,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.7.1"
-RELEASE_VERSION = "0.7.2"
+PREVIOUS_RELEASE_VERSION = "0.7.2"
+RELEASE_VERSION = "0.8.0"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -111,25 +115,14 @@ def _replace_ollama_agent() -> None:
         cloud_enabled=bool(profile["cloud_enabled"]),
         cloud_model=str(profile["cloud_model"]),
         local_fallback_model=str(profile["local_fallback_model"]),
-        cloud_fallback_local=application.option_bool(
-            "ollama_cloud_fallback_local",
-            True,
-        ),
-        cloud_timeout_seconds=float(
-            options.get("ollama_cloud_timeout_seconds") or 12
-        ),
-        direct_cloud_enabled=application.option_bool(
-            "ollama_direct_cloud_enabled",
-            True,
-        ),
-        direct_cloud_base_url=str(
-            options.get("ollama_direct_cloud_base_url") or "https://ollama.com"
-        ),
+        cloud_fallback_local=application.option_bool("ollama_cloud_fallback_local", True),
+        cloud_timeout_seconds=float(options.get("ollama_cloud_timeout_seconds") or 12),
+        direct_cloud_enabled=application.option_bool("ollama_direct_cloud_enabled", True),
+        direct_cloud_base_url=str(options.get("ollama_direct_cloud_base_url") or "https://ollama.com"),
         direct_cloud_api_key=str(options.get("ollama_direct_cloud_api_key") or ""),
         direct_cloud_model=str(options.get("ollama_direct_cloud_model") or ""),
         direct_cloud_fallback_local_proxy=application.option_bool(
-            "ollama_direct_cloud_fallback_local_proxy",
-            True,
+            "ollama_direct_cloud_fallback_local_proxy", True
         ),
         health_timeout_seconds=float(options.get("ollama_health_timeout_seconds") or 3),
         planner_timeout_seconds=max(10.0, float(options.get("ollama_planner_timeout_seconds") or 20)),
@@ -172,16 +165,12 @@ ollama_engagement = install_ollama_engagement(application, home_snapshot)
 motion_light_insight = install_motion_light_insight(
     application,
     device_index,
-    ai_timeout_seconds=float(
-        application.OPTIONS.get("ollama_quick_insight_timeout_seconds") or 20
-    ),
+    ai_timeout_seconds=float(application.OPTIONS.get("ollama_quick_insight_timeout_seconds") or 20),
 )
 automation_recommendation = install_automation_recommendation(
     application,
     device_index,
-    ai_timeout_seconds=float(
-        application.OPTIONS.get("ollama_quick_insight_timeout_seconds") or 20
-    ),
+    ai_timeout_seconds=float(application.OPTIONS.get("ollama_quick_insight_timeout_seconds") or 20),
 )
 conversation_context = install_safe_conversation_context(
     application,
@@ -230,6 +219,8 @@ semantic_read_intents = install_semantic_read_pipeline(
 )
 install_device_health_fast_route(application)
 install_ai_evidence_domains()
+if not application.option_bool("control_focus_mode_enabled", False):
+    install_hybrid_assistant_query_policy()
 ai_evidence_planner = install_ai_evidence_planner(
     application,
     device_index,
@@ -242,6 +233,7 @@ ai_evidence_planner = install_ai_evidence_planner(
     synthesis_timeout_seconds=float(application.OPTIONS.get("ai_evidence_planner_synthesis_timeout_seconds") or 20),
     max_inventory_items=int(application.OPTIONS.get("ai_evidence_planner_max_inventory_items") or 120),
 )
+hybrid_verified_reads = install_hybrid_verified_read_routes(application, semantic_metric_comparison)
 request_traces = install_request_tracing(
     application,
     application.mcp,
