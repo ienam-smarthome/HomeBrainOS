@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.6.4"
+version: "0.6.5"
 slug: hubitat_mcp_ai
-description: "HomeBrain Agent-First Control with PC-independent direct Ollama Cloud, semantic-read failover and verified Hubitat execution"
+description: "HomeBrain Agent-First Control with PC-independent Direct Cloud, whole-home priority insight and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
