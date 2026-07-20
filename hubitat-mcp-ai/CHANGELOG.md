@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.6.3
+
+- Adds direct Ollama Cloud API access from the Home Assistant add-on, so Cloud models remain available when the PC-hosted Ollama service is powered off or unreachable.
+- Uses `https://ollama.com/api` with bearer authentication from the new password setting `ollama_direct_cloud_api_key`.
+- Keeps local Qwen requests on the configured LAN Ollama host while transparently routing the configured Cloud model to the direct endpoint.
+- Converts local proxy tags such as `gemma4:31b-cloud` to the direct API model name `gemma4:31b` by default, with `ollama_direct_cloud_model` available as an explicit override.
+- Uses failover order: direct Cloud, signed-in local Ollama Cloud proxy, then local Qwen fallback.
+- Combines local and direct `/api/tags` results so existing planner and response-model selection continues to work when either endpoint is unavailable.
+- Lets the stronger Cloud model perform MCP tool planning when the PC is offline, while deterministic Python still executes Hubitat tools and verifies controls.
+- Adds separate diagnostics for Local Ollama and Direct Cloud reachability without exposing the API key.
+
 ## 0.6.2
 
 - Adds **goal-based AI lighting control** for subjective requests such as `Make Livingroom Light 1 comfortable for watching TV`.
@@ -112,7 +123,7 @@
 - Performs only one independent fresh read after a server-side timeout and never blindly resends the command.
 - Keeps bounded local verification for older/custom MCP servers that do not advertise `waitFor`.
 - Routes exact absolute level commands as deterministic MCP-fast controls instead of labelling them as Ollama-planner requests.
-- Interprets `turn on Bedroom 1 Light to 30%` and `turn Bedroom 1 Light on at 30%` as one deterministic `set_level` action, so the percentage is never included in the device name and no unnecessary device-choice menu is shown.
+- Interprets `turn on Bedroom 1 Light to 30%` and `turn Bedroom 1 Light on at 30%` as one deterministic `set_level` intent, so the percentage is never included in the device name and no unnecessary device-choice menu is shown.
 - Rejects out-of-range level values instead of silently clamping and auto-executing them.
 
 ## 0.5.1
