@@ -308,13 +308,57 @@ def test_ambiguity_sends_zero_writes_then_numbered_reply_executes_exact_candidat
     first = asyncio.run(agent.answer(request("turn off livingroom light"), unused))
 
     assert first["intent"] == "control-agent-device-choice-required"
-    assert first["alternatives"] == ["Livingroom Light 1", "Livingroom Light 2"]
+    assert first["alternatives"] == [
+        "Livingroom Light 1 (Hubitat ID 1)",
+        "Livingroom Light 2 (Hubitat ID 2)",
+    ]
     assert fallback.calls == []
 
     second = asyncio.run(agent.answer(request("2"), unused))
 
     assert second["success"] is True
     assert fallback.calls == [("Livingroom Light 2", "off")]
+
+
+def test_duplicate_label_choice_is_id_aware_and_remembered(tmp_path: Path):
+    duplicate_devices = [
+        device("20", "Livingroom Light 2", "Living Room"),
+        device("21", "Livingroom Light 2", "Living Room"),
+    ]
+    agent, fallback = make_agent(tmp_path, duplicate_devices)
+
+    first = asyncio.run(agent.answer(request("turn on living room light 2"), unused))
+
+    assert first["intent"] == "control-agent-device-choice-required"
+    assert first["alternatives"] == [
+        "Livingroom Light 2 (Hubitat ID 20)",
+        "Livingroom Light 2 (Hubitat ID 21)",
+    ]
+    assert "Hubitat ID 20" in first["message"]
+    assert fallback.calls == []
+
+    selected = asyncio.run(agent.answer(request("2"), unused))
+
+    assert selected["success"] is True
+    assert "device-id:21" in asyncio.run(agent.aliases.all()).values()
+
+    repeated = asyncio.run(agent.answer(request("turn on living room light 2"), unused))
+
+    assert repeated["success"] is True
+    assert repeated.get("confirmation_required") is not True
+    assert len(fallback.calls) == 2
+
+
+def test_legacy_label_aliases_remain_compatible():
+    graph = ControlDeviceGraph(
+        DEVICES,
+        learned_aliases={"reading lamp": "Livingroom Light 2"},
+    )
+
+    resolution = graph.resolve(ControlTargetIntent(name_hint="reading lamp"))
+
+    assert resolution.resolved is True
+    assert [item.id for item in resolution.nodes] == ["2"]
 
 
 def test_local_ai_group_plan_resolves_every_target_before_first_write(tmp_path: Path):

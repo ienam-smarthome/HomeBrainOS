@@ -7,3 +7,5 @@
 - Validate manifest/runtime/previous-release metadata and require matching changelogs.
 - Make pull-request validation reject Hubitat MCP AI runtime changes that do not bump
   the Home Assistant add-on version.
+- Distinguish same-name Hubitat devices by stable ID and remember the user's first
+  explicit selection so the same spoken control target resolves automatically later.

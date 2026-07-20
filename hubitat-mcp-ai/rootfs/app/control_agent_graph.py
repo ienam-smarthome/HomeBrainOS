@@ -128,10 +128,27 @@ class ControlDeviceGraph:
         self.by_id = {item.id: item for item in self.nodes}
         self._alias_index: dict[str, list[DeviceNode]] = {}
         for node in self.nodes:
+            seen_keys: set[str] = set()
             for alias in node.aliases:
                 key = spoken_name_key(alias)
-                if key:
+                if key and key not in seen_keys:
                     self._alias_index.setdefault(key, []).append(node)
+                    seen_keys.add(key)
+        self._learned_alias_index: dict[str, list[DeviceNode]] = {}
+        for alias, target in (learned_aliases or {}).items():
+            key = spoken_name_key(alias)
+            if not key:
+                continue
+            if target.startswith("device-id:"):
+                target_id = target.removeprefix("device-id:")
+                matches = [self.by_id[target_id]] if target_id in self.by_id else []
+            else:
+                matches = [
+                    node
+                    for node in self.nodes
+                    if spoken_name_key(node.label) == spoken_name_key(target)
+                ]
+            self._learned_alias_index[key] = matches
 
     def inventory_summary(self, *, max_chars: int = 5000) -> str:
         rows = [
@@ -164,6 +181,18 @@ class ControlDeviceGraph:
                 method=f"context-{reference}-missing",
                 reason="The requested conversation reference is no longer available.",
             )
+
+        learned_exact = self._learned_alias_index.get(spoken_name_key(target.name_hint), [])
+        if len(learned_exact) == 1 and target.quantifier == "one":
+            node = learned_exact[0]
+            if self._matches_constraints(node, target):
+                return DeviceResolution(
+                    nodes=[node],
+                    candidates=[node],
+                    confidence=1.0,
+                    method="learned-device-id-alias",
+                    reason="The spoken target is bound to a user-selected Hubitat device ID.",
+                )
 
         exact = self._exact_alias(target.name_hint)
         if len(exact) == 1 and target.quantifier == "one":
@@ -410,8 +439,11 @@ class ControlDeviceGraph:
             base = re.sub(r"\s*(?:\([^)]*\)|\[[^]]*\])\s*$", "", label).strip()
             if base:
                 aliases.add(base)
-            for alias, target_label in learned_aliases.items():
-                if spoken_name_key(target_label) == spoken_name_key(label):
+            for alias, target in learned_aliases.items():
+                target_id = target.removeprefix("device-id:") if target.startswith("device-id:") else ""
+                if target_id == device_id or (
+                    not target_id and spoken_name_key(target) == spoken_name_key(label)
+                ):
                     aliases.add(alias)
             provisional.append(
                 DeviceNode(
