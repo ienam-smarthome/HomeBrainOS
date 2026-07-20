@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.7.0
+
+- Introduces **AI Evidence Planner**, moving broader home analysis from one fixed route per question to AI-selected, evidence-bound read planning.
+- Lets AI choose only from an approved read-only catalogue: live home snapshot, device health, numeric measurements, hub health, selected-device inventory, targeted recent events, weather and today's calculated light usage.
+- Keeps Python authoritative for every MCP request, device label/ID lookup, calculation, coverage check, safety boundary and all write paths.
+- Supports at most two evidence rounds: an initial plan and one optional bounded follow-up when the first package is genuinely insufficient.
+- Uses Direct Ollama Cloud first by default, with local Ollama retry and deterministic evidence fallback when AI is unavailable.
+- Gives planning and synthesis models no command tools, arbitrary MCP tool names or authority to claim that a device changed.
+- Preserves exact controls, device health, live metric rankings and other proven MCP-fast routes instead of adding AI latency to clear requests.
+- Extends broad planning to natural electricity, bathroom, ventilation, room, appliance and environmental questions.
+- Adds independent settings for planner enablement, Cloud preference, evidence-round limit, planning/synthesis timeouts and inventory size.
+- Adds regression coverage for whitelist enforcement, Direct Cloud planning, second-round evidence, deterministic fallback and strict control-route isolation.
+
 ## 0.6.5
 
 - Adds a dedicated **whole-home priority insight** route for questions such as `What are the three most important issues at home right now?`, `What looks unusual at home?` and `What needs attention at home?`.
