@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import ai_evidence_planner as planner_module
+from automation_recommendation import AutomationRecommendationService
+
 
 _AUTOMATION_SHORTCUT = (
     '<button class="secondary" data-q="Suggest one useful automation for the devices I have">'
@@ -34,8 +37,35 @@ _ACTION_CSS = r"""
 _ACTION_FUNCTION = r"""function ruleActionButtons(items){if(!Array.isArray(items)||!items.length)return null;const box=el('div','rule-actions');items.forEach(item=>{const button=el('button','rule-action '+String(item.tone||'secondary'),(item.icon?String(item.icon)+' ':'')+String(item.label||'Continue'));button.type='button';button.onclick=()=>{const query=String(item.query||'').trim();if(!query)return;input.value=query;submit(query)};box.appendChild(button)});return box}"""
 
 
+def install_automation_recommendation_route_precedence() -> Callable[[str], bool]:
+    """Keep the capability-aware automation skill ahead of the universal AI fallback.
+
+    The AI Evidence Planner is intentionally the outer fallback in Hybrid Assistant
+    mode. Its matcher is resolved dynamically, so excluding this exact specialist
+    intent lets the already-installed AutomationRecommendationService receive the
+    request. The specialist deterministically inspects selected-device groups and
+    capabilities, then optionally uses Ollama only to improve the grounded wording.
+    """
+
+    original = planner_module.is_ai_evidence_query
+    if getattr(original, "_homebrain_automation_recommendation_precedence", False):
+        return original
+
+    def recommendation_safe_policy(query: str) -> bool:
+        if AutomationRecommendationService.matches(query):
+            return False
+        return bool(original(query))
+
+    recommendation_safe_policy._homebrain_automation_recommendation_precedence = True  # type: ignore[attr-defined]
+    recommendation_safe_policy._homebrain_previous_policy = original  # type: ignore[attr-defined]
+    planner_module.is_ai_evidence_query = recommendation_safe_policy
+    return recommendation_safe_policy
+
+
 def install_automation_recommendation_webui(module: Any) -> Callable[[str], str]:
-    """Patch shortcuts, route labels and safe rule-workflow action buttons."""
+    """Patch routing precedence, shortcuts, labels and rule-workflow action buttons."""
+
+    install_automation_recommendation_route_precedence()
     original = module.patch_page
     if getattr(original, "_homebrain_automation_recommendation_patch", False):
         return original
@@ -84,4 +114,7 @@ def install_automation_recommendation_webui(module: Any) -> Callable[[str], str]
     return patched
 
 
-__all__ = ["install_automation_recommendation_webui"]
+__all__ = [
+    "install_automation_recommendation_route_precedence",
+    "install_automation_recommendation_webui",
+]
