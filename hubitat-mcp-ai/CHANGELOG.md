@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.8.1
+
+- Fixes the `Suggest one useful automation for the devices I have` Smart Shortcut being intercepted by the universal AI Evidence Planner.
+- Gives the existing capability-aware AutomationRecommendationService precedence over the generic read-only fallback for automation suggestion requests.
+- Deterministically inspects selected-device rooms, groups and capabilities before choosing one grounded automation candidate.
+- Uses Ollama only to improve the wording of the verified candidate; it does not invent devices, capabilities or an existing rule.
+- Preserves the Hybrid Assistant universal AI fallback for ordinary analytical questions and keeps clear device controls on their fast verified route.
+- Adds regression coverage proving the exact shortcut reaches the specialist skill while normal electricity and home-analysis questions still reach the AI Evidence Planner.
+
 ## 0.8.0
 
 - Replaces Control Focus as the default with **Hybrid Assistant mode**: proven controls and verified reads stay fast, while every other connected-home question falls through to the AI Evidence Planner.
