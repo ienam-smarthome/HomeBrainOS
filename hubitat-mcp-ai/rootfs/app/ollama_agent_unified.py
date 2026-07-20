@@ -64,22 +64,36 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
             "describes how to obtain evidence but is not itself authoritative home data."
         )
 
+    @staticmethod
+    def _should_recover_with_inventory(error: Exception | str) -> bool:
+        """Recognise planner-control failures that still permit a direct live read."""
+
+        text = str(error or "").lower()
+        return any(
+            marker in text
+            for marker in (
+                "without authoritative home data",
+                "did not execute an mcp tool for a live-home question",
+                "tool request that could not be parsed",
+            )
+        )
+
     async def answer_with_planner(
         self,
         query: str,
         history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
-        """Run the multi-round MCP loop and recover from discovery-only exhaustion.
+        """Run the multi-round loop and recover from planner-control exits.
 
-        The recovery is generic rather than phrase based: when a planner consumes its
-        rounds only discovering tools, HomeBrain performs an authoritative device
-        inventory read and asks the response model to answer from that live result.
+        When planning/discovery does not advance to a data-bearing call, perform a
+        safe authoritative inventory read. Transport, authentication and actual MCP
+        execution failures remain explicit and are never hidden by this recovery.
         """
 
         try:
             return await ClaudeStyleOllamaAgent.answer(self, query, history or [])
         except OllamaUnavailable as exc:
-            if "without authoritative home data" not in str(exc).lower():
+            if not self._should_recover_with_inventory(exc):
                 raise
             return await self._answer_from_authoritative_inventory(query, history or [], exc)
 
@@ -93,7 +107,7 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
         result = await self.client.call_tool("hub_list_devices", {})
         if result.is_error:
             raise OllamaUnavailable(
-                f"Planner discovery ended without data and hub_list_devices failed: {result.text}"
+                f"Planner ended without data and hub_list_devices failed: {result.text}"
             ) from planner_error
 
         tool_text = self._compact_tool_result(result)
