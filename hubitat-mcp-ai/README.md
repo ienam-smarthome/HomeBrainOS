@@ -6,8 +6,8 @@ A Home Assistant add-on that provides a HomeBrain-style interface while using **
 
 - **Hubitat C8/C8 Pro:** MCP Rule Server
 - **Exact states and controls:** deterministic local HomeBrain routes
-- **MCP planning:** local `qwen3.5:4b`
-- **AI response synthesis:** `gemma4:31b-cloud` through the signed-in Windows Ollama service
+- **MCP planning:** local `qwen3.5:4b` when the PC is available; direct Cloud planner when it is not
+- **AI response synthesis:** direct Ollama Cloud from Home Assistant, with the signed-in Windows Ollama service as a backup proxy
 - **AI safety fallback:** local `qwen3.5:4b`, then deterministic Hubitat output
 - **Rule writes:** deterministic schema-aware compiler with explicit confirmation
 - **Web UI:** Home Assistant sidebar ingress or `http://HOME_ASSISTANT_IP:8788`
@@ -18,20 +18,23 @@ The add-on does not use HomeBrain's Maker API device engine for control. It conn
 
 1. Install and configure `MCP Rule Server` on Hubitat.
 2. Open the Hubitat MCP app and copy the **Local Endpoint**.
-3. On the Windows Ollama PC:
+3. Create an Ollama API key in your ollama.com account for direct Cloud access.
+4. Optionally, on the Windows Ollama PC:
    - Sign in through the Ollama app or run `ollama signin`.
    - Run `scripts/setup-homebrain-ollama-cloud.ps1` from this repository.
-   - The script keeps `qwen3.5:4b` locally and registers/tests `gemma4:31b-cloud`.
-4. In this add-on's Configuration page:
+   - The script keeps `qwen3.5:4b` locally and registers/tests `gemma4:31b-cloud` as a backup Cloud proxy.
+5. In this add-on's Configuration page:
    - Set `hubitat_mcp_url` to the endpoint without the `access_token` query parameter, for example:
      `http://192.168.1.100/apps/api/123/mcp`
    - Put the Hubitat token in `hubitat_mcp_token`.
-   - Keep the recommended Ollama hybrid settings shown below.
-5. Start the add-on and open it from the Home Assistant sidebar or port `8788`.
+   - Put the ollama.com API key in `ollama_direct_cloud_api_key`.
+   - Keep `ollama_direct_cloud_base_url` as `https://ollama.com`.
+   - Leave `ollama_direct_cloud_model` empty to convert `gemma4:31b-cloud` automatically to the direct API name `gemma4:31b`, or enter the exact model returned by the direct `/api/tags` endpoint.
+6. Start the add-on and open it from the Home Assistant sidebar or port `8788`.
 
 You may alternatively paste the complete Hubitat endpoint, including `?access_token=...`, into `hubitat_mcp_url` and leave `hubitat_mcp_token` empty.
 
-Do not put an Ollama Cloud API key in Home Assistant. HomeBrain talks to the signed-in Ollama service running on the Windows PC.
+The API key is stored as a Home Assistant password option. HomeBrain never includes it in diagnostics, answers or technical details.
 
 ## Recommended hybrid AI profile
 
@@ -44,20 +47,37 @@ ollama_cloud_model: gemma4:31b-cloud
 ollama_local_fallback_model: qwen3.5:4b
 ollama_cloud_fallback_local: true
 ollama_cloud_timeout_seconds: 12
-ollama_num_ctx: 2048
 
+ollama_direct_cloud_enabled: true
+ollama_direct_cloud_base_url: https://ollama.com
+ollama_direct_cloud_api_key: YOUR_OLLAMA_API_KEY
+ollama_direct_cloud_model: ""
+ollama_direct_cloud_fallback_local_proxy: true
+
+ollama_num_ctx: 2048
 rule_write_enabled: true
 rule_create_paused_required: true
 rule_workflow_ttl_seconds: 600
 ```
 
-This arrangement conserves Free cloud usage:
+### AI failover order
+
+For Cloud-model requests:
+
+1. Direct `ollama.com` API from the Home Assistant add-on.
+2. Signed-in Ollama Cloud proxy on the configured PC host.
+3. Local `qwen3.5:4b` fallback.
+4. Deterministic Hubitat answer where supported.
+
+Local-model requests always remain on the configured LAN Ollama host. Exact controls and fast live-state questions do not need either AI endpoint.
+
+This arrangement conserves Cloud usage:
 
 - Exact lists, dashboard counters, device controls, rooms, batteries and live states do not use Cloud.
-- The local 4B model performs MCP tool planning for open-ended requests.
-- Gemma Cloud receives only compact verified evidence for explanations, comparisons, diagnosis, recommendations and natural summaries.
-- If Cloud is unavailable, limited or offline, the same synthesis request is retried through local Qwen before deterministic fallback.
-- Cloud is given 12 seconds on bounded insights, preserving enough of the 20-second insight window for the local 4B retry.
+- The local 4B model performs MCP tool planning when the PC is reachable.
+- If the PC is offline, the Cloud model can perform structured planning directly while Python still executes MCP tools.
+- Gemma Cloud receives only compact device inventory or verified evidence for explanations, comparisons, diagnosis, recommendations and natural summaries.
+- If Cloud is unavailable, limited or offline, the request can retry through local Qwen before deterministic fallback.
 
 ## Bounded evidence routes
 
@@ -74,7 +94,7 @@ The automation recommendation route scans the selected device inventory directly
 
 ## Guarded rule workflow
 
-A recommendation can now become a Hubitat MCP rule, but never in one silent step:
+A recommendation can become a Hubitat MCP rule, but never in one silent step:
 
 1. **Build rule** compiles a reviewable draft and performs no write.
 2. HomeBrain discovers the connected server's current rule tools and input schemas.
@@ -103,16 +123,16 @@ Dashboard counters use the same enriched selected-device view. Capability-define
 
 ## Routing
 
-- Exact live lists, room inventories and simple on/off controls stay on the fast deterministic Hubitat route.
+- Exact live lists, room inventories and simple controls stay on deterministic Hubitat routes.
 - Common analytical questions use bounded evidence routes.
-- Other multi-step questions use local Qwen for MCP planning and Gemma Cloud for the final answer.
+- Other multi-step questions use the available planner: local Qwen when reachable, otherwise direct Cloud.
 - Prefix a question with `Ask Ollama:` when an AI-written answer is specifically required.
 - Per-browser conversation context supports natural follow-ups without allowing one browser session to control another session's devices or rule drafts.
 - Sensitive operations require explicit confirmation.
 
-## Free Cloud behaviour
+## Cloud behaviour
 
-Ollama Free is intended for light cloud usage and applies rolling session and weekly limits. HomeBrain therefore does not send every question to Cloud. When a limit is reached, responses display **Local Ollama fallback** and continue using `qwen3.5:4b`.
+Ollama plans may apply session or account usage limits. HomeBrain therefore does not send every question to Cloud. When a Cloud limit is reached, responses can continue through local `qwen3.5:4b` or deterministic Hubitat routes when the PC is available.
 
 ## Recommended Hubitat settings
 
@@ -122,16 +142,5 @@ Ollama Free is intended for light cloud usage and applies rolling session and we
 - Leave Developer Mode off for normal use.
 - Keep Read enabled.
 - Enable Write/rule-management access only when you want HomeBrain to create or update rules.
-
-## Current comparison build
-
-### v0.4.16-alpha
-
-- Adds guarded Build → Create disabled → Dry-run → Enable/Disable rule actions.
-- Uses the connected MCP server's live tool schemas rather than hard-coded server-version arguments.
-- Compiles current MCP rule JSON and supports older gateway-prefixed rule tools.
-- Blocks duplicate rule names, unresolved device IDs, missing notification recipients, ambiguous recipients and schemas that cannot guarantee disabled creation.
-- Keeps the live MCP summary authoritative for selected devices and newer live states authoritative over cached metadata.
-- Keeps the grounded recommendation, truthful snapshot recovery, corrected bedroom grouping, direct control verification, exact room lists, safe confirmations and device-specific icons.
 
 Ollama is never the source of device state or the authority for a rule write. Hubitat MCP supplies live evidence and tool schemas; HomeBrain deterministically compiles and validates the rule, and the user explicitly authorises each write stage.
