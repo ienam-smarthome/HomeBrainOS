@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.6.5"
+version: "0.7.0"
 slug: hubitat_mcp_ai
-description: "HomeBrain Agent-First Control with PC-independent Direct Cloud, whole-home priority insight and verified Hubitat execution"
+description: "HomeBrain AI Evidence Planner with PC-independent Direct Cloud and deterministic verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -69,6 +69,12 @@ options:
   semantic_intent_cloud_fallback_enabled: true
   semantic_intent_cloud_timeout_seconds: 12
   semantic_intent_cache_seconds: 300
+  ai_evidence_planner_enabled: true
+  ai_evidence_planner_prefer_cloud: true
+  ai_evidence_planner_max_rounds: 2
+  ai_evidence_planner_plan_timeout_seconds: 12
+  ai_evidence_planner_synthesis_timeout_seconds: 20
+  ai_evidence_planner_max_inventory_items: 120
   mcp_timeout_seconds: 25
   mcp_device_cache_seconds: 12
   mcp_catalog_cache_seconds: 60
@@ -143,6 +149,12 @@ schema:
   semantic_intent_cloud_fallback_enabled: bool
   semantic_intent_cloud_timeout_seconds: int
   semantic_intent_cache_seconds: int
+  ai_evidence_planner_enabled: bool
+  ai_evidence_planner_prefer_cloud: bool
+  ai_evidence_planner_max_rounds: int
+  ai_evidence_planner_plan_timeout_seconds: int
+  ai_evidence_planner_synthesis_timeout_seconds: int
+  ai_evidence_planner_max_inventory_items: int
   mcp_timeout_seconds: int
   mcp_device_cache_seconds: int
   mcp_catalog_cache_seconds: int
