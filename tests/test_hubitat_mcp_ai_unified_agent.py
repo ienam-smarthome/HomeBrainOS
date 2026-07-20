@@ -11,6 +11,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from mcp_agent_orchestrator import _normalise_history, should_use_unified_agent  # noqa: E402
+from control_agent_combined_level import install_combined_level_intent  # noqa: E402
 from ollama_agent_unified import UnifiedAdaptiveMCPAgent  # noqa: E402
 
 
@@ -70,7 +71,9 @@ def test_planner_broad_call_is_repaired_before_targeted_lookup_synthesis():
 
 
 def test_exact_fast_control_and_protocol_followups_stay_deterministic():
+    install_combined_level_intent()
     assert not should_use_unified_agent("Turn on Bedroom 1 Light")
+    assert not should_use_unified_agent("turn on living room light 2 at 90%")
     assert not should_use_unified_agent("yes")
     assert not should_use_unified_agent("Create paused rule")
 

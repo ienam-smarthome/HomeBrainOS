@@ -4,7 +4,7 @@ import asyncio
 import re
 from typing import Any, Awaitable, Callable
 
-from control_agent_intent import is_control_candidate
+from control_agent_intent import ControlIntentInterpreter, is_control_candidate
 from control_language import canonicalise_basic_control
 
 
@@ -45,16 +45,6 @@ _FAST_PATH_COMPLEX_TERMS = (
     " and ",
     ",",
 )
-_EXACT_FAST_CONTROL = re.compile(
-    r"^(?:please\s+)?(?:turn|switch)\s+(?:the\s+)?[^,]+?\s+(?:on|off)[.!?]*$|"
-    r"^(?:please\s+)?(?:turn|switch)\s+(?:on|off)\s+(?:the\s+)?[^,]+?[.!?]*$",
-    re.IGNORECASE,
-)
-_EXACT_FAST_LEVEL = re.compile(
-    r"^(?:please\s+)?(?:set|dim)\s+(?:the\s+)?[^,]+?\s+(?:to|at)\s+"
-    r"\d{1,3}(?:\s*%|\s+percent)[.!?]*$",
-    re.IGNORECASE,
-)
 
 
 def is_explicit_named_multi_control(query: str) -> bool:
@@ -81,13 +71,27 @@ def is_explicit_named_multi_control(query: str) -> bool:
 
 
 def is_exact_fast_control(query: str) -> bool:
-    """Return True only for the tiny, latency-sensitive deterministic fast path."""
+    """Return True when the canonical parser proves one explicit safe target."""
 
     text = re.sub(r"\s+", " ", str(query or "").strip())
     padded = f" {text.lower()} "
     if any(term in padded for term in _FAST_PATH_COMPLEX_TERMS):
         return False
-    return bool(_EXACT_FAST_CONTROL.match(text) or _EXACT_FAST_LEVEL.match(text))
+    intent = ControlIntentInterpreter._deterministic_intent(text)
+    if intent is None or intent.model is not None or len(intent.actions) != 1:
+        return False
+    action = intent.actions[0]
+    target = action.target
+    if (
+        not target.name_hint
+        or target.quantifier != "one"
+        or target.reference != "none"
+        or target.exclusions
+    ):
+        return False
+    if action.command == "set_level":
+        return action.value is not None and 0 <= action.value <= 100
+    return action.command in {"on", "off"}
 
 
 async def _ai_first_control(
