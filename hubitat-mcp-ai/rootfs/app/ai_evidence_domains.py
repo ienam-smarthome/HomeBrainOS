@@ -4,6 +4,7 @@ from typing import Any
 
 import ai_evidence_planner as planner_module
 from control_focus_mode import install_control_focus_mode
+from control_focus_octopus_energy import install_control_focus_octopus_energy
 from control_focus_power_summary_safe import install_control_focus_power_summary_safe
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 
@@ -30,10 +31,10 @@ def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, 
     """Install broad evidence domains or the safer default Control Focus scope.
 
     Control Focus is enabled by default. It keeps the proven control and verified-
-    read routes, adds a deterministic current-power summary, and prevents the later
-    AI Evidence Planner wrapper from capturing broad questions. Disabling
-    ``control_focus_mode_enabled`` restores the broader evidence-planner behaviour
-    without removing its code or settings.
+    read routes, adds deterministic current-power and Octopus whole-house summaries,
+    and prevents the later AI Evidence Planner wrapper from capturing broad questions.
+    Disabling ``control_focus_mode_enabled`` restores the broader evidence-planner
+    behaviour without removing its code or settings.
 
     ``activate_runtime=False`` is intended for side-effect-free domain validation
     in regression tests; production entrypoint installation uses the default.
@@ -63,6 +64,7 @@ def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, 
                 True,
             ),
         )
+        install_control_focus_octopus_energy(application)
     else:
         planner_module.is_ai_evidence_query = _ORIGINAL_AI_EVIDENCE_QUERY
     return merged
