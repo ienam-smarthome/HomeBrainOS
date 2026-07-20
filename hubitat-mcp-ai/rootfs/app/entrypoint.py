@@ -8,6 +8,7 @@ from pydantic import Field
 import app as application
 import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
+from ai_evidence_planner import install_ai_evidence_planner
 from automation_recommendation import install_automation_recommendation
 from automation_recommendation_webui import install_automation_recommendation_webui
 from automation_rule_workflow_repair_id_safe import (
@@ -47,8 +48,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.6.4"
-RELEASE_VERSION = "0.6.5"
+PREVIOUS_RELEASE_VERSION = "0.6.5"
+RELEASE_VERSION = "0.7.0"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -227,6 +228,18 @@ semantic_read_intents = install_semantic_read_pipeline(
     cache_ttl_seconds=float(application.OPTIONS.get("semantic_intent_cache_seconds") or 300),
 )
 install_device_health_fast_route(application)
+ai_evidence_planner = install_ai_evidence_planner(
+    application,
+    device_index,
+    home_snapshot,
+    semantic_metric_comparison,
+    enabled=application.option_bool("ai_evidence_planner_enabled", True),
+    prefer_cloud=application.option_bool("ai_evidence_planner_prefer_cloud", True),
+    max_rounds=int(application.OPTIONS.get("ai_evidence_planner_max_rounds") or 2),
+    plan_timeout_seconds=float(application.OPTIONS.get("ai_evidence_planner_plan_timeout_seconds") or 12),
+    synthesis_timeout_seconds=float(application.OPTIONS.get("ai_evidence_planner_synthesis_timeout_seconds") or 20),
+    max_inventory_items=int(application.OPTIONS.get("ai_evidence_planner_max_inventory_items") or 120),
+)
 request_traces = install_request_tracing(
     application,
     application.mcp,
