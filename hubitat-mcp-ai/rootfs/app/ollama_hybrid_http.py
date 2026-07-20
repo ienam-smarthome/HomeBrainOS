@@ -48,6 +48,7 @@ class HybridOllamaHTTPClient:
         direct_api_key: str,
         direct_model: str = "",
         fallback_local_proxy: bool = True,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         self.local_base_url = _normalise_host(local_base_url)
         self.cloud_model = str(cloud_model or "").strip()
@@ -56,7 +57,7 @@ class HybridOllamaHTTPClient:
         self._direct_api_key = str(direct_api_key or "").strip()
         self.direct_model = direct_model_name(self.cloud_model, direct_model)
         self.fallback_local_proxy = bool(fallback_local_proxy)
-        self._client = httpx.AsyncClient(follow_redirects=True)
+        self._client = client or httpx.AsyncClient(follow_redirects=True)
         self._last_direct_error: str | None = None
 
     @property
