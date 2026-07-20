@@ -77,14 +77,14 @@ def request(query):
 
 def test_non_trivial_control_uses_ai_tools_first():
     application = FakeApplication()
-    control_agent_ask = application.ask
 
     async def legacy_ask(req):
         application.calls.append(("legacy", req.query))
         return {"success": True, "route": "legacy"}
 
     install_control_agent_gate(application, FakeControlAgent(), legacy_ask)
-    answer = asyncio.run(application.ask(request("make the hallway warmer")))
+    query = "turn on the hallway light near the stairs"
+    answer = asyncio.run(application.ask(request(query)))
 
     assert answer["route"] == "ollama+mcp"
     assert answer["ai_first_control"] is True
@@ -120,8 +120,9 @@ def test_ai_failure_falls_back_to_control_agent():
         return {"success": True, "route": "legacy"}
 
     install_control_agent_gate(application, FakeControlAgent(), legacy_ask)
-    answer = asyncio.run(application.ask(request("make the hallway warmer")))
+    query = "turn on the hallway light near the stairs"
+    answer = asyncio.run(application.ask(request(query)))
 
     assert answer["route"] == "mcp-fast"
     assert answer["ai_first_control_fallback"] is True
-    assert application.calls == [("control", "make the hallway warmer")]
+    assert application.calls == [("control", query)]
