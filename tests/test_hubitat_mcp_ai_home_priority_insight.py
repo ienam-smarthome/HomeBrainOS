@@ -115,7 +115,7 @@ class FakeOllama:
 
 
 class FakeApplication:
-    VERSION = "0.7.0"
+    VERSION = "0.7.1"
 
     def __init__(self, *, fail_ai: bool = False) -> None:
         self.ollama = FakeOllama(fail=fail_ai)
@@ -183,7 +183,7 @@ def test_home_priority_keeps_deterministic_answer_when_cloud_is_unavailable():
 
 
 def test_ai_evidence_planner_domains_and_write_isolation_are_active():
-    terms = install_ai_evidence_domains()
+    terms = install_ai_evidence_domains(activate_runtime=False)
 
     assert "electricity" in terms
     assert "bathroom" in terms
@@ -202,9 +202,10 @@ def test_ai_evidence_planner_domains_and_write_isolation_are_active():
     assert "self.max_rounds = max(1, min(2" in planner_source
 
 
-def test_late_routes_and_evidence_planner_release_are_aligned():
+def test_late_routes_and_control_focus_release_are_aligned():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     route_source = (APP_DIR / "device_health_fast_route.py").read_text(encoding="utf-8")
+    domains = (APP_DIR / "ai_evidence_domains.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
 
     assert entrypoint.index("install_semantic_read_pipeline(") < entrypoint.index(
@@ -221,7 +222,9 @@ def test_late_routes_and_evidence_planner_release_are_aligned():
     )
     assert "is_home_priority_query(query)" in route_source
     assert 'RouteDecision(\n                "home-insight"' in route_source
-    assert 'version: "0.7.0"' in config
-    assert 'RELEASE_VERSION = "0.7.0"' in entrypoint
-    assert "ai_evidence_planner_enabled: true" in config
-    assert "ai_evidence_planner_max_rounds: 2" in config
+    assert 'version: "0.7.1"' in config
+    assert 'RELEASE_VERSION = "0.7.1"' in entrypoint
+    assert "control_focus_mode_enabled: true" in config
+    assert "control_focus_allow_verified_reads: true" in config
+    assert "install_control_focus_mode(" in domains
+    assert "planner_module.is_ai_evidence_query = lambda _query: False" in domains
