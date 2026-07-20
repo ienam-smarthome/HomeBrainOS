@@ -1,0 +1,1 @@
+0.9.1 fixes unified-agent recovery when the planner stops after MCP discovery without issuing a live data call.
