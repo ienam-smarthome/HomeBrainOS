@@ -16,27 +16,31 @@ AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 _DIRECT_CONTACT_RULE = re.compile(
     r"^(?:please\s+)?(?:write|create|make|build|draft|prepare)\s+"
     r"(?:me\s+)?(?:a\s+)?(?:rule|automation)\s+to\s+"
-    r"(?:alert|notify)(?:\s+me)?\s+when\s+(?:the\s+)?(.+?)\s+"
+    r"(?:(?:send|give)(?:\s+me)?\s+(?:an?\s+)?(?:alert|notification)|"
+    r"(?:alert|notify)(?:\s+me)?)\s+when\s+(?:the\s+)?(.+?)\s+"
     r"(?:has\s+been\s+|is\s+)?(?:left\s+)?open"
     r"(?:\s+for\s+(\d{1,3})\s*(seconds?|secs?|minutes?|mins?))?[.!?]*$",
     re.IGNORECASE,
 )
+_FIND_DEVICE = re.compile(
+    r"^(?:please\s+)?(?:find|search(?:\s+for)?|locate|show\s+matches\s+for)\s+"
+    r"(?:the\s+)?(?:device\s+)?(.+?)[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def _spoken_name(value: str) -> str:
+    value = re.sub(r"[._/\\-]+", " ", str(value or ""))
+    return re.sub(r"\s+", " ", value).strip(" .!?")
 
 
 def parse_direct_contact_rule(query: str) -> dict[str, Any] | None:
-    """Parse a complete, explicit contact-left-open rule request.
-
-    This intentionally recognises one narrow, safe rule family. Other automation
-    requests continue through the existing recommendation and review workflow.
-    Punctuation inside spoken device names is treated as a separator, so
-    ``front.door`` and ``front door`` resolve identically.
-    """
+    """Parse one narrow, explicit contact-left-open rule family."""
 
     match = _DIRECT_CONTACT_RULE.fullmatch(str(query or "").strip())
     if not match:
         return None
-    requested = re.sub(r"[._/\\-]+", " ", match.group(1))
-    requested = re.sub(r"\s+", " ", requested).strip(" .!?")
+    requested = _spoken_name(match.group(1))
     if not requested:
         return None
 
@@ -45,6 +49,14 @@ def parse_direct_contact_rule(query: str) -> dict[str, Any] | None:
     seconds = amount if unit.startswith(("sec", "s")) else amount * 60
     seconds = max(10, min(24 * 60 * 60, seconds))
     return {"requested_device": requested, "duration_seconds": seconds}
+
+
+def parse_device_search(query: str) -> str | None:
+    match = _FIND_DEVICE.fullmatch(str(query or "").strip())
+    if not match:
+        return None
+    requested = _spoken_name(match.group(1))
+    return requested or None
 
 
 def _has_contact_capability(device: dict[str, Any]) -> bool:
@@ -66,6 +78,53 @@ def _duration_text(seconds: int) -> str:
     return f"{seconds} seconds"
 
 
+def _candidate_message(requested: str, candidates: list[str]) -> str:
+    if not candidates:
+        return f'I could not find a selected device matching "{requested}".'
+    lines = [f'Devices matching "{requested}":']
+    lines.extend(f"{index}. {candidate}" for index, candidate in enumerate(candidates, start=1))
+    return "\n".join(lines)
+
+
+async def _find_devices(
+    service: RepairIdSafeWashingRuleMachineWorkflow,
+    requested: str,
+) -> dict[str, Any]:
+    exact = None
+    candidates: list[str] = []
+    try:
+        exact, candidates = await service.device_index.exact_device(requested)
+    except Exception as exc:
+        return {
+            "success": False,
+            "route": "mcp-device-search",
+            "intent": "device-search-error",
+            "message": f'Device search failed for "{requested}": {exc}',
+            "requested_name": requested,
+        }
+
+    if isinstance(exact, dict):
+        label = _label(exact) or requested
+        device_id = exact.get("id") or exact.get("deviceId")
+        room = _room_name(exact)
+        descriptor = label
+        details = [item for item in (f"ID {device_id}" if device_id else "", room) if item]
+        if details:
+            descriptor += f" ({', '.join(details)})"
+        candidates = [descriptor]
+
+    return {
+        "success": bool(candidates),
+        "route": "mcp-device-search",
+        "intent": "device-search-results" if candidates else "device-search-empty",
+        "message": _candidate_message(requested, candidates),
+        "requested_name": requested,
+        "matched_devices": candidates,
+        "match_count": len(candidates),
+        "answered_by": "HomeBrain selected-device index",
+    }
+
+
 async def _build_direct_contact_rule(
     service: RepairIdSafeWashingRuleMachineWorkflow,
     request: Any,
@@ -73,24 +132,34 @@ async def _build_direct_contact_rule(
 ) -> dict[str, Any]:
     requested = str(parsed["requested_device"])
     exact = None
-    details: dict[str, Any] = {}
+    candidates: list[str] = []
+    error: str | None = None
     for candidate in (requested, _normalise(requested)):
         try:
-            exact, details = await service.device_index.exact_device(candidate)
+            exact, candidates = await service.device_index.exact_device(candidate)
         except Exception as exc:
-            details = {"error": str(exc)}
+            error = str(exc)
             exact = None
+            candidates = []
         if isinstance(exact, dict):
             break
 
     if not isinstance(exact, dict):
+        message = _candidate_message(requested, candidates)
+        if candidates:
+            message += "\nUse the exact Hubitat label from this list to build the rule."
+        else:
+            message += " Check that the contact sensor is selected in the MCP device allowlist."
         return {
             "success": False,
             "route": "mcp-rule-intake",
             "intent": "automation-rule-device-not-found",
-            "message": f'I could not find one exact selected device matching "{requested}". Use its exact Hubitat label.',
+            "message": message,
             "requested_name": requested,
-            "technical": {"device_resolution": details},
+            "alternatives": candidates,
+            "matched_devices": candidates,
+            "match_count": len(candidates),
+            "technical": {"device_resolution_error": error},
         }
 
     label = _label(exact) or requested
@@ -172,9 +241,15 @@ def install_direct_contact_rule_workflow(
     original_ask: AskHandler = application.ask
 
     async def ask_with_direct_contact_rule(request: Any) -> dict[str, Any]:
-        parsed = parse_direct_contact_rule(str(getattr(request, "query", "") or ""))
+        query = str(getattr(request, "query", "") or "")
+        parsed = parse_direct_contact_rule(query)
         if parsed:
             answer = await _build_direct_contact_rule(service, request, parsed)
+            answer.setdefault("version", application.VERSION)
+            return answer
+        search = parse_device_search(query)
+        if search:
+            answer = await _find_devices(service, search)
             answer.setdefault("version", application.VERSION)
             return answer
         answer = await original_ask(request)
@@ -191,4 +266,8 @@ def install_direct_contact_rule_workflow(
     return service
 
 
-__all__ = ["install_direct_contact_rule_workflow", "parse_direct_contact_rule"]
+__all__ = [
+    "install_direct_contact_rule_workflow",
+    "parse_device_search",
+    "parse_direct_contact_rule",
+]
