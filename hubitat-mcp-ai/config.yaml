@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.6.1"
+version: "0.6.2"
 slug: hubitat_mcp_ai
-description: "HomeBrain Agent-First Control with semantic room, ordinal and device-type resolution plus verified Hubitat execution"
+description: "HomeBrain Agent-First Control with AI lighting-goal planning, semantic device resolution and verified Hubitat execution"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -52,6 +52,7 @@ options:
   control_agent_enabled: true
   control_agent_ai_rescue_enabled: true
   control_agent_cloud_fallback_enabled: true
+  control_agent_goal_prefer_cloud: true
   control_agent_intent_timeout_seconds: 5
   control_agent_cloud_timeout_seconds: 12
   control_agent_auto_execute_confidence_percent: 88
@@ -118,6 +119,7 @@ schema:
   control_agent_enabled: bool
   control_agent_ai_rescue_enabled: bool
   control_agent_cloud_fallback_enabled: bool
+  control_agent_goal_prefer_cloud: bool
   control_agent_intent_timeout_seconds: int
   control_agent_cloud_timeout_seconds: int
   control_agent_auto_execute_confidence_percent: int
