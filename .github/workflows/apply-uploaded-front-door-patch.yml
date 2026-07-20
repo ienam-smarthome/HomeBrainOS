@@ -1,0 +1,36 @@
+name: Apply uploaded front-door patch
+
+on:
+  push:
+    branches:
+      - fix/apply-front-door-routing-patch
+
+permissions:
+  contents: write
+
+jobs:
+  apply-patch:
+    if: ${{ !contains(github.event.head_commit.message, '[patch-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/apply-front-door-routing-patch
+          fetch-depth: 0
+
+      - name: Apply uploaded patch
+        run: |
+          git apply --check fix-front-door-routing.patch
+          git apply fix-front-door-routing.patch
+          git rm fix-front-door-routing.patch
+          git rm .github/workflows/apply-uploaded-front-door-patch.yml
+
+      - name: Commit applied source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hubitat-mcp-ai/rootfs/app/ai_evidence_planner.py \
+                  hubitat-mcp-ai/rootfs/app/ollama_agent_claude.py
+          git commit -m "Apply uploaded front-door routing patch [patch-applied]"
+          git push origin HEAD:fix/apply-front-door-routing-patch
