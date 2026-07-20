@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 import ai_evidence_planner as planner_module
+from control_focus_mode import install_control_focus_mode
+from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 
 
 _EXTRA_HOME_DOMAIN_TERMS = (
@@ -20,21 +22,47 @@ _EXTRA_HOME_DOMAIN_TERMS = (
     "camera",
     "appliance",
 )
+_ORIGINAL_AI_EVIDENCE_QUERY = planner_module.is_ai_evidence_query
 
 
-def install_ai_evidence_domains() -> tuple[str, ...]:
-    """Extend broad read-only AI planning without changing control routing.
+def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, ...]:
+    """Install broad evidence domains or the safer default Control Focus scope.
 
-    The core planner keeps a deliberately compact domain gate. This installer adds
-    common household rooms and systems before the planner wrapper is installed, so
-    natural questions such as bathroom ventilation or electricity diagnosis are
-    eligible for AI-led evidence selection. It does not add control verbs, tools,
-    metrics, device IDs or write permissions.
+    Control Focus is enabled by default for release 0.7.1. It keeps the proven
+    control and verified-read routes, adds a deterministic current-power summary,
+    and prevents the later AI Evidence Planner wrapper from capturing broad
+    questions. Disabling ``control_focus_mode_enabled`` restores the 0.7.0 broad
+    evidence-planner behaviour without removing its code or settings.
+
+    ``activate_runtime=False`` is intended for side-effect-free domain validation
+    in regression tests; production entrypoint installation uses the default.
     """
 
     existing = tuple(getattr(planner_module, "_HOME_DOMAIN_TERMS", ()))
     merged = tuple(dict.fromkeys((*existing, *_EXTRA_HOME_DOMAIN_TERMS)))
     planner_module._HOME_DOMAIN_TERMS = merged
+    if not activate_runtime:
+        return merged
+
+    import app as application
+
+    control_focus_enabled = application.option_bool("control_focus_mode_enabled", True)
+    if control_focus_enabled:
+        # AIEvidencePlanner.matches resolves this module global at runtime. Keeping
+        # it false prevents the outer planner wrapper from bypassing Control Focus.
+        planner_module.is_ai_evidence_query = lambda _query: False
+        metric_executor = SemanticMetricComparisonExecutor(application.fallback)
+        install_control_focus_mode(
+            application,
+            metric_executor,
+            enabled=True,
+            allow_verified_reads=application.option_bool(
+                "control_focus_allow_verified_reads",
+                True,
+            ),
+        )
+    else:
+        planner_module.is_ai_evidence_query = _ORIGINAL_AI_EVIDENCE_QUERY
     return merged
 
 
