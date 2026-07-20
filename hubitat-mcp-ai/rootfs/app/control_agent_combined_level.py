@@ -58,7 +58,7 @@ _COMPLEX_TARGET_WORDS = {
 }
 _COMPLEX_TARGET_TERMS = (" if ", " unless ", " when ", " before ", " after ", " and ")
 _TRAILING_CONTROL_SYNTAX = re.compile(
-    r"(?:\b(?:to|at|percent)\b|\d{1,3}\s*%?)\s*$",
+    r"\b(?:to|at|percent)\b\s*$",
     re.IGNORECASE,
 )
 

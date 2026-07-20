@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Awaitable, Callable
 
+from control_agent_gate import is_exact_fast_control
 from routing_policy import classify_query
 
 
@@ -202,6 +203,8 @@ def should_use_unified_agent(query: str) -> bool:
 
     q = _normalise(query)
     if not q or q in _PROTOCOL_FOLLOWUPS:
+        return False
+    if is_exact_fast_control(query):
         return False
     return classify_query(q).route != "mcp-fast"
 

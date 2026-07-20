@@ -10,6 +10,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from control_agent_combined_level import install_combined_level_intent  # noqa: E402
+from control_agent_gate import is_exact_fast_control  # noqa: E402
 from control_agent_intent import ControlIntentInterpreter  # noqa: E402
 
 
@@ -45,6 +46,21 @@ def test_turn_on_device_to_level_becomes_one_set_level_action():
         "turn on Bedroom 1 Light to 30%",
         target="Bedroom 1 Light",
         value=30,
+    )
+
+
+def test_turn_on_device_at_level_is_an_exact_fast_control():
+    query = "turn on living room light 2 at 90%"
+
+    assert_level(query, target="living room light 2", value=90)
+    assert is_exact_fast_control(query) is True
+
+
+def test_numbered_device_name_is_not_mistaken_for_level_syntax():
+    assert_level(
+        "switch on bathroom light 12 to 35 percent",
+        target="bathroom light 12",
+        value=35,
     )
 
 
