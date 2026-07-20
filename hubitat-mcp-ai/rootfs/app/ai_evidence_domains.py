@@ -25,7 +25,7 @@ _EXTRA_HOME_DOMAIN_TERMS = (
 _ORIGINAL_AI_EVIDENCE_QUERY = planner_module.is_ai_evidence_query
 
 
-def install_ai_evidence_domains() -> tuple[str, ...]:
+def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, ...]:
     """Install broad evidence domains or the safer default Control Focus scope.
 
     Control Focus is enabled by default for release 0.7.1. It keeps the proven
@@ -33,11 +33,16 @@ def install_ai_evidence_domains() -> tuple[str, ...]:
     and prevents the later AI Evidence Planner wrapper from capturing broad
     questions. Disabling ``control_focus_mode_enabled`` restores the 0.7.0 broad
     evidence-planner behaviour without removing its code or settings.
+
+    ``activate_runtime=False`` is intended for side-effect-free domain validation
+    in regression tests; production entrypoint installation uses the default.
     """
 
     existing = tuple(getattr(planner_module, "_HOME_DOMAIN_TERMS", ()))
     merged = tuple(dict.fromkeys((*existing, *_EXTRA_HOME_DOMAIN_TERMS)))
     planner_module._HOME_DOMAIN_TERMS = merged
+    if not activate_runtime:
+        return merged
 
     import app as application
 
