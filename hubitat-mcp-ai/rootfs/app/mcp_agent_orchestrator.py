@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Awaitable, Callable
 
 from routing_policy import classify_query
@@ -19,6 +20,27 @@ _PROTOCOL_FOLLOWUPS = {
     "repair it",
     "retry",
 }
+_CONTEXT_WORDS = {
+    "again",
+    "also",
+    "another",
+    "it",
+    "its",
+    "same",
+    "that",
+    "them",
+    "then",
+    "these",
+    "this",
+    "those",
+}
+_CONTEXT_PREFIXES = (
+    "and ",
+    "how about ",
+    "what about ",
+    "what is its ",
+    "what's its ",
+)
 
 
 def _normalise(value: str) -> str:
@@ -45,6 +67,23 @@ def _normalise_history(items: Any) -> list[dict[str, str]]:
     return normalised
 
 
+def _uses_conversation_context(query: str) -> bool:
+    """Return true only when the current request explicitly depends on prior turns.
+
+    Browser history is useful for pronouns and genuine follow-ups, but sending it for every
+    standalone request can leak stale device entities into a new task. The current request
+    remains authoritative unless it contains an explicit contextual reference.
+    """
+
+    q = _normalise(query)
+    if not q:
+        return False
+    if q in _PROTOCOL_FOLLOWUPS or q.startswith(_CONTEXT_PREFIXES):
+        return True
+    words = set(re.findall(r"[a-z0-9]+", q))
+    return bool(words & _CONTEXT_WORDS)
+
+
 def should_use_unified_agent(query: str) -> bool:
     """Use AI for every substantive non-fast request.
 
@@ -60,13 +99,7 @@ def should_use_unified_agent(query: str) -> bool:
 
 
 def install_unified_mcp_agent_orchestrator(application: Any) -> None:
-    """Install one AI-first decision point above the legacy route stack.
-
-    Substantive requests remain in the unified agent. A planner failure is returned
-    transparently instead of being silently rerouted to the restricted read-only
-    evidence planner. Exact fast paths and pending confirmation replies still use the
-    existing deterministic handlers.
-    """
+    """Install one AI-first decision point above the legacy route stack."""
 
     original_ask: AskHandler = application.ask
 
@@ -76,6 +109,9 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
             return await original_ask(request)
 
         history = _normalise_history(getattr(request, "history", None))
+        history_used = _uses_conversation_context(query)
+        if not history_used:
+            history = []
         try:
             planner = getattr(application.ollama, "answer_with_planner", None)
             if callable(planner):
@@ -86,6 +122,7 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
             result.setdefault("success", True)
             result["agent_orchestrator"] = "unified-mcp-ai-first"
             result["legacy_fallback_used"] = False
+            result["conversation_history_used"] = history_used
             result.setdefault("version", application.VERSION)
             return result
         except Exception as exc:
@@ -101,6 +138,7 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
                 ),
                 "agent_orchestrator": "unified-mcp-ai-first",
                 "legacy_fallback_used": False,
+                "conversation_history_used": history_used,
                 "unified_agent_error": error,
                 "version": application.VERSION,
                 "technical": {
@@ -117,6 +155,7 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
 
 __all__ = [
     "_normalise_history",
+    "_uses_conversation_context",
     "install_unified_mcp_agent_orchestrator",
     "should_use_unified_agent",
 ]
