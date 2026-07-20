@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from mcp_client import MCPTool
 from ollama_agent_adaptive import AdaptiveFinalAnswerAgent
 from ollama_agent_claude import ClaudeStyleOllamaAgent
+from ollama_agent_fast import OllamaUnavailable
 
 
 _DISCOVERY_TOOLS = {
@@ -18,14 +20,9 @@ _DISCOVERY_TOOLS = {
 class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
     """AI-first Hubitat agent with the full visible MCP surface.
 
-    The previous agent reduced the live MCP catalogue to a tiny keyword-selected
-    subset before the model saw the request. That made natural language depend on
-    HomeBrain's parser vocabulary. This agent exposes the complete visible MCP
-    catalogue (core tools plus category gateways), lets the model discover hidden
-    tools through the server, and uses the existing multi-round Claude-style loop.
-
-    Tool execution still passes through the existing confirmation, capability and
-    MCP safety checks. This class changes planning authority, not safety authority.
+    The model sees the complete visible MCP catalogue and can discover hidden tools
+    through category gateways. Tool execution still passes through the existing
+    confirmation, capability and MCP safety checks.
     """
 
     def __init__(self, *args: Any, unified_tool_limit: int = 48, **kwargs: Any) -> None:
@@ -56,14 +53,95 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
         ordered = sorted(unique.values(), key=priority)
         return ordered[: self.unified_tool_limit]
 
+    def _planner_prompt(self) -> str:
+        return (
+            super()._planner_prompt()
+            + "\n\nUnified-agent rules: discovery is never the final step. After "
+            "hub_search_tools or hub_get_tool_guide, immediately call a non-discovery "
+            "tool that returns live Hubitat data. For device identity, matching, state "
+            "or capability questions, call hub_list_devices or hub_read_devices directly; "
+            "do not repeatedly search the tool catalogue. A successful discovery result "
+            "describes how to obtain evidence but is not itself authoritative home data."
+        )
+
     async def answer_with_planner(
         self,
         query: str,
         history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
-        """Run the genuine multi-round MCP loop for every orchestrated request."""
+        """Run the multi-round MCP loop and recover from discovery-only exhaustion.
 
-        return await ClaudeStyleOllamaAgent.answer(self, query, history or [])
+        The recovery is generic rather than phrase based: when a planner consumes its
+        rounds only discovering tools, HomeBrain performs an authoritative device
+        inventory read and asks the response model to answer from that live result.
+        """
+
+        try:
+            return await ClaudeStyleOllamaAgent.answer(self, query, history or [])
+        except OllamaUnavailable as exc:
+            if "without authoritative home data" not in str(exc).lower():
+                raise
+            return await self._answer_from_authoritative_inventory(query, history or [], exc)
+
+    async def _answer_from_authoritative_inventory(
+        self,
+        query: str,
+        history: list[dict[str, str]],
+        planner_error: Exception,
+    ) -> dict[str, Any]:
+        started = time.perf_counter()
+        result = await self.client.call_tool("hub_list_devices", {})
+        if result.is_error:
+            raise OllamaUnavailable(
+                f"Planner discovery ended without data and hub_list_devices failed: {result.text}"
+            ) from planner_error
+
+        tool_text = self._compact_tool_result(result)
+        planner_messages: list[dict[str, Any]] = [
+            {
+                "role": "tool",
+                "tool_name": "hub_list_devices",
+                "content": tool_text,
+            }
+        ]
+        body = await self._chat(
+            model=self.model,
+            messages=self._synthesis_messages(
+                query=query,
+                history=history,
+                planner_messages=planner_messages,
+            ),
+            tools=None,
+            timeout_seconds=self.response_timeout_seconds,
+            num_ctx=self.num_ctx,
+            num_predict=self.num_predict,
+            temperature=0.15,
+        )
+        content = str((body.get("message") or {}).get("content") or "").strip()
+        if not content:
+            raise OllamaUnavailable("Inventory recovery returned no user-facing answer")
+
+        elapsed = round((time.perf_counter() - started) * 1000)
+        return {
+            "success": True,
+            "route": "ollama+mcp",
+            "intent": "unified-authoritative-inventory-recovery",
+            "message": content,
+            "model": self.model,
+            "planner_model": self._last_agent_status.get("planner_model"),
+            "tools_used": [
+                {
+                    "name": "hub_list_devices",
+                    "arguments": {},
+                    "success": True,
+                    "preview": tool_text[:700],
+                }
+            ],
+            "selected_tools": ["hub_list_devices"],
+            "planner_error": str(planner_error),
+            "authoritative_recovery": True,
+            "elapsed_ms": elapsed,
+        }
 
 
 __all__ = ["UnifiedAdaptiveMCPAgent"]
