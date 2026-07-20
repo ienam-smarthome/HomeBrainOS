@@ -9,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
+import ai_evidence_planner as planner_module  # noqa: E402
+from automation_recommendation import AutomationRecommendationService  # noqa: E402
+from automation_recommendation_webui import (  # noqa: E402
+    install_automation_recommendation_route_precedence,
+)
 from control_focus_mode import (  # noqa: E402
     ControlFocusMode,
     is_control_followup,
@@ -128,6 +133,21 @@ def test_hybrid_routing_keeps_controls_fast_and_sends_unhandled_reads_to_ai():
     assert not is_hybrid_ai_query("Show octopus live meter display")
 
 
+def test_automation_recommendation_skill_precedes_universal_ai_fallback():
+    query = "Suggest one useful automation for the devices I have"
+    assert AutomationRecommendationService.matches(query)
+    assert is_hybrid_ai_query(query)
+
+    original = planner_module.is_ai_evidence_query
+    planner_module.is_ai_evidence_query = is_hybrid_ai_query
+    try:
+        install_automation_recommendation_route_precedence()
+        assert planner_module.is_ai_evidence_query(query) is False
+        assert planner_module.is_ai_evidence_query("Why is electricity usage high right now?") is True
+    finally:
+        planner_module.is_ai_evidence_query = original
+
+
 def test_octopus_family_and_period_queries_are_verified_fast_reads():
     assert is_octopus_energy_query("Show octopus live meter display")
     assert is_octopus_energy_query("Total power consumption today")
@@ -177,6 +197,7 @@ def test_release_configuration_and_hybrid_installation_are_aligned():
     domains = (APP_DIR / "ai_evidence_domains.py").read_text(encoding="utf-8")
     hybrid = (APP_DIR / "hybrid_assistant_mode.py").read_text(encoding="utf-8")
     safe_power = (APP_DIR / "control_focus_power_summary_safe.py").read_text(encoding="utf-8")
+    automation_ui = (APP_DIR / "automation_recommendation_webui.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     changelog = (ROOT / "hubitat-mcp-ai" / "CHANGELOG.md").read_text(encoding="utf-8")
 
@@ -189,6 +210,7 @@ def test_release_configuration_and_hybrid_installation_are_aligned():
     assert 'option_bool("hybrid_assistant_mode_enabled", True)' in domains
     assert "restricted_focus_enabled" in domains
     assert "planner_module.is_ai_evidence_query = is_hybrid_ai_query" in hybrid
+    assert "install_automation_recommendation_route_precedence()" in automation_ui
     assert 'isinstance(technical, dict)' in safe_power
     assert 'answer.get("measurement_readings")' in safe_power
     assert "## 0.8.0" in changelog
