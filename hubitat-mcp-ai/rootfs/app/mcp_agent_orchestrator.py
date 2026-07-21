@@ -120,6 +120,10 @@ def _looks_like_false_evidence_failure(message: Any) -> bool:
             "too many items",
             "could not retrieve the full device list",
             "couldn't retrieve the full device list",
+            "don't have a list of your devices",
+            "do not have a list of your devices",
+            "don't have your device list",
+            "do not have your device list",
         )
     )
 

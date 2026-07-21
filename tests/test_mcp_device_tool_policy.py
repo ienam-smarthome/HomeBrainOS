@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -135,6 +136,40 @@ async def test_false_timeout_recommendation_is_replaced_with_grounded_service_an
     assert result["synthesis_policy_corrected"] is True
     assert result["message"].startswith("Use Hallway Motion")
     assert result["original_executed_tools"] == ["hub_read_devices"]
+
+
+def test_false_missing_inventory_claim_is_replaced_after_successful_device_read():
+    class RecommendationService:
+        @staticmethod
+        def matches(query):
+            return "automation" in query.lower()
+
+        async def answer(self, query):
+            return {
+                "success": True,
+                "route": "mcp-automation-recommendation",
+                "message": "Use Hallway Motion to control Hallway Light after dark.",
+            }
+
+    app = SimpleNamespace(automation_recommendation=RecommendationService())
+    original = {
+        "success": True,
+        "route": "ollama+mcp",
+        "message": "I currently don't have a list of your devices.",
+        "tools_used": [{"name": "hub_list_devices", "success": True}],
+    }
+
+    result = asyncio.run(
+        _apply_automation_recommendation_policy(
+            app,
+            "Suggest one useful automation for the devices I have and write a rule",
+            original,
+        )
+    )
+
+    assert result["synthesis_policy_corrected"] is True
+    assert result["message"].startswith("Use Hallway Motion")
+    assert result["original_executed_tools"] == ["hub_list_devices"]
 
 
 @pytest.mark.asyncio

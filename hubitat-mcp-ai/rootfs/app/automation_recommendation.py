@@ -21,7 +21,9 @@ _AUTOMATION_RECOMMENDATION_QUERY = re.compile(
     r"(?:\s+(?:i|we)\s+have)?)?"
     r"|what\s+(?:useful\s+)?automation\s+(?:should|could|can)\s+i\s+"
     r"(?:create|make|add)"
-    r")[?.!]*$",
+    r")"
+    r"(?:\s+and\s+(?:write|create|build|draft)\s+(?:a|the|this)?\s*rule)?"
+    r"[?.!]*$",
     re.IGNORECASE,
 )
 

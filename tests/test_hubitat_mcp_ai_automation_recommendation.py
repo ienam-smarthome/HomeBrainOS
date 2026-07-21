@@ -87,6 +87,12 @@ def test_screenshot_query_matches_bounded_recommendation_route():
     assert AutomationRecommendationService.matches(
         "What automation should I create?"
     )
+    assert AutomationRecommendationService.matches(
+        "Suggest one useful automation for the devices I have and write a rule"
+    )
+    assert AutomationRecommendationService.matches(
+        "Recommend an automation using the devices I have and build the rule."
+    )
 
 
 def test_washing_power_candidate_is_preferred_and_ai_uses_verified_evidence():
