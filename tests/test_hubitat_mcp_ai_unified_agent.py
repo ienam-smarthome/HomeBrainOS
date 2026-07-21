@@ -78,6 +78,16 @@ def test_exact_fast_control_and_protocol_followups_stay_deterministic():
     assert not should_use_unified_agent("Create paused rule")
 
 
+def test_contextual_controls_use_verified_session_context_not_ai_history():
+    variants = (
+        "turn it off",
+        "switch them on",
+        "turn those off",
+        "please switch that one on",
+    )
+    assert all(not should_use_unified_agent(query) for query in variants)
+
+
 def test_device_health_queries_never_enter_unified_ai_synthesis():
     variants = (
         "Are any devices offline or stale?",

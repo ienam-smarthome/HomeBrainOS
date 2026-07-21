@@ -3,8 +3,10 @@ from __future__ import annotations
 import re
 from typing import Any, Awaitable, Callable
 
-from control_agent_gate import is_exact_fast_control
+from control_agent_gate import is_contextual_device_control, is_exact_fast_control
+from contextual_control import is_other_device_control
 from device_health_fast_route import is_attention_query, is_device_health_query
+from mutation_result_policy import enforce_device_mutation_result
 from routing_policy import classify_query
 
 
@@ -211,6 +213,8 @@ def should_use_unified_agent(query: str) -> bool:
         return False
     if is_exact_fast_control(query):
         return False
+    if is_contextual_device_control(query) or is_other_device_control(query):
+        return False
     # Device-health classification is authoritative and intentionally conservative:
     # live healthStatus may confirm a fault, while lastActivity age alone is not one.
     # This guard must live in the outer unified-agent wrapper as well as the inner
@@ -252,6 +256,7 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
                 query,
                 result,
             )
+            result = enforce_device_mutation_result(query, result)
             result.setdefault("success", True)
             result["agent_orchestrator"] = "unified-mcp-ai-first"
             result["legacy_fallback_used"] = False

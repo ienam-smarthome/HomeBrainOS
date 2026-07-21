@@ -6,6 +6,8 @@ from typing import Any, Awaitable, Callable
 
 from control_agent_intent import ControlIntentInterpreter, is_control_candidate
 from control_language import canonicalise_basic_control
+from contextual_control import is_contextual_device_control, is_other_device_control
+from mutation_result_policy import enforce_device_mutation_result
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -178,12 +180,19 @@ def install_control_agent_gate(
             answer["control_agent_bypass"] = "verified-named-multi-control"
             return answer
         if is_control_candidate(query):
+            if is_other_device_control(query):
+                return await control_agent_ask(request)
+            # Resolve pronouns against verified per-session device IDs. Browser
+            # history supplied to an LLM is not an authoritative device reference.
+            if is_contextual_device_control(query):
+                return await legacy_ask(request)
             if is_exact_fast_control(query):
                 answer = dict(await control_agent_ask(request))
                 answer.setdefault("route_reason", "exact control fast path")
                 return answer
             if application.option_bool("ai_first_control_enabled", True):
-                return await _ai_first_control(application, request, control_agent_ask)
+                answer = await _ai_first_control(application, request, control_agent_ask)
+                return enforce_device_mutation_result(query, dict(answer))
             return await control_agent_ask(request)
         return await legacy_ask(request)
 
@@ -195,4 +204,5 @@ __all__ = [
     "install_control_agent_gate",
     "is_exact_fast_control",
     "is_explicit_named_multi_control",
+    "is_contextual_device_control",
 ]

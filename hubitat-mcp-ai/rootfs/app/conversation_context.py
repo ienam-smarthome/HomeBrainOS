@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from device_intelligence_index import _attributes, _device_id, _label, _normalise, _room_name
+from contextual_control import is_contextual_device_control, parse_contextual_device_control
 from presenter import display_payload, safe_debug
 
 
@@ -195,7 +196,11 @@ class ConversationContextStore:
         if control:
             action, target = control
             candidates = await self._current_context_devices(state)
-            matched, plural = self._resolve_control_target(target, candidates)
+            matched, plural = self._resolve_control_target(
+                target,
+                candidates,
+                previous_intent=state.last_intent,
+            )
             if len(matched) == 1:
                 resolved = f"turn {action} {matched[0].label}"
                 return ContextResolution(query=resolved, reason="context-single-device-control")
@@ -295,26 +300,7 @@ class ConversationContextStore:
 
     @staticmethod
     def _contextual_control(query: str) -> tuple[str, str] | None:
-        text = str(query or "").strip()
-        patterns = (
-            r"^(?:please\s+)?(?:turn|switch)\s+(on|off)\s+(.+?)[?.!]*$",
-            r"^(?:please\s+)?(?:turn|switch)\s+(.+?)\s+(on|off)[?.!]*$",
-        )
-        for index, pattern in enumerate(patterns):
-            match = re.match(pattern, text, flags=re.I)
-            if not match:
-                continue
-            action = match.group(1 if index == 0 else 2).lower()
-            target = match.group(2 if index == 0 else 1).strip()
-            normal = _normalise(target)
-            contextual = (
-                normal in {"it", "that", "this", "the one", "this one", "that one", "them", "those", "these", "all of them"}
-                or bool(re.search(r"\b(?:first|second|third|fourth|fifth|[1-5](?:st|nd|rd|th))\s+one\b", normal))
-                or bool(re.search(r"\b(?:the|that|this)\s+.+\s+one$", normal))
-            )
-            if contextual:
-                return action, target
-        return None
+        return parse_contextual_device_control(query)
 
     async def _current_context_devices(self, state: ConversationState) -> list[ContextDevice]:
         if not state.devices:
@@ -334,11 +320,18 @@ class ConversationContextStore:
         self,
         target: str,
         candidates: list[ContextDevice],
+        *,
+        previous_intent: str | None = None,
     ) -> tuple[list[ContextDevice], bool]:
         normal = _normalise(target)
         if normal in {"them", "those", "these", "all of them"}:
             return [item for item in candidates if "switch" in item.attributes], True
         if normal in {"it", "that", "this", "the one", "this one", "that one"}:
+            if (
+                len(candidates) > 1
+                and str(previous_intent or "").startswith("fallback-device-group-control-")
+            ):
+                return [item for item in candidates if "switch" in item.attributes], True
             return (candidates if len(candidates) == 1 else []), False
 
         for word, index in _ORDINALS.items():
@@ -730,4 +723,5 @@ __all__ = [
     "ConversationContextStore",
     "ConversationState",
     "install_conversation_context",
+    "is_contextual_device_control",
 ]
