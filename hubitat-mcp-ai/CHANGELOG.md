@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.9
+
+- Adds a deterministic named Rule Machine controller for pause, resume, enable,
+  disable, run and stop requests before AI or device routing.
+- Resolves exact normalized rule labels and Rule IDs without asking the user to
+  choose when the target is unique; partial or duplicate matches never write.
+- Maps enable/disable to Rule Machine resume/pause and keeps run versus stop
+  semantics distinct, while accurately describing pause-state verification limits.
+
 ## 0.10.8
 
 - Installs grounded automation recommendation matching outside every AI wrapper,

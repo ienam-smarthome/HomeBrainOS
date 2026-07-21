@@ -45,6 +45,7 @@ from hybrid_assistant_mode import (
 from mcp_agent_orchestrator import install_unified_mcp_agent_orchestrator
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from motion_light_insight import install_motion_light_insight
+from named_rule_control import install_named_rule_controller
 from ollama_agent_unified import UnifiedAdaptiveMCPAgent
 from ollama_cloud_help import hybrid_ollama_help
 from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
@@ -58,8 +59,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.7"
-RELEASE_VERSION = "0.10.8"
+PREVIOUS_RELEASE_VERSION = "0.10.8"
+RELEASE_VERSION = "0.10.9"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -242,6 +243,9 @@ hybrid_verified_reads = install_hybrid_verified_read_routes(application, semanti
 if application.option_bool("unified_mcp_agent_enabled", True):
     install_unified_mcp_agent_orchestrator(application)
 install_explicit_hub_backup_workflow(application, automation_rule_workflow)
+# Keep explicit named-rule writes outside AI and device-control wrappers. Exact
+# normalized names or Rule IDs execute directly; uncertain targets never write.
+named_rule_controller = install_named_rule_controller(application)
 # Install authoritative health/attention routes outside every AI wrapper so their
 # live classifications are terminal and cannot be reinterpreted by model synthesis.
 install_device_health_fast_route(application)
