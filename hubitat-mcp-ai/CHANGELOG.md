@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.10.6
+
+- Makes the AI question guide a terminal system route outside every model-driven
+  wrapper, so `What can Ollama help with?` returns immediately.
+- Prevents the local planner timeout and unified-agent error previously caused by
+  sending this static help request through `qwen3.5:4b`.
+- Adds regression coverage proving the unified agent and MCP are not called.
+
 ## 0.10.5
 
 - Keeps device-health questions on the authoritative deterministic route so Cloud

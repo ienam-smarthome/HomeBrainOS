@@ -45,7 +45,7 @@ from motion_light_insight import install_motion_light_insight
 from ollama_agent_unified import UnifiedAdaptiveMCPAgent
 from ollama_cloud_help import hybrid_ollama_help
 from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
-from ollama_engagement import install_ollama_engagement
+from ollama_engagement import install_ollama_engagement, install_ollama_help_terminal_route
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
@@ -55,8 +55,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.4"
-RELEASE_VERSION = "0.10.5"
+PREVIOUS_RELEASE_VERSION = "0.10.5"
+RELEASE_VERSION = "0.10.6"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -242,6 +242,7 @@ install_explicit_hub_backup_workflow(application, automation_rule_workflow)
 # Install authoritative health/attention routes outside every AI wrapper so their
 # live classifications are terminal and cannot be reinterpreted by model synthesis.
 install_device_health_fast_route(application)
+install_ollama_help_terminal_route(application)
 request_traces = install_request_tracing(
     application,
     application.mcp,

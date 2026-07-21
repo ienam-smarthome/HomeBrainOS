@@ -20,6 +20,7 @@ from mcp_client import MCPToolResult  # noqa: E402
 from ollama_engagement import (  # noqa: E402
     _AI_INSIGHT_QUERY,
     install_ollama_engagement,
+    install_ollama_help_terminal_route,
 )
 from webui import render_page  # noqa: E402
 
@@ -164,6 +165,32 @@ def test_ollama_guide_insight_and_explicit_override():
         kind == "ollama" and value[0] == "compare the bedroom temperatures"
         for kind, value in calls
     )
+
+
+def test_question_guide_is_terminal_outside_unified_agent():
+    calls: list[str] = []
+
+    async def unified_agent(_request: Any):
+        calls.append("unified-agent")
+        raise TimeoutError("planner must not run for the static question guide")
+
+    application = SimpleNamespace(
+        ask=unified_agent,
+        OPTIONS={"ollama_model": "gemma4:31b-cloud"},
+        VERSION="test",
+    )
+    install_ollama_help_terminal_route(application)
+
+    answer = asyncio.run(
+        application.ask(SimpleNamespace(query="What can Ollama help with?", history=[]))
+    )
+
+    assert calls == []
+    assert answer["success"] is True
+    assert answer["route"] == "system"
+    assert answer["intent"] == "ollama-question-guide"
+    assert answer["model"] is None
+    assert answer["answered_by"] == "HomeBrain AI question guide"
 
 
 def test_webui_exposes_ai_shortcuts_and_friendly_route_labels():
