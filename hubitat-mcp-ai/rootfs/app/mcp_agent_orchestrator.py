@@ -252,11 +252,7 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
                 "success": False,
                 "route": "unified-agent-error",
                 "intent": "unified-agent-failed",
-                "message": (
-                    "The unified Hubitat MCP agent could not complete this request. "
-                    "It was not redirected to the read-only evidence planner. "
-                    f"Technical error: {error}"
-                ),
+                "message": f"The unified Hubitat MCP agent could not complete this request: {error}",
                 "agent_orchestrator": "unified-mcp-ai-first",
                 "legacy_fallback_used": False,
                 "conversation_history_used": history_used,
