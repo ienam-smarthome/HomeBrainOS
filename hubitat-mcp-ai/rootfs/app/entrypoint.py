@@ -10,7 +10,10 @@ import device_intelligence_webui as device_intelligence_webui_module
 import ollama_engagement as ollama_engagement_module
 from ai_evidence_domains import install_ai_evidence_domains
 from ai_evidence_planner import install_ai_evidence_planner
-from automation_recommendation import install_automation_recommendation
+from automation_recommendation import (
+    install_automation_recommendation,
+    install_automation_recommendation_terminal_route,
+)
 from automation_recommendation_webui import install_automation_recommendation_webui
 from automation_rule_direct_contact import (
     install_direct_contact_rule_workflow as install_washing_rule_machine_workflow,
@@ -55,8 +58,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.6"
-RELEASE_VERSION = "0.10.7"
+PREVIOUS_RELEASE_VERSION = "0.10.7"
+RELEASE_VERSION = "0.10.8"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -242,6 +245,7 @@ install_explicit_hub_backup_workflow(application, automation_rule_workflow)
 # Install authoritative health/attention routes outside every AI wrapper so their
 # live classifications are terminal and cannot be reinterpreted by model synthesis.
 install_device_health_fast_route(application)
+install_automation_recommendation_terminal_route(application, automation_recommendation)
 install_ollama_help_terminal_route(application)
 request_traces = install_request_tracing(
     application,

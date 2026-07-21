@@ -449,8 +449,36 @@ def install_automation_recommendation(
     return service
 
 
+def install_automation_recommendation_terminal_route(
+    application: Any,
+    service: AutomationRecommendationService,
+) -> AskHandler:
+    """Keep grounded recommendations outside every model-driven wrapper."""
+
+    original_ask: AskHandler = application.ask
+
+    async def ask_with_terminal_automation_recommendation(request: Any) -> dict[str, Any]:
+        query = str(getattr(request, "query", "") or "").strip()
+        if not service.matches(query):
+            return await original_ask(request)
+
+        answer = dict(await service.answer(query))
+        answer.setdefault("version", application.VERSION)
+
+        workflow = getattr(application, "automation_rule_workflow", None)
+        remember = getattr(workflow, "remember_answer", None)
+        if callable(remember):
+            session_id = str(getattr(request, "session_id", "") or "default").strip()
+            await remember(session_id[:160] or "default", answer)
+        return answer
+
+    application.ask = ask_with_terminal_automation_recommendation
+    return original_ask
+
+
 __all__ = [
     "AutomationRecommendationService",
     "_AUTOMATION_RECOMMENDATION_QUERY",
     "install_automation_recommendation",
+    "install_automation_recommendation_terminal_route",
 ]
