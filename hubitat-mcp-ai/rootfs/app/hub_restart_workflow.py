@@ -87,26 +87,45 @@ class HubRestartWorkflow:
             self._pending.pop(key, None)
 
     def _confirmation(self) -> dict[str, Any]:
+        display = display_payload(
+            "hub-restart-confirmation",
+            "Restart the Hubitat hub now?",
+            subtitle="This will temporarily take the smart-home hub offline.",
+            metrics=[
+                {"label": "Downtime", "value": "1–3 min", "icon": "⏱️"},
+                {"label": "Backup", "value": "Required", "icon": "💾"},
+            ],
+            note=(
+                "Choose Yes — restart hub or No — cancel below. You can also reply Yes or No. "
+                "The Hubitat MCP server enforces a backup from the last 24 hours."
+            ),
+        )
+        display["actions"] = [
+            {
+                "label": "Yes — restart hub",
+                "query": "Yes",
+                "tone": "danger",
+                "icon": "🔄",
+            },
+            {
+                "label": "No — cancel",
+                "query": "No",
+                "tone": "secondary",
+                "icon": "✖️",
+            },
+        ]
         return {
             "success": False,
             "route": "mcp-hub-restart-confirmation",
             "intent": "hub-restart-confirmation-required",
             "confirmation_required": True,
             "message": (
-                "Restarting the Hubitat hub will make it unavailable for about 1–3 minutes. "
+                "Do you want to restart the Hubitat hub now? It will be unavailable for about "
+                "1–3 minutes. "
                 "The MCP server also requires Hub Admin Write access and a backup from the last "
                 "24 hours. Reply Yes to restart the hub, or No to cancel."
             ),
-            "display": display_payload(
-                "hub-restart-confirmation",
-                "Confirm hub restart",
-                subtitle="No restart request has been sent",
-                metrics=[
-                    {"label": "Downtime", "value": "1–3 min", "icon": "⏱️"},
-                    {"label": "Action", "value": "Restart hub", "icon": "🔄"},
-                ],
-                note="A recent hub backup is enforced by the Hubitat MCP server.",
-            ),
+            "display": display,
         }
 
     @staticmethod

@@ -57,6 +57,22 @@ def test_restart_requires_a_separate_same_session_yes_then_calls_confirmed_tool_
     application, fallback_calls, prompt, confirmed = asyncio.run(scenario())
     assert prompt["confirmation_required"] is True
     assert prompt["intent"] == "hub-restart-confirmation-required"
+    assert prompt["message"].startswith("Do you want to restart the Hubitat hub now?")
+    assert prompt["display"]["title"] == "Restart the Hubitat hub now?"
+    assert prompt["display"]["actions"] == [
+        {
+            "label": "Yes — restart hub",
+            "query": "Yes",
+            "tone": "danger",
+            "icon": "🔄",
+        },
+        {
+            "label": "No — cancel",
+            "query": "No",
+            "tone": "secondary",
+            "icon": "✖️",
+        },
+    ]
     assert application.mcp.calls == [("hub_reboot", {"confirm": True})]
     assert confirmed["success"] is True
     assert confirmed["intent"] == "hub-restart-requested"
