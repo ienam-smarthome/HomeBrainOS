@@ -386,6 +386,7 @@ def test_ambiguity_sends_zero_writes_then_numbered_reply_executes_exact_candidat
         "Livingroom Light 1 (Hubitat ID 1)",
         "Livingroom Light 2 (Hubitat ID 2)",
     ]
+    assert [item["query"] for item in first["display"]["items"]] == ["1", "2"]
     assert fallback.calls == []
 
     second = asyncio.run(agent.answer(request("2"), unused))

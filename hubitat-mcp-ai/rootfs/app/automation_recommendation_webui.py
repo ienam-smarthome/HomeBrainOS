@@ -32,9 +32,14 @@ _ACTION_CSS = r"""
 .rule-action.danger{background:#991b1b}
 .rule-action.primary{background:#166534}
 .rule-action:disabled{opacity:.55}
+.result-item.clickable{cursor:pointer;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+.result-item.clickable:hover,.result-item.clickable:focus-visible{background:#242428;border-color:#3b82f6;outline:2px solid #3b82f6;outline-offset:1px}
+.result-item.clickable:active{transform:translateY(1px)}
 """
 
 _ACTION_FUNCTION = r"""function ruleActionButtons(items){if(!Array.isArray(items)||!items.length)return null;const box=el('div','rule-actions');items.forEach(item=>{const button=el('button','rule-action '+String(item.tone||'secondary'),(item.icon?String(item.icon)+' ':'')+String(item.label||'Continue'));button.type='button';button.onclick=()=>{const query=String(item.query||'').trim();if(!query)return;input.value=query;submit(query)};box.appendChild(button)});return box}"""
+
+_CLICKABLE_ITEM_FUNCTION = r"""function itemList(items){if(!Array.isArray(items)||!items.length)return null;const list=el('div','result-list');items.forEach(item=>{const query=String(item.query||'').trim(),row=el('div','result-item '+(item.tone||'')+(query?' clickable':''));row.appendChild(el('div','',item.icon||'•'));const main=el('div','result-main');main.appendChild(el('div','result-name',item.title||''));if(item.subtitle)main.appendChild(el('div','result-sub',item.subtitle));row.appendChild(main);if(item.value!==undefined&&item.value!==null&&item.value!=='')row.appendChild(el('div','result-side',String(item.value)));if(query){row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-label','Select '+String(item.title||item.value||query));const choose=()=>{input.value=query;submit(query)};row.onclick=choose;row.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();choose()}}}list.appendChild(row)});return list}"""
 
 
 def install_automation_recommendation_route_precedence() -> Callable[[str], bool]:
@@ -102,6 +107,14 @@ def install_automation_recommendation_webui(module: Any) -> Callable[[str], str]
                 _ACTION_FUNCTION + "\nfunction routeLabel(route){",
                 1,
             )
+
+        item_start = rendered.find("function itemList(items){")
+        item_end_marker = ";return list}"
+        if item_start >= 0:
+            item_end = rendered.find(item_end_marker, item_start)
+            if item_end >= 0:
+                item_end += len(item_end_marker)
+                rendered = rendered[:item_start] + _CLICKABLE_ITEM_FUNCTION + rendered[item_end:]
 
         marker = "if(answer.display.note)output.appendChild(el('div','mini',answer.display.note));if(answer.message&&!answer.display.metrics?.length&&!answer.display.items?.length)"
         replacement = "if(answer.display.note)output.appendChild(el('div','mini',answer.display.note));const workflowActions=ruleActionButtons(answer.display.actions);if(workflowActions)output.appendChild(workflowActions);if(answer.message&&!answer.display.metrics?.length&&!answer.display.items?.length)"

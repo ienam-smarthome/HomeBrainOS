@@ -142,6 +142,7 @@ def _confirmation_display(action: str, candidates: list[str]) -> dict[str, Any]:
                 "icon": "📱",
                 "title": label,
                 "value": "Reply Yes" if len(candidates) == 1 else str(index),
+                "query": "Yes" if len(candidates) == 1 else str(index),
                 "subtitle": "Suggested device" if len(candidates) == 1 else "Reply with this number",
             }
             for index, label in enumerate(candidates, start=1)
