@@ -34,6 +34,7 @@ from device_refresh_webui import install_device_refresh_webui
 from fast_fallback_light_usage import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
+from hub_backup_workflow import install_explicit_hub_backup_workflow
 from hybrid_assistant_mode import (
     install_hybrid_assistant_query_policy,
     install_hybrid_verified_read_routes,
@@ -54,8 +55,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.0"
-RELEASE_VERSION = "0.10.1"
+PREVIOUS_RELEASE_VERSION = "0.10.1"
+RELEASE_VERSION = "0.10.2"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -238,6 +239,7 @@ ai_evidence_planner = install_ai_evidence_planner(
 hybrid_verified_reads = install_hybrid_verified_read_routes(application, semantic_metric_comparison)
 if application.option_bool("unified_mcp_agent_enabled", True):
     install_unified_mcp_agent_orchestrator(application)
+install_explicit_hub_backup_workflow(application, automation_rule_workflow)
 request_traces = install_request_tracing(
     application,
     application.mcp,

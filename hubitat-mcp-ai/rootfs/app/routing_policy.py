@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from backup_intent import is_explicit_backup_request
 from control_postfix_language import parse_postfix_control
 
 
@@ -236,6 +237,12 @@ def classify_query(query: str) -> RouteDecision:
     q = normalise(query)
     if not q:
         return RouteDecision("ollama-verified", "empty-or-routine")
+
+    if is_explicit_backup_request(query):
+        return RouteDecision(
+            "mcp-backup",
+            "explicit backup creation uses the guarded idempotent MCP workflow",
+        )
 
     level_control = _SIMPLE_LEVEL_CONTROL.match(q)
     if level_control:

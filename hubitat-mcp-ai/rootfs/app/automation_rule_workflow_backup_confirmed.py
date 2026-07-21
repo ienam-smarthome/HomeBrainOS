@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from typing import Any, Awaitable, Callable
 
 from automation_rule_workflow import PendingRule, _session_id
@@ -238,7 +239,12 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
                 return True, checks
         return False, checks
 
-    async def _ensure_backup(self, key: str | None) -> tuple[bool, dict[str, Any]]:
+    async def _ensure_backup(
+        self,
+        key: str | None,
+        *,
+        force: bool = False,
+    ) -> tuple[bool, dict[str, Any]]:
         if time.monotonic() < self._backup_pending_until:
             listed_ok, listed = await self._recent_listed_backup()
             if listed_ok:
@@ -264,15 +270,17 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
                 ),
             }
 
-        listed_ok, listed = await self._recent_listed_backup()
-        if listed_ok:
-            return True, {
-                "created": False,
-                "recent": True,
-                "verified_by": "hub_list_backups",
-                "listed": listed,
-                "best_practice_key_found": bool(key),
-            }
+        listed: dict[str, Any] = {"checked": False, "skipped_for_explicit_create": force}
+        if not force:
+            listed_ok, listed = await self._recent_listed_backup()
+            if listed_ok:
+                return True, {
+                    "created": False,
+                    "recent": True,
+                    "verified_by": "hub_list_backups",
+                    "listed": listed,
+                    "best_practice_key_found": bool(key),
+                }
 
         details: dict[str, Any] = {
             "created": False,
@@ -293,6 +301,15 @@ class ConfirmedBackupWashingRuleMachineWorkflow(FinalWashingRuleMachineWorkflow)
             self._argument_name(tool, "confirm", "confirm"): True,
         }
         args = self._add_best_practice_key(tool, args, key)
+        properties = tool.schema.get("properties") if isinstance(tool.schema, dict) else None
+        supports_op_token = not properties or any(
+            re.sub(r"[^a-z0-9]", "", str(name).lower()) == "optoken"
+            for name in properties
+        )
+        if supports_op_token:
+            args[self._argument_name(tool, "optoken", "opToken")] = (
+                "homebrain-backup-" + uuid.uuid4().hex[:20]
+            )
         details.update(
             {
                 "tool": tool.name,
