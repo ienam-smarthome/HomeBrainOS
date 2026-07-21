@@ -14,6 +14,7 @@ sys.path.insert(0, str(APP_DIR))
 from automation_recommendation import (  # noqa: E402
     AutomationRecommendationService,
     _AUTOMATION_RECOMMENDATION_QUERY,
+    install_automation_recommendation_terminal_route,
 )
 
 
@@ -93,6 +94,46 @@ def test_screenshot_query_matches_bounded_recommendation_route():
     assert AutomationRecommendationService.matches(
         "Recommend an automation using the devices I have and build the rule."
     )
+
+
+def test_terminal_route_bypasses_outer_planner_and_remembers_rule_workflow():
+    planner_calls = []
+    remembered = []
+
+    async def outer_planner(request):
+        planner_calls.append(request.query)
+        return {"route": "ollama+mcp", "message": "Planner should not run"}
+
+    class Recommendation:
+        matches = staticmethod(AutomationRecommendationService.matches)
+
+        async def answer(self, query):
+            return {
+                "route": "mcp-automation-recommendation",
+                "message": "Use Hallway Motion with Hallway Light.",
+                "recommendation": {"title": "Hallway motion lighting"},
+            }
+
+    class Workflow:
+        async def remember_answer(self, session_id, answer):
+            remembered.append((session_id, answer["recommendation"]["title"]))
+
+    application = SimpleNamespace(
+        ask=outer_planner,
+        VERSION="test-version",
+        automation_rule_workflow=Workflow(),
+    )
+    install_automation_recommendation_terminal_route(application, Recommendation())
+
+    request = SimpleNamespace(
+        query="Suggest one useful automation for the devices I have",
+        session_id="browser-1",
+    )
+    answer = asyncio.run(application.ask(request))
+
+    assert answer["route"] == "mcp-automation-recommendation"
+    assert planner_calls == []
+    assert remembered == [("browser-1", "Hallway motion lighting")]
 
 
 def test_washing_power_candidate_is_preferred_and_ai_uses_verified_evidence():
