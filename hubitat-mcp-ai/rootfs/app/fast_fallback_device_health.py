@@ -421,6 +421,31 @@ class FastFallbackRouter(GroupFastFallbackRouter):
             result,
         )
 
+    @staticmethod
+    def _reported_inventory_count(data: Any) -> int | None:
+        """Read a total/inventory count the MCP tool response may report.
+
+        Some Hubitat MCP builds page or cap device-list results. If the raw
+        response carries a count field larger than the number of rows we
+        actually parsed, the list was truncated and the health scan is
+        incomplete rather than clean.
+        """
+
+        if not isinstance(data, dict):
+            return None
+        for key in (
+            "device_count",
+            "total",
+            "count",
+            "inventory_count",
+            "total_count",
+            "projected_inventory_count",
+        ):
+            value = data.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                return int(value)
+        return None
+
     async def _device_health(self) -> dict[str, Any]:
         stale_call = self._execute_catalog_tool(
             "hub_list_devices",
@@ -460,6 +485,12 @@ class FastFallbackRouter(GroupFastFallbackRouter):
         live_result = results.get("live")
         if live_result is not None:
             live_rows = self._device_rows(live_result.data)
+            reported_total = self._reported_inventory_count(live_result.data)
+            if reported_total is not None and reported_total > len(live_rows):
+                errors["coverage"] = (
+                    f"the live health scan only returned {len(live_rows)} of "
+                    f"{reported_total} known devices (result may be paginated/truncated)"
+                )
             for device in live_rows:
                 health = _health_state(device)
                 if health:
