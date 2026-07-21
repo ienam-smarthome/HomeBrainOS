@@ -5,5 +5,3 @@
 - Uses the verified Hubitat inventory and stores the recommendation for the safe,
   review-first rule workflow.
 - Replaces false missing-device-list claims after successful MCP inventory reads.
-- Keeps recommendation matching terminal outside the unified AI planner while
-  preserving the pending recommendation used by the safe rule-draft workflow.

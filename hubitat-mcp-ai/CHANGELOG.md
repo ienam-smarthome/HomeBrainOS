@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.8
+
+- Installs grounded automation recommendation matching outside every AI wrapper,
+  preventing the unified planner from intercepting the recommendation shortcut.
+- Preserves the pending recommendation in the browser session so the existing
+  review-first `Build rule` workflow continues to work.
+
 ## 0.10.7
 
 - Routes combined automation recommendation and rule-writing requests through the
@@ -7,8 +14,6 @@
 - Keeps rule writes in the existing review-first workflow: recommendation, draft,
   explicit creation confirmation, then a paused Hubitat rule.
 - Corrects false `no device list` synthesis after a successful MCP inventory read.
-- Installs recommendation matching outside every AI wrapper so the shortcut cannot
-  be intercepted by the unified planner.
 
 ## 0.10.6
 
