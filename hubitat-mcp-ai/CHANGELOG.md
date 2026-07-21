@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.16
+
+- Makes clickable device choices self-contained control commands instead of bare numbers,
+  allowing the intended command to survive expired or restarted in-memory confirmation state.
+- Keeps numbered typed replies compatible with the pending choice workflow.
+- Sends the stable browser session ID in both the request body and header.
+
 ## 0.10.15
 
 - Makes ambiguous device-choice tiles clickable while preserving numbered and exact-name replies.

@@ -13,7 +13,7 @@ sys.path.insert(0, str(APP_DIR))
 from hub_restart_workflow import install_hub_restart_workflow  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 from automation_recommendation_webui import install_automation_recommendation_webui  # noqa: E402
-from webui_homebrain import render_homebrain_page  # noqa: E402
+from webui import render_page  # noqa: E402
 
 
 def request(query: str, session_id: str = "browser-1"):
@@ -126,10 +126,11 @@ def test_display_items_with_queries_are_clickable_and_keyboard_accessible():
             return page
 
     install_automation_recommendation_webui(Module)
-    page = Module.patch_page(render_homebrain_page("HomeBrain", "test"))
+    page = Module.patch_page(render_page("HomeBrain", "test"))
 
     assert ".result-item.clickable" in page
     assert "row.setAttribute('role','button')" in page
     assert "row.setAttribute('aria-label'" in page
     assert "row.onkeydown" in page
     assert "submit(query)" in page
+    assert "session_id:clientId" in page

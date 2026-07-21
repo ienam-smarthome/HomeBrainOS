@@ -386,12 +386,28 @@ def test_ambiguity_sends_zero_writes_then_numbered_reply_executes_exact_candidat
         "Livingroom Light 1 (Hubitat ID 1)",
         "Livingroom Light 2 (Hubitat ID 2)",
     ]
-    assert [item["query"] for item in first["display"]["items"]] == ["1", "2"]
+    assert [item["query"] for item in first["display"]["items"]] == [
+        "turn off Livingroom Light 1",
+        "turn off Livingroom Light 2",
+    ]
     assert fallback.calls == []
 
     second = asyncio.run(agent.answer(request("2"), unused))
 
     assert second["success"] is True
+    assert fallback.calls == [("Livingroom Light 2", "off")]
+
+
+def test_click_query_remains_a_complete_control_if_pending_state_is_lost(tmp_path: Path):
+    agent, fallback = make_agent(tmp_path)
+
+    first = asyncio.run(agent.answer(request("turn off livingroom light"), unused))
+    clicked_query = first["display"]["items"][1]["query"]
+    asyncio.run(agent.pending.clear("test"))
+    selected = asyncio.run(agent.answer(request(clicked_query), unused))
+
+    assert clicked_query == "turn off Livingroom Light 2"
+    assert selected["success"] is True
     assert fallback.calls == [("Livingroom Light 2", "off")]
 
 
