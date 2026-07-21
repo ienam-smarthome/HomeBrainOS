@@ -7,6 +7,8 @@
 - Keeps rule writes in the existing review-first workflow: recommendation, draft,
   explicit creation confirmation, then a paused Hubitat rule.
 - Corrects false `no device list` synthesis after a successful MCP inventory read.
+- Installs recommendation matching outside every AI wrapper so the shortcut cannot
+  be intercepted by the unified planner.
 
 ## 0.10.6
 
