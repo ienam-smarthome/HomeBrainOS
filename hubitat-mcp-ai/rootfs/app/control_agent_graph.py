@@ -38,6 +38,10 @@ _TYPE_SYNONYMS = {
     "bulb": "light",
     "bulbs": "light",
     "dimmer": "light",
+    "dimmers": "light",
+    "bulb": "light",
+    "bulbs": "light",
+    "dimmer": "light",
     "fan": "fan",
     "fans": "fan",
     "socket": "outlet",
@@ -62,6 +66,11 @@ _TYPE_SYNONYMS = {
     "heater": "heater",
 }
 _SENSITIVE_TYPES = {"lock", "alarm", "valve", "door", "thermostat", "heater"}
+_PLURAL_ROOM_TYPE = re.compile(
+    r"^(?P<room>.+?)\s+(?P<type>lights|lamps|bulbs|dimmers|fans|switches|sockets|outlets|plugs|"
+    r"dehumidifiers|humidifiers|televisions|tvs)$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -293,6 +302,43 @@ class ControlDeviceGraph:
             method="target-not-found",
             reason="No selected device matched all structured constraints.",
         )
+
+    def expand_plural_room_group(self, target: ControlTargetIntent) -> ControlTargetIntent:
+        """Promote an unambiguous plural room/type phrase to an all-device target.
+
+        Exact device aliases win first, so a real device called ``Christmas Lights``
+        remains singular. Promotion happens only when the live inventory proves that
+        the phrase names a room/type group containing at least two selected devices.
+        """
+
+        if (
+            target.quantifier != "one"
+            or not target.name_hint
+            or target.room_hint
+            or target.device_type
+            or target.ordinal is not None
+            or target.reference != "none"
+            or target.exclusions
+        ):
+            return target
+        if self._exact_alias(target.name_hint):
+            return target
+
+        match = _PLURAL_ROOM_TYPE.fullmatch(_normalise(target.name_hint))
+        if not match:
+            return target
+        room = re.sub(r"^(?:the)\s+", "", match.group("room"), flags=re.IGNORECASE).strip()
+        device_type = self._canonical_type(match.group("type"))
+        if not room or not device_type:
+            return target
+
+        expanded = ControlTargetIntent(
+            room_hint=room,
+            device_type=device_type,
+            quantifier="all",
+        )
+        matches = [node for node in self.nodes if self._matches_constraints(node, expanded)]
+        return expanded if len(matches) >= 2 else target
 
     def _resolve_reference(self, reference: str, context: GraphContext) -> list[DeviceNode]:
         ids: tuple[str, ...] = ()

@@ -252,6 +252,54 @@ def test_graph_resolves_group_with_exclusion_before_execution():
     ]
 
 
+def test_plural_room_lights_expand_to_group_but_singular_stays_ambiguous(tmp_path: Path):
+    devices = [
+        device("7046", "Hallway Light 1", "Hallway"),
+        device("7037", "Hallway Light 2", "Hallway"),
+    ]
+    agent, fallback = make_agent(tmp_path, devices)
+
+    plural = asyncio.run(agent.answer(request("turn on hallway lights"), unused))
+
+    assert plural["success"] is True
+    assert fallback.calls == [
+        ("Hallway Light 1", "on"),
+        ("Hallway Light 2", "on"),
+    ]
+    target = plural["control_plan"]["actions"][0]["target"]
+    assert target == {
+        "name_hint": "",
+        "room_hint": "hallway",
+        "device_type": "light",
+        "ordinal": None,
+        "quantifier": "all",
+        "reference": "none",
+        "exclusions": [],
+    }
+    assert plural["control_plan"]["actions"][0]["resolution_method"] == "room-type-group"
+
+    singular_agent, singular_fallback = make_agent(tmp_path / "singular", devices)
+    singular = asyncio.run(singular_agent.answer(request("turn on hallway light"), unused))
+
+    assert singular["intent"] == "control-agent-device-choice-required"
+    assert singular_fallback.calls == []
+
+
+def test_exact_plural_device_alias_wins_over_room_group_inference():
+    graph = ControlDeviceGraph(
+        [
+            device("10", "Christmas Lights", "Living Room"),
+            device("11", "Christmas Tree Plug", "Living Room"),
+        ]
+    )
+    target = ControlTargetIntent(name_hint="Christmas Lights")
+
+    assert graph.expand_plural_room_group(target) == target
+    resolution = graph.resolve(target)
+    assert [item.id for item in resolution.nodes] == ["10"]
+    assert resolution.method == "unique-alias"
+
+
 def test_exact_control_stays_deterministic_but_contextual_controls_require_ai():
     interpreter = ControlIntentInterpreter(FakeApplication())
 
