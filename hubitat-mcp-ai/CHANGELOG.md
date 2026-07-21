@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.10.14
+
+- Makes the restart confirmation card an explicit question instead of hiding the
+  confirmation instruction behind structured metrics.
+- Adds visible `Yes — restart hub` and `No — cancel` buttons while retaining spoken
+  or typed Yes/No replies.
+- Shows downtime and recent-backup requirements directly in the confirmation card.
+
 ## 0.10.13
 
 - Adds a deterministic, session-scoped two-turn workflow for Hubitat hub restart
