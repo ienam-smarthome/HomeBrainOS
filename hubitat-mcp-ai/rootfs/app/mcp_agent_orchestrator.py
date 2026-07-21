@@ -4,6 +4,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 from control_agent_gate import is_exact_fast_control
+from device_health_fast_route import is_attention_query, is_device_health_query
 from routing_policy import classify_query
 
 
@@ -205,6 +206,13 @@ def should_use_unified_agent(query: str) -> bool:
     if not q or q in _PROTOCOL_FOLLOWUPS:
         return False
     if is_exact_fast_control(query):
+        return False
+    # Device-health classification is authoritative and intentionally conservative:
+    # live healthStatus may confirm a fault, while lastActivity age alone is not one.
+    # This guard must live in the outer unified-agent wrapper as well as the inner
+    # deterministic route; routing_policy.classify_query is imported independently
+    # and does not see the late request-tracing classifier patch.
+    if is_device_health_query(query) or is_attention_query(query):
         return False
     return classify_query(q).route != "mcp-fast"
 

@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.5
+
+- Keeps device-health questions on the authoritative deterministic route so Cloud
+  AI cannot reinterpret quiet event timestamps as stale-device faults.
+- Routes the Attention shortcut to the deterministic attention collector instead
+  of treating `devices that need attention` as a literal device name.
+- Installs health and attention routing outside all AI wrappers, preserving live
+  Hubitat classifications as the terminal answer.
+
 ## 0.10.4
 
 - Pages detailed device-health inventory reads with bounded `limit` and `offset`
