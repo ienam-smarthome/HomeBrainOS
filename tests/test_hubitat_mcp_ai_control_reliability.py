@@ -150,7 +150,10 @@ def test_multiple_candidates_require_number_not_yes():
 
     calls, prompt, yes, selected = asyncio.run(scenario())
     assert "1. Hallway Light 1" in prompt["message"]
-    assert [item["query"] for item in prompt["display"]["items"]] == ["1", "2"]
+    assert [item["query"] for item in prompt["display"]["items"]] == [
+        "turn off Hallway Light 1",
+        "turn off Hallway Light 2",
+    ]
     assert yes["intent"] == "control-confirmation-choice-required"
     assert calls == ["turn off hallway light", "turn off Hallway Light 2"]
     assert selected["confirmed_candidate"] == "Hallway Light 2"

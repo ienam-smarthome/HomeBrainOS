@@ -311,7 +311,7 @@ class HomeBrainControlAgent:
                             "icon": "📱",
                             "title": item.label,
                             "value": str(index),
-                            "query": str(index),
+                            "query": self._candidate_choice_query(action, item),
                             "subtitle": (
                                 f"{item.room or 'No room assigned'} · Hubitat ID {item.id}"
                                 + (
@@ -442,6 +442,14 @@ class HomeBrainControlAgent:
             graph = await self._graph()
             candidates = [graph.by_id[item] for item in pending.candidate_ids if item in graph.by_id]
             selected: DeviceNode | None = None
+            action = pending.plan.actions[int(pending.action_index or 0)]
+            clicked = [
+                item
+                for item in candidates
+                if normal == " ".join(self._candidate_choice_query(action, item).lower().split())
+            ]
+            if len(clicked) == 1:
+                selected = clicked[0]
             if normal.isdigit():
                 index = int(normal) - 1
                 if 0 <= index < len(candidates):
@@ -769,6 +777,12 @@ class HomeBrainControlAgent:
         if action.intent.command == "set_level":
             return f"Set to {float(action.intent.value or 0):g}%"
         return action.intent.command.title()
+
+    @staticmethod
+    def _candidate_choice_query(action: ResolvedControlAction, node: DeviceNode) -> str:
+        if action.intent.command == "set_level":
+            return f"set {node.label} to {float(action.intent.value or 0):g}%"
+        return f"turn {action.intent.command} {node.label}"
 
     @classmethod
     def _plan_summary(cls, plan: ControlPlan) -> str:
