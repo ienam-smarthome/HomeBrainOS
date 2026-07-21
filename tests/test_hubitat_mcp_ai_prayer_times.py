@@ -169,4 +169,5 @@ def test_prayer_times_events_are_presented_as_times_not_raw_html():
 
 def test_backup_is_not_misclassified_as_routine_read_only():
     decision = classify_query("do a hub backup")
-    assert decision.route == "ollama-planner"
+    assert decision.route == "mcp-backup"
+    assert "idempotent" in decision.reason

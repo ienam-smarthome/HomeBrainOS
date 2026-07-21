@@ -34,8 +34,9 @@ class ConfirmedBackupClient:
     configured = True
     server_info: dict[str, Any] = {}
 
-    def __init__(self, *, backup_mode: str = "complete") -> None:
+    def __init__(self, *, backup_mode: str = "complete", support_op_token: bool = False) -> None:
         self.backup_mode = backup_mode
+        self.support_op_token = support_op_token
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def list_tools(self, refresh: bool = False):
@@ -68,6 +69,7 @@ class ConfirmedBackupClient:
                     "properties": {
                         "confirm": {"type": "boolean"},
                         "bestPracticeKey": {"type": "string"},
+                        **({"opToken": {"type": "string"}} if self.support_op_token else {}),
                     },
                     "required": ["confirm"],
                 },
@@ -97,10 +99,14 @@ class ConfirmedBackupClient:
                 )
             raise AssertionError(f"Unexpected guide section: {section}")
         if name == "hub_create_backup":
-            assert args == {
+            expected = {
                 "confirm": True,
                 "bestPracticeKey": "BP-CONFIRM-2401",
             }
+            if self.support_op_token:
+                assert args.get("opToken", "").startswith("homebrain-backup-")
+                expected["opToken"] = args["opToken"]
+            assert args == expected
             if self.backup_mode == "timeout":
                 raise TimeoutError()
             return result(
@@ -169,6 +175,20 @@ def workflow(*, backup_mode: str = "complete"):
     client = ConfirmedBackupClient(backup_mode=backup_mode)
     app = SimpleNamespace(mcp=client, VERSION="0.4.26-alpha")
     return ConfirmedBackupWashingRuleMachineWorkflow(app, object()), client
+
+
+def test_explicit_backup_forces_new_create_and_uses_schema_idempotency_token():
+    client = ConfirmedBackupClient(support_op_token=True)
+    app = SimpleNamespace(mcp=client, VERSION="0.10.2")
+    service = ConfirmedBackupWashingRuleMachineWorkflow(app, object())
+
+    ok, details = asyncio.run(service._ensure_backup("BP-CONFIRM-2401", force=True))
+
+    assert ok is True
+    assert details["created"] is True
+    create_calls = [args for name, args in client.calls if name == "hub_create_backup"]
+    assert len(create_calls) == 1
+    assert create_calls[0]["opToken"].startswith("homebrain-backup-")
 
 
 def test_acknowledgment_parser_accepts_markdown_backup_guide_wording():
