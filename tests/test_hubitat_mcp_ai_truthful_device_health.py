@@ -173,6 +173,44 @@ def test_negative_health_remains_authoritative_and_periodic_stale_is_separate():
     assert "Bathroom meter" in answer["message"]
 
 
+def test_oversized_live_inventory_marks_health_scan_incomplete():
+    class OversizedHealthRouter(FakeHealthRouter):
+        async def _execute_catalog_tool(
+            self,
+            direct_tool: str,
+            gateway_tool: str,
+            arguments: dict[str, Any] | None = None,
+        ):
+            del direct_tool, gateway_tool
+            arguments = arguments or {}
+            if arguments.get("filter"):
+                return result([])
+            return MCPToolResult(
+                name="hub_list_devices",
+                arguments=arguments,
+                raw={},
+                text="",
+                data={
+                    "response_too_large": True,
+                    "truncated": True,
+                    "estimatedBytes": 125248,
+                    "sizeLimitBytes": 120000,
+                    "tool": "hub_list_devices",
+                },
+                is_error=False,
+            )
+
+    answer = asyncio.run(OversizedHealthRouter([], [])._device_health())
+
+    assert answer["success"] is False
+    assert answer["offline_count"] == 0
+    assert answer["stale_telemetry_count"] == 0
+    assert "scan was incomplete" in answer["message"]
+    assert "cannot confirm that no devices are offline or stale" in answer["message"]
+    assert "coverage" in answer["message"]
+    assert answer["display"]["subtitle"] == "Scan incomplete"
+
+
 def test_common_question_forms_use_health_fast_route():
     assert is_device_health_query("Are any devices offline or stale?")
     assert is_device_health_query("Do I have stale devices?")

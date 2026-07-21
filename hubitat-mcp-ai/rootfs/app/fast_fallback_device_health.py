@@ -485,8 +485,29 @@ class FastFallbackRouter(GroupFastFallbackRouter):
         live_result = results.get("live")
         if live_result is not None:
             live_rows = self._device_rows(live_result.data)
-            reported_total = self._reported_inventory_count(live_result.data)
-            if reported_total is not None and reported_total > len(live_rows):
+            live_data = live_result.data
+            if isinstance(live_data, dict) and (
+                live_data.get("response_too_large") is True
+                or live_data.get("truncated") is True
+            ):
+                estimated_bytes = live_data.get("estimatedBytes")
+                size_limit_bytes = live_data.get("sizeLimitBytes")
+                size_detail = (
+                    f" ({estimated_bytes} bytes exceeds the {size_limit_bytes}-byte limit)"
+                    if isinstance(estimated_bytes, (int, float))
+                    and isinstance(size_limit_bytes, (int, float))
+                    else ""
+                )
+                errors["coverage"] = (
+                    "the live device inventory response was truncated or too large"
+                    f"{size_detail}"
+                )
+            reported_total = self._reported_inventory_count(live_data)
+            if (
+                "coverage" not in errors
+                and reported_total is not None
+                and reported_total > len(live_rows)
+            ):
                 errors["coverage"] = (
                     f"the live health scan only returned {len(live_rows)} of "
                     f"{reported_total} known devices (result may be paginated/truncated)"
