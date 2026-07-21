@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.12
+
+- Sends pronoun follow-up controls back to the same Control Agent that executed
+  the preceding command, eliminating the split context-store path.
+- Preserves the complete verified prior control scope so `turn it off`, `switch
+  them on`, and `turn it back on` operate on the same device or device group.
+- Parses these follow-ups deterministically and returns a safe unresolved response
+  without AI guessing or writes when no verified control context exists.
+
 ## 0.10.11
 
 - Routes contextual device controls such as `turn it off` and `switch them on`

@@ -97,6 +97,36 @@ def test_pending_confirmation_reaches_control_agent_even_for_yes_or_number():
     assert agent_queries == ["2"]
 
 
+def test_pronoun_follow_up_returns_to_the_same_control_agent():
+    agent_queries: list[str] = []
+    legacy_queries: list[str] = []
+
+    async def legacy_ask(value: Any):
+        legacy_queries.append(value.query)
+        return {"success": True, "route": "legacy"}
+
+    async def control_agent_ask(value: Any):
+        agent_queries.append(value.query)
+        return {"success": True, "route": "control-agent"}
+
+    class Pending:
+        async def get(self, _session_id: str):
+            return None
+
+    control_agent = SimpleNamespace(
+        pending=Pending(),
+        contexts=SimpleNamespace(session_id=lambda _request: "gate"),
+    )
+    application = SimpleNamespace(ask=control_agent_ask)
+    install_control_agent_gate(application, control_agent, legacy_ask)
+
+    answer = asyncio.run(application.ask(request("turn it off")))
+
+    assert answer["route"] == "control-agent"
+    assert agent_queries == ["turn it off"]
+    assert legacy_queries == []
+
+
 def test_release_installs_control_agent_gate():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 

@@ -234,6 +234,17 @@ def test_graph_resolves_spoken_typo_room_type_ordinal_and_other_reference():
     assert other.method == "context-other"
 
 
+def test_graph_scope_reference_preserves_the_complete_verified_group():
+    graph = ControlDeviceGraph(DEVICES)
+    resolution = graph.resolve(
+        ControlTargetIntent(reference="scope"),
+        context=GraphContext(last_device_ids=("3", "4")),
+    )
+
+    assert [item.id for item in resolution.nodes] == ["3", "4"]
+    assert resolution.method == "context-scope"
+
+
 def test_graph_resolves_group_with_exclusion_before_execution():
     graph = ControlDeviceGraph(DEVICES)
 
@@ -313,6 +324,21 @@ def test_exact_control_stays_deterministic_but_contextual_controls_require_ai():
     ) is None
     assert interpreter._deterministic_intent("turn off the other one") is None
     assert interpreter._deterministic_intent("switch the second lounge light off") is None
+
+
+def test_pronoun_control_is_deterministic_and_uses_verified_scope():
+    interpreter = ControlIntentInterpreter(FakeApplication())
+
+    parsed = interpreter._deterministic_intent("turn it off")
+    repeated = interpreter._deterministic_intent("turn it back on")
+
+    assert parsed is not None
+    assert parsed.model is None
+    assert parsed.actions[0].command == "off"
+    assert parsed.actions[0].target.reference == "scope"
+    assert repeated is not None
+    assert repeated.actions[0].command == "on"
+    assert repeated.actions[0].target.reference == "scope"
 
 
 def test_schema_rejects_commands_outside_the_control_allowlist():
@@ -454,6 +480,35 @@ def test_structured_context_supports_turn_it_back_on(tmp_path: Path):
         ("Livingroom Light 2", "off"),
         ("Livingroom Light 2", "on"),
     ]
+
+
+def test_verified_group_control_survives_immediate_it_follow_up(tmp_path: Path):
+    agent, fallback = make_agent(tmp_path)
+
+    first = asyncio.run(agent.answer(request("turn on bedroom 1 lights"), unused))
+    second = asyncio.run(agent.answer(request("turn it off"), unused))
+
+    assert first["success"] is True
+    assert second["success"] is True
+    assert second["control_plan"]["actions"][0]["resolution_method"] == "context-scope"
+    assert fallback.calls == [
+        ("Bedroom 1 Light", "on"),
+        ("My Floor Lamp", "on"),
+        ("Bedroom 1 Light", "off"),
+        ("My Floor Lamp", "off"),
+    ]
+
+
+def test_pronoun_without_verified_control_context_never_reaches_ai_or_writes(tmp_path: Path):
+    agent, fallback = make_agent(tmp_path)
+
+    answer = asyncio.run(agent.answer(request("turn it off"), unused))
+
+    assert answer["success"] is False
+    assert answer["intent"] == "control-agent-unresolved"
+    assert "No command was sent" in answer["message"]
+    assert answer["control_intent"]["interpreter"] == "deterministic-control-context-parser"
+    assert fallback.calls == []
 
 
 def test_sensitive_plan_requires_yes_and_no_cancels_without_write(tmp_path: Path):

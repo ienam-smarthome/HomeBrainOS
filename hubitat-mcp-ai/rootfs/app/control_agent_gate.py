@@ -185,7 +185,7 @@ def install_control_agent_gate(
             # Resolve pronouns against verified per-session device IDs. Browser
             # history supplied to an LLM is not an authoritative device reference.
             if is_contextual_device_control(query):
-                return await legacy_ask(request)
+                return await control_agent_ask(request)
             if is_exact_fast_control(query):
                 answer = dict(await control_agent_ask(request))
                 answer.setdefault("route_reason", "exact control fast path")
