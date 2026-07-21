@@ -78,6 +78,21 @@ def test_exact_fast_control_and_protocol_followups_stay_deterministic():
     assert not should_use_unified_agent("Create paused rule")
 
 
+def test_device_health_queries_never_enter_unified_ai_synthesis():
+    variants = (
+        "Are any devices offline or stale?",
+        "List devices that are offline or stale",
+        "Do I have stale devices?",
+        "Device health status",
+    )
+
+    assert all(not should_use_unified_agent(query) for query in variants)
+
+
+def test_attention_shortcut_never_becomes_a_device_name_search():
+    assert not should_use_unified_agent("Find devices that need attention")
+
+
 def test_typed_history_is_normalised_before_entering_agent_loop():
     class PydanticLike:
         def model_dump(self):

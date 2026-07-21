@@ -14,6 +14,7 @@ sys.path.insert(0, str(APP_DIR))
 import request_tracing  # noqa: E402
 from device_health_fast_route import (  # noqa: E402
     install_device_health_fast_route,
+    is_attention_query,
     is_device_health_query,
 )
 from fast_fallback_device_health import (  # noqa: E402
@@ -295,6 +296,7 @@ def test_common_question_forms_use_health_fast_route():
     assert is_device_health_query("Which devices are offline?")
     assert is_device_health_query("Device health status")
     assert not is_device_health_query("Why is the bathroom sensor offline?")
+    assert is_attention_query("Find devices that need attention")
 
 
 def test_fast_route_bypasses_ai_and_patches_trace_decision():

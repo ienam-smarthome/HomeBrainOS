@@ -13,7 +13,7 @@ AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 _DEVICE_HEALTH_QUERY = re.compile(
     r"^(?:please\s+)?(?:"
     r"(?:are\s+(?:there\s+)?any|do\s+i\s+have)\s+(?:devices?\s+)?(?:that\s+are\s+)?"
-    r"(?:offline|stale|offline\s+(?:or|and)\s+stale|stale\s+(?:or|and)\s+offline)"
+    r"(?:offline|stale|offline\s+(?:or|and)\s+stale|stale\s+(?:or|and)\s+offline)(?:\s+devices?)?"
     r"|(?:which|what|show|list|find|get|check)\s+(?:devices?\s+)?(?:are\s+|that\s+are\s+)?"
     r"(?:offline|stale|offline\s+(?:or|and)\s+stale|stale\s+(?:or|and)\s+offline)"
     r"|(?:device|devices)\s+health(?:\s+status)?"
@@ -22,10 +22,21 @@ _DEVICE_HEALTH_QUERY = re.compile(
     re.IGNORECASE,
 )
 
+_ATTENTION_QUERY = re.compile(
+    r"^(?:please\s+)?(?:find|show|list|check|get|which|what)\s+"
+    r"(?:the\s+)?(?:devices?\s+)?(?:that\s+)?(?:need|needs|requiring)\s+attention[?.!]*$",
+    re.IGNORECASE,
+)
+
 
 def is_device_health_query(query: str) -> bool:
     text = re.sub(r"\s+", " ", str(query or "").strip())
     return bool(_DEVICE_HEALTH_QUERY.match(text))
+
+
+def is_attention_query(query: str) -> bool:
+    text = re.sub(r"\s+", " ", str(query or "").strip())
+    return bool(_ATTENTION_QUERY.match(text))
 
 
 def install_device_health_fast_route(application: Any) -> AskHandler:
@@ -67,6 +78,11 @@ def install_device_health_fast_route(application: Any) -> AskHandler:
                     "classification; event age alone is not treated as a fault"
                 ),
             )
+        if is_attention_query(query):
+            return RouteDecision(
+                "mcp-fast",
+                "deterministic attention scan over authoritative live Hubitat evidence",
+            )
         return original_classifier(query)
 
     request_tracing.classify_query = classify_with_late_routes
@@ -76,6 +92,13 @@ def install_device_health_fast_route(application: Any) -> AskHandler:
         if is_home_priority_query(query):
             answer = dict(await priority_service.answer(query))
             answer.setdefault("version", application.VERSION)
+            return answer
+        if is_attention_query(query):
+            answer = dict(await application.fallback._attention())
+            answer["route"] = "mcp-fast"
+            answer["model"] = None
+            answer["answered_by"] = "Deterministic Hubitat attention classifier"
+            answer["selected_tools"] = ["hub_list_devices"]
             return answer
         if not is_device_health_query(query):
             return await original_ask(request)
@@ -93,6 +116,7 @@ def install_device_health_fast_route(application: Any) -> AskHandler:
 
 __all__ = [
     "install_device_health_fast_route",
+    "is_attention_query",
     "is_device_health_query",
     "is_home_priority_query",
 ]

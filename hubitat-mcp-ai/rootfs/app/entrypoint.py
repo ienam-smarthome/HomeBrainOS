@@ -220,7 +220,6 @@ semantic_read_intents = install_semantic_read_pipeline(
     timeout_seconds=float(application.OPTIONS.get("semantic_intent_timeout_seconds") or 5),
     cache_ttl_seconds=float(application.OPTIONS.get("semantic_intent_cache_seconds") or 300),
 )
-install_device_health_fast_route(application)
 install_ai_evidence_domains()
 if application.option_bool("hybrid_assistant_mode_enabled", True):
     install_hybrid_assistant_query_policy()
@@ -240,6 +239,9 @@ hybrid_verified_reads = install_hybrid_verified_read_routes(application, semanti
 if application.option_bool("unified_mcp_agent_enabled", True):
     install_unified_mcp_agent_orchestrator(application)
 install_explicit_hub_backup_workflow(application, automation_rule_workflow)
+# Install authoritative health/attention routes outside every AI wrapper so their
+# live classifications are terminal and cannot be reinterpreted by model synthesis.
+install_device_health_fast_route(application)
 request_traces = install_request_tracing(
     application,
     application.mcp,
