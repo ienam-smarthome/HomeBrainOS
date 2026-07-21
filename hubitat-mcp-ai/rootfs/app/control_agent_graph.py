@@ -344,6 +344,8 @@ class ControlDeviceGraph:
         ids: tuple[str, ...] = ()
         if reference == "last":
             ids = context.last_device_ids[-1:]
+        elif reference == "scope":
+            ids = context.last_device_ids
         elif reference == "both":
             ids = context.last_device_ids or context.last_candidate_ids
         elif reference == "other":

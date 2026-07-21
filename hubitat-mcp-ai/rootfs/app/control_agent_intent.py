@@ -7,11 +7,12 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from control_language import canonicalise_basic_control
+from contextual_control import parse_contextual_device_control
 
 
 _SUPPORTED_COMMANDS = {"on", "off", "set_level"}
 _SUPPORTED_QUANTIFIERS = {"one", "all"}
-_SUPPORTED_REFERENCES = {"none", "last", "other", "both"}
+_SUPPORTED_REFERENCES = {"none", "last", "scope", "other", "both"}
 
 _CONTROL_INTENT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -214,6 +215,24 @@ class ControlIntentInterpreter:
 
     @staticmethod
     def _deterministic_intent(query: str) -> ControlIntent | None:
+        contextual = parse_contextual_device_control(query)
+        if contextual is not None:
+            action, spoken_target = contextual
+            normal = " ".join(spoken_target.lower().strip(" .!?").split())
+            if normal in {"it", "that", "this", "them", "those", "these", "all of them"}:
+                return ControlIntent(
+                    intent="device_control",
+                    actions=(
+                        ControlActionIntent(
+                            command=action,
+                            value=None,
+                            target=ControlTargetIntent(reference="scope"),
+                        ),
+                    ),
+                    confidence=1.0,
+                    interpreter="deterministic-control-context-parser",
+                )
+
         basic = canonicalise_basic_control(query)
         if basic is not None:
             words = set(re.findall(r"[a-z0-9]+", basic.target.lower()))
@@ -290,8 +309,9 @@ class ControlIntentInterpreter:
             "You cannot call tools and must never claim that a command succeeded. Convert only "
             "device controls into the supplied JSON schema. Supported commands are on, off and "
             "set_level (0-100). Resolve language semantically into room_hint, device_type, ordinal, "
-            "quantifier and reference, but do not invent a device ID. Use reference last for it/that "
-            "one, other for the other one, and both for both/them when conversation context supports it. "
+            "quantifier and reference, but do not invent a device ID. Use reference scope for it/that/them "
+            "when referring to the complete last successful control, last for one device, other for the "
+            "other one, and both for an explicitly offered pair when conversation context supports it. "
             "Use quantifier all for room/group controls and put exception names in exclusions. Return "
             "unsupported for conditions, schedules, rule creation, locks, alarms, doors, heating changes, "
             "or anything outside these commands. Interpret lounge as Living Room when that room exists. "

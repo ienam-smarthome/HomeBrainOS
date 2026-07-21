@@ -18,8 +18,9 @@ def parse_contextual_device_control(query: str) -> tuple[str, str] | None:
         action = match.group(1 if index == 0 else 2).lower()
         target = match.group(2 if index == 0 else 1).strip()
         normal = " ".join(target.lower().strip(" .!?").split())
+        reference_target = re.sub(r"\s+back$", "", normal).strip()
         contextual = (
-            normal
+            reference_target
             in {
                 "it",
                 "that",
@@ -32,14 +33,14 @@ def parse_contextual_device_control(query: str) -> tuple[str, str] | None:
                 "these",
                 "all of them",
             }
-            or bool(re.search(r"\b(?:first|second|third|fourth|fifth|[1-5](?:st|nd|rd|th))\s+one\b", normal))
+            or bool(re.search(r"\b(?:first|second|third|fourth|fifth|[1-5](?:st|nd|rd|th))\s+one\b", reference_target))
             or (
-                normal not in {"other one", "the other one"}
-                and bool(re.search(r"\b(?:the|that|this)\s+.+\s+one$", normal))
+                reference_target not in {"other one", "the other one"}
+                and bool(re.search(r"\b(?:the|that|this)\s+.+\s+one$", reference_target))
             )
         )
         if contextual:
-            return action, target
+            return action, reference_target
     return None
 
 
