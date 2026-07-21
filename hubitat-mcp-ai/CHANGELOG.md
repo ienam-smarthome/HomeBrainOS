@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.15
+
+- Makes ambiguous device-choice tiles clickable while preserving numbered and exact-name replies.
+- Submits each clicked choice through the existing session-scoped confirmation workflow, so no
+  device command is sent until the selected Hubitat device ID is resolved.
+- Adds keyboard selection with Enter or Space and visible hover/focus states for choice tiles.
+
 ## 0.10.14
 
 - Makes the restart confirmation card an explicit question instead of hiding the

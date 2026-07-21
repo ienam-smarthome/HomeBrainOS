@@ -311,6 +311,7 @@ class HomeBrainControlAgent:
                             "icon": "📱",
                             "title": item.label,
                             "value": str(index),
+                            "query": str(index),
                             "subtitle": (
                                 f"{item.room or 'No room assigned'} · Hubitat ID {item.id}"
                                 + (
