@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.10.7
+
+- Routes combined automation recommendation and rule-writing requests through the
+  grounded device-aware recommendation service.
+- Keeps rule writes in the existing review-first workflow: recommendation, draft,
+  explicit creation confirmation, then a paused Hubitat rule.
+- Corrects false `no device list` synthesis after a successful MCP inventory read.
+
 ## 0.10.6
 
 - Makes the AI question guide a terminal system route outside every model-driven
