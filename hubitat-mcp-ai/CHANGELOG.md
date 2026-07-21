@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.11
+
+- Routes contextual device controls such as `turn it off` and `switch them on`
+  through verified per-session Hubitat device IDs instead of AI text history.
+- Preserves an immediately preceding verified multi-device control scope, allowing
+  `it` to refer naturally to the previously controlled group.
+- Prevents successful inventory reads from masking failed writes; HomeBrain now
+  reports complete or partial device-control failure instead of claiming success.
+
 ## 0.10.10
 
 - Treats a plural room/type target such as `hallway lights` as every matching

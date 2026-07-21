@@ -225,6 +225,28 @@ def test_turn_them_off_controls_only_previous_switch_devices():
     ]
 
 
+def test_it_reuses_an_immediately_previous_verified_group_scope():
+    async def scenario():
+        fallback = FakeFallback()
+        store = ConversationContextStore(FakeIndex(), fallback)
+        await seed(
+            store,
+            "turn on the previous lights",
+            answer_with_devices(
+                "fallback-device-group-control-confirmed",
+                "Previous devices",
+                ["Bedroom 2 Light", "Livingroom Light 1"],
+            ),
+        )
+        resolution = await store.resolve(request("turn it off"))
+        return fallback, resolution
+
+    fallback, resolution = asyncio.run(scenario())
+    assert resolution.reason == "context-device-group-control"
+    assert resolution.answer["success"] is True
+    assert fallback.group_calls[0]["ids"] == ["1", "2"]
+
+
 def test_temperature_follow_up_compares_recent_devices_without_ollama():
     async def scenario():
         store = ConversationContextStore(FakeIndex(), FakeFallback())
