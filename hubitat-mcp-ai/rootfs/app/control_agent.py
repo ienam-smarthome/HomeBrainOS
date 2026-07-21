@@ -210,10 +210,18 @@ class HomeBrainControlAgent:
     ) -> ControlPlan:
         actions: list[ResolvedControlAction] = []
         for action in intent.actions:
-            resolution = graph.resolve(action.target, context=context)
+            target = graph.expand_plural_room_group(action.target)
+            resolved_intent = action
+            if target != action.target:
+                resolved_intent = ControlActionIntent(
+                    command=action.command,
+                    value=action.value,
+                    target=target,
+                )
+            resolution = graph.resolve(target, context=context)
             actions.append(
                 ResolvedControlAction(
-                    intent=action,
+                    intent=resolved_intent,
                     nodes=list(resolution.nodes),
                     candidates=list(resolution.candidates),
                     resolution_confidence=resolution.confidence,

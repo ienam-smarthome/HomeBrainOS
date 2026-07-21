@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.10.10
+
+- Treats a plural room/type target such as `hallway lights` as every matching
+  selected light in that room when the live inventory proves a multi-device group.
+- Preserves exact plural device aliases and singular requests, so `hallway light`
+  still asks which device while a real device named `Christmas Lights` remains one
+  exact target.
+- Keeps group safety policy intact: sensitive or large groups still require
+  confirmation, and every selected Hubitat ID is resolved before the first write.
+
 ## 0.10.9
 
 - Adds a deterministic named Rule Machine controller for pause, resume, enable,
