@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.13
+
+- Adds a deterministic, session-scoped two-turn workflow for Hubitat hub restart
+  requests, keeping both the prompt and subsequent confirmation outside AI routes.
+- Sends the hidden `hub_reboot` MCP operation exactly once with `confirm=true` only
+  after a separate `Yes`, while `No` cancels without an MCP write.
+- Reports rejected and connection-interrupted restart attempts truthfully and never
+  retries a destructive request automatically.
+
 ## 0.10.12
 
 - Sends pronoun follow-up controls back to the same Control Agent that executed

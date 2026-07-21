@@ -43,6 +43,7 @@ from hybrid_assistant_mode import (
     install_hybrid_verified_read_routes,
 )
 from mcp_agent_orchestrator import install_unified_mcp_agent_orchestrator
+from hub_restart_workflow import install_hub_restart_workflow
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from motion_light_insight import install_motion_light_insight
 from named_rule_control import install_named_rule_controller
@@ -60,7 +61,7 @@ from webui_http_safe import install_http_safe_webui
 
 
 PREVIOUS_RELEASE_VERSION = "0.10.9"
-RELEASE_VERSION = "0.10.12"
+RELEASE_VERSION = "0.10.13"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -251,6 +252,12 @@ named_rule_controller = install_named_rule_controller(application)
 install_device_health_fast_route(application)
 install_automation_recommendation_terminal_route(application, automation_recommendation)
 install_ollama_help_terminal_route(application)
+# Hub restart is a destructive two-turn operation. Keep its pending confirmation
+# outside AI and every generic protocol-follow-up route.
+hub_restart_workflow = install_hub_restart_workflow(
+    application,
+    ttl_seconds=float(application.OPTIONS.get("hub_restart_confirmation_ttl_seconds") or 120),
+)
 request_traces = install_request_tracing(
     application,
     application.mcp,
