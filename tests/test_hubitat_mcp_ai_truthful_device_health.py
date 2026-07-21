@@ -211,6 +211,84 @@ def test_oversized_live_inventory_marks_health_scan_incomplete():
     assert answer["display"]["subtitle"] == "Scan incomplete"
 
 
+def test_live_health_inventory_aggregates_all_pages():
+    health_rows = [
+        device(str(index), f"Sensor {index}", {"healthStatus": "online"})
+        for index in range(1, 76)
+    ]
+
+    class PagedHealthRouter(FakeHealthRouter):
+        def __init__(self):
+            super().__init__([], health_rows)
+            self.offsets: list[int] = []
+
+        async def _execute_catalog_tool(
+            self,
+            direct_tool: str,
+            gateway_tool: str,
+            arguments: dict[str, Any] | None = None,
+        ):
+            del direct_tool, gateway_tool
+            arguments = arguments or {}
+            if arguments.get("filter"):
+                return result([])
+            offset = int(arguments.get("offset") or 0)
+            limit = int(arguments.get("limit") or 50)
+            self.offsets.append(offset)
+            return MCPToolResult(
+                name="hub_list_devices",
+                arguments=arguments,
+                raw={},
+                text="",
+                data={
+                    "devices": health_rows[offset : offset + limit],
+                    "total": len(health_rows),
+                },
+                is_error=False,
+            )
+
+    router = PagedHealthRouter()
+    answer = asyncio.run(router._device_health())
+
+    assert router.offsets == [0, 50]
+    assert answer["success"] is True
+    assert '"selected_devices_scanned": 75' in answer["technical"]
+    assert answer["offline_count"] == 0
+
+
+def test_repeated_page_marks_health_scan_incomplete():
+    page = [
+        device(str(index), f"Sensor {index}", {"healthStatus": "online"})
+        for index in range(1, 51)
+    ]
+
+    class OffsetIgnoringHealthRouter(FakeHealthRouter):
+        async def _execute_catalog_tool(
+            self,
+            direct_tool: str,
+            gateway_tool: str,
+            arguments: dict[str, Any] | None = None,
+        ):
+            del direct_tool, gateway_tool
+            arguments = arguments or {}
+            if arguments.get("filter"):
+                return result([])
+            return MCPToolResult(
+                name="hub_list_devices",
+                arguments=arguments,
+                raw={},
+                text="",
+                data={"devices": page},
+                is_error=False,
+            )
+
+    answer = asyncio.run(OffsetIgnoringHealthRouter([], page)._device_health())
+
+    assert answer["success"] is False
+    assert "scan was incomplete" in answer["message"]
+    assert '"selected_devices_scanned": 50' in answer["technical"]
+
+
 def test_common_question_forms_use_health_fast_route():
     assert is_device_health_query("Are any devices offline or stale?")
     assert is_device_health_query("Do I have stale devices?")

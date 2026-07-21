@@ -7,7 +7,7 @@ from typing import Any
 from fallback_router import _device_id, _label, _normalise
 from fast_fallback_groups import FastFallbackRouter as GroupFastFallbackRouter
 from fast_fallback_live import live_attributes
-from mcp_client import MCPError
+from mcp_client import MCPError, MCPToolResult
 from presenter import (
     compact_number,
     display_payload,
@@ -61,6 +61,8 @@ _POSITIVE_HEALTH = {
     "alive",
     "reachable",
 }
+_DEVICE_HEALTH_PAGE_SIZE = 50
+_DEVICE_HEALTH_MAX_PAGES = 100
 _PERIODIC_STATE_KEYS = {
     "temperature",
     "humidity",
@@ -446,6 +448,96 @@ class FastFallbackRouter(GroupFastFallbackRouter):
                 return int(value)
         return None
 
+    async def _paged_device_health_inventory(self) -> MCPToolResult:
+        """Read the complete detailed inventory without exceeding MCP response limits."""
+
+        rows: list[dict[str, Any]] = []
+        seen_pages: set[tuple[str, ...]] = set()
+        first_result: MCPToolResult | None = None
+        reported_total: int | None = None
+
+        for page_number in range(_DEVICE_HEALTH_MAX_PAGES):
+            offset = page_number * _DEVICE_HEALTH_PAGE_SIZE
+            result = await self._execute_catalog_tool(
+                "hub_list_devices",
+                "hub_read_devices",
+                {
+                    "detailed": True,
+                    "format": "detailed",
+                    "fields": list(_DEVICE_HEALTH_FIELDS),
+                    "limit": _DEVICE_HEALTH_PAGE_SIZE,
+                    "offset": offset,
+                },
+            )
+            if first_result is None:
+                first_result = result
+
+            data = result.data
+            if result.is_error or (
+                isinstance(data, dict)
+                and (
+                    data.get("response_too_large") is True
+                    or data.get("truncated") is True
+                )
+            ):
+                return result
+
+            page_rows = self._device_rows(data)
+            page_signature = tuple(
+                str(_device_id(device) or _label(device) or index)
+                for index, device in enumerate(page_rows)
+            )
+            if offset and page_rows and page_signature in seen_pages:
+                return MCPToolResult(
+                    name=result.name,
+                    arguments=result.arguments,
+                    raw=result.raw,
+                    text=result.text,
+                    data={
+                        "devices": rows,
+                        "truncated": True,
+                        "pagination_error": "the MCP server repeated a device page",
+                    },
+                    is_error=False,
+                )
+            seen_pages.add(page_signature)
+            rows.extend(page_rows)
+
+            page_total = self._reported_inventory_count(data)
+            if page_total is not None:
+                reported_total = max(reported_total or 0, page_total)
+            if not page_rows or len(page_rows) < _DEVICE_HEALTH_PAGE_SIZE:
+                break
+            if reported_total is not None and len(rows) >= reported_total:
+                break
+        else:
+            assert first_result is not None
+            return MCPToolResult(
+                name=first_result.name,
+                arguments=first_result.arguments,
+                raw=first_result.raw,
+                text=first_result.text,
+                data={
+                    "devices": rows,
+                    "truncated": True,
+                    "pagination_error": "the device inventory exceeded the pagination safety limit",
+                },
+                is_error=False,
+            )
+
+        assert first_result is not None
+        aggregate_data: dict[str, Any] = {"devices": rows}
+        if reported_total is not None:
+            aggregate_data["total"] = reported_total
+        return MCPToolResult(
+            name=first_result.name,
+            arguments=first_result.arguments,
+            raw=first_result.raw,
+            text=first_result.text,
+            data=aggregate_data,
+            is_error=False,
+        )
+
     async def _device_health(self) -> dict[str, Any]:
         stale_call = self._execute_catalog_tool(
             "hub_list_devices",
@@ -460,15 +552,7 @@ class FastFallbackRouter(GroupFastFallbackRouter):
         # Do not depend on capabilityFilter=Health Check. Some drivers expose a
         # real healthStatus current state without advertising that capability in
         # the MCP catalogue, and some MCP builds use HealthCheck without a space.
-        live_call = self._execute_catalog_tool(
-            "hub_list_devices",
-            "hub_read_devices",
-            {
-                "detailed": True,
-                "format": "detailed",
-                "fields": list(_DEVICE_HEALTH_FIELDS),
-            },
-        )
+        live_call = self._paged_device_health_inventory()
 
         outcomes = await asyncio.gather(
             self._safe_result("stale", stale_call),
