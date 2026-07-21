@@ -260,11 +260,33 @@ def install_ollama_engagement(
     return ask_with_ollama_engagement
 
 
+def install_ollama_help_terminal_route(application: Any) -> AskHandler:
+    """Keep the static AI question guide outside every model-driven wrapper."""
+
+    original_ask: AskHandler = application.ask
+
+    async def ask_with_terminal_ollama_help(request: Any) -> dict[str, Any]:
+        query = str(getattr(request, "query", "") or "").strip()
+        if not _HELP_QUERY.match(query):
+            return await original_ask(request)
+
+        answer = dict(ollama_help(application))
+        answer.setdefault("version", application.VERSION)
+        answer["route"] = "system"
+        answer["model"] = None
+        answer["answered_by"] = "HomeBrain AI question guide"
+        return answer
+
+    application.ask = ask_with_terminal_ollama_help
+    return original_ask
+
+
 __all__ = [
     "_AI_INSIGHT_QUERY",
     "_FORCE_OLLAMA",
     "_HELP_QUERY",
     "_decorate_snapshot_ai",
     "install_ollama_engagement",
+    "install_ollama_help_terminal_route",
     "ollama_help",
 ]
