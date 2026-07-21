@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.4
+
+- Pages detailed device-health inventory reads with bounded `limit` and `offset`
+  requests, then aggregates every page before classifying devices.
+- Detects oversized, truncated, repeated and safety-limited pagination results and
+  reports the health scan as incomplete instead of returning a false all-clear.
+- Adds regression coverage for the exact oversized MCP response, multi-page
+  inventories and MCP servers that ignore pagination offsets.
+
 ## 0.8.1
 
 - Fixes the `Suggest one useful automation for the devices I have` Smart Shortcut being intercepted by the universal AI Evidence Planner.
