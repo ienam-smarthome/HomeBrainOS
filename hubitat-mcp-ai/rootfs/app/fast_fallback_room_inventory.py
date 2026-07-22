@@ -13,12 +13,12 @@ from presenter import display_payload, first_value, safe_debug, walk
 _ROOM_DEVICE_PATTERNS = (
     re.compile(
         r"^(?:list|show|display|find)\s+(?:all\s+)?devices\s+"
-        r"(?:listed\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?(.+?)(?:\s+room)?[?.!]*$",
+        r"(?:listed\s+)?(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?(.+?)[?.!]*$",
         re.IGNORECASE,
     ),
     re.compile(
         r"^(?:what|which)\s+devices\s+(?:are\s+)?(?:listed\s+)?"
-        r"(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?(.+?)(?:\s+room)?[?.!]*$",
+        r"(?:in|under|inside|from|assigned\s+to)\s+(?:the\s+)?(.+?)[?.!]*$",
         re.IGNORECASE,
     ),
     re.compile(
