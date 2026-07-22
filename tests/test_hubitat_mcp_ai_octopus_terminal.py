@@ -31,6 +31,10 @@ class FakeMCP:
 
     async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
         self.calls.append((name, dict(arguments)))
+        invalid_fields = {"state", "states", "unit", "value"}.intersection(
+            arguments.get("fields") or []
+        )
+        assert invalid_fields == set()
         devices = [
             {
                 "id": "7433",
@@ -94,4 +98,21 @@ def test_octopus_meter_today_is_terminal_and_reads_real_hubitat_label():
         "value": "4.8 kWh",
         "room": "Octopus Energy",
     } in answer["octopus_displays"]
+    assert "4.8 kWh" in answer["message"]
+
+
+def test_find_octopus_uses_the_same_deterministic_complete_family_route():
+    application = SimpleNamespace(
+        ask=lambda _request: None,
+        mcp=FakeMCP(),
+        VERSION="test-version",
+    )
+    install_control_focus_octopus_energy(application)
+
+    answer = asyncio.run(application.ask(SimpleNamespace(query="find octopus")))
+
+    assert answer["route"] == "mcp-octopus-summary"
+    assert answer["model"] is None
+    assert answer["success"] is True
+    assert "173 W" in answer["message"]
     assert "4.8 kWh" in answer["message"]

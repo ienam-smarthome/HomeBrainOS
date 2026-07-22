@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.18
+
+- Removes unsupported Octopus inventory projections that caused Hubitat MCP to
+  reject every deterministic read before executing it.
+- Uses the complete shared device index as an additional fallback when filtered
+  list responses omit selected Octopus meter devices.
+- Routes `find octopus` through the same deterministic family reader as
+  `find octopus meter`, keeping discovery and live values consistent.
+
 ## 0.10.17
 
 - Keeps Octopus meter display queries on a terminal deterministic route outside
