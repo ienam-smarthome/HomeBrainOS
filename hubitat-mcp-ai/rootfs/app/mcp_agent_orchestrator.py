@@ -162,6 +162,138 @@ async def _apply_automation_recommendation_policy(
     return result
 
 
+_DEVICE_ATTRIBUTE_REQUESTS = (
+    (re.compile(r"\b(?:lux|illuminance)\b", re.IGNORECASE), "illuminance", "lux"),
+)
+
+
+def _requested_device_attribute(query: str) -> tuple[str, str] | None:
+    q = _normalise(query)
+    if not any(term in q for term in ("reading", "value", "current", "what is", "what's", "how bright")):
+        return None
+    for pattern, attribute, unit in _DEVICE_ATTRIBUTE_REQUESTS:
+        if pattern.search(q):
+            return attribute, unit
+    return None
+
+
+def _attribute_target_phrase(query: str) -> str:
+    q = str(query or "").strip().strip(" .!?")
+    match = re.search(r"\b(?:from|of)\s+(.+)$", q, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return parse_entity_request(query).target_phrase
+
+
+def _tool_data(result: Any) -> Any:
+    return getattr(result, "data", result)
+
+
+def _extract_attribute_value(value: Any, attribute: str) -> Any:
+    if isinstance(value, dict):
+        states = value.get("currentStates") or value.get("current_states") or value.get("attributes")
+        if isinstance(states, dict) and states.get(attribute) not in (None, ""):
+            return states.get(attribute)
+        if value.get(attribute) not in (None, ""):
+            return value.get(attribute)
+        for child in value.values():
+            found = _extract_attribute_value(child, attribute)
+            if found not in (None, ""):
+                return found
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            found = _extract_attribute_value(child, attribute)
+            if found not in (None, ""):
+                return found
+    return None
+
+
+async def _load_authoritative_inventory(application: Any) -> tuple[Any, list[dict[str, Any]]]:
+    result = await application.mcp.call_tool("hub_list_devices", {})
+    return result, list(_iter_device_records(_tool_data(result)))
+
+
+async def _read_authoritative_device(application: Any, device_id: str) -> Any:
+    desired = {
+        "ids": [device_id],
+        "deviceIds": [device_id],
+        "device_ids": [device_id],
+        "id": device_id,
+        "deviceId": device_id,
+    }
+    supported = getattr(application.mcp, "supported_arguments", None)
+    arguments = await supported("hub_read_devices", desired) if callable(supported) else {"ids": [device_id]}
+    if not arguments:
+        arguments = {"ids": [device_id]}
+    return await application.mcp.call_tool("hub_read_devices", arguments)
+
+
+async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str, Any] | None:
+    explicit_lookup = _is_explicit_device_lookup(query)
+    attribute_request = _requested_device_attribute(query)
+    if not explicit_lookup and attribute_request is None:
+        return None
+
+    inventory_result, devices = await _load_authoritative_inventory(application)
+    target_phrase = parse_entity_request(query).target_phrase if explicit_lookup else _attribute_target_phrase(query)
+    device = _best_lookup_device(devices, target_phrase)
+    tools_used = [{"name": "hub_list_devices", "success": not bool(getattr(inventory_result, "is_error", False))}]
+    if device is None:
+        return {
+            "success": False,
+            "route": "mcp-fast",
+            "intent": "device-lookup" if explicit_lookup else "device-attribute-read",
+            "message": f'I could not find a device matching "{target_phrase}".',
+            "tools_used": tools_used,
+            "entity_resolution_request": parse_entity_request(query).as_dict(),
+            "answered_by": "deterministic entity resolver",
+        }
+
+    if explicit_lookup:
+        return {
+            "success": True,
+            "route": "mcp-fast",
+            "intent": "device-lookup",
+            "message": _format_lookup_device(device),
+            "lookup_device": {
+                "id": str(device.get("id") or ""),
+                "label": str(device.get("label") or device.get("name") or ""),
+                "room": device.get("room") or device.get("roomName") or device.get("room_name"),
+                "device_type": device.get("name") or device.get("category") or device.get("deviceType"),
+                "disabled": bool(device.get("disabled")),
+            },
+            "tools_used": tools_used,
+            "entity_resolution_request": parse_entity_request(query).as_dict(),
+            "answered_by": "deterministic entity resolver",
+        }
+
+    attribute, unit = attribute_request
+    read_result = await _read_authoritative_device(application, str(device.get("id") or ""))
+    tools_used.append({"name": "hub_read_devices", "success": not bool(getattr(read_result, "is_error", False))})
+    value = _extract_attribute_value(_tool_data(read_result), attribute)
+    label = str(device.get("label") or device.get("name") or "Device")
+    if value in (None, ""):
+        message = f"{label} is available, but Hubitat did not expose a current {attribute} value."
+        success = False
+    else:
+        message = f"{label} is {value} {unit}."
+        success = True
+    return {
+        "success": success,
+        "route": "mcp-fast",
+        "intent": "device-attribute-read",
+        "message": message,
+        "device_id": str(device.get("id") or ""),
+        "device_label": label,
+        "attribute": attribute,
+        "value": value,
+        "unit": unit,
+        "tools_used": tools_used,
+        "entity_resolution_request": parse_entity_request(query).as_dict(),
+        "answered_by": "deterministic entity reader",
+    }
+
+
 _LOOKUP_PREFIX_RE = re.compile(
     r"^(?:find|locate|search for|look for|where is|where's)\b",
     re.IGNORECASE,
@@ -352,6 +484,14 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
         if not history_used:
             history = []
         try:
+            terminal_entity = await _answer_terminal_entity_read(application, query)
+            if terminal_entity is not None:
+                terminal_entity.setdefault("success", True)
+                terminal_entity["agent_orchestrator"] = "deterministic-entity-read"
+                terminal_entity["legacy_fallback_used"] = False
+                terminal_entity["conversation_history_used"] = False
+                terminal_entity.setdefault("version", application.VERSION)
+                return terminal_entity
             planner = getattr(application.ollama, "answer_with_planner", None)
             if callable(planner):
                 answer = await planner(query, history)
@@ -406,6 +546,7 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
 
 
 __all__ = [
+    "_answer_terminal_entity_read",
     "_apply_device_tool_policy",
     "_apply_device_lookup_response_policy",
     "_is_explicit_device_lookup",
