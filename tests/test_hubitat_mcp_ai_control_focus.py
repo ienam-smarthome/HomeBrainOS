@@ -103,6 +103,9 @@ def test_show_power_consumption_is_a_verified_summary_not_a_device_name():
     assert is_power_summary_query("Show power consumption")
     assert is_power_summary_query("Show current power usage")
     assert is_power_summary_query("List power readings")
+    assert is_power_summary_query("show power")
+    assert is_power_summary_query("show power devices")
+    assert is_power_summary_query("show device power")
     assert not is_power_summary_query("Which device is using the most power?")
 
     answer = asyncio.run(make_service().power_summary("Show power consumption"))
