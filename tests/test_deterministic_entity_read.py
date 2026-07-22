@@ -23,9 +23,6 @@ class MCP:
             {"illuminance": 212} if current_states is None else current_states
         )
 
-    async def supported_arguments(self, name, desired):
-        return {"ids": desired["ids"]}
-
     async def call_tool(self, name, arguments):
         if name == "hub_list_devices":
             return Result({"devices": [{
@@ -36,8 +33,8 @@ class MCP:
                 "disabled": False,
                 "currentStates": {},
             }]})
-        assert name == "hub_read_devices"
-        assert arguments == {"ids": ["123"]}
+        assert name == "hub_get_device"
+        assert arguments == {"deviceId": "123"}
         return Result({"devices": [{
             "id": "123",
             "label": "FP2 Bedroom 3 Lux",
@@ -55,14 +52,11 @@ class MultiDeviceMCP:
         self.states_by_id = states_by_id
         self.read_ids = []
 
-    async def supported_arguments(self, name, desired):
-        return {"ids": desired["ids"]}
-
     async def call_tool(self, name, arguments):
         if name == "hub_list_devices":
             return Result({"devices": self.devices})
-        assert name == "hub_read_devices"
-        device_id = arguments["ids"][0]
+        assert name == "hub_get_device"
+        device_id = arguments["deviceId"]
         self.read_ids.append(device_id)
         device = next(item for item in self.devices if item["id"] == device_id)
         return Result({"devices": [{
@@ -91,7 +85,7 @@ def test_lux_question_reads_authoritative_attribute():
     assert answer["intent"] == "device-attribute-read"
     assert answer["value"] == 212
     assert answer["message"] == "FP2 Bedroom 3 Lux is 212 lux."
-    assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices", "hub_read_devices"]
+    assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices", "hub_get_device"]
 
 
 def test_lux_question_reads_list_shaped_current_state_record():
@@ -166,16 +160,13 @@ def test_named_power_read_supports_how_much_wording():
     assert answer["success"] is True
     assert answer["value"] == 77
     assert answer["message"] == "Freezer (MQTT) is 77 W."
-    assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices", "hub_read_devices"]
+    assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices", "hub_get_device"]
 
 
 def test_named_power_read_accepts_sparse_mcp_inventory_aliases():
     class SparseInventoryMCP:
         def __init__(self):
             self.calls = []
-
-        async def supported_arguments(self, name, desired):
-            return {"deviceIds": desired["deviceIds"]}
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
@@ -184,8 +175,8 @@ def test_named_power_read_accepts_sparse_mcp_inventory_aliases():
                     "deviceId": "5313",
                     "displayName": "Freezer (MQTT)",
                 }]})
-            assert name == "hub_read_devices"
-            assert arguments == {"deviceIds": ["5313"]}
+            assert name == "hub_get_device"
+            assert arguments == {"deviceId": "5313"}
             return Result({"devices": [{
                 "deviceId": "5313",
                 "deviceLabel": "Freezer (MQTT)",
@@ -204,7 +195,19 @@ def test_named_power_read_accepts_sparse_mcp_inventory_aliases():
     assert answer["device_id"] == "5313"
     assert answer["device_label"] == "Freezer (MQTT)"
     assert answer["message"] == "Freezer (MQTT) is 77 W."
-    assert [name for name, _ in mcp.calls] == ["hub_list_devices", "hub_read_devices"]
+    assert [name for name, _ in mcp.calls] == ["hub_list_devices", "hub_get_device"]
+
+
+def test_named_power_read_accepts_current_state_value_key():
+    application, _ = multi_device_app(
+        [{"id": "freezer", "label": "Freezer (MQTT)", "room": "Kitchen"}],
+        {"freezer": [{"name": "power", "currentState": 77}]},
+    )
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "How much power is the freezer using?"))
+
+    assert answer["success"] is True
+    assert answer["message"] == "Freezer (MQTT) is 77 W."
 
 
 def test_room_metric_read_probes_bounded_candidates_until_attribute_is_found():

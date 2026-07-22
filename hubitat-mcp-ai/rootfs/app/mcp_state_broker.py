@@ -49,7 +49,7 @@ class MCPStateBroker:
     writes uncached and preserving the original tool name in traces and results.
     """
 
-    DEVICE_READ_TOOLS = {"hub_list_devices", "hub_read_devices"}
+    DEVICE_READ_TOOLS = {"hub_list_devices", "hub_read_devices", "hub_get_device"}
     CATALOG_READ_TOOLS = {
         "hub_list_rooms",
         "hub_read_rooms",

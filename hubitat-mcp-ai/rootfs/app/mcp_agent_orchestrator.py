@@ -245,7 +245,7 @@ _ATTRIBUTE_ALIASES = {
     "energy": {"energy", "energymeter"},
     "battery": {"battery", "batterylevel"},
 }
-_ATTRIBUTE_VALUE_KEYS = ("currentValue", "value", "displayValue", "current_value")
+_ATTRIBUTE_VALUE_KEYS = ("currentValue", "currentState", "value", "displayValue", "current_value")
 
 
 def _attribute_key(value: Any) -> str:
@@ -306,18 +306,11 @@ async def _load_authoritative_inventory(application: Any) -> tuple[Any, list[dic
 
 
 async def _read_authoritative_device(application: Any, device_id: str) -> Any:
-    desired = {
-        "ids": [device_id],
-        "deviceIds": [device_id],
-        "device_ids": [device_id],
-        "id": device_id,
-        "deviceId": device_id,
-    }
-    supported = getattr(application.mcp, "supported_arguments", None)
-    arguments = await supported("hub_read_devices", desired) if callable(supported) else {"ids": [device_id]}
-    if not arguments:
-        arguments = {"ids": [device_id]}
-    return await application.mcp.call_tool("hub_read_devices", arguments)
+    # ``hub_read_devices`` is a category gateway in the upstream MCP server,
+    # not a device-detail operation.  The state broker translates this hidden
+    # operation to hub_read_devices(tool="hub_get_device", args={...}) when
+    # gateways are enabled, while still supporting legacy flat-tool mode.
+    return await application.mcp.call_tool("hub_get_device", {"deviceId": device_id})
 
 
 async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str, Any] | None:
@@ -370,7 +363,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
     for candidate in candidates[:3]:
         read_result = await _read_authoritative_device(application, str(_device_id(candidate) or ""))
         read_success = not bool(getattr(read_result, "is_error", False))
-        tools_used.append({"name": "hub_read_devices", "success": read_success})
+        tools_used.append({"name": "hub_get_device", "success": read_success})
         devices_probed += 1
         candidate_value = _extract_attribute_value(_tool_data(read_result), attribute)
         if candidate_value not in (None, ""):

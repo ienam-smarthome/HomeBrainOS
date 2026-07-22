@@ -111,6 +111,13 @@ def is_whole_house_period_query(query: str) -> bool:
         q,
     ):
         return True
+    usage_language = r"(?:use|used|using|usage|consume|consumed|consuming|consumption)"
+    energy_language = r"(?:energy|electricity)"
+    if re.search(
+        rf"\b{energy_language}\b.*\b{usage_language}\b|\b{usage_language}\b.*\b{energy_language}\b",
+        q,
+    ):
+        return True
     return any(term in q for term in _ENERGY_TERMS)
 
 

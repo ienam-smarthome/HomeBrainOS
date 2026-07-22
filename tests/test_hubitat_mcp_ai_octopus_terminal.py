@@ -11,6 +11,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from control_focus_octopus_energy import (  # noqa: E402
+    is_whole_house_period_query,
     install_control_focus_octopus_energy,
 )
 from mcp_client import MCPToolResult  # noqa: E402
@@ -36,6 +37,7 @@ class FakeMCP:
             values = {
                 "7433": ("Octopus Meter Energy Today", "4.8 kWh"),
                 "7434": ("Octopus Meter Current Power", "173 W"),
+                "7435": ("Octopus Meter Energy Yesterday", "5.2 kWh"),
             }
             label, value = values[device_id]
             device = {
@@ -77,6 +79,15 @@ class FakeMCP:
                 "currentStates": {},
                 "attributes": {
                     "friendly_name": "Octopus Live Meter Display Power"
+                },
+            },
+            {
+                "id": "7435",
+                "label": "Octopus Meter Energy Yesterday",
+                "room": "Octopus Energy",
+                "currentStates": {},
+                "attributes": {
+                    "friendly_name": "Octopus Live Meter Display Yesterday"
                 },
             },
         ]
@@ -166,6 +177,32 @@ def test_show_energy_today_uses_the_same_terminal_period_route():
     assert answer["model"] is None
     assert answer["success"] is True
     assert "4.8 kWh" in answer["message"]
+
+
+def test_natural_yesterday_energy_wording_uses_terminal_period_route():
+    assert is_whole_house_period_query("How much energy did we use yesterday?")
+
+    planner_calls: list[str] = []
+
+    async def unified_planner(request):
+        planner_calls.append(request.query)
+        return {"route": "ollama+mcp", "message": "Incorrect AI answer"}
+
+    application = SimpleNamespace(
+        ask=unified_planner,
+        mcp=FakeMCP(),
+        VERSION="test-version",
+    )
+    install_control_focus_octopus_energy(application)
+
+    answer = asyncio.run(
+        application.ask(SimpleNamespace(query="How much energy did we use yesterday?"))
+    )
+
+    assert planner_calls == []
+    assert answer["route"] == "mcp-octopus-summary"
+    assert answer["success"] is True
+    assert "5.2 kWh" in answer["message"]
 
 
 def test_find_octopus_uses_the_same_deterministic_complete_family_route():

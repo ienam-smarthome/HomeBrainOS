@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.42
+
+- Fixes named-device power and energy reads by requesting the MCP
+  `hub_get_device` detail operation through the supported gateway translation.
+- Recognises `currentState` as an attribute value field alongside
+  `currentValue`, `value` and `displayValue`.
+- Routes natural period-energy wording such as `How much energy did we use
+  yesterday?` to the deterministic Octopus reader.
+
 ## 0.10.41
 
 - Makes deterministic measurement resolution use both device labels and
