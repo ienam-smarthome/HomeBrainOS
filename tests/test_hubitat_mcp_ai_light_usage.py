@@ -29,10 +29,14 @@ def result(name: str, data: Any, *, error: bool = False, text: str = "") -> MCPT
 
 def test_light_usage_query_routes_to_deterministic_mcp_fast_path():
     assert is_light_usage_today_query("total lights on time today") is True
+    assert is_light_usage_today_query("total lights on time") is True
+    assert is_light_usage_today_query("show lights on time for today") is True
     assert is_light_usage_today_query("How long have the lights been on today?") is True
     decision = classify_query("total lights on time today")
     assert decision.route == "mcp-fast"
     assert "historical event calculation" in decision.reason
+    assert classify_query("total lights on time").route == "mcp-fast"
+    assert classify_query("show lights on time for today").route == "mcp-fast"
 
 
 def test_midnight_spanning_interval_is_clipped_to_today():

@@ -216,6 +216,16 @@ def test_common_sensor_inventories_use_server_capability_filters_and_return_devi
     assert "Motion Sensor" in filters
 
 
+def test_light_inventory_does_not_treat_every_switch_as_a_light():
+    router, _client = make_router()
+
+    answer = asyncio.run(router.answer("Show lights"))
+
+    assert answer["device_count"] == 1
+    assert "Bedroom 2 Light: Off" in answer["message"]
+    assert "Cudy CAM-Camera-G100" not in answer["message"]
+
+
 def test_common_sensor_calls_do_not_request_huge_detailed_all_device_payloads():
     router, client = make_router()
     asyncio.run(router.answer("List temperature sensors"))

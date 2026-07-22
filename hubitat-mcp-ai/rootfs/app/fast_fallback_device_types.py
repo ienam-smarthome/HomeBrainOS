@@ -298,8 +298,12 @@ class FastFallbackRouter(PrayerTimesRouter):
     def _matches_type(self, spec: DeviceTypeSpec, item: dict[str, Any]) -> bool:
         attrs = live_attributes(item)
         metadata = self._metadata(item)
-        if spec.predicate and spec.predicate(item, attrs, metadata):
-            return True
+        # Predicates distinguish overlapping Hubitat capabilities (for example,
+        # almost every light, socket and appliance exposes ``Switch``).  Once a
+        # type supplies that stronger classifier, do not fall through to its
+        # broad state keys and accidentally accept the whole capability class.
+        if spec.predicate:
+            return spec.predicate(item, attrs, metadata)
         if any(key in attrs for key in spec.state_keys):
             return True
         return any(term in metadata for term in spec.metadata_terms)

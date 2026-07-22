@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.10.24
+
+- Separates actual lights from sockets, appliances, cameras and other devices
+  that share Hubitat's generic `Switch` capability.
+- Routes `total lights on time` and `show lights on time for today` directly to
+  the deterministic Hubitat event-history calculator instead of AI synthesis.
+- Keeps light-on duration scoped to the current local day and selected MCP lights.
+
 ## 0.10.22
 
 - Routes `show power` and `show power devices` to the same deterministic current-
