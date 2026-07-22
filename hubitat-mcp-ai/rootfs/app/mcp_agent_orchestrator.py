@@ -8,6 +8,7 @@ from control_agent_intent import is_control_candidate
 from contextual_control import is_other_device_control
 from device_health_fast_route import is_attention_query, is_device_health_query
 from entity_request_policy import parse_entity_request
+from fallback_router import _device_id, _label
 from mutation_result_policy import enforce_device_mutation_result
 from routing_policy import classify_query
 
@@ -347,8 +348,8 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
             "intent": "device-lookup",
             "message": _format_lookup_device(device),
             "lookup_device": {
-                "id": str(device.get("id") or ""),
-                "label": str(device.get("label") or device.get("name") or ""),
+                "id": str(_device_id(device) or ""),
+                "label": _label(device),
                 "room": device.get("room") or device.get("roomName") or device.get("room_name"),
                 "device_type": device.get("name") or device.get("category") or device.get("deviceType"),
                 "disabled": bool(device.get("disabled")),
@@ -359,10 +360,10 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         }
 
     attribute, unit = attribute_request
-    read_result = await _read_authoritative_device(application, str(device.get("id") or ""))
+    read_result = await _read_authoritative_device(application, str(_device_id(device) or ""))
     tools_used.append({"name": "hub_read_devices", "success": not bool(getattr(read_result, "is_error", False))})
     value = _extract_attribute_value(_tool_data(read_result), attribute)
-    label = str(device.get("label") or device.get("name") or "Device")
+    label = _label(device) or "Device"
     if value in (None, ""):
         message = f"{label} is available, but Hubitat did not expose a current {attribute} value."
         success = False
@@ -374,7 +375,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         "route": "mcp-fast",
         "intent": "device-attribute-read",
         "message": message,
-        "device_id": str(device.get("id") or ""),
+        "device_id": str(_device_id(device) or ""),
         "device_label": label,
         "attribute": attribute,
         "value": value,
@@ -401,9 +402,8 @@ def _iter_device_records(value: Any):
     """Yield device-shaped dictionaries from nested targeted-search evidence."""
 
     if isinstance(value, dict):
-        if value.get("id") not in (None, "") and (value.get("label") or value.get("name")):
-            if any(key in value for key in ("room", "roomName", "currentStates", "capabilities", "disabled")):
-                yield value
+        if _device_id(value) not in (None, "") and _label(value):
+            yield value
         for child in value.values():
             yield from _iter_device_records(child)
     elif isinstance(value, (list, tuple)):
@@ -417,7 +417,17 @@ def _device_attribute_support(device: dict[str, Any], attribute: str | None) -> 
     aliases = _ATTRIBUTE_ALIASES.get(attribute, {attribute}) | {attribute}
     haystack = " ".join(
         str(device.get(key) or "")
-        for key in ("label", "name", "category", "deviceType", "capabilities", "currentStates", "attributes")
+        for key in (
+            "label",
+            "displayName",
+            "name",
+            "deviceLabel",
+            "category",
+            "deviceType",
+            "capabilities",
+            "currentStates",
+            "attributes",
+        )
     )
     compact_haystack = _attribute_key(haystack)
     return int(any(_attribute_key(alias) in compact_haystack for alias in aliases))
@@ -428,7 +438,7 @@ def _lookup_record_score(
     target_phrase: str,
     attribute: str | None = None,
 ) -> tuple[int, int, int]:
-    label = _normalise(str(device.get("label") or device.get("name") or ""))
+    label = _normalise(_label(device))
     target = _normalise(target_phrase)
     compact_label = re.sub(r"[^a-z0-9]", "", label)
     compact_target = re.sub(r"[^a-z0-9]", "", target)

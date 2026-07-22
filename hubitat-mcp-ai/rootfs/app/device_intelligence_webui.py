@@ -7,7 +7,7 @@ from typing import Any
 from fastapi.responses import HTMLResponse, Response
 
 
-PWA_RELEASE_VERSION = "0.10.39"
+PWA_RELEASE_VERSION = "0.10.40"
 DEVICE_HANDLER_MARKER = "document.getElementById('refreshMcp').onclick=async()=>{"
 ASK_PAYLOAD_MARKER = "JSON.stringify({query,history:prior})"
 ASK_PAYLOAD_REPLACEMENT = "JSON.stringify({query,history:prior,session_id:clientId})"
