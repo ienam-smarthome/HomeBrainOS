@@ -102,9 +102,11 @@ def is_whole_house_period_query(query: str) -> bool:
     if period not in {"today", "yesterday", "week", "month"}:
         return False
     if re.fullmatch(
+        r"(?:(?:show|show me|display|get|check|give me|tell me) )?"
         r"(?:energy|electricity) (?:today|yesterday|(?:this )?week|(?:this )?month)",
         q,
     ) or re.fullmatch(
+        r"(?:(?:show|show me|display|get|check|give me|tell me) )?"
         r"(?:today|yesterday|(?:this )?week|(?:this )?month) (?:energy|electricity)",
         q,
     ):
