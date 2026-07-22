@@ -31,6 +31,31 @@ class FakeMCP:
 
     async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
         self.calls.append((name, dict(arguments)))
+        if name == "hub_get_device":
+            device_id = str(arguments.get("deviceId") or "")
+            values = {
+                "7433": ("Octopus Meter Today", "4.8 kWh"),
+                "7434": ("Octopus Meter Power", "173 W"),
+            }
+            label, value = values[device_id]
+            device = {
+                "id": device_id,
+                "label": label,
+                "room": "Octopus Energy",
+                "currentStates": {
+                    "healthStatus": {"name": "healthStatus", "value": "online"},
+                    "value": {"name": "value", "value": value},
+                    "valueStr": {"name": "valueStr", "value": value},
+                },
+            }
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data={"device": device},
+                is_error=False,
+            )
         invalid_fields = {"state", "states", "unit", "value"}.intersection(
             arguments.get("fields") or []
         )
@@ -40,11 +65,7 @@ class FakeMCP:
                 "id": "7433",
                 "label": "Octopus Meter Today",
                 "room": "Octopus Energy",
-                "currentStates": {
-                    "Health Status": "online",
-                    "Value": "4.8 kWh",
-                    "Value Str": "4.8 kWh",
-                },
+                "currentStates": {},
                 "attributes": {
                     "friendly_name": "Octopus Live Meter Display Today"
                 },
@@ -53,7 +74,7 @@ class FakeMCP:
                 "id": "7434",
                 "label": "Octopus Meter Power",
                 "room": "Octopus Energy",
-                "currentStates": {"Value": "173 W", "Value Str": "173 W"},
+                "currentStates": {},
                 "attributes": {
                     "friendly_name": "Octopus Live Meter Display Power"
                 },
