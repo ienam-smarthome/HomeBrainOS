@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.10.20
+
+- Recognises concise period requests such as `energy today`, `energy yesterday`,
+  `energy week` and `energy month` as deterministic Octopus meter reads.
+- Keeps those aliases outside the unified AI agent so renamed devices such as
+  `Octopus Meter Energy Today` return their verified live values.
+- Adds regression coverage for the renamed Energy and Current Power labels.
+
 ## 0.10.19
 
 - Reads each discovered Octopus meter with `hub_get_device`, translated through

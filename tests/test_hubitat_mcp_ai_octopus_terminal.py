@@ -34,8 +34,8 @@ class FakeMCP:
         if name == "hub_get_device":
             device_id = str(arguments.get("deviceId") or "")
             values = {
-                "7433": ("Octopus Meter Today", "4.8 kWh"),
-                "7434": ("Octopus Meter Power", "173 W"),
+                "7433": ("Octopus Meter Energy Today", "4.8 kWh"),
+                "7434": ("Octopus Meter Current Power", "173 W"),
             }
             label, value = values[device_id]
             device = {
@@ -63,7 +63,7 @@ class FakeMCP:
         devices = [
             {
                 "id": "7433",
-                "label": "Octopus Meter Today",
+                "label": "Octopus Meter Energy Today",
                 "room": "Octopus Energy",
                 "currentStates": {},
                 "attributes": {
@@ -72,7 +72,7 @@ class FakeMCP:
             },
             {
                 "id": "7434",
-                "label": "Octopus Meter Power",
+                "label": "Octopus Meter Current Power",
                 "room": "Octopus Energy",
                 "currentStates": {},
                 "attributes": {
@@ -114,11 +114,34 @@ def test_octopus_meter_today_is_terminal_and_reads_real_hubitat_label():
     assert answer["success"] is True
     assert {
         "id": "7433",
-        "label": "Octopus Meter Today",
+        "label": "Octopus Meter Energy Today",
         "period": "today",
         "value": "4.8 kWh",
         "room": "Octopus Energy",
     } in answer["octopus_displays"]
+    assert "4.8 kWh" in answer["message"]
+
+
+def test_energy_today_alias_uses_renamed_octopus_meter_and_skips_ai():
+    planner_calls: list[str] = []
+
+    async def unified_planner(request):
+        planner_calls.append(request.query)
+        return {"route": "ollama+mcp", "message": "Incorrect AI answer"}
+
+    application = SimpleNamespace(
+        ask=unified_planner,
+        mcp=FakeMCP(),
+        VERSION="test-version",
+    )
+    install_control_focus_octopus_energy(application)
+
+    answer = asyncio.run(application.ask(SimpleNamespace(query="energy today")))
+
+    assert planner_calls == []
+    assert answer["route"] == "mcp-octopus-summary"
+    assert answer["model"] is None
+    assert answer["success"] is True
     assert "4.8 kWh" in answer["message"]
 
 
