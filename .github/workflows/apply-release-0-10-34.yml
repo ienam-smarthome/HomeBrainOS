@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - agent/fix-optional-now-power-0.10.34
+  pull_request:
+    branches:
+      - main
 permissions:
   contents: write
 jobs:
