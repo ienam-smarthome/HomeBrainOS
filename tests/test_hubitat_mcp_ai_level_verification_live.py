@@ -294,8 +294,9 @@ def test_missing_level_field_returns_quickly_on_server_without_wait_for(tmp_path
     elapsed = time.monotonic() - started
 
     assert answer["success"] is False
-    assert answer["intent"] == "control-agent-failed"
-    assert "no numeric level was returned" in answer["message"]
+    assert answer["intent"] == "control-agent-unresolved"
+    assert "does not support set_level" in answer["message"]
+    assert fallback.commands == []
     assert elapsed < 1.2
     assert len(fallback.reads) <= 8
 

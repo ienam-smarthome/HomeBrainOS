@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.25
+
+- Promotes the existing selected-device control graph into one public
+  `EntityResolver` with typed resolution targets, statuses and match traces.
+- Rejects unsupported actions before execution or clarification, preventing a
+  switch-only device from being selected for a dimmer-level command.
+- Adds typed execution results and distinguishes completed, sent, failed and
+  uncertain command outcomes without treating delayed state reporting as failure.
+- Exposes the consolidated `fast-control`, `fast-read` and `agent` route class
+  alongside existing detailed route names for backwards compatibility.
+
 ## 0.10.24
 
 - Separates actual lights from sockets, appliances, cameras and other devices

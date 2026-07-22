@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from assistant_contracts import RouteClass
 from backup_intent import is_explicit_backup_request
 from control_postfix_language import parse_postfix_control
 
@@ -11,6 +12,16 @@ from control_postfix_language import parse_postfix_control
 class RouteDecision:
     route: str
     reason: str
+    route_class: RouteClass | None = None
+
+    def __post_init__(self) -> None:
+        if self.route_class is not None:
+            return
+        if self.route in {"mcp-fast", "semantic-read"} or self.route.startswith("mcp-"):
+            inferred = RouteClass.FAST_READ
+        else:
+            inferred = RouteClass.AGENT
+        object.__setattr__(self, "route_class", inferred)
 
 
 _SIMPLE_CONTROL = re.compile(
@@ -255,6 +266,7 @@ def classify_query(query: str) -> RouteDecision:
             return RouteDecision(
                 "mcp-fast",
                 "single explicit absolute level target; use deterministic Control Agent and MCP convergence verification",
+                RouteClass.FAST_CONTROL,
             )
         return RouteDecision(
             "ollama-planner",
@@ -266,6 +278,7 @@ def classify_query(query: str) -> RouteDecision:
         return RouteDecision(
             "mcp-fast",
             "single postfix on/off target; resolve room, device type and ordinal deterministically",
+            RouteClass.FAST_CONTROL,
         )
 
     control = _SIMPLE_CONTROL.match(q)
@@ -278,6 +291,7 @@ def classify_query(query: str) -> RouteDecision:
             return RouteDecision(
                 "mcp-fast",
                 "multiple explicit on/off targets; exact-match all and verify states deterministically",
+                RouteClass.FAST_CONTROL,
             )
         complex_target = any(term in f" {target} " for term in _COMPLEX_CONTROL_TERMS)
         too_long = len(words) > 8
@@ -285,6 +299,7 @@ def classify_query(query: str) -> RouteDecision:
             return RouteDecision(
                 "mcp-fast",
                 "single explicit on/off target; verify state deterministically",
+                RouteClass.FAST_CONTROL,
             )
         return RouteDecision(
             "ollama-planner",
@@ -295,6 +310,7 @@ def classify_query(query: str) -> RouteDecision:
         return RouteDecision(
             "mcp-fast",
             "authoritative live-state, historical event calculation, device inventory, gateway read, comparison or diagnostic query",
+            RouteClass.FAST_READ,
         )
 
     if is_semantic_read_candidate(q):

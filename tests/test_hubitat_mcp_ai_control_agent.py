@@ -373,7 +373,49 @@ def test_exact_control_executes_verified_mcp_without_cloud(tmp_path: Path):
     assert answer["success"] is True
     assert answer["route"] == "control-agent+mcp"
     assert answer["answered_by"] == "Deterministic Control Agent + verified Hubitat MCP"
+    assert answer["outcome"] == "completed"
+    assert answer["execution_result"]["verified"] is True
+    assert answer["control_plan"]["actions"][0]["resolution_status"] == "resolved"
     assert fallback.calls == [("Livingroom Light 2", "off")]
+
+
+def test_accepted_but_unverified_control_is_sent_not_failed(tmp_path: Path):
+    agent, fallback = make_agent(tmp_path)
+
+    async def accepted(label: str, action: str):
+        fallback.calls.append((label, action))
+        return {
+            "success": False,
+            "intent": "fallback-device-control-pending",
+            "message": f"The {action} command was accepted for {label}, but state is pending.",
+            "command_sent": True,
+            "command_accepted": True,
+            "confirmed": False,
+            "tools_used": [{"name": "hub_call_device_command", "success": True}],
+        }
+
+    fallback._control_device = accepted
+    answer = asyncio.run(agent.answer(request("turn off Livingroom Light 2"), unused))
+
+    assert answer["success"] is False
+    assert answer["outcome"] == "sent"
+    assert answer["submitted"] is True
+    assert answer["verified"] is False
+    assert answer["display"]["title"] == "Control sent"
+    assert answer["execution_result"]["targets"][0]["outcome"] == "sent"
+    assert "failed out of 1" in answer["message"]
+
+
+def test_unsupported_level_action_is_blocked_before_any_write(tmp_path: Path):
+    agent, fallback = make_agent(tmp_path)
+
+    answer = asyncio.run(agent.answer(request("set Standing Fan to 30%"), unused))
+
+    assert answer["success"] is False
+    assert answer["intent"] == "control-agent-unresolved"
+    assert "does not support set_level" in answer["message"]
+    assert fallback.calls == []
+    assert fallback.raw_commands == []
 
 
 def test_ambiguity_sends_zero_writes_then_numbered_reply_executes_exact_candidate(tmp_path: Path):
