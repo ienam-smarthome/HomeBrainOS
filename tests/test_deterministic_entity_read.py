@@ -46,7 +46,7 @@ class MCP:
 
 
 def app(current_states=None):
-    return SimpleNamespace(mcp=MCP(current_states), VERSION="0.10.39")
+    return SimpleNamespace(mcp=MCP(current_states), VERSION="0.10.40")
 
 
 class MultiDeviceMCP:
@@ -74,7 +74,7 @@ class MultiDeviceMCP:
 
 def multi_device_app(devices, states_by_id):
     mcp = MultiDeviceMCP(devices, states_by_id)
-    return SimpleNamespace(mcp=mcp, VERSION="0.10.39"), mcp
+    return SimpleNamespace(mcp=mcp, VERSION="0.10.40"), mcp
 
 
 def test_find_is_terminal_identity_lookup():
@@ -167,6 +167,44 @@ def test_named_power_read_supports_how_much_wording():
     assert answer["value"] == 77
     assert answer["message"] == "Freezer (MQTT) is 77 W."
     assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices", "hub_read_devices"]
+
+
+def test_named_power_read_accepts_sparse_mcp_inventory_aliases():
+    class SparseInventoryMCP:
+        def __init__(self):
+            self.calls = []
+
+        async def supported_arguments(self, name, desired):
+            return {"deviceIds": desired["deviceIds"]}
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_list_devices":
+                return Result({"items": [{
+                    "deviceId": "5313",
+                    "displayName": "Freezer (MQTT)",
+                }]})
+            assert name == "hub_read_devices"
+            assert arguments == {"deviceIds": ["5313"]}
+            return Result({"devices": [{
+                "deviceId": "5313",
+                "deviceLabel": "Freezer (MQTT)",
+                "attributes": [
+                    {"name": "switch", "currentValue": "on"},
+                    {"name": "power", "currentValue": 77},
+                ],
+            }]})
+
+    mcp = SparseInventoryMCP()
+    application = SimpleNamespace(mcp=mcp, VERSION="0.10.40")
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "How much power is the freezer using?"))
+
+    assert answer["success"] is True
+    assert answer["device_id"] == "5313"
+    assert answer["device_label"] == "Freezer (MQTT)"
+    assert answer["message"] == "Freezer (MQTT) is 77 W."
+    assert [name for name, _ in mcp.calls] == ["hub_list_devices", "hub_read_devices"]
 
 
 def test_aggregate_and_period_queries_remain_owned_by_semantic_reader():

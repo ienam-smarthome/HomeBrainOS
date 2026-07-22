@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.40
+
+- Fixes deterministic named-device reads when `hub_list_devices` returns compact
+  inventory rows without room, state or capability metadata.
+- Accepts the MCP device ID aliases `id`, `deviceId` and `device_id`, plus the
+  label aliases `label`, `displayName`, `name` and `deviceLabel`.
+- Covers the real sparse `Freezer (MQTT)` inventory response and verifies the
+  subsequent detail read returns its live 77 W power value.
+
 ## 0.10.39
 
 - Extends the deterministic named-device reader to temperature, humidity, power,
