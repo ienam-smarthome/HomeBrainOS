@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.10.39
+
+- Extends the deterministic named-device reader to temperature, humidity, power,
+  energy and battery questions instead of routing those reads through AI synthesis.
+- Performs an authoritative `hub_read_devices` detail read for natural questions
+  such as "How much power is the freezer using?".
+- Prefers devices that expose the requested attribute and leaves aggregate,
+  comparison and period questions with the semantic reader.
+- Removes the duplicated word in semantic power-comparison responses.
+
 ## 0.10.38
 
 - Fixes deterministic sensor reads when Hubitat returns list-shaped current-state

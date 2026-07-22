@@ -473,8 +473,11 @@ class SemanticMetricComparisonExecutor:
                 )
                 title = f"{spec.title} ranking"
             else:
+                metric_phrase = spec.title.lower()
+                if not metric_phrase.startswith("current "):
+                    metric_phrase = f"current {metric_phrase}"
                 message = (
-                    f"{winner['label']} has the {operation_label} current {spec.title.lower()} "
+                    f"{winner['label']} has the {operation_label} {metric_phrase} "
                     f"at {format_measurement(spec, winner['value'])}."
                 )
                 runners = entities[1 : max(1, intent.top_n)]

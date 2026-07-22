@@ -348,5 +348,5 @@ def test_release_installs_semantic_pipeline_not_phrase_specific_power_router():
 
     assert "install_semantic_read_pipeline" in entrypoint
     assert "SemanticMetricComparisonExecutor" in entrypoint
-    assert "from fast_fallback_multi_control import FastFallbackRouter" in entrypoint
+    assert "from fast_fallback_light_usage import FastFallbackRouter" in entrypoint
     assert "fast_fallback_power_comparison" not in entrypoint

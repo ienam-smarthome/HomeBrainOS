@@ -46,7 +46,35 @@ class MCP:
 
 
 def app(current_states=None):
-    return SimpleNamespace(mcp=MCP(current_states), VERSION="0.10.38")
+    return SimpleNamespace(mcp=MCP(current_states), VERSION="0.10.39")
+
+
+class MultiDeviceMCP:
+    def __init__(self, devices, states_by_id):
+        self.devices = devices
+        self.states_by_id = states_by_id
+        self.read_ids = []
+
+    async def supported_arguments(self, name, desired):
+        return {"ids": desired["ids"]}
+
+    async def call_tool(self, name, arguments):
+        if name == "hub_list_devices":
+            return Result({"devices": self.devices})
+        assert name == "hub_read_devices"
+        device_id = arguments["ids"][0]
+        self.read_ids.append(device_id)
+        device = next(item for item in self.devices if item["id"] == device_id)
+        return Result({"devices": [{
+            "id": device_id,
+            "label": device["label"],
+            "currentStates": self.states_by_id[device_id],
+        }]})
+
+
+def multi_device_app(devices, states_by_id):
+    mcp = MultiDeviceMCP(devices, states_by_id)
+    return SimpleNamespace(mcp=mcp, VERSION="0.10.39"), mcp
 
 
 def test_find_is_terminal_identity_lookup():
@@ -90,3 +118,60 @@ def test_lux_alias_and_zero_value_are_not_treated_as_missing():
     assert answer["success"] is True
     assert answer["value"] == 0
     assert answer["message"] == "FP2 Bedroom 3 Lux is 0 lux."
+
+
+def test_named_humidity_read_prefers_attribute_capable_device_over_room_light():
+    application, mcp = multi_device_app(
+        [
+            {"id": "light", "label": "Bathroom Light", "room": "Bathroom", "currentStates": {"switch": "off"}},
+            {"id": "climate", "label": "Bathroom Climate Sensor", "room": "Bathroom", "currentStates": {"humidity": 46}},
+        ],
+        {
+            "light": [{"name": "switch", "currentValue": "off"}],
+            "climate": [{"name": "relativeHumidity", "currentValue": 46}],
+        },
+    )
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "What is the bathroom humidity?"))
+
+    assert answer["success"] is True
+    assert answer["message"] == "Bathroom Climate Sensor is 46 %."
+    assert mcp.read_ids == ["climate"]
+
+
+def test_named_temperature_read_supports_natural_word_order():
+    application, _ = multi_device_app(
+        [{"id": "bedroom", "label": "Bedroom 1 Sensor", "room": "Bedroom 1", "currentStates": {"temperature": 21.5}}],
+        {"bedroom": [{"attribute": "temp", "value": 21.5}]},
+    )
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "What temperature is Bedroom 1?"))
+
+    assert answer["success"] is True
+    assert answer["message"] == "Bedroom 1 Sensor is 21.5 °C."
+
+
+def test_named_power_read_supports_how_much_wording():
+    application, _ = multi_device_app(
+        [{"id": "freezer", "label": "Freezer (MQTT)", "room": "Kitchen", "currentStates": {"switch": "on"}}],
+        {"freezer": [
+            {"name": "switch", "currentValue": "on"},
+            {"name": "energy", "currentValue": 522.732},
+            {"name": "power", "currentValue": 77},
+        ]},
+    )
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "How much power is the freezer using?"))
+
+    assert answer["success"] is True
+    assert answer["value"] == 77
+    assert answer["message"] == "Freezer (MQTT) is 77 W."
+    assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices", "hub_read_devices"]
+
+
+def test_aggregate_and_period_queries_remain_owned_by_semantic_reader():
+    application, mcp = multi_device_app([], {})
+
+    assert asyncio.run(_answer_terminal_entity_read(application, "Which device uses the most power?")) is None
+    assert asyncio.run(_answer_terminal_entity_read(application, "How much energy did we use yesterday?")) is None
+    assert mcp.read_ids == []
