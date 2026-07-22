@@ -39,6 +39,36 @@ def test_successful_device_write_is_preserved():
     assert enforce_device_mutation_result("turn the lamp off", original) == original
 
 
+def test_read_only_search_cannot_claim_that_a_light_was_turned_off():
+    answer = enforce_device_mutation_result(
+        "Turn off the second hallway light",
+        {
+            "success": True,
+            "message": "I've turned off Hallway Light 2.",
+            "tools_used": [
+                {"name": "homebrain_search_devices", "success": True},
+                {"name": "hub_list_devices", "success": True},
+            ],
+        },
+    )
+
+    assert answer["success"] is False
+    assert answer["submitted"] is False
+    assert answer["intent"] == "device-control-not-executed"
+    assert "No device command was executed" in answer["message"]
+    assert answer["original_message"] == "I've turned off Hallway Light 2."
+
+
+def test_safe_unresolved_control_response_is_preserved_without_a_write():
+    original = {
+        "success": False,
+        "intent": "control-agent-unresolved",
+        "message": "Which hallway light did you mean?",
+        "tools_used": [],
+    }
+    assert enforce_device_mutation_result("turn off the hallway light", original) == original
+
+
 def test_mixed_device_write_results_are_reported_as_partial():
     answer = enforce_device_mutation_result(
         "turn off both lamps",

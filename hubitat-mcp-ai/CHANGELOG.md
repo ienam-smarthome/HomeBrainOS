@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.26
+
+- Gives the deterministic Control Agent terminal ownership of every device-control
+  request, including natural and ordinal wording.
+- Prevents the outer unified AI wrapper from intercepting controls and claiming a
+  state change after executing only read/search tools.
+- Fails closed when a purported successful control contains no executed mutation,
+  preserving safe unresolved and clarification responses.
+- Adds deterministic prefix ordinal parsing for requests such as
+  `Turn off the second hallway light`.
+
 ## 0.10.25
 
 - Promotes the existing selected-device control graph into one public

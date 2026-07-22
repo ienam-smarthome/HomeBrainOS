@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import re
 from typing import Any, Awaitable, Callable
 
@@ -96,72 +95,16 @@ def is_exact_fast_control(query: str) -> bool:
     return action.command in {"on", "off"}
 
 
-async def _ai_first_control(
-    application: Any,
-    request: Any,
-    fallback: AskHandler,
-) -> dict[str, Any]:
-    """Let the model resolve non-trivial controls using the live MCP tool catalogue.
-
-    Tool implementations remain the safety boundary: capability checks, setpoint
-    clamps, confirmation requirements and post-command verification are enforced by
-    the MCP executor regardless of what the model requests. Any AI timeout or error
-    falls back to the existing deterministic control agent.
-    """
-
-    history = [
-        {"role": item.role, "content": item.content}
-        for item in list(getattr(request, "history", []) or [])[-6:]
-    ]
-    query = str(getattr(request, "query", "") or "").strip()
-    planner_query = (
-        f"{query}\n\n"
-        "Handle this as a smart-home control request using live Hubitat MCP tools. "
-        "Resolve device names with discovery tools rather than guessing. Execute only "
-        "when the target and action are sufficiently clear; otherwise change nothing "
-        "and ask one concise clarification question. Always rely on tool-side safety "
-        "checks and verify the resulting state."
-    )
-    timeout = max(
-        8.0,
-        min(
-            45.0,
-            float(application.OPTIONS.get("ai_first_control_timeout_seconds") or 20),
-        ),
-    )
-    try:
-        answer = dict(
-            await asyncio.wait_for(
-                application.ollama.answer_with_planner(planner_query, history),
-                timeout=timeout,
-            )
-        )
-        answer["route"] = "ollama+mcp"
-        answer["route_reason"] = "non-trivial control resolved by AI tool-calling agent"
-        answer["ai_first_control"] = True
-        answer.setdefault("version", application.VERSION)
-        return answer
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        answer = dict(await fallback(request))
-        answer["ai_first_control_attempted"] = True
-        answer["ai_first_control_fallback"] = True
-        answer["ai_first_control_error"] = str(exc)
-        return answer
-
-
 def install_control_agent_gate(
     application: Any,
     control_agent: Any,
     legacy_ask: AskHandler,
 ) -> AskHandler:
-    """Use one exact fast path, then AI tools, then deterministic fallback.
+    """Give the deterministic Control Agent terminal ownership of controls.
 
-    Pending confirmations and alias management stay deterministic. Exact single-device
-    on/off and percentage commands retain the proven low-latency control path. More
-    natural or complex control language is sent to the Ollama MCP planner first, with
-    the existing control-agent chain retained strictly as an offline/timeout fallback.
+    AI may interpret natural language inside the Control Agent's typed intent boundary,
+    but it never receives mutation tools. Python resolves selected-device IDs, validates
+    capabilities, executes MCP commands and verifies state before reporting an outcome.
     """
 
     control_agent_ask: AskHandler = application.ask
@@ -190,10 +133,12 @@ def install_control_agent_gate(
                 answer = dict(await control_agent_ask(request))
                 answer.setdefault("route_reason", "exact control fast path")
                 return answer
-            if application.option_bool("ai_first_control_enabled", True):
-                answer = await _ai_first_control(application, request, control_agent_ask)
-                return enforce_device_mutation_result(query, dict(answer))
-            return await control_agent_ask(request)
+            answer = dict(await control_agent_ask(request))
+            answer.setdefault(
+                "route_reason",
+                "terminal deterministic Control Agent resolution, execution and verification",
+            )
+            return enforce_device_mutation_result(query, answer)
         return await legacy_ask(request)
 
     application.ask = ask_with_control_gate

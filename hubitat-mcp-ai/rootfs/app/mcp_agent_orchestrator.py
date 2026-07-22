@@ -4,6 +4,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 from control_agent_gate import is_contextual_device_control, is_exact_fast_control
+from control_agent_intent import is_control_candidate
 from contextual_control import is_other_device_control
 from device_health_fast_route import is_attention_query, is_device_health_query
 from mutation_result_policy import enforce_device_mutation_result
@@ -210,6 +211,11 @@ def should_use_unified_agent(query: str) -> bool:
 
     q = _normalise(query)
     if not q or q in _PROTOCOL_FOLLOWUPS:
+        return False
+    # Device controls are terminally owned by the deterministic Control Agent.
+    # The agent may use AI to produce a typed intent, but only Python may resolve
+    # device IDs, execute mutations and verify the resulting Hubitat state.
+    if is_control_candidate(query):
         return False
     if is_exact_fast_control(query):
         return False

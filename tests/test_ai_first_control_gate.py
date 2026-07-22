@@ -62,7 +62,11 @@ class FakeApplication:
 
         async def initial_ask(request):
             self.calls.append(("control", request.query))
-            return {"success": True, "route": "mcp-fast"}
+            return {
+                "success": True,
+                "route": "control-agent+mcp",
+                "tools_used": [{"name": "hub_call_device_command", "success": True}],
+            }
 
         self.ask = initial_ask
 
@@ -75,7 +79,7 @@ def request(query):
     return SimpleNamespace(query=query, history=[])
 
 
-def test_non_trivial_control_uses_ai_tools_first():
+def test_non_trivial_control_uses_terminal_control_agent():
     application = FakeApplication()
 
     async def legacy_ask(req):
@@ -86,10 +90,9 @@ def test_non_trivial_control_uses_ai_tools_first():
     query = "turn on the hallway light near the stairs"
     answer = asyncio.run(application.ask(request(query)))
 
-    assert answer["route"] == "ollama+mcp"
-    assert answer["ai_first_control"] is True
-    assert application.ollama.calls
-    assert not application.calls
+    assert answer["route"] == "control-agent+mcp"
+    assert not application.ollama.calls
+    assert application.calls == [("control", query)]
 
 
 def test_exact_control_keeps_fast_verified_path():
@@ -102,12 +105,12 @@ def test_exact_control_keeps_fast_verified_path():
     install_control_agent_gate(application, FakeControlAgent(), legacy_ask)
     answer = asyncio.run(application.ask(request("turn on the hallway light")))
 
-    assert answer["route"] == "mcp-fast"
+    assert answer["route"] == "control-agent+mcp"
     assert not application.ollama.calls
     assert application.calls == [("control", "turn on the hallway light")]
 
 
-def test_ai_failure_falls_back_to_control_agent():
+def test_control_agent_does_not_depend_on_ai_tool_planner():
     application = FakeApplication()
 
     async def fail(_query, _history):
@@ -123,6 +126,7 @@ def test_ai_failure_falls_back_to_control_agent():
     query = "turn on the hallway light near the stairs"
     answer = asyncio.run(application.ask(request(query)))
 
-    assert answer["route"] == "mcp-fast"
-    assert answer["ai_first_control_fallback"] is True
+    assert answer["route"] == "control-agent+mcp"
+    assert "ai_first_control_fallback" not in answer
+    assert not application.ollama.calls
     assert application.calls == [("control", query)]

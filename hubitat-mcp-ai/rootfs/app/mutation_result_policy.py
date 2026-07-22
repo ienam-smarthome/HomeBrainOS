@@ -22,7 +22,24 @@ def enforce_device_mutation_result(query: str, answer: dict[str, Any]) -> dict[s
         if isinstance(item, dict) and str(item.get("name") or "") in _DEVICE_MUTATION_TOOLS
     ]
     if not mutations:
-        return answer
+        # Safe clarifications, policy blocks and unresolved responses explicitly
+        # report failure and must retain their useful explanation. Missing/true
+        # success with no mutation evidence fails closed.
+        if answer.get("success") is False:
+            return answer
+        result = dict(answer)
+        result["original_message"] = str(answer.get("message") or "")
+        result["mutation_policy_corrected"] = True
+        result["success"] = False
+        result["submitted"] = False
+        result["verified"] = None
+        result["outcome"] = "failed"
+        result["intent"] = "device-control-not-executed"
+        result["message"] = (
+            "No device command was executed. HomeBrain only read device information, "
+            "so no device state change can be claimed."
+        )
+        return result
 
     succeeded = [item for item in mutations if item.get("success") is True]
     failed = [item for item in mutations if item.get("success") is not True]
