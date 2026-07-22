@@ -101,6 +101,14 @@ def is_whole_house_period_query(query: str) -> bool:
     period = requested_octopus_period(q)
     if period not in {"today", "yesterday", "week", "month"}:
         return False
+    if re.fullmatch(
+        r"(?:energy|electricity) (?:today|yesterday|(?:this )?week|(?:this )?month)",
+        q,
+    ) or re.fullmatch(
+        r"(?:today|yesterday|(?:this )?week|(?:this )?month) (?:energy|electricity)",
+        q,
+    ):
+        return True
     return any(term in q for term in _ENERGY_TERMS)
 
 
