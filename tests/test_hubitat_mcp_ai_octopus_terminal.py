@@ -145,6 +145,29 @@ def test_energy_today_alias_uses_renamed_octopus_meter_and_skips_ai():
     assert "4.8 kWh" in answer["message"]
 
 
+def test_show_energy_today_uses_the_same_terminal_period_route():
+    planner_calls: list[str] = []
+
+    async def unified_planner(request):
+        planner_calls.append(request.query)
+        return {"route": "mcp-fast", "message": "Incorrect device-name lookup"}
+
+    application = SimpleNamespace(
+        ask=unified_planner,
+        mcp=FakeMCP(),
+        VERSION="test-version",
+    )
+    install_control_focus_octopus_energy(application)
+
+    answer = asyncio.run(application.ask(SimpleNamespace(query="show energy today")))
+
+    assert planner_calls == []
+    assert answer["route"] == "mcp-octopus-summary"
+    assert answer["model"] is None
+    assert answer["success"] is True
+    assert "4.8 kWh" in answer["message"]
+
+
 def test_find_octopus_uses_the_same_deterministic_complete_family_route():
     application = SimpleNamespace(
         ask=lambda _request: None,

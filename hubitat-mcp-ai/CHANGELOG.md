@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.21
+
+- Accepts normal read prefixes on concise energy-period aliases, including
+  `show energy today`, `get energy yesterday` and `display energy this month`.
+- Prevents prefixed requests from falling through to generic exact-device lookup.
+- Keeps renamed Octopus period sensors on the deterministic live-value route.
+
 ## 0.10.20
 
 - Recognises concise period requests such as `energy today`, `energy yesterday`,
