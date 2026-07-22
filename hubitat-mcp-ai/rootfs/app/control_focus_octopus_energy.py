@@ -75,7 +75,7 @@ _UNIT_KEYS = ("unit", "unitofmeasurement", "unit_of_measurement")
 
 
 def _query(value: str) -> str:
-    return re.sub(r"\s+", " ", _normalise(value)).strip(" .!?")
+    return re.sub(r"\s+", " ", _normalise(value).replace("-", " ")).strip(" .!?")
 
 
 def requested_octopus_period(query: str) -> str | None:
