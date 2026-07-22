@@ -202,7 +202,8 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
 
     @staticmethod
     def _room_key(value: Any) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", _normalise(value)).strip()
+        """Canonical room key tolerant of spaces, punctuation and spoken numbering."""
+        return re.sub(r"[^a-z0-9]+", "", _normalise(value))
 
     @staticmethod
     def _room_rows(value: Any) -> list[dict[str, Any]]:
