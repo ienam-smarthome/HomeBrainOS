@@ -1,28 +1,32 @@
 from pathlib import Path
+import re
 
 
-def replace(path: str, old: str, new: str) -> None:
+def rewrite(path: str, transform) -> None:
     p = Path(path)
-    text = p.read_text(encoding="utf-8")
-    if old not in text:
-        raise SystemExit(f"replacement marker not found in {path}: {old!r}")
-    p.write_text(text.replace(old, new), encoding="utf-8")
+    before = p.read_text(encoding="utf-8")
+    after = transform(before)
+    if after == before:
+        raise SystemExit(f"no change made in {path}")
+    p.write_text(after, encoding="utf-8")
+
 
 app = "hubitat-mcp-ai/rootfs/app"
-replace(
-    f"{app}/control_focus_octopus_energy.py",
-    'r"how much (?:power|electricity) (?:are we|is the house|is my home) using(?: right)? now",',
-    'r"how much (?:power|electricity) (?:are we|is the house|is my home) using(?: (?:right )?now)?",',
-)
-replace(
-    f"{app}/control_focus_octopus_energy.py",
-    'r"what(?:\'s| is) (?:our|the(?: whole house)?|my|current|whole house) (?:power|electricity) (?:usage|use|consumption)(?: right)? now",',
-    'r"what(?:\'s| is) (?:our|the(?: whole house)?|my|current|whole house) (?:power|electricity) (?:usage|use|consumption)(?: (?:right )?now)?",',
-)
-replace("hubitat-mcp-ai/config.yaml", 'version: "0.10.33"', 'version: "0.10.34"')
-replace(f"{app}/entrypoint.py", 'PREVIOUS_RELEASE_VERSION = "0.10.32"\nRELEASE_VERSION = "0.10.33"', 'PREVIOUS_RELEASE_VERSION = "0.10.33"\nRELEASE_VERSION = "0.10.34"')
-replace(f"{app}/device_intelligence_webui.py", 'PWA_RELEASE_VERSION = "0.10.33"', 'PWA_RELEASE_VERSION = "0.10.34"')
-replace(f"{app}/device_intelligence_webui.py", "hubitat-mcp-ai-shell-v0.10.33", "hubitat-mcp-ai-shell-v0.10.34")
+
+
+def patch_power(text: str) -> str:
+    old = '(?: right)? now'
+    new = '(?: (?:right )?now)?'
+    count = text.count(old)
+    if count < 2:
+        raise SystemExit(f"expected at least two live-power suffixes, found {count}")
+    return text.replace(old, new, 2)
+
+
+rewrite(f"{app}/control_focus_octopus_energy.py", patch_power)
+rewrite("hubitat-mcp-ai/config.yaml", lambda text: re.sub(r'(?m)^version: ["\']0\.10\.33["\']$', 'version: "0.10.34"', text, count=1))
+rewrite(f"{app}/entrypoint.py", lambda text: re.sub(r'PREVIOUS_RELEASE_VERSION = "0\.10\.32"\s+RELEASE_VERSION = "0\.10\.33"', 'PREVIOUS_RELEASE_VERSION = "0.10.33"\nRELEASE_VERSION = "0.10.34"', text, count=1))
+rewrite(f"{app}/device_intelligence_webui.py", lambda text: text.replace('PWA_RELEASE_VERSION = "0.10.33"', 'PWA_RELEASE_VERSION = "0.10.34"', 1).replace('hubitat-mcp-ai-shell-v0.10.33', 'hubitat-mcp-ai-shell-v0.10.34', 1))
 
 Path("hubitat-mcp-ai/tests/test_whole_house_power_optional_now.py").write_text(
 '''from __future__ import annotations
@@ -55,5 +59,3 @@ def test_device_specific_power_is_not_captured():
 
 Path("hubitat-mcp-ai/CHANGELOG_0.10.34.md").write_text(
 "# Hubitat MCP AI 0.10.34\n\n- Makes `now` optional in whole-house live-power questions.\n- Keeps spaced and hyphenated natural wording on the deterministic Octopus route.\n- Prevents device-specific power questions from being captured.\n", encoding="utf-8")
-
-# Corrective runner trigger 2.
