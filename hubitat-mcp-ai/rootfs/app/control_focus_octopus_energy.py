@@ -21,7 +21,7 @@ _PERIOD_ALIASES = {
     "yesterday": ("yesterday", "previous day"),
     "week": ("week", "weekly", "this week"),
     "month": ("month", "monthly", "this month"),
-    "power": ("power", "live power", "current power", "right now", "currently"),
+    "power": ("power", "live power", "current power", "right now", "currently", "now"),
     "rates": ("rates", "rates compact", "tariff", "price"),
     "previous rate": ("previous rate", "last rate"),
     "standing charge": ("standing charge",),
@@ -114,8 +114,23 @@ def is_whole_house_period_query(query: str) -> bool:
     return any(term in q for term in _ENERGY_TERMS)
 
 
+def is_whole_house_power_query(query: str) -> bool:
+    q = _query(query)
+    patterns = (
+        r"how much (?:power|electricity) (?:are we|is the house|is my home) using(?: right)? now",
+        r"what(?:'s| is) (?:our|the|my|current|whole house) (?:power|electricity) (?:usage|use|consumption)(?: right)? now",
+        r"(?:show|give|tell) me (?:the )?(?:current|live|whole house) (?:power|electricity)(?: usage| consumption)?",
+        r"(?:current|live|whole house|overall|total) (?:power|electricity) (?:usage|use|consumption)",
+    )
+    return any(re.fullmatch(pattern, q) for pattern in patterns)
+
+
 def is_octopus_energy_query(query: str) -> bool:
-    return is_octopus_display_query(query) or is_whole_house_period_query(query)
+    return (
+        is_octopus_display_query(query)
+        or is_whole_house_period_query(query)
+        or is_whole_house_power_query(query)
+    )
 
 
 def _is_octopus_meter_row(item: dict[str, Any]) -> bool:
