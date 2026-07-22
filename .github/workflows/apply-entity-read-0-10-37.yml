@@ -1,0 +1,24 @@
+name: Apply entity read 0.10.37
+on:
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/deterministic-entity-read-0.10.37'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/deterministic-entity-read-0.10.37
+          show-progress: false
+      - run: python3 .github/scripts/apply_entity_read_0_10_37.py
+      - run: rm -f .github/scripts/apply_entity_read_0_10_37.py
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Add deterministic entity reads"
+          git push
