@@ -91,6 +91,8 @@ def is_octopus_display_query(query: str) -> bool:
     q = _query(query)
     if "octopus" not in q:
         return False
+    if re.fullmatch(r"find octopus(?: (?:meters?|sensors?|devices?))?", q):
+        return True
     return any(term in q for term in ("live meter", "meter display", "energy display", "octopus meter"))
 
 
@@ -377,10 +379,9 @@ class OctopusLiveMeterSummary:
             "room",
             "currentStates",
             "attributes",
-            "state",
-            "states",
-            "value",
-            "unit",
+            "capabilities",
+            "commands",
+            "disabled",
             "lastActivity",
         ]
         for detailed in (False, True):
@@ -414,6 +415,20 @@ class OctopusLiveMeterSummary:
                     rows = [row for row in _device_rows(result.data) if _is_octopus_meter_row(row)]
             except Exception as exc:
                 errors.append(f"all-device Octopus fallback: {str(exc).strip() or type(exc).__name__}")
+
+        index = getattr(self.application, "device_index", None)
+        enriched_devices = getattr(index, "enriched_devices", None)
+        if callable(enriched_devices):
+            try:
+                indexed = list(await enriched_devices(force=True))
+                indexed = [row for row in indexed if _is_octopus_meter_row(row)]
+                if indexed:
+                    rows = _merge_rows([rows, indexed])
+                    tools.append("homebrain_device_index")
+            except Exception as exc:
+                errors.append(
+                    f"complete device index: {str(exc).strip() or type(exc).__name__}"
+                )
 
         enriched = await self._read_by_ids(rows, tools, errors)
         if enriched:
