@@ -26,7 +26,9 @@ rewrite("hubitat-mcp-ai/config.yaml", lambda text: re.sub(r'(?m)^version: ["\'][
 rewrite(f"{app}/entrypoint.py", lambda text: re.sub(r'PREVIOUS_RELEASE_VERSION = "[^"]+"\s+RELEASE_VERSION = "[^"]+"', 'PREVIOUS_RELEASE_VERSION = "0.10.33"\nRELEASE_VERSION = "0.10.34"', text, count=1))
 rewrite(f"{app}/device_intelligence_webui.py", patch_webui)
 
-Path("hubitat-mcp-ai/tests/test_whole_house_power_optional_now.py").write_text(
+tests_dir = Path("hubitat-mcp-ai/tests")
+tests_dir.mkdir(parents=True, exist_ok=True)
+(tests_dir / "test_whole_house_power_optional_now.py").write_text(
 '''from __future__ import annotations
 import sys
 from pathlib import Path
@@ -57,5 +59,3 @@ def test_device_specific_power_is_not_captured():
 
 Path("hubitat-mcp-ai/CHANGELOG_0.10.34.md").write_text(
 "# Hubitat MCP AI 0.10.34\n\n- Makes `now` optional in whole-house live-power questions.\n- Keeps spaced and hyphenated natural wording on the deterministic Octopus route.\n- Prevents device-specific power questions from being captured.\n", encoding="utf-8")
-
-# Traceback-capture retry.
