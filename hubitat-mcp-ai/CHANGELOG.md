@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.19
+
+- Reads each discovered Octopus meter with `hub_get_device`, translated through
+  the device-read gateway when Hubitat MCP is running in consolidated mode.
+- Merges authoritative per-device `value` and `valueStr` states into inventory
+  rows whose compact `currentStates` are empty.
+- Restores live Power, Today, Yesterday, Week, Month and Standing Charge values
+  instead of displaying `No live value` when Hubitat has current data.
+
 ## 0.10.18
 
 - Removes unsupported Octopus inventory projections that caused Hubitat MCP to

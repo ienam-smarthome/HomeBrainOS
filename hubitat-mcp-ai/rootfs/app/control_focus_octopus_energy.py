@@ -442,6 +442,36 @@ class OctopusLiveMeterSummary:
         errors: list[str],
     ) -> list[dict[str, Any]]:
         client = self.application.mcp
+        ids = [str(_device_id(row)) for row in rows if _device_id(row) is not None]
+        if not ids:
+            return []
+
+        # In gateway mode ``hub_read_devices`` is a category gateway, not a bulk
+        # detail operation. Request the real hidden operation by name and let the
+        # shared MCP broker translate it through that gateway when necessary.
+        async def get_one(device_id: str) -> Any:
+            return await client.call_tool("hub_get_device", {"deviceId": device_id})
+
+        detail_responses = await asyncio.gather(
+            *(get_one(device_id) for device_id in ids),
+            return_exceptions=True,
+        )
+        detail_rows: list[dict[str, Any]] = []
+        for response in detail_responses:
+            tools.append("hub_get_device")
+            if isinstance(response, Exception):
+                errors.append(
+                    f"hub_get_device: {str(response).strip() or type(response).__name__}"
+                )
+            elif response.is_error:
+                errors.append(response.text or "hub_get_device failed")
+            else:
+                detail_rows.extend(_device_rows(response.data))
+        if detail_rows:
+            return detail_rows
+
+        # Compatibility fallback for older servers that expose a true bulk/single
+        # ``hub_read_devices`` operation instead of ``hub_get_device``.
         try:
             tool = await client.get_tool("hub_read_devices")
         except Exception:
@@ -449,9 +479,6 @@ class OctopusLiveMeterSummary:
         if tool is None or not rows:
             return []
         properties = (tool.input_schema or {}).get("properties") or {}
-        ids = [str(_device_id(row)) for row in rows if _device_id(row) is not None]
-        if not ids:
-            return []
 
         plural_key = next((key for key in ("deviceIds", "device_ids", "ids") if key in properties), None)
         singular_key = next((key for key in ("deviceId", "device_id", "id") if key in properties), None)
