@@ -1,11 +1,15 @@
 package uk.co.homebrain.hubitatmcpai;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.View;
+import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
@@ -13,11 +17,16 @@ import android.webkit.WebViewClient;
 import android.widget.TextView;
 
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final String DASHBOARD_URL = BuildConfig.DASHBOARD_URL;
+    private static final int AUDIO_PERMISSION_REQUEST = 1001;
+
     private WebView webView;
     private TextView errorView;
+    private PermissionRequest pendingWebPermissionRequest;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -36,6 +45,7 @@ public final class MainActivity extends Activity {
         webView.getSettings().setAllowContentAccess(false);
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
         webView.setWebViewClient(new LocalOnlyWebViewClient());
+        webView.setWebChromeClient(new LocalOnlyWebChromeClient());
 
         if (savedInstanceState == null) {
             webView.loadUrl(DASHBOARD_URL);
@@ -56,6 +66,44 @@ public final class MainActivity extends Activity {
             webView.goBack();
         } else {
             super.onBackPressed();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != AUDIO_PERMISSION_REQUEST || pendingWebPermissionRequest == null) {
+            return;
+        }
+
+        PermissionRequest request = pendingWebPermissionRequest;
+        pendingWebPermissionRequest = null;
+
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            grantAllowedResources(request);
+        } else {
+            request.deny();
+        }
+    }
+
+    private void grantAllowedResources(PermissionRequest request) {
+        if (!isAllowed(request.getOrigin().toString())) {
+            request.deny();
+            return;
+        }
+
+        List<String> allowed = new ArrayList<>();
+        for (String resource : request.getResources()) {
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                allowed.add(resource);
+            }
+        }
+
+        if (allowed.isEmpty()) {
+            request.deny();
+        } else {
+            request.grant(allowed.toArray(new String[0]));
         }
     }
 
@@ -80,6 +128,52 @@ public final class MainActivity extends Activity {
     private int effectivePort(URI uri) {
         if (uri.getPort() >= 0) return uri.getPort();
         return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+    }
+
+    private final class LocalOnlyWebChromeClient extends WebChromeClient {
+        @Override
+        public void onPermissionRequest(PermissionRequest request) {
+            runOnUiThread(() -> {
+                if (!isAllowed(request.getOrigin().toString())) {
+                    request.deny();
+                    return;
+                }
+
+                boolean asksForAudio = false;
+                for (String resource : request.getResources()) {
+                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                        asksForAudio = true;
+                        break;
+                    }
+                }
+
+                if (!asksForAudio) {
+                    request.deny();
+                    return;
+                }
+
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                        == PackageManager.PERMISSION_GRANTED) {
+                    grantAllowedResources(request);
+                } else {
+                    if (pendingWebPermissionRequest != null) {
+                        pendingWebPermissionRequest.deny();
+                    }
+                    pendingWebPermissionRequest = request;
+                    requestPermissions(
+                            new String[]{Manifest.permission.RECORD_AUDIO},
+                            AUDIO_PERMISSION_REQUEST
+                    );
+                }
+            });
+        }
+
+        @Override
+        public void onPermissionRequestCanceled(PermissionRequest request) {
+            if (pendingWebPermissionRequest == request) {
+                pendingWebPermissionRequest = null;
+            }
+        }
     }
 
     private final class LocalOnlyWebViewClient extends WebViewClient {
