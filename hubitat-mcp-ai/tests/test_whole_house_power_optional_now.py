@@ -7,6 +7,7 @@ if str(APP) not in sys.path:
 from control_focus_octopus_energy import is_octopus_energy_query, is_whole_house_power_query, requested_octopus_period
 
 
+# Regression coverage for the exact wording reported from the live Web UI.
 def test_whole_house_power_without_now_is_terminal():
     query = "What is the whole house power consumption?"
     assert is_whole_house_power_query(query)
