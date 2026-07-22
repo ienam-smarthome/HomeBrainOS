@@ -1,0 +1,37 @@
+plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "uk.co.homebrain.hubitatmcpai"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "uk.co.homebrain.hubitatmcpai"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+
+        buildConfigField("String", "DASHBOARD_URL", "\"http://192.168.1.208:8788/\"")
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+}
