@@ -2,6 +2,7 @@ name: Corrective release runner
 on:
   push:
     branches:
+      - main
       - agent/publish-0.10.34-corrective
 permissions:
   contents: write
