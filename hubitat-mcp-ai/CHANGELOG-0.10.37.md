@@ -4,3 +4,4 @@
 - Resolves exact device IDs before reading sensor attributes.
 - Uses `hub_read_devices` for live values such as illuminance instead of relying on projected inventory.
 - Prevents Gemma from replacing authoritative values with missing-value guesses.
+- Verified against direct lookup and live illuminance regression scenarios.
