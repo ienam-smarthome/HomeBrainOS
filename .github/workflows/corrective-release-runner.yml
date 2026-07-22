@@ -1,14 +1,13 @@
 name: Corrective release runner
 on:
-  push:
+  pull_request:
     branches:
       - main
-      - agent/publish-0.10.34-corrective
 permissions:
   contents: write
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/publish-0.10.34-corrective'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
