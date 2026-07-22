@@ -7,7 +7,7 @@ from typing import Any
 from fastapi.responses import HTMLResponse, Response
 
 
-PWA_RELEASE_VERSION = "0.10.23"
+PWA_RELEASE_VERSION = "0.10.28"
 DEVICE_HANDLER_MARKER = "document.getElementById('refreshMcp').onclick=async()=>{"
 ASK_PAYLOAD_MARKER = "JSON.stringify({query,history:prior})"
 ASK_PAYLOAD_REPLACEMENT = "JSON.stringify({query,history:prior,session_id:clientId})"
@@ -72,7 +72,7 @@ PWA_ICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 <path d="M256 192v68M222 226h68" stroke="#fff" stroke-width="18" stroke-linecap="round"/>
 </svg>"""
 
-SERVICE_WORKER = r"""const CACHE='hubitat-mcp-ai-shell-v1';
+SERVICE_WORKER = r"""const CACHE='hubitat-mcp-ai-shell-v0.10.28';
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./','manifest.webmanifest','pwa-icon.svg'])).catch(()=>{}));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))));self.clients.claim();});
 self.addEventListener('fetch',event=>{const request=event.request;if(request.method!=='GET')return;const url=new URL(request.url);if(url.origin!==self.location.origin||url.pathname.includes('/api/'))return;event.respondWith(fetch(request).then(response=>{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(request,copy));return response;}).catch(()=>caches.match(request).then(hit=>hit||caches.match('./'))));});
@@ -147,8 +147,10 @@ def patch_page(page: str) -> str:
 
 def install_device_intelligence_webui(application: Any) -> None:
     api = application.app
-    application.VERSION = PWA_RELEASE_VERSION
-    api.version = PWA_RELEASE_VERSION
+    # The entrypoint owns the authoritative release version. The Web UI
+    # must display it, never replace it with a separately maintained value.
+    release_version = str(getattr(application, 'VERSION', PWA_RELEASE_VERSION))
+    api.version = release_version
     api.router.routes[:] = [
         route
         for route in api.router.routes
@@ -182,7 +184,7 @@ def install_device_intelligence_webui(application: Any) -> None:
     async def indexed_home() -> HTMLResponse:
         page = application.render_page(
             str(application.OPTIONS.get("web_title") or "Hubitat MCP AI"),
-            PWA_RELEASE_VERSION,
+            release_version,
         )
         return HTMLResponse(patch_page(page), headers={"Cache-Control": "no-cache"})
 
