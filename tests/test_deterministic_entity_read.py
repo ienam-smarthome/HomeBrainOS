@@ -18,6 +18,11 @@ class Result:
 
 
 class MCP:
+    def __init__(self, current_states=None):
+        self.current_states = (
+            {"illuminance": 212} if current_states is None else current_states
+        )
+
     async def supported_arguments(self, name, desired):
         return {"ids": desired["ids"]}
 
@@ -36,12 +41,12 @@ class MCP:
         return Result({"devices": [{
             "id": "123",
             "label": "FP2 Bedroom 3 Lux",
-            "currentStates": {"illuminance": 212},
+            "currentStates": self.current_states,
         }]})
 
 
-def app():
-    return SimpleNamespace(mcp=MCP(), VERSION="0.10.37")
+def app(current_states=None):
+    return SimpleNamespace(mcp=MCP(current_states), VERSION="0.10.38")
 
 
 def test_find_is_terminal_identity_lookup():
@@ -59,3 +64,29 @@ def test_lux_question_reads_authoritative_attribute():
     assert answer["value"] == 212
     assert answer["message"] == "FP2 Bedroom 3 Lux is 212 lux."
     assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices", "hub_read_devices"]
+
+
+def test_lux_question_reads_list_shaped_current_state_record():
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            app([{"name": "illuminance", "currentValue": 212}]),
+            "What is the lux reading from FP2 Bedroom 3 Lux?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["value"] == 212
+    assert answer["message"] == "FP2 Bedroom 3 Lux is 212 lux."
+
+
+def test_lux_alias_and_zero_value_are_not_treated_as_missing():
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            app([{"attribute": "illuminanceLevel", "value": 0}]),
+            "What is the illuminance value of FP2 Bedroom 3 Lux?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["value"] == 0
+    assert answer["message"] == "FP2 Bedroom 3 Lux is 0 lux."
