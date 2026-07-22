@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.38
+
+- Fixes deterministic sensor reads when Hubitat returns list-shaped current-state
+  records containing `name` and `currentValue` fields.
+- Adds attribute aliases and preserves valid zero values for live sensor readings.
+- Covers the FP2 Bedroom 3 Lux response shape with end-to-end regressions.
+
 ## 0.10.26
 
 - Gives the deterministic Control Agent terminal ownership of every device-control

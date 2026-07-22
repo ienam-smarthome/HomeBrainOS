@@ -189,13 +189,57 @@ def _tool_data(result: Any) -> Any:
     return getattr(result, "data", result)
 
 
-def _extract_attribute_value(value: Any, attribute: str) -> Any:
+_ATTRIBUTE_ALIASES = {
+    "illuminance": {"illuminance", "illuminancelevel", "lux"},
+    "temperature": {"temperature", "temp"},
+    "humidity": {"humidity", "relativehumidity"},
+    "power": {"power", "powermeter", "watts", "wattage"},
+    "energy": {"energy", "energymeter"},
+    "battery": {"battery", "batterylevel"},
+}
+_ATTRIBUTE_VALUE_KEYS = ("currentValue", "value", "displayValue", "current_value")
+
+
+def _attribute_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _present_attribute_value(value: Any) -> Any:
     if isinstance(value, dict):
-        states = value.get("currentStates") or value.get("current_states") or value.get("attributes")
-        if isinstance(states, dict) and states.get(attribute) not in (None, ""):
-            return states.get(attribute)
-        if value.get(attribute) not in (None, ""):
-            return value.get(attribute)
+        for key in _ATTRIBUTE_VALUE_KEYS:
+            candidate = value.get(key)
+            if candidate not in (None, ""):
+                return candidate
+    return value if value not in (None, "") else None
+
+
+def _extract_attribute_value(value: Any, attribute: str) -> Any:
+    aliases = _ATTRIBUTE_ALIASES.get(attribute, {attribute})
+    aliases = {_attribute_key(item) for item in aliases | {attribute}}
+    if isinstance(value, dict):
+        record_name = value.get("name") or value.get("attribute") or value.get("key")
+        if _attribute_key(record_name) in aliases:
+            record_value = _present_attribute_value(value)
+            if record_value not in (None, "") and record_value is not value:
+                return record_value
+
+        for key, candidate in value.items():
+            if _attribute_key(key) in aliases:
+                direct_value = _present_attribute_value(candidate)
+                if direct_value not in (None, ""):
+                    return direct_value
+
+        states = (
+            value.get("currentStates")
+            or value.get("current_states")
+            or value.get("attributes")
+            or value.get("states")
+        )
+        if states is not None:
+            found = _extract_attribute_value(states, attribute)
+            if found not in (None, ""):
+                return found
+
         for child in value.values():
             found = _extract_attribute_value(child, attribute)
             if found not in (None, ""):
