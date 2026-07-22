@@ -6,7 +6,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from control_agent_graph import ControlDeviceGraph, DeviceNode, DeviceResolution
+from assistant_contracts import ExecutionItem, ExecutionResult, VerificationOutcome
+from control_agent_graph import ControlDeviceGraph, DeviceNode
 from control_agent_intent import (
     ControlActionIntent,
     ControlIntent,
@@ -21,6 +22,7 @@ from control_agent_state import (
 )
 from control_language import canonicalise_basic_control
 from device_intelligence_index import _attributes, _device_id, _label
+from entity_resolver import EntityResolver
 from mcp_client import MCPError, MCPToolResult
 from presenter import display_payload, safe_debug
 from spoken_device_name import spoken_name_key
@@ -49,6 +51,8 @@ class ResolvedControlAction:
     resolution_confidence: float = 0.0
     resolution_method: str = "unresolved"
     resolution_reason: str = ""
+    resolution_status: str = "not_found"
+    resolution_trace: list[str] = field(default_factory=list)
 
     def public_dict(self) -> dict[str, Any]:
         return {
@@ -60,6 +64,8 @@ class ResolvedControlAction:
             "resolution_confidence": self.resolution_confidence,
             "resolution_method": self.resolution_method,
             "resolution_reason": self.resolution_reason,
+            "resolution_status": self.resolution_status,
+            "resolution_trace": list(self.resolution_trace),
         }
 
 
@@ -195,17 +201,17 @@ class HomeBrainControlAgent:
             return self._confirmation_response(plan, policy)
         return await self._execute_plan(session_id, plan, confirmed=False)
 
-    async def _graph(self) -> ControlDeviceGraph:
+    async def _graph(self) -> EntityResolver:
         aliases = await self.aliases.all()
         devices = await self.device_index.summary_devices()
-        return ControlDeviceGraph(devices, learned_aliases=aliases)
+        return EntityResolver(devices, learned_aliases=aliases)
 
     def _resolve_plan(
         self,
         query: str,
         intent: ControlIntent,
         diagnostics: dict[str, Any],
-        graph: ControlDeviceGraph,
+        graph: EntityResolver,
         context: Any,
     ) -> ControlPlan:
         actions: list[ResolvedControlAction] = []
@@ -218,7 +224,11 @@ class HomeBrainControlAgent:
                     value=action.value,
                     target=target,
                 )
-            resolution = graph.resolve(target, context=context)
+            resolution, contract = graph.resolve_for_action(
+                target,
+                action=resolved_intent.command,
+                context=context,
+            )
             actions.append(
                 ResolvedControlAction(
                     intent=resolved_intent,
@@ -227,6 +237,8 @@ class HomeBrainControlAgent:
                     resolution_confidence=resolution.confidence,
                     resolution_method=resolution.method,
                     resolution_reason=resolution.reason,
+                    resolution_status=contract.status.value,
+                    resolution_trace=list(contract.trace),
                 )
             )
         return ControlPlan(
@@ -274,7 +286,12 @@ class HomeBrainControlAgent:
         plan: ControlPlan,
         unresolved: list[ResolvedControlAction],
     ) -> dict[str, Any]:
-        if len(unresolved) == 1 and len(plan.actions) == 1 and unresolved[0].candidates:
+        if (
+            len(unresolved) == 1
+            and len(plan.actions) == 1
+            and unresolved[0].candidates
+            and unresolved[0].resolution_status != "unsupported_action"
+        ):
             action = unresolved[0]
             candidates = action.candidates[:5]
             await self.contexts.record_candidates(session_id, [item.id for item in candidates])
@@ -501,6 +518,7 @@ class HomeBrainControlAgent:
 
         child_results: list[dict[str, Any]] = []
         successful_nodes: list[DeviceNode] = []
+        submitted_nodes: list[DeviceNode] = []
         for action in plan.actions:
             for node in action.nodes:
                 if action.intent.command in {"on", "off"}:
@@ -515,18 +533,43 @@ class HomeBrainControlAgent:
                     }
                 result["control_agent_device"] = node.public_dict()
                 result["control_agent_action"] = action.intent.command
+                if result.get("success"):
+                    outcome = VerificationOutcome.COMPLETED
+                elif (
+                    result.get("command_sent")
+                    or result.get("command_accepted")
+                    or result.get("intent") == "control-agent-level-unverified"
+                ):
+                    outcome = VerificationOutcome.SENT
+                else:
+                    outcome = VerificationOutcome.FAILED
+                result["verification_outcome"] = outcome.value
                 child_results.append(result)
                 if result.get("success"):
                     successful_nodes.append(node)
+                if outcome in {VerificationOutcome.COMPLETED, VerificationOutcome.SENT}:
+                    submitted_nodes.append(node)
 
         success = bool(child_results) and all(item.get("success") for item in child_results)
         partial = bool(successful_nodes) and not success
-        if successful_nodes:
-            first = successful_nodes[0]
+        outcomes = [VerificationOutcome(item["verification_outcome"]) for item in child_results]
+        if outcomes and all(item is VerificationOutcome.COMPLETED for item in outcomes):
+            overall_outcome = VerificationOutcome.COMPLETED
+        elif outcomes and all(
+            item in {VerificationOutcome.COMPLETED, VerificationOutcome.SENT}
+            for item in outcomes
+        ):
+            overall_outcome = VerificationOutcome.SENT
+        elif outcomes and all(item is VerificationOutcome.FAILED for item in outcomes):
+            overall_outcome = VerificationOutcome.FAILED
+        else:
+            overall_outcome = VerificationOutcome.UNCERTAIN
+        if submitted_nodes:
+            first = submitted_nodes[0]
             action_name = plan.actions[0].intent.command if plan.actions else ""
             await self.contexts.record_success(
                 session_id,
-                device_ids=[item.id for item in successful_nodes],
+                device_ids=[item.id for item in submitted_nodes],
                 candidate_ids=[item.id for item in plan.candidates or plan.nodes],
                 room=first.room,
                 device_type=next(iter(sorted(first.types - {"device", "switch", "sensor"})), "device"),
@@ -537,22 +580,36 @@ class HomeBrainControlAgent:
         lines = []
         for result in child_results:
             node = result["control_agent_device"]
-            state = "Confirmed" if result.get("success") else "Failed"
+            outcome = VerificationOutcome(result["verification_outcome"])
+            state = {
+                VerificationOutcome.COMPLETED: "Completed",
+                VerificationOutcome.SENT: "Sent",
+                VerificationOutcome.FAILED: "Failed",
+                VerificationOutcome.UNCERTAIN: "Uncertain",
+            }[outcome]
             message = str(result.get("message") or "")
             lines.append(f"- {node['label']}: {message}")
             items.append(
                 {
-                    "icon": "✅" if result.get("success") else "⚠️",
+                    "icon": "✅" if outcome is VerificationOutcome.COMPLETED else "⏳" if outcome is VerificationOutcome.SENT else "⚠️",
                     "title": node["label"],
                     "value": state,
                     "subtitle": message,
-                    "tone": "good" if result.get("success") else "warning",
+                    "tone": "good" if outcome is VerificationOutcome.COMPLETED else "warning",
                 }
             )
 
-        title = "Control confirmed" if success else "Control partly completed" if partial else "Control failed"
+        sent_count = sum(item is VerificationOutcome.SENT for item in outcomes)
+        failed_count = sum(item is VerificationOutcome.FAILED for item in outcomes)
+        title = {
+            VerificationOutcome.COMPLETED: "Control completed",
+            VerificationOutcome.SENT: "Control sent",
+            VerificationOutcome.FAILED: "Control failed",
+            VerificationOutcome.UNCERTAIN: "Control partly completed",
+        }[overall_outcome]
         message = (
-            f"{len(successful_nodes)} of {len(child_results)} device commands were confirmed."
+            f"{len(successful_nodes)} completed, {sent_count} sent awaiting state verification, "
+            f"and {failed_count} failed out of {len(child_results)} device commands."
             + ("\n" + "\n".join(lines) if lines else "")
         )
         tools_used: list[dict[str, Any]] = []
@@ -560,8 +617,44 @@ class HomeBrainControlAgent:
             for tool in item.get("tools_used") or []:
                 if isinstance(tool, dict):
                     tools_used.append(tool)
+        execution_items = [
+            ExecutionItem(
+                device_id=str(item["control_agent_device"]["id"]),
+                label=str(item["control_agent_device"]["label"]),
+                action=str(item.get("control_agent_action") or ""),
+                outcome=VerificationOutcome(item["verification_outcome"]),
+                submitted=VerificationOutcome(item["verification_outcome"])
+                in {VerificationOutcome.COMPLETED, VerificationOutcome.SENT},
+                accepted_by_hub=bool(
+                    item.get("command_accepted")
+                    or item.get("command_sent")
+                    or item.get("success")
+                    or item.get("intent") == "control-agent-level-unverified"
+                ),
+                verified=True if item.get("success") else False if item["verification_outcome"] == "sent" else None,
+                observed_state=str(item.get("verified_state") or "") or None,
+                message=str(item.get("message") or ""),
+            )
+            for item in child_results
+        ]
+        execution_result = ExecutionResult(
+            outcome=overall_outcome,
+            success=success,
+            submitted=bool(submitted_nodes),
+            verified=True if success else False if submitted_nodes else None,
+            targets=execution_items,
+            warnings=[
+                item.message
+                for item in execution_items
+                if item.outcome is not VerificationOutcome.COMPLETED
+            ],
+            evidence=[{"tools_used": tools_used}],
+        )
         answer = {
             "success": success,
+            "outcome": overall_outcome.value,
+            "submitted": bool(submitted_nodes),
+            "verified": True if success else False if submitted_nodes else None,
             "route": "control-agent+mcp",
             "intent": "control-agent-confirmed" if success else "control-agent-partial" if partial else "control-agent-failed",
             "message": message,
@@ -584,6 +677,7 @@ class HomeBrainControlAgent:
             "control_plan": plan.public_dict(),
             "control_confirmed_by_user": confirmed,
             "tools_used": tools_used,
+            "execution_result": execution_result.model_dump(mode="json"),
             "technical": safe_debug(
                 {
                     "plan": plan.public_dict(),
@@ -699,6 +793,9 @@ class HomeBrainControlAgent:
         return {
             "success": False,
             "intent": "control-agent-level-unverified",
+            "command_sent": True,
+            "command_accepted": True,
+            "confirmed": False,
             "message": (
                 f"{node.label} received setLevel {value:g}%, but the final level could not be verified"
                 + (f"; last reading was {observed:g}%." if observed is not None else ".")

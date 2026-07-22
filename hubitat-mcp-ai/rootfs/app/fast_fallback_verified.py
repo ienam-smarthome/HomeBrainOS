@@ -294,6 +294,9 @@ class FastFallbackRouter(LiveFastFallbackRouter):
         response["command_sent"] = True
         response["command_accepted"] = True
         response["confirmed"] = confirmed
+        response["outcome"] = "completed" if confirmed else "sent"
+        response["submitted"] = True
+        response["verified"] = confirmed
         response["requested_state"] = desired_state
         response["initial_state"] = initial_state
         response["verified_state"] = verified_state
