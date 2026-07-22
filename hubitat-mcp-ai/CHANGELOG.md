@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.10.22
+
+- Routes `show power` and `show power devices` to the same deterministic current-
+  power summary already used by `show device power`.
+- Prevents those short read phrases from being treated as literal device names.
+- Keeps comparison questions such as highest-power-device requests on their
+  separate ranked comparison route.
+
 ## 0.10.21
 
 - Accepts normal read prefixes on concise energy-period aliases, including

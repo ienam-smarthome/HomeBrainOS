@@ -25,6 +25,21 @@ _POWER_SUMMARY_TERMS = (
     "power readings",
     "device power",
 )
+_SHORT_POWER_SUMMARY_ALIASES = {
+    "power",
+    "power devices",
+    "device power",
+}
+_READ_PREFIXES = (
+    "show me ",
+    "give me ",
+    "tell me ",
+    "show ",
+    "list ",
+    "display ",
+    "get ",
+    "check ",
+)
 _COMPARISON_TERMS = (
     " most ",
     " highest ",
@@ -79,8 +94,12 @@ def is_power_summary_query(query: str) -> bool:
         return False
     if q in _POWER_SUMMARY_TERMS:
         return True
-    if not q.startswith(("show ", "list ", "display ", "get ", "check ", "give me ", "tell me ")):
+    prefix = next((item for item in _READ_PREFIXES if q.startswith(item)), None)
+    if prefix is None:
         return False
+    requested = q[len(prefix) :].strip()
+    if requested in _SHORT_POWER_SUMMARY_ALIASES:
+        return True
     return any(term in q for term in _POWER_SUMMARY_TERMS)
 
 
