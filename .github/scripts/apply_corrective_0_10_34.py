@@ -56,4 +56,4 @@ def test_device_specific_power_is_not_captured():
 Path("hubitat-mcp-ai/CHANGELOG_0.10.34.md").write_text(
 "# Hubitat MCP AI 0.10.34\n\n- Makes `now` optional in whole-house live-power questions.\n- Keeps spaced and hyphenated natural wording on the deterministic Octopus route.\n- Prevents device-specific power questions from being captured.\n", encoding="utf-8")
 
-# Triggered by a user-authored commit so GitHub Actions can publish the generated release commit.
+# Corrective runner trigger 2.
