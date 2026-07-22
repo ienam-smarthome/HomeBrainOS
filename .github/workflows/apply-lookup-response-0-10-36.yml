@@ -1,0 +1,24 @@
+name: Apply lookup response 0.10.36
+on:
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/lookup-response-0.10.36'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/lookup-response-0.10.36
+          show-progress: false
+      - run: python3 .github/scripts/apply_lookup_response_0_10_36.py
+      - run: rm -f .github/scripts/apply_lookup_response_0_10_36.py
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Add deterministic device lookup responses"
+          git push
