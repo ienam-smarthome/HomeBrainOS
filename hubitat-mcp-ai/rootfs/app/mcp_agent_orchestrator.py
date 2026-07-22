@@ -7,6 +7,7 @@ from control_agent_gate import is_contextual_device_control, is_exact_fast_contr
 from control_agent_intent import is_control_candidate
 from contextual_control import is_other_device_control
 from device_health_fast_route import is_attention_query, is_device_health_query
+from entity_request_policy import parse_entity_request
 from mutation_result_policy import enforce_device_mutation_result
 from routing_policy import classify_query
 
@@ -181,11 +182,8 @@ async def _apply_device_tool_policy(
         return answer
 
     agent = getattr(application, "ollama", None)
-    targeted_check = getattr(agent, "_targeted_device_lookup", None)
-    if callable(targeted_check) and not targeted_check(query):
-        return answer
-    broad_check = getattr(agent, "_is_broad_device_inventory_request", None)
-    if callable(broad_check) and bool(broad_check(query)):
+    entity_request = parse_entity_request(query)
+    if entity_request.broad_inventory or not entity_request.targeted:
         return answer
 
     targeted = getattr(agent, "_answer_from_targeted_device_search", None)
@@ -199,6 +197,7 @@ async def _apply_device_tool_policy(
     )
     result = dict(corrected)
     result["tool_policy_corrected"] = True
+    result["entity_resolution_request"] = entity_request.as_dict()
     result["original_executed_tools"] = sorted(executed)
     result["original_selected_tools"] = [
         str(item) for item in answer.get("selected_tools") or [] if item
