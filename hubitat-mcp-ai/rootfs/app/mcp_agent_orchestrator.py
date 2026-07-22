@@ -164,12 +164,39 @@ async def _apply_automation_recommendation_policy(
 
 _DEVICE_ATTRIBUTE_REQUESTS = (
     (re.compile(r"\b(?:lux|illuminance)\b", re.IGNORECASE), "illuminance", "lux"),
+    (re.compile(r"\b(?:temperature|temp)\b", re.IGNORECASE), "temperature", "°C"),
+    (re.compile(r"\b(?:humidity|relative humidity)\b", re.IGNORECASE), "humidity", "%"),
+    (re.compile(r"\b(?:power|watts?|wattage)\b", re.IGNORECASE), "power", "W"),
+    (re.compile(r"\b(?:energy|kilowatt[- ]?hours?|kwh)\b", re.IGNORECASE), "energy", "kWh"),
+    (re.compile(r"\b(?:battery|battery level)\b", re.IGNORECASE), "battery", "%"),
+)
+
+_NON_DEVICE_ATTRIBUTE_QUERY = re.compile(
+    r"\b(?:all|average|compare|highest|lowest|most|least|total|whole[- ]?house|"
+    r"home|today|yesterday|this (?:week|month|year)|last (?:hour|day|week|month))\b",
+    re.IGNORECASE,
 )
 
 
 def _requested_device_attribute(query: str) -> tuple[str, str] | None:
     q = _normalise(query)
-    if not any(term in q for term in ("reading", "value", "current", "what is", "what's", "how bright")):
+    if _NON_DEVICE_ATTRIBUTE_QUERY.search(q):
+        return None
+    if not any(
+        term in q
+        for term in (
+            "reading",
+            "value",
+            "current",
+            "what is",
+            "what's",
+            "what temperature",
+            "what humidity",
+            "how bright",
+            "how much power",
+            "how much energy",
+        )
+    ):
         return None
     for pattern, attribute, unit in _DEVICE_ATTRIBUTE_REQUESTS:
         if pattern.search(q):
@@ -182,7 +209,27 @@ def _attribute_target_phrase(query: str) -> str:
     match = re.search(r"\b(?:from|of)\s+(.+)$", q, re.IGNORECASE)
     if match:
         return match.group(1).strip()
-    return parse_entity_request(query).target_phrase
+    patterns = (
+        r"^what\s+(?:temperature|humidity|battery(?: level)?|power|energy|lux|illuminance)\s+is\s+(.+)$",
+        r"^how\s+much\s+(?:power|energy)\s+(?:is|does)\s+(.+?)(?:\s+(?:using|use|reporting|report))?$",
+        r"^how\s+bright\s+is\s+(.+)$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, q, re.IGNORECASE)
+        if match:
+            return re.sub(r"^(?:the|a|an)\s+", "", match.group(1), flags=re.IGNORECASE).strip()
+
+    target = parse_entity_request(query).target_phrase
+    target = re.sub(
+        r"\b(?:current|reading|value|temperature|temp|humidity|relative humidity|"
+        r"battery(?: level)?|power|watts?|wattage|energy|kilowatt[- ]?hours?|kwh|"
+        r"lux|illuminance)\b",
+        " ",
+        target,
+        flags=re.IGNORECASE,
+    )
+    target = re.sub(r"\s+", " ", target).strip(" -")
+    return target
 
 
 def _tool_data(result: Any) -> Any:
@@ -280,7 +327,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
 
     inventory_result, devices = await _load_authoritative_inventory(application)
     target_phrase = parse_entity_request(query).target_phrase if explicit_lookup else _attribute_target_phrase(query)
-    device = _best_lookup_device(devices, target_phrase)
+    device = _best_lookup_device(devices, target_phrase, attribute_request[0] if attribute_request else None)
     tools_used = [{"name": "hub_list_devices", "success": not bool(getattr(inventory_result, "is_error", False))}]
     if device is None:
         return {
@@ -364,21 +411,49 @@ def _iter_device_records(value: Any):
             yield from _iter_device_records(child)
 
 
-def _lookup_record_score(device: dict[str, Any], target_phrase: str) -> tuple[int, int]:
+def _device_attribute_support(device: dict[str, Any], attribute: str | None) -> int:
+    if not attribute:
+        return 0
+    aliases = _ATTRIBUTE_ALIASES.get(attribute, {attribute}) | {attribute}
+    haystack = " ".join(
+        str(device.get(key) or "")
+        for key in ("label", "name", "category", "deviceType", "capabilities", "currentStates", "attributes")
+    )
+    compact_haystack = _attribute_key(haystack)
+    return int(any(_attribute_key(alias) in compact_haystack for alias in aliases))
+
+
+def _lookup_record_score(
+    device: dict[str, Any],
+    target_phrase: str,
+    attribute: str | None = None,
+) -> tuple[int, int, int]:
     label = _normalise(str(device.get("label") or device.get("name") or ""))
     target = _normalise(target_phrase)
     compact_label = re.sub(r"[^a-z0-9]", "", label)
     compact_target = re.sub(r"[^a-z0-9]", "", target)
     exact = int(bool(compact_target) and compact_label == compact_target)
     overlap = len(set(target.split()) & set(label.split()))
-    return exact, overlap
+    return _device_attribute_support(device, attribute), exact, overlap
 
 
-def _best_lookup_device(payload: Any, target_phrase: str) -> dict[str, Any] | None:
+def _best_lookup_device(
+    payload: Any,
+    target_phrase: str,
+    attribute: str | None = None,
+) -> dict[str, Any] | None:
     records = list(_iter_device_records(payload))
-    if not records:
+    if not records or not _normalise(target_phrase):
         return None
-    return max(records, key=lambda item: _lookup_record_score(item, target_phrase))
+    ranked = sorted(
+        records,
+        key=lambda item: _lookup_record_score(item, target_phrase, attribute),
+        reverse=True,
+    )
+    best = ranked[0]
+    if _lookup_record_score(best, target_phrase, attribute)[2] == 0:
+        return None
+    return best
 
 
 def _format_lookup_device(device: dict[str, Any]) -> str:
