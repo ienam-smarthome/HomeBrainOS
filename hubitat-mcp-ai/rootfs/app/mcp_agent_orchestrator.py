@@ -162,6 +162,113 @@ async def _apply_automation_recommendation_policy(
     return result
 
 
+_LOOKUP_PREFIX_RE = re.compile(
+    r"^(?:find|locate|search for|look for|where is|where's)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_explicit_device_lookup(query: str) -> bool:
+    """Return true for identity/location lookups, not state or value questions."""
+
+    return bool(_LOOKUP_PREFIX_RE.match(_normalise(query)))
+
+
+def _iter_device_records(value: Any):
+    """Yield device-shaped dictionaries from nested targeted-search evidence."""
+
+    if isinstance(value, dict):
+        if value.get("id") not in (None, "") and (value.get("label") or value.get("name")):
+            if any(key in value for key in ("room", "roomName", "currentStates", "capabilities", "disabled")):
+                yield value
+        for child in value.values():
+            yield from _iter_device_records(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            yield from _iter_device_records(child)
+
+
+def _lookup_record_score(device: dict[str, Any], target_phrase: str) -> tuple[int, int]:
+    label = _normalise(str(device.get("label") or device.get("name") or ""))
+    target = _normalise(target_phrase)
+    compact_label = re.sub(r"[^a-z0-9]", "", label)
+    compact_target = re.sub(r"[^a-z0-9]", "", target)
+    exact = int(bool(compact_target) and compact_label == compact_target)
+    overlap = len(set(target.split()) & set(label.split()))
+    return exact, overlap
+
+
+def _best_lookup_device(payload: Any, target_phrase: str) -> dict[str, Any] | None:
+    records = list(_iter_device_records(payload))
+    if not records:
+        return None
+    return max(records, key=lambda item: _lookup_record_score(item, target_phrase))
+
+
+def _format_lookup_device(device: dict[str, Any]) -> str:
+    label = str(device.get("label") or device.get("name") or "Device")
+    room = device.get("room") or device.get("roomName") or device.get("room_name")
+    device_type = device.get("name") or device.get("category") or device.get("deviceType")
+    disabled = bool(device.get("disabled"))
+    parts = [f"Found {label}"]
+    if room:
+        parts[0] += f" in {room}"
+    if device_type and _normalise(str(device_type)) != _normalise(label):
+        parts.append(f"Device type: {device_type}")
+    parts.append("Status: disabled" if disabled else "Status: available")
+    return ". ".join(parts) + "."
+
+
+async def _apply_device_lookup_response_policy(
+    application: Any,
+    query: str,
+    history: list[dict[str, str]],
+    answer: dict[str, Any],
+) -> dict[str, Any]:
+    """Make explicit find/locate requests terminal and evidence-shaped.
+
+    A lookup asks where/what a device is. It must not be reinterpreted as a request
+    for the device's current sensor value merely because the label contains words
+    such as lux, temperature or power.
+    """
+
+    if not _is_explicit_device_lookup(query):
+        return answer
+    entity_request = parse_entity_request(query)
+    if entity_request.broad_inventory or not entity_request.targeted:
+        return answer
+    executed = _executed_tool_names(answer)
+    if not ({"homebrain_search_devices", "hub_list_devices"} & executed):
+        return answer
+
+    agent = getattr(application, "ollama", None)
+    targeted = getattr(agent, "_answer_from_targeted_device_search", None)
+    if not callable(targeted):
+        return answer
+
+    corrected = await targeted(
+        query,
+        history,
+        RuntimeError("Explicit lookup requires deterministic targeted-device evidence"),
+    )
+    result = dict(corrected)
+    device = _best_lookup_device({"targeted": corrected, "planner": answer}, entity_request.target_phrase)
+    if device is not None:
+        result["message"] = _format_lookup_device(device)
+        result["lookup_device"] = {
+            "id": str(device.get("id") or ""),
+            "label": str(device.get("label") or device.get("name") or ""),
+            "room": device.get("room") or device.get("roomName") or device.get("room_name"),
+            "device_type": device.get("name") or device.get("category") or device.get("deviceType"),
+            "disabled": bool(device.get("disabled")),
+        }
+    result["lookup_response_policy_corrected"] = True
+    result["entity_resolution_request"] = entity_request.as_dict()
+    result["original_message"] = str(answer.get("message") or "")
+    result["original_executed_tools"] = sorted(executed)
+    return result
+
+
 async def _apply_device_tool_policy(
     application: Any,
     query: str,
@@ -256,6 +363,12 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
                 history,
                 dict(answer),
             )
+            result = await _apply_device_lookup_response_policy(
+                application,
+                query,
+                history,
+                result,
+            )
             result = await _apply_automation_recommendation_policy(
                 application,
                 query,
@@ -294,6 +407,8 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
 
 __all__ = [
     "_apply_device_tool_policy",
+    "_apply_device_lookup_response_policy",
+    "_is_explicit_device_lookup",
     "_apply_automation_recommendation_policy",
     "_executed_tool_names",
     "_has_successful_tool_call",
