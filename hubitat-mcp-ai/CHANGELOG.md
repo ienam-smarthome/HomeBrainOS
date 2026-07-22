@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.10.41
+
+- Makes deterministic measurement resolution use both device labels and
+  structured Hubitat room metadata.
+- Probes at most three matching devices through `hub_read_devices` when compact
+  inventory cannot identify which candidate exposes the requested attribute.
+- Prefers environmental sensors over obvious actuator-only devices for named
+  temperature, humidity and illuminance reads.
+- Adds room-based humidity plus named energy and battery regression coverage.
+
 ## 0.10.40
 
 - Fixes deterministic named-device reads when `hub_list_devices` returns compact

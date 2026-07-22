@@ -46,7 +46,7 @@ class MCP:
 
 
 def app(current_states=None):
-    return SimpleNamespace(mcp=MCP(current_states), VERSION="0.10.40")
+    return SimpleNamespace(mcp=MCP(current_states), VERSION="0.10.41")
 
 
 class MultiDeviceMCP:
@@ -74,7 +74,7 @@ class MultiDeviceMCP:
 
 def multi_device_app(devices, states_by_id):
     mcp = MultiDeviceMCP(devices, states_by_id)
-    return SimpleNamespace(mcp=mcp, VERSION="0.10.40"), mcp
+    return SimpleNamespace(mcp=mcp, VERSION="0.10.41"), mcp
 
 
 def test_find_is_terminal_identity_lookup():
@@ -205,6 +205,55 @@ def test_named_power_read_accepts_sparse_mcp_inventory_aliases():
     assert answer["device_label"] == "Freezer (MQTT)"
     assert answer["message"] == "Freezer (MQTT) is 77 W."
     assert [name for name, _ in mcp.calls] == ["hub_list_devices", "hub_read_devices"]
+
+
+def test_room_metric_read_probes_bounded_candidates_until_attribute_is_found():
+    application, mcp = multi_device_app(
+        [
+            {"id": "a", "label": "Environmental Sensor A", "room": {"name": "Bathroom"}},
+            {"id": "b", "label": "Environmental Sensor B", "room": {"name": "Bathroom"}},
+            {"id": "c", "label": "Kitchen Sensor", "room": {"name": "Kitchen"}},
+            {"id": "d", "label": "Bathroom Light", "room": {"name": "Bathroom"}},
+        ],
+        {
+            "a": [{"name": "temperature", "currentValue": 23.1}],
+            "b": [{"name": "humidity", "currentValue": 61}],
+            "c": [{"name": "humidity", "currentValue": 48}],
+            "d": [{"name": "switch", "currentValue": "off"}],
+        },
+    )
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "What is the bathroom humidity?"))
+
+    assert answer["success"] is True
+    assert answer["device_id"] == "b"
+    assert answer["message"] == "Environmental Sensor B is 61 %."
+    assert answer["devices_probed"] == 2
+    assert mcp.read_ids == ["a", "b"]
+
+
+def test_named_energy_read_uses_authoritative_device_detail():
+    application, _ = multi_device_app(
+        [{"id": "freezer", "label": "Freezer (MQTT)", "room": "Kitchen"}],
+        {"freezer": [{"name": "energyMeter", "currentValue": 522.732}]},
+    )
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "How much energy is the freezer using?"))
+
+    assert answer["success"] is True
+    assert answer["message"] == "Freezer (MQTT) is 522.732 kWh."
+
+
+def test_named_battery_read_uses_attribute_alias():
+    application, _ = multi_device_app(
+        [{"id": "contact", "label": "Hallway Contact", "room": "Hallway"}],
+        {"contact": [{"key": "batteryLevel", "displayValue": 88}]},
+    )
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "What is the battery level of Hallway Contact?"))
+
+    assert answer["success"] is True
+    assert answer["message"] == "Hallway Contact is 88 %."
 
 
 def test_aggregate_and_period_queries_remain_owned_by_semantic_reader():

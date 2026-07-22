@@ -328,7 +328,12 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
 
     inventory_result, devices = await _load_authoritative_inventory(application)
     target_phrase = parse_entity_request(query).target_phrase if explicit_lookup else _attribute_target_phrase(query)
-    device = _best_lookup_device(devices, target_phrase, attribute_request[0] if attribute_request else None)
+    candidates = _rank_lookup_devices(
+        devices,
+        target_phrase,
+        attribute_request[0] if attribute_request else None,
+    )
+    device = candidates[0] if candidates else None
     tools_used = [{"name": "hub_list_devices", "success": not bool(getattr(inventory_result, "is_error", False))}]
     if device is None:
         return {
@@ -360,9 +365,18 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         }
 
     attribute, unit = attribute_request
-    read_result = await _read_authoritative_device(application, str(_device_id(device) or ""))
-    tools_used.append({"name": "hub_read_devices", "success": not bool(getattr(read_result, "is_error", False))})
-    value = _extract_attribute_value(_tool_data(read_result), attribute)
+    value = None
+    devices_probed = 0
+    for candidate in candidates[:3]:
+        read_result = await _read_authoritative_device(application, str(_device_id(candidate) or ""))
+        read_success = not bool(getattr(read_result, "is_error", False))
+        tools_used.append({"name": "hub_read_devices", "success": read_success})
+        devices_probed += 1
+        candidate_value = _extract_attribute_value(_tool_data(read_result), attribute)
+        if candidate_value not in (None, ""):
+            device = candidate
+            value = candidate_value
+            break
     label = _label(device) or "Device"
     if value in (None, ""):
         message = f"{label} is available, but Hubitat did not expose a current {attribute} value."
@@ -380,6 +394,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         "attribute": attribute,
         "value": value,
         "unit": unit,
+        "devices_probed": devices_probed,
         "tools_used": tools_used,
         "entity_resolution_request": parse_entity_request(query).as_dict(),
         "answered_by": "deterministic entity reader",
@@ -433,18 +448,75 @@ def _device_attribute_support(device: dict[str, Any], attribute: str | None) -> 
     return int(any(_attribute_key(alias) in compact_haystack for alias in aliases))
 
 
+def _device_room(device: dict[str, Any]) -> str:
+    room = device.get("room") or device.get("roomName") or device.get("room_name")
+    if isinstance(room, dict):
+        room = room.get("name") or room.get("label") or room.get("roomName")
+    return str(room or "").strip()
+
+
+def _device_attribute_compatibility(device: dict[str, Any], attribute: str | None) -> int:
+    if attribute not in {"temperature", "humidity", "illuminance"}:
+        return 1
+    text = f" {_normalise(_label(device))} "
+    actuator_terms = (" light ", " lamp ", " bulb ", " switch ", " socket ", " plug ", " outlet ")
+    return int(not any(term in text for term in actuator_terms))
+
+
 def _lookup_record_score(
     device: dict[str, Any],
     target_phrase: str,
     attribute: str | None = None,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int, int]:
     label = _normalise(_label(device))
+    room = _normalise(_device_room(device))
     target = _normalise(target_phrase)
     compact_label = re.sub(r"[^a-z0-9]", "", label)
     compact_target = re.sub(r"[^a-z0-9]", "", target)
     exact = int(bool(compact_target) and compact_label == compact_target)
-    overlap = len(set(target.split()) & set(label.split()))
-    return _device_attribute_support(device, attribute), exact, overlap
+    target_tokens = set(target.split())
+    label_overlap = len(target_tokens & set(label.split()))
+    room_overlap = len(target_tokens & set(room.split()))
+    target_overlap = max(label_overlap, room_overlap)
+    return (
+        exact,
+        target_overlap,
+        _device_attribute_compatibility(device, attribute),
+        _device_attribute_support(device, attribute),
+        label_overlap,
+    )
+
+
+def _rank_lookup_devices(
+    payload: Any,
+    target_phrase: str,
+    attribute: str | None = None,
+) -> list[dict[str, Any]]:
+    records = list(_iter_device_records(payload))
+    if not records or not _normalise(target_phrase):
+        return []
+    def sort_key(item: dict[str, Any]) -> tuple[int, int, int, int, int, str, str]:
+        exact, overlap, compatible, support, label_overlap = _lookup_record_score(
+            item,
+            target_phrase,
+            attribute,
+        )
+        return (
+            -exact,
+            -overlap,
+            -compatible,
+            -support,
+            -label_overlap,
+            _normalise(_label(item)),
+            str(_device_id(item) or ""),
+        )
+
+    ranked = sorted(records, key=sort_key)
+    return [
+        item
+        for item in ranked
+        if _lookup_record_score(item, target_phrase, attribute)[1] > 0
+    ]
 
 
 def _best_lookup_device(
@@ -452,18 +524,8 @@ def _best_lookup_device(
     target_phrase: str,
     attribute: str | None = None,
 ) -> dict[str, Any] | None:
-    records = list(_iter_device_records(payload))
-    if not records or not _normalise(target_phrase):
-        return None
-    ranked = sorted(
-        records,
-        key=lambda item: _lookup_record_score(item, target_phrase, attribute),
-        reverse=True,
-    )
-    best = ranked[0]
-    if _lookup_record_score(best, target_phrase, attribute)[2] == 0:
-        return None
-    return best
+    ranked = _rank_lookup_devices(payload, target_phrase, attribute)
+    return ranked[0] if ranked else None
 
 
 def _format_lookup_device(device: dict[str, Any]) -> str:
