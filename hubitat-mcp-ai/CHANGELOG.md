@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.17
+
+- Keeps Octopus meter display queries on a terminal deterministic route outside
+  the unified AI agent, matching their existing `mcp-fast` classification.
+- Recognises the live Hubitat labels `Octopus Meter Power`, `Octopus Meter Today`
+  and related period sensors in addition to their friendly display names.
+- Uses detailed and per-device reads before reporting that an Octopus value is
+  unavailable, preventing AI from contradicting live Hubitat states such as `173 W`.
+
 ## 0.10.16
 
 - Makes clickable device choices self-contained control commands instead of bare numbers,

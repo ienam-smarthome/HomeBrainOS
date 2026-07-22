@@ -14,7 +14,7 @@ from routing_policy import RouteDecision
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 
-_PREFIX = "octopus live meter display"
+_PREFIXES = ("octopus live meter display", "octopus meter")
 _PERIOD_ORDER = ("power", "today", "yesterday", "week", "month", "rates", "previous rate", "standing charge")
 _PERIOD_ALIASES = {
     "today": ("today", "today's", "current day"),
@@ -104,6 +104,10 @@ def is_whole_house_period_query(query: str) -> bool:
 
 def is_octopus_energy_query(query: str) -> bool:
     return is_octopus_display_query(query) or is_whole_house_period_query(query)
+
+
+def _is_octopus_meter_row(item: dict[str, Any]) -> bool:
+    return _normalise(_label(item)).startswith(_PREFIXES)
 
 
 def _walk_dicts(value: Any) -> list[dict[str, Any]]:
@@ -393,7 +397,7 @@ class OctopusLiveMeterSummary:
                 if result.is_error:
                     errors.append(result.text or f"hub_list_devices detailed={detailed} failed")
                     continue
-                filtered = [row for row in _device_rows(result.data) if _normalise(_label(row)).startswith(_PREFIX)]
+                filtered = [row for row in _device_rows(result.data) if _is_octopus_meter_row(row)]
                 if filtered:
                     groups.append(filtered)
             except Exception as exc:
@@ -407,7 +411,7 @@ class OctopusLiveMeterSummary:
                 result = await client.call_tool("hub_list_devices", args)
                 tools.append("hub_list_devices")
                 if not result.is_error:
-                    rows = [row for row in _device_rows(result.data) if _normalise(_label(row)).startswith(_PREFIX)]
+                    rows = [row for row in _device_rows(result.data) if _is_octopus_meter_row(row)]
             except Exception as exc:
                 errors.append(f"all-device Octopus fallback: {str(exc).strip() or type(exc).__name__}")
 

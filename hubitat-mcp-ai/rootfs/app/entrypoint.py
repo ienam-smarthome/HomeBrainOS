@@ -24,6 +24,7 @@ from control_agent_gate import install_control_agent_gate
 from control_agent_postfix_control import install_postfix_control_intent
 from control_agent_rescue import install_control_agent
 from control_confirmation import install_control_confirmation
+from control_focus_octopus_energy import install_control_focus_octopus_energy
 from control_language import install_control_language
 from conversation_context_safe import install_safe_conversation_context
 from dashboard_api import install_dashboard_api
@@ -60,8 +61,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.9"
-RELEASE_VERSION = "0.10.16"
+PREVIOUS_RELEASE_VERSION = "0.10.16"
+RELEASE_VERSION = "0.10.17"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -250,6 +251,9 @@ named_rule_controller = install_named_rule_controller(application)
 # Install authoritative health/attention routes outside every AI wrapper so their
 # live classifications are terminal and cannot be reinterpreted by model synthesis.
 install_device_health_fast_route(application)
+# Keep Octopus display reads authoritative and outside the unified AI wrapper.
+# This also uses the richer per-device read fallback when list responses omit values.
+octopus_terminal_summary = install_control_focus_octopus_energy(application)
 install_automation_recommendation_terminal_route(application, automation_recommendation)
 install_ollama_help_terminal_route(application)
 # Hub restart is a destructive two-turn operation. Keep its pending confirmation
