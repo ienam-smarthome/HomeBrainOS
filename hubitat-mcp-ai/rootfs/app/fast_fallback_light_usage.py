@@ -13,9 +13,9 @@ from presenter import display_payload, safe_debug
 
 
 _PATTERNS = (
-    r"^(?:the )?(?:total |combined )?lights? on time (?:for )?today$",
+    r"^(?:show )?(?:the )?(?:total |combined )?lights? on time(?:(?: for)? today)?$",
     r"^how (?:long|much time) (?:have )?(?:all )?(?:the )?lights? (?:been )?on today$",
-    r"^(?:show|calculate|get|give me) (?:the )?(?:total |combined )?(?:daily )?light (?:on time|usage) (?:for )?today$",
+    r"^(?:show|calculate|get|give me) (?:the )?(?:total |combined )?(?:daily )?lights? (?:on time|usage) (?:for )?today$",
     r"^(?:which|what) lights? (?:were|have been) on (?:the )?longest today$",
 )
 
