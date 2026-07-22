@@ -117,8 +117,8 @@ def is_whole_house_period_query(query: str) -> bool:
 def is_whole_house_power_query(query: str) -> bool:
     q = _query(query)
     patterns = (
-        r"how much (?:power|electricity) (?:are we|is the house|is my home) using(?: right)? now",
-        r"what(?:'s| is) (?:our|the(?: whole house)?|my|current|whole house) (?:power|electricity) (?:usage|use|consumption)(?: right)? now",
+        r"how much (?:power|electricity) (?:are we|is the house|is my home) using(?: (?:right )?now)?",
+        r"what(?:'s| is) (?:our|the(?: whole house)?|my|current|whole house) (?:power|electricity) (?:usage|use|consumption)(?: (?:right )?now)?",
         r"(?:show|give|tell) me (?:the )?(?:current|live|whole house) (?:power|electricity)(?: usage| consumption)?",
         r"(?:current|live|whole house|overall|total) (?:power|electricity) (?:usage|use|consumption)",
     )
