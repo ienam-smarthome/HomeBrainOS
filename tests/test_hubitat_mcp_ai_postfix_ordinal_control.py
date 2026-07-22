@@ -172,6 +172,29 @@ def test_second_living_room_light_executes_once_without_ai_or_choice(tmp_path: P
     }
 
 
+def test_prefix_ordinal_wording_from_live_failure_executes_terminally(tmp_path: Path):
+    install_language()
+    fallback = FakeFallback()
+    agent = HomeBrainControlAgent(
+        FakeApplication(),
+        FakeIndex(),
+        fallback,
+        alias_path=str(tmp_path / "aliases.json"),
+    )
+
+    answer = asyncio.run(
+        agent.answer(request("Turn off the second living-room light"), unused)
+    )
+
+    assert answer["success"] is True
+    assert answer["route"] == "control-agent+mcp"
+    assert fallback.calls == [("Livingroom Light 2", "off")]
+    assert any(
+        item["name"] == "hub_call_device_command" and item["success"] is True
+        for item in answer["tools_used"]
+    )
+
+
 def test_entrypoint_installs_postfix_parser_before_control_agent():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 

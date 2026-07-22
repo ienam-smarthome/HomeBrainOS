@@ -10,7 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from mcp_agent_orchestrator import _normalise_history, should_use_unified_agent  # noqa: E402
+from mcp_agent_orchestrator import (  # noqa: E402
+    _normalise_history,
+    install_unified_mcp_agent_orchestrator,
+    should_use_unified_agent,
+)
 from control_agent_combined_level import install_combined_level_intent  # noqa: E402
 from ollama_agent_unified import UnifiedAdaptiveMCPAgent  # noqa: E402
 
@@ -86,6 +90,45 @@ def test_contextual_controls_use_verified_session_context_not_ai_history():
         "please switch that one on",
     )
     assert all(not should_use_unified_agent(query) for query in variants)
+
+
+def test_all_device_controls_bypass_unified_synthesis_even_with_ordinals():
+    variants = (
+        "Turn off the second hallway light",
+        "turn on the hallway light near the stairs",
+        "set the second living room light to 30 percent",
+    )
+    assert all(not should_use_unified_agent(query) for query in variants)
+
+
+def test_outer_unified_wrapper_cannot_intercept_ordinal_control():
+    calls: list[str] = []
+
+    async def terminal_control(request):
+        calls.append(request.query)
+        return {
+            "success": True,
+            "route": "control-agent+mcp",
+            "tools_used": [{"name": "hub_call_device_command", "success": True}],
+        }
+
+    class NeverPlanner:
+        async def answer_with_planner(self, _query, _history):
+            raise AssertionError("Unified synthesis must not receive device controls")
+
+    application = SimpleNamespace(
+        ask=terminal_control,
+        ollama=NeverPlanner(),
+        VERSION="test",
+    )
+    install_unified_mcp_agent_orchestrator(application)
+
+    answer = asyncio.run(
+        application.ask(SimpleNamespace(query="Turn off the second hallway light", history=[]))
+    )
+
+    assert answer["route"] == "control-agent+mcp"
+    assert calls == ["Turn off the second hallway light"]
 
 
 def test_device_health_queries_never_enter_unified_ai_synthesis():

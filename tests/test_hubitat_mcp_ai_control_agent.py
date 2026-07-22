@@ -323,7 +323,12 @@ def test_exact_control_stays_deterministic_but_contextual_controls_require_ai():
         "turn off all bedroom lights except the floor lamp"
     ) is None
     assert interpreter._deterministic_intent("turn off the other one") is None
-    assert interpreter._deterministic_intent("switch the second lounge light off") is None
+    ordinal = interpreter._deterministic_intent("switch the second lounge light off")
+    assert ordinal is not None
+    assert ordinal.model is None
+    assert ordinal.actions[0].target.room_hint == "Living Room"
+    assert ordinal.actions[0].target.device_type == "light"
+    assert ordinal.actions[0].target.ordinal == 2
 
 
 def test_pronoun_control_is_deterministic_and_uses_verified_scope():

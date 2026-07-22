@@ -8,6 +8,10 @@ _POSTFIX_CONTROL = re.compile(
     r"^(?:please\s+)?(?:turn|switch)\s+(?:the\s+)?(.+?)\s+(on|off)[.!?]*$",
     re.IGNORECASE,
 )
+_PREFIX_CONTROL = re.compile(
+    r"^(?:please\s+)?(?:turn|switch)\s+(on|off)\s+(?:the\s+)?(.+?)[.!?]*$",
+    re.IGNORECASE,
+)
 _ORDINAL_PREFIX = re.compile(
     r"^(?:number\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
     r"one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2}(?:st|nd|rd|th)?)\s+(.+)$",
@@ -116,22 +120,33 @@ def _ordinal(value: str) -> int | None:
 
 
 def parse_postfix_control(query: str) -> PostfixControlPhrase | None:
-    """Parse commands where the action appears after the target.
+    """Parse ordinal controls with the action before or after the target.
 
     Examples:
       - ``switch Bedroom 1 Light off`` -> exact device name
       - ``switch the second living-room light off`` -> room/type/ordinal
+      - ``turn off the second hallway light`` -> room/type/ordinal
 
     Contextual and group phrases deliberately return ``None`` so they remain on the
     structured context/AI path rather than being treated as a single device.
     """
 
-    match = _POSTFIX_CONTROL.match(str(query or "").strip())
-    if not match:
-        return None
+    text = str(query or "").strip()
+    match = _POSTFIX_CONTROL.match(text)
+    prefix_form = False
+    if match:
+        target = _normalise_phrase(match.group(1))
+        action = str(match.group(2) or "").lower()
+    else:
+        prefix = _PREFIX_CONTROL.match(text)
+        if prefix is None:
+            return None
+        prefix_form = True
+        action = str(prefix.group(1) or "").lower()
+        target = _normalise_phrase(prefix.group(2))
 
-    target = _normalise_phrase(match.group(1))
-    action = str(match.group(2) or "").lower()
+    if not target or action not in {"on", "off"}:
+        return None
     words = set(re.findall(r"[a-z0-9]+", target.lower()))
     if not target or words.intersection(_CONTEXT_WORDS):
         return None
@@ -156,6 +171,12 @@ def parse_postfix_control(query: str) -> PostfixControlPhrase | None:
             ordinal=ordinal,
         )
 
+    # Prefix action grammar already belongs to the base deterministic parser.
+    # This extension only adds the missing structured ordinal form; refusing all
+    # other prefix targets prevents multi-device and conditional requests from
+    # being flattened into one apparent device name.
+    if prefix_form:
+        return None
     return PostfixControlPhrase(action=action, name_hint=target)
 
 
