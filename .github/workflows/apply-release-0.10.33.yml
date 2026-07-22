@@ -1,0 +1,31 @@
+name: Apply release 0.10.33
+
+on:
+  push:
+    branches:
+      - agent/fix-the-whole-house-power-0.10.33
+    paths:
+      - tools/apply_release_0_10_33.py
+      - .github/workflows/apply-release-0.10.33.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-the-whole-house-power-0.10.33
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/apply_release_0_10_33.py
+      - run: rm tools/apply_release_0_10_33.py .github/workflows/apply-release-0.10.33.yml
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Fix terminal whole-house power grammar"
+          git push
