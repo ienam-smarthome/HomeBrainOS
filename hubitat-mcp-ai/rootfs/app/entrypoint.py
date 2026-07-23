@@ -4,9 +4,10 @@ import uvicorn
 
 import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
+from named_app_control import install_named_app_controller
 
-PREVIOUS_RELEASE_VERSION = "0.10.55"
-RELEASE_VERSION = "0.10.56"
+PREVIOUS_RELEASE_VERSION = "0.10.56"
+RELEASE_VERSION = "0.10.57"
 
 # Composition remains in entrypoint_core.py. Keep these explicit contract markers
 # visible here because release validation and maintainers verify the safety-critical
@@ -27,6 +28,10 @@ _core.RELEASE_VERSION = RELEASE_VERSION
 _core.application.VERSION = RELEASE_VERSION
 _core.application.app.version = RELEASE_VERSION
 application = _core.application
+
+# Install app management last so it remains a terminal deterministic route outside
+# generic AI and device-control wrappers. All app writes still require confirmation.
+named_app_controller = install_named_app_controller(application)
 app = _core.app
 
 
