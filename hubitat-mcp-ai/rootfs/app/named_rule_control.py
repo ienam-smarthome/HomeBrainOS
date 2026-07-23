@@ -247,16 +247,37 @@ class NamedRuleController:
         result: Any,
         started: float,
     ) -> dict[str, Any]:
+        requested_paused = arguments.get("paused") if tool_name == "hub_set_rule_paused" else None
+        reported_paused = _deep_value(result.data, "paused")
+        command_verified = (
+            isinstance(requested_paused, bool)
+            and isinstance(reported_paused, bool)
+            and reported_paused is requested_paused
+        )
+        verification_source = "hub_set_rule_paused response" if command_verified else None
+
         if wording == "pause":
-            message = f"Pause command accepted for **{rule['name']}**. It should no longer fire from its triggers."
-            note = "Hubitat MCP accepted the command but does not expose a paused-state read-back in the rule inventory."
-            title = "Rule pause requested"
-            intent_name = "automation-rule-pause-accepted"
+            if command_verified:
+                message = f"Rule paused for **{rule['name']}**. Hubitat confirmed `paused: true`."
+                note = "Confirmed by the hub_set_rule_paused response."
+                title = "Rule paused"
+                intent_name = "automation-rule-pause-verified"
+            else:
+                message = f"Pause command accepted for **{rule['name']}**, but Hubitat did not return the new paused state."
+                note = "The command was accepted, but paused-state confirmation was not available."
+                title = "Rule pause requested"
+                intent_name = "automation-rule-pause-accepted"
         elif wording == "resume":
-            message = f"Resume command accepted for **{rule['name']}**. It can fire from its triggers again."
-            note = "Hubitat MCP accepted the command but does not expose a paused-state read-back in the rule inventory."
-            title = "Rule resume requested"
-            intent_name = "automation-rule-resume-accepted"
+            if command_verified:
+                message = f"Rule resumed for **{rule['name']}**. Hubitat confirmed `paused: false`."
+                note = "Confirmed by the hub_set_rule_paused response."
+                title = "Rule resumed"
+                intent_name = "automation-rule-resume-verified"
+            else:
+                message = f"Resume command accepted for **{rule['name']}**, but Hubitat did not return the new paused state."
+                note = "The command was accepted, but paused-state confirmation was not available."
+                title = "Rule resume requested"
+                intent_name = "automation-rule-resume-accepted"
         elif wording == "run":
             message = f"Run command accepted for **{rule['name']}**."
             note = "This performs the rule's normal evaluation and may execute its configured actions."
@@ -291,7 +312,11 @@ class NamedRuleController:
                     "tool": tool_name,
                     "arguments": arguments,
                     "mcp": result.data,
-                    "post_state_verified": False if wording in {"pause", "resume"} else None,
+                    "command_verified": command_verified if wording in {"pause", "resume"} else None,
+                    "verification_source": verification_source if wording in {"pause", "resume"} else None,
+                    "reported_paused": reported_paused if wording in {"pause", "resume"} else None,
+                    "inventory_readback_verified": False if wording in {"pause", "resume"} else None,
+                    "post_state_verified": command_verified if wording in {"pause", "resume"} else None,
                 }
             ),
         }
