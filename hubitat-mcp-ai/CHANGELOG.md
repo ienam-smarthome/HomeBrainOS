@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.54
+
+- Treats an exact `paused` value returned by `hub_set_rule_paused` as verified command confirmation.
+- Shows clear **Rule paused** and **Rule resumed** results when Hubitat confirms the requested state.
+- Separates write-response confirmation from optional rule-inventory read-back in technical details.
+
 ## 0.10.53
 
 - Changes the Rules shortcut to list all automation rules instead of only active rules.

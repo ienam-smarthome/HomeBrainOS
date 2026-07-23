@@ -85,7 +85,7 @@ def test_pause_exact_name_with_optional_rule_suffix_needs_no_choice():
 
     assert answer["success"] is True
     assert answer["route"] == "mcp-rule-control"
-    assert answer["intent"] == "automation-rule-pause-accepted"
+    assert answer["intent"] == "automation-rule-pause-verified"
     assert client.calls == [
         ("hub_list_rules", {}),
         ("hub_set_rule_paused", {"ruleId": 2967, "paused": True}),
@@ -156,3 +156,29 @@ def test_device_like_action_with_no_rule_match_returns_to_existing_assistant():
 
     assert answer["route"] == "fallback"
     assert client.calls == [("hub_list_rules", {})]
+
+def test_resume_uses_write_response_as_verified_confirmation():
+    client = FakeMCP()
+    answer = ask(application(client), "resume rule Appliance: Fridge and Freezer - Auto ON")
+
+    assert answer["success"] is True
+    assert answer["intent"] == "automation-rule-resume-verified"
+    assert "Rule resumed" in answer["message"]
+    assert "paused: false" in answer["message"]
+    assert answer["display"]["title"] == "Rule resumed"
+    assert answer["display"]["subtitle"] == "Confirmed by the hub_set_rule_paused response."
+    assert '"command_verified": true' in answer["technical"]
+    assert '"verification_source": "hub_set_rule_paused response"' in answer["technical"]
+    assert '"post_state_verified": true' in answer["technical"]
+    assert '"inventory_readback_verified": false' in answer["technical"]
+
+
+def test_pause_uses_write_response_as_verified_confirmation():
+    client = FakeMCP()
+    answer = ask(application(client), "pause rule Appliance: Fridge door left door")
+
+    assert answer["intent"] == "automation-rule-pause-verified"
+    assert "Rule paused" in answer["message"]
+    assert "paused: true" in answer["message"]
+    assert answer["display"]["title"] == "Rule paused"
+
