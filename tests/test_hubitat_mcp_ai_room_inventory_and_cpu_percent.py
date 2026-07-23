@@ -30,6 +30,7 @@ class FakeRoomMCP:
                 "rooms": [
                     {"id": "1", "name": "Apps"},
                     {"id": "2", "name": "Bedroom 1"},
+                    {"id": "3", "name": "Hallway"},
                 ]
             }
         elif name == "hub_list_devices":
@@ -55,6 +56,20 @@ class FakeRoomMCP:
                         "room": "Bedroom 1",
                         "deviceType": "Generic Zigbee Light",
                         "currentStates": {"switch": "off"},
+                    },
+                    {
+                        "id": "301",
+                        "label": "Hallway FP300",
+                        "room": "Hallway",
+                        "deviceType": "Motion Sensor",
+                        "currentStates": {"motion": "inactive"},
+                    },
+                    {
+                        "id": "302",
+                        "label": "Hallway Light 1",
+                        "room": "Hallway",
+                        "deviceType": "Generic Zigbee Light",
+                        "currentStates": {"switch": "on"},
                     },
                 ]
             }
@@ -94,6 +109,48 @@ def test_explicit_room_wording_also_matches():
     )
     assert answer["intent"] == "fallback-room-devices"
     assert answer["room"] == "Apps"
+
+
+def test_real_room_name_with_room_suffix_is_preferred_before_fallback():
+    class LivingRoomMCP(FakeRoomMCP):
+        async def call_tool(self, name, arguments):
+            result = await super().call_tool(name, arguments)
+            if name == "hub_list_rooms":
+                result.data["rooms"].append({"id": "4", "name": "Living room"})
+            elif name == "hub_list_devices":
+                result.data["devices"].append(
+                    {
+                        "id": "401",
+                        "label": "Living Room Lamp",
+                        "room": "Living room",
+                        "deviceType": "Dimmer",
+                        "currentStates": {"switch": "off"},
+                    }
+                )
+            return result
+
+    answer = asyncio.run(
+        FastFallbackRouter(LivingRoomMCP()).answer(
+            "Show devices in the Living room"
+        )
+    )
+
+    assert answer["intent"] == "fallback-room-devices"
+    assert answer["room"] == "Living room"
+    assert "Living Room Lamp" in answer["message"]
+
+
+def test_room_first_hallway_inventory_returns_all_room_devices():
+    for query in ("Find hallway devices", "Show hallway devices"):
+        answer = asyncio.run(FastFallbackRouter(FakeRoomMCP()).answer(query))
+
+        assert answer["success"] is True
+        assert answer["intent"] == "fallback-room-devices"
+        assert answer["room"] == "Hallway"
+        assert "Hallway FP300" in answer["message"]
+        assert "Hallway Light 1" in answer["message"]
+        assert "Bedroom 1 Light" not in answer["message"]
+        assert answer["display"]["metrics"][0]["value"] == "2"
 
 
 def test_hub_info_load_and_percent_format_returns_percentage():

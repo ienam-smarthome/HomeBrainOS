@@ -25,6 +25,11 @@ _ROOM_DEVICE_PATTERNS = (
         r"^(?:list|show|display)\s+(?:the\s+)?(.+?)\s+room(?:\s+devices)?[?.!]*$",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"^(?:list|show|display|find)\s+(?:all\s+)?(?:the\s+)?"
+        r"(.+?)\s+devices[?.!]*$",
+        re.IGNORECASE,
+    ),
     # Mobile/voice shorthand: "List Apps" where Apps is an exact Hubitat room.
     re.compile(
         r"^(?:list|show|display)\s+(?:the\s+)?([a-z0-9][a-z0-9 &'_\-]{0,50})[?.!]*$",
@@ -84,6 +89,26 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
             (room for room in rooms if self._room_key(room["name"]) == requested_key),
             None,
         )
+        # Prefer an exact room whose real name includes "room". Only treat a
+        # trailing "room" as descriptive wording when the full name did not
+        # match, e.g. "devices under Apps room" for the room named "Apps".
+        if exact is None:
+            without_suffix = re.sub(
+                r"\s+room$",
+                "",
+                str(requested_room or "").strip(),
+                flags=re.IGNORECASE,
+            )
+            if without_suffix != str(requested_room or "").strip():
+                fallback_key = self._room_key(without_suffix)
+                exact = next(
+                    (
+                        room
+                        for room in rooms
+                        if self._room_key(room["name"]) == fallback_key
+                    ),
+                    None,
+                )
         if exact is None:
             return None
 
@@ -191,7 +216,7 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
             candidate = re.sub(r"\s+", " ", match.group(1).strip(" .!?"))
             if not candidate:
                 return None
-            if index == len(_ROOM_DEVICE_PATTERNS) - 1:
+            if index >= len(_ROOM_DEVICE_PATTERNS) - 2:
                 normalised = _normalise(candidate)
                 if normalised in _RESERVED_SHORTHAND:
                     return None

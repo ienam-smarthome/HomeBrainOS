@@ -21,5 +21,14 @@ def test_room_inventory_is_broad_not_targeted():
     r = parse_entity_request("Show devices in the living room")
     assert r.broad_inventory and not r.targeted
 
+
+def test_room_first_inventory_is_broad_and_preserves_room():
+    for query in ("Find hallway devices", "Show hallway devices"):
+        r = parse_entity_request(query)
+        assert r.broad_inventory
+        assert not r.targeted
+        assert r.room == "hallway"
+
+
 def test_generic_inventory_is_not_targeted():
     assert not is_targeted_device_request("List all devices")

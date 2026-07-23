@@ -8,6 +8,7 @@
 - Reduces Hubitat MCP CPU load by extending static catalogue, capability and metadata cache lifetimes.
 - Moderately extends live device, hub-health and dashboard snapshot caches while preserving write invalidation, control verification and manual refresh.
 - Canonicalizes device-field ordering in cache keys so equivalent inventory projections share one upstream fetch while stale and capability filters remain isolated.
+- Routes room-first plural requests such as `Find hallway devices` and `Show hallway devices` to the exact deterministic room inventory instead of single-device resolution.
 
 ## 0.10.44
 

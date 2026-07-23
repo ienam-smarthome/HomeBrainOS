@@ -8,3 +8,4 @@
 - Static MCP catalogue and device metadata caches are retained longer to reduce expensive Hubitat-side catalogue work.
 - Live device and dashboard cache defaults are increased conservatively. Controls, verification, writes, and explicit refreshes remain fresh.
 - Equivalent device inventory field projections now share a cache entry regardless of field ordering; filtered inventories remain separate.
+- Room-first plural requests such as `Find hallway devices` and `Show hallway devices` now return every selected device assigned to that exact Hubitat room.
