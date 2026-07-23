@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.65
+
+- Adds an **Apps** smart shortcut beside **Rules** in the HomeBrain Web UI.
+- The shortcut sends the deterministic command `List apps`.
+- Injects the shortcut at the final runtime rendering layer so existing Web UI composition remains unchanged.
+
 ## 0.10.64
 
 - Retries `hub_update_firmware` exactly once when HomeBrain has independently verified a fresh backup but the MCP firmware guard still reports `BACKUP REQUIRED`.
