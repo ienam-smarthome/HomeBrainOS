@@ -363,7 +363,11 @@ class HubFirmwareUpdateWorkflow:
     async def _ensure_recent_backup(self) -> tuple[bool, dict[str, Any]]:
         try:
             key = await self.backup_service._read_best_practice_key()
-            ok, details = await self.backup_service._ensure_backup(key)
+            # The firmware-write guard uses Hubitat's authoritative backup
+            # registry. A filename that happens to contain today's date is not
+            # sufficient evidence that the guard will accept it, so always
+            # create and verify a fresh backup in this confirmed workflow.
+            ok, details = await self.backup_service._ensure_backup(key, force=True)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

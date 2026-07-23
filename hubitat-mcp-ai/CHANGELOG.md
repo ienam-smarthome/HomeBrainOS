@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.49
+
+- Forces creation and verification of a fresh backup immediately before firmware updates.
+- Stops treating a date-like backup filename as sufficient evidence for the admin-write guard.
+- Keeps backup creation and firmware update within the same explicit confirmation workflow.
+
 ## 0.10.48
 
 - Reads authoritative Hubitat platform-update status before asking for confirmation.
