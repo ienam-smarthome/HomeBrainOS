@@ -1,19 +1,23 @@
 name: Apply measurement wording 0.10.43
 
 on:
-  push:
+  pull_request:
+    branches:
+      - main
     paths:
-      - .github/workflows/apply-measurement-wording-0.10.43.yml
+      - .github/measurement-wording-trigger
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.head_ref == 'agent/measurement-wording-0.10.43'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -44,7 +48,6 @@ jobs:
           text = text.replace(old, new, 1)
           orchestrator.write_text(text, encoding='utf-8')
 
-          # Add focused regression tests to the existing orchestrator test module.
           test_candidates = list(root.glob('tests/**/test*mcp*agent*orchestrator*.py'))
           if not test_candidates:
               test_candidates = [p for p in root.glob('tests/**/*.py') if 'test_lux_question_reads_authoritative_attribute' in p.read_text(encoding='utf-8', errors='ignore')]
@@ -78,7 +81,6 @@ jobs:
           release_notes = root / 'hubitat-mcp-ai/CHANGELOG-0.10.43.md'
           release_notes.write_text('''# Hubitat MCP AI 0.10.43\n\n## Natural deterministic measurement responses\n\n- Bathroom humidity now reads as `Bathroom humidity is 66%.` rather than `Bathroom meter is 66 %.`\n- Percent and Celsius values are formatted without a space before the unit.\n- Power, energy and lux values keep their standard unit spacing.\n- Added regression coverage for humidity, temperature, power and illuminance wording.\n''', encoding='utf-8')
 
-          # Keep release contract assertions aligned wherever the previous release is pinned.
           for path in root.glob('tests/**/*.py'):
               source = path.read_text(encoding='utf-8', errors='ignore')
               updated = source.replace('version: "0.10.42"', 'version: "0.10.43"')
@@ -93,12 +95,11 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-      - name: Commit release
+      - name: Commit release to pull request branch
         shell: bash
         run: |
-          rm -f .github/workflows/apply-measurement-wording-0.10.43.yml
           git config user.name "HomeBrain Release Bot"
           git config user.email "actions@users.noreply.github.com"
           git add -A
           git commit -m "Polish deterministic measurement wording (0.10.43)"
-          git push origin HEAD:main
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
