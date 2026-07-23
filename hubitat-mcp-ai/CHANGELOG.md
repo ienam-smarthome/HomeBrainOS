@@ -1,5 +1,9 @@
 # Hubitat MCP AI changelog
 
+## 0.10.51
+
+- Adds an explicit typed route-priority catalogue.
+
 ## 0.10.50
 
 - Routes reversed update wording such as `software update` and `firmware update` deterministically.
