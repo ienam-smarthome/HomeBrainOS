@@ -55,6 +55,7 @@ from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement, install_ollama_help_terminal_route
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
+from route_catalogue import build_route_registry
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 from semantic_read_pipeline import install_semantic_read_pipeline
 from temperature_insight_hybrid import HybridTemperatureInsightService
@@ -62,8 +63,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.49"
-RELEASE_VERSION = "0.10.50"
+PREVIOUS_RELEASE_VERSION = "0.10.50"
+RELEASE_VERSION = "0.10.51"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -156,6 +157,7 @@ def _replace_ollama_agent() -> None:
 
 
 install_dashboard_health_tile()
+application.route_registry = build_route_registry()
 _replace_mcp_client()
 device_index = _create_device_index()
 _replace_fallback_router(device_index)

@@ -129,7 +129,7 @@ def test_named_humidity_read_prefers_attribute_capable_device_over_room_light():
     answer = asyncio.run(_answer_terminal_entity_read(application, "What is the bathroom humidity?"))
 
     assert answer["success"] is True
-    assert answer["message"] == "Bathroom Climate Sensor is 46 %."
+    assert answer["message"] == "Bathroom Climate humidity is 46%."
     assert mcp.read_ids == ["climate"]
 
 
@@ -230,7 +230,7 @@ def test_room_metric_read_probes_bounded_candidates_until_attribute_is_found():
 
     assert answer["success"] is True
     assert answer["device_id"] == "b"
-    assert answer["message"] == "Environmental Sensor B is 61 %."
+    assert answer["message"] == "Environmental B humidity is 61%."
     assert answer["devices_probed"] == 2
     assert mcp.read_ids == ["a", "b"]
 
@@ -256,7 +256,7 @@ def test_named_battery_read_uses_attribute_alias():
     answer = asyncio.run(_answer_terminal_entity_read(application, "What is the battery level of Hallway Contact?"))
 
     assert answer["success"] is True
-    assert answer["message"] == "Hallway Contact is 88 %."
+    assert answer["message"] == "Hallway Contact is 88%."
 
 
 def test_aggregate_and_period_queries_remain_owned_by_semantic_reader():
