@@ -7,8 +7,8 @@ from entrypoint_core import *  # noqa: F401,F403
 from named_app_control import install_named_app_controller
 from runtime_route_bridge import install_runtime_route_bridge
 
-PREVIOUS_RELEASE_VERSION = "0.10.57"
-RELEASE_VERSION = "0.10.58"
+PREVIOUS_RELEASE_VERSION = "0.10.58"
+RELEASE_VERSION = "0.10.59"
 
 # Composition remains in entrypoint_core.py. Keep these explicit contract markers
 # visible here because release validation and maintainers verify the safety-critical
