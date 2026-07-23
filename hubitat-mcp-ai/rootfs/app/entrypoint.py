@@ -39,6 +39,7 @@ from fast_fallback_light_usage import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
 from home_snapshot_hybrid import install_hybrid_home_snapshot
 from hub_backup_workflow import install_explicit_hub_backup_workflow
+from hub_firmware_update_workflow import install_hub_firmware_update_workflow
 from hybrid_assistant_mode import (
     install_hybrid_assistant_query_policy,
     install_hybrid_verified_read_routes,
@@ -261,6 +262,14 @@ install_ollama_help_terminal_route(application)
 hub_restart_workflow = install_hub_restart_workflow(
     application,
     ttl_seconds=float(application.OPTIONS.get("hub_restart_confirmation_ttl_seconds") or 120),
+)
+# Firmware updates are destructive and restart the hub. Keep this terminal
+# confirmation workflow outside AI so the model cannot retry or consume "yes".
+hub_firmware_update_workflow = install_hub_firmware_update_workflow(
+    application,
+    ttl_seconds=float(
+        application.OPTIONS.get("hub_firmware_update_confirmation_ttl_seconds") or 120
+    ),
 )
 request_traces = install_request_tracing(
     application,

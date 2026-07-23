@@ -13,6 +13,7 @@ RELEASE_GATE_TESTS = [
     "tests/test_normalizer.py",
     "tests/test_hubitat_mcp_ai_control_focus.py",
     "tests/test_hubitat_mcp_ai_docs.py",
+    "tests/test_hubitat_mcp_ai_hub_firmware_update_workflow.py",
     "tests/test_hubitat_mcp_ai_release_metadata.py",
     "tests/test_hubitat_mcp_ai_room_inventory_and_cpu_percent.py",
     "tests/test_hubitat_mcp_ai_state_broker.py",
