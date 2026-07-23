@@ -1,0 +1,68 @@
+name: Apply rules shortcut 0.10.53
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/rules-shortcut-0.10.53-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/rules-shortcut-all-0.10.53'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Apply shortcut and release metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root = Path('.')
+          def replace(path, old, new):
+              text = path.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'missing marker in {path}: {old}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace(root/'hubitat-mcp-ai/rootfs/app/webui_homebrain.py', 'data-q="List active automation rules"', 'data-q="List automation rules"')
+          replace(root/'hubitat-mcp-ai/config.yaml', 'version: "0.10.52"', 'version: "0.10.53"')
+          replace(root/'hubitat-mcp-ai/rootfs/app/entrypoint.py', 'PREVIOUS_RELEASE_VERSION = "0.10.51"\nRELEASE_VERSION = "0.10.52"', 'PREVIOUS_RELEASE_VERSION = "0.10.52"\nRELEASE_VERSION = "0.10.53"')
+          replace(root/'hubitat-mcp-ai/rootfs/app/device_intelligence_webui.py', 'PWA_RELEASE_VERSION = "0.10.52"', 'PWA_RELEASE_VERSION = "0.10.53"')
+          replace(root/'hubitat-mcp-ai/README.md', 'Current add-on version: **0.10.52**', 'Current add-on version: **0.10.53**')
+          replace(root/'scripts/setup-homebrain-ollama-cloud.ps1', 'Update and restart Hubitat MCP AI 0.10.52.', 'Update and restart Hubitat MCP AI 0.10.53.')
+
+          changelog = root/'hubitat-mcp-ai/CHANGELOG.md'
+          text = changelog.read_text(encoding='utf-8')
+          section = '## 0.10.53\n\n- Changes the Rules shortcut to list all automation rules instead of only active rules.\n- Keeps active, inactive, and unknown rule counts visible in the result.\n\n'
+          if '## 0.10.53' not in text:
+              changelog.write_text(text.replace('# Hubitat MCP AI changelog\n\n', '# Hubitat MCP AI changelog\n\n' + section, 1), encoding='utf-8')
+          (root/'hubitat-mcp-ai/CHANGELOG-0.10.53.md').write_text('# Hubitat MCP AI 0.10.53\n\n- Updates the Rules shortcut to run `List automation rules`.\n- The shortcut now shows active and inactive rules together with accurate totals.\n', encoding='utf-8')
+          PY
+      - name: Remove temporary release files
+        run: rm -f .github/workflows/apply-rules-shortcut-0.10.53.yml .github/rules-shortcut-0.10.53-trigger
+      - name: Verify shortcut
+        run: |
+          grep -F 'data-q="List automation rules"' hubitat-mcp-ai/rootfs/app/webui_homebrain.py
+          ! grep -F 'data-q="List active automation rules"' hubitat-mcp-ai/rootfs/app/webui_homebrain.py
+      - name: Run blocking release gate
+        run: python scripts/run_release_gate.py
+      - name: Validate add-on layout
+        run: python scripts/validate_addon.py
+      - name: Commit tested release
+        run: |
+          git config user.name "HomeBrain Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Show all rules from Rules shortcut (0.10.53)"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
