@@ -11,7 +11,7 @@ def test_entrypoint_rebinds_routes_after_app_controller_installation():
     app_install = source.index("install_named_app_controller(_core.application)")
     route_rebind = source.index("install_runtime_route_bridge(_core.application)")
     assert app_install < route_rebind
-    assert 'RELEASE_VERSION = "0.10.62"' in source
+    assert 'RELEASE_VERSION = "0.10.64"' in source
 
 
 def test_runtime_version_is_baked_into_each_addon_image():
@@ -50,8 +50,8 @@ def test_rendered_version_is_rewritten_after_all_ui_patches():
         '<script>const TITLE="Hubitat MCP AI",VERSION="0.10.56";'
         "document.getElementById('version').textContent='v'+VERSION;</script>"
     )
-    rendered = enforce_rendered_version(stale, "0.10.62")
-    assert 'VERSION="0.10.62"' in rendered
+    rendered = enforce_rendered_version(stale, "0.10.64")
+    assert 'VERSION="0.10.64"' in rendered
     assert 'VERSION="0.10.56"' not in rendered
 
 
