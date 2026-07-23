@@ -182,3 +182,23 @@ def test_pause_uses_write_response_as_verified_confirmation():
     assert "paused: true" in answer["message"]
     assert answer["display"]["title"] == "Rule paused"
 
+def test_single_partial_rule_match_exposes_clickable_confirm_and_cancel_actions():
+    client = FakeMCP()
+    answer = ask(application(client), "pause fridge door rule")
+    assert answer["success"] is False
+    assert answer["route"] == "mcp-rule-clarification"
+    assert [name for name, _ in client.calls] == ["hub_list_rules"]
+    assert answer["display"]["actions"] == [
+        {"label": "Confirm pause", "query": "pause rule id 2967", "tone": "primary"},
+        {"label": "Cancel", "cancel": True, "tone": "secondary"},
+    ]
+
+
+def test_confirm_query_uses_exact_rule_id_and_executes_existing_safe_path():
+    client = FakeMCP()
+    app = application(client)
+    clarification = ask(app, "pause fridge door rule")
+    answer = ask(app, clarification["display"]["actions"][0]["query"])
+    assert answer["success"] is True
+    assert client.calls[-1] == ("hub_set_rule_paused", {"ruleId": 2967, "paused": True})
+

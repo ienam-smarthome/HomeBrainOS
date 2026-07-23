@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.55
+
+- Adds clickable Confirm and Cancel controls when a named rule command has one likely match.
+- Shows selectable rule actions when several candidates are returned.
+- Confirmation resubmits the exact Rule ID through the existing deterministic safety path.
+
 ## 0.10.54
 
 - Treats an exact `paused` value returned by `hub_set_rule_paused` as verified command confirmation.

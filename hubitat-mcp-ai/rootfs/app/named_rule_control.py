@@ -214,25 +214,42 @@ class NamedRuleController:
             )
         else:
             message = f"I could not find a Rule Machine rule named **{intent.requested_name}**. No command was sent."
+        display = display_payload(
+            "rules",
+            "Confirm rule",
+            subtitle="No command has been sent",
+            items=[
+                {
+                    "icon": "⚙️",
+                    "title": rule["name"],
+                    "value": str(rule["id"]),
+                    "subtitle": "Select this rule or cancel",
+                }
+                for rule in candidates
+            ],
+        )
+        if candidates:
+            if len(candidates) == 1:
+                action_label = f"Confirm {intent.action}"
+                action_rules = candidates
+            else:
+                action_label = ""
+                action_rules = candidates[:5]
+            display["actions"] = [
+                {
+                    "label": action_label or f"{intent.action.title()} {rule['name']}",
+                    "query": f"{intent.action} rule id {rule['id']}",
+                    "tone": "primary",
+                }
+                for rule in action_rules
+            ] + [{"label": "Cancel", "cancel": True, "tone": "secondary"}]
+
         return {
             "success": False,
             "route": "mcp-rule-clarification",
             "intent": "automation-rule-clarification",
             "message": message,
-            "display": display_payload(
-                "rules",
-                "Confirm rule",
-                subtitle="No command has been sent",
-                items=[
-                    {
-                        "icon": "⚙️",
-                        "title": rule["name"],
-                        "value": str(rule["id"]),
-                        "subtitle": "Reply with the exact name or Rule ID",
-                    }
-                    for rule in candidates
-                ],
-            ),
+            "display": display,
             "elapsed_ms": round((time.perf_counter() - started) * 1000),
             "technical": safe_debug({"requested": intent.requested_name, "candidates": candidates, "mcp": listed.data}),
         }
