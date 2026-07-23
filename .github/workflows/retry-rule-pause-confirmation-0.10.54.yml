@@ -1,0 +1,60 @@
+name: Retry rule pause confirmation 0.10.54
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/rule-pause-confirmation-0.10.54-retry
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/rule-pause-confirmation-0.10.54'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Reapply reviewed release patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/apply-rule-pause-confirmation-0.10.54.yml').read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(workflow) if "python - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'PY')
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in workflow[start:end])
+          exec(compile(script, '<release-patch>', 'exec'), {'__name__': '__main__'})
+
+          test_path = Path('tests/test_hubitat_mcp_ai_named_rule_control.py')
+          tests = test_path.read_text(encoding='utf-8')
+          old = 'assert answer["intent"] == "automation-rule-pause-accepted"'
+          new = 'assert answer["intent"] == "automation-rule-pause-verified"'
+          if old not in tests:
+              raise SystemExit('old pause intent expectation not found')
+          test_path.write_text(tests.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Remove temporary release files
+        run: rm -f .github/workflows/apply-rule-pause-confirmation-0.10.54.yml .github/workflows/retry-rule-pause-confirmation-0.10.54.yml .github/rule-pause-confirmation-0.10.54-trigger .github/rule-pause-confirmation-0.10.54-retry
+      - name: Compile changed Python
+        run: python -m py_compile hubitat-mcp-ai/rootfs/app/named_rule_control.py
+      - name: Run focused rule control tests
+        run: python -m pytest -q tests/test_hubitat_mcp_ai_named_rule_control.py
+      - name: Run blocking release gate
+        run: python scripts/run_release_gate.py
+      - name: Validate add-on layout
+        run: python scripts/validate_addon.py
+      - name: Commit tested release
+        run: |
+          git config user.name "HomeBrain Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Verify rule pause and resume responses (0.10.54)"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
