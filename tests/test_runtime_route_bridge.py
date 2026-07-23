@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
+ADDON_DIR = ROOT / "hubitat-mcp-ai"
 
 
 def test_entrypoint_rebinds_routes_after_app_controller_installation():
@@ -10,7 +11,18 @@ def test_entrypoint_rebinds_routes_after_app_controller_installation():
     app_install = source.index("install_named_app_controller(_core.application)")
     route_rebind = source.index("install_runtime_route_bridge(_core.application)")
     assert app_install < route_rebind
-    assert 'RELEASE_VERSION = "0.10.60"' in source
+    assert 'RELEASE_VERSION = "0.10.61"' in source
+
+
+def test_runtime_version_is_baked_into_each_addon_image():
+    dockerfile = (ADDON_DIR / "Dockerfile").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    assert "ARG BUILD_VERSION" in dockerfile
+    assert '/app/.homebrain-build-version' in dockerfile
+    assert 'io.hass.version="${BUILD_VERSION}"' in dockerfile
+    assert 'Path("/app/.homebrain-build-version")' in entrypoint
+    assert "RUNTIME_RELEASE_VERSION = _runtime_release_version()" in entrypoint
+    assert "_core.application.VERSION = RUNTIME_RELEASE_VERSION" in entrypoint
 
 
 def test_runtime_bridge_recreates_ask_and_home_routes_dynamically():

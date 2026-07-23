@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.10.60"
+version: "0.10.61"
 slug: hubitat_mcp_ai
 description: "HomeBrain AI-first Hubitat assistant with unified MCP tool calling, guarded writes and verified fallback"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"

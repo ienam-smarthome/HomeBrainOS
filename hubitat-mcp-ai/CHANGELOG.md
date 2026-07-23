@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.61
+
+- Bakes Home Assistant `BUILD_VERSION` into every add-on image so each release invalidates Docker build cache.
+- Reads the running image version from `/app/.homebrain-build-version` instead of trusting repository metadata alone.
+- Adds Home Assistant image labels for the build version and architecture.
+- Keeps the non-PWA ingress UI and guarded deterministic app controller.
+
 ## 0.10.60
 
 - Removes the installable PWA layer from the Home Assistant ingress page.
