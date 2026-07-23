@@ -300,6 +300,27 @@ def _extract_attribute_value(value: Any, attribute: str) -> Any:
     return None
 
 
+def _format_attribute_value(value: Any, unit: str) -> str:
+    text = str(value).strip()
+    if not unit:
+        return text
+    if unit in {"%", "°C"}:
+        return f"{text}{unit}"
+    return f"{text} {unit}"
+
+
+def _format_attribute_message(label: str, attribute: str, value: Any, unit: str) -> str:
+    formatted = _format_attribute_value(value, unit)
+    if attribute == "humidity":
+        normalised_label = _normalise(label)
+        if "humidity" not in normalised_label:
+            room = re.sub(r"\b(?:meter|sensor)\b", " ", label, flags=re.IGNORECASE)
+            room = re.sub(r"\s+", " ", room).strip(" -")
+            if room:
+                return f"{room} humidity is {formatted}."
+    return f"{label} is {formatted}."
+
+
 async def _load_authoritative_inventory(application: Any) -> tuple[Any, list[dict[str, Any]]]:
     result = await application.mcp.call_tool("hub_list_devices", {})
     return result, list(_iter_device_records(_tool_data(result)))
@@ -375,7 +396,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         message = f"{label} is available, but Hubitat did not expose a current {attribute} value."
         success = False
     else:
-        message = f"{label} is {value} {unit}."
+        message = _format_attribute_message(label, attribute, value, unit)
         success = True
     return {
         "success": success,

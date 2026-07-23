@@ -142,7 +142,7 @@ def test_named_temperature_read_supports_natural_word_order():
     answer = asyncio.run(_answer_terminal_entity_read(application, "What temperature is Bedroom 1?"))
 
     assert answer["success"] is True
-    assert answer["message"] == "Bedroom 1 Sensor is 21.5 °C."
+    assert answer["message"] == "Bedroom 1 Sensor is 21.5°C."
 
 
 def test_named_power_read_supports_how_much_wording():
@@ -265,3 +265,17 @@ def test_aggregate_and_period_queries_remain_owned_by_semantic_reader():
     assert asyncio.run(_answer_terminal_entity_read(application, "Which device uses the most power?")) is None
     assert asyncio.run(_answer_terminal_entity_read(application, "How much energy did we use yesterday?")) is None
     assert mcp.read_ids == []
+
+def test_measurement_wording_formats_humidity_naturally():
+    from mcp_agent_orchestrator import _format_attribute_message
+
+    assert _format_attribute_message("Bathroom meter", "humidity", 66, "%") == "Bathroom humidity is 66%."
+
+
+def test_measurement_wording_preserves_standard_unit_spacing():
+    from mcp_agent_orchestrator import _format_attribute_message
+
+    assert _format_attribute_message("Freezer (MQTT)", "power", 74, "W") == "Freezer (MQTT) is 74 W."
+    assert _format_attribute_message("FP2 Bedroom 3 Lux", "illuminance", 212, "lux") == "FP2 Bedroom 3 Lux is 212 lux."
+    assert _format_attribute_message("Bedroom meter", "temperature", 21.5, "°C") == "Bedroom meter is 21.5°C."
+

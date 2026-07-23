@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.43
+
+- Polishes deterministic sensor responses with natural room-and-metric wording.
+- Formats percentages and temperatures without an unnecessary space before the unit.
+- Preserves conventional spacing for power, energy and illuminance values.
+
 ## 0.10.42
 
 - Fixes named-device power and energy reads by requesting the MCP
