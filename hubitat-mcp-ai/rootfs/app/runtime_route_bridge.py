@@ -39,6 +39,10 @@ _VERSION_DECLARATION = re.compile(
     r'(const\s+TITLE\s*=\s*.*?,\s*VERSION\s*=\s*)("(?:\\.|[^"\\])*")',
     flags=re.S,
 )
+_RULES_SHORTCUT = (
+    '<button class="secondary" data-q="List automation rules">⚙️ Rules</button>'
+)
+_APPS_SHORTCUT = '<button class="secondary" data-q="List apps">🧩 Apps</button>'
 
 
 def remove_pwa_markup(page: str) -> str:
@@ -55,6 +59,20 @@ def remove_pwa_markup(page: str) -> str:
         flags=re.I | re.S,
     )
     return page
+
+
+def add_apps_shortcut(page: str) -> str:
+    """Add an Apps shortcut beside Rules without duplicating it on patched pages."""
+
+    if _APPS_SHORTCUT in page:
+        return page
+    if _RULES_SHORTCUT not in page:
+        raise RuntimeError("HomeBrain page did not contain the Rules shortcut anchor")
+    return page.replace(
+        _RULES_SHORTCUT,
+        _RULES_SHORTCUT + "\n" + _APPS_SHORTCUT,
+        1,
+    )
 
 
 def enforce_rendered_version(page: str, version: str) -> str:
@@ -128,7 +146,7 @@ def install_runtime_route_bridge(application: Any):
             str(application.OPTIONS.get("web_title") or "Hubitat MCP AI"),
             version,
         )
-        page = remove_pwa_markup(patch_page(page))
+        page = add_apps_shortcut(remove_pwa_markup(patch_page(page)))
         page = enforce_rendered_version(page, version)
         page = page.replace("</body>", PWA_REMOVAL_SCRIPT + "</body>", 1)
         return HTMLResponse(
@@ -152,6 +170,7 @@ def install_runtime_route_bridge(application: Any):
 __all__ = [
     "PWA_CLEANUP_SERVICE_WORKER",
     "PWA_REMOVAL_SCRIPT",
+    "add_apps_shortcut",
     "enforce_rendered_version",
     "install_runtime_route_bridge",
     "remove_pwa_markup",
