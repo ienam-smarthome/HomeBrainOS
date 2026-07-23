@@ -62,8 +62,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.45"
-RELEASE_VERSION = "0.10.46"
+PREVIOUS_RELEASE_VERSION = "0.10.46"
+RELEASE_VERSION = "0.10.47"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -267,6 +267,7 @@ hub_restart_workflow = install_hub_restart_workflow(
 # confirmation workflow outside AI so the model cannot retry or consume "yes".
 hub_firmware_update_workflow = install_hub_firmware_update_workflow(
     application,
+    automation_rule_workflow,
     ttl_seconds=float(
         application.OPTIONS.get("hub_firmware_update_confirmation_ttl_seconds") or 120
     ),

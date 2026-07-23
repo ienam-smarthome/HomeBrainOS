@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.47
+
+- Creates and verifies the required recent hub backup before starting a firmware update.
+- Reuses the hardened backup workflow, including acknowledgment and idempotency safeguards.
+- Reports preflight policy failures as not started instead of incorrectly saying the request was sent.
+
 ## 0.10.46
 
 - Adds session-scoped, expiring confirmation for Hubitat firmware updates.

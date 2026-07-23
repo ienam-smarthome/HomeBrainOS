@@ -30,8 +30,15 @@ class PendingFirmwareUpdate:
 class HubFirmwareUpdateWorkflow:
     """Explicit, session-scoped confirmation for Hubitat firmware updates."""
 
-    def __init__(self, application: Any, *, ttl_seconds: float = 120.0) -> None:
+    def __init__(
+        self,
+        application: Any,
+        backup_service: Any,
+        *,
+        ttl_seconds: float = 120.0,
+    ) -> None:
         self.application = application
+        self.backup_service = backup_service
         self.ttl_seconds = max(30.0, min(300.0, float(ttl_seconds)))
         self._pending: dict[str, PendingFirmwareUpdate] = {}
         self._lock = asyncio.Lock()
@@ -93,14 +100,15 @@ class HubFirmwareUpdateWorkflow:
         display = display_payload(
             "hub-firmware-update-confirmation",
             "Update the Hubitat hub software now?",
-            subtitle="The hub will restart and devices will be temporarily unavailable.",
+            subtitle="HomeBrain will verify or create a backup first, then the hub will restart.",
             metrics=[
                 {"label": "Operation", "value": "Firmware update", "icon": "⬆️"},
                 {"label": "Restart", "value": "Required", "icon": "🔄"},
             ],
             note=(
                 "Choose Yes - update hub or No - cancel below. You can also reply Yes or No. "
-                "Confirmation expires after two minutes."
+                "Yes authorizes the required backup and the firmware update. Confirmation "
+                "expires after two minutes."
             ),
         )
         display["actions"] = [
@@ -123,8 +131,10 @@ class HubFirmwareUpdateWorkflow:
             "intent": "hub-firmware-update-confirmation-required",
             "confirmation_required": True,
             "message": (
-                "Do you want to update the Hubitat hub software now? The hub will restart and "
-                "devices may be temporarily unavailable. Select Yes to update, or No to cancel."
+                "Do you want to update the Hubitat hub software now? HomeBrain will first verify "
+                "or create the required recent backup, then start the update. The hub will restart "
+                "and devices may be temporarily unavailable. Select Yes to continue, or No to "
+                "cancel."
             ),
             "display": display,
         }
@@ -139,28 +149,69 @@ class HubFirmwareUpdateWorkflow:
         }
 
     async def _update(self) -> dict[str, Any]:
+        backup_ok, backup_details = await self._ensure_recent_backup()
+        if not backup_ok:
+            error = str(
+                backup_details.get("error")
+                or "A verified backup from the last 24 hours is required."
+            ).strip()
+            return {
+                "success": False,
+                "route": "mcp-hub-firmware-update",
+                "intent": "hub-firmware-update-backup-failed",
+                "message": (
+                    "The hub software update was not started because HomeBrain could not "
+                    f"complete and verify the required backup: {error}"
+                ),
+                "tools_used": [
+                    {
+                        "name": "hub_create_backup",
+                        "success": False,
+                        "error": error[:700],
+                    }
+                ],
+                "technical": safe_debug({"backup": backup_details}),
+            }
+
         arguments = {"confirm": True}
         try:
             result = await self.application.mcp.call_tool(
                 "hub_update_firmware", arguments
             )
         except Exception as exc:
+            error = str(exc).strip() or type(exc).__name__
+            uncertain = isinstance(exc, (TimeoutError, asyncio.TimeoutError))
             return {
                 "success": False,
                 "route": "mcp-hub-firmware-update",
-                "intent": "hub-firmware-update-unconfirmed",
+                "intent": (
+                    "hub-firmware-update-unconfirmed"
+                    if uncertain
+                    else "hub-firmware-update-failed"
+                ),
                 "message": (
-                    "The update request was sent, but HomeBrain could not confirm whether the hub "
-                    "accepted it. Do not retry immediately; first check the Hubitat admin page."
+                    (
+                        "The update request may have been sent, but HomeBrain could not confirm "
+                        "whether the hub accepted it. Do not retry immediately; first check the "
+                        "Hubitat admin page."
+                    )
+                    if uncertain
+                    else f"The hub software update was not started: {error}"
                 ),
                 "tools_used": [
                     {
                         "name": "hub_update_firmware",
                         "success": False,
-                        "error": str(exc),
+                        "error": error,
                     }
                 ],
-                "technical": safe_debug({"error": str(exc) or type(exc).__name__}),
+                "technical": safe_debug(
+                    {
+                        "error": error,
+                        "exception_type": type(exc).__name__,
+                        "backup": backup_details,
+                    }
+                ),
             }
 
         if result.is_error:
@@ -189,18 +240,42 @@ class HubFirmwareUpdateWorkflow:
             ),
             "tools_used": [{"name": "hub_update_firmware", "success": True}],
             "technical": safe_debug(
-                {"tool": "hub_update_firmware", "arguments": arguments}
+                {
+                    "tool": "hub_update_firmware",
+                    "arguments": arguments,
+                    "backup": backup_details,
+                }
             ),
         }
+
+    async def _ensure_recent_backup(self) -> tuple[bool, dict[str, Any]]:
+        try:
+            key = await self.backup_service._read_best_practice_key()
+            ok, details = await self.backup_service._ensure_backup(key)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return False, {
+                "error": str(exc).strip() or "Unexpected MCP backup workflow error",
+                "exception_type": type(exc).__name__,
+            }
+        normalized = details if isinstance(details, dict) else {"result": details}
+        normalized["best_practice_key_found"] = bool(key)
+        return bool(ok), normalized
 
 
 def install_hub_firmware_update_workflow(
     application: Any,
+    backup_service: Any,
     *,
     ttl_seconds: float = 120.0,
 ) -> HubFirmwareUpdateWorkflow:
     original_ask: AskHandler = application.ask
-    workflow = HubFirmwareUpdateWorkflow(application, ttl_seconds=ttl_seconds)
+    workflow = HubFirmwareUpdateWorkflow(
+        application,
+        backup_service,
+        ttl_seconds=ttl_seconds,
+    )
 
     async def firmware_update_ask(request: Any) -> dict[str, Any]:
         return await workflow.answer(request, original_ask)
