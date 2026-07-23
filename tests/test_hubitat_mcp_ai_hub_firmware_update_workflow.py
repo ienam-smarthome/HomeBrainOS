@@ -75,8 +75,8 @@ class FakeBackupService:
         self.calls.append(("guide", None))
         return "BP-CONFIRM-2401"
 
-    async def _ensure_backup(self, key: str):
-        self.calls.append(("backup", key))
+    async def _ensure_backup(self, key: str, *, force: bool = False):
+        self.calls.append(("backup", key, force))
         if self.ok:
             return True, {"recent": True, "created": True, "status": "complete"}
         return False, {"error": "Backup creation failed", "created": False}
@@ -135,7 +135,7 @@ def test_update_prompts_with_clickable_actions_then_executes_once():
     ]
     assert backup_service.calls == [
         ("guide", None),
-        ("backup", "BP-CONFIRM-2401"),
+        ("backup", "BP-CONFIRM-2401", True),
     ]
     assert confirmed["intent"] == "hub-firmware-update-requested"
     assert repeated["route"] == "fallback"
@@ -227,7 +227,7 @@ def test_backup_failure_blocks_update_and_reports_the_real_reason():
     ]
     assert backup_service.calls == [
         ("guide", None),
-        ("backup", "BP-CONFIRM-2401"),
+        ("backup", "BP-CONFIRM-2401", True),
     ]
 
 
