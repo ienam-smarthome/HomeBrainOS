@@ -34,3 +34,9 @@ def test_which_devices_preserves_room_suffix_as_part_of_name() -> None:
 def test_explicit_room_suffix_form_still_extracts_room_name() -> None:
     router = load_module().FastFallbackRouter
     assert router._room_candidate("Show the Livingroom room devices") == "Livingroom"
+
+
+def test_room_first_device_inventory_extracts_room_name() -> None:
+    router = load_module().FastFallbackRouter
+    assert router._room_candidate("Find hallway devices") == "hallway"
+    assert router._room_candidate("Show hallway devices") == "hallway"

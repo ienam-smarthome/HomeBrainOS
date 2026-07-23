@@ -6,12 +6,18 @@ from entity_resolution import infer_ordinal, normalise_text
 
 _BROAD_PATTERNS = (
     r"(?:show|list|find|search|display|get) (?:all )?(?:my |the )?devices(?: in .+)?",
+    r"(?:show|list|find|search|display|get) (?:all )?(?:my |the )?.+ devices",
     r"(?:what|which) devices (?:are|do|have|need|in|on|off).+",
     r"devices in (?:the )?.+",
 )
 _PREFIX = re.compile(r"^(?:please )?(?:(?:turn|switch|set|dim|open|close|lock|unlock|find|locate|show|read|check|get)\s+|what(?:'s| is)\s+)(?:the )?", re.I)
 _TRAILING = re.compile(r"\s+(?:on|off|state|status|level|power|temperature|humidity)(?:\s+now)?$", re.I)
 _ROOM = re.compile(r"\b(?:in|from)\s+(?:the )?([a-z0-9 -]+?)(?:\s+room)?$", re.I)
+_ROOM_BEFORE_DEVICES = re.compile(
+    r"^(?:show|list|find|search|display|get)\s+(?:all\s+)?(?:my\s+|the\s+)?"
+    r"([a-z0-9][a-z0-9 &'_-]*?)\s+devices$",
+    re.I,
+)
 
 @dataclass(frozen=True)
 class EntityRequest:
@@ -45,7 +51,14 @@ def parse_entity_request(query: str) -> EntityRequest:
     q = normalise_text(query).strip(" .!?")
     broad = any(re.fullmatch(pattern, q) for pattern in _BROAD_PATTERNS)
     room_match = _ROOM.search(q)
-    room = normalise_text(room_match.group(1)) if room_match else None
+    room_before_devices = _ROOM_BEFORE_DEVICES.fullmatch(q)
+    room = (
+        normalise_text(room_match.group(1))
+        if room_match
+        else normalise_text(room_before_devices.group(1))
+        if room_before_devices
+        else None
+    )
     target = _TRAILING.sub("", _PREFIX.sub("", q))
     target = re.sub(r"\b(?:to|at)\s+\d+(?:\s*%)?$", "", target).strip()
     if room_match and room_match.start() > 0:
