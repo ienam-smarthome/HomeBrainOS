@@ -6,13 +6,19 @@ on:
     paths:
       - "hubitat-mcp-ai/**"
       - "tests/test_hubitat_mcp_ai_*.py"
+      - "tests/test_repository_hygiene.py"
       - "requirements.txt"
+      - "requirements-test.txt"
+      - "scripts/run_release_gate.py"
       - ".github/workflows/hubitat-mcp-ai-tests.yml"
   pull_request:
     paths:
       - "hubitat-mcp-ai/**"
       - "tests/test_hubitat_mcp_ai_*.py"
+      - "tests/test_repository_hygiene.py"
       - "requirements.txt"
+      - "requirements-test.txt"
+      - "scripts/run_release_gate.py"
       - ".github/workflows/hubitat-mcp-ai-tests.yml"
 
 permissions:
@@ -36,13 +42,16 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
+          python -m pip install -r requirements-test.txt
 
       - name: Compile Hubitat MCP AI
         run: python -m compileall -q hubitat-mcp-ai/rootfs/app
 
-      - name: Run Hubitat MCP AI regression tests
-        run: python -m pytest -q tests/test_hubitat_mcp_ai_*.py 2>&1 | tee pytest-output.txt
+      - name: Run blocking release gate
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/run_release_gate.py 2>&1 | tee pytest-output.txt
 
       - name: Upload pytest failure output
         if: failure()
@@ -51,3 +60,36 @@ jobs:
           name: hubitat-mcp-ai-pytest-failure-output
           path: pytest-output.txt
           retention-days: 3
+
+  legacy-audit:
+    name: Legacy regression audit (non-blocking)
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+
+      - name: Run historical Hubitat MCP AI suite
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q tests/test_hubitat_mcp_ai_*.py 2>&1 | tee pytest-legacy-output.txt
+
+      - name: Upload legacy audit output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hubitat-mcp-ai-legacy-audit-output
+          path: pytest-legacy-output.txt
+          retention-days: 7

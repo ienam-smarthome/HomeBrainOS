@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.45
+
+- Makes blocking CI propagate pytest failures even when output is captured with `tee`.
+- Adds a shared test dependency definition with async-test support and a centralized release gate.
+- Runs historical test debt as an explicitly non-blocking audit with failure artifacts.
+- Reduces Hubitat MCP CPU load by extending static catalogue, capability and metadata cache lifetimes.
+- Moderately extends live device, hub-health and dashboard snapshot caches while preserving write invalidation, control verification and manual refresh.
+- Canonicalizes device-field ordering in cache keys so equivalent inventory projections share one upstream fetch while stale and capability filters remain isolated.
+
 ## 0.10.44
 
 - Removes obsolete version-specific release workflows and temporary CI trigger files.

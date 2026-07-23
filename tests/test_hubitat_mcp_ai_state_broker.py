@@ -97,6 +97,65 @@ def test_identical_reads_are_coalesced_and_cached():
     asyncio.run(scenario())
 
 
+def test_device_field_order_does_not_fragment_inventory_cache():
+    async def scenario():
+        raw = FakeMCP()
+        broker = MCPStateBroker(raw, device_ttl_seconds=30)
+
+        await broker.call_tool(
+            "hub_list_devices",
+            {
+                "detailed": False,
+                "format": "summary",
+                "fields": ["label", "id", "currentStates"],
+            },
+        )
+        await broker.call_tool(
+            "hub_list_devices",
+            {
+                "detailed": False,
+                "format": "summary",
+                "fields": ["currentStates", "label", "id"],
+            },
+        )
+
+        device_calls = [
+            arguments for name, arguments in raw.calls
+            if name == "hub_list_devices"
+        ]
+        assert len(device_calls) == 1
+        assert device_calls[0]["fields"] == ["label", "id", "currentStates"]
+        assert broker.stats()["hits"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_inventory_filters_remain_separate_cache_entries():
+    async def scenario():
+        raw = FakeMCP()
+        broker = MCPStateBroker(raw, device_ttl_seconds=30)
+        base = {
+            "detailed": False,
+            "format": "summary",
+            "fields": ["id", "label"],
+        }
+
+        await broker.call_tool("hub_list_devices", base)
+        await broker.call_tool(
+            "hub_list_devices",
+            {**base, "filter": "stale:48"},
+        )
+        await broker.call_tool(
+            "hub_list_devices",
+            {**base, "capabilityFilter": "Health Check"},
+        )
+
+        assert [name for name, _args in raw.calls].count("hub_list_devices") == 3
+        assert broker.stats()["misses"] == 3
+
+    asyncio.run(scenario())
+
+
 def test_device_write_invalidates_cached_state_before_verification_read():
     async def scenario():
         raw = FakeMCP()

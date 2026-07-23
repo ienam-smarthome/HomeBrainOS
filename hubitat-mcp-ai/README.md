@@ -2,7 +2,7 @@
 
 A Home Assistant add-on that provides a HomeBrain-style interface while using **kingpanther13's Hubitat MCP Rule Server** as the authoritative smart-home data and control layer.
 
-Current add-on version: **0.10.44**. This is the maintained assistant component
+Current add-on version: **0.10.45**. This is the maintained assistant component
 and is versioned independently from the legacy HomeBrain OS dashboard.
 
 ## Architecture
@@ -152,3 +152,23 @@ Ollama plans may apply session or account usage limits. HomeBrain therefore does
 - Enable Write/rule-management access only when you want HomeBrain to create or update rules.
 
 Ollama is never the source of device state or the authority for a rule write. Hubitat MCP supplies live evidence and tool schemas; HomeBrain deterministically compiles and validates the rule, and the user explicitly authorises each write stage.
+
+## Hubitat CPU and state-size tuning
+
+The default HomeBrain caches are deliberately longer for static catalogues and
+device metadata than for live state. Device controls, post-control verification,
+explicit refreshes, and writes bypass or invalidate these caches.
+
+If Hubitat App Stats shows high MCP Rule Server load:
+
+1. Keep **MCP Debug Log Level** at `Errors only`.
+2. Turn **Enable Hubitat Console Logging** off during normal operation.
+3. Use `hub_delete_debug_logs` to clear stored MCP logs.
+4. Use `hub_clear_captured_states` if diagnostic snapshots are no longer needed,
+   and reduce **Max Captured States** from 20 when snapshots are rarely used.
+5. Keep **Publish tool output schemas** off unless a client explicitly needs it.
+6. Restart Hubitat MCP AI after changing cache options so the broker is rebuilt.
+
+The MCP Rule Server's persisted BM25 discovery corpus can account for a large
+state size. Do not edit the generated Hubitat app directly; update it through
+its supported package/source so its included libraries stay aligned.

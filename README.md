@@ -6,7 +6,7 @@ Home Assistant add-ons for a Hubitat-based smart home.
 
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
-| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.44 | Maintained | Current MCP-backed assistant, verified reads, deterministic controls, and optional AI synthesis |
+| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.45 | Maintained | Current MCP-backed assistant, verified reads, deterministic controls, and optional AI synthesis |
 | [HomeBrain OS dashboard](homebrainos/README.md) | 1.9.55-alpha | Legacy/alternate | Maker API dashboard and assistant retained for existing installations |
 
 These are separate add-ons with independent versions. The repository version is
