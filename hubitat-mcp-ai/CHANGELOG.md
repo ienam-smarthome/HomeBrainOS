@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.63
+
+- Removes the `mcp_tool_catalogue.py` startup handler that reset the running application to `0.10.56`.
+- Keeps the version baked into `/app/.homebrain-build-version` as the sole runtime authority.
+- Adds a startup regression proving the MCP tool catalogue installer cannot mutate application or API versions.
+- Keeps the authoritative rendered-version diagnostic introduced in 0.10.62.
+
 ## 0.10.62
 
 - Rewrites the Web UI's embedded JavaScript version after every renderer and UI patch has completed.
