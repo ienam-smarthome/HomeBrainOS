@@ -64,20 +64,17 @@ async def build_mcp_tool_catalogue(
 
 
 def install_mcp_tool_catalogue(application: Any, client: Any) -> None:
-    """Expose a readable catalogue and app-management capability diagnostic."""
+    """Expose a readable catalogue and app-management capability diagnostic.
+
+    This installer must never mutate release metadata. The baked image version set by
+    entrypoint.py is the only runtime version authority.
+    """
 
     @application.app.get("/api/mcp-tool-catalogue")
     async def mcp_tool_catalogue(refresh: bool = False) -> dict[str, Any]:
         return await build_mcp_tool_catalogue(client, refresh=refresh)
 
     install_app_management_capability(application)
-
-    # Keep the runtime UI version aligned with the Home Assistant manifest for this
-    # diagnostic-only release. This runs after entrypoint composition is complete.
-    @application.app.on_event("startup")
-    async def apply_app_capability_release_version() -> None:
-        application.VERSION = "0.10.56"
-        application.app.version = "0.10.56"
 
 
 __all__ = ["build_mcp_tool_catalogue", "install_mcp_tool_catalogue"]
