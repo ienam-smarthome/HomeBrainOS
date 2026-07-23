@@ -5,9 +5,10 @@ import uvicorn
 import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
 from named_app_control import install_named_app_controller
+from runtime_route_bridge import install_runtime_route_bridge
 
-PREVIOUS_RELEASE_VERSION = "0.10.56"
-RELEASE_VERSION = "0.10.57"
+PREVIOUS_RELEASE_VERSION = "0.10.57"
+RELEASE_VERSION = "0.10.58"
 
 # Composition remains in entrypoint_core.py. Keep these explicit contract markers
 # visible here because release validation and maintainers verify the safety-critical
@@ -21,16 +22,19 @@ RELEASE_VERSION = "0.10.57"
 # - options.get("mcp_catalog_cache_seconds") or 300
 # - options.get("device_index_metadata_ttl_seconds") or 600
 
-# The preserved composition root builds the application. Install app control as a
-# terminal deterministic wrapper outside AI and generic device control. Every app
-# write still requires an explicit clickable confirmation using an exact App ID.
-app_controller = install_named_app_controller(_core.application)
-
-# Override release metadata so the Home Assistant manifest and runtime stay aligned.
+# Override release metadata before rebuilding release-sensitive HTTP routes.
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RELEASE_VERSION
 _core.application.VERSION = RELEASE_VERSION
 _core.application.app.version = RELEASE_VERSION
+
+# Install app control as a terminal deterministic wrapper outside AI and generic
+# device control. Every app write requires clickable confirmation using an exact
+# App ID. Then rebuild /api/ask so the cancellable endpoint captures this final
+# handler, and rebuild / so the header reads the live runtime version.
+app_controller = install_named_app_controller(_core.application)
+runtime_request_registry = install_runtime_route_bridge(_core.application)
+
 application = _core.application
 app = _core.app
 
