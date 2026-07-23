@@ -37,6 +37,22 @@ class FakeMCP:
         )
 
 
+class FakeBackupService:
+    def __init__(self, *, ok: bool = True) -> None:
+        self.ok = ok
+        self.calls: list[tuple[str, Any]] = []
+
+    async def _read_best_practice_key(self):
+        self.calls.append(("guide", None))
+        return "BP-CONFIRM-2401"
+
+    async def _ensure_backup(self, key: str):
+        self.calls.append(("backup", key))
+        if self.ok:
+            return True, {"recent": True, "created": True, "status": "complete"}
+        return False, {"error": "Backup creation failed", "created": False}
+
+
 def make_application(*, error: bool = False, ttl_seconds: float = 120):
     fallback_calls: list[str] = []
 
@@ -45,21 +61,22 @@ def make_application(*, error: bool = False, ttl_seconds: float = 120):
         return {"success": True, "route": "fallback"}
 
     application = SimpleNamespace(ask=fallback, mcp=FakeMCP(error=error))
+    backup_service = FakeBackupService()
     workflow = install_hub_firmware_update_workflow(
-        application, ttl_seconds=ttl_seconds
+        application, backup_service, ttl_seconds=ttl_seconds
     )
-    return application, workflow, fallback_calls
+    return application, workflow, fallback_calls, backup_service
 
 
 def test_update_prompts_with_clickable_actions_then_executes_once():
     async def scenario():
-        application, _, fallback_calls = make_application()
+        application, _, fallback_calls, backup_service = make_application()
         prompt = await application.ask(request("update software"))
         confirmed = await application.ask(request("yes"))
         repeated = await application.ask(request("yes"))
-        return application, fallback_calls, prompt, confirmed, repeated
+        return application, backup_service, fallback_calls, prompt, confirmed, repeated
 
-    application, fallback_calls, prompt, confirmed, repeated = asyncio.run(scenario())
+    application, backup_service, fallback_calls, prompt, confirmed, repeated = asyncio.run(scenario())
     assert prompt["confirmation_required"] is True
     assert prompt["intent"] == "hub-firmware-update-confirmation-required"
     assert prompt["display"]["actions"] == [
@@ -77,6 +94,10 @@ def test_update_prompts_with_clickable_actions_then_executes_once():
         },
     ]
     assert application.mcp.calls == [("hub_update_firmware", {"confirm": True})]
+    assert backup_service.calls == [
+        ("guide", None),
+        ("backup", "BP-CONFIRM-2401"),
+    ]
     assert confirmed["intent"] == "hub-firmware-update-requested"
     assert repeated["route"] == "fallback"
     assert fallback_calls == ["yes"]
@@ -84,7 +105,7 @@ def test_update_prompts_with_clickable_actions_then_executes_once():
 
 def test_no_cancels_and_yes_from_another_session_cannot_execute():
     async def scenario():
-        application, _, fallback_calls = make_application()
+        application, _, fallback_calls, _ = make_application()
         await application.ask(request("upgrade hub firmware"))
         unrelated = await application.ask(request("yes", session_id="browser-2"))
         cancelled = await application.ask(request("no"))
@@ -99,7 +120,7 @@ def test_no_cancels_and_yes_from_another_session_cannot_execute():
 
 def test_expired_confirmation_does_not_execute():
     async def scenario():
-        application, workflow, fallback_calls = make_application()
+        application, workflow, fallback_calls, _ = make_application()
         workflow.ttl_seconds = 0
         await application.ask(request("update hub software"))
         answer = await application.ask(request("yes"))
@@ -113,7 +134,7 @@ def test_expired_confirmation_does_not_execute():
 
 def test_rejected_update_reports_failure_without_retry():
     async def scenario():
-        application, _, _ = make_application(error=True)
+        application, _, _, _ = make_application(error=True)
         await application.ask(request("update software"))
         answer = await application.ask(request("confirm"))
         return application, answer
@@ -122,6 +143,32 @@ def test_rejected_update_reports_failure_without_retry():
     assert answer["intent"] == "hub-firmware-update-failed"
     assert "Admin writes disabled" in answer["message"]
     assert application.mcp.calls == [("hub_update_firmware", {"confirm": True})]
+
+
+def test_backup_failure_blocks_update_and_reports_the_real_reason():
+    async def scenario():
+        fallback_calls: list[str] = []
+
+        async def fallback(value: Any):
+            fallback_calls.append(value.query)
+            return {"success": True, "route": "fallback"}
+
+        application = SimpleNamespace(ask=fallback, mcp=FakeMCP())
+        backup_service = FakeBackupService(ok=False)
+        install_hub_firmware_update_workflow(application, backup_service)
+        await application.ask(request("update software"))
+        answer = await application.ask(request("yes"))
+        return application, backup_service, answer
+
+    application, backup_service, answer = asyncio.run(scenario())
+    assert answer["intent"] == "hub-firmware-update-backup-failed"
+    assert "was not started" in answer["message"]
+    assert "Backup creation failed" in answer["message"]
+    assert application.mcp.calls == []
+    assert backup_service.calls == [
+        ("guide", None),
+        ("backup", "BP-CONFIRM-2401"),
+    ]
 
 
 def test_release_installs_firmware_workflow_outside_ai_routes():
