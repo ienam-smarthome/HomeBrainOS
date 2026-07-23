@@ -98,8 +98,16 @@ jobs:
                   path.write_text(updated, encoding='utf-8')
           PY
 
-      - name: Run focused regression tests
-        run: python -m pytest -q "$TEST_PATH"
+      - name: Run direct formatter assertions
+        shell: bash
+        run: |
+          PYTHONPATH=hubitat-mcp-ai/rootfs/app python - <<'PY'
+          from mcp_agent_orchestrator import _format_attribute_message
+          assert _format_attribute_message('Bathroom meter', 'humidity', 66, '%') == 'Bathroom humidity is 66%.'
+          assert _format_attribute_message('Bedroom meter', 'temperature', 21.5, '°C') == 'Bedroom meter is 21.5°C.'
+          assert _format_attribute_message('Freezer (MQTT)', 'power', 74, 'W') == 'Freezer (MQTT) is 74 W.'
+          assert _format_attribute_message('FP2 Bedroom 3 Lux', 'illuminance', 212, 'lux') == 'FP2 Bedroom 3 Lux is 212 lux.'
+          PY
 
       - name: Commit release to pull request branch
         shell: bash
