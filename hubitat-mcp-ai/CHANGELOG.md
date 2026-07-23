@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.62
+
+- Rewrites the Web UI's embedded JavaScript version after every renderer and UI patch has completed.
+- Adds `/api/runtime-version` with baked, application, API, and rendered versions for direct diagnosis.
+- Fails loudly if the generated HomeBrain page does not contain exactly one replaceable version declaration.
+- Keeps the baked container version as the single authoritative release value.
+
 ## 0.10.61
 
 - Bakes Home Assistant `BUILD_VERSION` into every add-on image so each release invalidates Docker build cache.
