@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.44
+
+- Removes obsolete version-specific release workflows and temporary CI trigger files.
+- Adds a repository hygiene test that rejects released-version workflow filenames and temporary trigger artifacts.
+- Clarifies the independently versioned Hubitat MCP AI and legacy HomeBrain OS add-ons.
+- Disables rule writes by default for new installations while preserving explicit opt-in and paused-rule safeguards.
+
 ## 0.10.43
 
 - Polishes deterministic sensor responses with natural room-and-metric wording.

@@ -2,6 +2,9 @@
 
 A Home Assistant add-on that provides a HomeBrain-style interface while using **kingpanther13's Hubitat MCP Rule Server** as the authoritative smart-home data and control layer.
 
+Current add-on version: **0.10.44**. This is the maintained assistant component
+and is versioned independently from the legacy HomeBrain OS dashboard.
+
 ## Architecture
 
 - **Hubitat C8/C8 Pro:** MCP Rule Server
@@ -55,10 +58,15 @@ ollama_direct_cloud_model: ""
 ollama_direct_cloud_fallback_local_proxy: true
 
 ollama_num_ctx: 2048
-rule_write_enabled: true
+rule_write_enabled: false
 rule_create_paused_required: true
 rule_workflow_ttl_seconds: 600
 ```
+
+Rule writes are disabled for new installations. To enable rule editing, set
+`rule_write_enabled: true` after reviewing the guarded workflow below. Created
+rules remain paused/disabled and require explicit confirmation before each write
+stage. Existing installations retain their saved option value.
 
 ### AI failover order
 
