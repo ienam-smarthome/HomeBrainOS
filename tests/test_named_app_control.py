@@ -92,6 +92,16 @@ def test_confirmed_disable_writes_and_verifies_response_and_inventory():
     ]
 
 
+def test_confirmed_enable_restores_a_disabled_app():
+    app = build_app()
+    app.mcp.disabled = True
+    install_named_app_controller(app)
+    answer = ask(app, "confirm enable app id 51")
+    assert answer["intent"] == "hubitat-app-enable-verified"
+    assert app.mcp.disabled is False
+    assert answer["technical"]["post_state_verified"] is True
+
+
 def test_partial_match_offers_selection_without_writing():
     app = build_app()
     install_named_app_controller(app)
