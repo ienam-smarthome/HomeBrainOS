@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.64
+
+- Retries `hub_update_firmware` exactly once when HomeBrain has independently verified a fresh backup but the MCP firmware guard still reports `BACKUP REQUIRED`.
+- Waits four seconds for the MCP backup index to settle before retrying.
+- Never creates a second backup or repeats the user confirmation during the retry.
+- Reports a specific backup-index-lag result when the retry is still rejected.
+
 ## 0.10.63
 
 - Removes the `mcp_tool_catalogue.py` startup handler that reset the running application to `0.10.56`.

@@ -6,11 +6,12 @@ import uvicorn
 
 import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
+from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from named_app_control import install_named_app_controller
 from runtime_route_bridge import install_runtime_route_bridge
 
-PREVIOUS_RELEASE_VERSION = "0.10.62"
-RELEASE_VERSION = "0.10.63"
+PREVIOUS_RELEASE_VERSION = "0.10.63"
+RELEASE_VERSION = "0.10.64"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 
@@ -51,6 +52,13 @@ application.BAKED_VERSION = RUNTIME_RELEASE_VERSION
 # Override release metadata before rebuilding release-sensitive HTTP routes.
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
+
+# The firmware workflow already creates and independently verifies a fresh backup.
+# Retry the destructive firmware tool exactly once when its own backup index lags.
+firmware_backup_retry = install_firmware_backup_settle_retry(
+    _core.hub_firmware_update_workflow,
+    settle_seconds=4.0,
+)
 
 # Install app control as a terminal deterministic wrapper outside AI and generic
 # device control. Every app write requires clickable confirmation using an exact
