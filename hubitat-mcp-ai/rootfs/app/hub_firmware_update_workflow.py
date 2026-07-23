@@ -6,7 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from presenter import display_payload, safe_debug
+from presenter import display_payload, first_mapping, first_value, safe_debug
+from system_presenter_v2 import present_hub_info_v2
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -25,6 +26,8 @@ _UPDATE = re.compile(
 @dataclass(slots=True)
 class PendingFirmwareUpdate:
     expires_at: float
+    current_version: str | None = None
+    available_version: str | None = None
 
 
 class HubFirmwareUpdateWorkflow:
@@ -71,14 +74,20 @@ class HubFirmwareUpdateWorkflow:
         if not self.matches(query):
             return await fallback(request)
 
-        await self._put(session_id)
-        return self._confirmation()
+        status = await self._read_update_status()
+        if status["available"] is not True:
+            return self._status_without_confirmation(status)
 
-    async def _put(self, session_id: str) -> None:
+        await self._put(session_id, status)
+        return self._confirmation(status)
+
+    async def _put(self, session_id: str, status: dict[str, Any]) -> None:
         async with self._lock:
             self._purge_locked()
             self._pending[session_id] = PendingFirmwareUpdate(
-                expires_at=time.monotonic() + self.ttl_seconds
+                expires_at=time.monotonic() + self.ttl_seconds,
+                current_version=status.get("current_version"),
+                available_version=status.get("available_version"),
             )
 
     async def _get(self, session_id: str) -> PendingFirmwareUpdate | None:
@@ -96,13 +105,18 @@ class HubFirmwareUpdateWorkflow:
         for key in [key for key, item in self._pending.items() if item.expires_at <= now]:
             self._pending.pop(key, None)
 
-    def _confirmation(self) -> dict[str, Any]:
+    def _confirmation(self, status: dict[str, Any]) -> dict[str, Any]:
+        current = str(status.get("current_version") or "Unknown")
+        available = str(status.get("available_version") or "Available")
+        channel = str(status.get("channel") or "").strip()
+        available_label = f"{available} ({channel})" if channel else available
         display = display_payload(
             "hub-firmware-update-confirmation",
             "Update the Hubitat hub software now?",
             subtitle="HomeBrain will verify or create a backup first, then the hub will restart.",
             metrics=[
-                {"label": "Operation", "value": "Firmware update", "icon": "⬆️"},
+                {"label": "Installed", "value": current, "icon": "🧩"},
+                {"label": "Available", "value": available_label, "icon": "⬆️"},
                 {"label": "Restart", "value": "Required", "icon": "🔄"},
             ],
             note=(
@@ -137,6 +151,104 @@ class HubFirmwareUpdateWorkflow:
                 "cancel."
             ),
             "display": display,
+            "tools_used": [{"name": "hub_get_info", "success": True}],
+            "technical": safe_debug({"platform_update": status.get("raw")}),
+        }
+
+    @staticmethod
+    def _status_without_confirmation(status: dict[str, Any]) -> dict[str, Any]:
+        current = str(status.get("current_version") or "Unknown")
+        available = status.get("available")
+        error = str(status.get("error") or "").strip()
+        if available is False:
+            title = "Hub software is up to date"
+            message = f"The Hubitat hub is already running the latest software ({current})."
+            intent = "hub-firmware-up-to-date"
+            success = True
+        else:
+            title = "Could not verify hub software"
+            message = (
+                "HomeBrain could not reliably read the installed and available Hubitat software "
+                "versions, so no update confirmation was created."
+            )
+            if error:
+                message += f" {error}"
+            intent = "hub-firmware-status-unavailable"
+            success = False
+        return {
+            "success": success,
+            "route": "mcp-hub-firmware-status",
+            "intent": intent,
+            "message": message,
+            "display": display_payload(
+                "hub-firmware-status",
+                title,
+                metrics=[
+                    {"label": "Installed", "value": current, "icon": "🧩"},
+                    {
+                        "label": "Update",
+                        "value": "Up to date" if available is False else "Unknown",
+                        "icon": "✅" if available is False else "❓",
+                    },
+                ],
+                note="No firmware update command was sent.",
+            ),
+            "tools_used": [
+                {
+                    "name": "hub_get_info",
+                    "success": not bool(error),
+                    **({"error": error[:700]} if error else {}),
+                }
+            ],
+            "technical": safe_debug({"platform_update": status.get("raw"), "error": error}),
+        }
+
+    async def _read_update_status(self) -> dict[str, Any]:
+        arguments = {"includeAppUpdate": False, "includeHealthAlerts": True}
+        try:
+            result = await self.application.mcp.call_tool("hub_get_info", arguments)
+        except Exception as exc:
+            return {
+                "available": None,
+                "current_version": None,
+                "available_version": None,
+                "error": str(exc).strip() or type(exc).__name__,
+                "raw": None,
+            }
+        if result.is_error:
+            return {
+                "available": None,
+                "current_version": None,
+                "available_version": None,
+                "error": str(result.text or "hub_get_info failed"),
+                "raw": result.data,
+            }
+
+        data = first_mapping(result.data)
+        _message, hub_display = present_hub_info_v2(data)
+        platform = hub_display.get("platform_update") or {}
+        raw_platform = data.get("platformUpdate")
+        raw_platform = raw_platform if isinstance(raw_platform, dict) else {}
+        current = (
+            platform.get("current")
+            or first_value(data, "firmwareVersion", "currentVersion")
+        )
+        available_version = platform.get("available_version")
+        channel = first_value(raw_platform, "channel", "releaseChannel", "track")
+        note = str(first_value(raw_platform, "note", "message") or "")
+        if not channel and "beta" in note.lower():
+            channel = "beta"
+        return {
+            "available": platform.get("available"),
+            "current_version": str(current) if current not in (None, "") else None,
+            "available_version": (
+                str(available_version)
+                if available_version not in (None, "")
+                else None
+            ),
+            "channel": str(channel) if channel not in (None, "") else None,
+            "error": None,
+            "raw": raw_platform,
         }
 
     @staticmethod

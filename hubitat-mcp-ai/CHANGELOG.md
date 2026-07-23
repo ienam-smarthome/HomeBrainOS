@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.48
+
+- Reads authoritative Hubitat platform-update status before asking for confirmation.
+- Shows installed version, available version, and release channel in the confirmation card.
+- Suppresses the destructive action when the hub is current or status cannot be verified.
+
 ## 0.10.47
 
 - Creates and verifies the required recent hub backup before starting a firmware update.
