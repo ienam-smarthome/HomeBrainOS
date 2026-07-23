@@ -10,15 +10,26 @@ def test_entrypoint_rebinds_routes_after_app_controller_installation():
     app_install = source.index("install_named_app_controller(_core.application)")
     route_rebind = source.index("install_runtime_route_bridge(_core.application)")
     assert app_install < route_rebind
-    assert 'RELEASE_VERSION = "0.10.58"' in source
+    assert 'RELEASE_VERSION = "0.10.59"' in source
 
 
 def test_runtime_bridge_recreates_ask_and_home_routes_dynamically():
     source = (APP_DIR / "runtime_route_bridge.py").read_text(encoding="utf-8")
     assert "install_cancellable_ask(application)" in source
     assert 'getattr(application, "VERSION", api.version)' in source
-    assert 'getattr(route, "path", None) == "/"' in source
+    assert 'getattr(route, "path", None) in {"/", "/service-worker.js"}' in source
     assert '"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"' in source
+    assert '"X-HomeBrain-Version": version' in source
+
+
+def test_runtime_bridge_replaces_stale_pwa_shell_cache():
+    source = (APP_DIR / "runtime_route_bridge.py").read_text(encoding="utf-8")
+    assert "NETWORK_ONLY_SERVICE_WORKER" in source
+    assert "hubitat-mcp-ai-shell-" in source
+    assert "caches.delete" in source
+    assert "request.mode==='navigate'" in source
+    assert "fetch(request,{cache:'no-store'})" in source
+    assert "caches.match('./')" not in source
 
 
 def test_life360_app_phrase_is_owned_by_deterministic_app_parser():
