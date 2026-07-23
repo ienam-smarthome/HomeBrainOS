@@ -1,0 +1,136 @@
+from __future__ import annotations
+
+import asyncio
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+
+APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
+sys.path.insert(0, str(APP_DIR))
+
+from hub_firmware_update_workflow import (  # noqa: E402
+    install_hub_firmware_update_workflow,
+)
+from mcp_client import MCPToolResult  # noqa: E402
+
+
+def request(query: str, session_id: str = "browser-1"):
+    return SimpleNamespace(query=query, session_id=session_id, history=[])
+
+
+class FakeMCP:
+    def __init__(self, *, error: bool = False) -> None:
+        self.error = error
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]):
+        self.calls.append((name, arguments))
+        return MCPToolResult(
+            name=name,
+            arguments=arguments,
+            raw={},
+            text="Admin writes disabled" if self.error else "Update accepted",
+            data={},
+            is_error=self.error,
+        )
+
+
+def make_application(*, error: bool = False, ttl_seconds: float = 120):
+    fallback_calls: list[str] = []
+
+    async def fallback(value: Any):
+        fallback_calls.append(value.query)
+        return {"success": True, "route": "fallback"}
+
+    application = SimpleNamespace(ask=fallback, mcp=FakeMCP(error=error))
+    workflow = install_hub_firmware_update_workflow(
+        application, ttl_seconds=ttl_seconds
+    )
+    return application, workflow, fallback_calls
+
+
+def test_update_prompts_with_clickable_actions_then_executes_once():
+    async def scenario():
+        application, _, fallback_calls = make_application()
+        prompt = await application.ask(request("update software"))
+        confirmed = await application.ask(request("yes"))
+        repeated = await application.ask(request("yes"))
+        return application, fallback_calls, prompt, confirmed, repeated
+
+    application, fallback_calls, prompt, confirmed, repeated = asyncio.run(scenario())
+    assert prompt["confirmation_required"] is True
+    assert prompt["intent"] == "hub-firmware-update-confirmation-required"
+    assert prompt["display"]["actions"] == [
+        {
+            "label": "Yes - update hub",
+            "query": "Yes",
+            "tone": "danger",
+            "icon": "⬆️",
+        },
+        {
+            "label": "No - cancel",
+            "query": "No",
+            "tone": "secondary",
+            "icon": "✖️",
+        },
+    ]
+    assert application.mcp.calls == [("hub_update_firmware", {"confirm": True})]
+    assert confirmed["intent"] == "hub-firmware-update-requested"
+    assert repeated["route"] == "fallback"
+    assert fallback_calls == ["yes"]
+
+
+def test_no_cancels_and_yes_from_another_session_cannot_execute():
+    async def scenario():
+        application, _, fallback_calls = make_application()
+        await application.ask(request("upgrade hub firmware"))
+        unrelated = await application.ask(request("yes", session_id="browser-2"))
+        cancelled = await application.ask(request("no"))
+        return application, fallback_calls, unrelated, cancelled
+
+    application, fallback_calls, unrelated, cancelled = asyncio.run(scenario())
+    assert unrelated["route"] == "fallback"
+    assert cancelled["intent"] == "hub-firmware-update-cancelled"
+    assert application.mcp.calls == []
+    assert fallback_calls == ["yes"]
+
+
+def test_expired_confirmation_does_not_execute():
+    async def scenario():
+        application, workflow, fallback_calls = make_application()
+        workflow.ttl_seconds = 0
+        await application.ask(request("update hub software"))
+        answer = await application.ask(request("yes"))
+        return application, fallback_calls, answer
+
+    application, fallback_calls, answer = asyncio.run(scenario())
+    assert answer["route"] == "fallback"
+    assert application.mcp.calls == []
+    assert fallback_calls == ["yes"]
+
+
+def test_rejected_update_reports_failure_without_retry():
+    async def scenario():
+        application, _, _ = make_application(error=True)
+        await application.ask(request("update software"))
+        answer = await application.ask(request("confirm"))
+        return application, answer
+
+    application, answer = asyncio.run(scenario())
+    assert answer["intent"] == "hub-firmware-update-failed"
+    assert "Admin writes disabled" in answer["message"]
+    assert application.mcp.calls == [("hub_update_firmware", {"confirm": True})]
+
+
+def test_release_installs_firmware_workflow_outside_ai_routes():
+    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    assert (
+        "from hub_firmware_update_workflow import install_hub_firmware_update_workflow"
+        in entrypoint
+    )
+    assert "hub_firmware_update_workflow = install_hub_firmware_update_workflow(" in entrypoint
+    assert entrypoint.index("install_unified_mcp_agent_orchestrator") < entrypoint.index(
+        "hub_firmware_update_workflow = install_hub_firmware_update_workflow("
+    )

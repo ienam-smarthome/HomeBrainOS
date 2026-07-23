@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.46
+
+- Adds session-scoped, expiring confirmation for Hubitat firmware updates.
+- Shows explicit Yes and No actions in the Home Assistant UI.
+- Prevents AI retries and duplicate submissions from issuing repeated update commands.
+- Adds firmware-update safety coverage to the blocking release gate.
+
 ## 0.10.45
 
 - Makes blocking CI propagate pytest failures even when output is captured with `tee`.
