@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.59
+
+- Replaces the stale cache-first PWA service worker with network-only navigation handling.
+- Deletes all historical `hubitat-mcp-ai-shell-*` caches when the new worker activates.
+- Adds a one-time browser cache reset and an `X-HomeBrain-Version` response header.
+- Prevents Home Assistant ingress from displaying an older HomeBrain release after the add-on has updated.
+
 ## 0.10.58
 
 - Rebinds the final `/api/ask` endpoint after the guarded app controller is installed, so explicit app commands cannot fall through to generic AI device handling.
