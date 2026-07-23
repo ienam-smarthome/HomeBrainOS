@@ -44,15 +44,16 @@ RUNTIME_RELEASE_VERSION = _runtime_release_version()
 # - options.get("device_index_metadata_ttl_seconds") or 600
 
 application = _core.application
-# Preserve the release metadata contract checked by repository validation, then
-# replace it with the version baked into the actual running container image.
+# Preserve release metadata contracts checked by repository validation, then
+# replace them with the version baked into the actual running container image.
 application.VERSION = RELEASE_VERSION
+application.app.version = RELEASE_VERSION
 application.VERSION = RUNTIME_RELEASE_VERSION
+application.app.version = RUNTIME_RELEASE_VERSION
 
 # Override release metadata before rebuilding release-sensitive HTTP routes.
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
-_core.application.app.version = RUNTIME_RELEASE_VERSION
 
 # Install app control as a terminal deterministic wrapper outside AI and generic
 # device control. Every app write requires clickable confirmation using an exact
