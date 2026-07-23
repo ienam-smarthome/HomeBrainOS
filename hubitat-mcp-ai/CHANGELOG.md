@@ -1,5 +1,13 @@
 # Hubitat MCP AI changelog
 
+## 0.10.57
+
+- Adds deterministic Hubitat app inventory with enabled, disabled, and unknown states.
+- Adds guarded app enable/disable commands through `hub_set_app_disabled`.
+- Requires clickable Confirm/Cancel before every app write.
+- Verifies writes from the MCP response and independent `hub_list_apps` read-back where available.
+- Supports exact App IDs and clickable selection for partial-name matches.
+
 ## 0.10.56
 
 - Adds a live, deterministic MCP app-management capability diagnostic.
