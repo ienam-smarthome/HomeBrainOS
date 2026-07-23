@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
@@ -12,6 +13,12 @@ sys.path.insert(0, str(APP_DIR))
 
 from hub_firmware_update_workflow import (  # noqa: E402
     install_hub_firmware_update_workflow,
+)
+from automation_rule_workflow_backup_confirmed import (  # noqa: E402
+    ConfirmedBackupWashingRuleMachineWorkflow,
+)
+from automation_rule_workflow_backup_filename_safe import (  # noqa: E402
+    FilenameSafeBackupWashingRuleMachineWorkflow,
 )
 from mcp_client import MCPToolResult  # noqa: E402
 
@@ -142,6 +149,28 @@ def test_update_prompts_with_clickable_actions_then_executes_once():
     assert fallback_calls == ["yes"]
 
 
+def test_natural_update_word_orders_all_use_terminal_workflow_without_ollama():
+    async def scenario(query: str):
+        application, _, fallback_calls, _ = make_application()
+        answer = await application.ask(request(query))
+        return application, fallback_calls, answer
+
+    for query in (
+        "software update",
+        "firmware update",
+        "platform update",
+        "Hubitat update",
+        "hub software update",
+        "check for software update",
+        "please check for a Hubitat update",
+    ):
+        application, fallback_calls, answer = asyncio.run(scenario(query))
+        assert answer["intent"] == "hub-firmware-update-confirmation-required", query
+        assert answer["route"] == "mcp-hub-firmware-update-confirmation", query
+        assert fallback_calls == [], query
+        assert [name for name, _ in application.mcp.calls] == ["hub_get_info"], query
+
+
 def test_no_cancels_and_yes_from_another_session_cannot_execute():
     async def scenario():
         application, _, fallback_calls, _ = make_application()
@@ -229,6 +258,31 @@ def test_backup_failure_blocks_update_and_reports_the_real_reason():
         ("guide", None),
         ("backup", "BP-CONFIRM-2401", True),
     ]
+
+
+def test_real_filename_safe_backup_layer_accepts_and_forwards_force():
+    forwarded: list[tuple[str | None, bool]] = []
+
+    async def confirmed_ensure(self, key: str | None, *, force: bool = False):
+        forwarded.append((key, force))
+        return True, {"created": True, "recent": True}
+
+    application = SimpleNamespace(mcp=SimpleNamespace(), VERSION="test")
+    service = FilenameSafeBackupWashingRuleMachineWorkflow(application, object())
+    with patch.object(
+        ConfirmedBackupWashingRuleMachineWorkflow,
+        "_ensure_backup",
+        new=confirmed_ensure,
+    ):
+        ok, details = asyncio.run(
+            service._ensure_backup("BP-CONFIRM-2401", force=True)
+        )
+
+    assert ok is True
+    assert details["created"] is True
+    assert details["listed_backup_check"]["skipped_for_explicit_create"] is True
+    assert details["hub_info_backup_check"]["skipped_for_explicit_create"] is True
+    assert forwarded == [("BP-CONFIRM-2401", True)]
 
 
 def test_up_to_date_status_lists_installed_version_without_confirmation():

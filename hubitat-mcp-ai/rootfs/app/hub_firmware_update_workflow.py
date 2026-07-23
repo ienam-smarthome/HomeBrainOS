@@ -14,11 +14,19 @@ AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 _YES = {"yes", "confirm", "confirmed", "do it", "go ahead", "please do", "proceed"}
 _NO = {"no", "cancel", "stop", "never mind", "nevermind"}
 _UPDATE = re.compile(
-    r"^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?"
-    r"(?:(?:check\s+(?:for\s+)?)?(?:and\s+)?(?:install|apply|start|run|do)?\s*)?"
+    r"^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:"
+    r"(?:(?:check\s+(?:for\s+)?(?:an?\s+)?)?(?:and\s+)?(?:install|apply|start|run|do)?\s*)?"
     r"(?:update|upgrade)\s+"
     r"(?:(?:the|my)\s+)?(?:(?:hub|hubitat)(?:\s+hub)?\s+)?"
-    r"(?:software|firmware|platform)[?.!]*$",
+    r"(?:software|firmware|platform)"
+    r"|"
+    r"(?:(?:check\s+(?:for\s+)?(?:an?\s+)?)?(?:(?:the|my)\s+)?)"
+    r"(?:(?:hub|hubitat)(?:\s+hub)?\s+)?"
+    r"(?:software|firmware|platform)\s+(?:update|upgrade)"
+    r"|"
+    r"(?:(?:check\s+(?:for\s+)?(?:an?\s+)?)?(?:(?:the|my)\s+)?)"
+    r"(?:hubitat|hub)(?:\s+hub)?\s+(?:update|upgrade)"
+    r")[?.!]*$",
     re.IGNORECASE,
 )
 
