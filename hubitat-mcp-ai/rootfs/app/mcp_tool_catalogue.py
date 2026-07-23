@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app_management_capability import install_app_management_capability
+
 
 async def build_mcp_tool_catalogue(
     client: Any,
@@ -62,11 +64,20 @@ async def build_mcp_tool_catalogue(
 
 
 def install_mcp_tool_catalogue(application: Any, client: Any) -> None:
-    """Expose a readable catalogue of core and gateway-contained MCP tools."""
+    """Expose a readable catalogue and app-management capability diagnostic."""
 
     @application.app.get("/api/mcp-tool-catalogue")
     async def mcp_tool_catalogue(refresh: bool = False) -> dict[str, Any]:
         return await build_mcp_tool_catalogue(client, refresh=refresh)
+
+    install_app_management_capability(application)
+
+    # Keep the runtime UI version aligned with the Home Assistant manifest for this
+    # diagnostic-only release. This runs after entrypoint composition is complete.
+    @application.app.on_event("startup")
+    async def apply_app_capability_release_version() -> None:
+        application.VERSION = "0.10.56"
+        application.app.version = "0.10.56"
 
 
 __all__ = ["build_mcp_tool_catalogue", "install_mcp_tool_catalogue"]
