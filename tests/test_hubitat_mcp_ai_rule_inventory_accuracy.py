@@ -77,3 +77,32 @@ def test_active_rule_query_lists_only_explicitly_active_rules():
     assert "Kitchen presence" in answer["message"]
     assert "Night heating" not in answer["message"]
     assert answer["display"]["subtitle"] == "2 active"
+
+def test_disabled_flag_wins_over_paused_false_and_status_is_counted_correctly():
+    rules = [
+        {
+            "id": "1",
+            "name": "Disabled media rule",
+            "disabled": True,
+            "paused": False,
+            "status": "disabled",
+        },
+        {
+            "id": "2",
+            "name": "Active lighting rule",
+            "disabled": False,
+            "paused": False,
+            "status": "active",
+        },
+    ]
+    answer = asyncio.run(
+        FastFallbackRouter(FakeRulesMCP(rules)).answer("List automation rules")
+    )
+
+    assert "Disabled media rule: Disabled" in answer["message"]
+    assert "Active lighting rule: Active" in answer["message"]
+    metrics = {item["label"]: item["value"] for item in answer["display"]["metrics"]}
+    assert metrics["Active"] == "1"
+    assert metrics["Inactive"] == "1"
+    assert metrics["Status unknown"] == "0"
+

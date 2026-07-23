@@ -255,13 +255,25 @@ def _rule_candidates(value: Any) -> list[dict[str, Any]]:
         if not name or rule_id in (None, ""):
             continue
         status = first_value(item, "status", "state")
+        normalised_status = normalise_text(status).lower()
+        disabled = first_value(item, "disabled", "isDisabled")
         paused = first_value(item, "paused", "isPaused")
         enabled = first_value(item, "enabled", "active")
-        if paused not in (None, ""):
-            status = "Paused" if bool_label(paused) == "Yes" else "Active"
+        if disabled not in (None, "") and bool_label(disabled) == "Yes":
+            status = "Disabled"
+        elif paused not in (None, "") and bool_label(paused) == "Yes":
+            status = "Paused"
+        elif normalised_status in {"active", "enabled", "running"}:
+            status = normalised_status.title()
+        elif normalised_status in {"paused", "disabled", "inactive", "stopped"}:
+            status = normalised_status.title()
         elif enabled not in (None, ""):
             status = "Active" if bool_label(enabled) == "Yes" else "Disabled"
-        rows.append({"name": str(name), "id": rule_id, "status": str(status or "Available")})
+        elif disabled not in (None, "") and bool_label(disabled) == "No":
+            status = "Active"
+        else:
+            status = "Status not exposed"
+        rows.append({"name": str(name), "id": rule_id, "status": str(status)})
     deduped: dict[str, dict[str, Any]] = {}
     for row in rows:
         deduped[str(row["id"])] = row

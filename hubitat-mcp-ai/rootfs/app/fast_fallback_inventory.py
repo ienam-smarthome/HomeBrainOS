@@ -138,26 +138,34 @@ class FastFallbackRouter(SpeechFastFallbackRouter):
 
             state = "unknown"
             status = first_value(item, "status", "state")
+            normalised_status = _normalise(status)
+            disabled = first_value(item, "disabled", "isDisabled")
             paused = first_value(item, "paused", "isPaused")
             enabled = first_value(item, "enabled", "active")
-            if paused not in (None, ""):
-                is_paused = bool_label(paused) == "Yes"
-                state = "inactive" if is_paused else "active"
-                status = "Paused" if is_paused else "Active"
+
+            # Negative state flags must win. Hubitat includes paused=false on every
+            # rule, so treating that alone as Active masks disabled=true.
+            if disabled not in (None, "") and bool_label(disabled) == "Yes":
+                state = "inactive"
+                status = "Disabled"
+            elif paused not in (None, "") and bool_label(paused) == "Yes":
+                state = "inactive"
+                status = "Paused"
+            elif normalised_status in _ACTIVE_RULE_STATES:
+                state = "active"
+                status = normalised_status.title()
+            elif normalised_status in _INACTIVE_RULE_STATES:
+                state = "inactive"
+                status = normalised_status.title()
             elif enabled not in (None, ""):
                 is_enabled = bool_label(enabled) == "Yes"
                 state = "active" if is_enabled else "inactive"
                 status = "Active" if is_enabled else "Disabled"
+            elif disabled not in (None, "") and bool_label(disabled) == "No":
+                state = "active"
+                status = "Active"
             else:
-                normalised_status = _normalise(status)
-                if normalised_status in _ACTIVE_RULE_STATES:
-                    state = "active"
-                    status = normalised_status.title()
-                elif normalised_status in _INACTIVE_RULE_STATES:
-                    state = "inactive"
-                    status = normalised_status.title()
-                else:
-                    status = "Status not exposed"
+                status = "Status not exposed"
 
             rows.append(
                 {

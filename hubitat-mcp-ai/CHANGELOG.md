@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.52
+
+- Correctly classifies disabled Rule Machine rules when Hubitat also reports `paused: false`.
+- Gives explicit disabled and paused states precedence over generic false flags.
+- Keeps active, inactive and unknown rule counts aligned with the authoritative MCP response.
+
 ## 0.10.51
 
 - Adds an explicit typed route-priority catalogue.
