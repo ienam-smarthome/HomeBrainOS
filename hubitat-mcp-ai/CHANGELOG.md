@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.50
+
+- Routes reversed update wording such as `software update` and `firmware update` deterministically.
+- Recognises natural Hubitat update variants without invoking Ollama.
+- Keeps update-status reads and confirmation available when local AI is offline.
+- Propagates forced-backup creation through the filename-safe backup workflow layer.
+
 ## 0.10.49
 
 - Forces creation and verification of a fresh backup immediately before firmware updates.

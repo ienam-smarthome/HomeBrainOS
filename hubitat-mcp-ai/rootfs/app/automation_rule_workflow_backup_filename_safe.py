@@ -295,29 +295,43 @@ class FilenameSafeBackupWashingRuleMachineWorkflow(
         details["error"] = "Hubitat lastBackupEpoch is older than 24 hours"
         return False, details
 
-    async def _ensure_backup(self, key: str | None) -> tuple[bool, dict[str, Any]]:
-        listed_ok, listed = await self._recent_listed_backup()
-        if listed_ok:
-            return True, {
-                "created": False,
-                "recent": True,
-                "verified_by": "hub_list_backups_filename_safe",
-                "listed": listed,
-                "best_practice_key_found": bool(key),
-            }
+    async def _ensure_backup(
+        self,
+        key: str | None,
+        *,
+        force: bool = False,
+    ) -> tuple[bool, dict[str, Any]]:
+        listed: dict[str, Any] = {
+            "checked": False,
+            "skipped_for_explicit_create": force,
+        }
+        hub_info: dict[str, Any] = {
+            "checked": False,
+            "skipped_for_explicit_create": force,
+        }
+        if not force:
+            listed_ok, listed = await self._recent_listed_backup()
+            if listed_ok:
+                return True, {
+                    "created": False,
+                    "recent": True,
+                    "verified_by": "hub_list_backups_filename_safe",
+                    "listed": listed,
+                    "best_practice_key_found": bool(key),
+                }
 
-        info_ok, hub_info = await self._recent_hub_info_backup()
-        if info_ok:
-            return True, {
-                "created": False,
-                "recent": True,
-                "verified_by": "hub_get_info_lastBackupEpoch",
-                "listed_backup_check": listed,
-                "hub_info_backup_check": hub_info,
-                "best_practice_key_found": bool(key),
-            }
+            info_ok, hub_info = await self._recent_hub_info_backup()
+            if info_ok:
+                return True, {
+                    "created": False,
+                    "recent": True,
+                    "verified_by": "hub_get_info_lastBackupEpoch",
+                    "listed_backup_check": listed,
+                    "hub_info_backup_check": hub_info,
+                    "best_practice_key_found": bool(key),
+                }
 
-        ok, details = await super()._ensure_backup(key)
+        ok, details = await super()._ensure_backup(key, force=force)
         details.setdefault("listed_backup_check", listed)
         details["hub_info_backup_check"] = hub_info
         return ok, details
