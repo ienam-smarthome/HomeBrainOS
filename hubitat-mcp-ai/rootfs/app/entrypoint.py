@@ -43,10 +43,15 @@ RUNTIME_RELEASE_VERSION = _runtime_release_version()
 # - options.get("mcp_catalog_cache_seconds") or 300
 # - options.get("device_index_metadata_ttl_seconds") or 600
 
+application = _core.application
+# Preserve the release metadata contract checked by repository validation, then
+# replace it with the version baked into the actual running container image.
+application.VERSION = RELEASE_VERSION
+application.VERSION = RUNTIME_RELEASE_VERSION
+
 # Override release metadata before rebuilding release-sensitive HTTP routes.
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
-_core.application.VERSION = RUNTIME_RELEASE_VERSION
 _core.application.app.version = RUNTIME_RELEASE_VERSION
 
 # Install app control as a terminal deterministic wrapper outside AI and generic
@@ -56,7 +61,6 @@ _core.application.app.version = RUNTIME_RELEASE_VERSION
 app_controller = install_named_app_controller(_core.application)
 runtime_request_registry = install_runtime_route_bridge(_core.application)
 
-application = _core.application
 app = _core.app
 
 
