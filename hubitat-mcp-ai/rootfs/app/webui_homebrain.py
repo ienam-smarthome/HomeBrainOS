@@ -54,7 +54,7 @@ def render_homebrain_page(title: str, version: str) -> str:
 <button class="secondary" data-q="Which batteries are low?">🪫 Low batteries</button>
 <button class="secondary" data-q="List my Hubitat rooms">🚪 Rooms</button>
 <button class="secondary" data-q="What is the weather?">🌦️ Weather</button>
-<button class="secondary" data-q="List active automation rules">⚙️ Rules</button>
+<button class="secondary" data-q="List automation rules">⚙️ Rules</button>
 <button class="secondary" data-q="Check the hub health status">🧠 Hub health</button>
 <details class="tools"><summary>Health, Diagnostics & MCP</summary><div class="grid tools-grid">
 <button class="secondary" data-q="Show hub CPU and free memory">Hub resources</button>

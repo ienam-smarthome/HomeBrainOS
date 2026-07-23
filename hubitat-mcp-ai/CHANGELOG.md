@@ -1,5 +1,10 @@
 # Hubitat MCP AI changelog
 
+## 0.10.53
+
+- Changes the Rules shortcut to list all automation rules instead of only active rules.
+- Keeps active, inactive, and unknown rule counts visible in the result.
+
 ## 0.10.52
 
 - Correctly classifies disabled Rule Machine rules when Hubitat also reports `paused: false`.
