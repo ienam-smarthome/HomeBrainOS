@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.60
+
+- Removes the installable PWA layer from the Home Assistant ingress page.
+- Unregisters legacy HomeBrain service workers and deletes `hubitat-mcp-ai-shell-*` caches.
+- Keeps a temporary cleanup worker endpoint so previously registered workers can retire themselves.
+- Adds cache-clearing response headers while preserving the guarded app-controller route.
+
 ## 0.10.59
 
 - Replaces the stale cache-first PWA service worker with network-only navigation handling.
