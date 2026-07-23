@@ -3,8 +3,6 @@ name: Apply clickable rule confirmation 0.10.55
 on:
   pull_request:
     branches: [main]
-    paths:
-      - .github/clickable-rule-confirmation-0.10.55-trigger
 
 permissions:
   contents: write
