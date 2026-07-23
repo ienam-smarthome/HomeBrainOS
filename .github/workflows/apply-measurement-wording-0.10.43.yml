@@ -28,6 +28,7 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
 
           root = Path('.')
@@ -54,6 +55,8 @@ jobs:
           if not test_candidates:
               raise SystemExit('Could not locate MCP agent orchestrator tests')
           test_path = test_candidates[0]
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
+              env_file.write(f'TEST_PATH={test_path.as_posix()}\n')
           tests = test_path.read_text(encoding='utf-8')
           addition = '''\n\ndef test_measurement_wording_formats_humidity_naturally():\n    from mcp_agent_orchestrator import _format_attribute_message\n\n    assert _format_attribute_message("Bathroom meter", "humidity", 66, "%") == "Bathroom humidity is 66%."\n\n\ndef test_measurement_wording_preserves_standard_unit_spacing():\n    from mcp_agent_orchestrator import _format_attribute_message\n\n    assert _format_attribute_message("Freezer (MQTT)", "power", 74, "W") == "Freezer (MQTT) is 74 W."\n    assert _format_attribute_message("FP2 Bedroom 3 Lux", "illuminance", 212, "lux") == "FP2 Bedroom 3 Lux is 212 lux."\n    assert _format_attribute_message("Bedroom meter", "temperature", 21.5, "°C") == "Bedroom meter is 21.5°C."\n'''
           if 'test_measurement_wording_formats_humidity_naturally' not in tests:
@@ -93,7 +96,7 @@ jobs:
           PY
 
       - name: Run focused regression tests
-        run: python -m pytest -q tests/test_mcp_agent_orchestrator.py
+        run: python -m pytest -q "$TEST_PATH"
 
       - name: Commit release to pull request branch
         shell: bash
