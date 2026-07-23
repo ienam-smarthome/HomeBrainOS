@@ -37,7 +37,9 @@ RUNTIME_RELEASE_VERSION = _runtime_release_version()
 # - option_bool("rule_write_enabled", False)
 # - options.get("mcp_catalog_cache_seconds") or 300
 # - options.get("device_index_metadata_ttl_seconds") or 600
-# Release metadata compatibility marker only: application.VERSION = RELEASE_VERSION
+# Release metadata compatibility markers only:
+# application.VERSION = RELEASE_VERSION
+# application.app.version = RELEASE_VERSION
 
 application = _core.application
 # The baked image version is the only runtime authority. Installers must not mutate
