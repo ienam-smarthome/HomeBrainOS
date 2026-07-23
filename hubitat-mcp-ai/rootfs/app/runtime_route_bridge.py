@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -34,6 +35,11 @@ PWA_REMOVAL_SCRIPT = r"""
 </script>
 """
 
+_VERSION_DECLARATION = re.compile(
+    r'(const\s+TITLE\s*=\s*.*?,\s*VERSION\s*=\s*)("(?:\\.|[^"\\])*")',
+    flags=re.S,
+)
+
 
 def remove_pwa_markup(page: str) -> str:
     """Remove installable-PWA markup and registration from the ingress page."""
@@ -51,6 +57,25 @@ def remove_pwa_markup(page: str) -> str:
     return page
 
 
+def enforce_rendered_version(page: str, version: str) -> str:
+    """Replace the renderer's embedded VERSION value with the live image version.
+
+    Older composition modules can retain a release constant captured during import.
+    The final HTTP layer is authoritative and rewrites the JavaScript VERSION value
+    after every other Web UI patch has run.
+    """
+
+    encoded = json.dumps(str(version))
+    rewritten, count = _VERSION_DECLARATION.subn(
+        lambda match: match.group(1) + encoded,
+        page,
+        count=1,
+    )
+    if count != 1:
+        raise RuntimeError("HomeBrain page did not contain one replaceable VERSION declaration")
+    return rewritten
+
+
 def install_runtime_route_bridge(application: Any):
     """Rebind final HTTP routes after outer deterministic controllers are installed."""
 
@@ -60,15 +85,13 @@ def install_runtime_route_bridge(application: Any):
     # chain, including guarded app management.
     request_registry = install_cancellable_ask(application)
 
-    # Replace the HTML home endpoint and legacy PWA asset routes. Home Assistant
-    # ingress does not need an additional installable PWA, and its service worker was
-    # able to preserve an obsolete complete UI shell across add-on upgrades.
+    # Replace the HTML home endpoint, runtime diagnostic, and legacy PWA asset routes.
     api.router.routes[:] = [
         route
         for route in api.router.routes
         if not (
             getattr(route, "path", None)
-            in {"/", "/service-worker.js", "/manifest.webmanifest"}
+            in {"/", "/service-worker.js", "/manifest.webmanifest", "/api/runtime-version"}
             and "GET" in (getattr(route, "methods", set()) or set())
         )
     ]
@@ -86,6 +109,17 @@ def install_runtime_route_bridge(application: Any):
             },
         )
 
+    @api.get("/api/runtime-version")
+    async def runtime_version() -> dict[str, Any]:
+        version = str(getattr(application, "VERSION", api.version))
+        return {
+            "success": True,
+            "baked_version": str(getattr(application, "BAKED_VERSION", version)),
+            "application_version": version,
+            "api_version": str(api.version),
+            "rendered_version": version,
+        }
+
     @api.get("/", response_class=HTMLResponse)
     async def runtime_home() -> HTMLResponse:
         version = str(getattr(application, "VERSION", api.version))
@@ -95,6 +129,7 @@ def install_runtime_route_bridge(application: Any):
             version,
         )
         page = remove_pwa_markup(patch_page(page))
+        page = enforce_rendered_version(page, version)
         page = page.replace("</body>", PWA_REMOVAL_SCRIPT + "</body>", 1)
         return HTMLResponse(
             page,
@@ -117,6 +152,7 @@ def install_runtime_route_bridge(application: Any):
 __all__ = [
     "PWA_CLEANUP_SERVICE_WORKER",
     "PWA_REMOVAL_SCRIPT",
+    "enforce_rendered_version",
     "install_runtime_route_bridge",
     "remove_pwa_markup",
 ]

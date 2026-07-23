@@ -9,18 +9,13 @@ from entrypoint_core import *  # noqa: F401,F403
 from named_app_control import install_named_app_controller
 from runtime_route_bridge import install_runtime_route_bridge
 
-PREVIOUS_RELEASE_VERSION = "0.10.60"
-RELEASE_VERSION = "0.10.61"
+PREVIOUS_RELEASE_VERSION = "0.10.61"
+RELEASE_VERSION = "0.10.62"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 
 def _runtime_release_version() -> str:
-    """Return the version baked into the running add-on image.
-
-    Home Assistant can refresh repository metadata independently from a locally
-    cached add-on image. Baking BUILD_VERSION into the image gives the runtime a
-    truthful version and makes every release change invalidate the Docker build.
-    """
+    """Return the version baked into the running add-on image."""
 
     try:
         baked = BAKED_VERSION_PATH.read_text(encoding="utf-8").strip()
@@ -50,6 +45,7 @@ application.VERSION = RELEASE_VERSION
 application.app.version = RELEASE_VERSION
 application.VERSION = RUNTIME_RELEASE_VERSION
 application.app.version = RUNTIME_RELEASE_VERSION
+application.BAKED_VERSION = RUNTIME_RELEASE_VERSION
 
 # Override release metadata before rebuilding release-sensitive HTTP routes.
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
@@ -58,7 +54,8 @@ _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
 # Install app control as a terminal deterministic wrapper outside AI and generic
 # device control. Every app write requires clickable confirmation using an exact
 # App ID. Then rebuild /api/ask so the cancellable endpoint captures this final
-# handler, and rebuild / without the obsolete ingress PWA shell.
+# handler, rebuild / without the obsolete ingress PWA shell, and expose the
+# authoritative baked/rendered version diagnostic.
 app_controller = install_named_app_controller(_core.application)
 runtime_request_registry = install_runtime_route_bridge(_core.application)
 
