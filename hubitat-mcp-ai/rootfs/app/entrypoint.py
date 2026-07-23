@@ -61,8 +61,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.43"
-RELEASE_VERSION = "0.10.44"
+PREVIOUS_RELEASE_VERSION = "0.10.44"
+RELEASE_VERSION = "0.10.45"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -79,9 +79,9 @@ def _replace_mcp_client() -> None:
     options = application.OPTIONS
     application.mcp = IndexedMCPStateBroker(
         application.mcp,
-        device_ttl_seconds=float(options.get("mcp_device_cache_seconds") or 12),
-        catalog_ttl_seconds=float(options.get("mcp_catalog_cache_seconds") or 60),
-        hub_ttl_seconds=float(options.get("mcp_hub_cache_seconds") or 20),
+        device_ttl_seconds=float(options.get("mcp_device_cache_seconds") or 20),
+        catalog_ttl_seconds=float(options.get("mcp_catalog_cache_seconds") or 300),
+        hub_ttl_seconds=float(options.get("mcp_hub_cache_seconds") or 60),
     )
 
 
@@ -89,9 +89,9 @@ def _create_device_index() -> DuplicateAwareCapabilityCatalogueDeviceIndex:
     options = application.OPTIONS
     index = DuplicateAwareCapabilityCatalogueDeviceIndex(
         application.mcp,
-        ttl_seconds=float(options.get("device_index_ttl_seconds") or 15),
-        capability_ttl_seconds=float(options.get("device_index_capability_ttl_seconds") or 60),
-        metadata_ttl_seconds=float(options.get("device_index_metadata_ttl_seconds") or 120),
+        ttl_seconds=float(options.get("device_index_ttl_seconds") or 30),
+        capability_ttl_seconds=float(options.get("device_index_capability_ttl_seconds") or 300),
+        metadata_ttl_seconds=float(options.get("device_index_metadata_ttl_seconds") or 600),
     )
     application.device_index = index
     return index
@@ -269,7 +269,7 @@ request_traces = install_request_tracing(
 )
 dashboard_snapshot = install_dashboard_api(
     application,
-    ttl_seconds=float(application.OPTIONS.get("dashboard_refresh_seconds") or 30),
+    ttl_seconds=float(application.OPTIONS.get("dashboard_refresh_seconds") or 60),
     device_index=device_index,
 )
 

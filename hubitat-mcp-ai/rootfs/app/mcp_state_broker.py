@@ -405,8 +405,16 @@ class MCPStateBroker:
 
     @staticmethod
     def _cache_key(name: str, arguments: dict[str, Any]) -> str:
+        cache_arguments = dict(arguments)
+        fields = cache_arguments.get("fields")
+        if name in MCPStateBroker.DEVICE_READ_TOOLS and isinstance(fields, list):
+            # Hubitat treats a field projection as a set; ordering only changes
+            # how callers happened to construct the request. Canonicalizing the
+            # order lets equivalent inventory reads share one cache entry without
+            # altering the arguments sent upstream or merging real filters.
+            cache_arguments["fields"] = sorted(fields, key=lambda value: str(value))
         encoded = json.dumps(
-            arguments,
+            cache_arguments,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,

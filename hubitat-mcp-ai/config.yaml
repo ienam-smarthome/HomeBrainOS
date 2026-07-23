@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.10.44"
+version: "0.10.45"
 slug: hubitat_mcp_ai
 description: "HomeBrain AI-first Hubitat assistant with unified MCP tool calling, guarded writes and verified fallback"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -81,12 +81,12 @@ options:
   ai_evidence_planner_synthesis_timeout_seconds: 20
   ai_evidence_planner_max_inventory_items: 120
   mcp_timeout_seconds: 25
-  mcp_device_cache_seconds: 12
-  mcp_catalog_cache_seconds: 60
-  mcp_hub_cache_seconds: 20
-  device_index_ttl_seconds: 15
-  device_index_capability_ttl_seconds: 60
-  device_index_metadata_ttl_seconds: 120
+  mcp_device_cache_seconds: 20
+  mcp_catalog_cache_seconds: 300
+  mcp_hub_cache_seconds: 60
+  device_index_ttl_seconds: 30
+  device_index_capability_ttl_seconds: 300
+  device_index_metadata_ttl_seconds: 600
   home_snapshot_ai_enabled: true
   home_snapshot_ai_timeout_seconds: 20
   home_snapshot_max_items_per_group: 8
@@ -102,7 +102,7 @@ options:
   attention_stale_hours: 48
   hub_cpu_probe_enabled: true
   hub_cpu_probe_timeout_seconds: 3
-  dashboard_refresh_seconds: 30
+  dashboard_refresh_seconds: 60
   require_sensitive_confirmation: true
   web_title: "Hubitat MCP AI"
 schema:
