@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.58
+
+- Rebinds the final `/api/ask` endpoint after the guarded app controller is installed, so explicit app commands cannot fall through to generic AI device handling.
+- Rebuilds the Web UI home route from the live runtime version instead of a release value captured during `entrypoint_core` import.
+- Adds no-store headers to the rendered HomeBrain page so the displayed version cannot remain frozen after an add-on update.
+
 ## 0.10.57
 
 - Adds deterministic Hubitat app inventory with enabled, disabled, and unknown counts.
