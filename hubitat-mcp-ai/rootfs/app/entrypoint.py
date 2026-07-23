@@ -61,8 +61,8 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.42"
-RELEASE_VERSION = "0.10.43"
+PREVIOUS_RELEASE_VERSION = "0.10.43"
+RELEASE_VERSION = "0.10.44"
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -216,7 +216,7 @@ automation_rule_workflow = install_automation_rule_workflow(
     device_index,
     ttl_seconds=float(application.OPTIONS.get("rule_workflow_ttl_seconds") or 600),
     max_sessions=int(application.OPTIONS.get("conversation_context_max_sessions") or 128),
-    write_enabled=application.option_bool("rule_write_enabled", True),
+    write_enabled=application.option_bool("rule_write_enabled", False),
     require_paused_create=application.option_bool("rule_create_paused_required", True),
 )
 semantic_metric_comparison = SemanticMetricComparisonExecutor(application.fallback)

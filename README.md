@@ -1,12 +1,25 @@
-# HomeBrain OS
+# HomeBrainOS repository
 
-AI-ready smart home operating system for Hubitat and Home Assistant.
+Home Assistant add-ons for a Hubitat-based smart home.
+
+## Components
+
+| Component | Version | Status | Purpose |
+| --- | --- | --- | --- |
+| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.44 | Maintained | Current MCP-backed assistant, verified reads, deterministic controls, and optional AI synthesis |
+| [HomeBrain OS dashboard](homebrainos/README.md) | 1.9.55-alpha | Legacy/alternate | Maker API dashboard and assistant retained for existing installations |
+
+These are separate add-ons with independent versions. The repository version is
+not the version of either component.
+
+The remainder of this document describes the legacy/alternate HomeBrain OS
+dashboard. New assistant development is centred on Hubitat MCP AI.
 
 HomeBrain OS runs as a Home Assistant add-on, connects to Hubitat via Maker API, normalises devices into a clean internal model, and exposes a mobile-friendly dashboard/API.
 
 Short GitHub description: Local-first AI smart-home dashboard and assistant for Hubitat + Home Assistant, with event-driven state, room intelligence, and privacy-preserving local control.
 
-## Current status
+## Legacy dashboard status
 
 `v1.9.55-alpha` assistant dashboard:
 
