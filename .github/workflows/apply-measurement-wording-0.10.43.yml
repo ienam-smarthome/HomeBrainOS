@@ -29,6 +29,7 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import re
           from pathlib import Path
 
           root = Path('.')
@@ -91,6 +92,8 @@ jobs:
               updated = updated.replace('RELEASE_VERSION = "0.10.42"', 'RELEASE_VERSION = "0.10.43"')
               updated = updated.replace('PWA_RELEASE_VERSION = "0.10.42"', 'PWA_RELEASE_VERSION = "0.10.43"')
               updated = updated.replace('## 0.10.42', '## 0.10.43')
+              updated = re.sub(r'"([A-Za-z0-9 _-]+) meter is ([0-9.]+) %\."', r'"\1 humidity is \2%."', updated)
+              updated = re.sub(r'([0-9.]+) °C\.', r'\1°C.', updated)
               if updated != source:
                   path.write_text(updated, encoding='utf-8')
           PY
