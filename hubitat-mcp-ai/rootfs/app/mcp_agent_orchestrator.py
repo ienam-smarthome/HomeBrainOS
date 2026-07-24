@@ -246,6 +246,54 @@ _ATTRIBUTE_ALIASES = {
     "battery": {"battery", "batterylevel"},
 }
 _ATTRIBUTE_VALUE_KEYS = ("currentValue", "currentState", "value", "displayValue", "current_value")
+_INVENTORY_STATE_PRIORITY = (
+    "switch",
+    "contact",
+    "water",
+    "smoke",
+    "carbonMonoxide",
+    "motion",
+    "acceleration",
+    "presence",
+    "lock",
+    "valve",
+    "thermostatOperatingState",
+    "thermostatMode",
+    "temperature",
+    "humidity",
+    "illuminance",
+    "power",
+    "energy",
+    "level",
+    "battery",
+    "healthStatus",
+    "deviceHealth",
+    "health",
+)
+_INVENTORY_STATE_ALIASES = {
+    "switch": {"switch"},
+    "contact": {"contact", "contactsensor"},
+    "water": {"water", "watersensor"},
+    "smoke": {"smoke", "smokedetector"},
+    "carbonMonoxide": {"carbonmonoxide", "co", "codetector"},
+    "motion": {"motion", "motionsensor"},
+    "acceleration": {"acceleration", "accelerationsensor"},
+    "presence": {"presence", "presencesensor"},
+    "lock": {"lock"},
+    "valve": {"valve"},
+    "thermostatOperatingState": {"thermostatoperatingstate", "operatingstate"},
+    "thermostatMode": {"thermostatmode"},
+    "temperature": {"temperature", "temp"},
+    "humidity": {"humidity", "relativehumidity"},
+    "illuminance": {"illuminance", "illuminancelevel", "lux"},
+    "power": {"power", "powermeter", "watts", "wattage"},
+    "energy": {"energy", "energymeter"},
+    "level": {"level", "switchlevel"},
+    "battery": {"battery", "batterylevel"},
+    "healthStatus": {"healthstatus"},
+    "deviceHealth": {"devicehealth"},
+    "health": {"health"},
+}
 
 
 def _attribute_key(value: Any) -> str:
@@ -298,6 +346,186 @@ def _extract_attribute_value(value: Any, attribute: str) -> Any:
             if found not in (None, ""):
                 return found
     return None
+
+
+def _inventory_state_value(device: dict[str, Any], attribute: str) -> Any:
+    """Read a compact inventory state without mistaking metadata for live state."""
+
+    aliases = _INVENTORY_STATE_ALIASES.get(attribute, {attribute})
+    aliases = {_attribute_key(item) for item in aliases}
+    states = (
+        device.get("currentStates")
+        or device.get("current_states")
+        or device.get("attributes")
+        or device.get("states")
+    )
+    if isinstance(states, dict):
+        for key, candidate in states.items():
+            if _attribute_key(key) in aliases:
+                return _present_attribute_value(candidate)
+    elif isinstance(states, (list, tuple)):
+        for record in states:
+            if not isinstance(record, dict):
+                continue
+            name = record.get("name") or record.get("attribute") or record.get("key")
+            if _attribute_key(name) in aliases:
+                return _present_attribute_value(record)
+    return None
+
+
+def _title_state(value: Any) -> str:
+    return str(value).strip().replace("_", " ").replace("-", " ").title()
+
+
+def _inventory_primary_state(device: dict[str, Any], disabled: bool) -> dict[str, Any]:
+    """Project the most useful live state already present in hub_list_devices."""
+
+    if disabled:
+        return {
+            "attribute": None,
+            "value": "Disabled",
+            "icon": "⏸️",
+            "tone": "muted",
+            "available": False,
+        }
+
+    for attribute in _INVENTORY_STATE_PRIORITY:
+        raw_value = _inventory_state_value(device, attribute)
+        if raw_value in (None, ""):
+            continue
+        normalised = _normalise(str(raw_value))
+        if attribute == "switch":
+            value = "On" if normalised == "on" else "Off" if normalised == "off" else _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "💡",
+                "tone": "success" if normalised == "on" else "neutral",
+                "available": True,
+            }
+        if attribute == "contact":
+            value = "Open" if normalised == "open" else "Closed" if normalised == "closed" else _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "🚪",
+                "tone": "warning" if normalised == "open" else "success",
+                "available": True,
+            }
+        if attribute in {"water", "smoke", "carbonMonoxide"}:
+            clear_values = {"clear", "dry", "tested"}
+            alert_values = {"detected", "wet"}
+            value = _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "💧" if attribute == "water" else "🚨",
+                "tone": (
+                    "danger"
+                    if normalised in alert_values
+                    else "success"
+                    if normalised in clear_values
+                    else "neutral"
+                ),
+                "available": True,
+            }
+        if attribute == "motion":
+            value = "Active" if normalised == "active" else "Inactive" if normalised == "inactive" else _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "🏃",
+                "tone": "warning" if normalised == "active" else "neutral",
+                "available": True,
+            }
+        if attribute == "acceleration":
+            value = "Active" if normalised == "active" else "Inactive" if normalised == "inactive" else _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "📳",
+                "tone": "warning" if normalised == "active" else "neutral",
+                "available": True,
+            }
+        if attribute == "presence":
+            value = "Present" if normalised in {"present", "on", "true"} else "Not present" if normalised in {"not present", "notpresent", "off", "false"} else _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "👤",
+                "tone": "success" if value == "Present" else "neutral",
+                "available": True,
+            }
+        if attribute == "lock":
+            value = "Locked" if normalised == "locked" else "Unlocked" if normalised == "unlocked" else _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "🔒" if normalised == "locked" else "🔓",
+                "tone": "success" if normalised == "locked" else "warning",
+                "available": True,
+            }
+        if attribute == "valve":
+            value = "Open" if normalised == "open" else "Closed" if normalised == "closed" else _title_state(raw_value)
+            return {
+                "attribute": attribute,
+                "value": value,
+                "icon": "🚰",
+                "tone": "warning" if normalised == "open" else "success",
+                "available": True,
+            }
+        if attribute in {"thermostatOperatingState", "thermostatMode"}:
+            return {
+                "attribute": attribute,
+                "value": _title_state(raw_value),
+                "icon": "🌡️",
+                "tone": "success" if normalised not in {"off", "idle"} else "neutral",
+                "available": True,
+            }
+        if attribute == "temperature":
+            value = _format_attribute_value(raw_value, "°C")
+            icon = "🌡️"
+        elif attribute == "humidity":
+            value = _format_attribute_value(raw_value, "%")
+            icon = "💧"
+        elif attribute == "power":
+            value = _format_attribute_value(raw_value, "W")
+            icon = "⚡"
+        elif attribute == "energy":
+            value = _format_attribute_value(raw_value, "kWh")
+            icon = "🔌"
+        elif attribute == "illuminance":
+            value = _format_attribute_value(raw_value, "lux")
+            icon = "☀️"
+        elif attribute == "level":
+            value = _format_attribute_value(raw_value, "%")
+            icon = "🔆"
+        elif attribute == "battery":
+            value = _format_attribute_value(raw_value, "%")
+            icon = "🔋"
+        else:
+            value = _title_state(raw_value)
+            icon = "🩺"
+        health_problem = attribute in {"healthStatus", "deviceHealth", "health"} and normalised not in {
+            "ok",
+            "online",
+            "healthy",
+        }
+        return {
+            "attribute": attribute,
+            "value": value,
+            "icon": icon,
+            "tone": "danger" if health_problem else "neutral",
+            "available": True,
+        }
+
+    return {
+        "attribute": None,
+        "value": "State unavailable",
+        "icon": "📱",
+        "tone": "muted",
+        "available": False,
+    }
 
 
 def _format_attribute_value(value: Any, unit: str) -> str:
@@ -357,6 +585,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
                 rooms.add(room)
             disabled = bool(device.get("disabled"))
             disabled_count += int(disabled)
+            primary_state = _inventory_primary_state(device, disabled)
             inventory.append(
                 {
                     "id": str(_device_id(device) or ""),
@@ -368,6 +597,11 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
                         or device.get("name")
                     ),
                     "disabled": disabled,
+                    "state": primary_state["value"],
+                    "state_attribute": primary_state["attribute"],
+                    "state_available": primary_state["available"],
+                    "state_icon": primary_state["icon"],
+                    "state_tone": primary_state["tone"],
                 }
             )
 
@@ -395,7 +629,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
                 ],
                 "items": [
                     {
-                        "icon": "📱",
+                        "icon": item["state_icon"],
                         "title": item["label"],
                         "subtitle": " · ".join(
                             value
@@ -405,12 +639,15 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
                             )
                             if value
                         ),
-                        "value": "Disabled" if item["disabled"] else "Available",
-                        "tone": "muted" if item["disabled"] else "neutral",
+                        "value": item["state"],
+                        "tone": item["state_tone"],
                     }
                     for item in inventory
                 ],
-                "note": "Live selected-device inventory from Hubitat MCP.",
+                "note": (
+                    "Primary states exposed by the live Hubitat device inventory. "
+                    "Open a device for complete state details."
+                ),
             },
             "tools_used": tools_used,
             "entity_resolution_request": parse_entity_request(query).as_dict(),
