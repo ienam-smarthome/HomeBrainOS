@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.74
+
+- Routes **find/list/show all devices** to a deterministic Hubitat inventory
+  response instead of treating `all devices` as a single device name.
+- Returns total device, room and disabled counts plus a scrollable device list
+  from one authoritative `hub_list_devices` call.
+- Preserves targeted identity lookups such as **Find Freezer** and room-scoped
+  inventory requests such as **Find hallway devices**.
+
 ## 0.10.73
 
 - Resolves the main thermostat from `hub_list_devices`, then reads its complete

@@ -139,8 +139,8 @@ def test_release_metadata_is_current():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
 
-    assert 'version: "0.10.73"' in config
-    assert 'RELEASE_VERSION = "0.10.73"' in entrypoint
+    assert 'version: "0.10.74"' in config
+    assert 'RELEASE_VERSION = "0.10.74"' in entrypoint
     assert "AdaptiveGatewayMCPStateBroker" in (
         APP_DIR / "device_index_broker.py"
     ).read_text(encoding="utf-8")

@@ -40,6 +40,7 @@ class FakeAgent:
 def test_lookup_intent_does_not_include_value_question():
     assert _is_explicit_device_lookup("Find FP2 Bedroom 3 Lux")
     assert _is_explicit_device_lookup("Locate the front door sensor")
+    assert not _is_explicit_device_lookup("Find all devices")
     assert not _is_explicit_device_lookup("What is the lux reading from FP2 Bedroom 3 Lux?")
 
 

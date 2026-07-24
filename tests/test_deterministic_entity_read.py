@@ -79,6 +79,28 @@ def test_find_is_terminal_identity_lookup():
     assert "lux value" not in answer["message"].lower()
 
 
+def test_find_all_devices_returns_complete_inventory_not_named_lookup_error():
+    answer = asyncio.run(_answer_terminal_entity_read(app(), "find all devices"))
+
+    assert answer["route"] == "mcp-fast"
+    assert answer["intent"] == "device-inventory"
+    assert answer["success"] is True
+    assert answer["device_count"] == 1
+    assert answer["message"] == "Found 1 selected Hubitat device. They are assigned across 1 room."
+    assert answer["device_inventory"] == [
+        {
+            "id": "123",
+            "label": "FP2 Bedroom 3 Lux",
+            "room": "Bedroom 3",
+            "device_type": "Illuminance Sensor",
+            "disabled": False,
+        }
+    ]
+    assert answer["display"]["title"] == "All Hubitat devices"
+    assert answer["display"]["items"][0]["title"] == "FP2 Bedroom 3 Lux"
+    assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices"]
+
+
 def test_lux_question_reads_authoritative_attribute():
     answer = asyncio.run(_answer_terminal_entity_read(app(), "What is the lux reading from FP2 Bedroom 3 Lux?"))
     assert answer["route"] == "mcp-fast"
