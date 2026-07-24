@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.70
+
+- Makes `/api/ask` resolve the current `application.ask` handler for every request instead of capturing an older handler during route installation.
+- Ensures terminal deterministic controllers installed later in composition, including the live thermostat reader, cannot be bypassed by a stale API closure.
+- Adds a regression proving **What is the thermostat setpoint** reaches a handler installed after the cancellable route is created.
+
 ## 0.10.69
 
 - Reads thermostat temperature and setpoints from a fresh `hub_read_devices` call instead of inventory-only metadata.
