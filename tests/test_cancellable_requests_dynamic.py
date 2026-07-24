@@ -34,28 +34,28 @@ def test_api_route_uses_handler_installed_after_route_creation():
     application = SimpleNamespace(app=api, ask=old_handler, AskRequest=AskRequest)
     install_cancellable_ask(application)
 
-    async def thermostat_handler(request):
-        assert request.query == "What is thermostat setpoint"
+    async def final_handler(request):
+        assert request.query == "What is system status"
         return {
-            "message": "The thermostat heating setpoint is 12°C.",
-            "route": "mcp-thermostat-live-state",
-            "tools_used": [{"name": "hub_read_devices", "success": True}],
+            "message": "new",
+            "route": "new",
+            "tools_used": [],
         }
 
-    application.ask = thermostat_handler
+    application.ask = final_handler
 
     with TestClient(api) as client:
         response = client.post(
             "/api/ask",
-            json={"query": "What is thermostat setpoint"},
-            headers={"X-HMCP-Client": "thermostat-test"},
+            json={"query": "What is system status"},
+            headers={"X-HMCP-Client": "dynamic-handler-test"},
         )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["route"] == "mcp-thermostat-live-state"
-    assert payload["message"] == "The thermostat heating setpoint is 12°C."
-    assert payload["tools_used"] == [{"name": "hub_read_devices", "success": True}]
+    assert payload["route"] == "new"
+    assert payload["message"] == "new"
+    assert payload["tools_used"] == []
 
 
 def test_http_boundary_reads_exact_thermostat_detail_before_ai():
@@ -131,6 +131,10 @@ def test_http_boundary_reads_exact_thermostat_detail_before_ai():
     assert payload["http_boundary_guard"] is True
     assert "room temperature is 25°C" in payload["message"]
     assert "heating setpoint is 12°C" in payload["message"]
+    assert [item["name"] for item in payload["tools_used"]] == [
+        "hub_list_devices",
+        "hub_get_device",
+    ]
     assert mcp.calls == [
         ("hub_list_devices", {}),
         ("hub_get_device", {"deviceId": "4382"}),
