@@ -48,9 +48,14 @@ class ActiveRequestRegistry:
 
 
 def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
-    """Replace the existing /api/ask route with a per-client cancellable wrapper."""
+    """Replace /api/ask with a per-client cancellable, order-safe wrapper.
+
+    The endpoint intentionally resolves ``application.ask`` when each request executes
+    instead of capturing it during installation. Terminal controllers can therefore be
+    installed or replaced later without leaving the HTTP route bound to an older chain.
+    """
+
     api = application.app
-    original_ask = application.ask
     registry = ActiveRequestRegistry()
 
     api.router.routes[:] = [
@@ -75,10 +80,14 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
                 client_id = request.client.host
             if hasattr(body, "session_id") and not body_session:
                 body.session_id = client_id or "default"
-            return await registry.run(
-                client_id or "default",
-                lambda: original_ask(body),
-            )
+
+            async def invoke_final_handler() -> dict[str, Any]:
+                handler = getattr(application, "ask", None)
+                if not callable(handler):
+                    raise RuntimeError("HomeBrain final ask handler is unavailable")
+                return await handler(body)
+
+            return await registry.run(client_id or "default", invoke_final_handler)
         except asyncio.CancelledError:
             return JSONResponse(
                 status_code=409,
