@@ -30,6 +30,20 @@ def thermostat_device():
     }
 
 
+class Result:
+    is_error = False
+    data = {"devices": [thermostat_device()]}
+
+
+class MCP:
+    def __init__(self):
+        self.calls = []
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        return Result()
+
+
 def test_corrects_measured_temperature_described_as_setpoint():
     message = "The living room is warm, and the thermostat is set to 24°C."
     corrected, evidence = correct_thermostat_summary(message, [thermostat_device()])
@@ -53,11 +67,7 @@ def test_does_not_change_a_correct_setpoint_statement():
     assert evidence is None
 
 
-def test_live_wrapper_updates_message_and_display_summary():
-    class Index:
-        async def enriched_devices(self):
-            return [thermostat_device()]
-
+def test_live_wrapper_updates_message_and_display_summary_from_mcp_state():
     async def original_ask(_request):
         message = "Everything is calm and the thermostat is set to 24°C."
         return {
@@ -67,26 +77,42 @@ def test_live_wrapper_updates_message_and_display_summary():
             "display": {"summary": message},
         }
 
-    application = SimpleNamespace(ask=original_ask, device_index=Index())
+    mcp = MCP()
+    application = SimpleNamespace(ask=original_ask, mcp=mcp, device_index=None)
     install_thermostat_summary_guard(application)
-    answer = asyncio.run(
-        application.ask(SimpleNamespace(query="What's happening?"))
-    )
+    answer = asyncio.run(application.ask(SimpleNamespace(query="What's happening?")))
 
     assert answer["thermostat_semantics_corrected"] is True
     assert "heating setpoint is 12°C" in answer["message"]
     assert answer["display"]["summary"] == answer["message"]
+    assert mcp.calls == [("hub_read_devices", {})]
+    assert answer["thermostat_summary_guard_read"]["source"] == "hub_read_devices"
+
+
+def test_direct_thermostat_question_returns_live_temperature_and_setpoints():
+    async def original_ask(_request):
+        raise AssertionError("AI route should not run for direct thermostat state")
+
+    mcp = MCP()
+    application = SimpleNamespace(ask=original_ask, mcp=mcp, device_index=None)
+    install_thermostat_summary_guard(application)
+    answer = asyncio.run(
+        application.ask(SimpleNamespace(query="What is the thermostat temperature and setpoint?"))
+    )
+
+    assert answer["route"] == "mcp-thermostat-live-state"
+    assert "room temperature is 24°C" in answer["message"]
+    assert "heating setpoint is 12°C" in answer["message"]
+    assert "cooling setpoint is 35°C" in answer["message"]
+    assert answer["display"]["metrics"][0]["label"] == "Room temperature"
+    assert mcp.calls == [("hub_read_devices", {})]
 
 
 def test_wrapper_ignores_unrelated_queries():
-    class Index:
-        async def enriched_devices(self):
-            raise AssertionError("device index should not be read")
-
     async def original_ask(_request):
         return {"message": "The thermostat is set to 24°C."}
 
-    application = SimpleNamespace(ask=original_ask, device_index=Index())
+    application = SimpleNamespace(ask=original_ask)
     install_thermostat_summary_guard(application)
     answer = asyncio.run(application.ask(SimpleNamespace(query="Tell me a joke")))
     assert answer["message"] == "The thermostat is set to 24°C."

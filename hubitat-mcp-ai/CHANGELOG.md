@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.69
+
+- Reads thermostat temperature and setpoints from a fresh `hub_read_devices` call instead of inventory-only metadata.
+- Adds a deterministic thermostat-status response that reports room temperature, heating setpoint and cooling setpoint separately.
+- Uses the same live thermostat evidence to correct **What's happening?** summaries before they reach the Web UI.
+- Falls back to the device index only when the live MCP read is unavailable.
+
 ## 0.10.68
 
 - Prevents AI home summaries from describing measured thermostat room temperature as a setpoint.

@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 from typing import Any, Awaitable, Callable
 
+from device_intelligence_index import _device_rows
+from presenter import display_payload, safe_debug
+
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 
@@ -17,6 +20,11 @@ _SET_TO_PATTERN = re.compile(
     r"\b(?:the\s+)?thermostat\s+is\s+set\s+to\s+(-?\d+(?:\.\d+)?)\s*°?c\b",
     re.IGNORECASE,
 )
+_DIRECT_THERMOSTAT_QUERY = re.compile(
+    r"\bthermostat\b.*\b(?:temperature|temp|setpoint|set point|setting|target)\b|"
+    r"\b(?:temperature|temp|setpoint|set point|setting|target)\b.*\bthermostat\b",
+    re.IGNORECASE,
+)
 
 
 def _key(value: Any) -> str:
@@ -25,7 +33,7 @@ def _key(value: Any) -> str:
 
 def _number(value: Any) -> float | None:
     if isinstance(value, dict):
-        for name in ("currentValue", "value", "state", "text"):
+        for name in ("currentValue", "value", "state", "text", "currentState"):
             if value.get(name) not in (None, ""):
                 return _number(value[name])
         return None
@@ -79,21 +87,54 @@ def _thermostat_reading(devices: list[dict[str, Any]]) -> dict[str, Any] | None:
         label = str(device.get("label") or device.get("displayName") or device.get("name") or "Thermostat").strip()
         candidates.append(
             {
+                "id": device.get("id") or device.get("deviceId"),
                 "label": label,
                 "temperature": temperature,
                 "heating_setpoint": heating if heating is not None else generic,
                 "cooling_setpoint": _number(attrs.get("coolingsetpoint")),
                 "mode": attrs.get("thermostatmode"),
+                "operating_state": attrs.get("thermostatoperatingstate"),
             }
         )
     if not candidates:
         return None
-    candidates.sort(key=lambda item: (0 if "thermostat" in item["label"].lower() else 1, item["label"].lower()))
+    candidates.sort(key=lambda item: (0 if item["label"].lower() == "thermostat" else 1, 0 if "thermostat" in item["label"].lower() else 1, item["label"].lower()))
     return candidates[0]
 
 
 def _format_celsius(value: float) -> str:
     return f"{value:g}°C"
+
+
+async def _live_thermostat_reading(application: Any) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    diagnostic: dict[str, Any] = {"tool": "hub_read_devices", "live_read": False}
+    try:
+        result = await application.mcp.call_tool("hub_read_devices", {})
+        diagnostic["live_read"] = True
+        diagnostic["result_is_error"] = bool(getattr(result, "is_error", False))
+        if not getattr(result, "is_error", False):
+            rows = _device_rows(getattr(result, "data", None))
+            diagnostic["device_count"] = len(rows)
+            reading = _thermostat_reading(rows)
+            if reading is not None:
+                diagnostic["source"] = "hub_read_devices"
+                return reading, diagnostic
+    except Exception as exc:
+        diagnostic["live_error"] = str(exc) or type(exc).__name__
+
+    index = getattr(application, "device_index", None)
+    read = getattr(index, "enriched_devices", None)
+    if callable(read):
+        try:
+            rows = list(await read())
+            diagnostic["inventory_count"] = len(rows)
+            reading = _thermostat_reading(rows)
+            if reading is not None:
+                diagnostic["source"] = "device_index_fallback"
+                return reading, diagnostic
+        except Exception as exc:
+            diagnostic["inventory_error"] = str(exc) or type(exc).__name__
+    return None, diagnostic
 
 
 def correct_thermostat_summary(message: str, devices: list[dict[str, Any]]) -> tuple[str, dict[str, Any] | None]:
@@ -107,9 +148,6 @@ def correct_thermostat_summary(message: str, devices: list[dict[str, Any]]) -> t
     claimed = float(match.group(1))
     temperature = reading.get("temperature")
     setpoint = float(reading["heating_setpoint"])
-
-    # Only rewrite the known failure mode: the claimed setpoint equals the measured
-    # temperature while the authoritative heating setpoint is different.
     if temperature is None or abs(claimed - float(temperature)) > 0.05 or abs(claimed - setpoint) <= 0.05:
         return message, None
 
@@ -127,29 +165,71 @@ def correct_thermostat_summary(message: str, devices: list[dict[str, Any]]) -> t
     }
 
 
+def _direct_answer(reading: dict[str, Any], diagnostic: dict[str, Any]) -> dict[str, Any]:
+    temperature = reading.get("temperature")
+    heating = reading.get("heating_setpoint")
+    cooling = reading.get("cooling_setpoint")
+    parts: list[str] = []
+    if temperature is not None:
+        parts.append(f"The thermostat room temperature is {_format_celsius(float(temperature))}")
+    if heating is not None:
+        parts.append(f"its heating setpoint is {_format_celsius(float(heating))}")
+    if cooling is not None:
+        parts.append(f"its cooling setpoint is {_format_celsius(float(cooling))}")
+    message = ", and ".join(parts[:2]) + "."
+    if len(parts) > 2:
+        message = ", ".join(parts[:-1]) + f", and {parts[-1]}."
+    metrics = []
+    if temperature is not None:
+        metrics.append({"label": "Room temperature", "value": _format_celsius(float(temperature)), "icon": "🌡️"})
+    if heating is not None:
+        metrics.append({"label": "Heating setpoint", "value": _format_celsius(float(heating)), "icon": "🔥"})
+    if cooling is not None:
+        metrics.append({"label": "Cooling setpoint", "value": _format_celsius(float(cooling)), "icon": "❄️"})
+    display = display_payload(
+        "thermostat-live-state",
+        reading.get("label") or "Thermostat",
+        subtitle="Authoritative live thermostat attributes",
+        metrics=metrics,
+        note="Room temperature and thermostat setpoints are reported as separate attributes.",
+    )
+    display["summary"] = message
+    return {
+        "success": True,
+        "route": "mcp-thermostat-live-state",
+        "intent": "thermostat-live-state",
+        "message": message,
+        "display": display,
+        "thermostat": reading,
+        "technical": safe_debug({"thermostat": reading, "read": diagnostic}),
+        "answered_by": "Deterministic live Hubitat thermostat reader",
+        "tools_used": [{"name": "hub_read_devices", "success": diagnostic.get("source") == "hub_read_devices"}],
+    }
+
+
 def install_thermostat_summary_guard(application: Any) -> AskHandler:
-    """Correct AI home summaries that confuse room temperature with setpoint."""
+    """Use live thermostat state for direct reads and correct AI summary semantics."""
 
     original_ask: AskHandler = application.ask
 
     async def guarded_ask(request: Any) -> dict[str, Any]:
+        query = str(getattr(request, "query", "") or "")
+        if _DIRECT_THERMOSTAT_QUERY.search(query):
+            reading, diagnostic = await _live_thermostat_reading(application)
+            if reading is not None:
+                return _direct_answer(reading, diagnostic)
+
         answer = dict(await original_ask(request))
-        query = str(getattr(request, "query", "") or "").lower()
+        lowered = query.lower()
         message = str(answer.get("message") or "")
-        if not any(term in query for term in _HOME_SUMMARY_TERMS) or not _SET_TO_PATTERN.search(message):
+        if not any(term in lowered for term in _HOME_SUMMARY_TERMS) or not _SET_TO_PATTERN.search(message):
             return answer
 
-        index = getattr(application, "device_index", None)
-        read = getattr(index, "enriched_devices", None)
-        if not callable(read):
+        reading, diagnostic = await _live_thermostat_reading(application)
+        if reading is None:
+            answer["thermostat_summary_guard_read"] = diagnostic
             return answer
-        try:
-            devices = list(await read())
-        except Exception as exc:
-            answer["thermostat_summary_guard_error"] = str(exc) or type(exc).__name__
-            return answer
-
-        corrected, evidence = correct_thermostat_summary(message, devices)
+        corrected, evidence = correct_thermostat_summary(message, [reading])
         if evidence is None:
             return answer
         answer["message"] = corrected
@@ -161,6 +241,7 @@ def install_thermostat_summary_guard(application: Any) -> AskHandler:
             answer["display"] = display
         answer["thermostat_semantics_corrected"] = True
         answer["thermostat_semantics"] = evidence
+        answer["thermostat_summary_guard_read"] = diagnostic
         return answer
 
     application.ask = guarded_ask
