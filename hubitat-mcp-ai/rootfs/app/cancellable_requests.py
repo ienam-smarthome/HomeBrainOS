@@ -9,6 +9,12 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from thermostat_summary_guard import (
+    _DIRECT_THERMOSTAT_QUERY,
+    _direct_answer,
+    _live_thermostat_reading,
+)
+
 
 AnswerFactory = Callable[[], Awaitable[dict[str, Any]]]
 
@@ -47,6 +53,30 @@ class ActiveRequestRegistry:
             await asyncio.gather(*tasks, return_exceptions=True)
 
 
+async def _http_boundary_thermostat_answer(
+    application: Any,
+    body: Any,
+) -> dict[str, Any] | None:
+    """Answer direct thermostat reads before any replaceable AI handler chain.
+
+    This is intentionally installed inside the final /api/ask endpoint. It makes
+    thermostat temperature/setpoint reads independent of wrapper composition order,
+    stale closures, and later application.ask replacement.
+    """
+
+    query = str(getattr(body, "query", "") or "")
+    if not _DIRECT_THERMOSTAT_QUERY.search(query):
+        return None
+
+    reading, diagnostic = await _live_thermostat_reading(application)
+    if reading is None:
+        return None
+
+    answer = _direct_answer(reading, diagnostic)
+    answer["http_boundary_guard"] = True
+    return answer
+
+
 def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
     """Replace /api/ask with a cancellable wrapper using the live final handler."""
     api = application.app
@@ -75,8 +105,16 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
             if hasattr(body, "session_id") and not body_session:
                 body.session_id = client_id or "default"
 
-            # Resolve application.ask when the request executes. Terminal controllers
-            # can be installed after this route without being hidden behind a stale
+            # This check lives at the final HTTP boundary rather than depending on
+            # application.ask wrapper order. Direct thermostat questions therefore
+            # cannot fall through to Ollama or inventory-only device search when live
+            # thermostat attributes are available.
+            thermostat_answer = await _http_boundary_thermostat_answer(application, body)
+            if thermostat_answer is not None:
+                return thermostat_answer
+
+            # Resolve application.ask when the request executes. Other terminal
+            # controllers can be installed later without being hidden behind a stale
             # handler captured during startup composition.
             return await registry.run(
                 client_id or "default",
@@ -121,4 +159,8 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
     return registry
 
 
-__all__ = ["ActiveRequestRegistry", "install_cancellable_ask"]
+__all__ = [
+    "ActiveRequestRegistry",
+    "_http_boundary_thermostat_answer",
+    "install_cancellable_ask",
+]
