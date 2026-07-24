@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.68
+
+- Prevents AI home summaries from describing measured thermostat room temperature as a setpoint.
+- Treats `temperature` as the current measured value and `heatingSetpoint` or `thermostatSetpoint` as the heating target.
+- Corrects the known failure mode from authoritative device-index evidence before the response reaches the Web UI.
+- Records the measured temperature, actual heating setpoint and incorrect claimed value in the response diagnostics.
+
 ## 0.10.67
 
 - Wires the enhanced Hub health tiles into the actual final `application.ask` response chain.
