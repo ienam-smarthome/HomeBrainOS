@@ -138,9 +138,13 @@ def test_unrelated_gateway_error_is_not_retried():
 def test_release_metadata_is_current():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    manifest_version = next(
+        line.split('"')[1]
+        for line in config.splitlines()
+        if line.startswith('version: "')
+    )
 
-    assert 'version: "0.10.75"' in config
-    assert 'RELEASE_VERSION = "0.10.75"' in entrypoint
+    assert f'RELEASE_VERSION = "{manifest_version}"' in entrypoint
     assert "AdaptiveGatewayMCPStateBroker" in (
         APP_DIR / "device_index_broker.py"
     ).read_text(encoding="utf-8")
