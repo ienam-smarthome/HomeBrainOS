@@ -12,8 +12,8 @@ from named_app_control import install_named_app_controller
 from runtime_route_bridge import install_runtime_route_bridge
 from thermostat_summary_guard import install_thermostat_summary_guard
 
-PREVIOUS_RELEASE_VERSION = "0.10.70"
-RELEASE_VERSION = "0.10.71"
+PREVIOUS_RELEASE_VERSION = "0.10.71"
+RELEASE_VERSION = "0.10.72"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 
