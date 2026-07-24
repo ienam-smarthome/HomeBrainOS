@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.67
+
+- Wires the enhanced Hub health tiles into the actual final `application.ask` response chain.
+- Promotes database size from the old note into a dedicated tile in the live Web UI.
+- Shows installed firmware and the precise software-update state, including the available version when supplied by Hubitat.
+- Uses the MCP response already attached by request tracing and does not make a duplicate hub call.
+
 ## 0.10.66
 
 - Shows the Hubitat software update state as a dedicated **Software update** tile in Hub health.
@@ -29,7 +36,7 @@
 ## 0.10.62
 
 - Rewrites the Web UI's embedded JavaScript version after every renderer and UI patch has completed.
-- Adds `/api/runtime-version` with baked, application, API, and rendered versions for direct diagnosis.
+- Adds `/api/runtime-version` with baked, application, API and rendered versions for direct diagnosis.
 - Fails loudly if the generated HomeBrain page does not contain exactly one replaceable version declaration.
 - Keeps the baked container version as the single authoritative release value.
 
