@@ -12,8 +12,8 @@ from named_app_control import install_named_app_controller
 from runtime_route_bridge import install_runtime_route_bridge
 from thermostat_summary_guard import install_thermostat_summary_guard
 
-PREVIOUS_RELEASE_VERSION = "0.10.68"
-RELEASE_VERSION = "0.10.69"
+PREVIOUS_RELEASE_VERSION = "0.10.69"
+RELEASE_VERSION = "0.10.70"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 
@@ -63,8 +63,8 @@ firmware_backup_retry = install_firmware_backup_settle_retry(
 )
 
 # Install terminal deterministic response policies outside AI and generic control.
-# Every app write requires exact-ID confirmation. Hub health and thermostat summaries
-# are then corrected from authoritative live evidence before rebuilding /api/ask.
+# /api/ask resolves application.ask at request time, so these controllers remain
+# effective even when future terminal handlers are installed after route creation.
 app_controller = install_named_app_controller(_core.application)
 hub_health_display_bridge = install_hub_health_display_bridge(_core.application)
 thermostat_summary_guard = install_thermostat_summary_guard(_core.application)
