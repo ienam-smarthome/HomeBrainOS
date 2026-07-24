@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.70
+
+- Makes `/api/ask` resolve the current final `application.ask` handler at request time instead of capturing an older route chain.
+- Ensures terminal thermostat, app and Hub-health controllers remain active regardless of installation order.
+- Adds a full HTTP regression for **What is the thermostat setpoint**, proving it returns the deterministic thermostat route rather than `ollama+mcp`.
+
 ## 0.10.69
 
 - Reads thermostat temperature and setpoints from a fresh `hub_read_devices` call instead of inventory-only metadata.
