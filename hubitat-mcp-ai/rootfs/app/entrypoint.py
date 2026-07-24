@@ -10,8 +10,8 @@ from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from named_app_control import install_named_app_controller
 from runtime_route_bridge import install_runtime_route_bridge
 
-PREVIOUS_RELEASE_VERSION = "0.10.64"
-RELEASE_VERSION = "0.10.65"
+PREVIOUS_RELEASE_VERSION = "0.10.65"
+RELEASE_VERSION = "0.10.66"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 

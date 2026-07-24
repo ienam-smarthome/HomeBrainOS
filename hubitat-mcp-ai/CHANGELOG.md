@@ -1,5 +1,11 @@
 # Hubitat MCP AI changelog
 
+## 0.10.66
+
+- Shows the Hubitat software update state as a dedicated **Software update** tile in Hub health.
+- Displays the installed firmware as **Installed firmware** and includes the available version when an update exists.
+- Promotes Hubitat database size from a note into its own **Database size** tile.
+
 ## 0.10.65
 
 - Adds an **Apps** smart shortcut beside **Rules** in the HomeBrain Web UI.

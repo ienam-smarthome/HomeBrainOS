@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from presenter import display_payload, first_mapping, first_value, present_hub_info
+from presenter import (
+    display_payload,
+    first_mapping,
+    first_value,
+    format_memory_kb,
+    present_hub_info,
+)
 
 
 def _bool_or_none(value: Any) -> bool | None:
@@ -150,12 +156,21 @@ def present_hub_info_v2(value: Any) -> tuple[str, dict[str, Any]]:
     data = first_mapping(value)
     platform = _platform_status(data)
     app_update = _app_status(data)
+    database_size = format_memory_kb(
+        first_value(data, "databaseSizeKB", "databaseSizeKb")
+    )
 
-    metrics = list(base_display.get("metrics") or [])
+    metrics = []
+    for metric in list(base_display.get("metrics") or []):
+        copied = dict(metric)
+        if copied.get("label") == "Firmware":
+            copied["label"] = "Installed firmware"
+        metrics.append(copied)
+
     metrics.extend(
         [
             {
-                "label": "Hub update",
+                "label": "Software update",
                 "value": platform["label"],
                 "icon": (
                     "⬆️"
@@ -172,6 +187,14 @@ def present_hub_info_v2(value: Any) -> tuple[str, dict[str, Any]]:
             },
         ]
     )
+    if database_size:
+        metrics.append(
+            {
+                "label": "Database size",
+                "value": database_size,
+                "icon": "🗄️",
+            }
+        )
 
     items: list[dict[str, Any]] = []
     if platform["available"] is True or platform["available"] is None:
@@ -206,10 +229,11 @@ def present_hub_info_v2(value: Any) -> tuple[str, dict[str, Any]]:
         subtitle=base_display.get("subtitle"),
         metrics=metrics,
         items=items,
-        note=base_display.get("note"),
+        note=None,
     )
     display["platform_update"] = platform
     display["app_update"] = app_update
+    display["database_size"] = database_size
     return "\n".join(message for message in messages if message), display
 
 
