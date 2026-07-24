@@ -1,5 +1,12 @@
 # Hubitat MCP AI changelog
 
+## 0.10.70
+
+- Installs the deterministic thermostat controller inside the final runtime route bridge immediately before `/api/ask` is captured.
+- Prevents exact questions such as **What is the thermostat setpoint** from falling through to generic AI device search.
+- Adds regressions for the reported phrase and for final route-installation order.
+- Continues to report room temperature, heating setpoint and cooling setpoint as separate live attributes.
+
 ## 0.10.69
 
 - Reads thermostat temperature and setpoints from a fresh `hub_read_devices` call instead of inventory-only metadata.

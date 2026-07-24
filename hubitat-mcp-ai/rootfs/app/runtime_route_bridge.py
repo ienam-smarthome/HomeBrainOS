@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from cancellable_requests import install_cancellable_ask
 from device_intelligence_webui import patch_page
+from thermostat_summary_guard import install_thermostat_summary_guard
 
 
 PWA_CLEANUP_SERVICE_WORKER = r"""self.addEventListener('install',event=>{self.skipWaiting();});
@@ -99,8 +100,14 @@ def install_runtime_route_bridge(application: Any):
 
     api = application.app
 
+    # Install thermostat semantics at the final composition point. This guarantees
+    # direct thermostat questions and home-summary correction are captured by the
+    # same handler that the replacement /api/ask endpoint closes over.
+    thermostat_summary_guard = install_thermostat_summary_guard(application)
+    application.runtime_thermostat_summary_guard = thermostat_summary_guard
+
     # Recreate the cancellable API route so it captures the final deterministic ask
-    # chain, including guarded app management.
+    # chain, including guarded app management and authoritative thermostat reads.
     request_registry = install_cancellable_ask(application)
 
     # Replace the HTML home endpoint, runtime diagnostic, and legacy PWA asset routes.
