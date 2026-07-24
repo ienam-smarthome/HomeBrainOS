@@ -73,6 +73,65 @@ def _attributes(device: dict[str, Any]) -> dict[str, Any]:
     return values
 
 
+def _device_id(device: dict[str, Any]) -> str:
+    for name in ("id", "deviceId", "device_id"):
+        value = device.get(name)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def _device_label(device: dict[str, Any]) -> str:
+    return str(
+        device.get("label")
+        or device.get("displayName")
+        or device.get("name")
+        or ""
+    ).strip()
+
+
+def _thermostat_inventory_candidates(
+    devices: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[tuple[tuple[int, str], dict[str, Any]]] = []
+    thermostat_attributes = {
+        "heatingsetpoint",
+        "thermostatsetpoint",
+        "coolingsetpoint",
+        "thermostatmode",
+        "thermostatoperatingstate",
+    }
+    for device in devices:
+        if not isinstance(device, dict) or device.get("disabled") is True:
+            continue
+        label = _device_label(device)
+        descriptive = " ".join(
+            str(device.get(name) or "")
+            for name in ("label", "displayName", "name", "type", "deviceType", "category")
+        ).lower()
+        attribute_names = set(_attributes(device))
+        if (
+            "thermostat" not in descriptive
+            and "trv" not in descriptive
+            and not thermostat_attributes.intersection(attribute_names)
+        ):
+            continue
+        lowered = label.lower()
+        if lowered == "thermostat":
+            rank = 0
+        elif lowered.startswith("thermostat"):
+            rank = 1
+        elif "thermostat" in lowered:
+            rank = 2
+        elif "trv" in lowered:
+            rank = 3
+        else:
+            rank = 4
+        candidates.append(((rank, lowered), device))
+    candidates.sort(key=lambda item: item[0])
+    return [device for _, device in candidates]
+
+
 def _thermostat_reading(devices: list[dict[str, Any]]) -> dict[str, Any] | None:
     candidates: list[dict[str, Any]] = []
     for device in devices:
@@ -107,17 +166,64 @@ def _format_celsius(value: float) -> str:
 
 
 async def _live_thermostat_reading(application: Any) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    diagnostic: dict[str, Any] = {"tool": "hub_read_devices", "live_read": False}
+    diagnostic: dict[str, Any] = {
+        "live_read": False,
+        "tools_used": [],
+    }
     try:
-        result = await application.mcp.call_tool("hub_read_devices", {})
+        result = await application.mcp.call_tool("hub_list_devices", {})
         diagnostic["live_read"] = True
         diagnostic["result_is_error"] = bool(getattr(result, "is_error", False))
+        diagnostic["tools_used"].append(
+            {
+                "name": "hub_list_devices",
+                "success": not bool(getattr(result, "is_error", False)),
+            }
+        )
         if not getattr(result, "is_error", False):
             rows = _device_rows(getattr(result, "data", None))
+            candidates = _thermostat_inventory_candidates(rows)
             diagnostic["device_count"] = len(rows)
-            reading = _thermostat_reading(rows)
+            diagnostic["candidate_count"] = len(candidates)
+            diagnostic["candidates"] = [
+                {"id": _device_id(item), "label": _device_label(item)}
+                for item in candidates[:6]
+            ]
+
+            # Prefer the explicitly named main Thermostat. If it is not present,
+            # probe a small bounded set of thermostat/TRV candidates.
+            probe = (
+                candidates[:1]
+                if candidates and _device_label(candidates[0]).lower() == "thermostat"
+                else candidates[:4]
+            )
+            for candidate in probe:
+                device_id = _device_id(candidate)
+                if not device_id:
+                    continue
+                detail = await application.mcp.call_tool(
+                    "hub_get_device",
+                    {"deviceId": device_id},
+                )
+                detail_success = not bool(getattr(detail, "is_error", False))
+                diagnostic["tools_used"].append(
+                    {"name": "hub_get_device", "success": detail_success}
+                )
+                if not detail_success:
+                    continue
+                detail_rows = _device_rows(getattr(detail, "data", None))
+                reading = _thermostat_reading(detail_rows)
+                if reading is not None:
+                    diagnostic["source"] = "hub_get_device"
+                    diagnostic["selected_device_id"] = device_id
+                    diagnostic["selected_device_label"] = reading.get("label")
+                    return reading, diagnostic
+
+            # Compatibility path for older servers whose inventory response is
+            # already detailed enough to contain live setpoint attributes.
+            reading = _thermostat_reading(candidates)
             if reading is not None:
-                diagnostic["source"] = "hub_read_devices"
+                diagnostic["source"] = "hub_list_devices"
                 return reading, diagnostic
     except Exception as exc:
         diagnostic["live_error"] = str(exc) or type(exc).__name__
@@ -141,7 +247,11 @@ def correct_thermostat_summary(message: str, devices: list[dict[str, Any]]) -> t
     match = _SET_TO_PATTERN.search(str(message or ""))
     if not match:
         return message, None
-    reading = _thermostat_reading(devices)
+    reading = None
+    if devices and devices[0].get("heating_setpoint") is not None:
+        reading = devices[0]
+    if reading is None:
+        reading = _thermostat_reading(devices)
     if reading is None or reading.get("heating_setpoint") is None:
         return message, None
 
@@ -203,7 +313,7 @@ def _direct_answer(reading: dict[str, Any], diagnostic: dict[str, Any]) -> dict[
         "thermostat": reading,
         "technical": safe_debug({"thermostat": reading, "read": diagnostic}),
         "answered_by": "Deterministic live Hubitat thermostat reader",
-        "tools_used": [{"name": "hub_read_devices", "success": diagnostic.get("source") == "hub_read_devices"}],
+        "tools_used": list(diagnostic.get("tools_used") or []),
     }
 
 

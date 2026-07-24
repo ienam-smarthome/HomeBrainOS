@@ -31,8 +31,9 @@ def thermostat_device():
 
 
 class Result:
-    is_error = False
-    data = {"devices": [thermostat_device()]}
+    def __init__(self, data):
+        self.is_error = False
+        self.data = data
 
 
 class MCP:
@@ -41,7 +42,26 @@ class MCP:
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
-        return Result()
+        if name == "hub_list_devices":
+            return Result(
+                {
+                    "devices": [
+                        {
+                            "id": 7001,
+                            "label": "Bedroom 1 TRV",
+                            "currentStates": [{"name": "temperature", "currentValue": "21.0"}],
+                        },
+                        {
+                            "id": 4382,
+                            "label": "Thermostat",
+                            "currentStates": [{"name": "temperature", "currentValue": "24.0"}],
+                        },
+                    ]
+                }
+            )
+        assert name == "hub_get_device"
+        assert arguments == {"deviceId": "4382"}
+        return Result({"device": thermostat_device()})
 
 
 def test_corrects_measured_temperature_described_as_setpoint():
@@ -85,8 +105,11 @@ def test_live_wrapper_updates_message_and_display_summary_from_mcp_state():
     assert answer["thermostat_semantics_corrected"] is True
     assert "heating setpoint is 12°C" in answer["message"]
     assert answer["display"]["summary"] == answer["message"]
-    assert mcp.calls == [("hub_read_devices", {})]
-    assert answer["thermostat_summary_guard_read"]["source"] == "hub_read_devices"
+    assert mcp.calls == [
+        ("hub_list_devices", {}),
+        ("hub_get_device", {"deviceId": "4382"}),
+    ]
+    assert answer["thermostat_summary_guard_read"]["source"] == "hub_get_device"
 
 
 def test_direct_thermostat_question_returns_live_temperature_and_setpoints():
@@ -105,7 +128,14 @@ def test_direct_thermostat_question_returns_live_temperature_and_setpoints():
     assert "heating setpoint is 12°C" in answer["message"]
     assert "cooling setpoint is 35°C" in answer["message"]
     assert answer["display"]["metrics"][0]["label"] == "Room temperature"
-    assert mcp.calls == [("hub_read_devices", {})]
+    assert mcp.calls == [
+        ("hub_list_devices", {}),
+        ("hub_get_device", {"deviceId": "4382"}),
+    ]
+    assert [item["name"] for item in answer["tools_used"]] == [
+        "hub_list_devices",
+        "hub_get_device",
+    ]
 
 
 def test_exact_reported_setpoint_phrase_never_reaches_ai():
@@ -121,7 +151,10 @@ def test_exact_reported_setpoint_phrase_never_reaches_ai():
 
     assert answer["route"] == "mcp-thermostat-live-state"
     assert "heating setpoint is 12°C" in answer["message"]
-    assert mcp.calls == [("hub_read_devices", {})]
+    assert mcp.calls == [
+        ("hub_list_devices", {}),
+        ("hub_get_device", {"deviceId": "4382"}),
+    ]
 
 
 def test_runtime_bridge_installs_thermostat_guard_before_final_api_capture():

@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.10.73
+
+- Resolves the main thermostat from `hub_list_devices`, then reads its complete
+  live attributes through the gateway-translated `hub_get_device` operation.
+- Prevents compact inventory temperature data from being mistaken for a complete
+  thermostat response when the heating setpoint exists only in device detail.
+- Keeps the exact **What is thermostat setpoint** request at the deterministic
+  HTTP boundary and reports the separate room temperature, heating setpoint and
+  cooling setpoint values without an AI clarification.
+
 ## 0.10.70
 
 - Installs the deterministic thermostat controller inside the final runtime route bridge immediately before `/api/ask` is captured.
