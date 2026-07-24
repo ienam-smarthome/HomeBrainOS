@@ -94,10 +94,47 @@ def test_find_all_devices_returns_complete_inventory_not_named_lookup_error():
             "room": "Bedroom 3",
             "device_type": "Illuminance Sensor",
             "disabled": False,
+            "state": "State unavailable",
+            "state_attribute": None,
+            "state_available": False,
+            "state_icon": "📱",
+            "state_tone": "muted",
         }
     ]
     assert answer["display"]["title"] == "All Hubitat devices"
     assert answer["display"]["items"][0]["title"] == "FP2 Bedroom 3 Lux"
+    assert answer["display"]["items"][0]["value"] == "State unavailable"
+    assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices"]
+
+
+def test_find_all_devices_projects_recognised_primary_states_without_detail_reads():
+    devices = [
+        {"id": "1", "label": "Kitchen Light", "currentStates": {"switch": "on"}},
+        {"id": "2", "label": "Front Door", "currentStates": [{"name": "contact", "currentValue": "open"}]},
+        {"id": "3", "label": "Hall Motion", "current_states": {"motion": {"value": "inactive"}}},
+        {"id": "4", "label": "Study Sensor", "attributes": {"temperature": 21.5}},
+        {"id": "5", "label": "Freezer", "states": [{"attribute": "power", "value": 77}]},
+        {"id": "6", "label": "Old Plug", "currentStates": {"switch": "off"}, "disabled": True},
+        {"id": "7", "label": "Hall Lux", "currentStates": {"illuminance": 212}},
+    ]
+    application, mcp = multi_device_app(devices, {})
+
+    answer = asyncio.run(_answer_terminal_entity_read(application, "show all devices"))
+
+    states = {
+        item["label"]: (item["state"], item["state_attribute"], item["state_available"])
+        for item in answer["device_inventory"]
+    }
+    assert states == {
+        "Freezer": ("77 W", "power", True),
+        "Front Door": ("Open", "contact", True),
+        "Hall Lux": ("212 lux", "illuminance", True),
+        "Hall Motion": ("Inactive", "motion", True),
+        "Kitchen Light": ("On", "switch", True),
+        "Old Plug": ("Disabled", None, False),
+        "Study Sensor": ("21.5°C", "temperature", True),
+    }
+    assert mcp.read_ids == []
     assert [item["name"] for item in answer["tools_used"]] == ["hub_list_devices"]
 
 
