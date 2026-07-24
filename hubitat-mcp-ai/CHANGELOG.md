@@ -1,10 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.10.71
+
+- Makes `/api/ask` resolve the live `application.ask` handler when each request executes.
+- Prevents terminal deterministic controllers from being hidden behind a stale startup closure.
+- Adds an HTTP regression for **What is thermostat setpoint**, requiring the final thermostat handler and `hub_read_devices` evidence.
+
 ## 0.10.70
 
-- Makes `/api/ask` resolve the current `application.ask` handler for every request instead of capturing an older handler during route installation.
-- Ensures terminal deterministic controllers installed later in composition, including the live thermostat reader, cannot be bypassed by a stale API closure.
-- Adds a regression proving **What is the thermostat setpoint** reaches a handler installed after the cancellable route is created.
+- Installs the live thermostat guard at the final API composition point.
+- Adds regression coverage for **What is the thermostat setpoint**.
 
 ## 0.10.69
 
