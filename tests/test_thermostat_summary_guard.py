@@ -108,6 +108,29 @@ def test_direct_thermostat_question_returns_live_temperature_and_setpoints():
     assert mcp.calls == [("hub_read_devices", {})]
 
 
+def test_exact_reported_setpoint_phrase_never_reaches_ai():
+    async def original_ask(_request):
+        raise AssertionError("AI route should not run for the exact setpoint question")
+
+    mcp = MCP()
+    application = SimpleNamespace(ask=original_ask, mcp=mcp, device_index=None)
+    install_thermostat_summary_guard(application)
+    answer = asyncio.run(
+        application.ask(SimpleNamespace(query="What is the thermostat setpoint"))
+    )
+
+    assert answer["route"] == "mcp-thermostat-live-state"
+    assert "heating setpoint is 12°C" in answer["message"]
+    assert mcp.calls == [("hub_read_devices", {})]
+
+
+def test_runtime_bridge_installs_thermostat_guard_before_final_api_capture():
+    source = (APP_DIR / "runtime_route_bridge.py").read_text(encoding="utf-8")
+    guard = source.index("install_thermostat_summary_guard(application)")
+    capture = source.index("install_cancellable_ask(application)")
+    assert guard < capture
+
+
 def test_wrapper_ignores_unrelated_queries():
     async def original_ask(_request):
         return {"message": "The thermostat is set to 24°C."}
