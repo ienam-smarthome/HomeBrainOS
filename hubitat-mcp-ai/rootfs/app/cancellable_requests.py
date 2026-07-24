@@ -48,9 +48,8 @@ class ActiveRequestRegistry:
 
 
 def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
-    """Replace the existing /api/ask route with a per-client cancellable wrapper."""
+    """Replace /api/ask with a cancellable wrapper using the live final handler."""
     api = application.app
-    original_ask = application.ask
     registry = ActiveRequestRegistry()
 
     api.router.routes[:] = [
@@ -75,9 +74,13 @@ def install_cancellable_ask(application: Any) -> ActiveRequestRegistry:
                 client_id = request.client.host
             if hasattr(body, "session_id") and not body_session:
                 body.session_id = client_id or "default"
+
+            # Resolve application.ask when the request executes. Terminal controllers
+            # can be installed after this route without being hidden behind a stale
+            # handler captured during startup composition.
             return await registry.run(
                 client_id or "default",
-                lambda: original_ask(body),
+                lambda: application.ask(body),
             )
         except asyncio.CancelledError:
             return JSONResponse(
