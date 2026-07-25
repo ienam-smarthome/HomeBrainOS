@@ -91,9 +91,26 @@ def is_octopus_display_query(query: str) -> bool:
     q = _query(query)
     if "octopus" not in q:
         return False
-    if re.fullmatch(r"find octopus(?: (?:meters?|sensors?|devices?))?", q):
+
+    # Treat the Octopus integration as a grouped whole-house meter family,
+    # rather than trying to find one device literally named "octopus".
+    if re.fullmatch(
+        r"(?:(?:show|list|display|get|check|find)(?: me)? )?"
+        r"(?:the )?octopus"
+        r"(?: (?:live )?(?:meters?|sensors?|devices?|energy displays?))?",
+        q,
+    ):
         return True
-    return any(term in q for term in ("live meter", "meter display", "energy display", "octopus meter"))
+
+    return any(
+        term in q
+        for term in (
+            "live meter",
+            "meter display",
+            "energy display",
+            "octopus meter",
+        )
+    )
 
 
 def is_whole_house_period_query(query: str) -> bool:
@@ -296,6 +313,30 @@ def _display_value(item: dict[str, Any]) -> str:
     return value
 
 
+
+def _has_live_display_value(item: dict[str, Any]) -> bool:
+    """Reject inventory placeholders that merely repeat the sensor identity."""
+
+    value = _display_value(item)
+    if value == "No live value":
+        return False
+
+    normalised_value = _normalise(value)
+    identity_values = {
+        _normalise(_label(item)),
+        _normalise(str(item.get("name") or "")),
+        _normalise(str(item.get("displayName") or "")),
+    }
+    identity_values.discard("")
+
+    if normalised_value in identity_values:
+        return False
+
+    # Every supported Octopus display is numeric: W, kWh, cost, rate,
+    # standing charge or a compact current/next rate pair.
+    return bool(re.search(r"\d", value))
+
+
 def _sort_key(item: dict[str, Any]) -> tuple[int, str]:
     period = _period_from_label(_label(item))
     try:
@@ -322,7 +363,7 @@ class OctopusLiveMeterSummary:
                 title = requested.title() if requested != "power" else "Live power"
                 message = f"Octopus whole-house {title.lower()}: {value}."
                 items = [self._item(selected)]
-                success = value != "No live value"
+                success = _has_live_display_value(selected)
             else:
                 labels = ", ".join(_label(row) for row in rows) or "none"
                 message = f"The Octopus {requested} display was not returned. Available displays: {labels}."
@@ -331,7 +372,7 @@ class OctopusLiveMeterSummary:
             intent = "octopus-period-energy"
             heading = f"Octopus {requested.title()}"
         else:
-            readable = [row for row in rows if _display_value(row) != "No live value"]
+            readable = [row for row in rows if _has_live_display_value(row)]
             lines = [f"- {self._short_label(row)}: {_display_value(row)}" for row in readable]
             if lines:
                 message = "Octopus whole-house meter displays:\n" + "\n".join(lines)
@@ -352,7 +393,7 @@ class OctopusLiveMeterSummary:
             subtitle=f"{len(rows)} grouped Octopus display sensor{'s' if len(rows) != 1 else ''}",
             metrics=[
                 {"label": "Displays found", "value": str(len(rows)), "icon": "⚡"},
-                {"label": "Live values", "value": str(sum(_display_value(row) != 'No live value' for row in rows)), "icon": "📡"},
+                {"label": "Live values", "value": str(sum(_has_live_display_value(row) for row in rows)), "icon": "📡"},
                 {"label": "Scope", "value": "Whole house", "icon": "🏠"},
             ],
             items=items,
@@ -386,8 +427,21 @@ class OctopusLiveMeterSummary:
                     "query": query,
                     "requested_period": requested,
                     "display_count": len(rows),
+                    "live_value_count": sum(
+                        _has_live_display_value(row)
+                        for row in rows
+                    ),
+                    "selected_tools": list(dict.fromkeys(tools)),
                     "evidence_errors": errors,
-                    "rows": rows,
+                    "displays": [
+                        {
+                            "id": str(_device_id(row) or ""),
+                            "label": _label(row),
+                            "period": _period_from_label(_label(row)),
+                            "value": _display_value(row),
+                        }
+                        for row in rows
+                    ],
                 }
             ),
         }
@@ -416,25 +470,43 @@ class OctopusLiveMeterSummary:
             "disabled",
             "lastActivity",
         ]
-        for detailed in (False, True):
-            desired = {
-                "detailed": detailed,
-                "format": "detailed" if detailed else "summary",
-                "labelFilter": "Octopus Live Meter Display",
-                "fields": fields,
-            }
-            try:
-                args = await client.supported_arguments("hub_list_devices", desired)
-                result = await client.call_tool("hub_list_devices", args)
-                tools.append("hub_list_devices")
-                if result.is_error:
-                    errors.append(result.text or f"hub_list_devices detailed={detailed} failed")
-                    continue
-                filtered = [row for row in _device_rows(result.data) if _is_octopus_meter_row(row)]
+
+        # Start with one filtered detailed inventory request. The previous
+        # implementation always performed both summary and detailed reads.
+        desired = {
+            "detailed": True,
+            "format": "detailed",
+            "labelFilter": "Octopus Live Meter Display",
+            "fields": fields,
+        }
+        try:
+            args = await client.supported_arguments(
+                "hub_list_devices",
+                desired,
+            )
+            result = await client.call_tool(
+                "hub_list_devices",
+                args,
+            )
+            tools.append("hub_list_devices")
+            if result.is_error:
+                errors.append(
+                    result.text
+                    or "filtered detailed Octopus inventory failed"
+                )
+            else:
+                filtered = [
+                    row
+                    for row in _device_rows(result.data)
+                    if _is_octopus_meter_row(row)
+                ]
                 if filtered:
                     groups.append(filtered)
-            except Exception as exc:
-                errors.append(f"hub_list_devices detailed={detailed}: {str(exc).strip() or type(exc).__name__}")
+        except Exception as exc:
+            errors.append(
+                "filtered detailed Octopus inventory: "
+                f"{str(exc).strip() or type(exc).__name__}"
+            )
 
         rows = _merge_rows(groups)
         if not rows:
@@ -448,21 +520,42 @@ class OctopusLiveMeterSummary:
             except Exception as exc:
                 errors.append(f"all-device Octopus fallback: {str(exc).strip() or type(exc).__name__}")
 
-        index = getattr(self.application, "device_index", None)
-        enriched_devices = getattr(index, "enriched_devices", None)
-        if callable(enriched_devices):
-            try:
-                indexed = list(await enriched_devices(force=True))
-                indexed = [row for row in indexed if _is_octopus_meter_row(row)]
-                if indexed:
-                    rows = _merge_rows([rows, indexed])
-                    tools.append("homebrain_device_index")
-            except Exception as exc:
-                errors.append(
-                    f"complete device index: {str(exc).strip() or type(exc).__name__}"
-                )
+        # Use the complete index only as a discovery fallback. Forcing it
+        # after successful discovery caused additional inventory calls.
+        if not rows:
+            index = getattr(self.application, "device_index", None)
+            enriched_devices = getattr(index, "enriched_devices", None)
+            if callable(enriched_devices):
+                try:
+                    indexed = list(
+                        await enriched_devices(force=False)
+                    )
+                    indexed = [
+                        row
+                        for row in indexed
+                        if _is_octopus_meter_row(row)
+                    ]
+                    if indexed:
+                        rows = _merge_rows([rows, indexed])
+                        tools.append("homebrain_device_index")
+                except Exception as exc:
+                    errors.append(
+                        "complete device index: "
+                        f"{str(exc).strip() or type(exc).__name__}"
+                    )
 
-        enriched = await self._read_by_ids(rows, tools, errors)
+        # Probe only rows whose inventory record did not include a readable
+        # display value. Do not automatically re-read every Octopus sensor.
+        missing_values = [
+            row
+            for row in rows
+            if not _has_live_display_value(row)
+        ]
+        enriched = await self._read_by_ids(
+            missing_values,
+            tools,
+            errors,
+        )
         if enriched:
             rows = _merge_rows([rows, enriched])
         return rows, list(dict.fromkeys(tools)), errors
