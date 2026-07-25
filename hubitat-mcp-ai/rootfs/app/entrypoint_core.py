@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 
 import uvicorn
 from pydantic import Field
@@ -314,17 +315,32 @@ install_device_intelligence_webui(application)
 app = application.app
 
 
-@app.on_event("startup")
-async def warm_device_intelligence_index() -> None:
-    try:
-        await asyncio.gather(device_index.summary_result(), device_index.metadata_result())
-    except Exception:
-        pass
+_base_lifespan = app.router.lifespan_context
 
 
-@app.on_event("shutdown")
-async def cancel_active_requests() -> None:
-    await request_registry.cancel_all()
+@asynccontextmanager
+async def maintained_lifespan(current_app):
+    """Compose maintained startup and shutdown work with the base app lifecycle."""
+
+    async with _base_lifespan(current_app):
+        try:
+            await asyncio.gather(
+                device_index.summary_result(),
+                device_index.metadata_result(),
+            )
+        except Exception:
+            # Startup warming is an optimization; a failed warm must not prevent
+            # HomeBrain from serving requests and rebuilding the index on demand.
+            pass
+
+        try:
+            yield
+        finally:
+            # Cancel request tasks before the base lifespan closes MCP and Ollama.
+            await request_registry.cancel_all()
+
+
+app.router.lifespan_context = maintained_lifespan
 
 
 if __name__ == "__main__":

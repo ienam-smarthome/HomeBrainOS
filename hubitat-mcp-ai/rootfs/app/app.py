@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import json
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -146,9 +146,21 @@ fallback = FastFallbackRouter(
     attention_stale_hours=float(OPTIONS.get("attention_stale_hours") or 48),
 )
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Own the base MCP and Ollama client shutdown lifecycle."""
+
+    try:
+        yield
+    finally:
+        await mcp.close()
+        await ollama.close()
+
+
 app = FastAPI(
     title=str(OPTIONS.get("web_title") or "Hubitat MCP AI"),
     version=VERSION,
+    lifespan=lifespan,
 )
 
 
@@ -447,12 +459,6 @@ async def refresh() -> dict[str, Any]:
         "ollama": runtime,
         "ollama_inference": compatibility_inference(runtime),
     }
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    await mcp.close()
-    await ollama.close()
 
 
 if __name__ == "__main__":

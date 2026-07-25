@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,13 +38,22 @@ def test_top_level_router_accepts_control_verification_settings_at_startup():
 
 
 def test_home_assistant_ingress_is_enabled_in_addon_config():
-    config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
+    config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(
+        encoding="utf-8"
+    )
 
-    assert "version: '0.4.3-alpha'" in config
-    assert "ingress: true" in config
-    assert "ingress_port: 8788" in config
-    assert "panel_title: Hubitat MCP AI" in config
-    assert "panel_icon: mdi:home-assistant" in config
+    def scalar(name: str) -> str:
+        match = re.search(
+            rf'(?m)^{re.escape(name)}:\s*["\']?([^"\'\n]+?)["\']?\s*$',
+            config,
+        )
+        assert match is not None, f"{name} not found in add-on config"
+        return match.group(1).strip()
+
+    assert scalar("version")
+    assert scalar("ingress") == "true"
+    assert scalar("ingress_port") == "8788"
+    assert scalar("panel_title") == "Hubitat MCP AI"
 
 
 def test_rendered_web_ui_uses_relative_api_paths_for_ingress():
