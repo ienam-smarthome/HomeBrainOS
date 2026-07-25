@@ -72,6 +72,18 @@ def _needs_empty_device_detail(
             " fan" in f" {text}",
             "fancontrol" in text,
             "fan control" in text,
+            "power meter" in text,
+            "powermeter" in text,
+            "energy meter" in text,
+            "energymeter" in text,
+            "thermostat" in text,
+            "temperaturemeasurement" in text,
+            "lock" in text,
+            "valve" in text,
+            "water sensor" in text,
+            "watersensor" in text,
+            "leak" in text,
+            "smoke" in text,
         )
     )
 
@@ -105,6 +117,17 @@ def _detail_device_record(value: Any, device_id: str) -> dict[str, Any] | None:
                 "illuminance",
                 "speed",
                 "switch",
+                "power",
+                "energy",
+                "thermostatMode",
+                "thermostatOperatingState",
+                "thermostatSetpoint",
+                "heatingSetpoint",
+                "coolingSetpoint",
+                "lock",
+                "valve",
+                "water",
+                "smoke",
             )
         ):
             fallback = candidate
@@ -154,6 +177,27 @@ def _room_device_icon(
         return "🌀"
     if "illuminance" in attrs or " lux" in f" {text}":
         return "🔆"
+    if any(
+        key in attrs
+        for key in (
+            "thermostatMode",
+            "thermostatOperatingState",
+            "thermostatSetpoint",
+            "heatingSetpoint",
+            "coolingSetpoint",
+        )
+    ):
+        return "♨️"
+    if "power" in attrs or "energy" in attrs:
+        return "⚡"
+    if "lock" in attrs:
+        return "🔒"
+    if "valve" in attrs:
+        return "🚰"
+    if "water" in attrs:
+        return "💧"
+    if "smoke" in attrs:
+        return "🚨"
     if "temperature" in attrs:
         return "🌡️"
     if "humidity" in attrs:
@@ -175,10 +219,47 @@ def _room_device_states(attrs: dict[str, Any], primary_state: str) -> list[str]:
     """Return useful compact live states without discarding secondary metrics."""
 
     states: list[str] = []
+
     speed = attrs.get("speed")
     illuminance = attrs.get("illuminance")
     temperature = attrs.get("temperature")
     humidity = attrs.get("humidity")
+    power = attrs.get("power")
+    energy = attrs.get("energy")
+    thermostat_mode = attrs.get("thermostatMode")
+    operating_state = attrs.get("thermostatOperatingState")
+    thermostat_setpoint = attrs.get("thermostatSetpoint")
+    heating_setpoint = attrs.get("heatingSetpoint")
+    cooling_setpoint = attrs.get("coolingSetpoint")
+
+    if thermostat_mode not in (None, ""):
+        states.append(
+            str(thermostat_mode).strip().replace("_", " ").title()
+        )
+
+    if operating_state not in (None, ""):
+        formatted_operating = (
+            str(operating_state).strip().replace("_", " ").title()
+        )
+        if _normalise(formatted_operating) not in {
+            _normalise(item) for item in states
+        }:
+            states.append(formatted_operating)
+
+    setpoint = next(
+        (
+            value
+            for value in (
+                thermostat_setpoint,
+                heating_setpoint,
+                cooling_setpoint,
+            )
+            if value not in (None, "")
+        ),
+        None,
+    )
+    if setpoint is not None:
+        states.append(f"{_format_number(setpoint)}°C setpoint")
 
     if speed not in (None, ""):
         states.append(str(speed).strip().replace("_", " ").title())
@@ -192,11 +273,21 @@ def _room_device_states(attrs: dict[str, Any], primary_state: str) -> list[str]:
     if humidity not in (None, ""):
         states.append(f"{_format_number(humidity)}% humidity")
 
+    if power not in (None, ""):
+        states.append(f"{_format_number(power)} W")
+
+    if energy not in (None, ""):
+        states.append(f"{_format_number(energy)} kWh")
+
     for attribute, labels in (
         ("switch", {"on": "On", "off": "Off"}),
         ("motion", {"active": "Active", "inactive": "Inactive"}),
         ("contact", {"open": "Open", "closed": "Closed"}),
         ("presence", {"present": "Present", "not present": "Not present"}),
+        ("lock", {"locked": "Locked", "unlocked": "Unlocked"}),
+        ("valve", {"open": "Open", "closed": "Closed"}),
+        ("water", {"wet": "Wet", "dry": "Dry"}),
+        ("smoke", {"detected": "Smoke detected", "clear": "Clear"}),
     ):
         value = _normalise(attrs.get(attribute))
         formatted = labels.get(value)
@@ -297,9 +388,10 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
 
         room_name = exact["name"]
         room_key = self._room_key(room_name)
+        all_device_rows = self._device_rows(devices_result.data)
         devices = [
             item
-            for item in self._device_rows(devices_result.data)
+            for item in all_device_rows
             if self._room_key(self._room_name(item)) == room_key
         ]
 
@@ -420,9 +512,10 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
         response["technical"] = safe_debug(
             {
                 "matched_room": exact,
-                "devices": devices_result.data,
-                "detail_reads": detail_reads,
+                "inventory_count": len(all_device_rows),
+                "room_device_count": len(devices),
                 "detail_probes": detail_probes,
+                "detail_reads": detail_reads,
             }
         )
         return response
