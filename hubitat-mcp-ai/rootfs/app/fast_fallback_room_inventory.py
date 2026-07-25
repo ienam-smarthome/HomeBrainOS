@@ -22,7 +22,7 @@ _ROOM_DEVICE_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"^(?:list|show|display)\s+(?:the\s+)?(.+?)\s+room(?:\s+devices)?[?.!]*$",
+        r"^(?:list|show|display)\s+(?:the\s+)?(.+?)\s+room[?.!]*$",
         re.IGNORECASE,
     ),
     re.compile(
@@ -384,8 +384,9 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
         items.sort(key=lambda item: item["title"].lower())
         count = len(items)
         if items:
+            room_title = _room_display_title(room_name)
             message = (
-                f"{count} device{'' if count == 1 else 's'} are assigned to the {room_name} room:\n"
+                f"{count} device{'' if count == 1 else 's'} are assigned to {room_title}:\n"
                 + "\n".join(
                     f"- {item['title']}: {item['value']}" for item in items
                 )
@@ -436,6 +437,19 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
             candidate = re.sub(r"\s+", " ", match.group(1).strip(" .!?"))
             if not candidate:
                 return None
+
+            # The general "<room name> devices" form correctly preserves
+            # multi-word room names such as "living room". Clean up only
+            # duplicated descriptive forms such as "Livingroom room" or
+            # "Bedroom room".
+            duplicated_room = re.fullmatch(
+                r"(.+?room)\s+room",
+                candidate,
+                flags=re.IGNORECASE,
+            )
+            if duplicated_room:
+                candidate = duplicated_room.group(1)
+
             if index >= len(_ROOM_DEVICE_PATTERNS) - 2:
                 normalised = _normalise(candidate)
                 if normalised in _RESERVED_SHORTHAND:
