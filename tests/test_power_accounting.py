@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import sys
@@ -199,4 +199,212 @@ def test_unrelated_energy_advice_remains_an_ai_question():
     )
     assert is_hybrid_ai_query(
         "Suggest ways to improve energy efficiency"
+    )
+
+def test_accounting_preserves_fractional_total_precision():
+    rows = [
+        {
+            "id": "whole",
+            "label": "Octopus Meter Current Power",
+            "attributes": {
+                "value": {"currentValue": "229 W"},
+            },
+        },
+        {
+            "id": "one",
+            "label": "Fridge",
+            "attributes": {
+                "power": {
+                    "currentValue": 86,
+                    "unit": "W",
+                }
+            },
+        },
+        {
+            "id": "two",
+            "label": "Fan",
+            "attributes": {
+                "power": {
+                    "currentValue": 14.6,
+                    "unit": "W",
+                }
+            },
+        },
+        {
+            "id": "three",
+            "label": "Socket",
+            "attributes": {
+                "power": {
+                    "currentValue": 60.8,
+                    "unit": "W",
+                }
+            },
+        },
+    ]
+
+    class FractionMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data={"devices": rows},
+                is_error=False,
+            )
+
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=FractionMCP())
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert result["monitored_device_power_w"] == 161.4
+    assert result["unaccounted_power_w"] == 67.6
+    assert "161.4 W" in result["message"]
+    assert "67.6 W" in result["message"]
+
+
+def test_structured_octopus_power_precedes_display_text():
+    rows = [
+        {
+            "id": "whole",
+            "label": "Octopus Meter Current Power",
+            "attributes": {
+                "power": {
+                    "currentValue": 229,
+                    "unit": "W",
+                },
+                "display": {
+                    "currentValue": (
+                        "Power 999 W, cost 12.34, rate 22.5"
+                    ),
+                },
+            },
+        },
+        {
+            "id": "load",
+            "label": "Fridge",
+            "attributes": {
+                "power": {
+                    "currentValue": 100,
+                    "unit": "W",
+                }
+            },
+        },
+    ]
+
+    class StructuredMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data={"devices": rows},
+                is_error=False,
+            )
+
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=StructuredMCP())
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert result["whole_house_power_w"] == 229
+    assert result["whole_house_value_source"] == (
+        "structured-power-attribute"
+    )
+
+
+def test_duplicate_octopus_meter_prefers_newest_exact_label():
+    rows = [
+        {
+            "id": "old",
+            "label": "Octopus Meter Current Power",
+            "lastActivity": "2026-07-25T20:00:00Z",
+            "attributes": {
+                "power": {
+                    "currentValue": 800,
+                    "unit": "W",
+                }
+            },
+        },
+        {
+            "id": "new",
+            "label": "Octopus Meter Current Power",
+            "lastActivity": "2026-07-25T20:01:00Z",
+            "attributes": {
+                "power": {
+                    "currentValue": 229,
+                    "unit": "W",
+                }
+            },
+        },
+        {
+            "id": "load",
+            "label": "Fridge",
+            "lastActivity": "2026-07-25T20:00:50Z",
+            "attributes": {
+                "power": {
+                    "currentValue": 100,
+                    "unit": "W",
+                }
+            },
+        },
+    ]
+
+    class DuplicateMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data={"devices": rows},
+                is_error=False,
+            )
+
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=DuplicateMCP())
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert result["whole_house_power_w"] == 229
+    assert result["whole_house_meter"]["id"] == "new"
+    assert result["reading_quality"]["quality"] == "good"
+    assert (
+        result["reading_quality"]["maximum_skew_seconds"]
+        == 10
+    )
+
+
+def test_historical_energy_questions_are_not_live_accounting():
+    assert not is_power_accounting_query(
+        "Why was electricity usage high today?"
+    )
+    assert not is_power_accounting_query(
+        "Why was my bill high this month?"
+    )
+    assert not is_power_accounting_query(
+        "Compare energy usage in kWh"
+    )
+    assert is_power_accounting_query(
+        "Why is electricity usage high right now?"
     )
