@@ -14,8 +14,8 @@ from semantic_home_summary_agent import install_semantic_home_summary_agent
 from runtime_route_bridge import install_runtime_route_bridge
 from thermostat_summary_guard import install_thermostat_summary_guard
 
-PREVIOUS_RELEASE_VERSION = "0.10.78"
-RELEASE_VERSION = "0.10.79"
+PREVIOUS_RELEASE_VERSION = "0.10.79"
+RELEASE_VERSION = "0.10.80"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 
