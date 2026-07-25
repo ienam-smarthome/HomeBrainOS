@@ -120,16 +120,18 @@ async def _read_live_motion(application: Any) -> tuple[list[str], int, dict[str,
 def install_home_summary_consistency_guard(application: Any) -> AskHandler:
     """Correct legacy AI home-summary motion claims from live Hubitat states.
 
-    The semantic home-summary route already uses typed, authoritative motion evidence
-    and validates all active device names before returning. It must not be rewritten
-    by this older compatibility guard.
+    Semantic home summary and attention routes already use typed authoritative
+    evidence and must not be rewritten by this compatibility guard.
     """
 
     original_ask: AskHandler = application.ask
 
     async def guarded_ask(request: Any) -> dict[str, Any]:
         answer = dict(await original_ask(request))
-        if str(answer.get("route") or "") == "ai-semantic-home-evidence":
+        if str(answer.get("route") or "") in {
+            "ai-semantic-home-evidence",
+            "ai-semantic-home-attention",
+        }:
             return answer
 
         query = str(getattr(request, "query", "") or "").lower()
