@@ -223,3 +223,72 @@ def test_exact_meter_label_wins_over_other_devices_in_same_room():
     assert result.targets[0].device_id == "3"
     assert result.targets[0].label == "Bedroom 2 Meter"
     assert "exact label" in result.targets[0].match_reasons
+
+
+def test_meter_target_hard_rejects_trv_and_mqtt_room_matches():
+    devices = [
+        device(
+            "trv",
+            "Bedroom 2 TRV",
+            "Bedroom 2",
+            capabilities=["Thermostat"],
+            category="thermostat",
+        ),
+        device(
+            "mqtt",
+            "Bedroom2 (MQTT)",
+            "Bedroom 2",
+            capabilities=["Temperature Measurement"],
+            category="sensor",
+        ),
+    ]
+
+    result = resolve_devices(
+        devices,
+        ResolutionRequest(
+            target_phrase="Bedroom 2 Meter",
+            room="Bedroom 2",
+        ),
+    )
+
+    assert result.status is ResolutionStatus.NOT_FOUND
+    assert result.targets == ()
+    assert all(item.score == 0.0 for item in result.candidates)
+    assert all(
+        "missing descriptive target token" in item.match_reasons
+        for item in result.candidates
+    )
+
+
+def test_exact_meter_still_wins_with_trv_and_mqtt_in_same_room():
+    devices = [
+        device(
+            "trv",
+            "Bedroom 2 TRV",
+            "Bedroom 2",
+            capabilities=["Thermostat"],
+        ),
+        device(
+            "mqtt",
+            "Bedroom2 (MQTT)",
+            "Bedroom 2",
+            capabilities=["Temperature Measurement"],
+        ),
+        device(
+            "meter",
+            "Bedroom 2 Meter",
+            "Bedroom 2",
+            capabilities=["Battery", "Temperature Measurement"],
+        ),
+    ]
+
+    result = resolve_devices(
+        devices,
+        ResolutionRequest(
+            target_phrase="Bedroom 2 Meter",
+            room="Bedroom 2",
+        ),
+    )
+
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.targets[0].device_id == "meter"
