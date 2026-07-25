@@ -208,6 +208,30 @@ def _requested_device_attribute(query: str) -> tuple[str, str] | None:
 
 def _attribute_target_phrase(query: str) -> str:
     q = str(query or "").strip().strip(" .!?")
+    parsed_request = parse_entity_request(query)
+
+    # A natural room metric question such as
+    # "What is the humidity in the bathroom?" identifies a room rather than a
+    # named device. Return that complete room name so the exact-room metric
+    # route can select and probe only devices assigned to that room.
+    if parsed_request.room:
+        parsed_target = _normalise(parsed_request.target_phrase)
+        requested_attribute = _requested_device_attribute(query)
+        attribute_terms = {
+            "temperature",
+            "temp",
+            "humidity",
+            "relative humidity",
+            "battery",
+            "battery level",
+            "power",
+            "energy",
+            "lux",
+            "illuminance",
+        }
+        if requested_attribute and parsed_target in attribute_terms:
+            return parsed_request.room
+
     match = re.search(r"\b(?:from|of)\s+(.+)$", q, re.IGNORECASE)
     if match:
         return re.sub(

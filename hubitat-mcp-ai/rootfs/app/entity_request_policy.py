@@ -12,7 +12,13 @@ _BROAD_PATTERNS = (
 )
 _PREFIX = re.compile(r"^(?:please )?(?:(?:turn|switch|set|dim|open|close|lock|unlock|find|locate|show|read|check|get)\s+|what(?:'s| is)\s+)(?:the )?", re.I)
 _TRAILING = re.compile(r"\s+(?:on|off|state|status|level|power|temperature|humidity)(?:\s+now)?$", re.I)
-_ROOM = re.compile(r"\b(?:in|from)\s+(?:the )?([a-z0-9 -]+?)(?:\s+room)?$", re.I)
+# Preserve complete room names, including names that genuinely end in
+# "Room", such as "Living Room". The previous optional suffix caused the
+# captured room to become only "living".
+_ROOM = re.compile(
+    r"\b(?:in|from)\s+(?:the\s+)?([a-z0-9][a-z0-9 -]*)$",
+    re.I,
+)
 _ROOM_BEFORE_DEVICES = re.compile(
     r"^(?:show|list|find|search|display|get)\s+(?:all\s+)?(?:my\s+|the\s+)?"
     r"([a-z0-9][a-z0-9 &'_-]*?)\s+devices$",
@@ -61,8 +67,20 @@ def parse_entity_request(query: str) -> EntityRequest:
     )
     target = _TRAILING.sub("", _PREFIX.sub("", q))
     target = re.sub(r"\b(?:to|at)\s+\d+(?:\s*%)?$", "", target).strip()
-    if room_match and room_match.start() > 0:
-        target = target[:room_match.start()].strip()
+
+    # Remove a trailing room clause from the already prefix-cleaned target.
+    # The previous implementation used an index taken from the original query,
+    # which truncated phrases such as:
+    # "what is the humidity in the bathroom" -> "humidity in the bathr".
+    if room:
+        target = re.sub(
+            rf"\s+\b(?:in|from)\s+(?:the\s+)?{re.escape(room)}"
+            rf"(?:\s+room)?$",
+            "",
+            target,
+            flags=re.IGNORECASE,
+        ).strip()
+
     target = re.sub(r"^(?:a|an|the)\s+", "", target).strip()
     useful = bool(target and target not in {"device", "devices", "all devices"})
     return EntityRequest(q, target, room, _device_type(target or q), infer_ordinal(target or q), broad, useful and not broad)

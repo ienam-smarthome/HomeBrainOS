@@ -32,3 +32,30 @@ def test_room_first_inventory_is_broad_and_preserves_room():
 
 def test_generic_inventory_is_not_targeted():
     assert not is_targeted_device_request("List all devices")
+
+
+def test_attribute_question_preserves_complete_bathroom_room():
+    request = parse_entity_request(
+        "What is the humidity in the bathroom?"
+    )
+
+    assert request.room == "bathroom"
+    assert request.target_phrase == "humidity"
+
+
+def test_attribute_question_preserves_numbered_room():
+    request = parse_entity_request(
+        "What is the temperature in Bedroom 2?"
+    )
+
+    assert request.room == "bedroom 2"
+    assert request.target_phrase == "temperature"
+
+
+def test_from_room_clause_is_removed_without_truncation():
+    request = parse_entity_request(
+        "Read humidity from the Living Room"
+    )
+
+    assert request.room == "living room"
+    assert request.target_phrase == "humidity"
