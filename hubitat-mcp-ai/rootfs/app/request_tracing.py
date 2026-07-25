@@ -63,6 +63,22 @@ def _performance(trace: dict[str, Any], answer: dict[str, Any] | None) -> dict[s
         ),
         "mcp_calls": len(tools),
         "mcp_tools": tools,
+        "mcp_events": [
+            {
+                key: event[key]
+                for key in (
+                    "tool",
+                    "cache",
+                    "duration_ms",
+                    "age_ms",
+                    "gateway",
+                    "arguments",
+                )
+                if event.get(key) not in (None, "", {})
+            }
+            for event in events
+            if event.get("tool") != "cache.invalidate"
+        ],
         "cache_hits": sum(event.get("cache") == "hit" for event in events),
         "cache_misses": sum(event.get("cache") == "miss" for event in events),
         "cache_coalesced": sum(event.get("cache") == "coalesced" for event in events),
