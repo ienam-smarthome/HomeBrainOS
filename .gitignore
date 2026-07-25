@@ -14,3 +14,5 @@ build/
 node_modules/
 
 full-suite-*.txt
+
+*-failed.log
