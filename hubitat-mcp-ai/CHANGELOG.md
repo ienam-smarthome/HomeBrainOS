@@ -1,3 +1,12 @@
+## 0.10.86
+
+- Deferred redundant legacy Ollama agent construction during maintained startup.
+- Preserved standalone `app.py` compatibility.
+- Added regression coverage proving `UnifiedAdaptiveMCPAgent` remains the final runtime agent.
+- Normalized current control-routing tests to inspect `entrypoint_core.py`.
+- Updated control-routing tests for current rescue, combined-level, postfix, and fallback wiring.
+- Made cloud control fallback tests independent of global installer order.
+
 # Hubitat MCP AI changelog
 
 ## 0.10.75
