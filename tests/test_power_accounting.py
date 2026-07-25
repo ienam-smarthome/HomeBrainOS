@@ -755,7 +755,14 @@ def test_empty_projected_snapshot_retries_plain_inventory():
     class RetryMCP(MCP):
         async def call_tool(self, name, arguments):
             self.calls.append((name, dict(arguments)))
-            data = fallback if arguments == {} else projected
+            data = (
+                fallback
+                if arguments == {
+                    "detailed": True,
+                    "format": "detailed",
+                }
+                else projected
+            )
             return MCPToolResult(
                 name=name,
                 arguments=arguments,
@@ -777,7 +784,13 @@ def test_empty_projected_snapshot_retries_plain_inventory():
     )
 
     assert len(mcp.calls) == 2
-    assert mcp.calls[1] == ("hub_list_devices", {})
+    assert mcp.calls[1] == (
+        "hub_list_devices",
+        {
+            "detailed": True,
+            "format": "detailed",
+        },
+    )
     assert result["success"] is True
     assert result["whole_house_power_w"] == 200
     assert result["monitored_device_power_w"] == 80
