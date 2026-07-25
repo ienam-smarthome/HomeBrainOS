@@ -101,6 +101,23 @@ def parse_app_intent(query: str) -> AppIntent | None:
     )
 
 
+_APP_NUMBER_PREFIX_RE = re.compile(
+    r"^\s*(?:\d+\s*[.\-_:)]\s*|\[\s*\d+\s*\]\s*)"
+)
+
+
+def _normalise_app_name(value: Any) -> str:
+    text = normalise_text(value)
+    text = _APP_NUMBER_PREFIX_RE.sub("", text)
+    text = re.sub(
+        r"\b(?:app|application)\b\s*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return _normalise(text)
+
+
 class NamedAppController:
     """Guarded deterministic Hubitat app inventory and enable/disable control."""
 
@@ -245,7 +262,7 @@ class NamedAppController:
             rows[key] = {
                 "id": app_id,
                 "name": normalise_text(name),
-                "normalised": _normalise(name),
+                "normalised": _normalise_app_name(name),
                 "disabled": disabled,
                 "type": normalise_text(first_value(item, "type", "appType") or ""),
             }

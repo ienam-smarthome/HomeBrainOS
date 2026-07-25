@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -95,8 +96,11 @@ def test_confirmed_app_disable_writes_exact_id_and_verifies():
     answer = asyncio.run(app.ask(SimpleNamespace(query="confirm disable app id 101")))
     assert answer["route"] == "mcp-app-control"
     assert answer["success"] is True
-    assert answer["technical"]["post_state_verified"] is True
-    assert answer["technical"]["arguments"] == {"appId": 101, "disabled": True}
+    technical = answer["technical"]
+    if isinstance(technical, str):
+        technical = json.loads(technical)
+    assert technical["post_state_verified"] is True
+    assert technical["arguments"] == {"appId": 101, "disabled": True}
     assert [name for name, _ in app.mcp.calls] == [
         "hub_list_apps",
         "hub_set_app_disabled",
