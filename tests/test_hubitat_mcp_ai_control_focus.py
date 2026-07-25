@@ -131,7 +131,11 @@ def test_hybrid_routing_keeps_controls_fast_and_sends_unhandled_reads_to_ai():
     assert not is_direct_control_query("Why is electricity usage high?")
 
     assert is_hybrid_ai_query("What should I improve in the bathroom ventilation setup?")
-    assert is_hybrid_ai_query("Why is electricity usage high right now?")
+    # Whole-house versus monitored-device power analysis is now a verified
+    # deterministic read, not a general AI Evidence Planner question.
+    assert not is_hybrid_ai_query(
+        "Why is electricity usage high right now?"
+    )
     assert is_hybrid_ai_query("Tell me what looks unusual at home")
     assert not is_hybrid_ai_query("Turn on Bedroom 1 Light")
     assert not is_hybrid_ai_query("Show power consumption")
@@ -148,7 +152,12 @@ def test_automation_recommendation_skill_precedes_universal_ai_fallback():
     try:
         install_automation_recommendation_route_precedence()
         assert planner_module.is_ai_evidence_query(query) is False
-        assert planner_module.is_ai_evidence_query("Why is electricity usage high right now?") is True
+        assert (
+            planner_module.is_ai_evidence_query(
+                "Why is electricity usage high right now?"
+            )
+            is False
+        )
     finally:
         planner_module.is_ai_evidence_query = original
 
