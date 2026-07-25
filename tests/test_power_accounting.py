@@ -722,9 +722,19 @@ def test_power_accounting_display_has_breakdown_tile():
     assert "Fridge 79 W" in breakdown["subtitle"]
     assert "Freezer 74 W" in breakdown["subtitle"]
 
-    assert items[1]["title"] == "TV"
-    assert items[2]["title"] == "Fridge"
-    assert items[3]["title"] == "Freezer"
+    item_by_title = {
+        item["title"]: item
+        for item in items
+    }
+
+    assert item_by_title["TV"]["value"] == "89 W"
+    assert item_by_title["Fridge"]["value"] == "79 W"
+    assert item_by_title["Freezer"]["value"] == "74 W"
+
+    assert (
+        item_by_title["Timestamp unavailable"]["value"]
+        == "3 readings"
+    )
 
 def test_empty_projected_snapshot_retries_plain_inventory():
     projected = {"devices": []}
@@ -972,3 +982,155 @@ def test_empty_detailed_inventory_uses_targeted_device_details():
 
     items = result["display"]["items"]
     assert items[0]["title"] == "Power breakdown"
+
+def test_fresh_comparison_excludes_active_readings_over_120_seconds():
+    rows = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "lastActivity": "2026-07-25T23:10:00+01:00",
+                "attributes": {
+                    "value": {
+                        "currentValue": "200 W",
+                    }
+                },
+            },
+            {
+                "id": "fresh",
+                "label": "Computer",
+                "lastActivity": "2026-07-25T23:09:30+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 50,
+                        "unit": "W",
+                    }
+                },
+            },
+            {
+                "id": "stale",
+                "label": "Bedroom socket",
+                "lastActivity": "2026-07-25T23:05:00+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 20,
+                        "unit": "W",
+                    }
+                },
+            },
+        ]
+    }
+
+    class FreshnessMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=rows,
+                is_error=False,
+            )
+
+    result = asyncio.run(
+        PowerAccountingService(
+            SimpleNamespace(mcp=FreshnessMCP())
+        ).answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert result["monitored_device_power_w"] == 70
+    assert result["unaccounted_power_w"] == 130
+
+    assert result["fresh_monitored_device_power_w"] == 50
+    assert result["fresh_unaccounted_power_w"] == 150
+    assert result["fresh_coverage_percent"] == 25
+
+    fresh = result["fresh_comparison"]
+    assert fresh["window_seconds"] == 120
+    assert fresh["fresh_reading_count"] == 1
+    assert fresh["stale_reading_count"] == 1
+    assert fresh["unknown_timestamp_count"] == 0
+    assert fresh["stale_readings"][0]["label"] == (
+        "Bedroom socket"
+    )
+    assert fresh["stale_readings"][0][
+        "meter_skew_seconds"
+    ] == 300
+
+    assert "fresh coverage" in result["message"]
+    assert (
+        "excluded from the fresh comparison"
+        in result["message"]
+    )
+
+    titles = [
+        item["title"]
+        for item in result["display"]["items"]
+    ]
+    assert "Excluded from fresh comparison" in titles
+
+
+def test_fresh_comparison_keeps_raw_total_when_timestamp_missing():
+    rows = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "lastActivity": "2026-07-25T23:10:00+01:00",
+                "attributes": {
+                    "value": {
+                        "currentValue": "100 W",
+                    }
+                },
+            },
+            {
+                "id": "unknown",
+                "label": "Untimestamped socket",
+                "attributes": {
+                    "power": {
+                        "currentValue": 15,
+                        "unit": "W",
+                    }
+                },
+            },
+        ]
+    }
+
+    class FreshnessMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=rows,
+                is_error=False,
+            )
+
+    result = asyncio.run(
+        PowerAccountingService(
+            SimpleNamespace(mcp=FreshnessMCP())
+        ).answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert result["monitored_device_power_w"] == 15
+    assert result["unaccounted_power_w"] == 85
+
+    assert result["fresh_monitored_device_power_w"] == 0
+    assert result["fresh_unaccounted_power_w"] == 100
+
+    fresh = result["fresh_comparison"]
+    assert fresh["fresh_reading_count"] == 0
+    assert fresh["stale_reading_count"] == 0
+    assert fresh["unknown_timestamp_count"] == 1
+
+    assert (
+        "had no usable timestamp"
+        in result["message"]
+    )
