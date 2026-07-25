@@ -40,11 +40,11 @@ _ROOM_DEVICE_PATTERNS = (
 _MAX_EMPTY_SENSOR_DETAIL_PROBES = 4
 
 
-def _looks_like_empty_lux_sensor(
+def _needs_empty_device_detail(
     item: dict[str, Any],
     attrs: dict[str, Any],
 ) -> bool:
-    """Identify empty summary records that are likely illuminance sensors."""
+    """Identify useful devices whose compact inventory omitted live states."""
 
     if attrs:
         return False
@@ -63,7 +63,17 @@ def _looks_like_empty_lux_sensor(
             )
         )
     )
-    return " lux" in f" {text}" or "illuminance" in text
+
+    return any(
+        condition
+        for condition in (
+            " lux" in f" {text}",
+            "illuminance" in text,
+            " fan" in f" {text}",
+            "fancontrol" in text,
+            "fan control" in text,
+        )
+    )
 
 
 def _detail_device_record(value: Any, device_id: str) -> dict[str, Any] | None:
@@ -93,6 +103,8 @@ def _detail_device_record(value: Any, device_id: str) -> dict[str, Any] | None:
                 "attributes",
                 "states",
                 "illuminance",
+                "speed",
+                "switch",
             )
         ):
             fallback = candidate
@@ -112,9 +124,13 @@ def _room_device_states(attrs: dict[str, Any], primary_state: str) -> list[str]:
     """Return useful compact live states without discarding secondary metrics."""
 
     states: list[str] = []
+    speed = attrs.get("speed")
     illuminance = attrs.get("illuminance")
     temperature = attrs.get("temperature")
     humidity = attrs.get("humidity")
+
+    if speed not in (None, ""):
+        states.append(str(speed).strip().replace("_", " ").title())
 
     if illuminance not in (None, ""):
         states.append(f"{_format_number(illuminance)} lx")
@@ -247,7 +263,7 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
 
             if (
                 detail_probes < _MAX_EMPTY_SENSOR_DETAIL_PROBES
-                and _looks_like_empty_lux_sensor(item, attrs)
+                and _needs_empty_device_detail(item, attrs)
             ):
                 device_id = str(_device_id(item) or "")
                 if device_id:

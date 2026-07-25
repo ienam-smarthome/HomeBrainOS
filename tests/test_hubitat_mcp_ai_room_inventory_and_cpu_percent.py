@@ -271,3 +271,98 @@ def test_empty_lux_summary_is_completed_by_bounded_device_detail():
             "success": True,
         }
     ]
+
+
+def test_empty_fan_summary_is_completed_by_device_detail():
+    class FanDetailMCP(FakeRoomMCP):
+        def __init__(self):
+            self.detail_ids = []
+
+        async def list_tools(self):
+            tools = await super().list_tools()
+            tools.append(
+                MCPTool(
+                    "hub_get_device",
+                    "device detail",
+                    {"type": "object", "properties": {}},
+                )
+            )
+            return tools
+
+        async def call_tool(self, name, arguments):
+            if name == "hub_get_device":
+                device_id = str(arguments.get("deviceId") or "")
+                self.detail_ids.append(device_id)
+
+                return MCPToolResult(
+                    name=name,
+                    arguments=arguments,
+                    raw={},
+                    text="",
+                    data={
+                        "device": {
+                            "id": device_id,
+                            "label": "Standing Fan",
+                            "room": "Living Room",
+                            "currentStates": {
+                                "speed": "off",
+                                "networkStatus": "online",
+                            },
+                        }
+                    },
+                    is_error=False,
+                )
+
+            result = await super().call_tool(name, arguments)
+
+            if name == "hub_list_rooms":
+                result.data["rooms"].append(
+                    {"id": "34", "name": "Living Room"}
+                )
+
+            if name == "hub_list_devices":
+                result.data["devices"].append(
+                    {
+                        "id": "7402",
+                        "label": "Standing Fan",
+                        "name": "Fan Control",
+                        "room": "Living Room",
+                        "deviceType": "Standing Fan",
+                        "capabilities": [
+                            "Actuator",
+                            "FanControl",
+                            "Switch",
+                            "SwitchLevel",
+                        ],
+                        "currentStates": {},
+                    }
+                )
+
+            return result
+
+    mcp = FanDetailMCP()
+    answer = asyncio.run(
+        FastFallbackRouter(mcp).answer("Show livingroom devices")
+    )
+
+    assert answer["success"] is True
+    assert "Standing Fan: Off" in answer["message"]
+
+    fan_item = next(
+        item
+        for item in answer["display"]["items"]
+        if item["title"] == "Standing Fan"
+    )
+
+    assert fan_item["value"] == "Off"
+    assert mcp.detail_ids == ["7402"]
+
+    technical = json.loads(answer["technical"])
+    assert technical["detail_probes"] == 1
+    assert technical["detail_reads"] == [
+        {
+            "device_id": "7402",
+            "label": "Standing Fan",
+            "success": True,
+        }
+    ]
