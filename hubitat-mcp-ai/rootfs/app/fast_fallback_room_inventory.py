@@ -120,6 +120,57 @@ def _format_number(value: Any) -> str:
     return f"{number:g}"
 
 
+def _room_display_title(room_name: str) -> str:
+    """Avoid titles such as 'Living Room room'."""
+
+    name = str(room_name or "").strip()
+    if _normalise(name).endswith(" room"):
+        return name
+    return f"{name} room"
+
+
+def _room_device_icon(
+    item: dict[str, Any],
+    attrs: dict[str, Any],
+    device_type: str,
+) -> str:
+    """Choose a meaningful room-card icon from label, type and live attributes."""
+
+    text = _normalise(
+        " ".join(
+            (
+                str(item.get("label") or ""),
+                str(item.get("name") or ""),
+                str(item.get("displayName") or ""),
+                str(device_type or ""),
+                " ".join(str(key) for key in attrs),
+            )
+        )
+    )
+
+    if _looks_like_light(item):
+        return "💡"
+    if "fan" in text or "speed" in attrs:
+        return "🌀"
+    if "illuminance" in attrs or " lux" in f" {text}":
+        return "🔆"
+    if "temperature" in attrs:
+        return "🌡️"
+    if "humidity" in attrs:
+        return "💧"
+    if "motion" in attrs:
+        return "🏃"
+    if "presence" in attrs:
+        return "📍"
+    if "contact" in attrs:
+        return "🚪"
+    if "battery" in attrs:
+        return "🔋"
+    if "switch" in attrs:
+        return "🔌"
+    return "📱"
+
+
 def _room_device_states(attrs: dict[str, Any], primary_state: str) -> list[str]:
     """Return useful compact live states without discarding secondary metrics."""
 
@@ -314,14 +365,7 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
                 first_value(item, "deviceType", "type", "category", "driverName")
                 or "Hubitat device"
             )
-            if _looks_like_light(item):
-                icon = "💡"
-            elif "motion" in _normalise(device_type + " " + str(attrs.keys())):
-                icon = "🏃"
-            elif "temperature" in attrs or "humidity" in attrs:
-                icon = "🌡️"
-            else:
-                icon = "📱"
+            icon = _room_device_icon(item, attrs, device_type)
 
             items.append(
                 {
@@ -351,7 +395,7 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
 
         display = display_payload(
             "room-device-inventory",
-            f"{room_name} room",
+            _room_display_title(room_name),
             subtitle=f"{count} device{'' if count == 1 else 's'} assigned",
             metrics=[
                 {"label": "Devices", "value": str(count), "icon": "📱"},

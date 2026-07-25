@@ -260,6 +260,7 @@ def test_empty_lux_summary_is_completed_by_bounded_device_detail():
         if item["title"] == "Hallway FP300 Lux"
     )
     assert lux_item["value"] == "3 lx"
+    assert lux_item["icon"] == "🔆"
     assert mcp.detail_ids == ["303"]
 
     technical = json.loads(answer["technical"])
@@ -355,6 +356,8 @@ def test_empty_fan_summary_is_completed_by_device_detail():
     )
 
     assert fan_item["value"] == "Off"
+    assert fan_item["icon"] == "🌀"
+    assert answer["display"]["title"] == "Living Room"
     assert mcp.detail_ids == ["7402"]
 
     technical = json.loads(answer["technical"])
