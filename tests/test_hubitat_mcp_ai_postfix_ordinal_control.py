@@ -196,7 +196,7 @@ def test_prefix_ordinal_wording_from_live_failure_executes_terminally(tmp_path: 
 
 
 def test_entrypoint_installs_postfix_parser_before_control_agent():
-    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint_core.py").read_text(encoding="utf-8")
 
     assert "from control_agent_postfix_control import install_postfix_control_intent" in entrypoint
     assert entrypoint.index("install_postfix_control_intent()") < entrypoint.index(

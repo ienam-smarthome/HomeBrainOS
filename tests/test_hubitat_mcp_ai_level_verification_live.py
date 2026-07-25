@@ -302,9 +302,13 @@ def test_missing_level_field_returns_quickly_on_server_without_wait_for(tmp_path
 
 
 def test_release_wires_capability_aware_level_agent_without_ai_for_exact_commands():
-    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint_core.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
 
-    assert "from control_agent_level_verified import install_control_agent" in entrypoint
+    assert "from control_agent_rescue import install_control_agent" in entrypoint
+    assert (
+        "from control_agent_combined_level import install_combined_level_intent"
+        in entrypoint
+    )
     assert "control_level_verification_timeout_seconds" in entrypoint
     assert "control_level_verification_timeout_seconds: 3" in config

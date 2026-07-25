@@ -124,7 +124,7 @@ def test_malformed_repeated_preposition_does_not_create_fake_device_name():
 
 
 def test_entrypoint_installs_combined_parser_before_control_agent():
-    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint_core.py").read_text(encoding="utf-8")
 
     assert "from control_agent_combined_level import install_combined_level_intent" in entrypoint
     assert entrypoint.index("install_combined_level_intent()") < entrypoint.index(

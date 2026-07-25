@@ -128,7 +128,7 @@ def test_pronoun_follow_up_returns_to_the_same_control_agent():
 
 
 def test_release_installs_control_agent_gate():
-    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint_core.py").read_text(encoding="utf-8")
 
     assert "from control_agent_gate import install_control_agent_gate" in entrypoint
     assert "legacy_control_ask = application.ask" in entrypoint

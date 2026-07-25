@@ -251,7 +251,7 @@ def test_rescue_can_be_disabled_without_affecting_safe_clarification(tmp_path: P
 
 
 def test_release_wires_rescue_agent_and_capability_filtered_graph():
-    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint_core.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
 
     assert "from control_agent_rescue import install_control_agent" in entrypoint

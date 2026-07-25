@@ -13,6 +13,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from control_agent import HomeBrainControlAgent  # noqa: E402
 from control_agent_graph import ControlDeviceGraph, GraphContext  # noqa: E402
+from control_agent_postfix_control import install_postfix_control_intent
 from control_agent_intent import (  # noqa: E402
     ControlActionIntent,
     ControlIntent,
@@ -312,6 +313,7 @@ def test_exact_plural_device_alias_wins_over_room_group_inference():
 
 
 def test_exact_control_stays_deterministic_but_contextual_controls_require_ai():
+    install_postfix_control_intent()
     interpreter = ControlIntentInterpreter(FakeApplication())
 
     exact = interpreter._deterministic_intent("turn off Livingroom Light 2")
@@ -636,10 +638,10 @@ def test_fresh_preflight_blocks_removed_device_before_any_write(tmp_path: Path):
 
 
 def test_release_wires_control_agent_without_feature_test_version_coupling():
-    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint_core.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
 
-    assert "from control_agent import install_control_agent" in entrypoint
+    assert "from control_agent_rescue import install_control_agent" in entrypoint
     assert "control_agent = install_control_agent(" in entrypoint
     assert "RELEASE_VERSION =" in entrypoint
     assert "control_agent_enabled: true" in config

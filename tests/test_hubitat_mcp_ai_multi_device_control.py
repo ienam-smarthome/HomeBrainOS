@@ -221,6 +221,6 @@ def test_unresolved_second_target_sends_no_commands():
 
 
 def test_release_uses_multi_control_router():
-    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    entrypoint = (APP_DIR / "entrypoint_core.py").read_text(encoding="utf-8")
 
-    assert "from fast_fallback_multi_control import FastFallbackRouter" in entrypoint
+    assert "from fast_fallback_light_usage import FastFallbackRouter" in entrypoint
