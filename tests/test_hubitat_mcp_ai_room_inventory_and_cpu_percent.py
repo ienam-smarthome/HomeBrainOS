@@ -416,3 +416,66 @@ def test_room_inventory_message_does_not_repeat_room():
     assert answer["display"]["title"] == "Living Room"
     assert "assigned to Living Room:" in answer["message"]
     assert "Living Room room" not in answer["message"]
+
+
+def test_room_state_enrichment_formats_common_device_metrics():
+    from fast_fallback_room_inventory import _room_device_states
+
+    assert _room_device_states(
+        {
+            "thermostatMode": "heat",
+            "heatingSetpoint": 22,
+            "temperature": 20.5,
+        },
+        "",
+    ) == ["Heat", "22°C setpoint", "20.5°C"]
+
+    assert _room_device_states(
+        {
+            "switch": "on",
+            "power": 84,
+            "energy": 12.4,
+        },
+        "",
+    ) == ["84 W", "12.4 kWh", "On"]
+
+    assert _room_device_states({"lock": "locked"}, "") == ["Locked"]
+    assert _room_device_states({"water": "dry"}, "") == ["Dry"]
+    assert _room_device_states({"smoke": "clear"}, "") == ["Clear"]
+
+
+def test_empty_common_sensor_types_are_eligible_for_bounded_detail():
+    from fast_fallback_room_inventory import _needs_empty_device_detail
+
+    examples = [
+        {"label": "Livingroom TRV", "name": "Thermostat"},
+        {"label": "TV socket power", "name": "Power Meter"},
+        {"label": "Front Door Lock", "name": "Lock"},
+        {"label": "Bathroom Leak", "name": "Water Sensor"},
+        {"label": "Kitchen Smoke", "name": "Smoke Detector"},
+    ]
+
+    for item in examples:
+        assert _needs_empty_device_detail(item, {}) is True
+
+    assert _needs_empty_device_detail(
+        {"label": "Unrelated Device", "name": "Generic Device"},
+        {},
+    ) is False
+
+
+def test_room_inventory_technical_response_is_compact():
+    answer = asyncio.run(
+        FastFallbackRouter(FakeRoomMCP()).answer("Show hallway devices")
+    )
+
+    assert answer["success"] is True
+
+    technical = json.loads(answer["technical"])
+    assert "devices" not in technical
+    assert isinstance(technical["inventory_count"], int)
+    assert isinstance(technical["room_device_count"], int)
+    assert technical["room_device_count"] == len(
+        answer["display"]["items"]
+    )
+    assert technical["detail_probes"] <= 4
