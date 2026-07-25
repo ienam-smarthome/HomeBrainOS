@@ -60,6 +60,11 @@ from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement, install_ollama_help_terminal_route
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
+from release_version import (
+    PREVIOUS_RELEASE_VERSION,
+    RELEASE_VERSION,
+    runtime_release_version,
+)
 from route_catalogue import build_route_registry
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 from semantic_read_pipeline import install_semantic_read_pipeline
@@ -68,8 +73,7 @@ from webui_clipboard_safe import install_clipboard_safe_webui
 from webui_http_safe import install_http_safe_webui
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.54"
-RELEASE_VERSION = "0.10.55"
+RUNTIME_RELEASE_VERSION = runtime_release_version()
 install_automation_rule_workflow = install_washing_rule_machine_workflow
 
 
@@ -301,8 +305,8 @@ install_device_refresh_webui(device_intelligence_webui_module)
 install_device_intelligence_api(application, device_index)
 install_mcp_tool_catalogue(application, application.mcp)
 request_registry = install_cancellable_ask(application)
-application.VERSION = RELEASE_VERSION
-application.app.version = RELEASE_VERSION
+application.VERSION = RUNTIME_RELEASE_VERSION
+application.app.version = RUNTIME_RELEASE_VERSION
 install_automation_recommendation_webui(device_intelligence_webui_module)
 install_clipboard_safe_webui(device_intelligence_webui_module)
 install_http_safe_webui(device_intelligence_webui_module)
