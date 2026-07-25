@@ -448,36 +448,27 @@ class OctopusLiveMeterSummary:
 
     async def _read_family(self) -> tuple[list[dict[str, Any]], list[str], list[str]]:
         client = self.application.mcp
-        groups: list[list[dict[str, Any]]] = []
         tools: list[str] = []
         errors: list[str] = []
-        invalidate = getattr(client, "invalidate", None)
-        if callable(invalidate):
-            try:
-                await invalidate("devices")
-            except Exception as exc:
-                errors.append(f"cache invalidation: {str(exc).strip() or type(exc).__name__}")
 
-        fields = [
-            "id",
-            "name",
-            "label",
-            "room",
-            "currentStates",
-            "attributes",
-            "capabilities",
-            "commands",
-            "disabled",
-            "lastActivity",
-        ]
-
-        # Start with one filtered detailed inventory request. The previous
-        # implementation always performed both summary and detailed reads.
+        # Use one conservative all-device detailed inventory request. It is the
+        # same request shape proven by the power summary route and reliably
+        # supplies device IDs and labels on the live Hubitat gateway.
         desired = {
             "detailed": True,
             "format": "detailed",
-            "fields": fields,
+            "fields": [
+                "id",
+                "name",
+                "label",
+                "room",
+                "attributes",
+                "disabled",
+                "lastActivity",
+            ],
         }
+
+        rows: list[dict[str, Any]] = []
         try:
             args = await client.supported_arguments(
                 "hub_list_devices",
@@ -488,39 +479,26 @@ class OctopusLiveMeterSummary:
                 args,
             )
             tools.append("hub_list_devices")
+
             if result.is_error:
                 errors.append(
                     result.text
-                    or "detailed Octopus inventory failed"
+                    or "Octopus detailed inventory failed"
                 )
             else:
-                filtered = [
+                rows = [
                     row
                     for row in _device_rows(result.data)
                     if _is_octopus_meter_row(row)
                 ]
-                if filtered:
-                    groups.append(filtered)
         except Exception as exc:
             errors.append(
-                "detailed Octopus inventory: "
+                "Octopus detailed inventory: "
                 f"{str(exc).strip() or type(exc).__name__}"
             )
 
-        rows = _merge_rows(groups)
-        if not rows:
-            try:
-                desired = {"detailed": False, "format": "summary", "fields": fields}
-                args = await client.supported_arguments("hub_list_devices", desired)
-                result = await client.call_tool("hub_list_devices", args)
-                tools.append("hub_list_devices")
-                if not result.is_error:
-                    rows = [row for row in _device_rows(result.data) if _is_octopus_meter_row(row)]
-            except Exception as exc:
-                errors.append(f"all-device Octopus fallback: {str(exc).strip() or type(exc).__name__}")
-
-        # Use the complete index only as a discovery fallback. Forcing it
-        # after successful discovery caused additional inventory calls.
+        # Compatibility fallback only when the single inventory response did
+        # not expose the Octopus family.
         if not rows:
             index = getattr(self.application, "device_index", None)
             enriched_devices = getattr(index, "enriched_devices", None)
@@ -529,13 +507,12 @@ class OctopusLiveMeterSummary:
                     indexed = list(
                         await enriched_devices(force=False)
                     )
-                    indexed = [
+                    rows = [
                         row
                         for row in indexed
                         if _is_octopus_meter_row(row)
                     ]
-                    if indexed:
-                        rows = _merge_rows([rows, indexed])
+                    if rows:
                         tools.append("homebrain_device_index")
                 except Exception as exc:
                     errors.append(
@@ -543,13 +520,15 @@ class OctopusLiveMeterSummary:
                         f"{str(exc).strip() or type(exc).__name__}"
                     )
 
-        # Probe only rows whose inventory record did not include a readable
-        # display value. Do not automatically re-read every Octopus sensor.
+        # Inventory records normally expose IDs but not the HTML/display value.
+        # Read only devices whose value is still absent. These detail requests
+        # are broker-cached and can be reused by subsequent period queries.
         missing_values = [
             row
             for row in rows
             if not _has_live_display_value(row)
         ]
+
         enriched = await self._read_by_ids(
             missing_values,
             tools,
@@ -557,6 +536,7 @@ class OctopusLiveMeterSummary:
         )
         if enriched:
             rows = _merge_rows([rows, enriched])
+
         return rows, list(dict.fromkeys(tools)), errors
 
     async def _read_by_ids(

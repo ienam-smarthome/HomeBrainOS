@@ -8,6 +8,7 @@ import request_tracing
 from control_agent_intent import is_control_candidate
 from control_focus_mode import ControlFocusMode, is_control_followup, is_power_summary_query
 from control_focus_power_summary_safe import install_control_focus_power_summary_safe
+from control_focus_octopus_energy import OctopusLiveMeterSummary
 from device_health_fast_route import is_device_health_query
 from fallback_router import _device_id, _label
 from presenter import display_payload, normalise_text, safe_debug
@@ -351,7 +352,7 @@ def install_hybrid_verified_read_routes(application: Any, metric_executor: Any) 
         enabled=False,
         allow_verified_reads=True,
     )
-    octopus_service = OctopusEnergySummary(application)
+    octopus_service = OctopusLiveMeterSummary(application)
     original_ask: AskHandler = application.ask
     original_classifier = request_tracing.classify_query
 
