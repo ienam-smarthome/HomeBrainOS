@@ -11,6 +11,7 @@ from entity_request_policy import parse_entity_request
 from entity_resolution import ResolutionRequest, ResolutionStatus, resolve_devices
 from fallback_router import _device_id, _label
 from mutation_result_policy import enforce_device_mutation_result
+from power_accounting import PowerAccountingService, is_power_accounting_query
 from routing_policy import classify_query
 
 
@@ -593,6 +594,13 @@ async def _read_authoritative_device(application: Any, device_id: str) -> Any:
 
 
 async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str, Any] | None:
+    # Whole-house power accounting is a verified aggregate read, not a
+    # request to resolve a device named from the words after "power".
+    # Handle it before generic device-attribute parsing can interpret
+    # "unaccounted for" as an entity target.
+    if is_power_accounting_query(query):
+        return await PowerAccountingService(application).answer(query)
+
     inventory_request = _is_all_device_inventory_query(query)
     explicit_lookup = _is_explicit_device_lookup(query)
     attribute_request = _requested_device_attribute(query)
