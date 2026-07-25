@@ -83,6 +83,140 @@ async def _classify(application: Any, query: str) -> tuple[str, str | None]:
         return "passthrough", str(exc).strip() or type(exc).__name__
 
 
+def _health_attention_items(answer: Any) -> list[dict[str, Any]]:
+    """Project authoritative device-health output into semantic attention items."""
+
+    if not isinstance(answer, dict):
+        return []
+
+    output: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(
+        device: Any,
+        *,
+        value: Any,
+        detail: Any = None,
+        room: Any = None,
+        tone: str = "danger",
+    ) -> None:
+        title = str(device or "").strip()
+        value_text = str(value or "").strip()
+        if not title or not value_text:
+            return
+
+        key = (title.casefold(), value_text.casefold())
+        if key in seen:
+            return
+        seen.add(key)
+
+        output.append(
+            {
+                "title": title,
+                "device": title,
+                "room": str(room or "").strip() or None,
+                "value": value_text,
+                "subtitle": str(detail or "").strip() or None,
+                "tone": tone,
+            }
+        )
+
+    # Prefer structured lists exposed by the authoritative health response.
+    for key in (
+        "offline_devices",
+        "offline",
+        "stale_devices",
+        "stale",
+        "health_issues",
+    ):
+        values = answer.get(key)
+        if isinstance(values, dict):
+            values = values.get("items") or values.get("devices") or []
+        if not isinstance(values, list):
+            continue
+
+        for item in values:
+            if isinstance(item, str):
+                add(
+                    item,
+                    value="Offline" if "offline" in key else "Stale",
+                )
+                continue
+            if not isinstance(item, dict):
+                continue
+
+            title = (
+                item.get("device")
+                or item.get("title")
+                or item.get("label")
+                or item.get("name")
+            )
+            state = (
+                item.get("value")
+                or item.get("status")
+                or item.get("healthStatus")
+                or item.get("health")
+                or ("Offline" if "offline" in key else "Stale")
+            )
+            detail = (
+                item.get("detail")
+                or item.get("subtitle")
+                or item.get("reason")
+            )
+            add(
+                title,
+                value=state,
+                detail=detail,
+                room=item.get("room"),
+            )
+
+    # The existing device-health route always presents authoritative issues as
+    # display items. This also supports older response schemas.
+    display = answer.get("display")
+    if isinstance(display, dict):
+        for item in display.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+
+            text = " ".join(
+                str(item.get(key) or "")
+                for key in ("title", "value", "subtitle", "tone")
+            ).casefold()
+
+            if "offline" not in text and "stale" not in text:
+                continue
+
+            add(
+                item.get("title") or item.get("device"),
+                value=(
+                    "Offline"
+                    if "offline" in text
+                    else "Stale"
+                ),
+                detail=item.get("subtitle") or item.get("value"),
+                room=item.get("room"),
+                tone=str(item.get("tone") or "danger"),
+            )
+
+    return output
+
+
+async def _authoritative_health_attention(
+    application: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, str | None]:
+    fallback = getattr(application, "fallback", None)
+    reader = getattr(fallback, "_device_health", None)
+    if not callable(reader):
+        return [], None, "Authoritative device-health reader unavailable"
+
+    try:
+        answer = await reader()
+    except Exception as exc:
+        return [], None, str(exc).strip() or type(exc).__name__
+
+    return _health_attention_items(answer), answer, None
+
+
 def _attention_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     data = evidence.get("data") if isinstance(evidence, dict) else {}
     if not isinstance(data, dict):
@@ -260,8 +394,57 @@ def install_semantic_home_query_router(application: Any) -> AskHandler:
                 "technical": safe_debug({"intent": intent, "evidence": evidence, "synthesis_error": synthesis_error, "classification_error": classification_error}),
             }
 
+        # The semantic evidence snapshot covers batteries, contacts and active
+        # devices, but device health has a separate authoritative live reader.
+        # Merge that result before classifying semantic attention so an explicit
+        # healthStatus=offline cannot be lost.
+        health_items, health_answer, health_error = (
+            await _authoritative_health_attention(application)
+        )
+
+        if health_items:
+            evidence = dict(evidence)
+            evidence_data = dict(evidence.get("data") or {})
+            existing_attention = [
+                item
+                for item in list(evidence_data.get("attention") or [])
+                if isinstance(item, dict)
+            ]
+
+            existing_keys = {
+                (
+                    str(item.get("title") or item.get("device") or "")
+                    .strip()
+                    .casefold(),
+                    str(item.get("value") or "")
+                    .strip()
+                    .casefold(),
+                )
+                for item in existing_attention
+            }
+
+            for item in health_items:
+                key = (
+                    str(item.get("title") or item.get("device") or "")
+                    .strip()
+                    .casefold(),
+                    str(item.get("value") or "")
+                    .strip()
+                    .casefold(),
+                )
+                if key not in existing_keys:
+                    existing_attention.append(item)
+                    existing_keys.add(key)
+
+            evidence_data["attention"] = existing_attention
+            evidence["data"] = evidence_data
+
         attention = _attention_evidence(evidence)
-        message, provider, synthesis_error = await _synthesise_attention(application, query, attention)
+        message, provider, synthesis_error = await _synthesise_attention(
+            application,
+            query,
+            attention,
+        )
         return {
             "success": True,
             "route": "ai-semantic-home-attention",
@@ -273,7 +456,16 @@ def install_semantic_home_query_router(application: Any) -> AskHandler:
             "synthesis_error": synthesis_error,
             "classification_error": classification_error,
             "answered_by": "AI semantic intent router using verified HomeBrain attention evidence",
-            "technical": safe_debug({"intent": intent, "attention": attention, "synthesis_error": synthesis_error, "classification_error": classification_error}),
+            "technical": safe_debug(
+                {
+                    "intent": intent,
+                    "attention": attention,
+                    "health_evidence_error": health_error,
+                    "health_evidence": health_answer,
+                    "synthesis_error": synthesis_error,
+                    "classification_error": classification_error,
+                }
+            ),
         }
 
     application.ask = semantic_router_ask
@@ -285,6 +477,8 @@ __all__ = [
     "_attention_complete",
     "_attention_evidence",
     "_attention_fallback",
+    "_authoritative_health_attention",
+    "_health_attention_items",
     "_json_object",
     "install_semantic_home_query_router",
 ]
