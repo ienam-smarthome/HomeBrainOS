@@ -36,23 +36,23 @@ class RejectingClient:
         self.calls = []
 
     async def call_tool(self, name, arguments):
-        self.calls.append(
-            {
-                "name": name,
-                "arguments": dict(arguments),
-            }
-        )
+        self.calls.append((name, dict(arguments)))
         raise AssertionError(
-            "Direct broker call should not be needed when "
-            "the shared capability snapshot contains live values"
+            "Direct MCP calls must not run when the shared summary "
+            "contains valid metric readings"
         )
 
 
-class SnapshotIndex:
+class SummaryIndex:
     def __init__(self, devices):
         self.devices = devices
-        self.calls = []
+        self.summary_calls = []
+        self.capability_calls = []
         self.client = RejectingClient()
+
+    async def summary_result(self, *, force=False):
+        self.summary_calls.append({"force": force})
+        return tool_result(self.devices)
 
     async def capability_result(
         self,
@@ -61,14 +61,16 @@ class SnapshotIndex:
         detailed=False,
         force=False,
     ):
-        self.calls.append(
+        self.capability_calls.append(
             {
                 "capability": capability,
                 "detailed": detailed,
                 "force": force,
             }
         )
-        return tool_result(self.devices)
+        raise AssertionError(
+            "Capability fallback must not run when summary values exist"
+        )
 
 
 def router_for(index):
@@ -79,28 +81,27 @@ def router_for(index):
     )
 
 
-def test_live_metric_uses_one_shared_capability_snapshot():
-    index = SnapshotIndex(
+def test_power_read_uses_one_shared_summary_snapshot():
+    index = SummaryIndex(
         [
             {
                 "id": "1",
                 "label": "Freezer",
                 "currentStates": {
-                    "power": {
-                        "value": 76,
-                        "unit": "W",
-                    }
+                    "power": {"value": 76, "unit": "W"}
                 },
             },
             {
                 "id": "2",
                 "label": "Computer",
                 "currentStates": {
-                    "power": {
-                        "value": 28,
-                        "unit": "W",
-                    }
+                    "power": {"value": 28, "unit": "W"}
                 },
+            },
+            {
+                "id": "3",
+                "label": "Motion Sensor",
+                "currentStates": {"motion": "inactive"},
             },
         ]
     )
@@ -114,31 +115,22 @@ def test_live_metric_uses_one_shared_capability_snapshot():
     )
 
     assert result.is_error is False
-    assert index.calls == [
-        {
-            "capability": "Power Meter",
-            "detailed": False,
-            "force": False,
-        }
-    ]
+    assert index.summary_calls == [{"force": False}]
+    assert index.capability_calls == []
     assert index.client.calls == []
     assert result.data["evidenceSources"] == [
-        "capability-snapshot-currentStates"
+        "shared-summary-currentStates"
     ]
-    assert len(result.data["devices"]) == 2
 
 
-def test_repeated_live_metric_reads_stay_on_snapshot_path():
-    index = SnapshotIndex(
+def test_repeated_power_reads_remain_on_shared_summary_path():
+    index = SummaryIndex(
         [
             {
                 "id": "1",
                 "label": "Power Device",
                 "currentStates": {
-                    "power": {
-                        "value": 12.5,
-                        "unit": "W",
-                    }
+                    "power": {"value": 12.5, "unit": "W"}
                 },
             }
         ]
@@ -155,19 +147,15 @@ def test_repeated_live_metric_reads_stay_on_snapshot_path():
         executor._fresh_capability_result(_SPECS["power"])
     )
 
-    assert len(index.calls) == 2
-    assert all(
-        call == {
-            "capability": "Power Meter",
-            "detailed": False,
-            "force": False,
-        }
-        for call in index.calls
-    )
+    assert index.summary_calls == [
+        {"force": False},
+        {"force": False},
+    ]
+    assert index.capability_calls == []
     assert index.client.calls == []
 
 
-def test_snapshot_path_precedes_direct_capability_fallback():
+def test_shared_summary_precedes_all_fallback_reads():
     source = (
         APP_DIR / "semantic_metric_comparison_live.py"
     ).read_text(encoding="utf-8")
@@ -180,14 +168,13 @@ def test_snapshot_path_precedes_direct_capability_fallback():
         1,
     )[0]
 
-    snapshot_position = method.find(
-        "await index.capability_result("
+    summary_position = method.find(
+        "await index.summary_result(force=False)"
     )
-    direct_position = method.find(
+    fallback_position = method.find(
         "await self._collect_capability("
     )
 
-    assert snapshot_position >= 0
-    assert direct_position > snapshot_position
-    assert "detailed=False" in method
-    assert "force=False" in method
+    assert summary_position >= 0
+    assert fallback_position > summary_position
+    assert "shared-summary-currentStates" in method

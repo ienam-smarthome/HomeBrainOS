@@ -137,25 +137,22 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
         sources: list[str] = []
         collected: list[list[dict[str, Any]]] = []
 
-        # Primary path: use the shared capability snapshot. This provides
-        # compact live currentStates and allows repeated metric requests to
-        # reuse the same authoritative evidence within the configured TTL.
+        # Primary path: use the shared compact all-device snapshot. The
+        # Hubitat gateway reliably exposes live currentStates in this response,
+        # while capability-filtered responses can return metadata without the
+        # actual values. Metric extraction and filtering are performed locally.
         if index is not None:
             try:
-                capability = await index.capability_result(
-                    spec.capability,
-                    detailed=False,
-                    force=False,
-                )
-                if capability.is_error:
+                summary = await index.summary_result(force=False)
+                if summary.is_error:
                     errors.append(
-                        capability.text
-                        or f"{spec.capability} capability snapshot failed"
+                        summary.text
+                        or "shared device summary snapshot failed"
                     )
                 else:
-                    rows = self.router._device_rows(capability.data)
+                    rows = self.router._device_rows(summary.data)
                     if rows:
-                        sources.append("capability-snapshot-currentStates")
+                        sources.append("shared-summary-currentStates")
                         collected.append(rows)
                         merged = _merge_rows(*collected)
                         if self._contains_measurement(merged, spec):
@@ -167,7 +164,7 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
                             )
             except Exception as exc:
                 errors.append(
-                    "capability snapshot: "
+                    "shared device summary snapshot: "
                     + (str(exc).strip() or type(exc).__name__)
                 )
 
