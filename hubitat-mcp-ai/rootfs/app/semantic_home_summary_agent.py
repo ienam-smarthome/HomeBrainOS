@@ -13,6 +13,19 @@ _HOME_SUMMARY_RE = re.compile(
     re.IGNORECASE,
 )
 _STATES_READ_RE = re.compile(r"\s*\([^)]*states? read[^)]*\)", re.IGNORECASE)
+_NUMBER_WORDS = {
+    0: "zero",
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+}
 
 
 def _names(items: list[dict[str, Any]]) -> str:
@@ -29,6 +42,50 @@ def _count_phrase(count: int, singular: str, plural: str | None = None) -> str:
     return f"{count} {singular if count == 1 else (plural or singular + 's')}"
 
 
+def _item_names(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    return [
+        str(item.get("device") or item.get("title") or "").strip()
+        for item in items
+        if isinstance(item, dict) and (item.get("device") or item.get("title"))
+    ]
+
+
+def _fact_manifest(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    data = evidence.get("data") if isinstance(evidence, dict) else {}
+    if not isinstance(data, dict):
+        return []
+
+    manifest: list[dict[str, Any]] = []
+    mode = str(data.get("mode") or "").strip()
+    if mode:
+        manifest.append({"domain": "mode", "value": mode, "required": True})
+
+    for domain, count_key, items_key in (
+        ("motion", "active_count", "active"),
+        ("contacts", "open_count", "open"),
+        ("lights", "on_count", "on"),
+        ("low_batteries", "count", "items"),
+    ):
+        block = data.get(domain) if isinstance(data.get(domain), dict) else {}
+        count = int(block.get(count_key) or 0)
+        names = _item_names(block.get(items_key))
+        manifest.append(
+            {
+                "domain": domain,
+                "count": count,
+                "names": names,
+                "required": domain == "motion" or count > 0,
+            }
+        )
+
+    heating = _item_names(data.get("heating"))
+    if heating:
+        manifest.append({"domain": "heating", "names": heating, "required": True})
+    return manifest
+
+
 def _fallback(evidence: dict[str, Any]) -> str:
     data = evidence.get("data") if isinstance(evidence, dict) else {}
     if not isinstance(data, dict):
@@ -37,7 +94,7 @@ def _fallback(evidence: dict[str, Any]) -> str:
     sentences: list[str] = []
     mode = str(data.get("mode") or "").strip()
     if mode:
-        sentences.append(f"The home is currently in {mode} mode.")
+        sentences.append(f"It's {mode} mode.")
 
     motion = data.get("motion") if isinstance(data.get("motion"), dict) else {}
     motion_count = int(motion.get("active_count") or 0)
@@ -72,7 +129,7 @@ def _fallback(evidence: dict[str, Any]) -> str:
         items = list(low.get("items") or [])
         detail = ", ".join(
             f"{item.get('device')} at {float(item.get('value') or 0):g}%"
-            for item in items[:3]
+            for item in items[:4]
             if item.get("device")
         )
         sentences.append(
@@ -82,7 +139,7 @@ def _fallback(evidence: dict[str, Any]) -> str:
 
     heating = list(data.get("heating") or [])
     if heating:
-        sentences.append(f"Heating activity is currently reported by {_names(heating)}.")
+        sentences.append(f"Heating is active on {_names(heating)}.")
 
     return " ".join(sentences[:5])
 
@@ -97,45 +154,45 @@ def _public_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "contacts": data.get("contacts"),
         "lights": data.get("lights"),
         "heating": data.get("heating"),
-        "attention": data.get("attention"),
-        "presence": data.get("presence"),
         "low_batteries": data.get("low_batteries"),
-        "climate": data.get("climate"),
-        "required_facts": evidence.get("required_facts"),
+        "fact_manifest": _fact_manifest(evidence),
     }
 
 
 def _normalise_answer(text: str) -> str:
     text = _STATES_READ_RE.sub("", str(text or ""))
     text = re.sub(r"^\s*(?:home summary|summary)\s*[:\-]?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bactive[- ]motion (?:devices|sensors)\b", "motion sensors", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bmotion devices\b", "motion sensors", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bplease note that\b", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
-def _contains_required_facts(text: str, evidence: dict[str, Any]) -> bool:
-    data = evidence.get("data") if isinstance(evidence, dict) else {}
-    if not isinstance(data, dict):
-        return False
+def _count_is_present(text: str, count: int) -> bool:
     lowered = text.lower()
+    if re.search(rf"(?<!\d){count}(?!\d)", lowered):
+        return True
+    word = _NUMBER_WORDS.get(count)
+    return bool(word and re.search(rf"\b{re.escape(word)}\b", lowered))
 
-    mode = str(data.get("mode") or "").strip()
-    if mode and mode.lower() not in lowered:
-        return False
 
-    motion = data.get("motion") if isinstance(data.get("motion"), dict) else {}
-    motion_count = int(motion.get("active_count") or 0)
-    if str(motion_count) not in lowered:
-        return False
-    for item in list(motion.get("active") or []):
-        name = str(item.get("device") or "").strip()
-        if name and name.lower() not in lowered:
+def _contains_required_facts(text: str, evidence: dict[str, Any]) -> bool:
+    lowered = text.lower()
+    for fact in _fact_manifest(evidence):
+        if not fact.get("required"):
+            continue
+        domain = str(fact.get("domain") or "")
+        if domain == "mode":
+            if str(fact.get("value") or "").lower() not in lowered:
+                return False
+            continue
+        count = fact.get("count")
+        if count is not None and not _count_is_present(text, int(count)):
             return False
-
-    low = data.get("low_batteries") if isinstance(data.get("low_batteries"), dict) else {}
-    low_count = int(low.get("count") or 0)
-    if low_count and not any(term in lowered for term in ("low battery", "low batteries", "battery")):
-        return False
-
+        for name in list(fact.get("names") or []):
+            if str(name).lower() not in lowered:
+                return False
     return True
 
 
@@ -148,15 +205,14 @@ async def _synthesise(application: Any, query: str, evidence: dict[str, Any]) ->
     if not callable(post) or not model:
         return fallback, None, "Synthesis model unavailable"
 
-    public_evidence = _public_evidence(evidence)
     system = (
         "/no_think\n"
         "You are HomeBrain. Write a natural, concise household update in 2 to 4 sentences using only the verified JSON. "
-        "Sound conversational, like a helpful smart-home assistant, not like a report or log. "
-        "Mention the current mode, the exact active-motion count and every active-motion device. "
-        "Mention open contacts, lights on, heating activity and low batteries when those verified lists or counts are non-empty. "
-        "Prioritise anything needing attention. Do not mention raw coverage, selected-device counts, states read, tool names, JSON, or technical details. "
-        "Do not invent, calculate, diagnose, repeat a heading, or say that evidence was gathered."
+        "Sound conversational, not like a report. Always say 'motion sensors', never 'active-motion devices'. "
+        "Include every fact marked required in fact_manifest, preserving exact counts and exact device names. "
+        "Mention non-empty open contacts, lights on, heating and low batteries. Prioritise anything needing attention. "
+        "Do not mention coverage, states read, tool names, JSON, technical details or evidence gathering. "
+        "Do not invent, calculate, diagnose, repeat a heading or add unverified context."
     )
     try:
         response = await post(
@@ -169,14 +225,14 @@ async def _synthesise(application: Any, query: str, evidence: dict[str, Any]) ->
                         "role": "user",
                         "content": (
                             f"Question: {query.strip()}\n"
-                            f"Verified household facts: {json.dumps(public_evidence, ensure_ascii=False, separators=(',', ':'))}"
+                            f"Verified household facts: {json.dumps(_public_evidence(evidence), ensure_ascii=False, separators=(',', ':'))}"
                         ),
                     },
                 ],
                 "stream": False,
                 "think": False,
                 "keep_alive": str(getattr(agent, "keep_alive", "30m") or "30m"),
-                "options": {"num_ctx": 4096, "num_predict": 280, "temperature": 0.15},
+                "options": {"num_ctx": 4096, "num_predict": 280, "temperature": 0.1},
             },
             timeout=25.0,
         )
@@ -213,12 +269,19 @@ def install_semantic_home_summary_agent(application: Any, snapshot_service: Any)
             "message": message,
             "semantic_evidence": evidence.get("data"),
             "required_facts": evidence.get("required_facts"),
+            "fact_manifest": _fact_manifest(evidence),
             "tools_used": list(evidence.get("tools_used") or []),
             "model": str(getattr(application.ollama, "cloud_model", "") or getattr(application.ollama, "model", "") or "") or None,
             "provider": provider,
             "synthesis_error": synthesis_error,
             "answered_by": "AI using semantic HomeBrain evidence tools",
-            "technical": safe_debug({"evidence": evidence, "synthesis_error": synthesis_error}),
+            "technical": safe_debug(
+                {
+                    "evidence": evidence,
+                    "fact_manifest": _fact_manifest(evidence),
+                    "synthesis_error": synthesis_error,
+                }
+            ),
         }
 
     application.ask = semantic_home_ask
@@ -226,4 +289,4 @@ def install_semantic_home_summary_agent(application: Any, snapshot_service: Any)
     return original_ask
 
 
-__all__ = ["install_semantic_home_summary_agent"]
+__all__ = ["_fact_manifest", "install_semantic_home_summary_agent"]
