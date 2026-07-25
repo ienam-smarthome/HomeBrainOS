@@ -337,57 +337,126 @@ def _individual_power_readings(
     )
 
 
-def _reading_quality(
-    meter_row: dict[str, Any] | None,
+def _timestamp_summary(
     readings: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    timestamps: list[tuple[str, datetime]] = []
+    timestamps = [
+        parsed
+        for item in readings
+        if (
+            parsed := _parse_activity(
+                item.get("last_activity")
+            )
+        ) is not None
+    ]
 
-    if meter_row is not None:
-        parsed = _parse_activity(_activity_text(meter_row))
-        if parsed is not None:
-            timestamps.append(("whole_house_meter", parsed))
-
-    for item in readings:
-        parsed = _parse_activity(item.get("last_activity"))
-        if parsed is not None:
-            timestamps.append((str(item.get("label") or "device"), parsed))
-
-    if len(timestamps) < 2:
+    if not timestamps:
         return {
-            "quality": "unknown",
-            "timestamp_count": len(timestamps),
+            "timestamp_count": 0,
             "maximum_skew_seconds": None,
-            "newest_activity": (
-                timestamps[0][1].isoformat()
-                if timestamps
-                else None
-            ),
-            "oldest_activity": (
-                timestamps[0][1].isoformat()
-                if timestamps
-                else None
-            ),
+            "newest_activity": None,
+            "oldest_activity": None,
         }
 
-    values = [item[1] for item in timestamps]
-    newest = max(values)
-    oldest = min(values)
-    skew = max(0.0, (newest - oldest).total_seconds())
+    newest = max(timestamps)
+    oldest = min(timestamps)
 
-    if skew <= 30:
-        quality = "good"
-    elif skew <= 120:
-        quality = "mixed"
+    return {
+        "timestamp_count": len(timestamps),
+        "maximum_skew_seconds": max(
+            0.0,
+            (newest - oldest).total_seconds(),
+        ),
+        "newest_activity": newest.isoformat(),
+        "oldest_activity": oldest.isoformat(),
+    }
+
+
+def _reading_quality(
+    meter_row: dict[str, Any] | None,
+    active_readings: list[dict[str, Any]],
+    all_readings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    meter_activity = (
+        _parse_activity(_activity_text(meter_row))
+        if meter_row is not None
+        else None
+    )
+
+    active_summary = _timestamp_summary(active_readings)
+    all_summary = _timestamp_summary(all_readings)
+
+    active_skew = active_summary[
+        "maximum_skew_seconds"
+    ]
+
+    if meter_activity is None:
+        quality = "unknown"
+        reason = "whole-house meter timestamp unavailable"
+        comparison_skew = None
+    elif not active_readings:
+        quality = "unknown"
+        reason = "no active monitored power readings"
+        comparison_skew = None
     else:
-        quality = "stale"
+        active_times = [
+            parsed
+            for item in active_readings
+            if (
+                parsed := _parse_activity(
+                    item.get("last_activity")
+                )
+            ) is not None
+        ]
+
+        if not active_times:
+            quality = "unknown"
+            reason = "active device timestamps unavailable"
+            comparison_skew = None
+        else:
+            comparison_skew = max(
+                abs(
+                    (
+                        meter_activity - activity
+                    ).total_seconds()
+                )
+                for activity in active_times
+            )
+
+            if comparison_skew <= 30:
+                quality = "good"
+            elif comparison_skew <= 120:
+                quality = "mixed"
+            else:
+                quality = "stale"
+
+            reason = None
 
     return {
         "quality": quality,
-        "timestamp_count": len(timestamps),
-        "maximum_skew_seconds": skew,
-        "newest_activity": newest.isoformat(),
-        "oldest_activity": oldest.isoformat(),
+        "reason": reason,
+        "meter_activity": (
+            meter_activity.isoformat()
+            if meter_activity is not None
+            else None
+        ),
+        "comparison_skew_seconds": comparison_skew,
+        "active_reading_timestamp_count": active_summary[
+            "timestamp_count"
+        ],
+        "active_reading_skew_seconds": active_skew,
+        "all_reading_timestamp_count": all_summary[
+            "timestamp_count"
+        ],
+        "all_reading_skew_seconds": all_summary[
+            "maximum_skew_seconds"
+        ],
+        "newest_active_activity": active_summary[
+            "newest_activity"
+        ],
+        "oldest_active_activity": active_summary[
+            "oldest_activity"
+        ],
     }
 
 
@@ -447,7 +516,11 @@ class PowerAccountingService:
             if float(item["value"]) <= 0.05
         ]
         monitored_w = sum(float(item["value"]) for item in active)
-        reading_quality = _reading_quality(meter_row, readings)
+        reading_quality = _reading_quality(
+            meter_row,
+            active,
+            readings,
+        )
 
         if whole_house_w is None:
             message = (
@@ -493,18 +566,30 @@ class PowerAccountingService:
         quality_name = str(
             reading_quality.get("quality") or "unknown"
         ).title()
-        skew_seconds = reading_quality.get(
-            "maximum_skew_seconds"
+        comparison_skew = reading_quality.get(
+            "comparison_skew_seconds"
         )
-        if skew_seconds is None:
+        active_skew = reading_quality.get(
+            "active_reading_skew_seconds"
+        )
+        reason = reading_quality.get("reason")
+
+        if comparison_skew is not None:
             message += (
-                " Reading timestamp quality is unknown because the "
-                "gateway did not expose enough activity timestamps."
+                f" Comparison timestamp quality is {quality_name} "
+                f"with a maximum meter-to-device skew of "
+                f"{comparison_skew:.0f} seconds."
             )
-        else:
+        elif reason:
             message += (
-                f" Reading timestamp quality is {quality_name} "
-                f"with a maximum skew of {skew_seconds:.0f} seconds."
+                f" Comparison timestamp quality is unknown: "
+                f"{reason}."
+            )
+
+        if active_skew is not None:
+            message += (
+                f" Active monitored readings span "
+                f"{active_skew:.0f} seconds."
             )
 
         top = active[:5]

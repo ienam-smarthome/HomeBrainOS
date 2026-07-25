@@ -390,8 +390,12 @@ def test_duplicate_octopus_meter_prefers_newest_exact_label():
     assert result["whole_house_meter"]["id"] == "new"
     assert result["reading_quality"]["quality"] == "good"
     assert (
-        result["reading_quality"]["maximum_skew_seconds"]
+        result["reading_quality"]["comparison_skew_seconds"]
         == 10
+    )
+    assert (
+        result["reading_quality"]["active_reading_skew_seconds"]
+        == 0
     )
 
 
@@ -475,3 +479,167 @@ def test_nested_sparse_duplicate_does_not_replace_complete_device():
 
     technical = json.loads(result["technical"])
     assert technical["extracted_device_row_count"] == 2
+
+def test_idle_stale_reading_does_not_define_comparison_quality():
+    rows = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "attributes": {
+                    "value": {
+                        "currentValue": "367 W",
+                    }
+                },
+            },
+            {
+                "id": "tv",
+                "label": "TV",
+                "lastActivity": "2026-07-25T23:00:30+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 87,
+                        "unit": "W",
+                    }
+                },
+            },
+            {
+                "id": "fridge",
+                "label": "Fridge",
+                "lastActivity": "2026-07-25T22:59:01+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 79,
+                        "unit": "W",
+                    }
+                },
+            },
+            {
+                "id": "idle",
+                "label": "Fan Switch",
+                "lastActivity": "2026-07-25T22:29:59+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 0,
+                        "unit": "W",
+                    }
+                },
+            },
+        ]
+    }
+
+    class TimestampMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=rows,
+                is_error=False,
+            )
+
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=TimestampMCP())
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    quality = result["reading_quality"]
+
+    assert quality["quality"] == "unknown"
+    assert quality["reason"] == (
+        "whole-house meter timestamp unavailable"
+    )
+    assert quality["comparison_skew_seconds"] is None
+
+    assert quality["active_reading_timestamp_count"] == 2
+    assert quality["active_reading_skew_seconds"] == 89
+
+    assert quality["all_reading_timestamp_count"] == 3
+    assert quality["all_reading_skew_seconds"] == 1831
+
+    assert (
+        "Comparison timestamp quality is unknown: "
+        "whole-house meter timestamp unavailable."
+        in result["message"]
+    )
+    assert "Active monitored readings span 89 seconds." in result["message"]
+
+
+def test_meter_timestamp_controls_comparison_quality():
+    rows = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "lastActivity": "2026-07-25T23:01:00+01:00",
+                "attributes": {
+                    "value": {
+                        "currentValue": "229 W",
+                    }
+                },
+            },
+            {
+                "id": "load-one",
+                "label": "Fridge",
+                "lastActivity": "2026-07-25T23:00:50+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 86,
+                        "unit": "W",
+                    }
+                },
+            },
+            {
+                "id": "load-two",
+                "label": "Computer",
+                "lastActivity": "2026-07-25T23:00:40+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 40,
+                        "unit": "W",
+                    }
+                },
+            },
+        ]
+    }
+
+    class TimestampMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=rows,
+                is_error=False,
+            )
+
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=TimestampMCP())
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    quality = result["reading_quality"]
+
+    assert quality["quality"] == "good"
+    assert quality["reason"] is None
+    assert quality["comparison_skew_seconds"] == 20
+    assert quality["active_reading_skew_seconds"] == 10
+    assert (
+        "Comparison timestamp quality is Good "
+        "with a maximum meter-to-device skew of 20 seconds."
+        in result["message"]
+    )
