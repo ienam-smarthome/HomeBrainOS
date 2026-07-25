@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, field
@@ -212,7 +212,9 @@ def _score_device(device: dict[str, Any], request: ResolutionRequest) -> Resolve
     reasons: list[str] = []
     score = 0.0
 
-    if target_c and target_c == label_c:
+    exact_label_match = bool(target_c and target_c == label_c)
+
+    if exact_label_match:
         score += 1.0
         reasons.append("exact label")
     elif target_n and target_n == label_n:
@@ -224,11 +226,27 @@ def _score_device(device: dict[str, Any], request: ResolutionRequest) -> Resolve
 
     target_tokens = _tokens(target_n)
     label_tokens = _tokens(label_n)
+
+    room_tokens = _tokens(requested_room or room_n)
+    descriptive_target_tokens = target_tokens - room_tokens
+
     if target_tokens and label_tokens:
         overlap = len(target_tokens & label_tokens) / max(len(target_tokens), 1)
         if overlap:
             score += 0.48 * overlap
             reasons.append(f"token overlap {overlap:.2f}")
+
+    # A room match alone must not make unrelated device types ambiguous.
+    # For example, "Bedroom 2 Meter" must not resolve or clarify between
+    # "Bedroom 2 Light" and "Bedroom 2 FP1" merely because all share the
+    # same room tokens.
+    if (
+        descriptive_target_tokens
+        and not exact_label_match
+        and not (descriptive_target_tokens & label_tokens)
+    ):
+        score -= 0.65
+        reasons.append("missing descriptive target token")
 
     if target_c and label_c:
         similarity = SequenceMatcher(None, target_c, label_c).ratio()

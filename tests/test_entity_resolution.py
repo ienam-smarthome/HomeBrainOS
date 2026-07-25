@@ -157,3 +157,69 @@ def test_spoken_and_numeric_ordinals_are_normalised():
     assert infer_ordinal("living room second light") == 2
     assert infer_ordinal("living room light 2") == 2
     assert infer_ordinal("bedroom three light") == 3
+
+
+def test_room_words_do_not_make_unrelated_device_types_ambiguous():
+    devices = [
+        device(
+            "1",
+            "Bedroom 2 Light",
+            "Bedroom 2",
+            capabilities=["Switch", "Switch Level"],
+        ),
+        device(
+            "2",
+            "Bedroom 2 FP1",
+            "Bedroom 2",
+            capabilities=["Motion Sensor"],
+            category="sensor",
+        ),
+    ]
+
+    result = resolve_devices(
+        devices,
+        ResolutionRequest(
+            target_phrase="Bedroom 2 Meter",
+            room="Bedroom 2",
+        ),
+    )
+
+    assert result.status is ResolutionStatus.NOT_FOUND
+    assert result.targets == ()
+
+
+def test_exact_meter_label_wins_over_other_devices_in_same_room():
+    devices = [
+        device(
+            "1",
+            "Bedroom 2 Light",
+            "Bedroom 2",
+            capabilities=["Switch"],
+        ),
+        device(
+            "2",
+            "Bedroom 2 FP1",
+            "Bedroom 2",
+            capabilities=["Motion Sensor"],
+        ),
+        device(
+            "3",
+            "Bedroom 2 Meter",
+            "Bedroom 2",
+            capabilities=["Battery", "Temperature Measurement"],
+            category="sensor",
+        ),
+    ]
+
+    result = resolve_devices(
+        devices,
+        ResolutionRequest(
+            target_phrase="Bedroom 2 Meter",
+            room="Bedroom 2",
+        ),
+    )
+
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.targets[0].device_id == "3"
+    assert result.targets[0].label == "Bedroom 2 Meter"
+    assert "exact label" in result.targets[0].match_reasons
