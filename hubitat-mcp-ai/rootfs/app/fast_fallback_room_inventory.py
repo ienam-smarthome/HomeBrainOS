@@ -37,6 +37,51 @@ _ROOM_DEVICE_PATTERNS = (
     ),
 )
 
+def _format_number(value: Any) -> str:
+    try:
+        number = float(str(value).replace("%", "").strip())
+    except Exception:
+        return str(value).strip()
+    return f"{number:g}"
+
+
+def _room_device_states(attrs: dict[str, Any], primary_state: str) -> list[str]:
+    """Return useful compact live states without discarding secondary metrics."""
+
+    states: list[str] = []
+    temperature = attrs.get("temperature")
+    humidity = attrs.get("humidity")
+
+    if temperature not in (None, ""):
+        states.append(f"{_format_number(temperature)}°C")
+
+    if humidity not in (None, ""):
+        states.append(f"{_format_number(humidity)}% humidity")
+
+    for attribute, labels in (
+        ("switch", {"on": "On", "off": "Off"}),
+        ("motion", {"active": "Active", "inactive": "Inactive"}),
+        ("contact", {"open": "Open", "closed": "Closed"}),
+        ("presence", {"present": "Present", "not present": "Not present"}),
+    ):
+        value = _normalise(attrs.get(attribute))
+        formatted = labels.get(value)
+        if formatted and _normalise(formatted) not in {
+            _normalise(item) for item in states
+        }:
+            states.append(formatted)
+            break
+
+    battery = attrs.get("battery")
+    if battery not in (None, "") and not states:
+        states.append(f"{_format_number(battery)}% battery")
+
+    if not states and primary_state:
+        states.append(str(primary_state))
+
+    return states
+
+
 _RESERVED_SHORTHAND = {
     "all devices",
     "devices",
@@ -130,7 +175,9 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
         for item in devices:
             attrs = live_attributes(item)
             state = self._primary_state(attrs)
-            normalised_state = _normalise(state)
+            presented_states = _room_device_states(attrs, state)
+            state = ", ".join(presented_states)
+            normalised_state = _normalise(self._primary_state(attrs))
             if _normalise(attrs.get("switch")) == "on":
                 on_count += 1
             if normalised_state in {"active", "open", "present", "unlocked"}:
