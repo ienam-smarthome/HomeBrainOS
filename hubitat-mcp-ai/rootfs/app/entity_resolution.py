@@ -140,7 +140,16 @@ def _tokens(value: Any) -> set[str]:
 
 
 def _device_label(device: dict[str, Any]) -> str:
-    return str(device.get("label") or device.get("name") or device.get("id") or "Unknown device")
+    return str(
+        device.get("label")
+        or device.get("displayName")
+        or device.get("deviceLabel")
+        or device.get("name")
+        or device.get("id")
+        or device.get("deviceId")
+        or device.get("device_id")
+        or "Unknown device"
+    )
 
 
 def _device_room(device: dict[str, Any]) -> str | None:
@@ -301,7 +310,12 @@ def _score_device(device: dict[str, Any], request: ResolutionRequest) -> Resolve
         score = 0.0
 
     return ResolvedTarget(
-        device_id=str(device.get("id") or ""),
+        device_id=str(
+            device.get("id")
+            or device.get("deviceId")
+            or device.get("device_id")
+            or ""
+        ),
         label=label,
         room=room,
         score=round(max(0.0, min(score, 1.5)), 4),
@@ -314,7 +328,12 @@ def resolve_devices(devices: Iterable[dict[str, Any]], request: ResolutionReques
     candidates = [
         _score_device(device, request)
         for device in devices
-        if isinstance(device, dict) and device.get("id") not in (None, "")
+        if isinstance(device, dict)
+        and (
+            device.get("id")
+            or device.get("deviceId")
+            or device.get("device_id")
+        ) not in (None, "")
     ]
     candidates.sort(key=lambda item: (-item.score, item.label.lower(), item.device_id))
     candidates = candidates[: max(1, request.limit)]

@@ -489,3 +489,74 @@ def test_exact_ordinal_meter_name_resolves_without_clarification():
     assert answer["value"] == 81
     assert mcp.read_ids == ["bedroom-2"]
 
+
+def test_live_reader_infers_room_prefix_before_device_resolution():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "trv",
+                "label": "Bedroom 2 TRV",
+                "room": "Bedroom 2",
+                "currentStates": {},
+            },
+            {
+                "id": "mqtt",
+                "label": "Bedroom2 (MQTT)",
+                "room": "Bedroom 2",
+                "currentStates": {},
+            },
+        ],
+        {
+            "trv": {"battery": 71},
+            "mqtt": {"battery": 64},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the battery level of Bedroom 2 Meter?",
+        )
+    )
+
+    assert answer["success"] is False
+    assert answer["intent"] == "device-attribute-read"
+    assert 'could not find a device matching "Bedroom 2 Meter"' in answer["message"]
+    assert answer["entity_resolution"]["status"] == "not_found"
+    assert mcp.read_ids == []
+
+
+def test_live_reader_resolves_exact_meter_after_room_prefix_inference():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "trv",
+                "label": "Bedroom 2 TRV",
+                "room": "Bedroom 2",
+                "currentStates": {},
+            },
+            {
+                "id": "meter",
+                "label": "Bedroom 2 Meter",
+                "room": "Bedroom 2",
+                "currentStates": {},
+            },
+        ],
+        {
+            "trv": {"battery": 71},
+            "meter": {"battery": 82},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the battery level of Bedroom 2 Meter?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["device_id"] == "meter"
+    assert answer["value"] == 82
+    assert mcp.read_ids == ["meter"]
+

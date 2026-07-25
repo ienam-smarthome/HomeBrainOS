@@ -292,3 +292,39 @@ def test_exact_meter_still_wins_with_trv_and_mqtt_in_same_room():
 
     assert result.status is ResolutionStatus.RESOLVED
     assert result.targets[0].device_id == "meter"
+
+
+def test_sparse_mcp_device_aliases_resolve_named_device():
+    devices = [
+        {
+            "deviceId": "5313",
+            "displayName": "Freezer (MQTT)",
+        }
+    ]
+
+    result = resolve_devices(
+        devices,
+        ResolutionRequest(target_phrase="freezer"),
+    )
+
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.targets[0].device_id == "5313"
+    assert result.targets[0].label == "Freezer (MQTT)"
+
+
+def test_sparse_mcp_device_label_alias_is_supported():
+    devices = [
+        {
+            "deviceId": "7398",
+            "deviceLabel": "Bathroom meter",
+        }
+    ]
+
+    result = resolve_devices(
+        devices,
+        ResolutionRequest(target_phrase="BathroomMeter"),
+    )
+
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.targets[0].device_id == "7398"
+    assert result.targets[0].label == "Bathroom meter"
