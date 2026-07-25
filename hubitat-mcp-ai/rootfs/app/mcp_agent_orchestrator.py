@@ -209,7 +209,12 @@ def _attribute_target_phrase(query: str) -> str:
     q = str(query or "").strip().strip(" .!?")
     match = re.search(r"\b(?:from|of)\s+(.+)$", q, re.IGNORECASE)
     if match:
-        return match.group(1).strip()
+        return re.sub(
+            r"^(?:the|a|an)\s+",
+            "",
+            match.group(1),
+            flags=re.IGNORECASE,
+        ).strip()
     patterns = (
         r"^what\s+(?:temperature|humidity|battery(?: level)?|power|energy|lux|illuminance)\s+is\s+(.+)$",
         r"^how\s+much\s+(?:power|energy)\s+(?:is|does)\s+(.+?)(?:\s+(?:using|use|reporting|report))?$",
@@ -691,14 +696,26 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         }
 
     attribute, unit = attribute_request
+    selected_score = _lookup_record_score(device, target_phrase, attribute)
+    exact_device_match = selected_score[0] > 0
+
     value = None
     devices_probed = 0
-    for candidate in candidates[:3]:
-        read_result = await _read_authoritative_device(application, str(_device_id(candidate) or ""))
+    probe_candidates = [device] if exact_device_match else candidates[:3]
+
+    for candidate in probe_candidates:
+        read_result = await _read_authoritative_device(
+            application,
+            str(_device_id(candidate) or ""),
+        )
         read_success = not bool(getattr(read_result, "is_error", False))
         tools_used.append({"name": "hub_get_device", "success": read_success})
         devices_probed += 1
-        candidate_value = _extract_attribute_value(_tool_data(read_result), attribute)
+
+        candidate_value = _extract_attribute_value(
+            _tool_data(read_result),
+            attribute,
+        )
         if candidate_value not in (None, ""):
             device = candidate
             value = candidate_value
@@ -852,7 +869,10 @@ def _rank_lookup_devices(
     return [
         item
         for item in ranked
-        if _lookup_record_score(item, target_phrase, attribute)[1] > 0
+        if (
+            _lookup_record_score(item, target_phrase, attribute)[0] > 0
+            or _lookup_record_score(item, target_phrase, attribute)[1] > 0
+        )
     ]
 
 
