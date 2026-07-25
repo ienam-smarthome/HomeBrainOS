@@ -16,8 +16,8 @@ from release_version import (  # noqa: E402
 
 
 def test_shared_release_constants_match_current_addon_release():
-    assert PREVIOUS_RELEASE_VERSION == "0.10.85"
-    assert RELEASE_VERSION == "0.10.86"
+    assert PREVIOUS_RELEASE_VERSION == "0.10.86"
+    assert RELEASE_VERSION == "0.10.87"
 
 
 def test_runtime_release_version_uses_baked_value_when_present(tmp_path):
