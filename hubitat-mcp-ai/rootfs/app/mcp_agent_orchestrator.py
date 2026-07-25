@@ -668,6 +668,32 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
     )
     target_request = parse_entity_request(target_phrase)
 
+    # Phrases such as "Bedroom 2 Meter" contain a room prefix but do not use
+    # explicit grammar such as "meter in Bedroom 2". Infer that room from the
+    # authoritative inventory before confidence scoring so shared room words
+    # cannot make unrelated devices appear ambiguous.
+    inferred_room = target_request.room
+    if not inferred_room:
+        normalised_phrase = _normalise(target_phrase)
+        inventory_rooms = sorted(
+            {
+                _normalise(_device_room(item))
+                for item in devices
+                if _normalise(_device_room(item))
+            },
+            key=len,
+            reverse=True,
+        )
+        inferred_room = next(
+            (
+                room_name
+                for room_name in inventory_rooms
+                if normalised_phrase == room_name
+                or normalised_phrase.startswith(room_name + " ")
+            ),
+            None,
+        )
+
     normalised_target = _normalise(target_phrase)
     compact_target = re.sub(r"[^a-z0-9]", "", normalised_target)
     exact_label_match = any(
@@ -700,7 +726,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
             devices,
             ResolutionRequest(
                 target_phrase=target_phrase,
-                room=target_request.room,
+                room=inferred_room,
                 device_type=target_request.device_type,
                 ordinal=target_request.ordinal,
                 allow_group=False,
@@ -748,17 +774,20 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         )
         candidates = [device] if device is not None else []
         resolved_by_confidence = device is not None
-    else:
+    elif room_metric_request:
         # Room-level metric requests such as "bathroom humidity" may not name
-        # an individual device. Preserve bounded attribute-capable probing for
-        # those broad reads while exact and confidently resolved devices remain
-        # bound to one authoritative device ID.
+        # an individual device. Preserve bounded attribute-capable probing only
+        # for verified room targets. A named-device NOT_FOUND result must remain
+        # terminal and must never fall back to another device in the same room.
         candidates = _rank_lookup_devices(
             devices,
             target_phrase,
             attribute_request[0] if attribute_request else None,
         )
         device = candidates[0] if candidates else None
+    else:
+        candidates = []
+        device = None
 
     if device is None:
         return {
