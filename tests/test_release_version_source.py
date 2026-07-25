@@ -17,14 +17,14 @@ from release_version import (  # noqa: E402
 
 def test_shared_release_constants_match_current_addon_release():
     assert PREVIOUS_RELEASE_VERSION == "0.10.86"
-    assert RELEASE_VERSION == "0.10.121"
+    assert RELEASE_VERSION == "0.10.122"
 
 
 def test_runtime_release_version_uses_baked_value_when_present(tmp_path):
     baked = tmp_path / ".homebrain-build-version"
-    baked.write_text("0.10.121\n", encoding="utf-8")
+    baked.write_text("0.10.122\n", encoding="utf-8")
 
-    assert runtime_release_version(baked) == "0.10.121"
+    assert runtime_release_version(baked) == "0.10.122"
 
 
 def test_runtime_release_version_falls_back_to_release_constant(tmp_path):
