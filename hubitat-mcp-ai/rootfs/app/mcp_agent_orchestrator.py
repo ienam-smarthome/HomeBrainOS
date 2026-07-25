@@ -877,6 +877,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
     exact_device_match = resolved_by_confidence or selected_score[0] > 0
 
     value = None
+    readings: list[dict[str, Any]] = []
     devices_probed = 0
     probe_candidates = (
         [device]
@@ -897,15 +898,50 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
             _tool_data(read_result),
             attribute,
         )
-        if candidate_value not in (None, ""):
-            device = candidate
-            value = candidate_value
+        if candidate_value in (None, ""):
+            continue
+
+        candidate_label = _label(candidate) or "Device"
+        candidate_id = str(_device_id(candidate) or "")
+
+        readings.append(
+            {
+                "device_id": candidate_id,
+                "device_label": candidate_label,
+                "room": _device_room(candidate),
+                "attribute": attribute,
+                "value": candidate_value,
+                "unit": unit,
+            }
+        )
+
+        # Named-device questions remain singular and terminal.
+        if exact_device_match:
             break
+
+    readings.sort(
+        key=lambda item: (
+            _normalise(str(item.get("device_label") or "")),
+            str(item.get("device_id") or ""),
+        )
+    )
+
+    if readings:
+        device = next(
+            (
+                candidate
+                for candidate in probe_candidates
+                if str(_device_id(candidate) or "") == readings[0]["device_id"]
+            ),
+            device,
+        )
+        value = readings[0]["value"]
+
     label = _label(device) or "Device"
     response_device_id = str(_device_id(device) or "")
     response_device_label = label
 
-    if value in (None, ""):
+    if not readings:
         if room_metric_request:
             room_label = _device_room(device) or target_phrase
             message = (
@@ -920,7 +956,34 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
                 f"a current {attribute} value."
             )
         success = False
+    elif room_metric_request and len(readings) > 1:
+        room_label = readings[0].get("room") or target_phrase
+        count_word = {
+            2: "two",
+            3: "three",
+            4: "four",
+            5: "five",
+            6: "six",
+        }.get(len(readings), str(len(readings)))
+
+        lines = [
+            f"{room_label} has {count_word} {attribute} readings:"
+        ]
+        lines.extend(
+            f"- {item['device_label']}: "
+            f"{_format_attribute_value(item['value'], unit)}"
+            for item in readings
+        )
+        message = "\n".join(lines)
+        response_device_id = ""
+        response_device_label = str(room_label)
+        success = True
     else:
+        first = readings[0]
+        label = str(first["device_label"])
+        value = first["value"]
+        response_device_id = str(first["device_id"])
+        response_device_label = label
         message = _format_attribute_message(label, attribute, value, unit)
         success = True
 
@@ -934,6 +997,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         "attribute": attribute,
         "value": value,
         "unit": unit,
+        "readings": readings,
         "devices_probed": devices_probed,
         "tools_used": tools_used,
         "entity_resolution_request": parse_entity_request(query).as_dict(),
