@@ -81,21 +81,21 @@ def router_for(index):
     )
 
 
-def test_power_read_uses_one_shared_summary_snapshot():
+def test_humidity_read_uses_one_shared_summary_snapshot():
     index = SummaryIndex(
         [
             {
                 "id": "1",
-                "label": "Freezer",
+                "label": "Bathroom Meter",
                 "currentStates": {
-                    "power": {"value": 76, "unit": "W"}
+                    "humidity": {"value": 76, "unit": "%"}
                 },
             },
             {
                 "id": "2",
-                "label": "Computer",
+                "label": "Hallway Meter",
                 "currentStates": {
-                    "power": {"value": 28, "unit": "W"}
+                    "humidity": {"value": 58, "unit": "%"}
                 },
             },
             {
@@ -111,7 +111,7 @@ def test_power_read_uses_one_shared_summary_snapshot():
     )
 
     result = asyncio.run(
-        executor._fresh_capability_result(_SPECS["power"])
+        executor._fresh_capability_result(_SPECS["humidity"])
     )
 
     assert result.is_error is False
@@ -123,14 +123,14 @@ def test_power_read_uses_one_shared_summary_snapshot():
     ]
 
 
-def test_repeated_power_reads_remain_on_shared_summary_path():
+def test_repeated_humidity_reads_remain_on_shared_summary_path():
     index = SummaryIndex(
         [
             {
                 "id": "1",
-                "label": "Power Device",
+                "label": "Humidity Device",
                 "currentStates": {
-                    "power": {"value": 12.5, "unit": "W"}
+                    "humidity": {"value": 62.5, "unit": "%"}
                 },
             }
         ]
@@ -141,10 +141,10 @@ def test_repeated_power_reads_remain_on_shared_summary_path():
     )
 
     asyncio.run(
-        executor._fresh_capability_result(_SPECS["power"])
+        executor._fresh_capability_result(_SPECS["humidity"])
     )
     asyncio.run(
-        executor._fresh_capability_result(_SPECS["power"])
+        executor._fresh_capability_result(_SPECS["humidity"])
     )
 
     assert index.summary_calls == [
