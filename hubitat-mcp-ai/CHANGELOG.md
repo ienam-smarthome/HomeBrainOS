@@ -1,4 +1,4 @@
-## 0.10.118
+## 0.10.119
 
 - Improved targeted MCP device recovery by extracting the requested device name before authoritative lookup.
 - Strengthened planner guidance so discovery tools are followed by authoritative MCP reads.

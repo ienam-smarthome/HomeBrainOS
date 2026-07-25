@@ -1360,7 +1360,29 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
             terminal_entity = await _answer_terminal_entity_read(application, query)
             if terminal_entity is not None:
                 terminal_entity.setdefault("success", True)
-                terminal_entity["agent_orchestrator"] = "deterministic-entity-read"
+
+                terminal_route = str(
+                    terminal_entity.get("route") or ""
+                ).strip()
+
+                terminal_labels = {
+                    "mcp-power-accounting": (
+                        "deterministic-power-accounting"
+                    ),
+                    "mcp-power-summary": (
+                        "deterministic-power-summary"
+                    ),
+                    "mcp-fast": (
+                        "deterministic-entity-read"
+                    ),
+                }
+
+                terminal_entity["agent_orchestrator"] = (
+                    terminal_labels.get(
+                        terminal_route,
+                        "deterministic-terminal-read",
+                    )
+                )
                 terminal_entity["legacy_fallback_used"] = False
                 terminal_entity["conversation_history_used"] = False
                 terminal_entity.setdefault("version", application.VERSION)
