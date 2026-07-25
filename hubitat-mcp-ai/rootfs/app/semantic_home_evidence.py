@@ -83,12 +83,46 @@ def _mode_name(value: Any) -> str | None:
     return None
 
 
+_NON_ROOM_CLIMATE_TERMS = (
+    "hub info",
+    "hubitat",
+    "weather",
+    "open-meteo",
+    "fridge",
+    "freezer",
+    "bridge",
+    "appliance",
+    "life360",
+)
+
+
+def _is_household_climate(label: str, room: str) -> bool:
+    haystack = f"{label} {room}".lower()
+    return not any(term in haystack for term in _NON_ROOM_CLIMATE_TERMS)
+
+
+def _is_household_battery(label: str, room: str) -> bool:
+    haystack = f"{label} {room}".lower()
+    return "life360" not in haystack
+
+
+def _required_facts(data: dict[str, Any]) -> list[str]:
+    required = ["mode", "motion.active_count", "contacts.open_count", "lights.on_count"]
+    low = data.get("low_batteries") if isinstance(data.get("low_batteries"), dict) else {}
+    if int(low.get("count") or 0):
+        required.append("low_batteries.count")
+    if list(data.get("heating") or []):
+        required.append("heating")
+    if list(data.get("attention") or []):
+        required.append("attention")
+    return required
+
+
 class SemanticHomeEvidenceBroker:
     """Build compact, typed home evidence for AI synthesis.
 
-    The model chooses this semantic evidence source; Python performs state extraction,
-    filtering, counting and aggregation so the model never has to inspect a raw
-    all-device payload or calculate authoritative facts itself.
+    Python performs state extraction, filtering, counting and aggregation so the
+    language model only phrases verified household facts.
     """
 
     def __init__(self, application: Any, snapshot_service: Any) -> None:
@@ -141,22 +175,58 @@ class SemanticHomeEvidenceBroker:
                 presence.append({"device": label, "room": room or None, "state": normalised_presence})
 
             battery = _number(_state(device, "battery", "batteryLevel"))
-            if battery is not None and battery <= 20:
+            if battery is not None and battery <= 20 and _is_household_battery(label, room):
                 low_batteries.append({"device": label, "room": room or None, "value": battery, "unit": "%"})
 
-            temperature = _number(_state(device, "temperature"))
-            if temperature is not None:
-                temperatures.append({"device": label, "room": room or None, "value": temperature, "unit": "°C"})
+            if _is_household_climate(label, room):
+                temperature = _number(_state(device, "temperature"))
+                if temperature is not None:
+                    temperatures.append({"device": label, "room": room or None, "value": temperature, "unit": "°C"})
 
-            humidity = _number(_state(device, "humidity", "relativeHumidity"))
-            if humidity is not None:
-                humidities.append({"device": label, "room": room or None, "value": humidity, "unit": "%"})
+                humidity = _number(_state(device, "humidity", "relativeHumidity"))
+                if humidity is not None:
+                    humidities.append({"device": label, "room": room or None, "value": humidity, "unit": "%"})
 
         motion_active.sort(key=lambda item: (str(item.get("room") or ""), str(item.get("device") or "")))
         presence.sort(key=lambda item: str(item.get("device") or ""))
         low_batteries.sort(key=lambda item: (float(item.get("value") or 0), str(item.get("device") or "")))
         temperatures.sort(key=lambda item: (-float(item.get("value") or 0), str(item.get("device") or "")))
         humidities.sort(key=lambda item: (-float(item.get("value") or 0), str(item.get("device") or "")))
+
+        data = {
+            "mode": mode,
+            "coverage": {
+                "selected_devices": snapshot.get("selected_devices") or len(devices),
+                "states_read": snapshot.get("states_read"),
+            },
+            "motion": {
+                "active_count": len(motion_active),
+                "active": motion_active[:limit],
+            },
+            "contacts": {
+                "open_count": len(list(snapshot.get("open_contacts") or [])),
+                "open": list(snapshot.get("open_contacts") or [])[:limit],
+            },
+            "lights": {
+                "on_count": len(list(snapshot.get("lights_on") or [])),
+                "on": list(snapshot.get("lights_on") or [])[:limit],
+            },
+            "heating": list(snapshot.get("heating") or [])[:limit],
+            "attention": list(snapshot.get("attention") or [])[:limit],
+            "presence": {
+                "count": len(presence),
+                "people": presence[:limit],
+            },
+            "low_batteries": {
+                "threshold_percent": 20,
+                "count": len(low_batteries),
+                "items": low_batteries[:limit],
+            },
+            "climate": {
+                "warmest": temperatures[: min(limit, 8)],
+                "most_humid": humidities[: min(limit, 8)],
+            },
+        }
 
         return {
             "source": "semantic_home_evidence",
@@ -166,41 +236,8 @@ class SemanticHomeEvidenceBroker:
                 {"name": "home_snapshot", "success": bool(devices)},
                 mode_tool,
             ],
-            "data": {
-                "mode": mode,
-                "coverage": {
-                    "selected_devices": snapshot.get("selected_devices") or len(devices),
-                    "states_read": snapshot.get("states_read"),
-                },
-                "motion": {
-                    "active_count": len(motion_active),
-                    "active": motion_active[:limit],
-                },
-                "contacts": {
-                    "open_count": len(list(snapshot.get("open_contacts") or [])),
-                    "open": list(snapshot.get("open_contacts") or [])[:limit],
-                },
-                "lights": {
-                    "on_count": len(list(snapshot.get("lights_on") or [])),
-                    "on": list(snapshot.get("lights_on") or [])[:limit],
-                },
-                "heating": list(snapshot.get("heating") or [])[:limit],
-                "attention": list(snapshot.get("attention") or [])[:limit],
-                "presence": {
-                    "count": len(presence),
-                    "people": presence[:limit],
-                },
-                "low_batteries": {
-                    "threshold_percent": 20,
-                    "count": len(low_batteries),
-                    "items": low_batteries[:limit],
-                },
-                "climate": {
-                    "warmest": temperatures[: min(limit, 8)],
-                    "most_humid": humidities[: min(limit, 8)],
-                },
-            },
-            "required_facts": ["mode", "motion.active_count"],
+            "data": data,
+            "required_facts": _required_facts(data),
         }
 
 
