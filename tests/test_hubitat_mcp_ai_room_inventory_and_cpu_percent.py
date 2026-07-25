@@ -369,3 +369,50 @@ def test_empty_fan_summary_is_completed_by_device_detail():
             "success": True,
         }
     ]
+
+
+def test_multi_word_room_before_devices_preserves_full_room_name():
+    assert (
+        FastFallbackRouter._room_candidate("Show living room devices")
+        == "living room"
+    )
+    assert (
+        FastFallbackRouter._room_candidate("List dining room devices")
+        == "dining room"
+    )
+
+
+def test_room_inventory_message_does_not_repeat_room():
+    class LivingRoomMCP(FakeRoomMCP):
+        async def call_tool(self, name, arguments):
+            result = await super().call_tool(name, arguments)
+
+            if name == "hub_list_rooms":
+                result.data["rooms"].append(
+                    {"id": "34", "name": "Living Room"}
+                )
+
+            if name == "hub_list_devices":
+                result.data["devices"].append(
+                    {
+                        "id": "7402",
+                        "label": "Standing Fan",
+                        "name": "Fan Control",
+                        "room": "Living Room",
+                        "currentStates": {"speed": "off"},
+                    }
+                )
+
+            return result
+
+    answer = asyncio.run(
+        FastFallbackRouter(LivingRoomMCP()).answer(
+            "Show living room devices"
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["room"] == "Living Room"
+    assert answer["display"]["title"] == "Living Room"
+    assert "assigned to Living Room:" in answer["message"]
+    assert "Living Room room" not in answer["message"]
