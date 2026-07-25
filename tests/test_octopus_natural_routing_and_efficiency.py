@@ -83,5 +83,11 @@ def test_octopus_inventory_does_not_use_narrow_legacy_label_filter():
     ).read_text(encoding="utf-8")
 
     assert '"labelFilter": "Octopus Live Meter Display"' not in source
-    assert '"detailed": True' in source
+    assert "detailed_device_arguments()" in source
+
+    shared_shape = (
+        APP_DIR / "device_read_shapes.py"
+    ).read_text(encoding="utf-8")
+    assert '"detailed": True' in shared_shape
+    assert '"format": "detailed"' in shared_shape
     assert "_is_octopus_meter_row(row)" in source

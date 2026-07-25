@@ -7,6 +7,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 import request_tracing
+from device_read_shapes import detailed_device_arguments
 from fallback_router import _attributes, _device_id, _label, _normalise
 from presenter import display_payload, safe_debug
 from routing_policy import RouteDecision
@@ -239,15 +240,38 @@ def _clean_text(value: Any) -> str:
 
 def _unwrap_state(value: Any) -> tuple[str, str]:
     if isinstance(value, dict):
+        # Hubitat and custom drivers use mixed spellings such as currentValue,
+        # currentvalue, displayValue and unitOfMeasurement. Normalize keys once
+        # so all equivalent structured-state shapes are accepted.
+        normalized = {
+            _normalise(str(key)).replace(" ", "").replace("_", ""): raw
+            for key, raw in value.items()
+        }
+
         unit = ""
         for key in _UNIT_KEYS:
-            if value.get(key) not in (None, ""):
-                unit = _clean_text(value.get(key))
+            normalized_key = (
+                _normalise(key)
+                .replace(" ", "")
+                .replace("_", "")
+            )
+            raw = normalized.get(normalized_key)
+            if raw not in (None, ""):
+                unit = _clean_text(raw)
                 break
+
         for key in _VALUE_KEYS:
-            if value.get(key) not in (None, ""):
-                return _clean_text(value.get(key)), unit
+            normalized_key = (
+                _normalise(key)
+                .replace(" ", "")
+                .replace("_", "")
+            )
+            raw = normalized.get(normalized_key)
+            if raw not in (None, ""):
+                return _clean_text(raw), unit
+
         return "", unit
+
     return _clean_text(value), ""
 
 
@@ -454,19 +478,7 @@ class OctopusLiveMeterSummary:
         # Use one conservative all-device detailed inventory request. It is the
         # same request shape proven by the power summary route and reliably
         # supplies device IDs and labels on the live Hubitat gateway.
-        desired = {
-            "detailed": True,
-            "format": "detailed",
-            "fields": [
-                "id",
-                "name",
-                "label",
-                "room",
-                "attributes",
-                "disabled",
-                "lastActivity",
-            ],
-        }
+        desired = detailed_device_arguments()
 
         rows: list[dict[str, Any]] = []
         try:
