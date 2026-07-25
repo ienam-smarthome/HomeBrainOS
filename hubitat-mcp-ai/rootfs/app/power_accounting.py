@@ -641,6 +641,29 @@ class PowerAccountingService:
             },
         ]
 
+        breakdown_items: list[dict[str, Any]] = []
+
+        if active:
+            breakdown_text = " · ".join(
+                f"{item['label']} "
+                f"{_format_accounting_power(float(item['value']))}"
+                for item in active[:5]
+            )
+
+            breakdown_items.append(
+                {
+                    "icon": "⚡",
+                    "title": "Power breakdown",
+                    "value": _format_accounting_power(monitored_w),
+                    "subtitle": (
+                        f"{len(active)} active monitored device"
+                        f"{'' if len(active) == 1 else 's'} · "
+                        f"{breakdown_text}"
+                    ),
+                    "tone": "warning",
+                }
+            )
+
         display = display_payload(
             "power-accounting",
             "Whole-house power accounting",
@@ -648,9 +671,10 @@ class PowerAccountingService:
                 f"{len(active)} active and {len(idle)} idle monitored readings"
             ),
             metrics=metrics,
-            items=[
+            items=breakdown_items
+            + [
                 {
-                    "icon": "⚡",
+                    "icon": "🔌",
                     "title": item["label"],
                     "value": _format_accounting_power(
                         float(item["value"]),
@@ -658,9 +682,9 @@ class PowerAccountingService:
                     "subtitle": str(
                         item.get("room") or "No room assigned"
                     ),
-                    "tone": "warning" if index == 0 else None,
+                    "tone": None,
                 }
-                for index, item in enumerate(active[:10])
+                for item in active[:10]
             ],
             note=(
                 "The Octopus current-power display is treated as the "

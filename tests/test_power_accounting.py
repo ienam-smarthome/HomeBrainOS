@@ -643,3 +643,84 @@ def test_meter_timestamp_controls_comparison_quality():
         "with a maximum meter-to-device skew of 20 seconds."
         in result["message"]
     )
+
+def test_power_accounting_display_has_breakdown_tile():
+    rows = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "attributes": {
+                    "value": {
+                        "currentValue": "362 W",
+                    }
+                },
+            },
+            {
+                "id": "tv",
+                "label": "TV",
+                "attributes": {
+                    "power": {
+                        "currentValue": 89,
+                        "unit": "W",
+                    }
+                },
+            },
+            {
+                "id": "fridge",
+                "label": "Fridge",
+                "attributes": {
+                    "power": {
+                        "currentValue": 79,
+                        "unit": "W",
+                    }
+                },
+            },
+            {
+                "id": "freezer",
+                "label": "Freezer",
+                "attributes": {
+                    "power": {
+                        "currentValue": 74,
+                        "unit": "W",
+                    }
+                },
+            },
+        ]
+    }
+
+    class BreakdownMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=rows,
+                is_error=False,
+            )
+
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=BreakdownMCP())
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    items = result["display"]["items"]
+    breakdown = items[0]
+
+    assert breakdown["title"] == "Power breakdown"
+    assert breakdown["value"] == "242 W"
+    assert "3 active monitored devices" in breakdown["subtitle"]
+    assert "TV 89 W" in breakdown["subtitle"]
+    assert "Fridge 79 W" in breakdown["subtitle"]
+    assert "Freezer 74 W" in breakdown["subtitle"]
+
+    assert items[1]["title"] == "TV"
+    assert items[2]["title"] == "Fridge"
+    assert items[3]["title"] == "Freezer"

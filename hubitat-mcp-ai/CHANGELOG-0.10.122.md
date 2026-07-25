@@ -2,15 +2,16 @@
 
 ## Improved
 
-- Whole-house comparison quality now depends on the whole-house meter timestamp and active monitored-device timestamps.
-- Stale zero-watt devices no longer make the main accounting comparison appear stale.
-- Active-reading timestamp spread is reported separately from all-reading spread.
-- Missing Octopus meter timestamps now produce an explicit unknown comparison-quality reason.
-- Meter-to-device comparison skew is reported when authoritative timestamps are available.
+- Added a consolidated Power breakdown tile to whole-house power accounting.
+- The tile shows total monitored power, active monitored-device count and the five largest loads.
+- Individual monitored-device tiles remain available below the consolidated breakdown.
+- Whole-house comparison quality now uses the meter and active-device timestamps.
+- Idle zero-watt readings no longer make the main comparison appear stale.
+- Active-reading and all-reading timestamp spreads are reported separately.
 
 ## Validation
 
-- Focused power-accounting and routing tests passed: 24 tests.
-- Energy and power test suite passed: 52 tests.
+- Focused power-accounting and routing tests passed: 25 tests.
+- Energy and power test suite passed: 53 tests.
 - Add-on repository validation passed.
 - Blocking release gate passed: 279 tests.
