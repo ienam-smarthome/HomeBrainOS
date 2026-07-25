@@ -13,7 +13,6 @@ from device_health_fast_route import is_device_health_query
 from fallback_router import _device_id, _label
 from presenter import display_payload, normalise_text, safe_debug
 from routing_policy import RouteDecision, classify_query, normalise
-from semantic_metric_comparison_live import _merge_rows
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -235,111 +234,6 @@ def _requested_periods(query: str) -> tuple[str, ...]:
         requested.append("power")
     return tuple(dict.fromkeys(requested))
 
-
-class OctopusEnergySummary:
-    def __init__(self, application: Any) -> None:
-        self.application = application
-
-    async def _read(self, *, detailed: bool) -> Any:
-        desired = {
-            "detailed": detailed,
-            "format": "detailed" if detailed else "summary",
-            "labelFilter": "Octopus Live Meter Display",
-        }
-        supported = getattr(self.application.mcp, "supported_arguments", None)
-        args = await supported("hub_list_devices", desired) if callable(supported) else desired
-        return await self.application.mcp.call_tool("hub_list_devices", args)
-
-    async def answer(self, query: str) -> dict[str, Any]:
-        invalidate = getattr(self.application.mcp, "invalidate", None)
-        if callable(invalidate):
-            try:
-                await invalidate("devices")
-            except Exception:
-                pass
-
-        summary = await self._read(detailed=False)
-        detailed = await self._read(detailed=True)
-        summary_rows = _device_rows(summary.data) if not summary.is_error else []
-        detailed_rows = _device_rows(detailed.data) if not detailed.is_error else []
-        rows = _merge_rows(detailed_rows, summary_rows)
-        rows = [item for item in rows if normalise(_label(item)).startswith(_OCTOPUS_PREFIX)]
-
-        requested = _requested_periods(query)
-        prepared: list[dict[str, Any]] = []
-        for item in rows:
-            period = _period_for_label(_label(item))
-            if requested and not any(period == wanted or period.startswith(wanted) for wanted in requested):
-                continue
-            prepared.append(
-                {
-                    "id": str(_device_id(item) or ""),
-                    "label": _label(item),
-                    "period": period,
-                    "title": _PERIOD_LABELS.get(period, period.title()),
-                    "value": _display_value(item),
-                    "room": item.get("room"),
-                    "lastActivity": item.get("lastActivity"),
-                }
-            )
-
-        order = {name: index for index, name in enumerate(_PERIOD_ORDER)}
-        prepared.sort(key=lambda item: (order.get(str(item.get("period")), 99), str(item.get("label")).lower()))
-        available = [item for item in prepared if item.get("value")]
-
-        if available:
-            message = "Octopus whole-house energy readings:\n" + "\n".join(
-                f"- {item['title']}: {item['value']}" for item in available
-            )
-        elif prepared:
-            message = (
-                "The Octopus Live Meter display devices were found, but their current display values "
-                "were not returned by the selected-device read."
-            )
-        else:
-            message = "No selected Octopus Live Meter display devices matched this request."
-
-        items = [
-            {
-                "icon": "⚡" if item.get("period") == "power" else "📊",
-                "title": item.get("title"),
-                "value": item.get("value") or "No live value",
-                "subtitle": item.get("label"),
-            }
-            for item in prepared
-        ]
-        display = display_payload(
-            "octopus-energy-summary",
-            "Octopus whole-house energy",
-            subtitle=f"{len(available)} live display reading{'s' if len(available) != 1 else ''}",
-            metrics=[
-                {"label": "Displays found", "value": str(len(rows)), "icon": "📟"},
-                {"label": "Values read", "value": str(len(available)), "icon": "📡"},
-            ],
-            items=items,
-            note="These are the authoritative Octopus display sensors selected in Hubitat.",
-        )
-        display["summary"] = message
-        return {
-            "success": bool(available),
-            "route": "mcp-octopus-energy",
-            "intent": "verified-octopus-energy-summary",
-            "message": message,
-            "display": display,
-            "octopus_readings": prepared,
-            "answered_by": "Deterministic Octopus whole-house display reader",
-            "selected_tools": ["hub_list_devices"],
-            "model": None,
-            "technical": safe_debug(
-                {
-                    "query": query,
-                    "requested_periods": requested,
-                    "summary_error": summary.text if summary.is_error else None,
-                    "detailed_error": detailed.text if detailed.is_error else None,
-                    "readings": prepared,
-                }
-            ),
-        }
 
 
 def install_hybrid_verified_read_routes(application: Any, metric_executor: Any) -> dict[str, Any]:

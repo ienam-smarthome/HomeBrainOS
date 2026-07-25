@@ -23,8 +23,10 @@ from control_focus_mode import (  # noqa: E402
 from control_focus_power_summary_safe import (  # noqa: E402
     install_control_focus_power_summary_safe,
 )
+from control_focus_octopus_energy import (  # noqa: E402
+    OctopusLiveMeterSummary,
+)
 from hybrid_assistant_mode import (  # noqa: E402
-    OctopusEnergySummary,
     is_direct_control_query,
     is_hybrid_ai_query,
     is_octopus_energy_query,
@@ -158,20 +160,36 @@ def test_octopus_family_and_period_queries_are_verified_fast_reads():
     assert not is_octopus_energy_query("Show power consumption")
 
     app = FakeOctopusApplication()
-    service = OctopusEnergySummary(app)
+    service = OctopusLiveMeterSummary(app)
 
     today = asyncio.run(service.answer("Total power consumption today"))
-    assert today["route"] == "mcp-octopus-energy"
+    assert today["route"] == "mcp-octopus-summary"
     assert today["model"] is None
-    assert [item["period"] for item in today["octopus_readings"]] == ["today"]
+    assert today["technical"]
     assert "4.8 kWh" in today["message"]
     assert "£1.48" in today["message"]
 
-    all_displays = asyncio.run(service.answer("Show octopus live meter display"))
-    assert "Whole-house power: 540 W" in all_displays["message"]
-    assert "Today: 4.8 kWh" in all_displays["message"]
-    assert "Yesterday: 5.2 kWh" in all_displays["message"]
-    assert len(all_displays["octopus_readings"]) == 4
+    today_displays = [
+        item
+        for item in today["octopus_displays"]
+        if item["period"] == "today"
+    ]
+    assert len(today_displays) == 1
+    assert "4.8 kWh" in today_displays[0]["value"]
+
+    all_displays = asyncio.run(
+        service.answer("Show octopus live meter display")
+    )
+    assert all_displays["route"] == "mcp-octopus-summary"
+    assert "540 W" in all_displays["message"]
+    assert "4.8 kWh" in all_displays["message"]
+    assert "5.2 kWh" in all_displays["message"]
+    assert len(all_displays["octopus_displays"]) == 4
+
+    # Each request uses one canonical detailed inventory read. The fake
+    # inventory already contains all display values, so no detail probes occur.
+    assert len(app.mcp.calls) == 2
+    assert all(call["detailed"] is True for call in app.mcp.calls)
 
 
 def test_control_focus_remains_available_only_as_an_optional_restriction():

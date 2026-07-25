@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fallback_router import _device_id, _label, _normalise
+from device_read_shapes import DETAILED_DEVICE_FIELDS, detailed_device_arguments
 from mcp_client import MCPError, MCPToolResult
 from semantic_metric_comparison import (
     MeasurementSpec,
@@ -14,15 +15,7 @@ from semantic_metric_comparison import (
 # Keep these request shapes deliberately conservative. They match the field sets
 # already used successfully by the shared device index and avoid making a useful
 # compact live-state read depend on optional detailed-catalogue fields.
-_DETAIL_FIELDS = [
-    "id",
-    "name",
-    "label",
-    "room",
-    "attributes",
-    "disabled",
-    "lastActivity",
-]
+_DETAIL_FIELDS = list(DETAILED_DEVICE_FIELDS)
 
 _SUMMARY_FIELDS = [
     "id",
@@ -147,11 +140,7 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
         ):
             result = await self._safe_call(
                 client,
-                {
-                    "detailed": True,
-                    "format": "detailed",
-                    "fields": list(_DETAIL_FIELDS),
-                },
+                detailed_device_arguments(),
                 "all-device detailed power evidence",
                 errors,
             )
