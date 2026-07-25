@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 
 import asyncio
 import sys
@@ -724,3 +725,111 @@ def test_power_accounting_display_has_breakdown_tile():
     assert items[1]["title"] == "TV"
     assert items[2]["title"] == "Fridge"
     assert items[3]["title"] == "Freezer"
+
+def test_empty_projected_snapshot_retries_plain_inventory():
+    projected = {"devices": []}
+    fallback = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "attributes": {
+                    "value": {
+                        "currentValue": "200 W",
+                    }
+                },
+            },
+            {
+                "id": "load",
+                "label": "Fridge",
+                "attributes": {
+                    "power": {
+                        "currentValue": 80,
+                        "unit": "W",
+                    }
+                },
+            },
+        ]
+    }
+
+    class RetryMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            data = fallback if arguments == {} else projected
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=data,
+                is_error=False,
+            )
+
+    mcp = RetryMCP()
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=mcp)
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert len(mcp.calls) == 2
+    assert mcp.calls[1] == ("hub_list_devices", {})
+    assert result["success"] is True
+    assert result["whole_house_power_w"] == 200
+    assert result["monitored_device_power_w"] == 80
+    assert result["unaccounted_power_w"] == 120
+
+    technical = json.loads(result["technical"])
+    assert technical["projected_device_row_count"] == 0
+    assert technical["snapshot_retry_used"] is True
+    assert technical["retry_device_row_count"] == 2
+    assert technical["extracted_device_row_count"] == 2
+
+
+def test_double_empty_snapshot_returns_unavailable_not_zero():
+    class EmptyMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data={"devices": []},
+                is_error=False,
+            )
+
+    mcp = EmptyMCP()
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=mcp)
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert len(mcp.calls) == 2
+    assert result["success"] is False
+    assert result["whole_house_power_w"] is None
+    assert result["monitored_device_power_w"] is None
+    assert result["unaccounted_power_w"] is None
+    assert result["coverage_percent"] is None
+    assert "No 0 W total has been assumed" in result["message"]
+
+    display = result["display"]
+    assert display["metrics"][0]["value"] == "Unavailable"
+    assert (
+        display["items"][0]["title"]
+        == "Device snapshot unavailable"
+    )
+
+    technical = json.loads(result["technical"])
+    assert technical["snapshot_retry_used"] is True
+    assert technical["extracted_device_row_count"] == 0
+    assert technical["snapshot_status"] == "unavailable"

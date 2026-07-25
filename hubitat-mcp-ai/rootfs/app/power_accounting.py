@@ -500,6 +500,115 @@ class PowerAccountingService:
             }
 
         rows = _accounting_device_rows(result.data)
+        projected_device_row_count = len(rows)
+        snapshot_retry_used = False
+        retry_result = None
+
+        # Some detailed/projected Hubitat reads occasionally return an empty
+        # successful payload. Retry once using the plain authoritative device
+        # inventory. The empty argument set also uses a separate broker cache
+        # key, so an empty projected snapshot is not reused.
+        if not rows:
+            snapshot_retry_used = True
+            retry_result = await self.application.mcp.call_tool(
+                "hub_list_devices",
+                {},
+            )
+            if not retry_result.is_error:
+                retry_rows = _accounting_device_rows(
+                    retry_result.data
+                )
+                if retry_rows:
+                    rows = retry_rows
+                    result = retry_result
+
+        if not rows:
+            retry_error = (
+                retry_result.text
+                if retry_result is not None
+                and retry_result.is_error
+                else None
+            )
+            message = (
+                "The Hubitat device snapshot was empty, so live "
+                "whole-house power accounting could not be verified. "
+                "No 0 W total has been assumed."
+            )
+            display = display_payload(
+                "power-accounting",
+                "Whole-house power accounting",
+                subtitle="Live device snapshot unavailable",
+                metrics=[
+                    {
+                        "label": "Status",
+                        "value": "Unavailable",
+                        "icon": "⚠️",
+                    }
+                ],
+                items=[
+                    {
+                        "icon": "⚠️",
+                        "title": "Device snapshot unavailable",
+                        "value": "Retry failed",
+                        "subtitle": (
+                            "The detailed inventory and the authoritative "
+                            "fallback both returned no usable device rows."
+                        ),
+                        "tone": "warning",
+                    }
+                ],
+                note=(
+                    "Power totals are withheld when the device inventory "
+                    "is empty because reporting 0 W would be misleading."
+                ),
+            )
+            display["summary"] = message
+            return {
+                "success": False,
+                "route": "mcp-power-accounting",
+                "intent": "verified-power-accounting",
+                "message": message,
+                "display": display,
+                "whole_house_power_w": None,
+                "whole_house_meter": None,
+                "monitored_device_power_w": None,
+                "unaccounted_power_w": None,
+                "coverage_percent": None,
+                "whole_house_value_source": None,
+                "reading_quality": {
+                    "quality": "unknown",
+                    "reason": "device snapshot unavailable",
+                    "meter_activity": None,
+                    "comparison_skew_seconds": None,
+                    "active_reading_timestamp_count": 0,
+                    "active_reading_skew_seconds": None,
+                    "all_reading_timestamp_count": 0,
+                    "all_reading_skew_seconds": None,
+                    "newest_active_activity": None,
+                    "oldest_active_activity": None,
+                },
+                "active_reading_count": 0,
+                "idle_reading_count": 0,
+                "active_power_readings": [],
+                "model": None,
+                "answered_by": (
+                    "Deterministic Octopus and Hubitat power accounting"
+                ),
+                "technical": safe_debug(
+                    {
+                        "query": query,
+                        "projected_device_row_count": (
+                            projected_device_row_count
+                        ),
+                        "snapshot_retry_used": snapshot_retry_used,
+                        "retry_device_row_count": 0,
+                        "retry_error": retry_error,
+                        "extracted_device_row_count": 0,
+                        "snapshot_status": "unavailable",
+                    }
+                ),
+            }
+
         whole_house_w, meter_row, meter_value_source = (
             _whole_house_power(rows)
         )
@@ -725,6 +834,15 @@ class PowerAccountingService:
             "technical": safe_debug(
                 {
                     "query": query,
+                    "projected_device_row_count": (
+                        projected_device_row_count
+                    ),
+                    "snapshot_retry_used": snapshot_retry_used,
+                    "retry_device_row_count": (
+                        len(rows)
+                        if snapshot_retry_used
+                        else None
+                    ),
                     "extracted_device_row_count": len(rows),
                     "whole_house_power_w": whole_house_w,
                     "monitored_device_power_w": monitored_w,
