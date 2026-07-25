@@ -75,3 +75,13 @@ def test_octopus_placeholder_identity_is_not_a_live_value():
 
     assert _has_live_display_value(placeholder) is False
     assert _has_live_display_value(real_value) is True
+
+
+def test_octopus_inventory_does_not_use_narrow_legacy_label_filter():
+    source = (
+        APP_DIR / "control_focus_octopus_energy.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"labelFilter": "Octopus Live Meter Display"' not in source
+    assert '"detailed": True' in source
+    assert "_is_octopus_meter_row(row)" in source
