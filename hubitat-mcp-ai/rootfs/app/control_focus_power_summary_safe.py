@@ -144,11 +144,19 @@ def install_control_focus_power_summary_safe() -> None:
                 "technical": safe_debug(
                     {
                         "query": query,
-                        "normalised_readings": readings,
-                        "active_readings": active,
-                        "idle_readings": idle,
+                        "numeric_reading_count": len(readings),
+                        "active_reading_count": len(active),
+                        "idle_reading_count": len(idle),
                         "active_total_w": total,
-                        "aggregate_readings": aggregate,
+                        "aggregate_reading_count": len(aggregate),
+                        "active_device_labels": [
+                            str(item.get("label") or "Unknown")
+                            for item in active
+                        ],
+                        "idle_device_labels": [
+                            str(item.get("label") or "Unknown")
+                            for item in idle
+                        ],
                     }
                 ),
             }
