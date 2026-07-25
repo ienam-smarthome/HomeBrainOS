@@ -7,7 +7,12 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from semantic_home_evidence import _is_household_battery, _is_household_climate, _required_facts  # noqa: E402
-from semantic_home_summary_agent import _contains_required_facts, _fallback, _normalise_answer  # noqa: E402
+from semantic_home_summary_agent import (  # noqa: E402
+    _contains_required_facts,
+    _fact_manifest,
+    _fallback,
+    _normalise_answer,
+)
 
 
 def sample_evidence():
@@ -20,8 +25,14 @@ def sample_evidence():
                 {"device": "Livingroom FP300", "room": "Living Room", "state": "active"},
             ],
         },
-        "contacts": {"open_count": 0, "open": []},
-        "lights": {"on_count": 0, "on": []},
+        "contacts": {
+            "open_count": 1,
+            "open": [{"title": "Front Door", "room": "Hallway"}],
+        },
+        "lights": {
+            "on_count": 1,
+            "on": [{"title": "Bathroom Light 1", "room": "Bathroom"}],
+        },
         "heating": [],
         "attention": [{"title": "Livingroom TRV", "value": "10%"}],
         "presence": {"count": 0, "people": []},
@@ -40,27 +51,57 @@ def sample_evidence():
 
 def test_fallback_is_natural_and_complete():
     message = _fallback(sample_evidence())
-    assert "Morning mode" in message
+    assert "It's Morning mode" in message
     assert "2 motion sensors are active" in message
     assert "Bedroom 3 Presence Sensor" in message
     assert "Livingroom FP300" in message
+    assert "Front Door" in message
+    assert "Bathroom Light 1" in message
     assert "low battery" in message
     assert "states read" not in message.lower()
 
 
-def test_synthesis_validation_requires_exact_motion_names_and_battery_fact():
+def test_fact_manifest_covers_every_non_empty_authoritative_domain():
+    manifest = {item["domain"]: item for item in _fact_manifest(sample_evidence())}
+    assert manifest["mode"]["required"] is True
+    assert manifest["motion"] == {
+        "domain": "motion",
+        "count": 2,
+        "names": ["Bedroom 3 Presence Sensor", "Livingroom FP300"],
+        "required": True,
+    }
+    assert manifest["contacts"]["names"] == ["Front Door"]
+    assert manifest["lights"]["names"] == ["Bathroom Light 1"]
+    assert manifest["low_batteries"]["names"] == ["Livingroom TRV", "Fridge Door"]
+
+
+def test_synthesis_validation_requires_all_non_empty_domain_names():
     evidence = sample_evidence()
     good = (
-        "The home is in Morning mode. Two motion sensors are active: Bedroom 3 Presence Sensor and "
-        "Livingroom FP300. Two devices have low batteries."
+        "It's Morning mode. Two motion sensors are active: Bedroom 3 Presence Sensor and Livingroom FP300. "
+        "Front Door is open, Bathroom Light 1 is on, and Livingroom TRV and Fridge Door have low batteries."
     )
-    assert _contains_required_facts(good.replace("Two", "2"), evidence) is True
-    assert _contains_required_facts("The home is in Morning mode and 2 motion sensors are active.", evidence) is False
+    assert _contains_required_facts(good, evidence) is True
+    assert _contains_required_facts(good.replace("Front Door is open, ", ""), evidence) is False
+    assert _contains_required_facts(good.replace("Bathroom Light 1 is on, ", ""), evidence) is False
+    assert _contains_required_facts(good.replace("Fridge Door", ""), evidence) is False
 
 
-def test_states_read_and_repeated_heading_are_removed():
-    text = _normalise_answer("Home summary: The home is calm (13 states read).")
-    assert text == "The home is calm."
+def test_number_words_are_accepted_for_counts():
+    evidence = sample_evidence()
+    message = (
+        "It's Morning mode. Two motion sensors are active: Bedroom 3 Presence Sensor and Livingroom FP300. "
+        "One contact is open: Front Door. One light is on: Bathroom Light 1. "
+        "Two devices have low batteries: Livingroom TRV and Fridge Door."
+    )
+    assert _contains_required_facts(message, evidence) is True
+
+
+def test_states_read_heading_and_mechanical_motion_wording_are_removed():
+    text = _normalise_answer(
+        "Home summary: There are 3 active-motion devices in the house (13 states read). Please note that batteries are low."
+    )
+    assert text == "There are 3 motion sensors in the house. batteries are low."
 
 
 def test_non_household_climate_sources_are_excluded():
