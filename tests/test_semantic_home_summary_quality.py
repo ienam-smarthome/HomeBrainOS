@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
@@ -79,12 +80,38 @@ def test_synthesis_validation_requires_all_non_empty_domain_names():
     evidence = sample_evidence()
     good = (
         "It's Morning mode. Two motion sensors are active: Bedroom 3 Presence Sensor and Livingroom FP300. "
-        "Front Door is open, Bathroom Light 1 is on, and Livingroom TRV and Fridge Door have low batteries."
+        "One contact is open: Front Door. One light is on: Bathroom Light 1. "
+        "Two devices have low batteries: Livingroom TRV and Fridge Door."
     )
     assert _contains_required_facts(good, evidence) is True
-    assert _contains_required_facts(good.replace("Front Door is open, ", ""), evidence) is False
-    assert _contains_required_facts(good.replace("Bathroom Light 1 is on, ", ""), evidence) is False
+    assert _contains_required_facts(good.replace("Front Door", ""), evidence) is False
+    assert _contains_required_facts(good.replace("Bathroom Light 1", ""), evidence) is False
     assert _contains_required_facts(good.replace("Fridge Door", ""), evidence) is False
+
+
+def test_counts_must_appear_in_the_correct_domain_sentence():
+    evidence = sample_evidence()
+    wrong = (
+        "It's Morning mode. Two motion sensors are active: Bedroom 3 Presence Sensor and Livingroom FP300. "
+        "Front Door is open. Bathroom Light 1 is on. "
+        "Two devices have low batteries: Livingroom TRV and Fridge Door."
+    )
+    assert _contains_required_facts(wrong, evidence) is False
+
+
+def test_zero_motion_accepts_no_none_or_zero_wording():
+    evidence = deepcopy(sample_evidence())
+    evidence["data"]["motion"] = {"active_count": 0, "active": []}
+    assert _contains_required_facts(
+        "It's Morning mode. No motion sensors are active. One contact is open: Front Door. "
+        "One light is on: Bathroom Light 1. Two devices have low batteries: Livingroom TRV and Fridge Door.",
+        evidence,
+    ) is True
+    assert _contains_required_facts(
+        "It's Morning mode. Motion sensors are inactive. One contact is open: Front Door. "
+        "One light is on: Bathroom Light 1. Two devices have low batteries: Livingroom TRV and Fridge Door.",
+        evidence,
+    ) is False
 
 
 def test_number_words_are_accepted_for_counts():
@@ -97,11 +124,11 @@ def test_number_words_are_accepted_for_counts():
     assert _contains_required_facts(message, evidence) is True
 
 
-def test_states_read_heading_and_mechanical_motion_wording_are_removed():
+def test_states_read_heading_and_mechanical_motion_wording_are_removed_and_capitalised():
     text = _normalise_answer(
         "Home summary: There are 3 active-motion devices in the house (13 states read). Please note that batteries are low."
     )
-    assert text == "There are 3 motion sensors in the house. batteries are low."
+    assert text == "There are 3 motion sensors in the house. Batteries are low."
 
 
 def test_non_household_climate_sources_are_excluded():
