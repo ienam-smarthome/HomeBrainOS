@@ -26,6 +26,13 @@ _NUMBER_WORDS = {
     9: "nine",
     10: "ten",
 }
+_DOMAIN_TERMS = {
+    "motion": ("motion sensor", "motion sensors", "motion"),
+    "contacts": ("contact sensor", "contact sensors", "contact", "door", "window", "open"),
+    "lights": ("light", "lights", "lamp", "lamps", "on"),
+    "low_batteries": ("low battery", "low batteries", "battery", "batteries"),
+    "heating": ("heating", "thermostat", "trv", "radiator"),
+}
 
 
 def _names(items: list[dict[str, Any]]) -> str:
@@ -159,22 +166,53 @@ def _public_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _capitalise_sentences(text: str) -> str:
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    fixed: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        match = re.search(r"[A-Za-z]", part)
+        if match:
+            index = match.start()
+            part = part[:index] + part[index].upper() + part[index + 1 :]
+        fixed.append(part)
+    return " ".join(fixed)
+
+
 def _normalise_answer(text: str) -> str:
     text = _STATES_READ_RE.sub("", str(text or ""))
     text = re.sub(r"^\s*(?:home summary|summary)\s*[:\-]?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\bactive[- ]motion (?:devices|sensors)\b", "motion sensors", text, flags=re.IGNORECASE)
     text = re.sub(r"\bmotion devices\b", "motion sensors", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bplease note that\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bplease note that\b\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return _capitalise_sentences(text)
+
+
+def _sentences(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
 
 
 def _count_is_present(text: str, count: int) -> bool:
     lowered = text.lower()
+    if count == 0 and re.search(r"\b(?:no|none|zero)\b", lowered):
+        return True
     if re.search(rf"(?<!\d){count}(?!\d)", lowered):
         return True
     word = _NUMBER_WORDS.get(count)
     return bool(word and re.search(rf"\b{re.escape(word)}\b", lowered))
+
+
+def _domain_sentences(text: str, domain: str, names: list[str]) -> list[str]:
+    terms = _DOMAIN_TERMS.get(domain, ())
+    sentences = _sentences(text)
+    matched = [sentence for sentence in sentences if any(term in sentence.lower() for term in terms)]
+    if names:
+        named = [sentence for sentence in sentences if any(name.lower() in sentence.lower() for name in names)]
+        matched.extend(sentence for sentence in named if sentence not in matched)
+    return matched
 
 
 def _contains_required_facts(text: str, evidence: dict[str, Any]) -> bool:
@@ -187,11 +225,18 @@ def _contains_required_facts(text: str, evidence: dict[str, Any]) -> bool:
             if str(fact.get("value") or "").lower() not in lowered:
                 return False
             continue
-        count = fact.get("count")
-        if count is not None and not _count_is_present(text, int(count)):
+
+        names = [str(name) for name in list(fact.get("names") or []) if str(name).strip()]
+        relevant = _domain_sentences(text, domain, names)
+        if not relevant:
             return False
-        for name in list(fact.get("names") or []):
-            if str(name).lower() not in lowered:
+        domain_text = " ".join(relevant)
+
+        count = fact.get("count")
+        if count is not None and not _count_is_present(domain_text, int(count)):
+            return False
+        for name in names:
+            if name.lower() not in domain_text.lower():
                 return False
     return True
 
@@ -210,6 +255,8 @@ async def _synthesise(application: Any, query: str, evidence: dict[str, Any]) ->
         "You are HomeBrain. Write a natural, concise household update in 2 to 4 sentences using only the verified JSON. "
         "Sound conversational, not like a report. Always say 'motion sensors', never 'active-motion devices'. "
         "Include every fact marked required in fact_manifest, preserving exact counts and exact device names. "
+        "Keep each domain's count in the same sentence as that domain. "
+        "For a zero motion count, say no motion sensors are active. "
         "Mention non-empty open contacts, lights on, heating and low batteries. Prioritise anything needing attention. "
         "Do not mention coverage, states read, tool names, JSON, technical details or evidence gathering. "
         "Do not invent, calculate, diagnose, repeat a heading or add unverified context."
