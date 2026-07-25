@@ -476,7 +476,6 @@ class OctopusLiveMeterSummary:
         desired = {
             "detailed": True,
             "format": "detailed",
-            "labelFilter": "Octopus Live Meter Display",
             "fields": fields,
         }
         try:
@@ -492,7 +491,7 @@ class OctopusLiveMeterSummary:
             if result.is_error:
                 errors.append(
                     result.text
-                    or "filtered detailed Octopus inventory failed"
+                    or "detailed Octopus inventory failed"
                 )
             else:
                 filtered = [
@@ -504,7 +503,7 @@ class OctopusLiveMeterSummary:
                     groups.append(filtered)
         except Exception as exc:
             errors.append(
-                "filtered detailed Octopus inventory: "
+                "detailed Octopus inventory: "
                 f"{str(exc).strip() or type(exc).__name__}"
             )
 
