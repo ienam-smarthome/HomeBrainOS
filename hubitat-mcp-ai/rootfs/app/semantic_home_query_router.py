@@ -275,6 +275,127 @@ def _attention_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _requested_attention_scope(query: str) -> str | None:
+    """Return an explicitly requested attention category, or None for all."""
+
+    q = " ".join(str(query or "").strip().lower().strip(" .!?").split())
+    if not q:
+        return None
+
+    category_terms = (
+        (
+            "offline",
+            (
+                "offline device",
+                "offline devices",
+                "devices offline",
+                "which devices are offline",
+                "what devices are offline",
+                "show offline",
+                "list offline",
+            ),
+        ),
+        (
+            "stale",
+            (
+                "stale device",
+                "stale devices",
+                "devices stale",
+                "which devices are stale",
+                "show stale",
+                "list stale",
+                "stale telemetry",
+            ),
+        ),
+        (
+            "low_batteries",
+            (
+                "low battery",
+                "low batteries",
+                "battery low",
+                "batteries low",
+                "which batteries are low",
+                "show low batteries",
+                "list low batteries",
+            ),
+        ),
+        (
+            "warnings",
+            (
+                "warnings",
+                "device warnings",
+                "show warnings",
+                "list warnings",
+            ),
+        ),
+        (
+            "updates",
+            (
+                "updates available",
+                "devices need updating",
+                "device updates",
+                "show updates",
+                "list updates",
+            ),
+        ),
+    )
+
+    matches = [
+        scope
+        for scope, terms in category_terms
+        if any(term in q for term in terms)
+    ]
+
+    # Only narrow the result when exactly one category is explicitly requested.
+    return matches[0] if len(matches) == 1 else None
+
+
+def _filter_attention_scope(
+    attention: dict[str, Any],
+    scope: str | None,
+) -> dict[str, Any]:
+    """Keep only the explicitly requested issue category."""
+
+    if not scope:
+        return attention
+
+    filtered = dict(attention)
+    issue_categories = (
+        "low_batteries",
+        "offline",
+        "stale",
+        "warnings",
+        "updates",
+    )
+
+    for category in issue_categories:
+        if category == scope:
+            continue
+        filtered[category] = {
+            "count": 0,
+            "items": [],
+        }
+
+    # Category-specific requests should not include unrelated household state.
+    filtered["open_contacts"] = {
+        "open_count": 0,
+        "open": [],
+    }
+    filtered["lights_on"] = {
+        "on_count": 0,
+        "on": [],
+    }
+
+    selected = filtered.get(scope)
+    filtered["issue_count"] = (
+        int(selected.get("count") or 0)
+        if isinstance(selected, dict)
+        else 0
+    )
+    filtered["requested_scope"] = scope
+    return filtered
+
+
 def _names(items: list[dict[str, Any]]) -> str:
     values = [str(item.get("device") or item.get("title") or "").strip() for item in items]
     values = [value for value in values if value]
@@ -440,6 +561,11 @@ def install_semantic_home_query_router(application: Any) -> AskHandler:
             evidence["data"] = evidence_data
 
         attention = _attention_evidence(evidence)
+        requested_scope = _requested_attention_scope(query)
+        attention = _filter_attention_scope(
+            attention,
+            requested_scope,
+        )
         message, provider, synthesis_error = await _synthesise_attention(
             application,
             query,
@@ -462,6 +588,7 @@ def install_semantic_home_query_router(application: Any) -> AskHandler:
                     "attention": attention,
                     "health_evidence_error": health_error,
                     "health_evidence": health_answer,
+                    "requested_attention_scope": requested_scope,
                     "synthesis_error": synthesis_error,
                     "classification_error": classification_error,
                 }
@@ -477,6 +604,8 @@ __all__ = [
     "_attention_complete",
     "_attention_evidence",
     "_attention_fallback",
+    "_filter_attention_scope",
+    "_requested_attention_scope",
     "_authoritative_health_attention",
     "_health_attention_items",
     "_json_object",
