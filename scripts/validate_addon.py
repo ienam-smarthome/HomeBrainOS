@@ -30,7 +30,6 @@ required = [
     'hubitat-mcp-ai/rootfs/app/device_intelligence_webui.py',
     'hubitat-mcp-ai/rootfs/app/mcp_tool_catalogue.py',
     'hubitat-mcp-ai/rootfs/app/request_tracing.py',
-    'hubitat-mcp-ai/rootfs/app/ollama_agent.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_fast.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_resilient.py',
     'hubitat-mcp-ai/rootfs/app/ollama_agent_inference.py',

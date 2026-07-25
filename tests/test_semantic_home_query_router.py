@@ -77,4 +77,4 @@ def test_entrypoint_wires_semantic_router_before_legacy_guard():
     router = source.index("install_semantic_home_query_router(_core.application)")
     guard = source.index("install_home_summary_consistency_guard(_core.application)")
     assert router < guard
-    assert 'RELEASE_VERSION = "0.10.83"' in source
+    assert 'RELEASE_VERSION = "0.10.85"' in source

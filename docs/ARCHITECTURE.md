@@ -56,3 +56,23 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 6. Fold Web UI safety wrappers into a single maintained Web UI implementation.
 
 Each phase must preserve current public commands, MCP safety behaviour and Home Assistant startup.
+
+## Ollama runtime wiring
+
+`app.py` currently constructs a `ClaudeStyleOllamaAgent` during module import.
+`entrypoint_core.py` then replaces `application.ollama` with the live
+`UnifiedAdaptiveMCPAgent` before the request-serving application is exposed.
+
+The temporary base-agent construction is retained for now because changing
+startup composition and flattening the inheritance chain in the same release
+would increase regression risk. `tests/test_ollama_runtime_wiring.py` pins the
+final runtime class before that cleanup begins.
+
+The next Ollama consolidation phase must:
+
+1. preserve `UnifiedAdaptiveMCPAgent` as the final request-serving object;
+2. determine whether construction of the temporary Claude-style agent can be
+   removed without losing shutdown, fallback or configuration behaviour;
+3. add behaviour-level tests before removing shadowed ancestor methods;
+4. flatten one inheritance layer at a time rather than deleting the chain in
+   one change.

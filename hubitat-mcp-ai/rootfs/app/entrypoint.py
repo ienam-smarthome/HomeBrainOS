@@ -15,8 +15,8 @@ from semantic_home_query_router import install_semantic_home_query_router
 from semantic_home_summary_agent import install_semantic_home_summary_agent
 from thermostat_summary_guard import install_thermostat_summary_guard
 
-PREVIOUS_RELEASE_VERSION = "0.10.83"
-RELEASE_VERSION = "0.10.84"
+PREVIOUS_RELEASE_VERSION = "0.10.84"
+RELEASE_VERSION = "0.10.85"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 
