@@ -10,12 +10,13 @@ from home_summary_consistency_guard import install_home_summary_consistency_guar
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
-from semantic_home_summary_agent import install_semantic_home_summary_agent
 from runtime_route_bridge import install_runtime_route_bridge
+from semantic_home_query_router import install_semantic_home_query_router
+from semantic_home_summary_agent import install_semantic_home_summary_agent
 from thermostat_summary_guard import install_thermostat_summary_guard
 
-PREVIOUS_RELEASE_VERSION = "0.10.81"
-RELEASE_VERSION = "0.10.82"
+PREVIOUS_RELEASE_VERSION = "0.10.82"
+RELEASE_VERSION = "0.10.83"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 
@@ -62,6 +63,7 @@ semantic_home_summary_agent = install_semantic_home_summary_agent(
     _core.application,
     _core.home_snapshot,
 )
+semantic_home_query_router = install_semantic_home_query_router(_core.application)
 home_summary_consistency_guard = install_home_summary_consistency_guard(_core.application)
 thermostat_summary_guard = install_thermostat_summary_guard(_core.application)
 runtime_request_registry = install_runtime_route_bridge(_core.application)
