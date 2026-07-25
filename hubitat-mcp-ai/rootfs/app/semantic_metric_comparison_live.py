@@ -137,6 +137,34 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
         sources: list[str] = []
         collected: list[list[dict[str, Any]]] = []
 
+        # The live Hubitat gateway exposes the complete Power Meter values in
+        # the all-device detailed attribute response. Capability-filtered and
+        # compact summary responses on this installation return metadata but
+        # not usable power measurements. Use the proven authoritative shape
+        # first so a power summary requires one logical MCP read.
+        if spec.key == "power" and client is not None and callable(
+            getattr(client, "call_tool", None)
+        ):
+            result = await self._safe_call(
+                client,
+                {
+                    "detailed": True,
+                    "format": "detailed",
+                    "fields": list(_DETAIL_FIELDS),
+                },
+                "all-device detailed power evidence",
+                errors,
+            )
+            if result is not None and not result.is_error:
+                rows = self.router._device_rows(result.data)
+                if rows and self._contains_measurement(rows, spec):
+                    return _synthetic_result(
+                        spec.capability,
+                        rows,
+                        sources=["all-device-detailed-attributes"],
+                        errors=errors,
+                    )
+
         # Primary path: use the shared compact all-device snapshot. The
         # Hubitat gateway reliably exposes live currentStates in this response,
         # while capability-filtered responses can return metadata without the
