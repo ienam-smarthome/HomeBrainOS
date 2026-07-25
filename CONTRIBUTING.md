@@ -1,0 +1,48 @@
+# Contributing to HomeBrainOS
+
+## Change existing modules before creating variants
+
+A bug fix belongs in the existing live implementation. Do not create files named with suffixes such as `_final`, `_safe`, `_verified`, `_fixed`, `_v2`, `_new` or `_release` unless the file represents a genuinely separate capability with its own public contract.
+
+Before adding a new Python module under `hubitat-mcp-ai/rootfs/app`:
+
+1. Check `docs/ARCHITECTURE.md`.
+2. Run `python scripts/analyze_imports.py` and `python scripts/analyze_clusters.py`.
+3. Confirm that the capability does not already exist in a live module family.
+4. Prefer configuration, composition or a focused edit over another wrapper/subclass generation.
+5. Add regression coverage for the behaviour being changed.
+
+## Safe consolidation
+
+Do not delete a same-family module merely because its name looks obsolete. Many current modules are load-bearing inheritance or wrapper layers. Flatten one family at a time:
+
+1. identify the directly wired entry;
+2. map inherited/imported behaviour;
+3. port required safety checks;
+4. add tests;
+5. switch imports;
+6. verify no importers remain;
+7. delete the old file.
+
+## Validation
+
+At minimum, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m py_compile <changed Python files>
+.\.venv\Scripts\python.exe scripts\validate_addon.py
+.\.venv\Scripts\python.exe -m pytest -q <focused tests>
+git diff --check
+```
+
+For release or routing changes, also run `scripts/run_release_gate.py` when the local environment has all test dependencies installed.
+
+## Release metadata
+
+Keep the Hubitat MCP AI version aligned in:
+
+- `hubitat-mcp-ai/config.yaml`
+- `hubitat-mcp-ai/rootfs/app/entrypoint.py`
+- documentation that displays the current maintained version
+
+Do not claim CI or tests passed without actual results.
