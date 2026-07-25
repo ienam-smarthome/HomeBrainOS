@@ -31,6 +31,32 @@ def _trace_event(event: dict[str, Any]) -> None:
         trace.setdefault("mcp_events", []).append(event)
 
 
+def _safe_trace_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Return compact non-sensitive MCP arguments for diagnostics."""
+    allowed = {
+        "detailed",
+        "format",
+        "capabilityFilter",
+        "labelFilter",
+        "deviceId",
+        "fields",
+        "tool",
+    }
+    safe: dict[str, Any] = {}
+    for key, value in arguments.items():
+        if key not in allowed:
+            continue
+        if key == "fields" and isinstance(value, list):
+            safe[key] = [str(item) for item in value[:20]]
+        elif key == "deviceId":
+            safe[key] = str(value)
+        elif key == "tool":
+            safe[key] = str(value)
+        elif isinstance(value, (str, int, float, bool)) or value is None:
+            safe[key] = value
+    return safe
+
+
 @dataclass(slots=True)
 class _CacheEntry:
     value: MCPToolResult
@@ -226,6 +252,7 @@ class MCPStateBroker:
                     "cache": "bypass",
                     "duration_ms": duration_ms,
                     "argument_keys": sorted(arguments),
+                    "arguments": _safe_trace_arguments(arguments),
                 }
                 if gateway:
                     event["gateway"] = gateway
@@ -245,6 +272,7 @@ class MCPStateBroker:
                 "cache": "disabled",
                 "duration_ms": round((time.perf_counter() - started) * 1000),
                 "argument_keys": sorted(arguments),
+                    "arguments": _safe_trace_arguments(arguments),
             }
             if gateway:
                 event["gateway"] = gateway
@@ -264,6 +292,7 @@ class MCPStateBroker:
                         "duration_ms": 0,
                         "age_ms": round((now - entry.stored_at) * 1000),
                         "argument_keys": sorted(arguments),
+                    "arguments": _safe_trace_arguments(arguments),
                     }
                 )
                 return entry.value
@@ -277,6 +306,7 @@ class MCPStateBroker:
                         "cache": "coalesced",
                         "duration_ms": 0,
                         "argument_keys": sorted(arguments),
+                    "arguments": _safe_trace_arguments(arguments),
                     }
                 )
             else:
@@ -317,6 +347,7 @@ class MCPStateBroker:
                 "cache": "miss",
                 "duration_ms": duration_ms,
                 "argument_keys": sorted(arguments),
+                    "arguments": _safe_trace_arguments(arguments),
             }
             if gateway:
                 event["gateway"] = gateway
