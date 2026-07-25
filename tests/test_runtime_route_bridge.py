@@ -11,7 +11,20 @@ def test_entrypoint_rebinds_routes_after_app_controller_installation():
     app_install = source.index("install_named_app_controller(_core.application)")
     route_rebind = source.index("install_runtime_route_bridge(_core.application)")
     assert app_install < route_rebind
-    assert 'RELEASE_VERSION = "0.10.75"' in source
+    config = (
+        Path(__file__).resolve().parents[1]
+        / "hubitat-mcp-ai"
+        / "config.yaml"
+    ).read_text(encoding="utf-8")
+
+    version_line = next(
+        line
+        for line in config.splitlines()
+        if line.startswith('version: "')
+    )
+    release_version = version_line.split('"')[1]
+
+    assert f'RELEASE_VERSION = "{release_version}"' in source
 
 
 def test_runtime_version_is_baked_into_each_addon_image():
