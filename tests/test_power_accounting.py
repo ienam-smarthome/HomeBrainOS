@@ -408,3 +408,70 @@ def test_historical_energy_questions_are_not_live_accounting():
     assert is_power_accounting_query(
         "Why is electricity usage high right now?"
     )
+
+def test_nested_sparse_duplicate_does_not_replace_complete_device():
+    rows = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "lastActivity": "2026-07-25T21:00:00Z",
+                "attributes": {
+                    "value": {
+                        "currentValue": "229 W",
+                    }
+                },
+                "nested": {
+                    "id": "whole",
+                    "label": "Octopus Meter Current Power",
+                },
+            },
+            {
+                "id": "fridge",
+                "label": "Fridge",
+                "lastActivity": "2026-07-25T20:59:55Z",
+                "attributes": {
+                    "power": {
+                        "currentValue": 86.4,
+                        "unit": "W",
+                    }
+                },
+                "nested": {
+                    "id": "fridge",
+                    "label": "Fridge",
+                },
+            },
+        ]
+    }
+
+    class NestedMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=rows,
+                is_error=False,
+            )
+
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=NestedMCP())
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert result["whole_house_power_w"] == 229
+    assert result["monitored_device_power_w"] == 86.4
+    assert result["unaccounted_power_w"] == 142.6
+    assert result["active_power_readings"][0]["id"] == "fridge"
+
+    import json
+
+    technical = json.loads(result["technical"])
+    assert technical["extracted_device_row_count"] == 2

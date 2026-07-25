@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from control_focus_octopus_energy import (
-    _device_rows,
     _display_value,
+    _merge_rows,
     _period_from_label,
+    _walk_dicts,
 )
 from device_read_shapes import detailed_device_arguments
 from fallback_router import _device_id, _label, _normalise
@@ -95,6 +96,25 @@ def is_power_accounting_query(query: str) -> bool:
         )
     )
     return has_difference and has_power
+
+
+def _accounting_device_rows(value: Any) -> list[dict[str, Any]]:
+    """Merge every detailed representation of each Hubitat device.
+
+    Detailed MCP responses can contain the same device more than once in
+    nested evidence. Keeping only the last occurrence can replace a complete
+    device record with a sparse row that has no live attributes.
+    """
+
+    raw_rows = [
+        item
+        for item in _walk_dicts(value)
+        if isinstance(item, dict)
+        and _device_id(item) not in (None, "")
+        and _label(item)
+    ]
+
+    return _merge_rows([raw_rows])
 
 
 def _number_from_display(value: Any) -> float | None:
@@ -410,7 +430,7 @@ class PowerAccountingService:
                 ),
             }
 
-        rows = _device_rows(result.data)
+        rows = _accounting_device_rows(result.data)
         whole_house_w, meter_row, meter_value_source = (
             _whole_house_power(rows)
         )
@@ -596,6 +616,7 @@ class PowerAccountingService:
             "technical": safe_debug(
                 {
                     "query": query,
+                    "extracted_device_row_count": len(rows),
                     "whole_house_power_w": whole_house_w,
                     "monitored_device_power_w": monitored_w,
                     "unaccounted_power_w": difference_w,
