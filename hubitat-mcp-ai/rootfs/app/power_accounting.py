@@ -504,6 +504,86 @@ def _timestamp_summary(
     }
 
 
+_FRESH_COMPARISON_WINDOW_SECONDS = 120.0
+
+
+def _fresh_power_comparison(
+    meter_row: dict[str, Any] | None,
+    active_readings: list[dict[str, Any]],
+    whole_house_w: float | None,
+) -> dict[str, Any]:
+    meter_activity = (
+        _parse_activity(_activity_text(meter_row))
+        if meter_row is not None
+        else None
+    )
+
+    fresh: list[dict[str, Any]] = []
+    stale: list[dict[str, Any]] = []
+    unknown: list[dict[str, Any]] = []
+
+    for item in active_readings:
+        activity = _parse_activity(
+            item.get("last_activity")
+        )
+
+        enriched = dict(item)
+        enriched["meter_skew_seconds"] = None
+
+        if meter_activity is None or activity is None:
+            unknown.append(enriched)
+            continue
+
+        skew = abs(
+            (meter_activity - activity).total_seconds()
+        )
+        enriched["meter_skew_seconds"] = skew
+
+        if skew <= _FRESH_COMPARISON_WINDOW_SECONDS:
+            fresh.append(enriched)
+        else:
+            stale.append(enriched)
+
+    fresh_w = sum(
+        float(item["value"])
+        for item in fresh
+    )
+
+    fresh_unaccounted_w = (
+        whole_house_w - fresh_w
+        if whole_house_w is not None
+        else None
+    )
+
+    fresh_coverage = (
+        fresh_w / whole_house_w * 100.0
+        if whole_house_w is not None
+        and whole_house_w > 0
+        else None
+    )
+
+    return {
+        "window_seconds": (
+            _FRESH_COMPARISON_WINDOW_SECONDS
+        ),
+        "available": (
+            meter_activity is not None
+            and whole_house_w is not None
+        ),
+        "fresh_monitored_power_w": fresh_w,
+        "fresh_unaccounted_power_w": (
+            fresh_unaccounted_w
+        ),
+        "fresh_coverage_percent": fresh_coverage,
+        "fresh_reading_count": len(fresh),
+        "stale_reading_count": len(stale),
+        "unknown_timestamp_count": len(unknown),
+        "fresh_readings": fresh,
+        "stale_readings": stale,
+        "unknown_timestamp_readings": unknown,
+    }
+
+
 def _reading_quality(
     meter_row: dict[str, Any] | None,
     active_readings: list[dict[str, Any]],
@@ -720,12 +800,12 @@ class PowerAccountingService:
                     {
                         "label": "Status",
                         "value": "Unavailable",
-                        "icon": "⚠️",
+                        "icon": "warning",
                     }
                 ],
                 items=[
                     {
-                        "icon": "⚠️",
+                        "icon": "warning",
                         "title": "Device snapshot unavailable",
                         "value": "Retry failed",
                         "subtitle": (
@@ -817,6 +897,11 @@ class PowerAccountingService:
             active,
             readings,
         )
+        fresh_comparison = _fresh_power_comparison(
+            meter_row,
+            active,
+            whole_house_w,
+        )
 
         if whole_house_w is None:
             message = (
@@ -888,6 +973,69 @@ class PowerAccountingService:
                 f"{active_skew:.0f} seconds."
             )
 
+        stale_count = int(
+            fresh_comparison["stale_reading_count"]
+        )
+        unknown_count = int(
+            fresh_comparison[
+                "unknown_timestamp_count"
+            ]
+        )
+
+        if (
+            fresh_comparison["available"]
+            and (stale_count or unknown_count)
+        ):
+            fresh_w = float(
+                fresh_comparison[
+                    "fresh_monitored_power_w"
+                ]
+            )
+            fresh_difference = fresh_comparison[
+                "fresh_unaccounted_power_w"
+            ]
+            fresh_coverage = fresh_comparison[
+                "fresh_coverage_percent"
+            ]
+
+            message += (
+                f" Using only readings within "
+                f"{_FRESH_COMPARISON_WINDOW_SECONDS:.0f} seconds "
+                f"of the whole-house meter, monitored power is "
+                f"{_format_accounting_power(fresh_w)}"
+            )
+
+            if fresh_difference is not None:
+                message += (
+                    f", leaving "
+                    f"{_format_accounting_power(float(fresh_difference))} "
+                    f"unaccounted for"
+                )
+
+            if fresh_coverage is not None:
+                message += (
+                    f" with {float(fresh_coverage):.1f}% "
+                    f"fresh coverage"
+                )
+
+            message += "."
+
+            if stale_count:
+                message += (
+                    f" {stale_count} active reading"
+                    f"{'' if stale_count == 1 else 's'} "
+                    f"were excluded from the fresh comparison "
+                    f"because they were older than the "
+                    f"{_FRESH_COMPARISON_WINDOW_SECONDS:.0f}-second window."
+                )
+
+            if unknown_count:
+                message += (
+                    f" {unknown_count} active reading"
+                    f"{'' if unknown_count == 1 else 's'} "
+                    f"had no usable timestamp."
+                )
+
         top = active[:5]
         if top:
             message += "\n\nLargest monitored loads:\n" + "\n".join(
@@ -937,6 +1085,42 @@ class PowerAccountingService:
             },
         ]
 
+        if (
+            fresh_comparison["available"]
+            and (
+                fresh_comparison["stale_reading_count"]
+                or fresh_comparison[
+                    "unknown_timestamp_count"
+                ]
+            )
+        ):
+            metrics.extend(
+                [
+                    {
+                        "label": "Fresh monitored",
+                        "value": _format_accounting_power(
+                            float(
+                                fresh_comparison[
+                                    "fresh_monitored_power_w"
+                                ]
+                            )
+                        ),
+                        "icon": "🕒",
+                    },
+                    {
+                        "label": "Fresh coverage",
+                        "value": (
+                            f"{float(fresh_comparison['fresh_coverage_percent']):.1f}%"
+                            if fresh_comparison[
+                                "fresh_coverage_percent"
+                            ] is not None
+                            else "Unavailable"
+                        ),
+                        "icon": "✅",
+                    },
+                ]
+            )
+
         breakdown_items: list[dict[str, Any]] = []
 
         if active:
@@ -960,6 +1144,53 @@ class PowerAccountingService:
                 }
             )
 
+        freshness_items: list[dict[str, Any]] = []
+
+        if fresh_comparison["stale_readings"]:
+            excluded_text = " | ".join(
+                f"{item['label']} "
+                f"{_format_accounting_power(float(item['value']))} "
+                f"({float(item['meter_skew_seconds']):.0f}s)"
+                for item in fresh_comparison[
+                    "stale_readings"
+                ][:5]
+            )
+
+            freshness_items.append(
+                {
+                    "icon": "clock",
+                    "title": "Excluded from fresh comparison",
+                    "value": (
+                        f"{fresh_comparison['stale_reading_count']} stale"
+                    ),
+                    "subtitle": excluded_text,
+                    "tone": "warning",
+                }
+            )
+
+        if fresh_comparison[
+            "unknown_timestamp_readings"
+        ]:
+            unknown_text = " | ".join(
+                str(item["label"])
+                for item in fresh_comparison[
+                    "unknown_timestamp_readings"
+                ][:5]
+            )
+
+            freshness_items.append(
+                {
+                    "icon": "question",
+                    "title": "Timestamp unavailable",
+                    "value": (
+                        f"{fresh_comparison['unknown_timestamp_count']} reading"
+                        f"{'' if fresh_comparison['unknown_timestamp_count'] == 1 else 's'}"
+                    ),
+                    "subtitle": unknown_text,
+                    "tone": "warning",
+                }
+            )
+
         display = display_payload(
             "power-accounting",
             "Whole-house power accounting",
@@ -968,6 +1199,7 @@ class PowerAccountingService:
             ),
             metrics=metrics,
             items=breakdown_items
+            + freshness_items
             + [
                 {
                     "icon": "🔌",
@@ -1011,6 +1243,22 @@ class PowerAccountingService:
             "coverage_percent": coverage,
             "whole_house_value_source": meter_value_source,
             "reading_quality": reading_quality,
+            "fresh_comparison": fresh_comparison,
+            "fresh_monitored_device_power_w": (
+                fresh_comparison[
+                    "fresh_monitored_power_w"
+                ]
+            ),
+            "fresh_unaccounted_power_w": (
+                fresh_comparison[
+                    "fresh_unaccounted_power_w"
+                ]
+            ),
+            "fresh_coverage_percent": (
+                fresh_comparison[
+                    "fresh_coverage_percent"
+                ]
+            ),
             "active_reading_count": len(active),
             "idle_reading_count": len(idle),
             "active_power_readings": active,
@@ -1049,6 +1297,7 @@ class PowerAccountingService:
                     "coverage_percent": coverage,
                     "whole_house_value_source": meter_value_source,
                     "reading_quality": reading_quality,
+                    "fresh_comparison": fresh_comparison,
                     "active_readings": active,
                     "idle_readings": idle,
                     "meter_label": (
