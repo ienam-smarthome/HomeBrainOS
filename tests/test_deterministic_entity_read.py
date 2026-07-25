@@ -413,3 +413,79 @@ def test_attribute_reader_does_not_switch_to_another_meter():
     assert "73%" not in answer["message"]
     assert mcp.read_ids == ["bathroom"]
 
+
+def test_similarly_scored_meter_names_require_clarification():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "bedroom-1",
+                "label": "Bedroom 1 Meter",
+                "room": "Bedroom 1",
+                "currentStates": {},
+            },
+            {
+                "id": "bedroom-2",
+                "label": "Bedroom 2 Meter",
+                "room": "Bedroom 2",
+                "currentStates": {},
+            },
+        ],
+        {
+            "bedroom-1": {"battery": 73},
+            "bedroom-2": {"battery": 81},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the battery level of the bedroom meter?",
+        )
+    )
+
+    assert answer["success"] is False
+    assert answer["intent"] == "device-resolution-ambiguous"
+    assert answer["confirmation_required"] is True
+    assert set(answer["alternatives"]) == {
+        "Bedroom 1 Meter",
+        "Bedroom 2 Meter",
+    }
+    assert answer["entity_resolution"]["status"] == "ambiguous"
+    assert mcp.read_ids == []
+
+
+def test_exact_ordinal_meter_name_resolves_without_clarification():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "bedroom-1",
+                "label": "Bedroom 1 Meter",
+                "room": "Bedroom 1",
+                "currentStates": {},
+            },
+            {
+                "id": "bedroom-2",
+                "label": "Bedroom 2 Meter",
+                "room": "Bedroom 2",
+                "currentStates": {},
+            },
+        ],
+        {
+            "bedroom-1": {"battery": 73},
+            "bedroom-2": {"battery": 81},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the battery level of Bedroom 2 Meter?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["device_id"] == "bedroom-2"
+    assert answer["device_label"] == "Bedroom 2 Meter"
+    assert answer["value"] == 81
+    assert mcp.read_ids == ["bedroom-2"]
+

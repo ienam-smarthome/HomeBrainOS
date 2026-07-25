@@ -8,6 +8,7 @@ from control_agent_intent import is_control_candidate
 from contextual_control import is_other_device_control
 from device_health_fast_route import is_attention_query, is_device_health_query
 from entity_request_policy import parse_entity_request
+from entity_resolution import ResolutionRequest, ResolutionStatus, resolve_devices
 from fallback_router import _device_id, _label
 from mutation_result_policy import enforce_device_mutation_result
 from routing_policy import classify_query
@@ -659,13 +660,106 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
             "answered_by": "deterministic device inventory",
         }
 
-    target_phrase = parse_entity_request(query).target_phrase if explicit_lookup else _attribute_target_phrase(query)
-    candidates = _rank_lookup_devices(
-        devices,
-        target_phrase,
-        attribute_request[0] if attribute_request else None,
+    entity_request = parse_entity_request(query)
+    target_phrase = (
+        entity_request.target_phrase
+        if explicit_lookup
+        else _attribute_target_phrase(query)
     )
-    device = candidates[0] if candidates else None
+    target_request = parse_entity_request(target_phrase)
+
+    normalised_target = _normalise(target_phrase)
+    compact_target = re.sub(r"[^a-z0-9]", "", normalised_target)
+    exact_label_match = any(
+        re.sub(r"[^a-z0-9]", "", _normalise(_label(item))) == compact_target
+        for item in devices
+    )
+    exact_room_match = any(
+        _normalise(_device_room(item)) == normalised_target
+        for item in devices
+    )
+    room_metric_request = bool(
+        attribute_request
+        and exact_room_match
+        and not exact_label_match
+    )
+
+    if room_metric_request:
+        shared_resolution = None
+        shared_resolution_data = {
+            "status": "room_metric",
+            "confidence": 1.0,
+            "targets": [],
+            "candidates": [],
+            "reason": "The target phrase exactly matches a room rather than a device label.",
+            "query": target_phrase,
+            "metadata": {"room_metric_request": True},
+        }
+    else:
+        shared_resolution = resolve_devices(
+            devices,
+            ResolutionRequest(
+                target_phrase=target_phrase,
+                room=target_request.room,
+                device_type=target_request.device_type,
+                ordinal=target_request.ordinal,
+                allow_group=False,
+            ),
+        )
+        shared_resolution_data = shared_resolution.as_dict()
+
+    resolved_by_confidence = False
+
+    if (
+        shared_resolution is not None
+        and shared_resolution.status is ResolutionStatus.AMBIGUOUS
+    ):
+        labels = [item.label for item in shared_resolution.candidates[:3]]
+        choices = ", ".join(labels)
+        return {
+            "success": False,
+            "route": "mcp-fast",
+            "intent": "device-resolution-ambiguous",
+            "message": (
+                f'I found multiple devices matching "{target_phrase}": '
+                f"{choices}. Please use the exact device name."
+            ),
+            "confirmation_required": True,
+            "alternatives": labels,
+            "tools_used": tools_used,
+            "entity_resolution_request": entity_request.as_dict(),
+            "entity_resolution": shared_resolution_data,
+            "answered_by": "shared deterministic entity resolver",
+        }
+
+    if (
+        shared_resolution is not None
+        and shared_resolution.status is ResolutionStatus.RESOLVED
+        and shared_resolution.targets
+    ):
+        resolved_id = shared_resolution.targets[0].device_id
+        device = next(
+            (
+                item
+                for item in devices
+                if str(_device_id(item) or "") == resolved_id
+            ),
+            None,
+        )
+        candidates = [device] if device is not None else []
+        resolved_by_confidence = device is not None
+    else:
+        # Room-level metric requests such as "bathroom humidity" may not name
+        # an individual device. Preserve bounded attribute-capable probing for
+        # those broad reads while exact and confidently resolved devices remain
+        # bound to one authoritative device ID.
+        candidates = _rank_lookup_devices(
+            devices,
+            target_phrase,
+            attribute_request[0] if attribute_request else None,
+        )
+        device = candidates[0] if candidates else None
+
     if device is None:
         return {
             "success": False,
@@ -673,8 +767,9 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
             "intent": "device-lookup" if explicit_lookup else "device-attribute-read",
             "message": f'I could not find a device matching "{target_phrase}".',
             "tools_used": tools_used,
-            "entity_resolution_request": parse_entity_request(query).as_dict(),
-            "answered_by": "deterministic entity resolver",
+            "entity_resolution_request": entity_request.as_dict(),
+            "entity_resolution": shared_resolution_data,
+            "answered_by": "shared deterministic entity resolver",
         }
 
     if explicit_lookup:
@@ -697,7 +792,7 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
 
     attribute, unit = attribute_request
     selected_score = _lookup_record_score(device, target_phrase, attribute)
-    exact_device_match = selected_score[0] > 0
+    exact_device_match = resolved_by_confidence or selected_score[0] > 0
 
     value = None
     devices_probed = 0
