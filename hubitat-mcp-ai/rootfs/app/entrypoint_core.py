@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 import uvicorn
 from pydantic import Field
+
+# The maintained entrypoint replaces app.ollama with UnifiedAdaptiveMCPAgent.
+# Avoid constructing a complete legacy agent and HTTP client only to discard it.
+os.environ["HOMEBRAIN_DEFER_OLLAMA_INIT"] = "1"
 
 import app as application
 import device_intelligence_webui as device_intelligence_webui_module

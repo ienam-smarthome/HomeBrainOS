@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import json
 import os
 import time
@@ -98,31 +99,48 @@ mcp = HubitatMCPClient(
     access_token=str(OPTIONS.get("hubitat_mcp_token") or ""),
     timeout_seconds=float(OPTIONS.get("mcp_timeout_seconds") or 25),
 )
-ollama = ClaudeStyleOllamaAgent(
-    client=mcp,
-    base_url=str(OPTIONS.get("ollama_base_url") or ""),
-    model=str(OPTIONS.get("ollama_model") or ""),
-    planner_model=str(OPTIONS.get("ollama_planner_model") or ""),
-    health_timeout_seconds=float(OPTIONS.get("ollama_health_timeout_seconds") or 3),
-    planner_timeout_seconds=float(
-        OPTIONS.get("ollama_planner_timeout_seconds") or 45
-    ),
-    response_timeout_seconds=float(
-        OPTIONS.get("ollama_response_timeout_seconds") or 90
-    ),
-    num_ctx=int(OPTIONS.get("ollama_num_ctx") or 4096),
-    num_predict=int(OPTIONS.get("ollama_num_predict") or 220),
-    keep_alive=str(OPTIONS.get("ollama_keep_alive") or "30m"),
-    planner_tool_limit=int(OPTIONS.get("ollama_planner_tool_limit") or 6),
-    tool_result_limit_chars=int(
-        OPTIONS.get("ollama_tool_result_limit_chars") or 12000
-    ),
-    max_tool_rounds=int(OPTIONS.get("ollama_max_tool_rounds") or 3),
-    require_sensitive_confirmation=option_bool(
-        "require_sensitive_confirmation",
-        True,
-    ),
-)
+class DeferredOllamaAgent:
+    """Temporary startup placeholder used by the maintained entrypoint.
+
+    entrypoint_core.py replaces this object with UnifiedAdaptiveMCPAgent before
+    request-serving routes are exposed. Keeping close() async preserves the
+    replacement lifecycle without allocating an unused HTTP client.
+    """
+
+    deferred_initialization = True
+
+    async def close(self) -> None:
+        return None
+
+
+if os.environ.get("HOMEBRAIN_DEFER_OLLAMA_INIT") == "1":
+    ollama = DeferredOllamaAgent()
+else:
+    ollama = ClaudeStyleOllamaAgent(
+        client=mcp,
+        base_url=str(OPTIONS.get("ollama_base_url") or ""),
+        model=str(OPTIONS.get("ollama_model") or ""),
+        planner_model=str(OPTIONS.get("ollama_planner_model") or ""),
+        health_timeout_seconds=float(OPTIONS.get("ollama_health_timeout_seconds") or 3),
+        planner_timeout_seconds=float(
+            OPTIONS.get("ollama_planner_timeout_seconds") or 45
+        ),
+        response_timeout_seconds=float(
+            OPTIONS.get("ollama_response_timeout_seconds") or 90
+        ),
+        num_ctx=int(OPTIONS.get("ollama_num_ctx") or 4096),
+        num_predict=int(OPTIONS.get("ollama_num_predict") or 220),
+        keep_alive=str(OPTIONS.get("ollama_keep_alive") or "30m"),
+        planner_tool_limit=int(OPTIONS.get("ollama_planner_tool_limit") or 6),
+        tool_result_limit_chars=int(
+            OPTIONS.get("ollama_tool_result_limit_chars") or 12000
+        ),
+        max_tool_rounds=int(OPTIONS.get("ollama_max_tool_rounds") or 3),
+        require_sensitive_confirmation=option_bool(
+            "require_sensitive_confirmation",
+            True,
+        ),
+    )
 fallback = FastFallbackRouter(
     mcp,
     attention_stale_hours=float(OPTIONS.get("attention_stale_hours") or 48),

@@ -76,3 +76,17 @@ The next Ollama consolidation phase must:
 3. add behaviour-level tests before removing shadowed ancestor methods;
 4. flatten one inheritance layer at a time rather than deleting the chain in
    one change.
+
+## Deferred Ollama startup
+
+The maintained `entrypoint_core.py` startup now requests deferred legacy Ollama
+initialization before importing `app.py`. During that import, `app.py` installs
+a lightweight temporary object rather than constructing a complete
+`ClaudeStyleOllamaAgent` and unused HTTP client.
+
+`entrypoint_core.py` then replaces the placeholder with
+`UnifiedAdaptiveMCPAgent`, as before. Direct standalone execution of `app.py`
+continues to construct the Claude-style agent for compatibility.
+
+This removes duplicate startup work without yet changing the load-bearing
+Ollama inheritance chain.

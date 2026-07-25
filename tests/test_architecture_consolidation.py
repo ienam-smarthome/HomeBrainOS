@@ -29,7 +29,7 @@ def test_current_release_metadata_is_aligned():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     readme = (ROOT / "hubitat-mcp-ai" / "README.md").read_text(encoding="utf-8")
-    assert 'version: "0.10.85"' in config
-    assert 'PREVIOUS_RELEASE_VERSION = "0.10.84"' in entrypoint
-    assert 'RELEASE_VERSION = "0.10.85"' in entrypoint
-    assert "Current add-on version: **0.10.85**" in readme
+    assert 'version: "0.10.86"' in config
+    assert 'PREVIOUS_RELEASE_VERSION = "0.10.85"' in entrypoint
+    assert 'RELEASE_VERSION = "0.10.86"' in entrypoint
+    assert "Current add-on version: **0.10.86**" in readme
