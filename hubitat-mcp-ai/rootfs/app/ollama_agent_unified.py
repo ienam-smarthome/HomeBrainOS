@@ -90,7 +90,7 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
             "without a distinguishing name, room or capability, call hub_list_devices rather "
             "than hub_read_devices. Do not reuse an entity from conversation history unless "
             "the current request explicitly refers to it. Do not use hub_search_tools to find "
-            "physical devices. Tool-catalogue discovery is never authoritative home data."
+            "physical devices. Tool-catalogue discovery is never authoritative home data. ""discovery is never the final step for a live-home question. After discovery, ""call hub_list_devices, hub_read_devices, homebrain_search_devices, or another ""authoritative MCP tool before producing the final answer."
         )
 
     def _is_broad_device_inventory_request(self, query: str) -> bool:
@@ -110,6 +110,12 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
         requested = " ".join(match.group(1).strip(" .!?").split())
         requested = re.sub(
             r"^(?:the\s+)?(?:device\s+)?",
+            "",
+            requested,
+            flags=re.IGNORECASE,
+        ).strip()
+        requested = re.sub(
+            r"\s+device$",
             "",
             requested,
             flags=re.IGNORECASE,
@@ -251,9 +257,10 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
         planner_error: Exception,
     ) -> dict[str, Any]:
         started = time.perf_counter()
+        requested = self._targeted_device_lookup(query) or query
         result = await self.client.call_tool(
             _TARGETED_DEVICE_SEARCH,
-            {"query": query, "limit": 8},
+            {"query": requested, "limit": 8},
         )
         if result.is_error:
             raise OllamaUnavailable(
@@ -297,7 +304,7 @@ class UnifiedAdaptiveMCPAgent(AdaptiveFinalAnswerAgent):
             "tools_used": [
                 {
                     "name": _TARGETED_DEVICE_SEARCH,
-                    "arguments": {"query": query, "limit": 8},
+                    "arguments": {"query": requested, "limit": 8},
                     "success": True,
                     "preview": tool_text[:700],
                     **({"evidence": evidence} if evidence else {}),

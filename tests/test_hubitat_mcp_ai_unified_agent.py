@@ -37,6 +37,7 @@ def test_device_discovery_goes_to_the_same_agent():
 def test_explicit_named_lookup_is_distinguished_from_broad_inventory():
     lookup = UnifiedAdaptiveMCPAgent._targeted_device_lookup
     assert lookup("find front door") == "front door"
+    assert lookup("Please find the front door device") == "front door"
     assert lookup("Please search for the device Entrance Lock") == "Entrance Lock"
     assert lookup("show all selected devices") is None
     assert lookup("what doors are open?") is None
@@ -72,6 +73,60 @@ def test_planner_broad_call_is_repaired_before_targeted_lookup_synthesis():
     assert record["name"] == "homebrain_search_devices"
     assert record["success"] is True
     assert "Front Door" in tool_text
+
+
+def test_targeted_recovery_uses_extracted_device_phrase_and_traces_it():
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return SimpleNamespace(
+                data={"matches": [{"id": "7399", "label": "Front Door"}]},
+                text="",
+                raw={},
+                is_error=False,
+            )
+
+    client = FakeClient()
+    agent = object.__new__(UnifiedAdaptiveMCPAgent)
+    agent.client = client
+    agent.model = "test-model"
+    agent.response_timeout_seconds = 5
+    agent.num_ctx = 2048
+    agent.num_predict = 120
+    agent._last_agent_status = {"planner_model": "test-planner"}
+
+    agent._compact_tool_result = lambda result: '{"matches":[{"id":"7399","label":"Front Door"}]}'
+    agent._tool_evidence = lambda data: {"match_count": len(data.get("matches") or [])}
+    agent._synthesis_messages = lambda **kwargs: [
+        {"role": "user", "content": kwargs["query"]}
+    ]
+
+    async def fake_chat(**kwargs):
+        return {"message": {"content": "I found the Front Door device."}}
+
+    agent._chat = fake_chat
+
+    answer = asyncio.run(
+        agent._answer_from_targeted_device_search(
+            "Please find the front door device",
+            history=[],
+            planner_error=RuntimeError("planner returned no authoritative data"),
+        )
+    )
+
+    expected_arguments = {"query": "front door", "limit": 8}
+    assert client.calls == [
+        ("homebrain_search_devices", expected_arguments)
+    ]
+    assert answer["success"] is True
+    assert answer["targeted_device_search"] is True
+    assert answer["authoritative_recovery"] is True
+    assert answer["tools_used"][0]["name"] == "homebrain_search_devices"
+    assert answer["tools_used"][0]["arguments"] == expected_arguments
+    assert answer["message"] == "I found the Front Door device."
 
 
 def test_exact_fast_control_and_protocol_followups_stay_deterministic():
