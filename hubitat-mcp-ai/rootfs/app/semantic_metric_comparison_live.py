@@ -133,15 +133,11 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
             return await super()._fresh_capability_result(spec)
 
         errors: list[str] = []
-        invalidate = getattr(client, "invalidate", None)
-        try:
-            if callable(invalidate):
-                await invalidate("devices")
-            elif index is not None:
-                await index.invalidate()
-        except Exception as exc:
-            errors.append(f"cache invalidation: {str(exc).strip() or type(exc).__name__}")
 
+        # This is a read-only metric operation. Do not invalidate the shared
+        # broker or device-index caches before reading. Device writes already
+        # invalidate this evidence, while normal TTL expiry preserves bounded
+        # freshness for repeated live-state queries.
         sources: list[str] = []
         collected: list[list[dict[str, Any]]] = []
 
@@ -201,7 +197,7 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
                 catalogue = await index.capability_result(
                     spec.capability,
                     detailed=True,
-                    force=True,
+                    force=False,
                 )
                 if catalogue.is_error:
                     errors.append(catalogue.text or "selected-device capability catalogue failed")
