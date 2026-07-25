@@ -3,8 +3,8 @@
 ## Fixed
 
 - Exact device attribute reads remain bound to the resolved Hubitat device ID.
-- A requested device is no longer replaced by another candidate merely because the other device exposes the requested attribute.
-- Compact, spaced, hyphenated, and underscored device labels now resolve consistently, including `BathroomMeter` and `Bathroom meter`.
+- A requested device is no longer replaced by another candidate merely because that device exposes the requested attribute.
+- Compact and spaced device names resolve consistently, including `BathroomMeter` and `Bathroom meter`.
 - Leading articles such as `the`, `a`, and `an` are removed from attribute target phrases.
 - Broad room metric queries retain bounded candidate probing while exact device queries read only the selected device.
 
