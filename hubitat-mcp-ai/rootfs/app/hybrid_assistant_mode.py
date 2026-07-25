@@ -12,6 +12,7 @@ from control_focus_octopus_energy import OctopusLiveMeterSummary
 from device_health_fast_route import is_device_health_query
 from fallback_router import _device_id, _label
 from presenter import display_payload, normalise_text, safe_debug
+from power_accounting import PowerAccountingService, is_power_accounting_query
 from routing_policy import RouteDecision, classify_query, normalise
 
 
@@ -124,7 +125,11 @@ def is_hybrid_ai_query(query: str) -> bool:
         return False
     if any(term in q for term in _AUTOMATION_WRITE_TERMS):
         return False
-    if is_power_summary_query(q) or is_octopus_energy_query(q):
+    if (
+        is_power_accounting_query(q)
+        or is_power_summary_query(q)
+        or is_octopus_energy_query(q)
+    ):
         return False
     decision = classify_query(q)
     return decision.route != "mcp-fast"
@@ -247,10 +252,16 @@ def install_hybrid_verified_read_routes(application: Any, metric_executor: Any) 
         allow_verified_reads=True,
     )
     octopus_service = OctopusLiveMeterSummary(application)
+    accounting_service = PowerAccountingService(application)
     original_ask: AskHandler = application.ask
     original_classifier = request_tracing.classify_query
 
     def classify_with_hybrid_reads(query: str) -> RouteDecision:
+        if is_power_accounting_query(query):
+            return RouteDecision(
+                "mcp-fast",
+                "verified whole-house versus monitored-device power accounting",
+            )
         if is_power_summary_query(query):
             return RouteDecision(
                 "mcp-fast",
@@ -267,6 +278,10 @@ def install_hybrid_verified_read_routes(application: Any, metric_executor: Any) 
 
     async def ask_with_hybrid_reads(request: Any) -> dict[str, Any]:
         query = str(getattr(request, "query", "") or "").strip()
+        if is_power_accounting_query(query):
+            answer = dict(await accounting_service.answer(query))
+            answer.setdefault("version", application.VERSION)
+            return answer
         if is_power_summary_query(query):
             answer = dict(await power_service.power_summary(query))
             answer.setdefault("version", application.VERSION)
