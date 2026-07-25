@@ -635,3 +635,63 @@ def test_room_metric_candidates_do_not_use_partial_room_matches():
     )
 
     assert [str(_device_id(item)) for item in candidates] == ["bedroom-2"]
+
+
+def test_natural_room_humidity_question_uses_complete_room_name():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "bathroom-meter",
+                "label": "Bathroom Meter",
+                "room": "Bathroom",
+                "capabilities": ["RelativeHumidityMeasurement"],
+                "currentStates": {},
+            },
+            {
+                "id": "bedroom-meter",
+                "label": "Bedroom Meter",
+                "room": "Bedroom 2",
+                "capabilities": ["RelativeHumidityMeasurement"],
+                "currentStates": {},
+            },
+        ],
+        {
+            "bathroom-meter": {"humidity": 61},
+            "bedroom-meter": {"humidity": 48},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the humidity in the bathroom?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["attribute"] == "humidity"
+    assert answer["value"] == 61
+    assert answer["device_id"] == "bathroom-meter"
+    assert mcp.read_ids == ["bathroom-meter"]
+
+
+def test_attribute_target_phrase_returns_complete_room_for_room_metric():
+    from mcp_agent_orchestrator import _attribute_target_phrase
+
+    assert (
+        _attribute_target_phrase(
+            "What is the humidity in the bathroom?"
+        )
+        == "bathroom"
+    )
+
+
+def test_attribute_target_phrase_preserves_living_room():
+    from mcp_agent_orchestrator import _attribute_target_phrase
+
+    assert (
+        _attribute_target_phrase(
+            "What is the temperature in the Living Room?"
+        )
+        == "living room"
+    )
