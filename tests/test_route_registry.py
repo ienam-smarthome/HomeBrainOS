@@ -11,7 +11,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-from routing import Route, RouteDecision, RouteRegistry
+from route_priority import Route, RouteDecision, RouteRegistry
 
 
 def route(
@@ -176,3 +176,16 @@ def test_registry_description_is_priority_ordered():
         "entity-read",
         "ai-evidence",
     ]
+
+
+def test_existing_routing_modules_are_not_shadowed():
+    import route_registry
+    import routing
+
+    assert callable(routing.dedupe_current_query)
+    assert callable(routing.is_fast_path_query)
+    assert Path(routing.__file__).name == "routing.py"
+
+    assert hasattr(route_registry, "RouteDescriptor")
+    assert hasattr(route_registry, "RouteSelection")
+    assert Path(route_registry.__file__).name == "route_registry.py"
