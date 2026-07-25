@@ -510,9 +510,16 @@ class PowerAccountingService:
         # key, so an empty projected snapshot is not reused.
         if not rows:
             snapshot_retry_used = True
+
+            # Retain detailed mode so the fallback still includes live
+            # attributes, but remove the fields projection that can
+            # occasionally produce an empty payload.
+            retry_arguments = dict(arguments)
+            retry_arguments.pop("fields", None)
+
             retry_result = await self.application.mcp.call_tool(
                 "hub_list_devices",
-                {},
+                retry_arguments,
             )
             if not retry_result.is_error:
                 retry_rows = _accounting_device_rows(
