@@ -1121,6 +1121,49 @@ class PowerAccountingService:
                 ]
             )
 
+        summary_parts = [
+            (
+                f"{_format_accounting_power(monitored_w)} "
+                "monitored"
+            )
+        ]
+
+        if difference_w is not None:
+            summary_parts.append(
+                f"{_format_accounting_power(difference_w)} "
+                "unaccounted"
+            )
+
+        if coverage is not None:
+            summary_parts.append(
+                f"{coverage:.1f}% coverage"
+            )
+
+        summary_tone = (
+            "warning"
+            if reading_quality.get("quality")
+            in {"mixed", "stale", "unknown"}
+            else None
+        )
+
+        summary_items: list[dict[str, Any]] = [
+            {
+                "icon": "summary",
+                "title": "Power summary",
+                "value": (
+                    _format_accounting_power(
+                        whole_house_w
+                    )
+                    if whole_house_w is not None
+                    else "Whole-house unavailable"
+                ),
+                "subtitle": " | ".join(
+                    summary_parts
+                ),
+                "tone": summary_tone,
+            }
+        ]
+
         breakdown_items: list[dict[str, Any]] = []
 
         if active:
@@ -1198,7 +1241,8 @@ class PowerAccountingService:
                 f"{len(active)} active and {len(idle)} idle monitored readings"
             ),
             metrics=metrics,
-            items=breakdown_items
+            items=summary_items
+            + breakdown_items
             + freshness_items
             + [
                 {

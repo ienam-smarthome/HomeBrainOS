@@ -713,7 +713,15 @@ def test_power_accounting_display_has_breakdown_tile():
     )
 
     items = result["display"]["items"]
-    breakdown = items[0]
+
+    summary = items[0]
+    breakdown = items[1]
+
+    assert summary["title"] == "Power summary"
+    assert summary["value"] == "362 W"
+    assert "242 W monitored" in summary["subtitle"]
+    assert "120 W unaccounted" in summary["subtitle"]
+    assert "66.9% coverage" in summary["subtitle"]
 
     assert breakdown["title"] == "Power breakdown"
     assert breakdown["value"] == "242 W"
@@ -981,7 +989,14 @@ def test_empty_detailed_inventory_uses_targeted_device_details():
     assert technical["targeted_detail"]["failure_count"] == 0
 
     items = result["display"]["items"]
-    assert items[0]["title"] == "Power breakdown"
+
+    assert items[0]["title"] == "Power summary"
+    assert items[0]["value"] == "200 W"
+    assert "80 W monitored" in items[0]["subtitle"]
+    assert "120 W unaccounted" in items[0]["subtitle"]
+    assert "40.0% coverage" in items[0]["subtitle"]
+
+    assert items[1]["title"] == "Power breakdown"
 
 def test_fresh_comparison_excludes_active_readings_over_120_seconds():
     rows = {
