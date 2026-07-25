@@ -589,7 +589,6 @@ def test_room_metric_candidates_are_confined_to_exact_room():
 
     assert [str(_device_id(item)) for item in candidates] == [
         "bathroom-meter",
-        "bathroom-light",
     ]
 
 
@@ -695,3 +694,163 @@ def test_attribute_target_phrase_preserves_living_room():
         )
         == "living room"
     )
+
+
+def test_room_metric_inventory_value_is_ranked_first():
+    candidates = _room_metric_candidates(
+        [
+            {
+                "id": "capability-only",
+                "label": "Bathroom Climate",
+                "room": "Bathroom",
+                "capabilities": ["RelativeHumidityMeasurement"],
+                "currentStates": {},
+            },
+            {
+                "id": "live-value",
+                "label": "Bathroom Meter",
+                "room": "Bathroom",
+                "currentStates": {"humidity": 59},
+            },
+        ],
+        "Bathroom",
+        "humidity",
+    )
+
+    assert str(_device_id(candidates[0])) == "live-value"
+
+
+def test_room_metric_excludes_unrelated_devices_when_supported_device_exists():
+    candidates = _room_metric_candidates(
+        [
+            {
+                "id": "light",
+                "label": "Bathroom Light",
+                "room": "Bathroom",
+                "capabilities": ["Switch"],
+            },
+            {
+                "id": "presence",
+                "label": "Bathroom Presence",
+                "room": "Bathroom",
+                "capabilities": ["PresenceSensor"],
+            },
+            {
+                "id": "humidity",
+                "label": "Bathroom Climate",
+                "room": "Bathroom",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+        ],
+        "Bathroom",
+        "humidity",
+    )
+
+    assert [str(_device_id(item)) for item in candidates] == ["humidity"]
+
+
+def test_room_metric_never_probes_supported_device_from_another_room():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "bathroom-light",
+                "label": "Bathroom Light",
+                "room": "Bathroom",
+                "capabilities": ["Switch"],
+            },
+            {
+                "id": "bedroom-meter",
+                "label": "Bedroom Meter",
+                "room": "Bedroom 2",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+        ],
+        {
+            "bathroom-light": {"switch": "off"},
+            "bedroom-meter": {"humidity": 48},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the humidity in the bathroom?",
+        )
+    )
+
+    assert answer["success"] is False
+    assert "No device in Bathroom exposed a current humidity value." == answer["message"]
+    assert "bedroom-meter" not in mcp.read_ids
+
+
+def test_room_metric_reports_room_when_no_candidate_exposes_value():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "sensor-a",
+                "label": "Aqara Hi-P Sensor",
+                "room": "Bathroom",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+            {
+                "id": "sensor-b",
+                "label": "Bathroom Environment",
+                "room": "Bathroom",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+        ],
+        {
+            "sensor-a": {"presence": "present"},
+            "sensor-b": {"temperature": 27.8},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the humidity in the bathroom?",
+        )
+    )
+
+    assert answer["success"] is False
+    assert answer["device_id"] == ""
+    assert answer["device_label"] == "Bathroom"
+    assert answer["message"] == (
+        "No device in Bathroom exposed a current humidity value."
+    )
+    assert mcp.read_ids == ["sensor-a", "sensor-b"]
+
+
+def test_named_device_read_remains_single_target_only():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "named",
+                "label": "Bathroom Meter",
+                "room": "Ventilation",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+            {
+                "id": "other",
+                "label": "Ventilation Climate",
+                "room": "Ventilation",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+        ],
+        {
+            "named": {"humidity": 59},
+            "other": {"humidity": 48},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the humidity of Bathroom Meter?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["device_id"] == "named"
+    assert answer["value"] == 59
+    assert mcp.read_ids == ["named"]

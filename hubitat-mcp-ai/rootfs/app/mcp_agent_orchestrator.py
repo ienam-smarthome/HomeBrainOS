@@ -813,6 +813,36 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         device = None
 
     if device is None:
+        if room_metric_request and attribute_request:
+            attribute, unit = attribute_request
+            room_label = next(
+                (
+                    _device_room(item)
+                    for item in devices
+                    if _normalise(_device_room(item)) == normalised_target
+                ),
+                target_phrase,
+            )
+            return {
+                "success": False,
+                "route": "mcp-fast",
+                "intent": "device-attribute-read",
+                "message": (
+                    f"No device in {room_label} exposed a current "
+                    f"{attribute} value."
+                ),
+                "device_id": "",
+                "device_label": room_label,
+                "attribute": attribute,
+                "value": None,
+                "unit": unit,
+                "devices_probed": 0,
+                "tools_used": tools_used,
+                "entity_resolution_request": entity_request.as_dict(),
+                "entity_resolution": shared_resolution_data,
+                "answered_by": "deterministic entity reader",
+            }
+
         return {
             "success": False,
             "route": "mcp-fast",
@@ -848,7 +878,11 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
 
     value = None
     devices_probed = 0
-    probe_candidates = [device] if exact_device_match else candidates[:3]
+    probe_candidates = (
+        [device]
+        if exact_device_match
+        else candidates[:_MAX_ROOM_METRIC_PROBES]
+    )
 
     for candidate in probe_candidates:
         read_result = await _read_authoritative_device(
@@ -868,19 +902,35 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
             value = candidate_value
             break
     label = _label(device) or "Device"
+    response_device_id = str(_device_id(device) or "")
+    response_device_label = label
+
     if value in (None, ""):
-        message = f"{label} is available, but Hubitat did not expose a current {attribute} value."
+        if room_metric_request:
+            room_label = _device_room(device) or target_phrase
+            message = (
+                f"No device in {room_label} exposed a current "
+                f"{attribute} value."
+            )
+            response_device_id = ""
+            response_device_label = room_label
+        else:
+            message = (
+                f"{label} is available, but Hubitat did not expose "
+                f"a current {attribute} value."
+            )
         success = False
     else:
         message = _format_attribute_message(label, attribute, value, unit)
         success = True
+
     return {
         "success": success,
         "route": "mcp-fast",
         "intent": "device-attribute-read",
         "message": message,
-        "device_id": str(_device_id(device) or ""),
-        "device_label": label,
+        "device_id": response_device_id,
+        "device_label": response_device_label,
         "attribute": attribute,
         "value": value,
         "unit": unit,
@@ -988,16 +1038,20 @@ def _lookup_record_score(
     )
 
 
+_MAX_ROOM_METRIC_PROBES = 6
+
+
 def _room_metric_candidates(
     payload: Any,
     room: str,
     attribute: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return deterministic candidates confined to one exact room.
+    """Return capability-aware candidates confined to one exact room.
 
-    Room-level reads are intentionally different from named-device lookup:
-    labels are not fuzzily matched. Candidates must belong to the requested
-    room, then are ordered by attribute compatibility and support.
+    Prefer devices whose inventory already exposes the requested state, then
+    devices advertising matching capability or attribute metadata. When the
+    inventory is sparse and exposes no support metadata, retain compatible
+    room devices as a bounded fallback.
     """
     room_n = _normalise(room)
     if not room_n:
@@ -1009,15 +1063,35 @@ def _room_metric_candidates(
         if _normalise(_device_room(item)) == room_n
     ]
 
-    def sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
+    def inventory_support(item: dict[str, Any]) -> int:
+        if not attribute:
+            return 0
+        return int(_inventory_state_value(item, attribute) not in (None, ""))
+
+    supported = [
+        item
+        for item in records
+        if inventory_support(item) or _device_attribute_support(item, attribute)
+    ]
+
+    # Detailed capability metadata may be absent from compact inventories.
+    # Only use the broader compatible set when no explicit support exists.
+    candidates = supported or [
+        item
+        for item in records
+        if _device_attribute_compatibility(item, attribute)
+    ]
+
+    def sort_key(item: dict[str, Any]) -> tuple[int, int, int, str, str]:
         return (
-            -_device_attribute_compatibility(item, attribute),
+            -inventory_support(item),
             -_device_attribute_support(item, attribute),
+            -_device_attribute_compatibility(item, attribute),
             _normalise(_label(item)),
             str(_device_id(item) or ""),
         )
 
-    return sorted(records, key=sort_key)
+    return sorted(candidates, key=sort_key)
 
 
 def _rank_lookup_devices(
