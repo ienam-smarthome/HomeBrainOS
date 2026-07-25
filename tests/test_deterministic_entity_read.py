@@ -854,3 +854,120 @@ def test_named_device_read_remains_single_target_only():
     assert answer["device_id"] == "named"
     assert answer["value"] == 59
     assert mcp.read_ids == ["named"]
+
+
+def test_room_metric_returns_all_exact_room_readings():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "fp300-humidity",
+                "label": "Hallway FP300 Humidity",
+                "room": "Hallway",
+                "capabilities": ["RelativeHumidityMeasurement"],
+                "currentStates": {"humidity": 35},
+            },
+            {
+                "id": "hallway-meter",
+                "label": "Hallway Meter",
+                "room": "Hallway",
+                "capabilities": [
+                    "TemperatureMeasurement",
+                    "RelativeHumidityMeasurement",
+                ],
+                "currentStates": {
+                    "temperature": 29.2,
+                    "humidity": 36,
+                },
+            },
+        ],
+        {
+            "fp300-humidity": {"humidity": 35},
+            "hallway-meter": {
+                "temperature": 29.2,
+                "humidity": 36,
+            },
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the humidity in the hallway?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["device_id"] == ""
+    assert answer["device_label"] == "Hallway"
+    assert answer["value"] == 35
+    assert answer["message"] == (
+        "Hallway has two humidity readings:\n"
+        "- Hallway FP300 Humidity: 35%\n"
+        "- Hallway Meter: 36%"
+    )
+    assert answer["readings"] == [
+        {
+            "device_id": "fp300-humidity",
+            "device_label": "Hallway FP300 Humidity",
+            "room": "Hallway",
+            "attribute": "humidity",
+            "value": 35,
+            "unit": "%",
+        },
+        {
+            "device_id": "hallway-meter",
+            "device_label": "Hallway Meter",
+            "room": "Hallway",
+            "attribute": "humidity",
+            "value": 36,
+            "unit": "%",
+        },
+    ]
+    assert answer["devices_probed"] == 2
+    assert mcp.read_ids == ["fp300-humidity", "hallway-meter"]
+
+
+def test_named_multi_attribute_device_read_remains_singular():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "hallway-meter",
+                "label": "Hallway Meter",
+                "room": "Hallway",
+                "capabilities": [
+                    "TemperatureMeasurement",
+                    "RelativeHumidityMeasurement",
+                ],
+                "currentStates": {
+                    "temperature": 29.2,
+                    "humidity": 36,
+                },
+            },
+            {
+                "id": "fp300-humidity",
+                "label": "Hallway FP300 Humidity",
+                "room": "Hallway",
+                "currentStates": {"humidity": 35},
+            },
+        ],
+        {
+            "hallway-meter": {
+                "temperature": 29.2,
+                "humidity": 36,
+            },
+            "fp300-humidity": {"humidity": 35},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the humidity of Hallway Meter?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["device_id"] == "hallway-meter"
+    assert answer["message"] == "Hallway humidity is 36%."
+    assert len(answer["readings"]) == 1
+    assert mcp.read_ids == ["hallway-meter"]
