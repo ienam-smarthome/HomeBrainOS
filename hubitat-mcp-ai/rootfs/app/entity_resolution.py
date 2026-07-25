@@ -240,12 +240,12 @@ def _score_device(device: dict[str, Any], request: ResolutionRequest) -> Resolve
     # For example, "Bedroom 2 Meter" must not resolve or clarify between
     # "Bedroom 2 Light" and "Bedroom 2 FP1" merely because all share the
     # same room tokens.
-    if (
+    missing_descriptive_target = bool(
         descriptive_target_tokens
         and not exact_label_match
         and not (descriptive_target_tokens & label_tokens)
-    ):
-        score -= 0.65
+    )
+    if missing_descriptive_target:
         reasons.append("missing descriptive target token")
 
     if target_c and label_c:
@@ -294,6 +294,11 @@ def _score_device(device: dict[str, Any], request: ResolutionRequest) -> Resolve
     else:
         score -= 0.55
         reasons.append("unsupported action")
+
+    # Missing a required descriptive device token is a hard mismatch.
+    # Room overlap and fuzzy similarity must never restore such a candidate.
+    if missing_descriptive_target:
+        score = 0.0
 
     return ResolvedTarget(
         device_id=str(device.get("id") or ""),
