@@ -125,40 +125,80 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
     recognised numeric comparison back to the Cloud planner.
     """
 
-    async def _fresh_capability_result(self, spec: MeasurementSpec) -> MCPToolResult:
+    async def _fresh_capability_result(
+        self,
+        spec: MeasurementSpec,
+    ) -> MCPToolResult:
         index = getattr(self.router, "device_index", None)
         client = getattr(index, "client", None) if index is not None else None
         client = client or getattr(self.router, "client", None)
-        if client is None or not callable(getattr(client, "call_tool", None)):
-            return await super()._fresh_capability_result(spec)
 
         errors: list[str] = []
-
-        # This is a read-only metric operation. Do not invalidate the shared
-        # broker or device-index caches before reading. Device writes already
-        # invalidate this evidence, while normal TTL expiry preserves bounded
-        # freshness for repeated live-state queries.
         sources: list[str] = []
         collected: list[list[dict[str, Any]]] = []
 
-        # 1. Known-compatible live capability read. Most current power values are
-        # exposed here even when detailed mode only returns attribute definitions.
-        await self._collect_capability(
-            client,
-            spec,
-            spec.capability,
-            detailed=False,
-            source="summary-currentStates",
-            sources=sources,
-            collected=collected,
-            errors=errors,
-        )
-        merged = _merge_rows(*collected)
-        if self._contains_measurement(merged, spec):
-            return _synthetic_result(spec.capability, merged, sources=sources, errors=errors)
+        # Primary path: use the shared capability snapshot. This provides
+        # compact live currentStates and allows repeated metric requests to
+        # reuse the same authoritative evidence within the configured TTL.
+        if index is not None:
+            try:
+                capability = await index.capability_result(
+                    spec.capability,
+                    detailed=False,
+                    force=False,
+                )
+                if capability.is_error:
+                    errors.append(
+                        capability.text
+                        or f"{spec.capability} capability snapshot failed"
+                    )
+                else:
+                    rows = self.router._device_rows(capability.data)
+                    if rows:
+                        sources.append("capability-snapshot-currentStates")
+                        collected.append(rows)
+                        merged = _merge_rows(*collected)
+                        if self._contains_measurement(merged, spec):
+                            return _synthetic_result(
+                                spec.capability,
+                                merged,
+                                sources=sources,
+                                errors=errors,
+                            )
+            except Exception as exc:
+                errors.append(
+                    "capability snapshot: "
+                    + (str(exc).strip() or type(exc).__name__)
+                )
 
-        # 2. Custom drivers may expose PowerMeter/TemperatureMeasurement without
-        # spaces even when the canonical Hubitat capability contains spaces.
+        if client is None or not callable(
+            getattr(client, "call_tool", None)
+        ):
+            return await super()._fresh_capability_result(spec)
+
+        # Compatibility fallback for installations without a usable shared
+        # capability snapshot.
+        if not collected:
+            await self._collect_capability(
+                client,
+                spec,
+                spec.capability,
+                detailed=False,
+                source="summary-currentStates",
+                sources=sources,
+                collected=collected,
+                errors=errors,
+            )
+            merged = _merge_rows(*collected)
+            if self._contains_measurement(merged, spec):
+                return _synthetic_result(
+                    spec.capability,
+                    merged,
+                    sources=sources,
+                    errors=errors,
+                )
+
+        # Some custom drivers expose compact capability names without spaces.
         compact_capability = spec.capability.replace(" ", "")
         if compact_capability.lower() != spec.capability.lower():
             await self._collect_capability(
@@ -173,9 +213,15 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
             )
             merged = _merge_rows(*collected)
             if self._contains_measurement(merged, spec):
-                return _synthetic_result(spec.capability, merged, sources=sources, errors=errors)
+                return _synthetic_result(
+                    spec.capability,
+                    merged,
+                    sources=sources,
+                    errors=errors,
+                )
 
-        # 3. Detailed metadata is useful for units/capabilities, but is optional.
+        # Detailed metadata is only needed when compact state does not contain
+        # a usable measurement.
         await self._collect_capability(
             client,
             spec,
@@ -188,33 +234,21 @@ class LiveStateSemanticMetricComparisonExecutor(SemanticMetricComparisonExecutor
         )
         merged = _merge_rows(*collected)
         if self._contains_measurement(merged, spec):
-            return _synthetic_result(spec.capability, merged, sources=sources, errors=errors)
+            return _synthetic_result(
+                spec.capability,
+                merged,
+                sources=sources,
+                errors=errors,
+            )
 
-        # 4. Keep the catalogue's locally normalised capability aliases as a final
-        # selected-device source. Any server exception is diagnostic, not fatal.
-        if index is not None:
-            try:
-                catalogue = await index.capability_result(
-                    spec.capability,
-                    detailed=True,
-                    force=False,
-                )
-                if catalogue.is_error:
-                    errors.append(catalogue.text or "selected-device capability catalogue failed")
-                else:
-                    rows = self.router._device_rows(catalogue.data)
-                    if rows:
-                        sources.append("selected-device-capability-catalogue")
-                        collected.append(rows)
-            except Exception as exc:
-                errors.append(
-                    "selected-device capability catalogue: "
-                    + (str(exc).strip() or type(exc).__name__)
-                )
-
-        merged = _merge_rows(*collected)
         if merged:
-            return _synthetic_result(spec.capability, merged, sources=sources, errors=errors)
+            return _synthetic_result(
+                spec.capability,
+                merged,
+                sources=sources,
+                errors=errors,
+            )
+
         raise MCPError(
             "; ".join(item for item in errors if item)
             or f"No {spec.capability} evidence returned"
