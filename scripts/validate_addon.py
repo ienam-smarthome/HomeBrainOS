@@ -140,8 +140,8 @@ if len(set(version_sources.values())) != 1:
 
 mcp_ai_versions = {
     'hubitat-mcp-ai/config.yaml': yaml_version('hubitat-mcp-ai/config.yaml'),
-    'hubitat-mcp-ai/rootfs/app/entrypoint.py': python_string_assignment(
-        'hubitat-mcp-ai/rootfs/app/entrypoint.py',
+    'hubitat-mcp-ai/rootfs/app/release_version.py': python_string_assignment(
+        'hubitat-mcp-ai/rootfs/app/release_version.py',
         'RELEASE_VERSION',
     ),
 }
@@ -153,7 +153,7 @@ if len(set(mcp_ai_versions.values())) != 1:
 
 mcp_ai_version = next(iter(mcp_ai_versions.values()))
 mcp_ai_previous_version = python_string_assignment(
-    'hubitat-mcp-ai/rootfs/app/entrypoint.py',
+    'hubitat-mcp-ai/rootfs/app/release_version.py',
     'PREVIOUS_RELEASE_VERSION',
 )
 if mcp_ai_previous_version == mcp_ai_version:

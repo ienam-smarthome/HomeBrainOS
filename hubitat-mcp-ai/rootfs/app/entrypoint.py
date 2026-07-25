@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import uvicorn
 
 import entrypoint_core as _core
@@ -11,22 +9,20 @@ from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
 from runtime_route_bridge import install_runtime_route_bridge
+from release_version import (
+    BAKED_VERSION_PATH,
+    PREVIOUS_RELEASE_VERSION,
+    RELEASE_VERSION,
+    runtime_release_version,
+)
 from semantic_home_query_router import install_semantic_home_query_router
 from semantic_home_summary_agent import install_semantic_home_summary_agent
 from thermostat_summary_guard import install_thermostat_summary_guard
 
-PREVIOUS_RELEASE_VERSION = "0.10.85"
-RELEASE_VERSION = "0.10.86"
-BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
-
-
 def _runtime_release_version() -> str:
-    """Return the version baked into the running add-on image."""
-    try:
-        baked = BAKED_VERSION_PATH.read_text(encoding="utf-8").strip()
-    except OSError:
-        baked = ""
-    return baked or RELEASE_VERSION
+    """Compatibility wrapper around the shared release-version resolver."""
+
+    return runtime_release_version(BAKED_VERSION_PATH)
 
 
 RUNTIME_RELEASE_VERSION = _runtime_release_version()

@@ -1,3 +1,15 @@
+## 0.10.87
+
+- Improved targeted MCP device recovery by extracting the requested device name before authoritative lookup.
+- Strengthened planner guidance so discovery tools are followed by authoritative MCP reads.
+- Centralized release metadata in `release_version.py`.
+- Updated repository validation and release tests to use the shared version source.
+- Made historical regression audits explicitly non-blocking while retaining the blocking release gate.
+- Removed obsolete PWA manifest, service-worker, installation and cache-cleanup support.
+- Preserved the standard Home Assistant ingress Web UI.
+- Migrated FastAPI startup and shutdown handling to lifespan management.
+- Preserved device-index warming, active-request cancellation and MCP/Ollama shutdown behavior.
+
 ## 0.10.86
 
 - Deferred redundant legacy Ollama agent construction during maintained startup.

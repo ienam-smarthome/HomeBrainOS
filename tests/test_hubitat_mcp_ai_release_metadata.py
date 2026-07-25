@@ -18,6 +18,7 @@ def _required_match(pattern: str, text: str, source: str) -> re.Match[str]:
 def test_supervisor_version_is_plain_numeric_and_matches_runtime_release():
     config = (ADDON_DIR / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    release_source = (APP_DIR / "release_version.py").read_text(encoding="utf-8")
 
     manifest_version = _required_match(
         r'^version:\s*"(\d+\.\d+\.\d+)"\s*$',
@@ -26,8 +27,8 @@ def test_supervisor_version_is_plain_numeric_and_matches_runtime_release():
     ).group(1)
     runtime_version = _required_match(
         r'^RELEASE_VERSION\s*=\s*"([^"]+)"\s*$',
-        entrypoint,
-        "entrypoint.py",
+        release_source,
+        "release_version.py",
     ).group(1)
 
     assert manifest_version == runtime_version
@@ -35,8 +36,8 @@ def test_supervisor_version_is_plain_numeric_and_matches_runtime_release():
     assert "stage: stable" in config
     assert "stage: experimental" not in config
     assert "# Previous version:" not in config
-    assert "application.VERSION = RELEASE_VERSION" in entrypoint
-    assert "application.app.version = RELEASE_VERSION" in entrypoint
+    assert "application.VERSION = RUNTIME_RELEASE_VERSION" in entrypoint
+    assert "application.app.version = RUNTIME_RELEASE_VERSION" in entrypoint
 
 
 def test_changelog_and_cloud_setup_point_to_the_manifest_release():
