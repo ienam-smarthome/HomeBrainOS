@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -115,6 +116,137 @@ def _accounting_device_rows(value: Any) -> list[dict[str, Any]]:
     ]
 
     return _merge_rows([raw_rows])
+
+
+_MAX_POWER_DETAIL_PROBES = 32
+
+
+def _looks_like_power_candidate(
+    row: dict[str, Any],
+) -> bool:
+    label = _normalise(_label(row))
+
+    if "octopus" in label and (
+        "power" in label
+        or "current" in label
+        or "live meter" in label
+    ):
+        return True
+
+    searchable = " ".join(
+        str(row.get(key) or "")
+        for key in (
+            "label",
+            "name",
+            "displayName",
+            "deviceType",
+            "category",
+            "capabilities",
+            "attributes",
+            "currentStates",
+        )
+    )
+    searchable = _normalise(searchable)
+
+    return any(
+        token in searchable
+        for token in (
+            "power meter",
+            "powermeter",
+            "power measurement",
+            "powermeasurement",
+            "power attribute",
+            "powerattribute",
+            "capability power",
+            "current power",
+        )
+    )
+
+
+async def _targeted_power_detail_rows(
+    client: Any,
+    inventory_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    candidates = [
+        row
+        for row in inventory_rows
+        if _looks_like_power_candidate(row)
+        and _device_id(row) not in (None, "")
+        and not bool(row.get("disabled"))
+    ]
+
+    # Always prioritise the Octopus current-power meter, then keep the
+    # remainder deterministic and bounded.
+    candidates.sort(
+        key=lambda row: (
+            0
+            if "octopus" in _normalise(_label(row))
+            else 1,
+            _normalise(_label(row)),
+        )
+    )
+    candidates = candidates[:_MAX_POWER_DETAIL_PROBES]
+
+    async def get_one(row: dict[str, Any]) -> Any:
+        return await client.call_tool(
+            "hub_get_device",
+            {
+                "deviceId": str(_device_id(row)),
+            },
+        )
+
+    responses = await asyncio.gather(
+        *(get_one(row) for row in candidates),
+        return_exceptions=True,
+    )
+
+    detail_rows: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+
+    for candidate, response in zip(candidates, responses):
+        device_id = str(_device_id(candidate) or "")
+        label = _label(candidate)
+
+        if isinstance(response, Exception):
+            failures.append(
+                {
+                    "device_id": device_id,
+                    "label": label,
+                    "error": (
+                        str(response).strip()
+                        or type(response).__name__
+                    ),
+                }
+            )
+            continue
+
+        if response.is_error:
+            failures.append(
+                {
+                    "device_id": device_id,
+                    "label": label,
+                    "error": (
+                        response.text
+                        or "hub_get_device failed"
+                    ),
+                }
+            )
+            continue
+
+        detail_rows.extend(
+            _accounting_device_rows(response.data)
+        )
+
+    return detail_rows, {
+        "candidate_count": len(candidates),
+        "candidate_ids": [
+            str(_device_id(row) or "")
+            for row in candidates
+        ],
+        "detail_row_count": len(detail_rows),
+        "failure_count": len(failures),
+        "failures": failures,
+    }
 
 
 def _number_from_display(value: Any) -> float | None:
@@ -529,6 +661,45 @@ class PowerAccountingService:
                     rows = retry_rows
                     result = retry_result
 
+        targeted_fallback_used = False
+        plain_inventory_row_count = 0
+        targeted_detail_diagnostic: dict[str, Any] = {
+            "candidate_count": 0,
+            "candidate_ids": [],
+            "detail_row_count": 0,
+            "failure_count": 0,
+            "failures": [],
+        }
+
+        if not rows:
+            targeted_fallback_used = True
+
+            plain_result = await self.application.mcp.call_tool(
+                "hub_list_devices",
+                {},
+            )
+
+            if not plain_result.is_error:
+                plain_rows = _accounting_device_rows(
+                    plain_result.data
+                )
+                plain_inventory_row_count = len(plain_rows)
+
+                detail_rows, targeted_detail_diagnostic = (
+                    await _targeted_power_detail_rows(
+                        self.application.mcp,
+                        plain_rows,
+                    )
+                )
+
+                if detail_rows:
+                    rows = _merge_rows(
+                        [
+                            plain_rows,
+                            detail_rows,
+                        ]
+                    )
+
         if not rows:
             retry_error = (
                 retry_result.text
@@ -610,6 +781,15 @@ class PowerAccountingService:
                         "snapshot_retry_used": snapshot_retry_used,
                         "retry_device_row_count": 0,
                         "retry_error": retry_error,
+                        "targeted_fallback_used": (
+                            targeted_fallback_used
+                        ),
+                        "plain_inventory_row_count": (
+                            plain_inventory_row_count
+                        ),
+                        "targeted_detail": (
+                            targeted_detail_diagnostic
+                        ),
                         "extracted_device_row_count": 0,
                         "snapshot_status": "unavailable",
                     }
@@ -848,7 +1028,19 @@ class PowerAccountingService:
                     "retry_device_row_count": (
                         len(rows)
                         if snapshot_retry_used
+                        and not targeted_fallback_used
+                        else 0
+                        if snapshot_retry_used
                         else None
+                    ),
+                    "targeted_fallback_used": (
+                        targeted_fallback_used
+                    ),
+                    "plain_inventory_row_count": (
+                        plain_inventory_row_count
+                    ),
+                    "targeted_detail": (
+                        targeted_detail_diagnostic
                     ),
                     "extracted_device_row_count": len(rows),
                     "whole_house_power_w": whole_house_w,

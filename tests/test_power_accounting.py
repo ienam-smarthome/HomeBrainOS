@@ -827,7 +827,8 @@ def test_double_empty_snapshot_returns_unavailable_not_zero():
         )
     )
 
-    assert len(mcp.calls) == 2
+    assert len(mcp.calls) == 3
+    assert mcp.calls[2] == ("hub_list_devices", {})
     assert result["success"] is False
     assert result["whole_house_power_w"] is None
     assert result["monitored_device_power_w"] is None
@@ -846,3 +847,128 @@ def test_double_empty_snapshot_returns_unavailable_not_zero():
     assert technical["snapshot_retry_used"] is True
     assert technical["extracted_device_row_count"] == 0
     assert technical["snapshot_status"] == "unavailable"
+
+def test_empty_detailed_inventory_uses_targeted_device_details():
+    plain_inventory = {
+        "devices": [
+            {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+            },
+            {
+                "id": "fridge",
+                "label": "Fridge",
+                "capabilities": ["PowerMeter"],
+            },
+            {
+                "id": "light",
+                "label": "Hallway Light",
+                "capabilities": ["Switch"],
+            },
+        ]
+    }
+
+    detail_rows = {
+        "whole": {
+            "device": {
+                "id": "whole",
+                "label": "Octopus Meter Current Power",
+                "lastActivity": "2026-07-25T23:01:00+01:00",
+                "attributes": {
+                    "value": {
+                        "currentValue": "200 W",
+                    }
+                },
+            }
+        },
+        "fridge": {
+            "device": {
+                "id": "fridge",
+                "label": "Fridge",
+                "lastActivity": "2026-07-25T23:00:50+01:00",
+                "attributes": {
+                    "power": {
+                        "currentValue": 80,
+                        "unit": "W",
+                    }
+                },
+            }
+        },
+    }
+
+    class TargetedMCP(MCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+
+            if name == "hub_get_device":
+                device_id = str(arguments["deviceId"])
+                return MCPToolResult(
+                    name=name,
+                    arguments=arguments,
+                    raw={},
+                    text="",
+                    data=detail_rows[device_id],
+                    is_error=False,
+                )
+
+            data = (
+                plain_inventory
+                if arguments == {}
+                else {"devices": []}
+            )
+
+            return MCPToolResult(
+                name=name,
+                arguments=arguments,
+                raw={},
+                text="",
+                data=data,
+                is_error=False,
+            )
+
+    mcp = TargetedMCP()
+    reader = PowerAccountingService(
+        SimpleNamespace(mcp=mcp)
+    )
+
+    result = asyncio.run(
+        reader.answer(
+            "How much power is unaccounted for?"
+        )
+    )
+
+    assert result["success"] is True
+    assert result["whole_house_power_w"] == 200
+    assert result["monitored_device_power_w"] == 80
+    assert result["unaccounted_power_w"] == 120
+
+    detail_calls = [
+        call
+        for call in mcp.calls
+        if call[0] == "hub_get_device"
+    ]
+
+    assert detail_calls == [
+        (
+            "hub_get_device",
+            {"deviceId": "whole"},
+        ),
+        (
+            "hub_get_device",
+            {"deviceId": "fridge"},
+        ),
+    ]
+
+    technical = json.loads(result["technical"])
+    assert technical["targeted_fallback_used"] is True
+    assert technical["plain_inventory_row_count"] == 3
+    assert technical["targeted_detail"]["candidate_count"] == 2
+    assert technical["targeted_detail"]["candidate_ids"] == [
+        "whole",
+        "fridge",
+    ]
+    assert technical["targeted_detail"]["detail_row_count"] == 2
+    assert technical["targeted_detail"]["failure_count"] == 0
+
+    items = result["display"]["items"]
+    assert items[0]["title"] == "Power breakdown"
