@@ -338,3 +338,78 @@ def test_measurement_wording_preserves_standard_unit_spacing():
     assert _format_attribute_message("FP2 Bedroom 3 Lux", "illuminance", 212, "lux") == "FP2 Bedroom 3 Lux is 212 lux."
     assert _format_attribute_message("Bedroom meter", "temperature", 21.5, "°C") == "Bedroom meter is 21.5°C."
 
+
+def test_compact_bathroom_meter_name_and_attribute_binding():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "bathroom",
+                "label": "Bathroom meter",
+                "room": "Ventilation",
+                "currentStates": {},
+            },
+            {
+                "id": "bedroom",
+                "label": "Bedroom 1 Meter",
+                "room": "Bedroom 1",
+                "currentStates": {},
+            },
+        ],
+        {
+            "bathroom": {"battery": 66},
+            "bedroom": {"battery": 73},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the battery level of BathroomMeter?",
+        )
+    )
+
+    assert answer["success"] is True
+    assert answer["device_id"] == "bathroom"
+    assert answer["device_label"] == "Bathroom meter"
+    assert answer["value"] == 66
+    assert answer["message"] == "Bathroom meter is 66%."
+    assert mcp.read_ids == ["bathroom"]
+
+
+def test_attribute_reader_does_not_switch_to_another_meter():
+    application, mcp = multi_device_app(
+        [
+            {
+                "id": "bathroom",
+                "label": "Bathroom meter",
+                "room": "Ventilation",
+                "currentStates": {},
+            },
+            {
+                "id": "bedroom",
+                "label": "Bedroom 1 Meter",
+                "room": "Bedroom 1",
+                "currentStates": {},
+            },
+        ],
+        {
+            "bathroom": {},
+            "bedroom": {"battery": 73},
+        },
+    )
+
+    answer = asyncio.run(
+        _answer_terminal_entity_read(
+            application,
+            "What is the battery level of the bathroom meter?",
+        )
+    )
+
+    assert answer["success"] is False
+    assert answer["device_id"] == "bathroom"
+    assert answer["device_label"] == "Bathroom meter"
+    assert "did not expose a current battery value" in answer["message"]
+    assert "Bedroom 1 Meter" not in answer["message"]
+    assert "73%" not in answer["message"]
+    assert mcp.read_ids == ["bathroom"]
+
