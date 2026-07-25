@@ -71,6 +71,16 @@ class FakeRoomMCP:
                         "deviceType": "Generic Zigbee Light",
                         "currentStates": {"switch": "on"},
                     },
+                    {
+                        "id": "303",
+                        "label": "Hallway Meter",
+                        "room": "Hallway",
+                        "deviceType": "Temperature Humidity Sensor",
+                        "currentStates": {
+                            "temperature": 29.2,
+                            "humidity": 36,
+                        },
+                    },
                 ]
             }
         else:
@@ -149,8 +159,16 @@ def test_room_first_hallway_inventory_returns_all_room_devices():
         assert answer["room"] == "Hallway"
         assert "Hallway FP300" in answer["message"]
         assert "Hallway Light 1" in answer["message"]
+        assert "Hallway Meter: 29.2°C, 36% humidity" in answer["message"]
         assert "Bedroom 1 Light" not in answer["message"]
-        assert answer["display"]["metrics"][0]["value"] == "2"
+        assert answer["display"]["metrics"][0]["value"] == "3"
+
+        hallway_meter = next(
+            item
+            for item in answer["display"]["items"]
+            if item["title"] == "Hallway Meter"
+        )
+        assert hallway_meter["value"] == "29.2°C, 36% humidity"
 
 
 def test_hub_info_load_and_percent_format_returns_percentage():
