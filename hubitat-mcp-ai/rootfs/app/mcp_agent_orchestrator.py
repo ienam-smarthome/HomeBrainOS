@@ -775,13 +775,12 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         candidates = [device] if device is not None else []
         resolved_by_confidence = device is not None
     elif room_metric_request:
-        # Room-level metric requests such as "bathroom humidity" may not name
-        # an individual device. Preserve bounded attribute-capable probing only
-        # for verified room targets. A named-device NOT_FOUND result must remain
-        # terminal and must never fall back to another device in the same room.
-        candidates = _rank_lookup_devices(
+        # Room-level reads use exact room membership rather than fuzzy label
+        # ranking. Attribute-compatible devices are probed in deterministic
+        # order, while named-device NOT_FOUND remains terminal.
+        candidates = _room_metric_candidates(
             devices,
-            target_phrase,
+            normalised_target,
             attribute_request[0] if attribute_request else None,
         )
         device = candidates[0] if candidates else None
@@ -963,6 +962,38 @@ def _lookup_record_score(
         _device_attribute_support(device, attribute),
         label_overlap,
     )
+
+
+def _room_metric_candidates(
+    payload: Any,
+    room: str,
+    attribute: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return deterministic candidates confined to one exact room.
+
+    Room-level reads are intentionally different from named-device lookup:
+    labels are not fuzzily matched. Candidates must belong to the requested
+    room, then are ordered by attribute compatibility and support.
+    """
+    room_n = _normalise(room)
+    if not room_n:
+        return []
+
+    records = [
+        item
+        for item in _iter_device_records(payload)
+        if _normalise(_device_room(item)) == room_n
+    ]
+
+    def sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
+        return (
+            -_device_attribute_compatibility(item, attribute),
+            -_device_attribute_support(item, attribute),
+            _normalise(_label(item)),
+            str(_device_id(item) or ""),
+        )
+
+    return sorted(records, key=sort_key)
 
 
 def _rank_lookup_devices(

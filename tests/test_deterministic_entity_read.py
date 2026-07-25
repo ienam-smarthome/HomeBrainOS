@@ -8,7 +8,7 @@ APP = Path("hubitat-mcp-ai/rootfs/app").resolve()
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
 
-from mcp_agent_orchestrator import _answer_terminal_entity_read
+from mcp_agent_orchestrator import _answer_terminal_entity_read, _device_id, _room_metric_candidates
 
 
 class Result:
@@ -560,3 +560,78 @@ def test_live_reader_resolves_exact_meter_after_room_prefix_inference():
     assert answer["value"] == 82
     assert mcp.read_ids == ["meter"]
 
+
+def test_room_metric_candidates_are_confined_to_exact_room():
+    candidates = _room_metric_candidates(
+        [
+            {
+                "id": "bathroom-meter",
+                "label": "Bathroom Meter",
+                "room": "Bathroom",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+            {
+                "id": "bedroom-meter",
+                "label": "Bedroom Meter",
+                "room": "Bedroom 2",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+            {
+                "id": "bathroom-light",
+                "label": "Bathroom Light",
+                "room": "Bathroom",
+                "capabilities": ["Switch"],
+            },
+        ],
+        "Bathroom",
+        "humidity",
+    )
+
+    assert [str(_device_id(item)) for item in candidates] == [
+        "bathroom-meter",
+        "bathroom-light",
+    ]
+
+
+def test_room_metric_candidates_prefer_attribute_compatible_device():
+    candidates = _room_metric_candidates(
+        [
+            {
+                "id": "light",
+                "label": "Bathroom Light",
+                "room": "Bathroom",
+                "capabilities": ["Switch"],
+            },
+            {
+                "id": "meter",
+                "label": "Bathroom Meter",
+                "room": "Bathroom",
+                "capabilities": ["RelativeHumidityMeasurement"],
+            },
+        ],
+        "Bathroom",
+        "humidity",
+    )
+
+    assert str(_device_id(candidates[0])) == "meter"
+
+
+def test_room_metric_candidates_do_not_use_partial_room_matches():
+    candidates = _room_metric_candidates(
+        [
+            {
+                "id": "bedroom-2",
+                "label": "Bedroom 2 Meter",
+                "room": "Bedroom 2",
+            },
+            {
+                "id": "bedroom-20",
+                "label": "Bedroom 20 Meter",
+                "room": "Bedroom 20",
+            },
+        ],
+        "Bedroom 2",
+        "temperature",
+    )
+
+    assert [str(_device_id(item)) for item in candidates] == ["bedroom-2"]
