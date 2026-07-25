@@ -35,6 +35,8 @@ def live_attributes(item: dict[str, Any]) -> dict[str, Any]:
     for key in (
         "switch",
         "level",
+        "speed",
+        "supportedFanSpeeds",
         "motion",
         "contact",
         "temperature",
