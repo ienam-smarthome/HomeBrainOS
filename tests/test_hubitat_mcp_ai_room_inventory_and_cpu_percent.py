@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -188,3 +189,85 @@ def test_load_average_and_processors_derives_percentage():
     assert cpu["percent"] == 15.0
     assert cpu["value"] == "15.0%"
     assert cpu["derived_percent"] is True
+
+
+def test_empty_lux_summary_is_completed_by_bounded_device_detail():
+    class LuxDetailMCP(FakeRoomMCP):
+        def __init__(self):
+            self.detail_ids = []
+
+        async def list_tools(self):
+            tools = await super().list_tools()
+            tools.append(
+                MCPTool(
+                    "hub_get_device",
+                    "device detail",
+                    {"type": "object", "properties": {}},
+                )
+            )
+            return tools
+
+        async def call_tool(self, name, arguments):
+            if name == "hub_get_device":
+                device_id = str(arguments.get("deviceId") or "")
+                self.detail_ids.append(device_id)
+                return MCPToolResult(
+                    name=name,
+                    arguments=arguments,
+                    raw={},
+                    text="",
+                    data={
+                        "device": {
+                            "id": device_id,
+                            "label": "Hallway FP300 Lux",
+                            "room": "Hallway",
+                            "currentStates": {
+                                "illuminance": 3,
+                                "networkStatus": "online",
+                            },
+                        }
+                    },
+                    is_error=False,
+                )
+
+            result = await super().call_tool(name, arguments)
+
+            if name == "hub_list_devices":
+                result.data["devices"].append(
+                    {
+                        "id": "303",
+                        "label": "Hallway FP300 Lux",
+                        "name": "Illuminance Sensor",
+                        "room": "Hallway",
+                        "deviceType": "Illuminance Sensor",
+                        "currentStates": {},
+                    }
+                )
+
+            return result
+
+    mcp = LuxDetailMCP()
+    answer = asyncio.run(
+        FastFallbackRouter(mcp).answer("Show hallway devices")
+    )
+
+    assert answer["success"] is True
+    assert "Hallway FP300 Lux: 3 lx" in answer["message"]
+
+    lux_item = next(
+        item
+        for item in answer["display"]["items"]
+        if item["title"] == "Hallway FP300 Lux"
+    )
+    assert lux_item["value"] == "3 lx"
+    assert mcp.detail_ids == ["303"]
+
+    technical = json.loads(answer["technical"])
+    assert technical["detail_probes"] == 1
+    assert technical["detail_reads"] == [
+        {
+            "device_id": "303",
+            "label": "Hallway FP300 Lux",
+            "success": True,
+        }
+    ]

@@ -37,6 +37,69 @@ _ROOM_DEVICE_PATTERNS = (
     ),
 )
 
+_MAX_EMPTY_SENSOR_DETAIL_PROBES = 4
+
+
+def _looks_like_empty_lux_sensor(
+    item: dict[str, Any],
+    attrs: dict[str, Any],
+) -> bool:
+    """Identify empty summary records that are likely illuminance sensors."""
+
+    if attrs:
+        return False
+
+    text = _normalise(
+        " ".join(
+            str(item.get(key) or "")
+            for key in (
+                "label",
+                "name",
+                "displayName",
+                "deviceType",
+                "type",
+                "category",
+                "capabilities",
+            )
+        )
+    )
+    return " lux" in f" {text}" or "illuminance" in text
+
+
+def _detail_device_record(value: Any, device_id: str) -> dict[str, Any] | None:
+    """Find the requested device record inside a detailed MCP response."""
+
+    fallback: dict[str, Any] | None = None
+
+    for candidate in walk(value):
+        if not isinstance(candidate, dict):
+            continue
+
+        candidate_id = str(
+            candidate.get("id")
+            or candidate.get("deviceId")
+            or candidate.get("device_id")
+            or ""
+        )
+
+        if candidate_id and candidate_id == device_id:
+            return candidate
+
+        if fallback is None and any(
+            key in candidate
+            for key in (
+                "currentStates",
+                "current_states",
+                "attributes",
+                "states",
+                "illuminance",
+            )
+        ):
+            fallback = candidate
+
+    return fallback
+
+
 def _format_number(value: Any) -> str:
     try:
         number = float(str(value).replace("%", "").strip())
@@ -49,8 +112,12 @@ def _room_device_states(attrs: dict[str, Any], primary_state: str) -> list[str]:
     """Return useful compact live states without discarding secondary metrics."""
 
     states: list[str] = []
+    illuminance = attrs.get("illuminance")
     temperature = attrs.get("temperature")
     humidity = attrs.get("humidity")
+
+    if illuminance not in (None, ""):
+        states.append(f"{_format_number(illuminance)} lx")
 
     if temperature not in (None, ""):
         states.append(f"{_format_number(temperature)}°C")
@@ -170,10 +237,54 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
         ]
 
         items: list[dict[str, Any]] = []
+        detail_reads: list[dict[str, Any]] = []
+        detail_probes = 0
         on_count = 0
         active_count = 0
+
         for item in devices:
             attrs = live_attributes(item)
+
+            if (
+                detail_probes < _MAX_EMPTY_SENSOR_DETAIL_PROBES
+                and _looks_like_empty_lux_sensor(item, attrs)
+            ):
+                device_id = str(_device_id(item) or "")
+                if device_id:
+                    detail_probes += 1
+                    try:
+                        detail_result = await self._execute_catalog_tool(
+                            "hub_get_device",
+                            "hub_read_devices",
+                            {"deviceId": device_id},
+                        )
+                    except MCPError as exc:
+                        detail_reads.append(
+                            {
+                                "device_id": device_id,
+                                "label": _label(item),
+                                "success": False,
+                                "error": str(exc),
+                            }
+                        )
+                    else:
+                        detail_success = not detail_result.is_error
+                        detail_reads.append(
+                            {
+                                "device_id": device_id,
+                                "label": _label(item),
+                                "success": detail_success,
+                            }
+                        )
+                        if detail_success:
+                            detail_record = _detail_device_record(
+                                detail_result.data,
+                                device_id,
+                            )
+                            detail_attrs = live_attributes(detail_record or {})
+                            if detail_attrs:
+                                attrs.update(detail_attrs)
+
             state = self._primary_state(attrs)
             presented_states = _room_device_states(attrs, state)
             state = ", ".join(presented_states)
@@ -249,6 +360,8 @@ class FastFallbackRouter(EssentialsFastFallbackRouter):
             {
                 "matched_room": exact,
                 "devices": devices_result.data,
+                "detail_reads": detail_reads,
+                "detail_probes": detail_probes,
             }
         )
         return response
