@@ -318,16 +318,13 @@ class SemanticMetricComparisonExecutor:
     async def _fresh_capability_result(self, spec: MeasurementSpec) -> MCPToolResult:
         index = getattr(self.router, "device_index", None)
         if index is not None:
-            broker = getattr(index, "client", None)
-            invalidate = getattr(broker, "invalidate", None)
-            if callable(invalidate):
-                await invalidate("devices")
-            else:
-                await index.invalidate()
+            # Read-only metric queries share the capability snapshot. The
+            # DeviceIntelligenceIndex already expires it on a short TTL and
+            # invalidates it after device writes.
             result = await index.capability_result(
                 spec.capability,
                 detailed=True,
-                force=True,
+                force=False,
             )
         else:
             result = await self.router._capability_devices(
@@ -341,7 +338,7 @@ class SemanticMetricComparisonExecutor:
     async def _fallback_detailed_result(self) -> MCPToolResult | None:
         index = getattr(self.router, "device_index", None)
         if index is not None:
-            result = await index.metadata_result(force=True)
+            result = await index.metadata_result(force=False)
             return None if result.is_error else result
         result = await self.router._execute_catalog_tool(
             "hub_list_devices",
