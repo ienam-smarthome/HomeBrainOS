@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from device_intelligence_index import _device_rows
+from environmental_insight_engine import build_environmental_insights
 
 
 def _key(value: Any) -> str:
@@ -195,6 +196,7 @@ class SemanticHomeEvidenceBroker:
 
         data = {
             "mode": mode,
+            "environmental_insights": environmental_insights,
             "coverage": {
                 "selected_devices": snapshot.get("selected_devices") or len(devices),
                 "states_read": snapshot.get("states_read"),
