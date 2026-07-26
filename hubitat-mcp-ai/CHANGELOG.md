@@ -1,3 +1,14 @@
+## 0.10.145
+
+### Runtime safety-prompt refresh
+
+- Clarifies that gateway routing never relaxes MCP safety checks.
+- Distinguishes hub shutdown from reboot and documents the manual power-cycle
+  requirement.
+- Adds safe physical and virtual-device deletion guidance.
+- Documents the rule-engine loop guard and advisory-only tool annotations.
+- Requires live tool-guide lookup before writing rule JSON.
+
 ## 0.10.144
 
 ### App command verification integration
