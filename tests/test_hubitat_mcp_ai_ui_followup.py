@@ -49,7 +49,7 @@ def test_homebrain_ui_uses_two_columns_and_smaller_summary_tile_text():
 
 
 def test_ollama_health_retries_and_retains_recent_online_state():
-    from ollama_agent_resilient import OllamaMCPAgent  # noqa: E402
+    from ollama_agent_inference import OllamaMCPAgent  # noqa: E402
 
     class FakeResponse:
         def raise_for_status(self):

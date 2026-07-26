@@ -11,7 +11,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from fast_fallback_speech import FastFallbackRouter, normalise_spoken_device_name  # noqa: E402
 from fastpath_ai_handoff import install_fastpath_ai_handoff  # noqa: E402
-from ollama_agent_device_resolution import DeviceResolutionNaturalAgent  # noqa: E402
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent as DeviceResolutionNaturalAgent  # noqa: E402
 
 
 def test_spoken_numbers_match_numeric_device_labels():

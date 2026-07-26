@@ -1,3 +1,14 @@
+## 0.10.146
+
+### Complete Ollama compatibility cleanup
+
+- Removes six production-orphaned Ollama compatibility modules.
+- Redirects historical regression tests to the live consolidated class owners.
+- Restores the intended static and class-method bindings for unified-agent
+  evidence, routing and final-answer helpers.
+- Updates repository validation and architecture documentation for the
+  maintained four-layer Ollama chain.
+
 ## 0.10.145
 
 ### Runtime safety-prompt refresh

@@ -13,10 +13,11 @@ sys.path.insert(0, str(APP_DIR))
 
 from device_intelligence_webui import patch_page  # noqa: E402
 from motion_light_insight import MotionLightInsightService  # noqa: E402
-from ollama_agent_adaptive import AdaptiveFinalAnswerAgent  # noqa: E402
 from ollama_agent_fast import OllamaUnavailable  # noqa: E402
-from ollama_agent_final_answer import FinalAnswerNaturalAgent  # noqa: E402
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent as AdaptiveFinalAnswerAgent  # noqa: E402
 from webui import render_page  # noqa: E402
+
+FinalAnswerNaturalAgent = AdaptiveFinalAnswerAgent
 
 
 class CloudOllama:

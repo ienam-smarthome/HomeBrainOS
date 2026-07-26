@@ -16,7 +16,7 @@ from cancellable_requests import (  # noqa: E402
     install_cancellable_ask,
 )
 from fastpath_ai_handoff import install_fastpath_ai_handoff  # noqa: E402
-from ollama_agent_quality import QualityNaturalHubitatOllamaAgent  # noqa: E402
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent as QualityNaturalHubitatOllamaAgent  # noqa: E402
 from routing_policy import classify_query  # noqa: E402
 from webui import render_page  # noqa: E402
 

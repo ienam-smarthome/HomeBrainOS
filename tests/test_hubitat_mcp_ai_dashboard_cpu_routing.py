@@ -11,7 +11,7 @@ sys.path.insert(0, str(APP_DIR))
 from fast_fallback_dashboard import FastFallbackRouter  # noqa: E402
 from hub_cpu_probe import parse_cpu_info  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
-from ollama_agent_adaptive import AdaptiveFinalAnswerAgent  # noqa: E402
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent as AdaptiveFinalAnswerAgent  # noqa: E402
 from routing_policy import classify_query  # noqa: E402
 from webui import render_page  # noqa: E402
 
