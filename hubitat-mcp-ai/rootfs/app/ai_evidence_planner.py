@@ -518,7 +518,7 @@ class AIEvidencePlanner:
         user = (
             f"Question: {query.strip()}\n"
             f"Recent conversation: {json.dumps(context, ensure_ascii=False, separators=(',', ':'))}\n"
-            "Approved evidence catalogue: home_snapshot, device_health, measurements, hub_health, "
+            "Approved evidence catalogue: home_snapshot, device_health, measurements, thermal_state, hub_health, "
             "inventory, recent_events, weather, light_usage.\n"
             f"Selected-device catalogue: {json.dumps(inventory, ensure_ascii=False, separators=(',', ':'))}"
         )
