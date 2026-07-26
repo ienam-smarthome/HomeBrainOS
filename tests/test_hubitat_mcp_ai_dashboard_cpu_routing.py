@@ -8,7 +8,9 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback_dashboard import FastFallbackRouter  # noqa: E402
+from fast_fallback_extended_reads import (  # noqa: E402
+    DashboardFastFallbackRouter as FastFallbackRouter,
+)
 from hub_cpu_probe import parse_cpu_info  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 from ollama_agent_unified import UnifiedAdaptiveMCPAgent as AdaptiveFinalAnswerAgent  # noqa: E402

@@ -12,7 +12,7 @@ if str(APP) not in sys.path:
 
 
 def load_module() -> ModuleType:
-    path = APP / "fast_fallback_room_inventory.py"
+    path = APP / "fast_fallback_extended_reads.py"
     spec = importlib.util.spec_from_file_location("room_inventory_parser_test_module", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

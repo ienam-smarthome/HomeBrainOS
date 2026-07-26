@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def load_module():
-    path = Path('hubitat-mcp-ai/rootfs/app/fast_fallback_room_inventory.py')
+    path = Path('hubitat-mcp-ai/rootfs/app/fast_fallback_extended_reads.py')
     spec = importlib.util.spec_from_file_location('room_inventory_test_module', path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader

@@ -8,8 +8,10 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-import fast_fallback_release as release_module  # noqa: E402
-from fast_fallback_release import FastFallbackRouter  # noqa: E402
+import fast_fallback_extended_reads as release_module  # noqa: E402
+from fast_fallback_extended_reads import (  # noqa: E402
+    ReleaseFastFallbackRouter as FastFallbackRouter,
+)
 from hub_metric_formatting import format_database_size  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 from routing_policy import classify_query  # noqa: E402
