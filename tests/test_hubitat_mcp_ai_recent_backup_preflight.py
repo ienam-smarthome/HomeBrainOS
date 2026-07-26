@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from automation_rule_workflow_washing import (  # noqa: E402
+from automation_rule_workflow_repair_id_safe import (  # noqa: E402
     FinalWashingRuleMachineWorkflow,
 )
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
@@ -153,7 +153,7 @@ def test_today_date_only_hubitat_filename_is_accepted_as_recent():
         "location": "local",
     }
 
-    from automation_rule_workflow_washing import _backup_timestamp_ms
+    from automation_rule_workflow_repair_id_safe import _backup_timestamp_ms
 
     now_ms = int(time.time() * 1000)
     parsed = _backup_timestamp_ms(item, now_ms)

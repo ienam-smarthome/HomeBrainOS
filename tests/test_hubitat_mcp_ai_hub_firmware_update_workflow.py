@@ -14,10 +14,10 @@ sys.path.insert(0, str(APP_DIR))
 from hub_firmware_update_workflow import (  # noqa: E402
     install_hub_firmware_update_workflow,
 )
-from automation_rule_workflow_backup_confirmed import (  # noqa: E402
+from automation_rule_workflow_repair_id_safe import (  # noqa: E402
     ConfirmedBackupWashingRuleMachineWorkflow,
 )
-from automation_rule_workflow_backup_filename_safe import (  # noqa: E402
+from automation_rule_workflow_repair_id_safe import (  # noqa: E402
     FilenameSafeBackupWashingRuleMachineWorkflow,
 )
 from mcp_client import MCPToolResult  # noqa: E402

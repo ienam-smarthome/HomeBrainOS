@@ -40,9 +40,9 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
 - `automation_rule_workflow_*`: live schema, release safeguards and native Rule
   Machine execution are consolidated in
   `automation_rule_workflow_native_rm.py`; notification discovery, guarded
-  washing-rule compilation and final backup preflight are consolidated in
-  `automation_rule_workflow_washing.py`; backup confirmation, filename safety,
-  write recovery and repair safety remain to be consolidated.
+  washing-rule compilation, backup preflight/confirmation, filename safety,
+  write recovery and repair safety are consolidated behind the externally wired
+  `automation_rule_workflow_repair_id_safe.py`.
 - `fast_fallback_*`: the base, weather and live-state kernel is consolidated in
   `fast_fallback_live.py`; verified control, attention, group control,
   device-health and speech behavior is consolidated in
@@ -71,8 +71,8 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 2. [done] Flatten the Ollama inheritance chain behind `UnifiedAdaptiveMCPAgent`.
 3. [done] Consolidate overlapping control-agent wrappers behind maintained
    public control services.
-4. [in progress] Consolidate automation Rule Machine safety layers; the live
-   schema/release/native and notification/washing groups are complete.
+4. [done] Consolidate automation Rule Machine safety layers behind the native,
+   washing and externally wired recovery owners.
 5. [done] Merge fast-fallback near-duplicates by semantic capability.
 6. Fold Web UI safety wrappers into a single maintained Web UI implementation.
 
