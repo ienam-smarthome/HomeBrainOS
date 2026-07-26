@@ -593,104 +593,130 @@ async def _read_authoritative_device(application: Any, device_id: str) -> Any:
     return await application.mcp.call_tool("hub_get_device", {"deviceId": device_id})
 
 
-async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str, Any] | None:
-    # Whole-house power accounting is a verified aggregate read, not a
-    # request to resolve a device named from the words after "power".
-    # Handle it before generic device-attribute parsing can interpret
-    # "unaccounted for" as an entity target.
-    if is_power_accounting_query(query):
-        return await PowerAccountingService(application).answer(query)
+async def _answer_power_accounting(
+    application: Any,
+    query: str,
+) -> dict[str, Any] | None:
+    """Answer verified whole-house power accounting requests."""
 
-    inventory_request = _is_all_device_inventory_query(query)
-    explicit_lookup = _is_explicit_device_lookup(query)
-    attribute_request = _requested_device_attribute(query)
-    if not inventory_request and not explicit_lookup and attribute_request is None:
+    if not is_power_accounting_query(query):
+        return None
+    return await PowerAccountingService(application).answer(query)
+
+
+async def _answer_inventory_listing(
+    application: Any,
+    query: str,
+) -> dict[str, Any] | None:
+    """Answer requests for the complete selected-device inventory."""
+
+    if not _is_all_device_inventory_query(query):
         return None
 
-    inventory_result, devices = await _load_authoritative_inventory(application)
-    tools_used = [{"name": "hub_list_devices", "success": not bool(getattr(inventory_result, "is_error", False))}]
-    if inventory_request:
-        ordered = sorted(devices, key=lambda item: _normalise(_label(item)))
-        inventory = []
-        rooms: set[str] = set()
-        disabled_count = 0
-        for device in ordered:
-            room_value = device.get("room") or device.get("roomName") or device.get("room_name")
-            if isinstance(room_value, dict):
-                room_value = room_value.get("name") or room_value.get("label")
-            room = str(room_value or "").strip()
-            if room:
-                rooms.add(room)
-            disabled = bool(device.get("disabled"))
-            disabled_count += int(disabled)
-            primary_state = _inventory_primary_state(device, disabled)
-            inventory.append(
-                {
-                    "id": str(_device_id(device) or ""),
-                    "label": _label(device) or "Unnamed device",
-                    "room": room or None,
-                    "device_type": (
-                        device.get("deviceType")
-                        or device.get("category")
-                        or device.get("name")
-                    ),
-                    "disabled": disabled,
-                    "state": primary_state["value"],
-                    "state_attribute": primary_state["attribute"],
-                    "state_available": primary_state["available"],
-                    "state_icon": primary_state["icon"],
-                    "state_tone": primary_state["tone"],
-                }
-            )
-
-        total = len(inventory)
-        message = f"Found {total} selected Hubitat device{'' if total == 1 else 's'}."
-        if rooms:
-            message += f" They are assigned across {len(rooms)} room{'' if len(rooms) == 1 else 's'}."
-        return {
-            "success": not bool(getattr(inventory_result, "is_error", False)),
-            "route": "mcp-fast",
-            "intent": "device-inventory",
-            "message": message,
-            "device_count": total,
-            "room_count": len(rooms),
-            "disabled_count": disabled_count,
-            "device_inventory": inventory,
-            "display": {
-                "kind": "device-inventory",
-                "title": "All Hubitat devices",
-                "subtitle": f"{total} selected devices",
-                "metrics": [
-                    {"label": "Devices", "value": str(total), "icon": "📱"},
-                    {"label": "Rooms", "value": str(len(rooms)), "icon": "🏠"},
-                    {"label": "Disabled", "value": str(disabled_count), "icon": "⏸️"},
-                ],
-                "items": [
-                    {
-                        "icon": item["state_icon"],
-                        "title": item["label"],
-                        "subtitle": " · ".join(
-                            value
-                            for value in (
-                                str(item["room"] or ""),
-                                str(item["device_type"] or ""),
-                            )
-                            if value
-                        ),
-                        "value": item["state"],
-                        "tone": item["state_tone"],
-                    }
-                    for item in inventory
-                ],
-                "note": (
-                    "Primary states exposed by the live Hubitat device inventory. "
-                    "Open a device for complete state details."
-                ),
-            },
-            "tools_used": tools_used,
-            "entity_resolution_request": parse_entity_request(query).as_dict(),
-            "answered_by": "deterministic device inventory",
+    inventory_result, devices = await _load_authoritative_inventory(
+        application
+    )
+    tools_used = [
+        {
+            "name": "hub_list_devices",
+            "success": not bool(
+                getattr(inventory_result, "is_error", False)
+            ),
         }
+    ]
+    ordered = sorted(devices, key=lambda item: _normalise(_label(item)))
+    inventory = []
+    rooms: set[str] = set()
+    disabled_count = 0
+    for device in ordered:
+        room_value = device.get("room") or device.get("roomName") or device.get("room_name")
+        if isinstance(room_value, dict):
+            room_value = room_value.get("name") or room_value.get("label")
+        room = str(room_value or "").strip()
+        if room:
+            rooms.add(room)
+        disabled = bool(device.get("disabled"))
+        disabled_count += int(disabled)
+        primary_state = _inventory_primary_state(device, disabled)
+        inventory.append(
+            {
+                "id": str(_device_id(device) or ""),
+                "label": _label(device) or "Unnamed device",
+                "room": room or None,
+                "device_type": (
+                    device.get("deviceType")
+                    or device.get("category")
+                    or device.get("name")
+                ),
+                "disabled": disabled,
+                "state": primary_state["value"],
+                "state_attribute": primary_state["attribute"],
+                "state_available": primary_state["available"],
+                "state_icon": primary_state["icon"],
+                "state_tone": primary_state["tone"],
+            }
+        )
+
+    total = len(inventory)
+    message = f"Found {total} selected Hubitat device{'' if total == 1 else 's'}."
+    if rooms:
+        message += f" They are assigned across {len(rooms)} room{'' if len(rooms) == 1 else 's'}."
+    return {
+        "success": not bool(getattr(inventory_result, "is_error", False)),
+        "route": "mcp-fast",
+        "intent": "device-inventory",
+        "message": message,
+        "device_count": total,
+        "room_count": len(rooms),
+        "disabled_count": disabled_count,
+        "device_inventory": inventory,
+        "display": {
+            "kind": "device-inventory",
+            "title": "All Hubitat devices",
+            "subtitle": f"{total} selected devices",
+            "metrics": [
+                {"label": "Devices", "value": str(total), "icon": "📱"},
+                {"label": "Rooms", "value": str(len(rooms)), "icon": "🏠"},
+                {"label": "Disabled", "value": str(disabled_count), "icon": "⏸️"},
+            ],
+            "items": [
+                {
+                    "icon": item["state_icon"],
+                    "title": item["label"],
+                    "subtitle": " · ".join(
+                        value
+                        for value in (
+                            str(item["room"] or ""),
+                            str(item["device_type"] or ""),
+                        )
+                        if value
+                    ),
+                    "value": item["state"],
+                    "tone": item["state_tone"],
+                }
+                for item in inventory
+            ],
+            "note": (
+                "Primary states exposed by the live Hubitat device inventory. "
+                "Open a device for complete state details."
+            ),
+        },
+        "tools_used": tools_used,
+        "entity_resolution_request": parse_entity_request(query).as_dict(),
+        "answered_by": "deterministic device inventory",
+    }
+
+
+async def _answer_resolved_entity_read(
+    application: Any,
+    query: str,
+    *,
+    explicit_lookup: bool,
+    attribute_request: tuple[str, str] | None,
+    devices: list[dict[str, Any]],
+    tools_used: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve one entity or room and produce its terminal response."""
 
     entity_request = parse_entity_request(query)
     target_phrase = (
@@ -1011,6 +1037,85 @@ async def _answer_terminal_entity_read(application: Any, query: str) -> dict[str
         "entity_resolution_request": parse_entity_request(query).as_dict(),
         "answered_by": "deterministic entity reader",
     }
+
+
+async def _answer_device_lookup(
+    application: Any,
+    query: str,
+) -> dict[str, Any] | None:
+    """Answer explicit identity or location lookups for one device."""
+
+    if not _is_explicit_device_lookup(query):
+        return None
+
+    inventory_result, devices = await _load_authoritative_inventory(
+        application
+    )
+    tools_used = [
+        {
+            "name": "hub_list_devices",
+            "success": not bool(
+                getattr(inventory_result, "is_error", False)
+            ),
+        }
+    ]
+    return await _answer_resolved_entity_read(
+        application,
+        query,
+        explicit_lookup=True,
+        attribute_request=None,
+        devices=devices,
+        tools_used=tools_used,
+    )
+
+
+async def _answer_attribute_read(
+    application: Any,
+    query: str,
+) -> dict[str, Any] | None:
+    """Answer one named-device or exact-room attribute request."""
+
+    attribute_request = _requested_device_attribute(query)
+    if attribute_request is None:
+        return None
+
+    inventory_result, devices = await _load_authoritative_inventory(
+        application
+    )
+    tools_used = [
+        {
+            "name": "hub_list_devices",
+            "success": not bool(
+                getattr(inventory_result, "is_error", False)
+            ),
+        }
+    ]
+    return await _answer_resolved_entity_read(
+        application,
+        query,
+        explicit_lookup=False,
+        attribute_request=attribute_request,
+        devices=devices,
+        tools_used=tools_used,
+    )
+
+
+async def _answer_terminal_entity_read(
+    application: Any,
+    query: str,
+) -> dict[str, Any] | None:
+    """Dispatch terminal reads to one focused deterministic handler."""
+
+    for handler in (
+        _answer_power_accounting,
+        _answer_inventory_listing,
+        _answer_device_lookup,
+        _answer_attribute_read,
+    ):
+        answer = await handler(application, query)
+        if answer is not None:
+            return answer
+    return None
 
 
 _LOOKUP_PREFIX_RE = re.compile(

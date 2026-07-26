@@ -1,3 +1,12 @@
+## 0.10.128
+
+- Split terminal entity reads into focused handlers for power accounting,
+  complete device inventory, explicit device lookup and attribute reads.
+- Retained one shared deterministic entity-resolution path for ambiguity,
+  room matching and confidence checks.
+- Preserved existing MCP calls, response dictionaries and user-visible wording.
+- Added focused regression coverage for the terminal-read dispatcher order.
+
 ## 0.10.127
 
 - Improved targeted MCP device recovery by extracting the requested device name before authoritative lookup.
