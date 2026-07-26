@@ -1,3 +1,13 @@
+## 0.10.134
+
+### Deterministic climate extrema and semantic evidence fix
+
+- Answers highest and lowest humidity or temperature questions directly from verified live measurements.
+- Prevents AI synthesis from inventing room names or unsupported sensor values.
+- Ignores aggregate and invalid climate readings when selecting extrema.
+- Fixes the undefined `environmental_insights` variable in semantic home evidence collection.
+- Adds focused climate extrema regression coverage.
+
 ## 0.10.133
 
 ### Deterministic climate measurement routing
