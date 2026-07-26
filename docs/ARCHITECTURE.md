@@ -58,6 +58,16 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
 
 Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changing these families.
 
+## Import graph health
+
+The maintained add-on has 120 production Python modules, all reachable from a
+declared entrypoint. `scripts/analyze_imports.py` reports zero orphans.
+
+The former `sitecustomize.py` compatibility hook was retired after structured
+MCP result handling moved into `mcp_client.py`; Python's implicit
+`sitecustomize` loading therefore no longer hides behavior from the static
+import graph.
+
 ## Consolidation rules
 
 1. Confirm the live import graph before moving or deleting code.
