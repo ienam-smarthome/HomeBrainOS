@@ -30,7 +30,9 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
 
 - `ollama_agent_*`: consolidated live chain is `fast → inference → claude → unified`;
   superseded compatibility modules have been removed.
-- `control_agent_*`: several directly wired capabilities currently coexist.
+- `control_agent_*`: core confirmation state, base execution, verified-level
+  control and rescue behavior are consolidated in `control_agent_rescue.py`;
+  capability and interpretation wrappers remain to be consolidated.
 - `automation_rule_workflow_*`: native Rule Machine workflow composes several safety layers.
 - `fast_fallback_*`: the base, weather and live-state kernel is consolidated in
   `fast_fallback_live.py`; verified control, attention, group control,
@@ -58,7 +60,8 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 
 1. [done] Remove confirmed zero-importer production modules.
 2. [done] Flatten the Ollama inheritance chain behind `UnifiedAdaptiveMCPAgent`.
-3. Consolidate overlapping control-agent wrappers behind one public control service.
+3. [in progress] Consolidate overlapping control-agent wrappers behind one
+   public control service; the core execution group is complete.
 4. Consolidate automation Rule Machine safety layers.
 5. [done] Merge fast-fallback near-duplicates by semantic capability.
 6. Fold Web UI safety wrappers into a single maintained Web UI implementation.
