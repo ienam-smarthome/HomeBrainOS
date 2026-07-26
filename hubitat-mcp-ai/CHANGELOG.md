@@ -1,3 +1,15 @@
+## 0.10.160
+
+### Unify auxiliary request composition
+
+- Extends `request_composition.py` with a typed builder for compatibility
+  installers.
+- Declares all ten auxiliary request wrappers in one ordered composition while
+  preserving installer return objects, route registration and service patches.
+- Detects duplicate layer names, missing wrappers and untracked
+  `application.ask` mutations during startup.
+- Leaves the four service-only installers outside the request stack.
+
 ## 0.10.159
 
 ### Remove the final production orphans
