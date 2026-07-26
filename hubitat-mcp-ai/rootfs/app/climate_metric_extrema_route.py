@@ -8,6 +8,20 @@ from semantic_metric_comparison import _SPECS, format_measurement
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
 
+_NON_ROOM_CLIMATE_TERMS = (
+    "appliance",
+    "appliances",
+    "fridge",
+    "freezer",
+    "refrigerator",
+    "hub info",
+    "hubitat",
+    "weather",
+    "open-meteo",
+    "bridge",
+    "life360",
+)
+
 
 def _normalise(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower()).strip(" .!?")
@@ -33,6 +47,13 @@ def _metric_request(query: str) -> tuple[str, str] | None:
     return None
 
 
+def _is_room_climate_reading(reading: dict[str, Any]) -> bool:
+    device = str(reading.get("label") or reading.get("device") or "").strip()
+    room = str(reading.get("room") or "").strip()
+    haystack = f"{device} {room}".lower()
+    return bool(room) and not any(term in haystack for term in _NON_ROOM_CLIMATE_TERMS)
+
+
 def select_metric_extreme(
     readings: list[dict[str, Any]],
     *,
@@ -42,6 +63,8 @@ def select_metric_extreme(
     valid: list[dict[str, Any]] = []
     for raw in readings:
         if not isinstance(raw, dict) or raw.get("aggregate") is True:
+            continue
+        if not _is_room_climate_reading(raw):
             continue
         try:
             value = float(raw.get("value"))
@@ -95,7 +118,7 @@ def install_climate_metric_extrema_route(
                 "success": False,
                 "route": "mcp-fast",
                 "intent": f"climate-{metric}-extreme",
-                "message": f"No valid live {metric} readings are currently available.",
+                "message": f"No valid live room {metric} readings are currently available.",
                 "answered_by": "Deterministic climate measurement reader",
             }
 
@@ -105,16 +128,10 @@ def install_climate_metric_extrema_route(
         room = str(selected.get("room") or "").strip()
         direction_word = "highest" if direction == "max" else "lowest"
 
-        if room:
-            message = (
-                f"{room} has the {direction_word} {metric} reading at {formatted}, "
-                f"reported by {device}."
-            )
-        else:
-            message = (
-                f"The {direction_word} {metric} reading is {formatted}, "
-                f"reported by {device}."
-            )
+        message = (
+            f"{room} has the {direction_word} {metric} reading at {formatted}, "
+            f"reported by {device}."
+        )
 
         return {
             "success": True,
@@ -125,7 +142,7 @@ def install_climate_metric_extrema_route(
             "direction": direction,
             "reading": {
                 "device": device,
-                "room": room or None,
+                "room": room,
                 "value": value,
                 "formatted": formatted,
                 "attribute": selected.get("source_attribute"),
