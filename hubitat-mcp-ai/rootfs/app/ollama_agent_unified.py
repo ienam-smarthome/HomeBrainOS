@@ -180,7 +180,11 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             client=existing_http,
         )
 
-    def _exact_model_present(model: str, installed_models: list[str]) -> bool:
+    def _exact_model_present(
+        self,
+        model: str,
+        installed_models: list[str],
+    ) -> bool:
         target = str(model or "").strip().lower()
         return bool(target) and any(
             str(name or "").strip().lower() == target for name in installed_models
@@ -1270,7 +1274,16 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
                 num_ctx=num_ctx,
                 num_predict=max(160, num_predict),
             )
-            answer = self._extract_final_answer(body, require_json=True)
+            try:
+                answer = self._extract_final_answer(
+                    body,
+                    require_json=True,
+                )
+            except Exception:
+                answer = self._extract_final_answer(
+                    body,
+                    require_json=False,
+                )
         except OllamaUnavailable as structured_error:
             # Older Ollama builds may not support JSON-schema output. Keep a
             # compatibility path, but still reject any visible chain-of-thought.

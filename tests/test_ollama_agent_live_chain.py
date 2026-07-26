@@ -98,3 +98,4 @@ def test_consolidated_methods_are_owned_by_live_classes():
         "_bounded_text",
     ):
         assert method_name in UnifiedAdaptiveMCPAgent.__dict__
+
