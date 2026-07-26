@@ -1,3 +1,13 @@
+## 0.10.151
+
+### Consolidate core control-agent execution
+
+- Merges confirmation/session state, base control planning, verified level
+  execution and rescue behavior into `control_agent_rescue.py`.
+- Preserves the effective base → verified → rescue class order and separates
+  the three installer stages by explicit names.
+- Removes three sibling-only modules and redirects focused safety tests.
+
 ## 0.10.150
 
 ### Complete fast-fallback family consolidation

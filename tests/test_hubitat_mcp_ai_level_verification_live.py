@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from control_agent_level_verified import FastVerifiedControlAgent  # noqa: E402
+from control_agent_rescue import FastVerifiedControlAgent  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from control_agent import HomeBrainControlAgent  # noqa: E402
+from control_agent_rescue import HomeBrainControlAgent  # noqa: E402
 from control_agent_combined_level import install_combined_level_intent  # noqa: E402
 from control_agent_postfix_control import install_postfix_control_intent  # noqa: E402
 from control_postfix_language import parse_postfix_control  # noqa: E402
