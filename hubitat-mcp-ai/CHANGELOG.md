@@ -1,3 +1,13 @@
+## 0.10.155
+
+### Consolidate notification and washing Rule Machine safety
+
+- Merges notification-device discovery, guarded washing-rule compilation and
+  final backup preflight behavior into `automation_rule_workflow_washing.py`.
+- Preserves the notification → washing → final-washing class order and all
+  existing installer entry points.
+- Removes two sibling-only modules and redirects the downstream backup chain.
+
 ## 0.10.154
 
 ### Consolidate Rule Machine schema and native workflow

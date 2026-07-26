@@ -10,7 +10,7 @@ from automation_rule_workflow_backup_confirmed import (
     ConfirmedBackupWashingRuleMachineWorkflow,
     _plain_backup_rows,
 )
-from automation_rule_workflow_washing_final import (
+from automation_rule_workflow_washing import (
     _BACKUP_MAX_AGE_MS,
     _backup_timestamp_ms,
     _looks_like_local_hub_backup,
