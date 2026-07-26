@@ -12,7 +12,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from automation_rule_workflow_native_rm import LiveRuleTool  # noqa: E402
-from automation_rule_workflow_write_safe import (  # noqa: E402
+from automation_rule_workflow_repair_id_safe import (  # noqa: E402
     WriteSafeBackupWashingRuleMachineWorkflow,
 )
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402

@@ -14,7 +14,7 @@ sys.path.insert(0, str(APP_DIR))
 from automation_rule_workflow_repair_id_safe import (  # noqa: E402
     RepairIdSafeWashingRuleMachineWorkflow,
 )
-from automation_rule_workflow_split_repair import _REPAIR_RE  # noqa: E402
+from automation_rule_workflow_repair_id_safe import _REPAIR_RE  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 

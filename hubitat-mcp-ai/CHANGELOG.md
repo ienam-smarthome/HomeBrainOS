@@ -1,3 +1,16 @@
+## 0.10.156
+
+### Complete Rule Machine safety-chain consolidation
+
+- Merges notification discovery, washing compilation, backup preflight and
+  confirmation, filename validation, native write-route recovery, split
+  population/repair and authoritative repair-ID verification into
+  `automation_rule_workflow_repair_id_safe.py`.
+- Preserves the complete recovery class order, helper API and installer entry
+  points behind the externally wired repair-ID workflow.
+- Removes five sibling-only modules, eliminates the final Rule Machine cluster
+  suspect and completes architecture Step 4.
+
 ## 0.10.155
 
 ### Consolidate notification and washing Rule Machine safety
