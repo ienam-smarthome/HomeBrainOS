@@ -10,7 +10,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from fast_fallback_extended_reads import FastFallbackRouter  # noqa: E402
-from fast_fallback_speech import normalise_spoken_device_name  # noqa: E402
+from fast_fallback_device_health import normalise_spoken_device_name  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from mcp_state_broker import MCPStateBroker  # noqa: E402
 from mcp_tool_catalogue import build_mcp_tool_catalogue  # noqa: E402

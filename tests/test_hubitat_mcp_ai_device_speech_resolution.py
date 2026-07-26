@@ -9,7 +9,10 @@ from types import SimpleNamespace
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback_speech import FastFallbackRouter, normalise_spoken_device_name  # noqa: E402
+from fast_fallback_device_health import (  # noqa: E402
+    SpeechFastFallbackRouter as FastFallbackRouter,
+    normalise_spoken_device_name,
+)
 from fastpath_ai_handoff import install_fastpath_ai_handoff  # noqa: E402
 from ollama_agent_unified import UnifiedAdaptiveMCPAgent as DeviceResolutionNaturalAgent  # noqa: E402
 

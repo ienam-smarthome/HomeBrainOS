@@ -1,3 +1,13 @@
+## 0.10.148
+
+### Consolidate fast-fallback health and attention
+
+- Merges verified control, attention, group control, device-health and
+  speech-aware behavior into `fast_fallback_device_health.py`.
+- Preserves the device-health and speech-aware public class entrypoints.
+- Removes four sibling inheritance modules and redirects all consumers to the
+  consolidated owner.
+
 ## 0.10.147
 
 ### Consolidate the fast-fallback kernel

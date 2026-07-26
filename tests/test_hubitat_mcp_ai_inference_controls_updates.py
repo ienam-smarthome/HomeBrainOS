@@ -8,7 +8,9 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback_verified import FastFallbackRouter  # noqa: E402
+from fast_fallback_device_health import (  # noqa: E402
+    VerifiedFastFallbackRouter as FastFallbackRouter,
+)
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from ollama_agent_inference import OllamaMCPAgent  # noqa: E402
 from system_presenter_v2 import present_hub_info_v2  # noqa: E402
@@ -116,7 +118,7 @@ def test_control_is_verified_after_command(monkeypatch):
     async def no_sleep(_delay):
         return None
 
-    monkeypatch.setattr("fast_fallback_verified.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("fast_fallback_device_health.asyncio.sleep", no_sleep)
     answer = asyncio.run(
         FastFallbackRouter(fake).answer("turn off hallway light 1")
     )

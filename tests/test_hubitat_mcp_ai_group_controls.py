@@ -8,7 +8,9 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback_groups import FastFallbackRouter  # noqa: E402
+from fast_fallback_device_health import (  # noqa: E402
+    GroupFastFallbackRouter as FastFallbackRouter,
+)
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 
 
@@ -115,7 +117,7 @@ def test_turn_off_hallway_lights_controls_and_verifies_both_lights(monkeypatch):
     async def no_sleep(_delay):
         return None
 
-    monkeypatch.setattr("fast_fallback_groups.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("fast_fallback_device_health.asyncio.sleep", no_sleep)
     answer = asyncio.run(
         FastFallbackRouter(fake).answer("Turn off Hallway Lights")
     )

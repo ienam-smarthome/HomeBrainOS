@@ -33,8 +33,10 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
 - `control_agent_*`: several directly wired capabilities currently coexist.
 - `automation_rule_workflow_*`: native Rule Machine workflow composes several safety layers.
 - `fast_fallback_*`: the base, weather and live-state kernel is consolidated in
-  `fast_fallback_live.py`; higher read/control capabilities still form a
-  dependency chain.
+  `fast_fallback_live.py`; verified control, attention, group control,
+  device-health and speech behavior is consolidated in
+  `fast_fallback_device_health.py`; higher inventory/read/control capabilities
+  still form a dependency chain.
 - `home_snapshot_*`: `home_snapshot_hybrid.py` is the live entry and builds on truthful snapshot behaviour.
 
 Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changing these families.
@@ -56,7 +58,7 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 3. Consolidate overlapping control-agent wrappers behind one public control service.
 4. Consolidate automation Rule Machine safety layers.
 5. [in progress] Merge fast-fallback near-duplicates by semantic capability;
-   the base/weather/live kernel group is complete.
+   the base/weather/live kernel and health/attention groups are complete.
 6. Fold Web UI safety wrappers into a single maintained Web UI implementation.
 
 Each phase must preserve current public commands, MCP safety behaviour and Home Assistant startup.
