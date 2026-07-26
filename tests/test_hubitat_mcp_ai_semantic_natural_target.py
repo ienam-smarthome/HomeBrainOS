@@ -14,7 +14,7 @@ sys.path.insert(0, str(APP_DIR))
 from control_agent_combined_level import install_combined_level_intent  # noqa: E402
 from control_agent_graph import ControlDeviceGraph  # noqa: E402
 from control_agent_intent import ControlIntentInterpreter  # noqa: E402
-from control_agent_semantic_target import decompose_natural_target  # noqa: E402
+from control_agent_combined_level import decompose_natural_target  # noqa: E402
 
 
 class NoAIApplication:
