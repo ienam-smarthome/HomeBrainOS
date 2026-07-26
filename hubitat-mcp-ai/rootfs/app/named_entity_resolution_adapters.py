@@ -31,7 +31,11 @@ def _resolved_rows(
     selected = result.candidates if candidates_only else result.targets
     if candidates_only and result.status is ResolutionStatus.RESOLVED:
         selected = result.targets
-    return [payloads[target.entity_id or target.device_id] for target in selected if (target.entity_id or target.device_id) in payloads]
+    return [
+        payloads[target.entity_id or target.device_id]
+        for target in selected
+        if (target.entity_id or target.device_id) in payloads
+    ]
 
 
 def install_named_entity_resolution_adapters(
@@ -65,7 +69,7 @@ def install_named_entity_resolution_adapters(
         )
 
     def rule_exact_matches(self: Any, rules: list[dict[str, Any]], intent: Any) -> list[dict[str, Any]]:
-        requested_id = self._requested_rule_id(intent)
+        requested_id = self._requested_id(intent)
         return _resolved_rows(
             rules,
             entity_type="rule",
