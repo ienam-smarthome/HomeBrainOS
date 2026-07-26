@@ -21,6 +21,7 @@ from release_version import (
     RELEASE_VERSION,
     runtime_release_version,
 )
+from request_composition import AskCompositionBuilder
 from semantic_home_query_router import install_semantic_home_query_router
 from semantic_home_summary_agent import install_semantic_home_summary_agent
 from thermostat_summary_guard import install_thermostat_summary_guard
@@ -69,29 +70,64 @@ firmware_backup_retry = install_firmware_backup_settle_retry(
 named_rule_disable_guard = install_named_rule_disable_guard(
     _core.named_rule_controller,
 )
-app_controller = install_named_app_controller(_core.application)
+auxiliary_request_layers = AskCompositionBuilder(
+    _core.application,
+    base_name="core-request-stack",
+)
+app_controller = auxiliary_request_layers.capture(
+    "named-app-control",
+    lambda: install_named_app_controller(_core.application),
+)
 named_entity_resolver = install_named_entity_resolution_adapters(
     app_controller=app_controller,
     rule_controller=_core.named_rule_controller,
 )
-hub_health_display_bridge = install_hub_health_display_bridge(_core.application)
-semantic_home_summary_agent = install_semantic_home_summary_agent(
-    _core.application,
-    _core.home_snapshot,
+hub_health_display_bridge = auxiliary_request_layers.capture(
+    "hub-health-display",
+    lambda: install_hub_health_display_bridge(_core.application),
 )
-semantic_home_query_router = install_semantic_home_query_router(_core.application)
-home_summary_consistency_guard = install_home_summary_consistency_guard(_core.application)
-thermostat_summary_guard = install_thermostat_summary_guard(_core.application)
-climate_metric_extrema_route = install_climate_metric_extrema_route(
-    _core.application,
-    _core.semantic_metric_comparison,
+semantic_home_summary_agent = auxiliary_request_layers.capture(
+    "semantic-home-summary",
+    lambda: install_semantic_home_summary_agent(
+        _core.application,
+        _core.home_snapshot,
+    ),
 )
-named_rule_status_route = install_named_rule_status_route(
-    _core.application,
-    _core.named_rule_controller,
+semantic_home_query_router = auxiliary_request_layers.capture(
+    "semantic-home-query",
+    lambda: install_semantic_home_query_router(_core.application),
 )
-execution_contract_bridge = install_execution_contract_bridge(_core.application)
-runtime_request_registry = install_runtime_route_bridge(_core.application)
+home_summary_consistency_guard = auxiliary_request_layers.capture(
+    "home-summary-consistency",
+    lambda: install_home_summary_consistency_guard(_core.application),
+)
+thermostat_summary_guard = auxiliary_request_layers.capture(
+    "thermostat-summary",
+    lambda: install_thermostat_summary_guard(_core.application),
+)
+climate_metric_extrema_route = auxiliary_request_layers.capture(
+    "climate-metric-extrema",
+    lambda: install_climate_metric_extrema_route(
+        _core.application,
+        _core.semantic_metric_comparison,
+    ),
+)
+named_rule_status_route = auxiliary_request_layers.capture(
+    "named-rule-status",
+    lambda: install_named_rule_status_route(
+        _core.application,
+        _core.named_rule_controller,
+    ),
+)
+execution_contract_bridge = auxiliary_request_layers.capture(
+    "execution-contract",
+    lambda: install_execution_contract_bridge(_core.application),
+)
+runtime_request_registry = auxiliary_request_layers.capture(
+    "runtime-route-bridge",
+    lambda: install_runtime_route_bridge(_core.application),
+)
+auxiliary_request_handler = auxiliary_request_layers.finalize()
 
 app = _core.app
 

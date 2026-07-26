@@ -104,6 +104,13 @@ the declared outer-to-inner order for diagnostics. The compatibility installer
 in `mcp_agent_orchestrator.py` remains available for isolated callers and tests,
 but the production entrypoint does not use its mutation-based API.
 
+`entrypoint.py` uses `AskCompositionBuilder` for every auxiliary request
+installer. The builder captures compatibility wrappers, preserves their service
+return values and non-request side effects, rejects untracked mutations, then
+verifies the reconstructed typed chain is the same live handler before
+finalizing it. Service-only installers remain direct calls because they do not
+participate in request ordering.
+
 ## Ollama runtime wiring
 
 `entrypoint_core.py` installs `UnifiedAdaptiveMCPAgent` as the final
