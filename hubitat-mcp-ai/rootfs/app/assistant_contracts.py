@@ -28,7 +28,12 @@ class RouteClass(str, Enum):
 
 
 class ResolvedTarget(BaseModel):
+    # device_id remains required for backwards compatibility with the existing
+    # device graph. For apps, rules and rooms it contains the authoritative
+    # entity ID while entity_type identifies the namespace.
     device_id: str
+    entity_id: str | None = None
+    entity_type: str = "device"
     label: str
     room: str = ""
     types: list[str] = Field(default_factory=list)
