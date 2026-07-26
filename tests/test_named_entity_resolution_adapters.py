@@ -69,3 +69,12 @@ def test_rule_adapter_returns_shortened_name_as_candidate_only():
 
     assert exact == []
     assert [item["id"] for item in candidates] == [2844]
+
+
+def test_runtime_installs_only_the_central_named_entity_matcher():
+    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+
+    assert "install_named_entity_resolution_adapters" in entrypoint
+    assert "named_entity_resolver = install_named_entity_resolution_adapters" in entrypoint
+    assert "install_named_rule_match_guard" not in entrypoint
+    assert "named_rule_match_guard =" not in entrypoint
