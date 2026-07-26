@@ -9,7 +9,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from assistant_contracts import ResolutionStatus, RouteClass  # noqa: E402
-from control_agent_capability_filter import install_control_graph_capability_filter  # noqa: E402
+from control_agent_graph import install_control_graph_capability_filter  # noqa: E402
 from control_agent_intent import ControlTargetIntent  # noqa: E402
 from entity_resolver import EntityResolver  # noqa: E402
 from routing_policy import classify_query  # noqa: E402

@@ -1,3 +1,14 @@
+## 0.10.152
+
+### Consolidate control capability filtering
+
+- Moves actuator eligibility and exact read-only device safeguards into
+  `control_agent_graph.py`.
+- Keeps the graph filter installer and public evidence helpers unchanged while
+  removing their sibling-only module.
+- Redirects rescue, combined-level and focused safety consumers to the graph
+  owner.
+
 ## 0.10.151
 
 ### Consolidate core control-agent execution

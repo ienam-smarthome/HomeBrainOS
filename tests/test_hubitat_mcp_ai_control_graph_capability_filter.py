@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from control_agent_capability_filter import (  # noqa: E402
+from control_agent_graph import (  # noqa: E402
     exact_non_control_matches,
     install_control_graph_capability_filter,
     is_control_capable,
