@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from automation_rule_workflow_notification_safe import (  # noqa: E402
+from automation_rule_workflow_washing import (  # noqa: E402
     NotificationSafeNativeRuleMachineWorkflow,
 )
 from device_intelligence_duplicate_safe import (  # noqa: E402

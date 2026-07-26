@@ -14,7 +14,7 @@ from automation_rule_workflow_native_rm import (
     _best_practice_key,
     _nested_value,
 )
-from automation_rule_workflow_washing_final import (
+from automation_rule_workflow_washing import (
     FinalWashingRuleMachineWorkflow,
     _BACKUP_MAX_AGE_MS,
     _backup_timestamp_ms,
