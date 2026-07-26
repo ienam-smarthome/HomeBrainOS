@@ -1,3 +1,12 @@
+## 0.10.149
+
+### Consolidate fast-fallback inventory and room reads
+
+- Merges seven inventory, dashboard, room, status and extended-read layers into
+  `fast_fallback_extended_reads.py`.
+- Preserves the effective inheritance order and focused internal stage classes.
+- Removes six sibling modules and redirects production consumers and tests.
+
 ## 0.10.148
 
 ### Consolidate fast-fallback health and attention

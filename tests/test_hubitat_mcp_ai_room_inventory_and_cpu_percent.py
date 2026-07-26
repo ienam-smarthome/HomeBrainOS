@@ -9,7 +9,9 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback_room_inventory import FastFallbackRouter  # noqa: E402
+from fast_fallback_extended_reads import (  # noqa: E402
+    RoomInventoryRouter as FastFallbackRouter,
+)
 from hub_cpu_probe import parse_cpu_info  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from routing_policy import classify_query  # noqa: E402
@@ -419,7 +421,7 @@ def test_room_inventory_message_does_not_repeat_room():
 
 
 def test_room_state_enrichment_formats_common_device_metrics():
-    from fast_fallback_room_inventory import _room_device_states
+    from fast_fallback_extended_reads import _room_device_states
 
     assert _room_device_states(
         {
@@ -445,7 +447,7 @@ def test_room_state_enrichment_formats_common_device_metrics():
 
 
 def test_empty_common_sensor_types_are_eligible_for_bounded_detail():
-    from fast_fallback_room_inventory import _needs_empty_device_detail
+    from fast_fallback_extended_reads import _needs_empty_device_detail
 
     examples = [
         {"label": "Livingroom TRV", "name": "Thermostat"},
