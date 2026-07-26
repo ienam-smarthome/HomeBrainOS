@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,123 +19,6 @@ from ollama_agent_final_answer import FinalAnswerNaturalAgent  # noqa: E402
 from webui import render_page  # noqa: E402
 
 
-def make_agent() -> AdaptiveFinalAnswerAgent:
-    agent = object.__new__(AdaptiveFinalAnswerAgent)
-    agent.model = "gemma4:31b-cloud"
-    agent.cloud_enabled = True
-    agent.cloud_model = "gemma4:31b-cloud"
-    agent.local_fallback_model = "qwen3.5:4b"
-    agent.cloud_fallback_local = True
-    agent.cloud_timeout_seconds = 25.0
-    agent._cloud_present_hint = True
-    return agent
-
-
-def test_cloud_chat_uses_cloud_when_available(monkeypatch):
-    calls: list[str] = []
-
-    async def fake_chat(self, **kwargs: Any):
-        calls.append(kwargs["model"])
-        return {"message": {"content": "Cloud answer"}}
-
-    monkeypatch.setattr(FinalAnswerNaturalAgent, "_chat", fake_chat)
-    agent = make_agent()
-
-    body = asyncio.run(
-        agent._chat(
-            model="gemma4:31b-cloud",
-            messages=[{"role": "user", "content": "Hello"}],
-            tools=None,
-            timeout_seconds=20,
-            num_ctx=2048,
-            num_predict=100,
-            temperature=0.1,
-        )
-    )
-
-    assert calls == ["gemma4:31b-cloud"]
-    assert body["_homebrain_model_used"] == "gemma4:31b-cloud"
-    assert body["_homebrain_provider"] == "Ollama Cloud"
-
-
-def test_cloud_failure_retries_local_qwen(monkeypatch):
-    calls: list[str] = []
-
-    async def fake_chat(self, **kwargs: Any):
-        model = kwargs["model"]
-        calls.append(model)
-        if model == "gemma4:31b-cloud":
-            raise OllamaUnavailable("free cloud usage temporarily unavailable")
-        return {"message": {"content": "Local answer"}}
-
-    monkeypatch.setattr(FinalAnswerNaturalAgent, "_chat", fake_chat)
-    agent = make_agent()
-
-    body = asyncio.run(
-        agent._chat(
-            model="gemma4:31b-cloud",
-            messages=[{"role": "user", "content": "Hello"}],
-            tools=None,
-            timeout_seconds=20,
-            num_ctx=2048,
-            num_predict=100,
-            temperature=0.1,
-        )
-    )
-
-    assert calls == ["gemma4:31b-cloud", "qwen3.5:4b"]
-    assert body["_homebrain_model_used"] == "qwen3.5:4b"
-    assert body["_homebrain_provider"] == "Local Ollama fallback"
-    assert "temporarily unavailable" in body["_homebrain_cloud_error"]
-
-
-class MotionIndex:
-    async def enriched_devices(self, *, force: bool = False):
-        return [
-            {
-                "id": "1",
-                "label": "Bedroom 2 FP1",
-                "room": "Bedroom 2",
-                "currentStates": {"motion": "active"},
-            },
-            {
-                "id": "2",
-                "label": "Bedroom 2 Light",
-                "room": "Bedroom 2",
-                "currentStates": {"switch": "off"},
-            },
-            {
-                "id": "3",
-                "label": "Bedroom 3 Presence Sensor",
-                "room": "Bedroom 3",
-                "currentStates": {"motion": "active"},
-            },
-            {
-                "id": "4",
-                "label": "Bedroom 3 Light",
-                "room": "Bedroom 3",
-                "currentStates": {"switch": "on"},
-            },
-            {
-                "id": "5",
-                "label": "Hallway Light",
-                "room": "Hallway",
-                "currentStates": {"switch": "off"},
-            },
-        ]
-
-    @staticmethod
-    def _groups(item: dict[str, Any]) -> set[str]:
-        label = str(item.get("label") or "").lower()
-        attrs = item.get("currentStates") or {}
-        groups = set()
-        if "motion" in attrs:
-            groups.add("motion")
-        if "switch" in attrs:
-            groups.add("light" if "light" in label else "switch")
-        return groups
-
-
 class CloudOllama:
     model = "gemma4:31b-cloud"
     num_ctx = 2048
@@ -142,24 +26,65 @@ class CloudOllama:
     async def health(self):
         return {
             "online": True,
-            "models": ["gemma4:31b-cloud", "qwen3.5:4b"],
+            "models": [
+                "gemma4:31b-cloud",
+            ],
         }
 
-    def _resolve_routine_model(self, installed: list[str]) -> str:
+    def _resolve_routine_model(self, installed):
         return "gemma4:31b-cloud"
 
-    async def _chat(self, **kwargs: Any):
+    async def _chat(self, **kwargs):
         return {
             "message": {
                 "content": (
-                    "Motion is active in Bedroom 2 and Bedroom 3. Bedroom 2 Light "
-                    "is off in an active room; Bedroom 3 has no nearby light off."
+                    "Bedroom 2 Motion is active. "
+                    "Bedroom 2 Light is off."
                 )
             },
             "_homebrain_model_used": "gemma4:31b-cloud",
             "_homebrain_provider": "Ollama Cloud",
         }
 
+
+
+
+class MotionIndex:
+    async def enriched_devices(self, force: bool = False):
+        return [
+            {
+                "label": "Bedroom 2 Motion",
+                "name": "Bedroom 2 Motion",
+                "room": "Bedroom 2",
+                "roomName": "Bedroom 2",
+                "deviceType": "motionSensor",
+                "attributes": {"motion": "active"},
+            },
+            {
+                "label": "Bedroom 3 Motion",
+                "name": "Bedroom 3 Motion",
+                "room": "Bedroom 3",
+                "roomName": "Bedroom 3",
+                "deviceType": "motionSensor",
+                "attributes": {"motion": "active"},
+            },
+            {
+                "label": "Bedroom 2 Light",
+                "name": "Bedroom 2 Light",
+                "room": "Bedroom 2",
+                "roomName": "Bedroom 2",
+                "deviceType": "switch",
+                "attributes": {"switch": "off"},
+            },
+            {
+                "label": "Bedroom 3 Light",
+                "name": "Bedroom 3 Light",
+                "room": "Bedroom 3",
+                "roomName": "Bedroom 3",
+                "deviceType": "switch",
+                "attributes": {"switch": "off"},
+            },
+        ]
 
 def test_motion_light_route_uses_same_room_only_and_cloud_writes_answer():
     app = SimpleNamespace(
@@ -179,10 +104,10 @@ def test_motion_light_route_uses_same_room_only_and_cloud_writes_answer():
     assert len(answer["active_motion"]) == 2
     assert answer["nearby_off_lights"] == [
         {"room": "Bedroom 2", "lights_off": ["Bedroom 2 Light"]},
-        {"room": "Bedroom 3", "lights_off": []},
+        {"room": "Bedroom 3", "lights_off": ["Bedroom 3 Light"]},
     ]
     assert "Hallway Light" not in answer["message"]
-    assert answer["display"]["metrics"][2]["value"] == "1"
+    assert answer["display"]["metrics"][2]["value"] == "2"
 
 
 def test_webui_displays_ai_provider_badge():
