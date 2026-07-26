@@ -13,7 +13,6 @@ from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
 from named_entity_resolution_adapters import install_named_entity_resolution_adapters
 from named_rule_disable_guard import install_named_rule_disable_guard
-from named_rule_match_guard import install_named_rule_match_guard
 from named_rule_status_route import install_named_rule_status_route
 from runtime_route_bridge import install_runtime_route_bridge
 from release_version import (
@@ -65,9 +64,6 @@ firmware_backup_retry = install_firmware_backup_settle_retry(
     settle_seconds=4.0,
 )
 
-named_rule_match_guard = install_named_rule_match_guard(
-    _core.named_rule_controller,
-)
 named_rule_disable_guard = install_named_rule_disable_guard(
     _core.named_rule_controller,
 )
