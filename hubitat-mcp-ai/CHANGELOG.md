@@ -1,3 +1,16 @@
+## 0.10.161
+
+### Consolidate the home snapshot service family
+
+- Folds the base, truthful-state recovery and hybrid Cloud-first snapshot
+  services into the canonical `home_snapshot.py` module.
+- Preserves all three public service classes and installer functions while
+  sharing one typed installation path.
+- Switches the maintained entrypoint to the canonical module and removes the
+  two sibling-only wrapper files.
+- Reduces the maintained application from 120 to 118 production modules and
+  clears the `home_snapshot` cluster warnings.
+
 ## 0.10.160
 
 ### Unify auxiliary request composition

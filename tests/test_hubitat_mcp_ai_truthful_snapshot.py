@@ -10,7 +10,7 @@ from typing import Any
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from home_snapshot_truthful import TruthfulHomeSnapshotService  # noqa: E402
+from home_snapshot import TruthfulHomeSnapshotService  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 

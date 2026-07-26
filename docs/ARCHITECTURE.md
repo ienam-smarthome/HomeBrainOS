@@ -51,7 +51,10 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
   prayer-time, device-type, index, engagement, multi-control and light-usage
   behavior is consolidated in `fast_fallback_light_usage.py`. All four
   remaining family modules are wired outside the family.
-- `home_snapshot_*`: `home_snapshot_hybrid.py` is the live entry and builds on truthful snapshot behaviour.
+- `home_snapshot.py`: owns the base, truthful-state recovery and hybrid
+  Cloud-first snapshot services in one canonical module. The three public
+  service classes and installer functions remain available without a
+  sibling-only inheritance chain.
 - `webui_*`: the base HomeBrain renderer, mobile dashboard, clipboard fallback
   and HTTP error handling are consolidated in `webui.py`; feature-specific UI
   patchers remain separate modules.
@@ -60,7 +63,7 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 
 ## Import graph health
 
-The maintained add-on has 120 production Python modules, all reachable from a
+The maintained add-on has 118 production Python modules, all reachable from a
 declared entrypoint. `scripts/analyze_imports.py` reports zero orphans.
 
 The former `sitecustomize.py` compatibility hook was retired after structured
