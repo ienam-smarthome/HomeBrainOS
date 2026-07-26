@@ -21,6 +21,91 @@ def _bool_value(value: Any) -> bool | None:
     return None
 
 
+def _raw_rule_state(value: Any, rule_id: Any) -> dict[str, Any]:
+    rows = value.get("rules", []) if isinstance(value, dict) else []
+    for raw in rows:
+        if isinstance(raw, dict) and str(raw.get("id")) == str(rule_id):
+            disabled = _bool_value(raw.get("disabled"))
+            paused = _bool_value(raw.get("paused"))
+            status = str(raw.get("status") or "").strip().lower()
+            if not status:
+                status = "disabled" if disabled is True else "paused" if paused is True else "active"
+            return {
+                "disabled": disabled,
+                "paused": paused,
+                "status": status,
+            }
+    return {"disabled": None, "paused": None, "status": "unknown"}
+
+
+def _unsupported_response(
+    controller: Any,
+    *,
+    intent: Any,
+    rule: dict[str, Any],
+    listed: Any,
+    available: set[str],
+    started: float,
+) -> dict[str, Any]:
+    state = _raw_rule_state(getattr(listed, "data", None), rule["id"])
+    display = display_payload(
+        "rule-control",
+        "Rule enable/disable unavailable",
+        subtitle="The MCP server can read disabled state but cannot change it",
+        metrics=[
+            {"label": "Requested", "value": intent.action.title(), "icon": "🎯"},
+            {"label": "Rule ID", "value": str(rule["id"]), "icon": "⚙️"},
+            {"label": "Disabled", "value": str(state["disabled"]).title(), "icon": "⛔"},
+            {"label": "Paused", "value": str(state["paused"]).title(), "icon": "⏸️"},
+        ],
+        items=[
+            {
+                "icon": "⚙️",
+                "title": rule["name"],
+                "value": state["status"].title(),
+                "subtitle": "No command was sent",
+            }
+        ],
+    )
+    replacement_action = "resume" if state["paused"] is True else "pause"
+    display["actions"] = [
+        {
+            "label": f"{replacement_action.title()} instead",
+            "query": f"{replacement_action} rule id {rule['id']}",
+            "tone": "primary",
+        },
+        {"label": "Cancel", "cancel": True, "tone": "secondary"},
+    ]
+    return {
+        "success": False,
+        "route": "mcp-rule-control-unsupported",
+        "intent": "automation-rule-disabled-write-unsupported",
+        "message": (
+            "The connected MCP server can report whether this rule is disabled, but it does not "
+            "advertise a rule enable/disable write operation. No command was sent. Pause and disable "
+            "remain separate states."
+        ),
+        "answered_by": "Hubitat MCP deterministic rule controller",
+        "display": display,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
+        "technical": safe_debug(
+            {
+                "requested_action": intent.action,
+                "resolved_rule": rule,
+                "current_state": state,
+                "advertised_tools": sorted(available),
+                "required_mcp_capability": {
+                    "preferred_tool": "hub_set_rule_disabled",
+                    "arguments": {"ruleId": rule["id"], "disabled": intent.action == "disable"},
+                    "required_response_fields": ["success", "ruleId", "disabled"],
+                    "verification": "Read hub_list_rules and confirm disabled state by Rule ID",
+                },
+                "command_sent": False,
+            }
+        ),
+    }
+
+
 def install_named_rule_disable_guard(controller: Any) -> Any:
     """Keep pause/resume and disable/enable as distinct Rule Machine actions."""
 
@@ -55,12 +140,13 @@ def install_named_rule_disable_guard(controller: Any) -> Any:
         else:
             legacy = "hub_disable_rule" if desired_disabled else "hub_enable_rule"
             if legacy not in available:
-                return self._error(
-                    "The connected MCP server does not advertise rule enable/disable control. "
-                    "No command was sent. Use pause or resume only when you want paused-state control.",
-                    listed,
-                    started,
+                return _unsupported_response(
+                    self,
+                    intent=intent,
                     rule=rule,
+                    listed=listed,
+                    available=available,
+                    started=started,
                 )
             tool_name = legacy
             arguments = {"ruleId": rule["id"]}
@@ -81,21 +167,9 @@ def install_named_rule_disable_guard(controller: Any) -> Any:
         try:
             refreshed = await self.mcp.call_tool("hub_list_rules", {})
             if not refreshed.is_error:
-                current = next(
-                    (
-                        item
-                        for item in self._rule_rows(refreshed.data)
-                        if str(item["id"]) == str(rule["id"])
-                    ),
-                    None,
-                )
-                if current is not None:
-                    # _rule_rows may not preserve disabled yet, so inspect the raw inventory.
-                    for raw in getattr(refreshed, "data", {}).get("rules", []) if isinstance(getattr(refreshed, "data", None), dict) else []:
-                        if str(raw.get("id")) == str(rule["id"]):
-                            readback_state = _bool_value(raw.get("disabled"))
-                            readback_verified = readback_state is desired_disabled
-                            break
+                state = _raw_rule_state(getattr(refreshed, "data", None), rule["id"])
+                readback_state = state["disabled"]
+                readback_verified = readback_state is desired_disabled
         except Exception:
             pass
 
@@ -150,4 +224,7 @@ def install_named_rule_disable_guard(controller: Any) -> Any:
     return controller
 
 
-__all__ = ["install_named_rule_disable_guard"]
+__all__ = [
+    "_raw_rule_state",
+    "install_named_rule_disable_guard",
+]
