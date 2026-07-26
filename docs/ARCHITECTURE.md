@@ -52,6 +52,9 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
   behavior is consolidated in `fast_fallback_light_usage.py`. All four
   remaining family modules are wired outside the family.
 - `home_snapshot_*`: `home_snapshot_hybrid.py` is the live entry and builds on truthful snapshot behaviour.
+- `webui_*`: the base HomeBrain renderer, mobile dashboard, clipboard fallback
+  and HTTP error handling are consolidated in `webui.py`; feature-specific UI
+  patchers remain separate modules.
 
 Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changing these families.
 
@@ -74,7 +77,7 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 4. [done] Consolidate automation Rule Machine safety layers behind the native,
    washing and externally wired recovery owners.
 5. [done] Merge fast-fallback near-duplicates by semantic capability.
-6. Fold Web UI safety wrappers into a single maintained Web UI implementation.
+6. [done] Fold Web UI safety wrappers into a single maintained Web UI implementation.
 
 Each phase must preserve current public commands, MCP safety behaviour and Home Assistant startup.
 

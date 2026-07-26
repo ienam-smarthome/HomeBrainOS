@@ -11,7 +11,6 @@ ENTRYPOINTS = {
     "entrypoint",
     "entrypoint_core",
     "webui",
-    "webui_homebrain",
     "runtime_route_bridge",
     "dashboard_api",
     "device_intelligence_api",

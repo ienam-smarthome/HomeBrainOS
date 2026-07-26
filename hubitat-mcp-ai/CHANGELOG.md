@@ -1,3 +1,13 @@
+## 0.10.157
+
+### Consolidate Web UI safety wrappers
+
+- Merges the base HomeBrain renderer, mobile dashboard, clipboard fallback and
+  HTTP error handling into the canonical `webui.py` implementation.
+- Preserves the public renderer, patch and installer entry points while keeping
+  feature-specific UI patchers independently wired.
+- Removes three sibling-only wrapper modules and completes architecture Step 6.
+
 ## 0.10.156
 
 ### Complete Rule Machine safety-chain consolidation
