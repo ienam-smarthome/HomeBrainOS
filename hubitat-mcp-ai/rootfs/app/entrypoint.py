@@ -4,6 +4,7 @@ import uvicorn
 
 import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
+from ai_evidence_climate_guard import install_climate_measurement_guard
 from home_summary_consistency_guard import install_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
@@ -18,6 +19,7 @@ from release_version import (
 from semantic_home_query_router import install_semantic_home_query_router
 from semantic_home_summary_agent import install_semantic_home_summary_agent
 from thermostat_summary_guard import install_thermostat_summary_guard
+
 
 def _runtime_release_version() -> str:
     """Compatibility wrapper around the shared release-version resolver."""
@@ -47,6 +49,10 @@ application.app.version = RUNTIME_RELEASE_VERSION
 application.BAKED_VERSION = RUNTIME_RELEASE_VERSION
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
+
+climate_measurement_guard = install_climate_measurement_guard(
+    _core.ai_evidence_planner,
+)
 
 firmware_backup_retry = install_firmware_backup_settle_retry(
     _core.hub_firmware_update_workflow,
