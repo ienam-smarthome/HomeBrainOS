@@ -1,3 +1,12 @@
+## 0.10.131
+
+### Unified HomeBrain telemetry
+
+- Updated semantic response labels to match the unified agent architecture
+- Improved Home evidence and Home attention route descriptions
+- Preserved deterministic MCP control and verified state handling
+- Passed complete 280-test release gate
+
 ## 0.10.130
 
 ### Unified Ollama agent authority
