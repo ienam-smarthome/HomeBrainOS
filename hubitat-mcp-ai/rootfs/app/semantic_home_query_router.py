@@ -511,7 +511,7 @@ def install_semantic_home_query_router(application: Any) -> AskHandler:
                 "provider": provider,
                 "synthesis_error": synthesis_error,
                 "classification_error": classification_error,
-                "answered_by": "AI semantic intent router using verified HomeBrain evidence",
+                "answered_by": "HomeBrain semantic evidence engine",
                 "technical": safe_debug({"intent": intent, "evidence": evidence, "synthesis_error": synthesis_error, "classification_error": classification_error}),
             }
 
@@ -581,7 +581,7 @@ def install_semantic_home_query_router(application: Any) -> AskHandler:
             "provider": provider,
             "synthesis_error": synthesis_error,
             "classification_error": classification_error,
-            "answered_by": "AI semantic intent router using verified HomeBrain attention evidence",
+            "answered_by": "HomeBrain attention analysis engine",
             "technical": safe_debug(
                 {
                     "intent": intent,
