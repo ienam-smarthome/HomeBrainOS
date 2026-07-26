@@ -1,3 +1,52 @@
+## 0.10.141
+
+### Central named entity resolution
+
+- Adds one typed resolver for Hubitat apps and Rule Machine rules.
+- Resolves authoritative IDs and exact normalised names deterministically.
+- Keeps shortened names as clarification candidates rather than automatic write targets.
+- Rejects unsafe broad one-word fuzzy matches.
+- Consolidates execution metadata onto the canonical assistant contracts.
+- Adds regression coverage for exact IDs, shortened names, accepted commands and verified commands.
+
+## 0.10.140
+
+### HomeBrainOS 2.0 execution contracts
+
+- Defines the three execution lanes: fast control, fast read and agent.
+- Adds explicit execution and verification metadata while preserving legacy response fields.
+- Adds regression coverage for route classification and verification outcomes.
+
+## 0.10.139
+
+### Deterministic named Rule Machine status
+
+- Adds direct status queries for named Rule Machine rules and exact Rule IDs.
+- Reports disabled, paused and active states separately.
+- Supports safe shortened-name clarification without automatic writes.
+
+## 0.10.138
+
+### Rule write capability diagnostics
+
+- Reports disabled, paused and active rule state separately when a requested write is unsupported.
+- Provides a developer-ready MCP rule enable/disable contract without substituting pause for disable.
+
+## 0.10.137
+
+### Separate pause and disable semantics
+
+- Keeps pause/resume separate from enable/disable.
+- Refuses unsupported rule disable writes instead of silently pausing a rule.
+
+## 0.10.136
+
+### Safe shortened Rule Machine matching
+
+- Adds ranked clarification candidates for shortened Rule Machine names.
+- Preserves exact Rule ID confirmation before writes.
+- Rejects unsafe broad one-word matching.
+
 ## 0.10.135
 
 ### Room climate ranking filters
@@ -214,7 +263,7 @@
 
 - Rebinds the final `/api/ask` endpoint after the guarded app controller is installed, so explicit app commands cannot fall through to generic AI device handling.
 - Rebuilds the Web UI home route from the live runtime version instead of a release value captured during `entrypoint_core` import.
-- Adds no-store headers to the rendered HomeBrain page so the displayed version cannot remain frozen after an add-on update.
+- Adds no-store headers to the rendered HomeBrain page so the displayed version cannot remain frozen after the add-on has updated.
 
 ## 0.10.57
 
