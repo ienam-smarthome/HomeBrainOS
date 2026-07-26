@@ -194,6 +194,13 @@ class SemanticHomeEvidenceBroker:
         temperatures.sort(key=lambda item: (-float(item.get("value") or 0), str(item.get("device") or "")))
         humidities.sort(key=lambda item: (-float(item.get("value") or 0), str(item.get("device") or "")))
 
+        environmental_insights = build_environmental_insights(
+            {
+                "temperatures": temperatures,
+                "humidities": humidities,
+            }
+        )
+
         data = {
             "mode": mode,
             "environmental_insights": environmental_insights,
