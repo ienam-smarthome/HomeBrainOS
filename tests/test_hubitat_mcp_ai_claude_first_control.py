@@ -13,7 +13,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 import request_tracing  # noqa: E402
-from control_agent_claude_first import (  # noqa: E402
+from control_agent_combined_level import (  # noqa: E402
     install_claude_first_control_interpreter,
     is_probable_control_request,
     parse_natural_level,

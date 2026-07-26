@@ -13,7 +13,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from control_agent_combined_level import install_combined_level_intent  # noqa: E402
-from control_agent_goal_based import is_goal_based_control  # noqa: E402
+from control_agent_combined_level import is_goal_based_control  # noqa: E402
 from control_agent_intent import ControlIntentInterpreter  # noqa: E402
 
 
@@ -134,9 +134,8 @@ def test_goal_control_uses_strong_cloud_first_and_returns_confirmable_level():
 
 
 def test_goal_control_wiring_prevents_general_agent_fallthrough():
-    source = (APP_DIR / "control_agent_goal_based.py").read_text(encoding="utf-8")
-    combined = (APP_DIR / "control_agent_combined_level.py").read_text(encoding="utf-8")
+    source = (APP_DIR / "control_agent_combined_level.py").read_text(encoding="utf-8")
 
     assert "safe_fallback" in source
     assert "was not passed to the general answer agent" in source
-    assert "install_goal_based_control()" in combined
+    assert "install_goal_based_control()" in source

@@ -1,3 +1,14 @@
+## 0.10.153
+
+### Complete control-agent consolidation
+
+- Merges Claude-first, goal-based, semantic-target and combined-level
+  interpretation into `control_agent_combined_level.py`.
+- Preserves module patch points through an explicit self-alias and keeps the
+  Claude and semantic normalization helpers distinct.
+- Removes three sibling-only modules, leaving six directly wired control-agent
+  modules and no same-family suspects.
+
 ## 0.10.152
 
 ### Consolidate control capability filtering
