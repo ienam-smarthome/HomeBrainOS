@@ -26,10 +26,6 @@ def test_live_ollama_agent_chain_bypasses_thin_compatibility_layers():
         in qualified_names
     )
     assert (
-        "ollama_agent_final_answer.FinalAnswerNaturalAgent"
-        in qualified_names
-    )
-    assert (
         "ollama_agent_quality.QualityNaturalHubitatOllamaAgent"
         in qualified_names
     )
@@ -40,6 +36,10 @@ def test_live_ollama_agent_chain_bypasses_thin_compatibility_layers():
     )
     assert not any(
         name.startswith("ollama_agent_adaptive.")
+        for name in qualified_names
+    )
+    assert not any(
+        name.startswith("ollama_agent_final_answer.")
         for name in qualified_names
     )
     assert not any(
@@ -65,5 +65,12 @@ def test_consolidated_methods_are_owned_by_live_classes():
         "answer",
         "_chat",
         "_preferred_family_model",
+        "_final_answer_chat",
+        "_structured_final_chat",
+        "_final_only_messages",
+        "_extract_final_answer",
+        "_strip_thinking_blocks",
+        "_looks_like_reasoning",
+        "_looks_incomplete",
     ):
         assert method_name in UnifiedAdaptiveMCPAgent.__dict__
