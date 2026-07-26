@@ -1,3 +1,15 @@
+## 0.10.143
+
+### Central command verification service
+
+- Adds one typed `StateVerification` result backed by the canonical
+  `VerificationOutcome` enum.
+- Centralises nested field extraction and boolean-state coercion.
+- Defines a write-response-first, independent-readback-second verification
+  policy.
+- Adds focused regressions for verified, accepted, conflicting and failed
+  command outcomes.
+
 ## 0.10.142
 
 ### Remove redundant Rule Machine matcher
