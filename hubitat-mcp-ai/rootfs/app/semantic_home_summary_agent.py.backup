@@ -162,7 +162,6 @@ def _public_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "lights": data.get("lights"),
         "heating": data.get("heating"),
         "low_batteries": data.get("low_batteries"),
-        "climate": data.get("climate"),
         "fact_manifest": _fact_manifest(evidence),
     }
 
@@ -258,9 +257,7 @@ async def _synthesise(application: Any, query: str, evidence: dict[str, Any]) ->
         "Include every fact marked required in fact_manifest, preserving exact counts and exact device names. "
         "Keep each domain's count in the same sentence as that domain. "
         "For a zero motion count, say no motion sensors are active. "
-        "Mention non-empty open contacts, lights on, heating, low batteries and important climate conditions. "
-        "If a room is unusually warm or humid, mention the room and sensor reading. "
-        "Prioritise anything needing attention. "
+        "Mention non-empty open contacts, lights on, heating and low batteries. Prioritise anything needing attention. "
         "Do not mention coverage, states read, tool names, JSON, technical details or evidence gathering. "
         "Do not invent, calculate, diagnose, repeat a heading or add unverified context."
     )
