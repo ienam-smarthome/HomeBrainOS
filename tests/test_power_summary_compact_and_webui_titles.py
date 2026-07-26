@@ -86,9 +86,7 @@ def test_power_summary_technical_diagnostics_are_compact():
 
 
 def test_webui_does_not_render_identical_display_title_twice():
-    source = (
-        APP_DIR / "webui_homebrain.py"
-    ).read_text(encoding="utf-8")
+    source = (APP_DIR / "webui.py").read_text(encoding="utf-8")
 
     assert (
         "if(displayTitle!==(title.textContent||''))"

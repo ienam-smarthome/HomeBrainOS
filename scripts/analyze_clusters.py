@@ -23,7 +23,6 @@ WIRING_LAYER = {
     "entrypoint",
     "entrypoint_core",
     "webui",
-    "webui_homebrain",
     "runtime_route_bridge",
     "route_registry",
     "route_catalogue",

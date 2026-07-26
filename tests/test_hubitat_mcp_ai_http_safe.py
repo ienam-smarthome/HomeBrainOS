@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from webui_http_safe import patch_http_errors  # noqa: E402
+from webui import patch_http_errors  # noqa: E402
 
 
 def test_ask_response_is_parsed_as_text_before_json():

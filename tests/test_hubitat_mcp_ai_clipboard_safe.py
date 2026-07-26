@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from webui_clipboard_safe import patch_clipboard  # noqa: E402
+from webui import patch_clipboard  # noqa: E402
 
 
 def test_clipboard_patch_replaces_silent_message_only_handler():

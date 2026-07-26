@@ -70,8 +70,7 @@ from route_catalogue import build_route_registry
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 from semantic_read_pipeline import install_semantic_read_pipeline
 from temperature_insight_hybrid import HybridTemperatureInsightService
-from webui_clipboard_safe import install_clipboard_safe_webui
-from webui_http_safe import install_http_safe_webui
+from webui import install_clipboard_safe_webui, install_http_safe_webui
 
 
 RUNTIME_RELEASE_VERSION = runtime_release_version()
