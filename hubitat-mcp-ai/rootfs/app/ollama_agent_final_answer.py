@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any
 
-from ollama_agent_device_resolution import DeviceResolutionNaturalAgent
+from ollama_agent_quality import QualityNaturalHubitatOllamaAgent
 from ollama_agent_fast import OllamaUnavailable
 
 
@@ -35,7 +35,7 @@ _REASONING_PATTERNS = (
 )
 
 
-class FinalAnswerNaturalAgent(DeviceResolutionNaturalAgent):
+class FinalAnswerNaturalAgent(QualityNaturalHubitatOllamaAgent):
     """Natural agent that never exposes a model's private working text.
 
     Qwen thinking is disabled both through Ollama's ``think`` request field and a
@@ -44,6 +44,28 @@ class FinalAnswerNaturalAgent(DeviceResolutionNaturalAgent):
     emits analysis, a truncated completion, or malformed JSON, the existing
     verified MCP fallback is used instead of showing internal reasoning.
     """
+
+    def _preferred_family_model(self, installed_models: list[str]) -> str:
+        configured_name = self.model.split(":", 1)[0].lower()
+        generation_match = re.match(r"([a-z]+\d+)", configured_name)
+        generation = generation_match.group(1) if generation_match else configured_name
+
+        candidates = [
+            name
+            for name in installed_models
+            if name
+            and not any(term in name.lower() for term in ("embed", "nomic", "bge"))
+            and name.split(":", 1)[0].lower().startswith(generation)
+        ]
+        if not candidates:
+            return self.model
+
+        def size_key(name: str) -> tuple[float, str]:
+            match = re.search(r"(?<!\d)(\d+(?:\.\d+)?)b(?:\b|$)", name.lower())
+            return (float(match.group(1)) if match else 999.0, name.lower())
+
+        candidates.sort(key=size_key)
+        return candidates[0]
 
     async def _chat(
         self,
