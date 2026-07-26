@@ -2,10 +2,33 @@ from __future__ import annotations
 
 from typing import Any
 
-from fast_fallback_weather import FastFallbackRouter as WeatherFastFallbackRouter
-from fallback_router import _device_id, _label, _normalise
+from fallback_router import (
+    HomeBrainFallbackRouter,
+    _attributes,
+    _device_id,
+    _label,
+    _normalise,
+)
 from mcp_client import MCPError, MCPToolResult
-from presenter import display_payload
+from presenter import (
+    display_payload,
+    present_hub_info,
+    present_rooms,
+    present_rules,
+    safe_debug,
+)
+from weather_presenter_icons import present_weather
+
+
+_WEATHER_TERMS = (
+    "weather",
+    "forecast",
+    "rain",
+    "raining",
+    "umbrella",
+    "precipitation",
+    "temperature outside",
+)
 
 
 def live_attributes(item: dict[str, Any]) -> dict[str, Any]:
@@ -99,8 +122,190 @@ def _looks_like_light(item: dict[str, Any]) -> bool:
     )
 
 
-class FastFallbackRouter(WeatherFastFallbackRouter):
+class FastFallbackRouter(HomeBrainFallbackRouter):
     """Fast MCP routes using Hubitat's authoritative summary currentStates."""
+
+    async def answer(self, query: str) -> dict[str, Any]:
+        q = _normalise(query)
+        if any(term in q for term in _WEATHER_TERMS):
+            return await self._find_weather(query)
+        if any(term in q for term in ("list rooms", "what rooms", "hubitat rooms")):
+            return await self._rooms()
+        if "rule" in q and any(
+            term in q for term in ("list", "show", "active", "automation")
+        ):
+            return await self._rules()
+        if any(
+            term in q
+            for term in ("need attention", "needs attention", "attention", "problems")
+        ):
+            return await self._attention()
+        return await super().answer(query)
+
+    async def _execute_catalog_tool(
+        self,
+        direct_tool: str,
+        gateway_tool: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> MCPToolResult:
+        arguments = arguments if isinstance(arguments, dict) else {}
+        available = {tool.name for tool in await self.client.list_tools()}
+
+        if direct_tool in available:
+            return await self.client.call_tool(direct_tool, arguments)
+
+        if gateway_tool not in available:
+            raise MCPError(
+                f"The MCP server exposes neither {direct_tool} nor {gateway_tool}."
+            )
+
+        result = await self.client.call_tool(
+            gateway_tool,
+            {"tool": direct_tool, "args": arguments},
+        )
+        data = result.data
+        if isinstance(data, dict) and str(data.get("mode") or "").lower() == "catalog":
+            raise MCPError(
+                f"{gateway_tool} returned its catalogue instead of executing "
+                f"{direct_tool}."
+            )
+        return result
+
+    @staticmethod
+    def _decorate(
+        response: dict[str, Any],
+        display: dict[str, Any],
+        result: MCPToolResult | None = None,
+    ) -> dict[str, Any]:
+        response["display"] = display
+        if result is not None:
+            response["technical"] = safe_debug(result.data)
+        return response
+
+    async def _hub_info(self) -> dict[str, Any]:
+        result = await self.client.call_tool("hub_get_info", {})
+        if result.is_error:
+            raise MCPError(result.text or "hub_get_info failed")
+        message, display = present_hub_info(result.data)
+        return self._decorate(
+            self._response(message, "fallback-hub-info", True, result),
+            display,
+            result,
+        )
+
+    async def _rooms(self) -> dict[str, Any]:
+        result = await self._execute_catalog_tool(
+            "hub_list_rooms",
+            "hub_read_rooms",
+            {},
+        )
+        if result.is_error:
+            raise MCPError(result.text or "Room lookup failed")
+        message, display = present_rooms(result.data)
+        return self._decorate(
+            self._response(message, "fallback-rooms", True, result),
+            display,
+            result,
+        )
+
+    async def _rules(self) -> dict[str, Any]:
+        result = await self._execute_catalog_tool(
+            "hub_list_rules",
+            "hub_read_rules",
+            {},
+        )
+        if result.is_error:
+            raise MCPError(result.text or "Rule lookup failed")
+        message, display = present_rules(result.data)
+        return self._decorate(
+            self._response(message, "fallback-rules", True, result),
+            display,
+            result,
+        )
+
+    async def _find_weather(self, query: str = "weather") -> dict[str, Any]:
+        result = await self._list_devices(detailed=True, label_filter="weather")
+        if result.is_error:
+            raise MCPError(result.text or "Weather lookup failed")
+        message, display = present_weather(result.data, query)
+        return self._decorate(
+            self._response(message, "fallback-weather", True, result),
+            display,
+            result,
+        )
+
+    async def _attention(self) -> dict[str, Any]:
+        result = await self._list_devices(detailed=True)
+        problems: list[dict[str, Any]] = []
+
+        for item in self._device_rows(result.data):
+            attrs = _attributes(item)
+            label = _label(item) or str(_device_id(item))
+            battery = _number(item.get("battery", attrs.get("battery")))
+            if battery is not None and battery <= 20:
+                problems.append(
+                    {
+                        "icon": "🪫",
+                        "title": label,
+                        "value": f"{battery:g}%",
+                        "subtitle": "Low battery",
+                        "tone": "danger" if battery <= 15 else "warning",
+                        "priority": battery,
+                    }
+                )
+
+            health = _normalise(
+                item.get(
+                    "healthStatus",
+                    item.get(
+                        "status",
+                        attrs.get("healthStatus", attrs.get("status")),
+                    ),
+                )
+            )
+            if health in {
+                "offline",
+                "unavailable",
+                "not present",
+                "dead",
+                "failed",
+            }:
+                problems.append(
+                    {
+                        "icon": "📡",
+                        "title": label,
+                        "value": "Offline",
+                        "subtitle": "Device is not responding",
+                        "tone": "danger",
+                        "priority": -1,
+                    }
+                )
+
+        problems.sort(
+            key=lambda item: (item.get("priority", 100), item["title"].lower())
+        )
+        if problems:
+            message = "Devices needing attention:\n" + "\n".join(
+                f"- {item['title']}: {item['value']} ({item['subtitle']})"
+                for item in problems
+            )
+        else:
+            message = "No low-battery or offline devices were found."
+
+        display = display_payload(
+            "attention",
+            "Needs attention",
+            subtitle=f"{len(problems)} issue{'' if len(problems) == 1 else 's'} found",
+            items=[
+                {key: value for key, value in item.items() if key != "priority"}
+                for item in problems
+            ],
+        )
+        return self._decorate(
+            self._response(message, "fallback-attention", True, result),
+            display,
+            result,
+        )
 
     async def _live_devices(
         self,

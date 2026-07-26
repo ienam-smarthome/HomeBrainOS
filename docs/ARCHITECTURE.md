@@ -28,10 +28,13 @@ New phrasings should normally be handled by semantic intent classification. Rege
 
 Several older areas are implemented as load-bearing inheritance or wrapper chains. They must be flattened incrementally with regression tests rather than deleted by filename:
 
-- `ollama_agent_*`: live entry is `ollama_agent_unified.py`; ancestors provide inherited behaviour.
+- `ollama_agent_*`: consolidated live chain is `fast → inference → claude → unified`;
+  superseded compatibility modules have been removed.
 - `control_agent_*`: several directly wired capabilities currently coexist.
 - `automation_rule_workflow_*`: native Rule Machine workflow composes several safety layers.
-- `fast_fallback_*`: many read/control capabilities form a dependency chain.
+- `fast_fallback_*`: the base, weather and live-state kernel is consolidated in
+  `fast_fallback_live.py`; higher read/control capabilities still form a
+  dependency chain.
 - `home_snapshot_*`: `home_snapshot_hybrid.py` is the live entry and builds on truthful snapshot behaviour.
 
 Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changing these families.
@@ -48,34 +51,26 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 
 ## Planned consolidation order
 
-1. Remove confirmed zero-importer production modules.
-2. Flatten the Ollama inheritance chain behind `UnifiedAdaptiveMCPAgent`.
+1. [done] Remove confirmed zero-importer production modules.
+2. [done] Flatten the Ollama inheritance chain behind `UnifiedAdaptiveMCPAgent`.
 3. Consolidate overlapping control-agent wrappers behind one public control service.
 4. Consolidate automation Rule Machine safety layers.
-5. Merge fast-fallback near-duplicates by semantic capability.
+5. [in progress] Merge fast-fallback near-duplicates by semantic capability;
+   the base/weather/live kernel group is complete.
 6. Fold Web UI safety wrappers into a single maintained Web UI implementation.
 
 Each phase must preserve current public commands, MCP safety behaviour and Home Assistant startup.
 
 ## Ollama runtime wiring
 
-`app.py` currently constructs a `ClaudeStyleOllamaAgent` during module import.
-`entrypoint_core.py` then replaces `application.ollama` with the live
-`UnifiedAdaptiveMCPAgent` before the request-serving application is exposed.
+`entrypoint_core.py` installs `UnifiedAdaptiveMCPAgent` as the final
+request-serving object. The maintained inheritance chain now contains four
+behavior-bearing layers: `ollama_agent_fast`, `ollama_agent_inference`,
+`ollama_agent_claude` and `ollama_agent_unified`.
 
-The temporary base-agent construction is retained for now because changing
-startup composition and flattening the inheritance chain in the same release
-would increase regression risk. `tests/test_ollama_runtime_wiring.py` pins the
-final runtime class before that cleanup begins.
-
-The next Ollama consolidation phase must:
-
-1. preserve `UnifiedAdaptiveMCPAgent` as the final request-serving object;
-2. determine whether construction of the temporary Claude-style agent can be
-   removed without losing shutdown, fallback or configuration behaviour;
-3. add behaviour-level tests before removing shadowed ancestor methods;
-4. flatten one inheritance layer at a time rather than deleting the chain in
-   one change.
+Consolidated behavior is pinned by `tests/test_ollama_agent_live_chain.py`.
+Historical behavior-level tests import the live owner directly rather than
+keeping compatibility modules solely as test adapters.
 
 ## Deferred Ollama startup
 
@@ -88,5 +83,5 @@ a lightweight temporary object rather than constructing a complete
 `UnifiedAdaptiveMCPAgent`, as before. Direct standalone execution of `app.py`
 continues to construct the Claude-style agent for compatibility.
 
-This removes duplicate startup work without yet changing the load-bearing
-Ollama inheritance chain.
+This removes duplicate startup work while preserving the consolidated
+four-layer Ollama chain.

@@ -68,6 +68,6 @@ def test_dry_condition_icon_mapping_covers_common_conditions():
 
 
 def test_release_uses_condition_aware_weather_presenter():
-    weather_route = (APP_DIR / "fast_fallback_weather.py").read_text(encoding="utf-8")
+    weather_route = (APP_DIR / "fast_fallback_live.py").read_text(encoding="utf-8")
 
     assert "from weather_presenter_icons import present_weather" in weather_route
