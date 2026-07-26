@@ -1427,10 +1427,12 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         )
         return final_match.group(1).strip() if final_match else text
 
+    @staticmethod
     def _looks_like_reasoning(value: str) -> bool:
         text = str(value or "").strip().lower()
         return any(re.search(pattern, text, flags=re.I | re.S) for pattern in _REASONING_PATTERNS)
 
+    @staticmethod
     def _looks_incomplete(value: str) -> bool:
         text = str(value or "").rstrip()
         if len(text) < 2:
