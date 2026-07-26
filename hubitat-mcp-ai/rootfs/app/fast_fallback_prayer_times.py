@@ -6,7 +6,7 @@ from typing import Any, Iterable
 from fallback_router import _device_id, _label, _normalise
 from fast_fallback_extended_reads import FastFallbackRouter as ExtendedReadsRouter, _rows
 from fast_fallback_live import live_attributes
-from fast_fallback_speech import normalise_spoken_device_name
+from fast_fallback_device_health import normalise_spoken_device_name
 from mcp_client import MCPToolResult
 from presenter import display_payload, first_value, normalise_text, safe_debug
 

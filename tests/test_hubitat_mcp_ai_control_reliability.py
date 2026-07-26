@@ -12,7 +12,9 @@ sys.path.insert(0, str(APP_DIR))
 
 from control_confirmation import install_control_confirmation  # noqa: E402
 from control_language import canonicalise_basic_control, install_control_language  # noqa: E402
-from fast_fallback_verified import FastFallbackRouter  # noqa: E402
+from fast_fallback_device_health import (  # noqa: E402
+    VerifiedFastFallbackRouter as FastFallbackRouter,
+)
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 
 

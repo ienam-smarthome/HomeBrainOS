@@ -5,7 +5,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 from control_language import canonicalise_basic_control
-from fast_fallback_speech import normalise_spoken_device_name
+from fast_fallback_device_health import normalise_spoken_device_name
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]

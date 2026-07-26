@@ -15,7 +15,9 @@ from control_confirmation import install_control_confirmation  # noqa: E402
 from device_intelligence_duplicate_safe import (  # noqa: E402
     DuplicateAwareCapabilityCatalogueDeviceIndex,
 )
-from fast_fallback_speech import FastFallbackRouter  # noqa: E402
+from fast_fallback_device_health import (  # noqa: E402
+    SpeechFastFallbackRouter as FastFallbackRouter,
+)
 from spoken_device_name import spoken_name_key, unique_spoken_match  # noqa: E402
 
 

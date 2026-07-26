@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fallback_router import _normalise
-from fast_fallback_speech import FastFallbackRouter as SpeechFastFallbackRouter
+from fast_fallback_device_health import SpeechFastFallbackRouter
 from mcp_client import MCPError
 from presenter import bool_label, display_payload, first_value, safe_debug, walk
 
