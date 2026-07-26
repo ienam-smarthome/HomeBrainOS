@@ -1,3 +1,13 @@
+## 0.10.142
+
+### Central entity resolver authority
+
+- Removes the obsolete `named_rule_match_guard` runtime installation.
+- Keeps `NamedEntityResolver` as the single runtime matcher for Hubitat apps
+  and Rule Machine rules.
+- Adds an architecture regression preventing the legacy matcher from being
+  reintroduced into `entrypoint.py`.
+
 ## 0.10.141
 
 ### Central named entity resolution
