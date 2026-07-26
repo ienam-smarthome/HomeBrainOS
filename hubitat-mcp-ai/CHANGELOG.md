@@ -1,3 +1,13 @@
+## 0.10.154
+
+### Consolidate Rule Machine schema and native workflow
+
+- Merges live tool-schema handling, release safeguards and native Rule Machine
+  execution into `automation_rule_workflow_native_rm.py`.
+- Preserves the live → release → native class order and strict notification
+  device patch point.
+- Removes two sibling-only modules and redirects downstream workflow consumers.
+
 ## 0.10.153
 
 ### Complete control-agent consolidation
