@@ -39,6 +39,10 @@ def test_live_ollama_agent_chain_bypasses_thin_compatibility_layers():
         for name in qualified_names
     )
     assert not any(
+        name.startswith("ollama_agent_adaptive.")
+        for name in qualified_names
+    )
+    assert not any(
         name.startswith("ollama_agent_resilient.")
         for name in qualified_names
     )
@@ -52,3 +56,14 @@ def test_consolidated_methods_are_owned_by_live_classes():
         FinalAnswerNaturalAgent.__dict__
     )
     assert "health" in OllamaMCPAgent.__dict__
+
+    for method_name in (
+        "_exact_model_present",
+        "_cloud_model_present",
+        "health",
+        "runtime_status",
+        "answer",
+        "_chat",
+        "_preferred_family_model",
+    ):
+        assert method_name in UnifiedAdaptiveMCPAgent.__dict__
