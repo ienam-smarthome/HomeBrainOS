@@ -43,6 +43,10 @@ def test_live_ollama_agent_chain_bypasses_thin_compatibility_layers():
         for name in qualified_names
     )
     assert not any(
+        name.startswith("ollama_agent_natural.")
+        for name in qualified_names
+    )
+    assert not any(
         name.startswith("ollama_agent_resilient.")
         for name in qualified_names
     )
@@ -78,5 +82,19 @@ def test_consolidated_methods_are_owned_by_live_classes():
         "_answer_from_verified_context",
         "_verified_messages",
         "_unreliable_verified_answer",
+        "_natural_answer",
+        "_plan_and_collect",
+        "_execute_tool_call_for_query",
+        "_fallback_evidence",
+        "_compact_result_for_query",
+        "_device_evidence",
+        "_compact_fallback_evidence",
+        "_compact_fallback_result",
+        "_evidence_messages",
+        "_is_deep_reasoning_query",
+        "_prioritise_display_items",
+        "_device_rows_from_data",
+        "_number",
+        "_bounded_text",
     ):
         assert method_name in UnifiedAdaptiveMCPAgent.__dict__
