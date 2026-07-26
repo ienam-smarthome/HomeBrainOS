@@ -39,3 +39,34 @@ def test_invalid_humidity_and_aggregate_rows_are_ignored():
     assert selected is not None
     assert selected["label"] == "Bathroom Meter"
     assert selected["room"] == "Bathroom"
+
+
+def test_appliance_and_fridge_readings_are_excluded_from_room_ranking():
+    selected = select_metric_extreme(
+        [
+            {"label": "Fridge Meter", "room": "Appliances", "value": 69},
+            {"label": "Bathroom Meter", "room": "Bathroom", "value": 47},
+            {"label": "Hallway Meter", "room": "Hallway", "value": 43},
+        ],
+        metric="humidity",
+        direction="max",
+    )
+
+    assert selected is not None
+    assert selected["label"] == "Bathroom Meter"
+    assert selected["room"] == "Bathroom"
+    assert selected["value"] == 47.0
+
+
+def test_unassigned_climate_readings_are_not_treated_as_rooms():
+    selected = select_metric_extreme(
+        [
+            {"label": "Loose humidity sensor", "room": "", "value": 88},
+            {"label": "Bathroom Meter", "room": "Bathroom", "value": 47},
+        ],
+        metric="humidity",
+        direction="max",
+    )
+
+    assert selected is not None
+    assert selected["room"] == "Bathroom"
