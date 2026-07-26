@@ -78,8 +78,21 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
    washing and externally wired recovery owners.
 5. [done] Merge fast-fallback near-duplicates by semantic capability.
 6. [done] Fold Web UI safety wrappers into a single maintained Web UI implementation.
+7. [done] Replace the unified-agent `application.ask` monkey-patch with an
+   explicit maintained request-layer composition.
 
 Each phase must preserve current public commands, MCP safety behaviour and Home Assistant startup.
+
+## Request-handler composition
+
+`entrypoint_core.py` is the maintained owner of the live request pipeline. It
+captures the complete control-agent and legacy route stack, builds the unified
+MCP agent as a pure handler layer, and assigns the composed handler once.
+
+`request_composition.py` provides the typed, named layer primitive and records
+the declared outer-to-inner order for diagnostics. The compatibility installer
+in `mcp_agent_orchestrator.py` remains available for isolated callers and tests,
+but the production entrypoint does not use its mutation-based API.
 
 ## Ollama runtime wiring
 

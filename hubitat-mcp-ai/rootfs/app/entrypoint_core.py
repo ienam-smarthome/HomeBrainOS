@@ -50,7 +50,7 @@ from hybrid_assistant_mode import (
     install_hybrid_assistant_query_policy,
     install_hybrid_verified_read_routes,
 )
-from mcp_agent_orchestrator import install_unified_mcp_agent_orchestrator
+from mcp_agent_orchestrator import build_unified_mcp_agent_handler
 from hub_restart_workflow import install_hub_restart_workflow
 from mcp_tool_catalogue import install_mcp_tool_catalogue
 from motion_light_insight import install_motion_light_insight
@@ -61,6 +61,7 @@ from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement, install_ollama_help_terminal_route
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
+from request_composition import AskLayer, compose_ask_layers
 from release_version import (
     PREVIOUS_RELEASE_VERSION,
     RELEASE_VERSION,
@@ -255,7 +256,19 @@ ai_evidence_planner = install_ai_evidence_planner(
 )
 hybrid_verified_reads = install_hybrid_verified_read_routes(application, semantic_metric_comparison)
 if application.option_bool("unified_mcp_agent_enabled", True):
-    install_unified_mcp_agent_orchestrator(application)
+    legacy_request_layer = application.ask
+    unified_agent_layer = AskLayer(
+        "unified-mcp-agent",
+        lambda next_handler: build_unified_mcp_agent_handler(
+            application,
+            next_handler,
+        ),
+    )
+    application.ask = compose_ask_layers(
+        legacy_request_layer,
+        unified_agent_layer,
+        base_name="control-agent-and-legacy-routes",
+    )
 install_explicit_hub_backup_workflow(application, automation_rule_workflow)
 # Keep explicit named-rule writes outside AI and device-control wrappers. Exact
 # normalized names or Rule IDs execute directly; uncertain targets never write.

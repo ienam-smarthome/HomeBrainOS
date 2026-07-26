@@ -1,3 +1,14 @@
+## 0.10.158
+
+### Compose the unified request handler explicitly
+
+- Adds a typed, named request-layer composition primitive with a declared
+  outer-to-inner order.
+- Builds the unified MCP agent as a pure handler over the complete deterministic
+  control and legacy route stack.
+- Removes the orchestrator's runtime `application.ask` mutation from the
+  maintained production startup path and completes architecture Phase 7.
+
 ## 0.10.157
 
 ### Consolidate Web UI safety wrappers

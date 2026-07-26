@@ -52,6 +52,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/weather_presenter_v2.py',
     'hubitat-mcp-ai/rootfs/app/system_presenter_v2.py',
     'hubitat-mcp-ai/rootfs/app/request_router.py',
+    'hubitat-mcp-ai/rootfs/app/request_composition.py',
     'hubitat-mcp-ai/rootfs/app/routing.py',
     'hubitat-mcp-ai/rootfs/app/webui.py',
     'hubitat-mcp-ai/rootfs/app/kingpanther_skill.py',
