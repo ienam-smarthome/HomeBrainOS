@@ -1,3 +1,14 @@
+## 0.10.159
+
+### Remove the final production orphans
+
+- Removes the unused humidity, thermal and named-rule match helper modules.
+- Retires the implicitly loaded `sitecustomize.py` compatibility hook now that
+  structured MCP results are handled directly by `mcp_client.py`.
+- Migrates structured-result regression coverage to the canonical MCP client.
+- Reduces the application from 124 to 120 modules and the analyzer orphan count
+  from four to zero.
+
 ## 0.10.158
 
 ### Compose the unified request handler explicitly
