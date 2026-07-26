@@ -1447,10 +1447,11 @@ def should_use_unified_agent(query: str) -> bool:
     return classify_query(q).route != "mcp-fast"
 
 
-def install_unified_mcp_agent_orchestrator(application: Any) -> None:
-    """Install one AI-first decision point above the legacy route stack."""
-
-    original_ask: AskHandler = application.ask
+def build_unified_mcp_agent_handler(
+    application: Any,
+    original_ask: AskHandler,
+) -> AskHandler:
+    """Build the AI-first layer without mutating the application."""
 
     async def ask_with_unified_agent(request: Any) -> dict[str, Any]:
         query = str(getattr(request, "query", "") or "")
@@ -1542,7 +1543,15 @@ def install_unified_mcp_agent_orchestrator(application: Any) -> None:
                 },
             }
 
-    application.ask = ask_with_unified_agent
+    return ask_with_unified_agent
+
+
+def install_unified_mcp_agent_orchestrator(application: Any) -> AskHandler:
+    """Compatibility installer for callers outside the maintained entrypoint."""
+
+    handler = build_unified_mcp_agent_handler(application, application.ask)
+    application.ask = handler
+    return handler
 
 
 __all__ = [
@@ -1557,6 +1566,7 @@ __all__ = [
     "_looks_like_false_evidence_failure",
     "_normalise_history",
     "_uses_conversation_context",
+    "build_unified_mcp_agent_handler",
     "install_unified_mcp_agent_orchestrator",
     "should_use_unified_agent",
 ]

@@ -39,7 +39,9 @@ RUNTIME_RELEASE_VERSION = _runtime_release_version()
 # wiring from the public entrypoint.
 # - install_hybrid_assistant_query_policy()
 # - install_hybrid_verified_read_routes
-# - install_unified_mcp_agent_orchestrator
+# - build_unified_mcp_agent_handler
+# - application.ask = compose_ask_layers(...)
+# - compatibility API: install_unified_mcp_agent_orchestrator
 # - from hub_firmware_update_workflow import install_hub_firmware_update_workflow
 # - hub_firmware_update_workflow = install_hub_firmware_update_workflow(
 # - option_bool("rule_write_enabled", False)
