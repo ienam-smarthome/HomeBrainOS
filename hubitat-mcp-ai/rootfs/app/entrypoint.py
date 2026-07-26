@@ -5,6 +5,7 @@ import uvicorn
 import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
 from ai_evidence_climate_guard import install_climate_measurement_guard
+from climate_metric_extrema_route import install_climate_metric_extrema_route
 from home_summary_consistency_guard import install_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
@@ -68,6 +69,10 @@ semantic_home_summary_agent = install_semantic_home_summary_agent(
 semantic_home_query_router = install_semantic_home_query_router(_core.application)
 home_summary_consistency_guard = install_home_summary_consistency_guard(_core.application)
 thermostat_summary_guard = install_thermostat_summary_guard(_core.application)
+climate_metric_extrema_route = install_climate_metric_extrema_route(
+    _core.application,
+    _core.metric_comparison_executor,
+)
 runtime_request_registry = install_runtime_route_bridge(_core.application)
 
 app = _core.app
