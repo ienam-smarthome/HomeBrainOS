@@ -971,3 +971,48 @@ def test_named_multi_attribute_device_read_remains_singular():
     assert answer["message"] == "Hallway humidity is 36%."
     assert len(answer["readings"]) == 1
     assert mcp.read_ids == ["hallway-meter"]
+
+
+
+def test_terminal_entity_read_is_split_into_focused_helpers():
+    import inspect
+
+    from mcp_agent_orchestrator import (
+        _answer_attribute_read,
+        _answer_device_lookup,
+        _answer_inventory_listing,
+        _answer_power_accounting,
+        _answer_resolved_entity_read,
+        _answer_terminal_entity_read,
+    )
+
+    helpers = (
+        _answer_power_accounting,
+        _answer_inventory_listing,
+        _answer_resolved_entity_read,
+        _answer_device_lookup,
+        _answer_attribute_read,
+        _answer_terminal_entity_read,
+    )
+
+    assert all(inspect.iscoroutinefunction(helper) for helper in helpers)
+
+    dispatcher_source = inspect.getsource(
+        _answer_terminal_entity_read
+    )
+
+    assert dispatcher_source.index(
+        "_answer_power_accounting"
+    ) < dispatcher_source.index(
+        "_answer_inventory_listing"
+    )
+    assert dispatcher_source.index(
+        "_answer_inventory_listing"
+    ) < dispatcher_source.index(
+        "_answer_device_lookup"
+    )
+    assert dispatcher_source.index(
+        "_answer_device_lookup"
+    ) < dispatcher_source.index(
+        "_answer_attribute_read"
+    )
