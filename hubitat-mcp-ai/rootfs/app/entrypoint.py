@@ -12,6 +12,7 @@ from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
 from named_rule_disable_guard import install_named_rule_disable_guard
 from named_rule_match_guard import install_named_rule_match_guard
+from named_rule_status_route import install_named_rule_status_route
 from runtime_route_bridge import install_runtime_route_bridge
 from release_version import (
     BAKED_VERSION_PATH,
@@ -80,6 +81,10 @@ thermostat_summary_guard = install_thermostat_summary_guard(_core.application)
 climate_metric_extrema_route = install_climate_metric_extrema_route(
     _core.application,
     _core.semantic_metric_comparison,
+)
+named_rule_status_route = install_named_rule_status_route(
+    _core.application,
+    _core.named_rule_controller,
 )
 runtime_request_registry = install_runtime_route_bridge(_core.application)
 
