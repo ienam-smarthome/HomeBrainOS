@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from presenter import display_payload, first_value, normalise_text, safe_debug, walk
+from verification_service import verify_boolean_state
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -166,9 +167,6 @@ class NamedAppController:
                 app=app,
             )
 
-        reported_disabled = _bool_value(_deep_value(result.data, "disabled"))
-        command_verified = reported_disabled is desired_disabled
-        readback_verified = False
         readback_state: bool | None = None
         try:
             refreshed = await self.mcp.call_tool("hub_list_apps", {})
@@ -177,11 +175,20 @@ class NamedAppController:
                 current = next((row for row in refreshed_rows if str(row["id"]) == str(app["id"])), None)
                 if current is not None:
                     readback_state = current["disabled"]
-                    readback_verified = readback_state is desired_disabled
         except Exception:
             pass
 
-        verified = command_verified or readback_verified
+        verification = verify_boolean_state(
+            expected=desired_disabled,
+            field_names=("disabled",),
+            write_payload=result.data,
+            readback_payload={"disabled": readback_state},
+            write_source="hub_set_app_disabled response",
+            readback_source="hub_list_apps read-back",
+        )
+        verified = verification.verified
+        command_verified = verified and verification.source == "hub_set_app_disabled response"
+        readback_verified = verified and verification.source == "hub_list_apps read-back"
         verb = "disabled" if desired_disabled else "enabled"
         if verified:
             message = f"App {verb} for **{app['name']}**. Hubitat confirmed `disabled: {str(desired_disabled).lower()}`."
@@ -205,6 +212,7 @@ class NamedAppController:
             "inventory_readback_verified": readback_verified,
             "inventory_reported_disabled": readback_state,
             "post_state_verified": verified,
+            "verification_outcome": verification.outcome.value,
         }
         return {
             "success": True,
