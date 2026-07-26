@@ -43,8 +43,6 @@ required = [
     'hubitat-mcp-ai/rootfs/app/fastpath_ai_handoff.py',
     'hubitat-mcp-ai/rootfs/app/routing_policy.py',
     'hubitat-mcp-ai/rootfs/app/fallback_router.py',
-    'hubitat-mcp-ai/rootfs/app/fast_fallback.py',
-    'hubitat-mcp-ai/rootfs/app/fast_fallback_weather.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_live.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_verified.py',
     'hubitat-mcp-ai/rootfs/app/fast_fallback_attention.py',

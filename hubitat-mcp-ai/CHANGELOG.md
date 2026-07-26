@@ -1,3 +1,14 @@
+## 0.10.147
+
+### Consolidate the fast-fallback kernel
+
+- Merges the base, weather and authoritative live-state fallback layers into
+  `fast_fallback_live.py`.
+- Preserves the effective runtime route surface while removing two inheritance
+  layers.
+- Redirects regression coverage, validation and architecture documentation to
+  the consolidated owner.
+
 ## 0.10.146
 
 ### Complete Ollama compatibility cleanup
