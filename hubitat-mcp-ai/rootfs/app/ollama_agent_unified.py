@@ -914,6 +914,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         )
         return messages
 
+    @staticmethod
     def _is_deep_reasoning_query(query: str) -> bool:
         q = _normalise(query)
         return any(
@@ -968,6 +969,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         )
         return ordered[: self.evidence_item_limit]
 
+    @staticmethod
     def _device_rows_from_data(data: Any) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -985,12 +987,14 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             rows.append(item)
         return rows
 
+    @staticmethod
     def _number(value: Any) -> float | None:
         try:
             return float(str(value).replace("%", "").strip())
         except Exception:
             return None
 
+    @staticmethod
     def _bounded_text(text: str, limit: int) -> str:
         if len(text) <= limit:
             return text
@@ -1131,6 +1135,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             "elapsed_ms": elapsed,
         }
 
+    @staticmethod
     def _verified_messages(
         *,
         query: str,
@@ -1353,6 +1358,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
                 f"Ollama structured final answer failed for {model}: {text}"
             ) from exc
 
+    @classmethod
     def _final_only_messages(
         cls,
         messages: list[dict[str, Any]],
@@ -1381,6 +1387,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             cleaned.insert(0, {"role": "system", "content": instruction})
         return cleaned
 
+    @classmethod
     def _extract_final_answer(
         cls,
         body: dict[str, Any],
@@ -1416,6 +1423,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             raise OllamaUnavailable("Ollama returned an incomplete final answer")
         return answer.strip()
 
+    @staticmethod
     def _strip_thinking_blocks(value: str) -> str:
         text = re.sub(r"<think>.*?</think>", "", value, flags=re.I | re.S).strip()
         if "</think>" in text.lower():

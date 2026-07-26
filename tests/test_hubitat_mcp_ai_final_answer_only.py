@@ -11,7 +11,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from ollama_agent_fast import OllamaUnavailable  # noqa: E402
-from ollama_agent_final_answer import FinalAnswerNaturalAgent  # noqa: E402
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent as FinalAnswerNaturalAgent  # noqa: E402
 
 
 class FakeResponse:

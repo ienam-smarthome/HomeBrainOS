@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from ollama_agent_adaptive import AdaptiveFinalAnswerAgent  # noqa: E402
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent as AdaptiveFinalAnswerAgent  # noqa: E402
 
 
 def _agent(

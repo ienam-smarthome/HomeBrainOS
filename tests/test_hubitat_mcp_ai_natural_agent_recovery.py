@@ -11,7 +11,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
-from ollama_agent_natural import NaturalHubitatOllamaAgent  # noqa: E402
+from ollama_agent_unified import UnifiedAdaptiveMCPAgent as NaturalHubitatOllamaAgent  # noqa: E402
 
 
 class FakeResponse:
@@ -29,6 +29,15 @@ class FakeHTTP:
     def __init__(self, responses):
         self.responses = list(responses)
         self.posts = []
+        self.direct_enabled = False
+        self.direct_ready = False
+        self.direct_api_key_configured = False
+        self.direct_base_url = ""
+        self.direct_model = ""
+        self.last_direct_error = None
+
+    def last_provider(self, default="Local Ollama"):
+        return default
 
     async def post(self, url, json, timeout):
         self.posts.append(
@@ -44,7 +53,14 @@ class FakeHTTP:
         return FakeResponse(value)
 
     async def get(self, url, timeout):
-        return FakeResponse({"models": []})
+        return FakeResponse(
+            {
+                "models": [
+                    {"name": "qwen3.5:9b"},
+                    {"name": "qwen3:4b"},
+                ]
+            }
+        )
 
 
 class FakeMCP:
@@ -153,6 +169,7 @@ def make_agent(responses, *, item_limit=6):
         max_tool_rounds=3,
         fallback_provider=provider,
         evidence_item_limit=item_limit,
+        local_fallback_model="qwen3.5:9b",
     )
     agent._health_cache = (
         time.time(),
@@ -167,10 +184,9 @@ def make_agent(responses, *, item_limit=6):
     return agent
 
 
-def test_planner_timeout_recovers_with_compact_mcp_evidence_and_routine_model():
+def test_verified_mcp_evidence_uses_routine_model_without_planning():
     agent = make_agent(
         [
-            TimeoutError("planner took too long"),
             {
                 "message": {
                     "content": (
@@ -185,28 +201,25 @@ def test_planner_timeout_recovers_with_compact_mcp_evidence_and_routine_model():
     answer = asyncio.run(agent.answer("What's happening at home?"))
 
     assert answer["success"] is True
-    assert answer["route"] == "ollama+mcp"
-    assert answer["evidence_source"] == "mcp-recovery"
-    assert answer["planner_model"] == "qwen3:4b"
-    assert answer["response_model"] == "qwen3:4b"
+    assert answer["route"] == "ollama+mcp", answer.get("ollama_error")
+    assert answer["evidence_source"] == "verified-mcp-context"
+    assert answer["planner_model"] == "verified-mcp-context"
+    assert answer["response_model"] == "qwen3.5:9b"
     assert "One light is on" in answer["message"]
-    assert [call["model"] for call in agent._http.posts] == [
-        "qwen3:4b",
-        "qwen3:4b",
-    ]
-    assert agent._http.posts[0]["timeout"] == 25.0
-    assert agent._http.posts[1]["has_tools"] is False
+    assert [call["model"] for call in agent._http.posts] == ["qwen3.5:9b"]
+    assert agent._http.posts[0]["timeout"] == 40.0
+    assert agent._http.posts[0]["has_tools"] is False
 
 
-def test_direct_tools_are_preferred_over_catalogue_search_for_home_snapshot():
+def test_direct_tools_are_prioritised_with_catalogue_discovery_available():
     agent = make_agent([{"message": {"content": "unused"}}])
     selected = agent._select_compact_tools(
         "What's happening at home?",
         asyncio.run(FakeMCP().list_tools()),
     )
     names = [tool.name for tool in selected]
-    assert "hub_list_devices" in names
-    assert "hub_search_tools" not in names
+    assert names[0] == "hub_list_devices"
+    assert "hub_search_tools" in names
     assert len(names) <= 4
 
 
