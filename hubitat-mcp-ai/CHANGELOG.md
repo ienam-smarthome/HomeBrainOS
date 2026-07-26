@@ -1,3 +1,13 @@
+## 0.10.144
+
+### App command verification integration
+
+- Routes deterministic app enable/disable verification through the central
+  `StateVerification` service.
+- Preserves write-response-first and inventory-readback-second behavior.
+- Adds regressions for write-confirmed, readback-confirmed and accepted-only
+  outcomes.
+
 ## 0.10.143
 
 ### Central command verification service

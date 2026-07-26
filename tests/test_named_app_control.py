@@ -59,11 +59,11 @@ class FakeMCP:
         raise AssertionError(name)
 
 
-def make_app():
+def make_app(mcp=None):
     async def fallback(_request):
         return {"route": "fallback"}
 
-    app = SimpleNamespace(mcp=FakeMCP(), ask=fallback)
+    app = SimpleNamespace(mcp=mcp or FakeMCP(), ask=fallback)
     install_named_app_controller(app)
     return app
 
@@ -106,6 +106,48 @@ def test_confirmed_app_disable_writes_exact_id_and_verifies():
         "hub_set_app_disabled",
         "hub_list_apps",
     ]
+
+
+def test_confirmed_app_disable_uses_inventory_readback_when_write_omits_state():
+    class ReadbackMCP(FakeMCP):
+        async def call_tool(self, name, arguments):
+            if name == "hub_set_app_disabled":
+                self.calls.append((name, arguments))
+                self.disabled = bool(arguments["disabled"])
+                return Result({"success": True, "appId": arguments["appId"]})
+            return await super().call_tool(name, arguments)
+
+    app = make_app(ReadbackMCP())
+    answer = asyncio.run(app.ask(SimpleNamespace(query="confirm disable app id 101")))
+    technical = answer["technical"]
+    if isinstance(technical, str):
+        technical = json.loads(technical)
+
+    assert answer["intent"] == "app-disable-verified"
+    assert technical["command_verified"] is False
+    assert technical["inventory_readback_verified"] is True
+    assert technical["verification_source"] == "hub_list_apps read-back"
+    assert technical["verification_outcome"] == "completed"
+
+
+def test_confirmed_app_disable_remains_accepted_when_state_is_unavailable():
+    class AcceptedMCP(FakeMCP):
+        async def call_tool(self, name, arguments):
+            if name == "hub_set_app_disabled":
+                self.calls.append((name, arguments))
+                return Result({"success": True, "appId": arguments["appId"]})
+            return await super().call_tool(name, arguments)
+
+    app = make_app(AcceptedMCP())
+    answer = asyncio.run(app.ask(SimpleNamespace(query="confirm disable app id 101")))
+    technical = answer["technical"]
+    if isinstance(technical, str):
+        technical = json.loads(technical)
+
+    assert answer["intent"] == "app-disable-accepted"
+    assert technical["post_state_verified"] is False
+    assert technical["verification_source"] is None
+    assert technical["verification_outcome"] == "sent"
 
 
 def test_partial_match_returns_clickable_selection_without_write():
