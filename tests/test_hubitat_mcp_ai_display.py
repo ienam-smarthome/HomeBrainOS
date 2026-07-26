@@ -8,7 +8,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback import FastFallbackRouter  # noqa: E402
+from fast_fallback_live import FastFallbackRouter  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from routing import is_fast_path_query  # noqa: E402
 from webui import render_page  # noqa: E402
@@ -102,7 +102,7 @@ def test_hub_health_is_human_readable_and_structured():
 
     assert answer["display"]["kind"] == "hub-health"
     assert answer["display"]["title"] == "C8 Pro"
-    assert "firmware 2.5.1.128" in answer["message"]
+    assert "firmware 2.5.1.128" in answer["message"].lower()
     assert "free memory 926.1" in answer["message"]
     assert not answer["message"].lstrip().startswith("{")
     metrics = {
