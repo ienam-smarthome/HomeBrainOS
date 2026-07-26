@@ -10,7 +10,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from device_intelligence_webui import patch_page  # noqa: E402
-from fast_fallback_device_index import FastFallbackRouter  # noqa: E402
+from fast_fallback_light_usage import IndexedDeviceRouter as FastFallbackRouter  # noqa: E402
 from webui import render_page  # noqa: E402
 
 

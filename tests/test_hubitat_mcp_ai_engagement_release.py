@@ -12,8 +12,8 @@ sys.path.insert(0, str(APP_DIR))
 
 from device_intelligence_webui import patch_page  # noqa: E402
 from device_presentation import device_icon  # noqa: E402
-from fast_fallback_engagement import (  # noqa: E402
-    FastFallbackRouter,
+from fast_fallback_light_usage import (  # noqa: E402
+    EngagementFastFallbackRouter as FastFallbackRouter,
     _ROOM_LIST_QUERY,
 )
 from mcp_client import MCPToolResult  # noqa: E402

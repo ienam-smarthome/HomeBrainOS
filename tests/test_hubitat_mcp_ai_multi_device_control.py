@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback_multi_control import (  # noqa: E402
-    FastFallbackRouter,
+from fast_fallback_light_usage import (  # noqa: E402
+    MultiControlRouter as FastFallbackRouter,
     base_device_label,
     split_explicit_control_targets,
 )
