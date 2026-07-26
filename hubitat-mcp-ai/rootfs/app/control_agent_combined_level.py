@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-from control_agent_capability_filter import install_control_graph_capability_filter
+from control_agent_graph import install_control_graph_capability_filter
 from control_agent_claude_first import install_claude_first_control_interpreter
 from control_agent_goal_based import install_goal_based_control
 from control_agent_intent import (
