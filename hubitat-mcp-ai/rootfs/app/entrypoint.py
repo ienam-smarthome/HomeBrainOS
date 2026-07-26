@@ -10,6 +10,7 @@ from home_summary_consistency_guard import install_home_summary_consistency_guar
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
+from named_rule_match_guard import install_named_rule_match_guard
 from runtime_route_bridge import install_runtime_route_bridge
 from release_version import (
     BAKED_VERSION_PATH,
@@ -60,6 +61,9 @@ firmware_backup_retry = install_firmware_backup_settle_retry(
     settle_seconds=4.0,
 )
 
+named_rule_match_guard = install_named_rule_match_guard(
+    _core.named_rule_controller,
+)
 app_controller = install_named_app_controller(_core.application)
 hub_health_display_bridge = install_hub_health_display_bridge(_core.application)
 semantic_home_summary_agent = install_semantic_home_summary_agent(
