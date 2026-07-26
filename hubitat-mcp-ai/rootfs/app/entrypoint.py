@@ -11,6 +11,7 @@ from home_summary_consistency_guard import install_home_summary_consistency_guar
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
+from named_entity_resolution_adapters import install_named_entity_resolution_adapters
 from named_rule_disable_guard import install_named_rule_disable_guard
 from named_rule_match_guard import install_named_rule_match_guard
 from named_rule_status_route import install_named_rule_status_route
@@ -71,6 +72,10 @@ named_rule_disable_guard = install_named_rule_disable_guard(
     _core.named_rule_controller,
 )
 app_controller = install_named_app_controller(_core.application)
+named_entity_resolver = install_named_entity_resolution_adapters(
+    app_controller=app_controller,
+    rule_controller=_core.named_rule_controller,
+)
 hub_health_display_bridge = install_hub_health_display_bridge(_core.application)
 semantic_home_summary_agent = install_semantic_home_summary_agent(
     _core.application,
