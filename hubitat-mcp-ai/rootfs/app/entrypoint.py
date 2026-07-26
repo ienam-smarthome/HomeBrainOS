@@ -6,6 +6,7 @@ import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
 from ai_evidence_climate_guard import install_climate_measurement_guard
 from climate_metric_extrema_route import install_climate_metric_extrema_route
+from execution_contract_bridge import install_execution_contract_bridge
 from home_summary_consistency_guard import install_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
@@ -86,6 +87,7 @@ named_rule_status_route = install_named_rule_status_route(
     _core.application,
     _core.named_rule_controller,
 )
+execution_contract_bridge = install_execution_contract_bridge(_core.application)
 runtime_request_registry = install_runtime_route_bridge(_core.application)
 
 app = _core.app
