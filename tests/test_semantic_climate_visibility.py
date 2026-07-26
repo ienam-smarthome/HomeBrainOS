@@ -10,16 +10,16 @@ sys.path.insert(0,str(APP))
 from semantic_home_summary_agent import _public_evidence
 
 
-def test_public_evidence_contains_climate():
+def test_climate_is_visible_to_ai():
 
     result = _public_evidence(
         {
-            "data":{
-                "climate":{
-                    "warmest":[
+            "data": {
+                "climate": {
+                    "warmest": [
                         {
-                            "device":"Livingroom FP300",
-                            "value":29
+                            "device": "Livingroom FP300",
+                            "value": 29
                         }
                     ]
                 }
