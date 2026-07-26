@@ -1,3 +1,12 @@
+## 0.10.132
+
+### Unified agent reasoning helper fix
+
+- Fixed UnifiedAdaptiveMCPAgent reasoning filter invocation
+- Restored correct instance method behaviour for `_looks_like_reasoning`
+- Preserved unified Ollama agent routing and deterministic MCP control
+- Passed full regression release gate
+
 ## 0.10.131
 
 ### Unified HomeBrain telemetry
