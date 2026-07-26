@@ -71,7 +71,7 @@ home_summary_consistency_guard = install_home_summary_consistency_guard(_core.ap
 thermostat_summary_guard = install_thermostat_summary_guard(_core.application)
 climate_metric_extrema_route = install_climate_metric_extrema_route(
     _core.application,
-    _core.metric_comparison_executor,
+    _core.semantic_metric_comparison,
 )
 runtime_request_registry = install_runtime_route_bridge(_core.application)
 
