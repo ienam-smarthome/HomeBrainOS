@@ -1,3 +1,14 @@
+## 0.10.150
+
+### Complete fast-fallback family consolidation
+
+- Merges prayer-time, device-type, capability, device-index, engagement,
+  multi-control and light-usage routing into `fast_fallback_light_usage.py`.
+- Preserves the effective eight-stage inheritance order and control-resolution
+  namespaces behind one live module owner.
+- Removes seven sibling modules, leaving four directly wired fast-fallback
+  modules and no same-family suspects.
+
 ## 0.10.149
 
 ### Consolidate fast-fallback inventory and room reads

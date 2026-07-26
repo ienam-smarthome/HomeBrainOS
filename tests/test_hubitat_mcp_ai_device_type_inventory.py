@@ -9,7 +9,9 @@ from typing import Any
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from fast_fallback_device_types_compat import FastFallbackRouter  # noqa: E402
+from fast_fallback_light_usage import (  # noqa: E402
+    CompatibleDeviceTypeRouter as FastFallbackRouter,
+)
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from routing_policy import classify_query  # noqa: E402
 

@@ -12,7 +12,7 @@ sys.path.insert(0, str(APP_DIR))
 from device_intelligence_catalogue_safe import (  # noqa: E402
     SafeCapabilityCatalogueDeviceIndex,
 )
-from fast_fallback_device_index import FastFallbackRouter  # noqa: E402
+from fast_fallback_light_usage import IndexedDeviceRouter as FastFallbackRouter  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 
