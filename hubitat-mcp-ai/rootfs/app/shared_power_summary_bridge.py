@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import hybrid_assistant_mode as hybrid_mode
 from control_focus_mode import ControlFocusMode
 from power_accounting import PowerAccountingService
 from presenter import display_payload, safe_debug
@@ -114,6 +115,8 @@ def install_shared_power_summary_bridge() -> None:
     """Patch the existing service class without adding another ask wrapper."""
 
     ControlFocusMode.power_summary = shared_power_summary
+    # Preserve the historical public export while pointing it at the real class.
+    hybrid_mode.OctopusEnergySummary = hybrid_mode.OctopusLiveMeterSummary
 
 
 __all__ = ["install_shared_power_summary_bridge", "shared_power_summary"]
