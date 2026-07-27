@@ -89,7 +89,7 @@ class AnswerGuardRegistry:
 
         registered_ask.__name__ = "ask_with_answer_guard_registry"
         registered_ask.__homebrain_registry_catalogue__ = tuple(self.catalogue())
-        self.application.ask = registered_ask
+        setattr(self.application, "ask", registered_ask)
         self._installed = True
         return registered_ask
 
