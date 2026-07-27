@@ -111,27 +111,22 @@ semantic_home_routes = auxiliary_request_layers.capture(
     "semantic-home-registry",
     semantic_home_registry.install,
 )
-home_summary_guard_registry = AnswerGuardRegistry(_core.application)
-home_summary_guard_registry.register_guard(
-    "home-summary-consistency",
-    build_home_summary_consistency_guard(_core.application),
-)
-home_summary_consistency_guard = auxiliary_request_layers.capture(
-    "home-summary-guard-registry",
-    home_summary_guard_registry.install,
-)
-thermostat_guard_registry = AnswerGuardRegistry(_core.application)
-thermostat_guard_registry.register_terminal_route(
+summary_thermostat_registry = AnswerGuardRegistry(_core.application)
+summary_thermostat_registry.register_terminal_route(
     "thermostat-live-state",
     build_thermostat_terminal_route(_core.application),
 )
-thermostat_guard_registry.register_guard(
+summary_thermostat_registry.register_guard(
+    "home-summary-consistency",
+    build_home_summary_consistency_guard(_core.application),
+)
+summary_thermostat_registry.register_guard(
     "thermostat-summary",
     build_thermostat_summary_guard(_core.application),
 )
-thermostat_summary_guard = auxiliary_request_layers.capture(
-    "thermostat-guard-registry",
-    thermostat_guard_registry.install,
+summary_thermostat_routes = auxiliary_request_layers.capture(
+    "summary-thermostat-registry",
+    summary_thermostat_registry.install,
 )
 read_terminal_registry = AnswerGuardRegistry(_core.application)
 read_terminal_registry.register_terminal_route(
