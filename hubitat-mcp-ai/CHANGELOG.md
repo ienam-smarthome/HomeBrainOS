@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.10.176
+
+### Migrate exact semantic home summaries into the terminal-route registry
+
+- Moves exact whole-home summary phrases into `AnswerGuardRegistry` as an ordered
+  terminal route.
+- Preserves verified semantic evidence collection, required-fact validation,
+  synthesis fallback and response metadata.
+- Keeps unmatched queries and failed evidence collection on the existing
+  passthrough path.
+- Retains the legacy installer for standalone compatibility.
+- Leaves the broader semantic home query route and every other guard unchanged.
+
 ## 0.10.175
 
 ### Remove the duplicate runtime thermostat wrapper
