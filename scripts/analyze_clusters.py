@@ -34,6 +34,16 @@ WIRING_LAYER = {
     "mcp_agent_orchestrator",
 }
 
+# These sibling-only layers are deliberate parts of the maintained architecture,
+# documented in docs/ARCHITECTURE.md and pinned by the live-chain regression test.
+# Keep this allowlist exact: unlisted same-family chains must remain suspicious.
+INTENTIONAL_FAMILY_LAYERS = {
+    "ollama_agent": {
+        "ollama_agent_fast",
+        "ollama_agent_inference",
+    },
+}
+
 
 def parse_imports(path: Path, known: set[str]) -> set[str]:
     try:
@@ -79,6 +89,12 @@ def build_report(app_dir: Path) -> dict[str, list[dict[str, object]]]:
             others = [item for item in importers if item not in wiring and item not in siblings]
             if wiring:
                 signal = "LIVE (wired directly)"
+            elif (
+                siblings
+                and not others
+                and module in INTENTIONAL_FAMILY_LAYERS.get(family, set())
+            ):
+                signal = "LIVE (intentional documented layer)"
             elif siblings and not others:
                 signal = "SUSPECT (only used by a same-family sibling)"
             elif importers:
