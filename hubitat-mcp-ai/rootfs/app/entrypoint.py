@@ -14,7 +14,7 @@ from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
 from named_entity_resolution_adapters import install_named_entity_resolution_adapters
 from named_rule_disable_guard import install_named_rule_disable_guard
-from named_rule_status_registry import build_named_rule_status_terminal_route
+from named_rule_status_route import build_named_rule_status_terminal_route
 from runtime_route_bridge import install_runtime_route_bridge
 from release_version import (
     BAKED_VERSION_PATH,
@@ -135,10 +135,7 @@ climate_metric_extrema_route = auxiliary_request_layers.capture(
 named_rule_status_registry = AnswerGuardRegistry(_core.application)
 named_rule_status_registry.register_terminal_route(
     "named-rule-status",
-    build_named_rule_status_terminal_route(
-        _core.application,
-        _core.named_rule_controller,
-    ),
+    build_named_rule_status_terminal_route(_core.named_rule_controller),
 )
 named_rule_status_route = auxiliary_request_layers.capture(
     "named-rule-status-registry",
