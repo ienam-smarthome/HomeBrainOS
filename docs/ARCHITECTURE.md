@@ -17,6 +17,39 @@ The maintained assistant starts at `hubitat-mcp-ai/rootfs/app/entrypoint.py`, co
 5. **Fact validation** rejects AI output that omits or changes required facts and falls back to deterministic natural wording.
 6. **Presentation and tracing** add display metadata and technical diagnostics without changing authoritative facts.
 
+## Request-layer registry
+
+The maintained startup installs `AskLayerRegistry` before the first
+`application.ask` wrapper. It observes every subsequent assignment, including
+nested compatibility installers, without changing handler identity, ordering
+or safety behavior. `/api/request-layers` exposes the live ordered registry;
+recent-request performance records include `answering_layer`,
+`answering_layer_tier` and the number of traversed layers.
+
+The live request stack is documented by tier:
+
+1. **Safety-critical deterministic writes**: confirmations, named app/rule
+   control, automation workflows, backup, restart and firmware operations.
+2. **Deterministic fast reads**: cached home snapshots, device-derived
+   insights and automation recommendations.
+3. **Semantic-evidence routing**: semantic reads, evidence planning and
+   verified hybrid reads.
+4. **AI synthesis**: fast handoff, Ollama engagement and the unified MCP agent.
+5. **Answer guards**: home-summary, thermostat, climate, hub-health and
+   execution-contract validation.
+6. **Narrow terminal-route intercepts**: authoritative device health, Octopus
+   power, named-rule status, automation recommendations and Ollama help.
+
+Conversation context and request tracing form a separate observability tier.
+They describe the request but do not relax the six safety-preserving tiers.
+
+`scripts/analyze_request_layers.py` statically covers all 51 raw assignment
+sites across 38 production modules, including dormant compatibility paths.
+Live main currently executes 36 wrappers plus the base route. All MCP access
+still originates from the single `HubitatMCPClient` in `app.py`, which startup
+wraps once with `IndexedMCPStateBroker`; no request-layer module constructs an
+independent MCP client or bypasses the shared catalogue/state caches.
+
 ## Live semantic home modules
 
 - `semantic_home_query_router.py`: AI intent classification for broad whole-home questions.
@@ -71,7 +104,19 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
   fallback and HTTP error handling are consolidated in `webui.py`;
   feature-specific UI patchers remain separate modules.
 
-Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changing these families.
+Use `scripts/analyze_imports.py`, `scripts/analyze_clusters.py` and
+`scripts/analyze_request_layers.py` before changing these families or adding
+another request wrapper.
+
+## Standing monitoring practice
+
+- Run `scripts/analyze_clusters.py` whenever a `_safe`, wrapper or sibling
+  compatibility module is introduced; run `scripts/analyze_request_layers.py`
+  whenever request routing changes.
+- Query Hubitat `hub_get_performance_stats` by both `pctBusy` and `averageMs`.
+  The first exposes frequent cumulative load; the second exposes rare,
+  individually expensive executions. Review call count and state size beside
+  both rankings so neither shape is hidden.
 
 ## Import graph health
 

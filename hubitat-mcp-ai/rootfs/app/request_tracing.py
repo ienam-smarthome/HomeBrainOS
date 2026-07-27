@@ -55,6 +55,9 @@ def _performance(trace: dict[str, Any], answer: dict[str, Any] | None) -> dict[s
         "route_selected": trace["route_selected"],
         "route_reason": trace["route_reason"],
         "final_route": (answer or {}).get("route") or trace.get("final_route") or "error",
+        "answering_layer": (answer or {}).get("answering_layer"),
+        "answering_layer_tier": (answer or {}).get("answering_layer_tier"),
+        "ask_layer_count": len((answer or {}).get("ask_layers_traversed") or []),
         "elapsed_ms": trace.get("elapsed_ms", 0),
         "mcp_duration_ms": sum(
             int(event.get("duration_ms") or 0)
@@ -220,6 +223,9 @@ def install_request_tracing(
                     "route_selected": trace["route_selected"],
                     "route_reason": trace["route_reason"],
                     "final_route": performance["final_route"],
+                    "answering_layer": performance["answering_layer"],
+                    "answering_layer_tier": performance["answering_layer_tier"],
+                    "ask_layer_count": performance["ask_layer_count"],
                     "elapsed_ms": performance["elapsed_ms"],
                     "mcp_duration_ms": performance["mcp_duration_ms"],
                     "mcp_calls": performance["mcp_calls"],
@@ -245,6 +251,19 @@ def install_request_tracing(
     @application.app.get("/api/mcp-cache", response_model=None)
     async def mcp_cache():
         return {"success": True, "cache": broker.stats()}
+
+    @application.app.get("/api/request-layers", response_model=None)
+    async def request_layers():
+        registry = getattr(application, "_homebrain_ask_layer_registry", None)
+        if registry is None:
+            return {
+                "success": False,
+                "count": 0,
+                "tiers": {},
+                "layers": [],
+                "error": "Ask-layer registry is unavailable",
+            }
+        return registry.response()
 
     @application.app.post("/api/mcp-cache/clear", response_model=None)
     async def clear_mcp_cache():
