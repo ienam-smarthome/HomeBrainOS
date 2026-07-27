@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.178
+
+### Consolidate semantic home terminal routes
+
+- Registers exact semantic home summaries and broader semantic home queries in one
+  ordered `AnswerGuardRegistry`.
+- Preserves summary-first precedence, verified evidence behaviour and all existing
+  passthrough paths.
+- Removes one redundant request wrapper without changing either terminal route.
+- Keeps the consolidated registry between hub-health display enrichment and the
+  home-summary consistency guard.
+
 ## 0.10.177
 
 ### Fix runtime route bridge startup

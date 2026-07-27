@@ -24,7 +24,7 @@ from release_version import (
 )
 from request_composition import AskCompositionBuilder
 from semantic_home_query_registry import build_semantic_home_query_terminal_route
-from semantic_home_summary_agent import install_semantic_home_summary_agent
+from semantic_home_summary_registry import build_semantic_home_summary_terminal_route
 from thermostat_summary_registry import (
     build_thermostat_summary_guard,
     build_thermostat_terminal_route,
@@ -95,21 +95,21 @@ hub_health_display_bridge = auxiliary_request_layers.capture(
     "hub-health-display-registry",
     hub_health_guard_registry.install,
 )
-semantic_home_summary_agent = auxiliary_request_layers.capture(
+semantic_home_registry = AnswerGuardRegistry(_core.application)
+semantic_home_registry.register_terminal_route(
     "semantic-home-summary",
-    lambda: install_semantic_home_summary_agent(
+    build_semantic_home_summary_terminal_route(
         _core.application,
         _core.home_snapshot,
     ),
 )
-semantic_home_query_registry = AnswerGuardRegistry(_core.application)
-semantic_home_query_registry.register_terminal_route(
+semantic_home_registry.register_terminal_route(
     "semantic-home-query",
     build_semantic_home_query_terminal_route(_core.application),
 )
-semantic_home_query_router = auxiliary_request_layers.capture(
-    "semantic-home-query-registry",
-    semantic_home_query_registry.install,
+semantic_home_routes = auxiliary_request_layers.capture(
+    "semantic-home-registry",
+    semantic_home_registry.install,
 )
 home_summary_guard_registry = AnswerGuardRegistry(_core.application)
 home_summary_guard_registry.register_guard(
