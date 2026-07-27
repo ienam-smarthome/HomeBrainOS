@@ -157,7 +157,7 @@ def test_rendered_dashboard_has_room_and_power_summary_tiles():
     old_status = webui.NEW_STATUS_FUNCTION
     try:
         install_dashboard_health_tile(webui)
-        page = webui.render_page("Hubitat MCP AI", "0.10.164")
+        page = webui.render_page("Hubitat MCP AI", "0.10.165")
     finally:
         webui.NEW_SUMMARY = old_summary
         webui.NEW_STATUS_FUNCTION = old_status
@@ -174,6 +174,9 @@ def test_rendered_dashboard_has_room_and_power_summary_tiles():
     assert "dash.whole_house_power_w" in page
     assert "dash.monitored_device_power_w" in page
     assert "formatDashWatts" in page
+    assert "Math.abs(number)>=1000" in page
+    assert "kilowatts=number/1000" in page
+    assert "+' kW'" in page
     assert "Number.isInteger(number)?0:1" in page
     assert (
         "#summaryCard.dashboard-grid"

@@ -1,3 +1,12 @@
+## 0.10.165
+
+### Scale dashboard power units
+
+- Displays dashboard power below 1,000 watts in W.
+- Converts dashboard power at or above 1,000 watts to kW with compact
+  precision, so 3,190 W is shown as 3.19 kW.
+- Preserves decimal precision for sub-kilowatt monitored-device totals.
+
 ## 0.10.164
 
 ### Add active-room and power dashboard summaries
