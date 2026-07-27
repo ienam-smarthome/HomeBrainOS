@@ -1,6 +1,6 @@
 # HomeBrainOS architecture
 
-## Current add-ons
+## Current add-on
 
 - `hubitat-mcp-ai/` is the maintained and only Hubitat MCP assistant. The
   legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
@@ -58,6 +58,12 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
   Cloud-first snapshot services in one canonical module. The three public
   service classes and installer functions remain available without a
   sibling-only inheritance chain.
+- `device_intelligence_catalogue.py`: owns capability enrichment,
+  authoritative selected-device membership, safe state merging, dashboard
+  metrics, duplicate-name diagnostics and conservative spoken-name matching.
+- `conversation_context.py`: owns the conservative per-session context store
+  and installer, including stale-pronoun clearing, reordered comparisons and
+  room-name-safe follow-ups.
 - `webui_*`: the base HomeBrain renderer, mobile dashboard, clipboard fallback
   and HTTP error handling are consolidated in `webui.py`; feature-specific UI
   patchers remain separate modules.
@@ -66,8 +72,13 @@ Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changi
 
 ## Import graph health
 
-The maintained add-on has 118 production Python modules, all reachable from a
+The add-on has 115 production Python modules, all reachable from a
 declared entrypoint. `scripts/analyze_imports.py` reports zero orphans.
+
+`scripts/analyze_clusters.py` distinguishes same-family inheritance from plain
+module composition. Unlisted sibling-only subclass layers remain suspect;
+ordinary function composition, such as `semantic_home_summary_agent.py` using
+`semantic_home_evidence.py`, is reported as live.
 
 The former `sitecustomize.py` compatibility hook was retired after structured
 MCP result handling moved into `mcp_client.py`; Python's implicit
@@ -96,6 +107,12 @@ import graph.
 6. [done] Fold Web UI safety wrappers into a single maintained Web UI implementation.
 7. [done] Replace the unified-agent `application.ask` monkey-patch with an
    explicit maintained request-layer composition.
+8. [done] Fold capability-catalogue safety and duplicate-aware matching into
+   `device_intelligence_catalogue.py`.
+9. [done] Fold conservative follow-up handling into
+   `conversation_context.py`.
+10. [done] Distinguish subclass accretion from ordinary sibling composition in
+    the cluster analyzer.
 
 Each phase must preserve current public commands, MCP safety behaviour and Home Assistant startup.
 

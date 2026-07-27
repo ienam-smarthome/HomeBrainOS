@@ -45,29 +45,73 @@ INTENTIONAL_FAMILY_LAYERS = {
 }
 
 
-def parse_imports(path: Path, known: set[str]) -> set[str]:
+def parse_module_relationships(
+    path: Path,
+    known: set[str],
+) -> tuple[set[str], set[str]]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
     except SyntaxError:
-        return set()
+        return set(), set()
     imports: set[str] = set()
+    imported_names: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 top = alias.name.split(".")[0]
                 if top in known:
                     imports.add(top)
+                    imported_names[alias.asname or top] = top
         elif isinstance(node, ast.ImportFrom) and node.module:
             top = node.module.split(".")[0]
             if top in known:
                 imports.add(top)
+                for alias in node.names:
+                    imported_names[alias.asname or alias.name] = top
+
+    subclass_dependencies: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for base in node.bases:
+            if isinstance(base, ast.Name):
+                dependency = imported_names.get(base.id)
+            elif isinstance(base, ast.Attribute):
+                root = base.value
+                while isinstance(root, ast.Attribute):
+                    root = root.value
+                dependency = (
+                    imported_names.get(root.id)
+                    if isinstance(root, ast.Name)
+                    else None
+                )
+            else:
+                dependency = None
+            if dependency:
+                subclass_dependencies.add(dependency)
+    return imports, subclass_dependencies
+
+
+def parse_imports(path: Path, known: set[str]) -> set[str]:
+    imports, _ = parse_module_relationships(path, known)
     return imports
 
 
 def build_report(app_dir: Path) -> dict[str, list[dict[str, object]]]:
     files = {path.stem: path for path in app_dir.glob("*.py")}
     known = set(files)
-    forward = {module: parse_imports(path, known) for module, path in files.items()}
+    relationships = {
+        module: parse_module_relationships(path, known)
+        for module, path in files.items()
+    }
+    forward = {
+        module: imports
+        for module, (imports, _) in relationships.items()
+    }
+    subclass_forward = {
+        module: dependencies
+        for module, (_, dependencies) in relationships.items()
+    }
     reverse: dict[str, set[str]] = {module: set() for module in known}
     for module, dependencies in forward.items():
         for dependency in dependencies:
@@ -87,6 +131,11 @@ def build_report(app_dir: Path) -> dict[str, list[dict[str, object]]]:
             wiring = [item for item in importers if item in WIRING_LAYER]
             siblings = [item for item in importers if family_of(item) == family and item != module]
             others = [item for item in importers if item not in wiring and item not in siblings]
+            subclass_siblings = [
+                item
+                for item in siblings
+                if module in subclass_forward[item]
+            ]
             if wiring:
                 signal = "LIVE (wired directly)"
             elif (
@@ -95,8 +144,10 @@ def build_report(app_dir: Path) -> dict[str, list[dict[str, object]]]:
                 and module in INTENTIONAL_FAMILY_LAYERS.get(family, set())
             ):
                 signal = "LIVE (intentional documented layer)"
-            elif siblings and not others:
+            elif subclass_siblings and not others:
                 signal = "SUSPECT (only used by a same-family sibling)"
+            elif siblings and not others:
+                signal = "LIVE (composed by sibling)"
             elif importers:
                 signal = "LIVE (used elsewhere)"
             else:

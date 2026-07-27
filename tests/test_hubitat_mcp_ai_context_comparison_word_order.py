@@ -9,7 +9,7 @@ from types import SimpleNamespace
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from conversation_context_safe import SafeConversationContextStore  # noqa: E402
+from conversation_context import ConversationContextStore  # noqa: E402
 
 
 DEVICES = [
@@ -50,7 +50,7 @@ def req(query: str):
 
 def test_which_battery_is_lowest_uses_context_comparison():
     async def scenario():
-        store = SafeConversationContextStore(FakeIndex(), FakeFallback())
+        store = ConversationContextStore(FakeIndex(), FakeFallback())
         await store.capture(
             req("List battery devices"),
             {

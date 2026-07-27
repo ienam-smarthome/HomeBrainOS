@@ -12,8 +12,8 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from control_confirmation import install_control_confirmation  # noqa: E402
-from device_intelligence_duplicate_safe import (  # noqa: E402
-    DuplicateAwareCapabilityCatalogueDeviceIndex,
+from device_intelligence_catalogue import (  # noqa: E402
+    CapabilityCatalogueDeviceIndex,
 )
 from fast_fallback_device_health import (  # noqa: E402
     SpeechFastFallbackRouter as FastFallbackRouter,
@@ -53,7 +53,7 @@ def test_duplicate_spoken_keys_remain_ambiguous():
 
 
 def test_shared_device_index_resolves_unique_spoken_alias_before_fuzzy_list():
-    index = object.__new__(DuplicateAwareCapabilityCatalogueDeviceIndex)
+    index = object.__new__(CapabilityCatalogueDeviceIndex)
 
     async def summary_devices(self):
         return selected_devices()

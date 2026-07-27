@@ -9,8 +9,8 @@ from typing import Any
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from device_intelligence_catalogue_safe import (  # noqa: E402
-    SafeCapabilityCatalogueDeviceIndex,
+from device_intelligence_catalogue import (  # noqa: E402
+    CapabilityCatalogueDeviceIndex,
 )
 from fast_fallback_light_usage import IndexedDeviceRouter as FastFallbackRouter  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
@@ -172,7 +172,7 @@ class ExactFilterMissMCP:
 
 def make_index():
     client = ExactFilterMissMCP()
-    index = SafeCapabilityCatalogueDeviceIndex(
+    index = CapabilityCatalogueDeviceIndex(
         client,
         ttl_seconds=30,
         capability_ttl_seconds=60,

@@ -2,8 +2,8 @@
 
 A Home Assistant add-on that provides a HomeBrain-style interface while using **kingpanther13's Hubitat MCP Rule Server** as the authoritative smart-home data and control layer.
 
-Current add-on version: **0.10.162**. This is the maintained assistant component
-and is versioned independently from the legacy HomeBrain OS dashboard.
+Current add-on version: **0.10.163**. This is the repository's sole Home
+Assistant add-on.
 
 ## Architecture
 

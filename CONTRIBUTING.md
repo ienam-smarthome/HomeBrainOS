@@ -12,6 +12,10 @@ Before adding a new Python module under `hubitat-mcp-ai/rootfs/app`:
 4. Prefer configuration, composition or a focused edit over another wrapper/subclass generation.
 5. Add regression coverage for the behaviour being changed.
 
+The cluster analyzer treats ordinary same-family function composition as live,
+but flags unlisted sibling-only inheritance as suspect. An intentional
+inheritance layer must be documented, tested and narrowly allowlisted.
+
 ## Safe consolidation
 
 Do not delete a same-family module merely because its name looks obsolete. Many current modules are load-bearing inheritance or wrapper layers. Flatten one family at a time:
@@ -42,7 +46,7 @@ For release or routing changes, also run `scripts/run_release_gate.py` when the 
 Keep the Hubitat MCP AI version aligned in:
 
 - `hubitat-mcp-ai/config.yaml`
-- `hubitat-mcp-ai/rootfs/app/entrypoint.py`
+- `hubitat-mcp-ai/rootfs/app/release_version.py`
 - documentation that displays the current maintained version
 
 Do not claim CI or tests passed without actual results.

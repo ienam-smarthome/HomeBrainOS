@@ -10,12 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from device_intelligence_catalogue_safe import (  # noqa: E402
-    SafeCapabilityCatalogueDeviceIndex,
+from device_intelligence_catalogue import (  # noqa: E402
+    CapabilityCatalogueDeviceIndex,
 )
 
 
-class FakeIndex(SafeCapabilityCatalogueDeviceIndex):
+class FakeIndex(CapabilityCatalogueDeviceIndex):
     def __init__(
         self,
         summary: list[dict[str, Any]],
