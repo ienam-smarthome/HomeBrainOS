@@ -147,7 +147,8 @@ def test_stale_backup_and_missing_core_create_tool_returns_exact_override_guidan
 
 def test_today_date_only_hubitat_filename_is_accepted_as_recent():
     service, _ = workflow(30)
-    today = time.strftime("%Y-%m-%d")
+    now_ms = int(time.time() * 1000)
+    today = time.strftime("%Y-%m-%d", time.localtime(now_ms / 1000))
     item = {
         "fileName": f"Hubitat_Hub_{today}~2.5.1.125.lzf",
         "location": "local",
@@ -155,7 +156,6 @@ def test_today_date_only_hubitat_filename_is_accepted_as_recent():
 
     from automation_rule_workflow_repair_id_safe import _backup_timestamp_ms
 
-    now_ms = int(time.time() * 1000)
     parsed = _backup_timestamp_ms(item, now_ms)
 
     assert parsed is not None

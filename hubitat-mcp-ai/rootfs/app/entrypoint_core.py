@@ -30,12 +30,10 @@ from control_agent_gate import install_control_agent_gate
 from control_agent_postfix_control import install_postfix_control_intent
 from control_agent_rescue import install_control_agent
 from control_confirmation import install_control_confirmation
-from control_focus_octopus_energy import install_control_focus_octopus_energy
 from control_language import install_control_language
 from conversation_context import install_conversation_context
 from dashboard_api import install_dashboard_api
 from dashboard_health_tile import install_dashboard_health_tile
-from device_health_fast_route import install_device_health_fast_route
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
 from device_intelligence_catalogue import CapabilityCatalogueDeviceIndex
@@ -43,6 +41,10 @@ from device_intelligence_webui import install_device_intelligence_webui
 from device_refresh_webui import install_device_refresh_webui
 from fast_fallback_light_usage import FastFallbackRouter
 from fastpath_ai_handoff import install_fastpath_ai_handoff
+from final_read_terminal_routes import (
+    configure_device_health_query_classifier,
+    configure_octopus_query_classifier,
+)
 from home_snapshot import install_hybrid_home_snapshot
 from hub_backup_workflow import install_explicit_hub_backup_workflow
 from hub_firmware_update_workflow import install_hub_firmware_update_workflow
@@ -278,12 +280,9 @@ install_explicit_hub_backup_workflow(application, automation_rule_workflow)
 # Keep explicit named-rule writes outside AI and device-control wrappers. Exact
 # normalized names or Rule IDs execute directly; uncertain targets never write.
 named_rule_controller = install_named_rule_controller(application)
-# Install authoritative health/attention routes outside every AI wrapper so their
-# live classifications are terminal and cannot be reinterpreted by model synthesis.
-install_device_health_fast_route(application)
-# Keep Octopus display reads authoritative and outside the unified AI wrapper.
-# This also uses the richer per-device read fallback when list responses omit values.
-octopus_terminal_summary = install_control_focus_octopus_energy(application)
+# Keep late-route tracing labels without adding more application.ask wrappers.
+configure_device_health_query_classifier()
+configure_octopus_query_classifier()
 install_automation_recommendation_terminal_route(application, automation_recommendation)
 install_ollama_help_terminal_route(application)
 # Hub restart is a destructive two-turn operation. Keep its pending confirmation
@@ -349,7 +348,6 @@ async def maintained_lifespan(current_app):
             # Startup warming is an optimization; a failed warm must not prevent
             # HomeBrain from serving requests and rebuilding the index on demand.
             pass
-
         try:
             yield
         finally:
