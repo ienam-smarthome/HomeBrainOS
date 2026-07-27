@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from answer_guard_registry import AnswerGuardRegistry
-from named_rule_status_registry import build_named_rule_status_terminal_route
+from named_rule_status_route import build_named_rule_status_terminal_route
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,12 +17,6 @@ def run(coro):
 
 
 def test_named_rule_status_route_delegates_unmatched_queries_without_mcp_read():
-    calls = []
-
-    async def base(request):
-        calls.append(request.query)
-        return {"message": "base"}
-
     class Controller:
         class MCP:
             async def call_tool(self, name, arguments):
@@ -30,12 +24,9 @@ def test_named_rule_status_route_delegates_unmatched_queries_without_mcp_read():
 
         mcp = MCP()
 
-    app = SimpleNamespace(ask=base)
-    route = build_named_rule_status_terminal_route(app, Controller())
+    route = build_named_rule_status_terminal_route(Controller())
 
     assert run(route(SimpleNamespace(query="turn on the lamp"))) is None
-    assert calls == []
-    assert app.ask is base
 
 
 def test_named_rule_status_route_runs_as_registry_terminal_route():
@@ -74,7 +65,7 @@ def test_named_rule_status_route_runs_as_registry_terminal_route():
     registry = AnswerGuardRegistry(app)
     registry.register_terminal_route(
         "named-rule-status",
-        build_named_rule_status_terminal_route(app, Controller()),
+        build_named_rule_status_terminal_route(Controller()),
     )
     handler = registry.install()
 
@@ -89,7 +80,7 @@ def test_named_rule_status_route_runs_as_registry_terminal_route():
 def test_public_entrypoint_uses_named_rule_status_registry_at_same_position():
     source = ENTRYPOINT.read_text(encoding="utf-8")
 
-    assert "from named_rule_status_registry import build_named_rule_status_terminal_route" in source
+    assert "from named_rule_status_route import build_named_rule_status_terminal_route" in source
     assert 'register_terminal_route(\n    "named-rule-status",' in source
     assert '"named-rule-status-registry",\n    named_rule_status_registry.install,' in source
     assert "install_named_rule_status_route" not in source
