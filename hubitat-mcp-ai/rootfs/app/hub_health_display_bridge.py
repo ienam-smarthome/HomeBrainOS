@@ -108,15 +108,31 @@ def enhance_hub_health_answer(answer: dict[str, Any]) -> dict[str, Any]:
     return answer
 
 
+async def hub_health_display_guard(
+    request: Any,
+    answer: dict[str, Any],
+) -> dict[str, Any]:
+    """Registry-compatible display guard for Hubitat health responses."""
+
+    del request
+    return enhance_hub_health_answer(answer)
+
+
 def install_hub_health_display_bridge(application: Any) -> AskHandler:
+    """Compatibility installer retained for standalone consumers and tests."""
+
     original_ask: AskHandler = application.ask
 
     async def hub_health_display_ask(request: Any) -> dict[str, Any]:
         answer = await original_ask(request)
-        return enhance_hub_health_answer(answer)
+        return await hub_health_display_guard(request, answer)
 
     application.ask = hub_health_display_ask
     return original_ask
 
 
-__all__ = ["enhance_hub_health_answer", "install_hub_health_display_bridge"]
+__all__ = [
+    "enhance_hub_health_answer",
+    "hub_health_display_guard",
+    "install_hub_health_display_bridge",
+]
