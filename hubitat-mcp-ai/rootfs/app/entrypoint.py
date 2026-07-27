@@ -8,7 +8,7 @@ from ai_evidence_climate_guard import install_climate_measurement_guard
 from answer_guard_registry import AnswerGuardRegistry
 from climate_metric_extrema_route import install_climate_metric_extrema_route
 from execution_contract_bridge import execution_contract_guard
-from home_summary_consistency_guard import install_home_summary_consistency_guard
+from home_summary_consistency_guard import build_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
 from named_app_control import install_named_app_controller
@@ -98,9 +98,14 @@ semantic_home_query_router = auxiliary_request_layers.capture(
     "semantic-home-query",
     lambda: install_semantic_home_query_router(_core.application),
 )
-home_summary_consistency_guard = auxiliary_request_layers.capture(
+home_summary_guard_registry = AnswerGuardRegistry(_core.application)
+home_summary_guard_registry.register_guard(
     "home-summary-consistency",
-    lambda: install_home_summary_consistency_guard(_core.application),
+    build_home_summary_consistency_guard(_core.application),
+)
+home_summary_consistency_guard = auxiliary_request_layers.capture(
+    "home-summary-guard-registry",
+    home_summary_guard_registry.install,
 )
 thermostat_summary_guard = auxiliary_request_layers.capture(
     "thermostat-summary",
