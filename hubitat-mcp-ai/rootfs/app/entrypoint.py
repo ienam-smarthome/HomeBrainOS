@@ -4,6 +4,7 @@ import uvicorn
 
 import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
+from active_rooms_route import build_active_rooms_terminal_route
 from ai_evidence_climate_guard import install_climate_measurement_guard
 from answer_guard_registry import AnswerGuardRegistry
 from climate_metric_extrema_route import build_climate_metric_extrema_route
@@ -133,6 +134,13 @@ summary_thermostat_routes = auxiliary_request_layers.capture(
     summary_thermostat_registry.install,
 )
 read_execution_registry = AnswerGuardRegistry(_core.application)
+read_execution_registry.register_terminal_route(
+    "active-rooms",
+    build_active_rooms_terminal_route(
+        _core.application,
+        _core.dashboard_snapshot,
+    ),
+)
 read_execution_registry.register_terminal_route(
     "device-health-fast-route",
     build_device_health_fast_route(_core.application),

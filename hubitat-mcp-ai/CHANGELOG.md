@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.184
+
+### Answer active-room dashboard questions deterministically
+
+- Adds a direct read-only terminal route for questions such as “Which rooms are
+  active based on motion or lights?”
+- Answers from the authoritative cached dashboard snapshot instead of invoking
+  the unified Ollama planner.
+- Preserves the current active-room names and details already shown by the live
+  dashboard while avoiding the 25-second local-model timeout path.
+- Keeps unrelated room, device and control questions on their existing routes.
+
 ## 0.10.183
 
 ### Migrate final deterministic read routes into the shared registry
