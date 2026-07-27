@@ -60,13 +60,16 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
   sibling-only inheritance chain.
 - `device_intelligence_catalogue.py`: owns capability enrichment,
   authoritative selected-device membership, safe state merging, dashboard
-  metrics, duplicate-name diagnostics and conservative spoken-name matching.
+  metrics (including motion/light-based active rooms), duplicate-name
+  diagnostics and conservative spoken-name matching.
 - `conversation_context.py`: owns the conservative per-session context store
   and installer, including stale-pronoun clearing, reordered comparisons and
   room-name-safe follow-ups.
-- `webui_*`: the base HomeBrain renderer, mobile dashboard, clipboard fallback
-  and HTTP error handling are consolidated in `webui.py`; feature-specific UI
-  patchers remain separate modules.
+- `dashboard_api.py` composes device, health and deterministic whole-house power
+  metrics for the dashboard; each source fails open independently.
+- `webui_*`: the base HomeBrain renderer, responsive dashboard, clipboard
+  fallback and HTTP error handling are consolidated in `webui.py`;
+  feature-specific UI patchers remain separate modules.
 
 Use `scripts/analyze_imports.py` and `scripts/analyze_clusters.py` before changing these families.
 
