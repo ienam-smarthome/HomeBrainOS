@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import hybrid_assistant_mode
@@ -37,14 +38,15 @@ def test_shared_summary_reuses_accounting_discovery(monkeypatch):
     )
 
     answer = asyncio.run(bridge.shared_power_summary(service, "show power devices"))
+    technical = json.loads(answer["technical"])
 
     assert answer["route"] == "mcp-power-summary"
     assert answer["active_power_total_w"] == 72.0
     assert answer["numeric_reading_count"] == 2
     assert answer["active_power_readings"][0]["label"] == "Fridge"
     assert answer["idle_power_readings"][0]["label"] == "TV"
-    assert answer["technical"]["shared_power_discovery"] is True
-    assert answer["technical"]["targeted_fallback_used"] is True
+    assert technical["shared_power_discovery"] is True
+    assert technical["targeted_fallback_used"] is True
 
 
 def test_install_patches_existing_service_and_repairs_octopus_export():
