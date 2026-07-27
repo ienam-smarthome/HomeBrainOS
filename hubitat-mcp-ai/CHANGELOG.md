@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.173
+
+### Migrate the hub-health display guard
+
+- Moves Hubitat health display enrichment into `AnswerGuardRegistry` as an
+  ordered answer guard.
+- Preserves installed firmware, software-update and database-size presentation.
+- Keeps non-hub-health answers unchanged and retains the guard's original
+  request-stack position before semantic home summary handling.
+- Retains the legacy installer for standalone compatibility.
+- Leaves all other guards and terminal routes unchanged.
+
 ## 0.10.172
 
 ### Migrate named-rule status into the terminal-route registry
