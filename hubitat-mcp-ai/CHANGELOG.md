@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.175
+
+### Remove the duplicate runtime thermostat wrapper
+
+- Stops the final HTTP route bridge from reinstalling the legacy thermostat
+  wrapper outside the declared `AnswerGuardRegistry` stack.
+- Keeps the cancellable `/api/ask` route bound to the already composed request
+  handler, including the registered thermostat terminal route and summary guard.
+- Prevents duplicate thermostat evidence reads and duplicate post-processing.
+- Leaves runtime version, Web UI route rebinding and shutdown cancellation unchanged.
+
 ## 0.10.174
 
 ### Migrate semantic home queries into the terminal-route registry
