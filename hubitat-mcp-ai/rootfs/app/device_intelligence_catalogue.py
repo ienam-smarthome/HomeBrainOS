@@ -6,8 +6,9 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from device_intelligence_index import DeviceIntelligenceIndex
+from device_intelligence_index import DeviceIntelligenceIndex, _room_name
 from mcp_client import MCPError, MCPToolResult
+from spoken_device_name import spoken_name_key
 
 
 _METADATA_FIELDS = [
@@ -226,14 +227,36 @@ def _looks_like_camera(item: dict[str, Any]) -> bool:
     return "camera" in words or "cam" in words or any(word.endswith("cam") for word in words)
 
 
+def _membership_key(item: dict[str, Any]) -> str:
+    return _device_id(item) or _normalise(_label(item))
+
+
+def _descriptor(item: dict[str, Any]) -> str:
+    label = _label(item) or "Unnamed device"
+    details = [
+        detail
+        for detail in (
+            f"ID {_device_id(item)}" if _device_id(item) else "",
+            _room_name(item),
+        )
+        if detail
+    ]
+    return f"{label} ({', '.join(details)})" if details else label
+
+
 class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
-    """Unified state index enriched by one cached capability catalogue.
+    """Authoritative selected-device index enriched by a capability catalogue.
 
     Kingpanther's capabilityFilter is an exact capability-name match. Custom drivers
     can expose equivalent names without spaces (for example ``ContactSensor``), so
     an exact filter may return zero even though the device is selected. This index
     loads the selected devices' capability names and detailed attributes once,
     normalises them locally and merges that data with the compact live snapshot.
+
+    The compact summary remains authoritative for membership and current state:
+    stale metadata cannot restore a removed device or overwrite a newer value.
+    Exact-name ambiguity includes device IDs and rooms, while conservative spoken
+    aliases resolve only when exactly one selected device owns the alias.
     """
 
     def __init__(
@@ -314,28 +337,188 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
             self.summary_devices(force=force),
             self.metadata_devices(force=force),
         )
-        merged: dict[str, dict[str, Any]] = {}
-        for item in metadata:
-            key = _device_id(item) or _normalise(_label(item))
-            if key:
-                merged[key] = dict(item)
+        metadata_by_key = {
+            key: dict(item)
+            for item in metadata
+            if (key := _membership_key(item))
+        }
+        enriched: list[dict[str, Any]] = []
+        selected_keys: set[str] = set()
+
         for item in summary:
-            key = _device_id(item) or _normalise(_label(item))
+            key = _membership_key(item)
             if not key:
                 continue
-            combined = dict(merged.get(key) or {})
+            selected_keys.add(key)
+            detail = metadata_by_key.get(key) or {}
+            combined = dict(detail)
             combined.update(item)
-            if key in merged and merged[key].get("capabilities") is not None:
-                combined["capabilities"] = merged[key]["capabilities"]
-            # A compact summary may contain an empty attributes/currentStates field.
-            # Do not let that erase richer live attributes from the detailed catalogue.
-            for state_key in ("attributes", "currentStates", "states", "state"):
-                summary_value = item.get(state_key)
-                metadata_value = (merged.get(key) or {}).get(state_key)
-                if summary_value in (None, {}, []) and metadata_value not in (None, {}, []):
-                    combined[state_key] = metadata_value
-            merged[key] = combined
-        return list(merged.values())
+
+            if detail.get("capabilities") is not None:
+                combined["capabilities"] = detail["capabilities"]
+
+            detail_attrs = _attributes(detail)
+            summary_attrs = _attributes(item)
+            merged_attrs = {**detail_attrs, **summary_attrs}
+            if merged_attrs:
+                combined["attributes"] = merged_attrs
+
+            enriched.append(combined)
+
+        self._last_metadata_orphans_dropped = len(
+            set(metadata_by_key).difference(selected_keys)
+        )
+        return enriched
+
+    async def dashboard_metrics(self, *, force: bool = False) -> dict[str, Any]:
+        devices = await self.enriched_devices(force=force)
+        lights_on = 0
+        switches_on = 0
+        motion_active = 0
+        low_batteries = 0
+        states_read = 0
+
+        for item in devices:
+            if item.get("disabled") is True:
+                continue
+            attrs = _attributes(item)
+            if attrs:
+                states_read += 1
+            groups = self._groups(item)
+            switch = _normalise(attrs.get("switch"))
+            if switch == "on":
+                if "light" in groups:
+                    lights_on += 1
+                else:
+                    switches_on += 1
+            if _normalise(attrs.get("motion")) == "active":
+                motion_active += 1
+            try:
+                battery = float(str(attrs.get("battery")).replace("%", "").strip())
+            except (TypeError, ValueError):
+                battery = None
+            if battery is not None and battery <= 20:
+                low_batteries += 1
+
+        snapshot = getattr(self, "_snapshot", None)
+        age = (
+            round(max(0.0, time.monotonic() - snapshot.stored_at), 2)
+            if snapshot is not None
+            else None
+        )
+        return {
+            "success": True,
+            "lights_on": lights_on,
+            "switches_on": switches_on,
+            "motion_active": motion_active,
+            "low_batteries": low_batteries,
+            "selected_devices": len(devices),
+            "state_records": states_read,
+            "metadata_orphans_dropped": int(
+                getattr(self, "_last_metadata_orphans_dropped", 0)
+            ),
+            "updated_at": time.time(),
+            "index_age_seconds": age,
+        }
+
+    def stats(self) -> dict[str, Any]:
+        value = super().stats()
+        now = time.monotonic()
+        metadata = getattr(self, "_metadata", None)
+        value.update(
+            {
+                "metadata_loaded": metadata is not None,
+                "metadata_age_seconds": (
+                    round(max(0.0, now - metadata.stored_at), 2)
+                    if metadata is not None
+                    else None
+                ),
+                "metadata_ttl_seconds": self.metadata_ttl_seconds,
+                "metadata_orphans_dropped": int(
+                    getattr(self, "_last_metadata_orphans_dropped", 0)
+                ),
+            }
+        )
+        return value
+
+    async def exact_device(
+        self,
+        requested_name: str,
+    ) -> tuple[dict[str, Any] | None, list[str]]:
+        devices = await self.summary_devices()
+        target = _normalise(requested_name)
+        aliases = self._alias_map(devices)
+        ids = aliases.get(target, set())
+
+        if len(ids) == 1:
+            wanted = next(iter(ids))
+            return next(
+                (item for item in devices if _device_id(item) == wanted),
+                None,
+            ), []
+
+        if len(ids) > 1:
+            matches = [item for item in devices if _device_id(item) in ids]
+            matches.sort(key=lambda item: (_label(item).lower(), _device_id(item)))
+            return None, [_descriptor(item) for item in matches]
+
+        spoken_target = spoken_name_key(requested_name)
+        spoken_ids: set[str] = set()
+        if spoken_target:
+            for item in devices:
+                device_id = _device_id(item)
+                if not device_id:
+                    continue
+                names = (
+                    _label(item),
+                    str(item.get("name") or ""),
+                    str(item.get("displayName") or ""),
+                )
+                if any(
+                    spoken_name_key(name) == spoken_target
+                    for name in names
+                    if name
+                ):
+                    spoken_ids.add(device_id)
+
+        if len(spoken_ids) == 1:
+            wanted = next(iter(spoken_ids))
+            return next(
+                (item for item in devices if _device_id(item) == wanted),
+                None,
+            ), []
+
+        if len(spoken_ids) > 1:
+            matches = [
+                item for item in devices if _device_id(item) in spoken_ids
+            ]
+            matches.sort(key=lambda item: (_label(item).lower(), _device_id(item)))
+            return None, [_descriptor(item) for item in matches]
+
+        target_words = set(target.split())
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for item in devices:
+            label = _label(item)
+            normal = _normalise(label)
+            if not normal:
+                continue
+            words = set(normal.split())
+            overlap = len(target_words & words) / max(
+                1,
+                len(target_words | words),
+            )
+            if target in normal or normal in target:
+                overlap += 0.5
+            if overlap > 0.15:
+                scored.append((overlap, item))
+        scored.sort(
+            key=lambda entry: (
+                -entry[0],
+                _label(entry[1]).lower(),
+                _device_id(entry[1]),
+            )
+        )
+        return None, [_descriptor(item) for _, item in scored[:5]]
 
     async def capability_result(
         self,
@@ -426,14 +609,16 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
     @staticmethod
     def _groups(item: dict[str, Any]) -> set[str]:
         groups: set[str] = set()
+        generic = {"sensor", "switch", "battery", "alarm", "lock", "valve"}
         for capability in _capability_names(item):
             compact = _compact(capability)
             exact = _CAPABILITY_GROUPS.get(compact)
             if exact:
                 groups.add(exact)
-            for known, candidate in _CAPABILITY_GROUPS.items():
-                if len(known) >= 6 and known in compact:
-                    groups.add(candidate)
+            if compact not in generic:
+                for known, candidate in _CAPABILITY_GROUPS.items():
+                    if len(known) >= 8 and compact.endswith(known):
+                        groups.add(candidate)
 
         attrs = _attributes(item)
         for key in attrs:

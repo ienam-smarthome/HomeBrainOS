@@ -14,8 +14,8 @@ sys.path.insert(0, str(APP_DIR))
 from automation_rule_workflow_repair_id_safe import (  # noqa: E402
     NotificationSafeNativeRuleMachineWorkflow,
 )
-from device_intelligence_duplicate_safe import (  # noqa: E402
-    DuplicateAwareCapabilityCatalogueDeviceIndex,
+from device_intelligence_catalogue import (  # noqa: E402
+    CapabilityCatalogueDeviceIndex,
 )
 from mcp_client import MCPToolResult  # noqa: E402
 
@@ -31,7 +31,7 @@ def tool_result(name: str, data: Any) -> MCPToolResult:
     )
 
 
-class DuplicateIndex(DuplicateAwareCapabilityCatalogueDeviceIndex):
+class DuplicateIndex(CapabilityCatalogueDeviceIndex):
     def __init__(self) -> None:
         pass
 

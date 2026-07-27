@@ -61,6 +61,13 @@ _TYPE_INTENTS = {
     "fallback-low-batteries": "battery",
 }
 
+_DEVICE_INTENTS = {
+    "fallback-lights-on",
+    "fallback-switches-on",
+    "fallback-motion-active",
+    "fallback-low-batteries",
+}
+
 
 @dataclass(slots=True)
 class ContextDevice:
@@ -166,7 +173,11 @@ class ConversationContextStore:
     async def resolve(self, request: Any) -> ContextResolution:
         query = str(getattr(request, "query", "") or "").strip()
         state = await self.get(self.session_id(request))
-        if not state or not query:
+        if (
+            not state
+            or not query
+            or not self._device_context_active(state)
+        ):
             return ContextResolution(query=query)
 
         comparison = self._comparison_metric(query)
@@ -223,6 +234,18 @@ class ConversationContextStore:
         original_query: str,
         resolved_query: str,
     ) -> ConversationState:
+        captured = await self._devices_from_answer(answer)
+        answer_type = self._device_type_from_answer(answer)
+        intent = str(answer.get("intent") or "")
+        explicit_device_result = bool(
+            answer_type
+            or answer.get("device_label")
+            or captured
+            or intent in _DEVICE_INTENTS
+            or intent.startswith("fallback-device-type-")
+        )
+        context_continuation = intent.startswith("context-")
+
         session_id = self.session_id(request)
         now = time.time()
         existing = await self.get(session_id)
@@ -237,14 +260,13 @@ class ConversationContextStore:
         state.last_resolved_query = resolved_query
         state.last_intent = str(answer.get("intent") or "") or None
 
-        device_type = self._device_type_from_answer(answer)
+        device_type = answer_type
         if device_type:
             state.last_device_type = device_type
         room = str(answer.get("room") or "").strip()
         if room:
             state.last_room = room
 
-        captured = await self._devices_from_answer(answer)
         if captured:
             state.devices = captured[:60]
             rooms = {item.room for item in captured if item.room}
@@ -252,12 +274,27 @@ class ConversationContextStore:
                 state.last_room = next(iter(rooms))
 
         async with self._lock:
+            if explicit_device_result:
+                # An empty device inventory is meaningful. Never retain devices
+                # from the previous answer and resolve "them" against stale state.
+                state.devices = captured[:60]
+            elif not context_continuation:
+                state.devices = []
+                state.last_device_type = None
+                state.last_room = None
             self._purge_locked()
             if len(self._items) >= self.max_sessions and session_id not in self._items:
                 oldest = min(self._items.values(), key=lambda item: item.updated_at)
                 self._items.pop(oldest.session_id, None)
             self._items[session_id] = state
         return state
+
+    @staticmethod
+    def _device_context_active(state: Any) -> bool:
+        return bool(
+            getattr(state, "devices", None)
+            or getattr(state, "last_device_type", None)
+        )
 
     def _purge_locked(self) -> None:
         now = time.time()
@@ -268,6 +305,16 @@ class ConversationContextStore:
     @staticmethod
     def _comparison_metric(query: str) -> str | None:
         q = _normalise(query)
+        reordered = (
+            (r"\bbattery\b.*\b(?:lowest|weakest)\b", "lowest battery"),
+            (r"\bbattery\b.*\bhighest\b", "highest battery"),
+            (r"\bpower\b.*\b(?:most|highest)\b", "most power"),
+            (r"\bhumidity\b.*\b(?:highest|most humid)\b", "highest humidity"),
+            (r"\bhumidity\b.*\b(?:lowest|driest)\b", "lowest humidity"),
+        )
+        for pattern, metric in reordered:
+            if re.search(pattern, q):
+                return metric
         for phrase in sorted(_METRICS, key=len, reverse=True):
             if phrase in q and any(word in q for word in ("which", "what", "one", "device", "sensor")):
                 return phrase
@@ -288,12 +335,12 @@ class ConversationContextStore:
 
     @staticmethod
     def _room_follow_up(query: str) -> str | None:
-        q = str(query or "").strip()
+        text = str(query or "").strip()
         for pattern in (
-            r"^(?:and\s+)?(?:what|how)\s+about\s+(?:the\s+)?(.+?)(?:\s+room)?[?.!]*$",
-            r"^(?:and\s+)?(?:in|for)\s+(?:the\s+)?(.+?)(?:\s+room)?[?.!]*$",
+            r"^(?:and\s+)?(?:what|how)\s+about\s+(?:the\s+)?(.+?)[?.!]*$",
+            r"^(?:and\s+)?(?:in|for)\s+(?:the\s+)?(.+?)[?.!]*$",
         ):
-            match = re.match(pattern, q, flags=re.I)
+            match = re.match(pattern, text, flags=re.I)
             if match:
                 return match.group(1).strip()
         return None
@@ -521,6 +568,22 @@ class ConversationContextStore:
             if _normalise(room) == room_target or _normalise(room).replace(" ", "") == compact
         ]
         if len(matched_rooms) != 1:
+            stripped = re.sub(
+                r"\s+room$",
+                "",
+                requested_room.strip(),
+                flags=re.I,
+            ).strip()
+            if stripped and stripped.lower() != requested_room.strip().lower():
+                room_target = _normalise(stripped)
+                compact = room_target.replace(" ", "")
+                matched_rooms = [
+                    room
+                    for room in rooms
+                    if _normalise(room) == room_target
+                    or _normalise(room).replace(" ", "") == compact
+                ]
+        if len(matched_rooms) != 1:
             return None
         room = matched_rooms[0]
         devices = [
@@ -572,8 +635,6 @@ class ConversationContextStore:
         ]
 
     async def _devices_from_answer(self, answer: dict[str, Any]) -> list[ContextDevice]:
-        indexed = await self._indexed_devices()
-        by_label = {_normalise(_label(item)): item for item in indexed if _label(item)}
         wanted: list[str] = []
         if answer.get("device_label"):
             wanted.append(str(answer["device_label"]))
@@ -582,6 +643,14 @@ class ConversationContextStore:
             for item in display.get("items") or []:
                 if isinstance(item, dict) and item.get("title"):
                     wanted.append(str(item["title"]))
+        if not wanted:
+            return []
+        indexed = await self._indexed_devices()
+        by_label = {
+            _normalise(_label(item)): item
+            for item in indexed
+            if _label(item)
+        }
         captured: list[ContextDevice] = []
         seen: set[str] = set()
         for label in wanted:

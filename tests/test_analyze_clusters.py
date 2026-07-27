@@ -43,13 +43,33 @@ def test_live_ollama_chain_reports_documented_layers_not_suspects():
     )
 
 
-def test_unlisted_sibling_only_layer_remains_suspect(tmp_path: Path):
+def test_plain_sibling_composition_is_live(tmp_path: Path):
     (tmp_path / "control_agent_base.py").write_text(
-        "VALUE = 1\n",
+        "def value():\n    return 1\n",
         encoding="utf-8",
     )
     (tmp_path / "control_agent_wrapper.py").write_text(
-        "from control_agent_base import VALUE\n",
+        "from control_agent_base import value\n\nRESULT = value()\n",
+        encoding="utf-8",
+    )
+
+    rows = _rows_by_module(tmp_path, "control_agent")
+
+    assert rows["control_agent_base"]["signal"] == (
+        "LIVE (composed by sibling)"
+    )
+    assert rows["control_agent_wrapper"]["signal"] == (
+        "ORPHAN (imported by nothing)"
+    )
+
+
+def test_unlisted_sibling_subclass_layer_remains_suspect(tmp_path: Path):
+    (tmp_path / "control_agent_base.py").write_text(
+        "class Base:\n    pass\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "control_agent_wrapper.py").write_text(
+        "from control_agent_base import Base\n\nclass Wrapper(Base):\n    pass\n",
         encoding="utf-8",
     )
 
@@ -75,4 +95,12 @@ def test_allowlisted_layer_without_an_importer_is_still_orphaned(
 
     assert rows["ollama_agent_fast"]["signal"] == (
         "ORPHAN (imported by nothing)"
+    )
+
+
+def test_live_semantic_evidence_composition_is_not_a_suspect():
+    rows = _rows_by_module(APP_DIR, "semantic")
+
+    assert rows["semantic_home_evidence"]["signal"] == (
+        "LIVE (composed by sibling)"
     )

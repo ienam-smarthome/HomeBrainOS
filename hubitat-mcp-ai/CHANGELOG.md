@@ -1,3 +1,19 @@
+## 0.10.163
+
+### Complete the final layer consolidations
+
+- Folds capability-catalogue safety and duplicate-aware spoken-name resolution
+  into `device_intelligence_catalogue.py`.
+- Folds conservative per-session follow-up handling into
+  `conversation_context.py`.
+- Removes three superseded sibling modules while preserving their behavioral
+  coverage through the canonical classes.
+- Distinguishes ordinary same-family function composition from subclass
+  accretion in `scripts/analyze_clusters.py`.
+- Reduces the maintained application from 118 to 115 production modules with
+  zero import-graph orphans.
+- Updates repository documentation for Hubitat MCP AI as the sole add-on.
+
 ## 0.10.162
 
 ### Recognize intentional analyzer layers

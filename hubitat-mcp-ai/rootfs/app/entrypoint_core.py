@@ -32,13 +32,13 @@ from control_agent_rescue import install_control_agent
 from control_confirmation import install_control_confirmation
 from control_focus_octopus_energy import install_control_focus_octopus_energy
 from control_language import install_control_language
-from conversation_context_safe import install_safe_conversation_context
+from conversation_context import install_conversation_context
 from dashboard_api import install_dashboard_api
 from dashboard_health_tile import install_dashboard_health_tile
 from device_health_fast_route import install_device_health_fast_route
 from device_index_broker import IndexedMCPStateBroker
 from device_intelligence_api import install_device_intelligence_api
-from device_intelligence_duplicate_safe import DuplicateAwareCapabilityCatalogueDeviceIndex
+from device_intelligence_catalogue import CapabilityCatalogueDeviceIndex
 from device_intelligence_webui import install_device_intelligence_webui
 from device_refresh_webui import install_device_refresh_webui
 from fast_fallback_light_usage import FastFallbackRouter
@@ -97,9 +97,9 @@ def _replace_mcp_client() -> None:
     )
 
 
-def _create_device_index() -> DuplicateAwareCapabilityCatalogueDeviceIndex:
+def _create_device_index() -> CapabilityCatalogueDeviceIndex:
     options = application.OPTIONS
-    index = DuplicateAwareCapabilityCatalogueDeviceIndex(
+    index = CapabilityCatalogueDeviceIndex(
         application.mcp,
         ttl_seconds=float(options.get("device_index_ttl_seconds") or 30),
         capability_ttl_seconds=float(options.get("device_index_capability_ttl_seconds") or 300),
@@ -109,7 +109,7 @@ def _create_device_index() -> DuplicateAwareCapabilityCatalogueDeviceIndex:
     return index
 
 
-def _replace_fallback_router(index: DuplicateAwareCapabilityCatalogueDeviceIndex) -> None:
+def _replace_fallback_router(index: CapabilityCatalogueDeviceIndex) -> None:
     application.fallback = FastFallbackRouter(
         application.mcp,
         device_index=index,
@@ -194,7 +194,7 @@ automation_recommendation = install_automation_recommendation(
     device_index,
     ai_timeout_seconds=float(application.OPTIONS.get("ollama_quick_insight_timeout_seconds") or 20),
 )
-conversation_context = install_safe_conversation_context(
+conversation_context = install_conversation_context(
     application,
     device_index,
     ttl_seconds=float(application.OPTIONS.get("conversation_context_ttl_seconds") or 600),

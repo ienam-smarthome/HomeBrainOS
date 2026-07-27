@@ -10,7 +10,7 @@ from typing import Any
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from conversation_context_safe import SafeConversationContextStore  # noqa: E402
+from conversation_context import ConversationContextStore  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 
@@ -80,7 +80,7 @@ async def capture(store, query, answer):
 
 def test_unrelated_answer_clears_previous_device_pronouns():
     async def scenario():
-        store = SafeConversationContextStore(FakeIndex(), FakeFallback())
+        store = ConversationContextStore(FakeIndex(), FakeFallback())
         await capture(
             store,
             "Show Livingroom Light 1",
@@ -114,7 +114,7 @@ def test_unrelated_answer_clears_previous_device_pronouns():
 
 def test_empty_new_inventory_does_not_reuse_previous_devices():
     async def scenario():
-        store = SafeConversationContextStore(FakeIndex(), FakeFallback())
+        store = ConversationContextStore(FakeIndex(), FakeFallback())
         await capture(
             store,
             "Show Livingroom Light 1",
@@ -152,7 +152,7 @@ def test_empty_new_inventory_does_not_reuse_previous_devices():
 
 def test_living_room_follow_up_preserves_room_name_word():
     async def scenario():
-        store = SafeConversationContextStore(FakeIndex(), FakeFallback())
+        store = ConversationContextStore(FakeIndex(), FakeFallback())
         await capture(
             store,
             "List temperature sensors",
