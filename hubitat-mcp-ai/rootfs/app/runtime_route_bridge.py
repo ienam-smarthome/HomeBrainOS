@@ -8,8 +8,6 @@ from fastapi.responses import HTMLResponse
 
 from cancellable_requests import install_cancellable_ask
 from device_intelligence_webui import patch_page
-from thermostat_summary_guard import install_thermostat_summary_guard
-
 
 
 _VERSION_DECLARATION = re.compile(
@@ -20,7 +18,6 @@ _RULES_SHORTCUT = (
     '<button class="secondary" data-q="List automation rules">⚙️ Rules</button>'
 )
 _APPS_SHORTCUT = '<button class="secondary" data-q="List apps">🧩 Apps</button>'
-
 
 
 def add_apps_shortcut(page: str) -> str:
@@ -57,18 +54,13 @@ def enforce_rendered_version(page: str, version: str) -> str:
 
 
 def install_runtime_route_bridge(application: Any):
-    """Rebind final HTTP routes after outer deterministic controllers are installed."""
+    """Bind final HTTP routes to the already composed request handler."""
 
     api = application.app
 
-    # Install thermostat semantics at the final composition point. This guarantees
-    # direct thermostat questions and home-summary correction are captured by the
-    # same handler that the replacement /api/ask endpoint closes over.
-    thermostat_summary_guard = install_thermostat_summary_guard(application)
-    application.runtime_thermostat_summary_guard = thermostat_summary_guard
-
-    # Recreate the cancellable API route so it captures the final deterministic ask
-    # chain, including guarded app management and authoritative thermostat reads.
+    # The maintained entrypoint has already installed thermostat semantics through
+    # AnswerGuardRegistry. Re-wrapping here would place a legacy thermostat layer
+    # outside the declared registry stack and execute the same logic twice.
     request_registry = install_cancellable_ask(application)
 
     # Replace the HTML home endpoint, runtime diagnostic, and legacy PWA asset routes.
@@ -81,7 +73,6 @@ def install_runtime_route_bridge(application: Any):
             and "GET" in (getattr(route, "methods", set()) or set())
         )
     ]
-
 
     @api.get("/api/runtime-version")
     async def runtime_version() -> dict[str, Any]:
