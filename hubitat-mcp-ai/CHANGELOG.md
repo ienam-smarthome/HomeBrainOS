@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.181
+
+### Consolidate read routes with execution guard
+
+- Registers named Rule Machine status reads, climate extrema reads and the
+  execution-contract answer guard in one ordered `AnswerGuardRegistry`.
+- Preserves named-rule-first and climate-second terminal routing followed by
+  execution-contract annotation.
+- Removes one redundant request wrapper without changing any route or guard.
+- Keeps runtime HTTP route rebinding outside request composition.
+
 ## 0.10.180
 
 ### Consolidate summary and thermostat guards
