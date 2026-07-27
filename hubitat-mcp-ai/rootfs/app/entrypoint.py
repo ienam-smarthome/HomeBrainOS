@@ -6,7 +6,7 @@ import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
 from ai_evidence_climate_guard import install_climate_measurement_guard
 from answer_guard_registry import AnswerGuardRegistry
-from climate_metric_extrema_route import install_climate_metric_extrema_route
+from climate_metric_extrema_route import build_climate_metric_extrema_route
 from execution_contract_bridge import execution_contract_guard
 from home_summary_consistency_guard import build_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
@@ -123,12 +123,14 @@ thermostat_summary_guard = auxiliary_request_layers.capture(
     "thermostat-guard-registry",
     thermostat_guard_registry.install,
 )
-climate_metric_extrema_route = auxiliary_request_layers.capture(
+climate_extrema_registry = AnswerGuardRegistry(_core.application)
+climate_extrema_registry.register_terminal_route(
     "climate-metric-extrema",
-    lambda: install_climate_metric_extrema_route(
-        _core.application,
-        _core.semantic_metric_comparison,
-    ),
+    build_climate_metric_extrema_route(_core.semantic_metric_comparison),
+)
+climate_metric_extrema_route = auxiliary_request_layers.capture(
+    "climate-extrema-registry",
+    climate_extrema_registry.install,
 )
 named_rule_status_route = auxiliary_request_layers.capture(
     "named-rule-status",
