@@ -133,23 +133,18 @@ thermostat_summary_guard = auxiliary_request_layers.capture(
     "thermostat-guard-registry",
     thermostat_guard_registry.install,
 )
-climate_extrema_registry = AnswerGuardRegistry(_core.application)
-climate_extrema_registry.register_terminal_route(
-    "climate-metric-extrema",
-    build_climate_metric_extrema_route(_core.semantic_metric_comparison),
-)
-climate_metric_extrema_route = auxiliary_request_layers.capture(
-    "climate-extrema-registry",
-    climate_extrema_registry.install,
-)
-named_rule_status_registry = AnswerGuardRegistry(_core.application)
-named_rule_status_registry.register_terminal_route(
+read_terminal_registry = AnswerGuardRegistry(_core.application)
+read_terminal_registry.register_terminal_route(
     "named-rule-status",
     build_named_rule_status_terminal_route(_core.named_rule_controller),
 )
-named_rule_status_route = auxiliary_request_layers.capture(
-    "named-rule-status-registry",
-    named_rule_status_registry.install,
+read_terminal_registry.register_terminal_route(
+    "climate-metric-extrema",
+    build_climate_metric_extrema_route(_core.semantic_metric_comparison),
+)
+read_terminal_routes = auxiliary_request_layers.capture(
+    "read-terminal-registry",
+    read_terminal_registry.install,
 )
 answer_guard_registry = AnswerGuardRegistry(_core.application)
 answer_guard_registry.register_guard(
