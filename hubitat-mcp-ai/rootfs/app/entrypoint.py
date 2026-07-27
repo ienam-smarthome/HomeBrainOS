@@ -10,7 +10,7 @@ from climate_metric_extrema_route import build_climate_metric_extrema_route
 from execution_contract_bridge import execution_contract_guard
 from home_summary_consistency_guard import build_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
-from hub_health_display_bridge import install_hub_health_display_bridge
+from hub_health_display_bridge import hub_health_display_guard
 from named_app_control import install_named_app_controller
 from named_entity_resolution_adapters import install_named_entity_resolution_adapters
 from named_rule_disable_guard import install_named_rule_disable_guard
@@ -86,9 +86,14 @@ named_entity_resolver = install_named_entity_resolution_adapters(
     app_controller=app_controller,
     rule_controller=_core.named_rule_controller,
 )
-hub_health_display_bridge = auxiliary_request_layers.capture(
+hub_health_guard_registry = AnswerGuardRegistry(_core.application)
+hub_health_guard_registry.register_guard(
     "hub-health-display",
-    lambda: install_hub_health_display_bridge(_core.application),
+    hub_health_display_guard,
+)
+hub_health_display_bridge = auxiliary_request_layers.capture(
+    "hub-health-display-registry",
+    hub_health_guard_registry.install,
 )
 semantic_home_summary_agent = auxiliary_request_layers.capture(
     "semantic-home-summary",
