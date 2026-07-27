@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.10.186
+
+### Share monitored-power discovery across dashboard and direct reads
+
+- Makes `show power devices` use the same bounded inventory and `hub_get_device`
+  fallback as whole-house power accounting.
+- Keeps genuine 0 W readings as idle while leaving missing power attributes absent.
+- Aligns the dashboard monitored-power tile and direct current-power summary with
+  the existing deterministic accounting source.
+- Repairs the historical `OctopusEnergySummary` public export by aliasing it to the
+  maintained `OctopusLiveMeterSummary` class.
+- Adds diagnostics showing whether shared targeted discovery was used.
+
 ## 0.10.185
 
 ### Discover monitored power devices from sparse inventories
