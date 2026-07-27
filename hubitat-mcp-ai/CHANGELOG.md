@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.10.182
+
+### Complete the final request-layer registry audit
+
+- Adds an executable audit for the maintained four-registry request composition.
+- Verifies migrated legacy answer-guard and terminal-route installers are not
+  reinstalled by `entrypoint.py` or `entrypoint_core.py`.
+- Verifies request composition is finalised before direct runtime HTTP route setup.
+- Marks request-routing Thread 1 step 3 complete when the audit and existing CI
+  suite are green.
+- Leaves the optional planner redesign deferred and identifies Device Health
+  Monitor state bloat as the next independent workstream.
+
 ## 0.10.181
 
 ### Consolidate read routes with execution guard
@@ -161,7 +174,7 @@
 - Keeps the legacy installer available for standalone compatibility while the
   maintained entrypoint uses the registry path.
 - Adds focused delegation, metadata and wiring regression tests.
-- Leaves every other answer guard and terminal route unchanged.
+- Leaves every other answer guard and terminal routes unchanged.
 
 ## 0.10.167
 
