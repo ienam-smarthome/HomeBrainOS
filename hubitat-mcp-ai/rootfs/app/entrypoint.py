@@ -8,6 +8,10 @@ from ai_evidence_climate_guard import install_climate_measurement_guard
 from answer_guard_registry import AnswerGuardRegistry
 from climate_metric_extrema_route import build_climate_metric_extrema_route
 from execution_contract_bridge import execution_contract_guard
+from final_read_terminal_routes import (
+    build_control_focus_octopus_energy,
+    build_device_health_fast_route,
+)
 from home_summary_consistency_guard import build_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import hub_health_display_guard
@@ -129,6 +133,14 @@ summary_thermostat_routes = auxiliary_request_layers.capture(
     summary_thermostat_registry.install,
 )
 read_execution_registry = AnswerGuardRegistry(_core.application)
+read_execution_registry.register_terminal_route(
+    "device-health-fast-route",
+    build_device_health_fast_route(_core.application),
+)
+read_execution_registry.register_terminal_route(
+    "control-focus-octopus-energy",
+    build_control_focus_octopus_energy(_core.application),
+)
 read_execution_registry.register_terminal_route(
     "named-rule-status",
     build_named_rule_status_terminal_route(_core.named_rule_controller),
