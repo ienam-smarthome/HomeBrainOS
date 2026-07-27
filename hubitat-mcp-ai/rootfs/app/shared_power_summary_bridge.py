@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import hybrid_assistant_mode as hybrid_mode
@@ -7,6 +8,20 @@ from control_focus_mode import ControlFocusMode
 from power_accounting import PowerAccountingService
 from presenter import display_payload, safe_debug
 from semantic_metric_comparison import _SPECS, format_measurement
+
+
+def _technical_mapping(value: Any) -> dict[str, Any]:
+    """Return accounting diagnostics whether supplied as a mapping or safe-debug JSON."""
+
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return dict(decoded) if isinstance(decoded, dict) else {}
+    return {}
 
 
 async def shared_power_summary(self: ControlFocusMode, query: str) -> dict[str, Any]:
@@ -19,7 +34,7 @@ async def shared_power_summary(self: ControlFocusMode, query: str) -> dict[str, 
         for item in list(source.get("active_power_readings") or [])
         if isinstance(item, dict)
     ]
-    technical = source.get("technical") or {}
+    technical = _technical_mapping(source.get("technical"))
     idle = [
         dict(item)
         for item in list(technical.get("idle_readings") or [])

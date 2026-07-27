@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.187
+
+### Fix serialized power-summary diagnostics crash
+
+- Decodes serialized `safe_debug()` technical diagnostics before the shared current-power summary reads idle values and fallback metadata.
+- Accepts both dictionary and JSON-string diagnostic payloads.
+- Handles malformed or missing diagnostic payloads without raising an exception.
+- Adds runtime-shaped regression coverage for the live `show power devices` path.
+
 ## 0.10.186
 
 ### Share monitored-power discovery across dashboard and direct reads
