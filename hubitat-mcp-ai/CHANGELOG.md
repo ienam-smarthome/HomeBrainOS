@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.179
+
+### Consolidate read-only terminal routes
+
+- Registers named Rule Machine status reads and climate extrema reads in one
+  ordered `AnswerGuardRegistry`.
+- Preserves named-rule-first precedence and all existing passthrough behaviour.
+- Removes one redundant request wrapper without changing either terminal route.
+- Keeps the consolidated registry between thermostat handling and the
+  execution-contract guard.
+
 ## 0.10.178
 
 ### Consolidate semantic home terminal routes
@@ -149,7 +160,7 @@
 
 - Captures every live `application.ask` assignment in a typed runtime registry
   without changing wrapper order or request behavior.
-- Records the terminal answering layer, tier and traversal count in request
+- Records the terminal answering layer, routing tier and traversal count in request
   performance diagnostics.
 - Adds `/api/request-layers` for the ordered live layer catalogue.
 - Classifies all 51 raw assignment sites across 38 production modules into
