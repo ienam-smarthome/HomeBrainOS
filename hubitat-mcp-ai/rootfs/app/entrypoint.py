@@ -20,6 +20,7 @@ from named_app_control import install_named_app_controller
 from named_entity_resolution_adapters import install_named_entity_resolution_adapters
 from named_rule_disable_guard import install_named_rule_disable_guard
 from named_rule_status_route import build_named_rule_status_terminal_route
+from power_device_discovery_fallback import install_power_device_discovery_fallback
 from runtime_route_bridge import install_runtime_route_bridge
 from release_version import (
     BAKED_VERSION_PATH,
@@ -66,6 +67,8 @@ application.app.version = RUNTIME_RELEASE_VERSION
 application.BAKED_VERSION = RUNTIME_RELEASE_VERSION
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
+
+power_device_discovery_fallback = install_power_device_discovery_fallback()
 
 climate_measurement_guard = install_climate_measurement_guard(
     _core.ai_evidence_planner,
