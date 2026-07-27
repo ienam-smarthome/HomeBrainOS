@@ -1,3 +1,5 @@
+# Hubitat MCP AI changelog
+
 ## 0.10.167
 
 ### Add the answer guard registry foundation
