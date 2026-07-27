@@ -43,13 +43,13 @@ def _state_message(name: str, state: dict[str, Any]) -> str:
     return f"**{name}** reports status **{status}**. Disabled or paused state is incomplete."
 
 
-def install_named_rule_status_route(application: Any, controller: Any) -> AskHandler:
-    original_ask: AskHandler = application.ask
+def build_named_rule_status_terminal_route(controller: Any):
+    """Build a registry terminal route for exact named Rule Machine status reads."""
 
-    async def ask(request: Any) -> dict[str, Any]:
+    async def terminal_route(request: Any) -> dict[str, Any] | None:
         target = parse_rule_status_target(str(getattr(request, "query", "") or ""))
         if target is None:
-            return await original_ask(request)
+            return None
 
         started = time.perf_counter()
         listed = await controller.mcp.call_tool("hub_list_rules", {})
@@ -156,9 +156,26 @@ def install_named_rule_status_route(application: Any, controller: Any) -> AskHan
             "elapsed_ms": round((time.perf_counter() - started) * 1000),
         }
 
+    return terminal_route
+
+
+def install_named_rule_status_route(application: Any, controller: Any) -> AskHandler:
+    original_ask: AskHandler = application.ask
+    terminal_route = build_named_rule_status_terminal_route(controller)
+
+    async def ask(request: Any) -> dict[str, Any]:
+        answer = await terminal_route(request)
+        if answer is not None:
+            return answer
+        return await original_ask(request)
+
     application.ask = ask
     application.named_rule_status_route = ask
     return ask
 
 
-__all__ = ["install_named_rule_status_route", "parse_rule_status_target"]
+__all__ = [
+    "build_named_rule_status_terminal_route",
+    "install_named_rule_status_route",
+    "parse_rule_status_target",
+]
