@@ -25,7 +25,10 @@ from release_version import (
 from request_composition import AskCompositionBuilder
 from semantic_home_query_router import install_semantic_home_query_router
 from semantic_home_summary_agent import install_semantic_home_summary_agent
-from thermostat_summary_guard import install_thermostat_summary_guard
+from thermostat_summary_registry import (
+    build_thermostat_summary_guard,
+    build_thermostat_terminal_route,
+)
 
 
 def _runtime_release_version() -> str:
@@ -107,9 +110,18 @@ home_summary_consistency_guard = auxiliary_request_layers.capture(
     "home-summary-guard-registry",
     home_summary_guard_registry.install,
 )
-thermostat_summary_guard = auxiliary_request_layers.capture(
+thermostat_guard_registry = AnswerGuardRegistry(_core.application)
+thermostat_guard_registry.register_terminal_route(
+    "thermostat-live-state",
+    build_thermostat_terminal_route(_core.application),
+)
+thermostat_guard_registry.register_guard(
     "thermostat-summary",
-    lambda: install_thermostat_summary_guard(_core.application),
+    build_thermostat_summary_guard(_core.application),
+)
+thermostat_summary_guard = auxiliary_request_layers.capture(
+    "thermostat-guard-registry",
+    thermostat_guard_registry.install,
 )
 climate_metric_extrema_route = auxiliary_request_layers.capture(
     "climate-metric-extrema",
