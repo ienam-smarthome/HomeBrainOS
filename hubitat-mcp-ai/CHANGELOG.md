@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.172
+
+### Migrate named-rule status into the terminal-route registry
+
+- Moves exact named Rule Machine status reads into `AnswerGuardRegistry` as an
+  ordered terminal route.
+- Preserves exact matching, clarification choices, disabled/paused reporting and
+  deterministic Hubitat inventory wording.
+- Keeps unmatched queries outside the rule inventory read path.
+- Retains the legacy installer for standalone compatibility.
+- Leaves all other guards, writes and terminal routes unchanged.
+
 ## 0.10.171
 
 ### Migrate climate extrema into the terminal-route registry
