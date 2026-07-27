@@ -61,7 +61,11 @@ from ollama_diagnostics_hybrid import install_hybrid_ollama_diagnostics
 from ollama_engagement import install_ollama_engagement, install_ollama_help_terminal_route
 from ollama_hybrid_profile import resolve_hybrid_profile
 from request_tracing import install_request_tracing
-from request_composition import AskLayer, compose_ask_layers
+from request_composition import (
+    AskLayer,
+    compose_ask_layers,
+    install_ask_layer_tracking,
+)
 from release_version import (
     PREVIOUS_RELEASE_VERSION,
     RELEASE_VERSION,
@@ -85,6 +89,7 @@ class ContextAskRequest(application.AskRequest):
 
 
 application.AskRequest = ContextAskRequest
+ask_layer_registry = install_ask_layer_tracking(application)
 
 
 def _replace_mcp_client() -> None:

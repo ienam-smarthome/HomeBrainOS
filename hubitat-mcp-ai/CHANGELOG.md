@@ -1,3 +1,17 @@
+## 0.10.166
+
+### Instrument the complete request-layer stack
+
+- Captures every live `application.ask` assignment in a typed runtime registry
+  without changing wrapper order or request behavior.
+- Records the terminal answering layer, tier and traversal count in request
+  performance diagnostics.
+- Adds `/api/request-layers` for the ordered live layer catalogue.
+- Classifies all 51 raw assignment sites across 38 production modules into
+  the documented safety-preserving routing tiers.
+- Confirms every request layer shares the indexed MCP state broker rather than
+  constructing an independent client.
+
 ## 0.10.165
 
 ### Scale dashboard power units
