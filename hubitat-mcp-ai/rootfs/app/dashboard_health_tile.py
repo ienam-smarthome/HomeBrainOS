@@ -24,6 +24,11 @@ function formatDashWatts(value){
   if(value===null||value===undefined||value==='')return '—';
   const number=Number(value);
   if(!Number.isFinite(number))return '—';
+  if(Math.abs(number)>=1000){
+    const kilowatts=number/1000;
+    const digits=Math.abs(kilowatts)>=10?1:2;
+    return kilowatts.toFixed(digits).replace(/\.?0+$/,'')+' kW';
+  }
   const digits=Number.isInteger(number)?0:1;
   return number.toFixed(digits).replace(/\.0$/,'')+' W';
 }
