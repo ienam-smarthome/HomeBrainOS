@@ -27,7 +27,7 @@ def test_execution_contract_guard_preserves_message_and_adds_contract_metadata()
     answer = run(execution_contract_guard(request, original))
 
     assert answer["message"] == "Lamp command accepted."
-    assert answer["execution_lane"] == "fast_control"
+    assert answer["execution_lane"] == "fast-control"
     assert answer["verification_state"] == "sent"
     assert "execution_lane" not in original
 
@@ -52,7 +52,7 @@ def test_registry_delegates_once_and_applies_execution_contract_guard():
 
     assert calls == ["status"]
     assert answer["message"] == "Live status."
-    assert answer["execution_lane"] == "fast_read"
+    assert answer["execution_lane"] == "fast-read"
     assert answer["verification_state"] == "uncertain"
     assert handler.__homebrain_registry_catalogue__ == (
         {"name": "execution-contract", "order": 0, "kind": "answer-guard"},
