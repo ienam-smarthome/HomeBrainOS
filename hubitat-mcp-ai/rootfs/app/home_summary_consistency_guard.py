@@ -7,6 +7,7 @@ from device_intelligence_index import _device_rows
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
+AnswerGuard = Callable[[Any, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 _HOME_SUMMARY_TERMS = (
     "what's happening",
@@ -117,17 +118,11 @@ async def _read_live_motion(application: Any) -> tuple[list[str], int, dict[str,
     return [], 0, diagnostic
 
 
-def install_home_summary_consistency_guard(application: Any) -> AskHandler:
-    """Correct legacy AI home-summary motion claims from live Hubitat states.
+def build_home_summary_consistency_guard(application: Any) -> AnswerGuard:
+    """Build the registry-compatible home-summary motion correction guard."""
 
-    Semantic home summary and attention routes already use typed authoritative
-    evidence and must not be rewritten by this compatibility guard.
-    """
-
-    original_ask: AskHandler = application.ask
-
-    async def guarded_ask(request: Any) -> dict[str, Any]:
-        answer = dict(await original_ask(request))
+    async def guard(request: Any, response: dict[str, Any]) -> dict[str, Any]:
+        answer = dict(response)
         if str(answer.get("route") or "") in {
             "ai-semantic-home-evidence",
             "ai-semantic-home-attention",
@@ -163,9 +158,27 @@ def install_home_summary_consistency_guard(application: Any) -> AskHandler:
         }
         answer["home_summary_motion_guard_read"] = diagnostic
         tools = list(answer.get("tools_used") or [])
-        tools.append({"name": "hub_list_devices", "success": True, "purpose": "home-summary-motion-verification"})
+        tools.append(
+            {
+                "name": "hub_list_devices",
+                "success": True,
+                "purpose": "home-summary-motion-verification",
+            }
+        )
         answer["tools_used"] = tools
         return answer
+
+    return guard
+
+
+def install_home_summary_consistency_guard(application: Any) -> AskHandler:
+    """Compatibility installer for standalone consumers and historical tests."""
+
+    original_ask: AskHandler = application.ask
+    guard = build_home_summary_consistency_guard(application)
+
+    async def guarded_ask(request: Any) -> dict[str, Any]:
+        return await guard(request, dict(await original_ask(request)))
 
     application.ask = guarded_ask
     return original_ask
@@ -174,5 +187,6 @@ def install_home_summary_consistency_guard(application: Any) -> AskHandler:
 __all__ = [
     "_active_motion_labels",
     "_replace_motion_claims",
+    "build_home_summary_consistency_guard",
     "install_home_summary_consistency_guard",
 ]

@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.169
+
+### Migrate the home-summary consistency guard
+
+- Moves legacy home-summary motion verification into `AnswerGuardRegistry`.
+- Preserves the guard's original request-stack position before thermostat and
+  climate routes.
+- Keeps semantic home evidence and attention responses exempt from rewriting.
+- Retains the legacy installer for standalone compatibility.
+- Leaves all other answer guards and terminal routes unchanged.
+
 ## 0.10.168
 
 ### Migrate the first answer guard
