@@ -157,11 +157,16 @@ def test_exact_reported_setpoint_phrase_never_reaches_ai():
     ]
 
 
-def test_runtime_bridge_installs_thermostat_guard_before_final_api_capture():
-    source = (APP_DIR / "runtime_route_bridge.py").read_text(encoding="utf-8")
-    guard = source.index("install_thermostat_summary_guard(application)")
-    capture = source.index("install_cancellable_ask(application)")
-    assert guard < capture
+def test_runtime_bridge_uses_already_composed_thermostat_registry():
+    entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
+    bridge = (APP_DIR / "runtime_route_bridge.py").read_text(encoding="utf-8")
+
+    assert '"summary-thermostat-registry"' in entrypoint
+    assert entrypoint.index("auxiliary_request_layers.finalize()") < entrypoint.index(
+        "install_runtime_route_bridge(_core.application)"
+    )
+    assert "install_thermostat_summary_guard(application)" not in bridge
+    assert bridge.count("install_cancellable_ask(application)") == 1
 
 
 def test_wrapper_ignores_unrelated_queries():

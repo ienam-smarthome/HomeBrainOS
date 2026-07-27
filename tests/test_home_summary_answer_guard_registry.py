@@ -62,9 +62,9 @@ def test_home_summary_guard_runs_through_registry_once():
         "home-summary-consistency",
         build_home_summary_consistency_guard(application),
     )
-    registry.install()
+    handler = registry.install()
 
-    answer = run(application.ask(SimpleNamespace(query="What's happening at home?")))
+    answer = run(handler(SimpleNamespace(query="What's happening at home?")))
 
     assert calls == [("hub_list_devices", {})]
     assert "Heating is on." in answer["message"]
@@ -72,13 +72,14 @@ def test_home_summary_guard_runs_through_registry_once():
     assert answer["home_summary_motion_corrected"] is True
 
 
-def test_public_entrypoint_keeps_home_summary_registry_in_original_position():
+def test_public_entrypoint_keeps_home_summary_guard_in_summary_thermostat_registry():
     source = ENTRYPOINT.read_text(encoding="utf-8")
 
-    registry_pos = source.index("home_summary_guard_registry = AnswerGuardRegistry")
-    thermostat_pos = source.index("thermostat_summary_guard =")
-    execution_pos = source.index("answer_guard_registry = AnswerGuardRegistry")
+    registry_pos = source.index("summary_thermostat_registry = AnswerGuardRegistry")
+    home_guard_pos = source.index('"home-summary-consistency"')
+    thermostat_guard_pos = source.index('"thermostat-summary"')
+    read_execution_pos = source.index('"read-execution-registry"')
 
-    assert registry_pos < thermostat_pos < execution_pos
+    assert registry_pos < home_guard_pos < thermostat_guard_pos < read_execution_pos
     assert "build_home_summary_consistency_guard(_core.application)" in source
     assert "install_home_summary_consistency_guard" not in source

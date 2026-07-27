@@ -90,26 +90,27 @@ def test_builder_detects_untracked_mutation():
         builder.finalize()
 
 
-def test_entrypoint_captures_all_auxiliary_request_layers():
+def test_entrypoint_captures_final_auxiliary_request_wrappers():
     source = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     expected_layers = (
         "named-app-control",
-        "hub-health-display",
-        "semantic-home-summary",
-        "semantic-home-query",
-        "home-summary-consistency",
-        "thermostat-summary",
-        "climate-metric-extrema",
-        "named-rule-status",
-        "execution-contract",
-        "runtime-route-bridge",
+        "hub-health-display-registry",
+        "semantic-home-registry",
+        "summary-thermostat-registry",
+        "read-execution-registry",
     )
 
     assert "auxiliary_request_layers = AskCompositionBuilder(" in source
     assert source.count("auxiliary_request_layers.capture(") == len(expected_layers)
     assert "auxiliary_request_handler = auxiliary_request_layers.finalize()" in source
+
     positions = []
     for layer in expected_layers:
         assert f'"{layer}"' in source
         positions.append(source.index(f'"{layer}"'))
     assert positions == sorted(positions)
+
+    finalized = source.index("auxiliary_request_layers.finalize()")
+    runtime_bridge = source.index("install_runtime_route_bridge(_core.application)")
+    assert finalized < runtime_bridge
+    assert 'capture(\n    "runtime-route-bridge"' not in source

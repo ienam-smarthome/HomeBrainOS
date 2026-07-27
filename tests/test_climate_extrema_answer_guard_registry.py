@@ -85,12 +85,12 @@ def test_registry_stops_after_climate_extrema_terminal_answer():
     assert calls == []
 
 
-def test_public_entrypoint_uses_climate_extrema_registry_at_existing_position():
+def test_public_entrypoint_uses_climate_extrema_in_final_read_registry():
     source = ENTRYPOINT.read_text(encoding="utf-8")
 
     assert "from climate_metric_extrema_route import build_climate_metric_extrema_route" in source
-    assert 'register_terminal_route(\n    "climate-metric-extrema",' in source
-    assert '"climate-extrema-registry",\n    climate_extrema_registry.install,' in source
+    assert 'read_execution_registry.register_terminal_route(\n    "climate-metric-extrema",' in source
+    assert '"read-execution-registry",\n    read_execution_registry.install,' in source
     assert "install_climate_metric_extrema_route" not in source
-    assert source.index('"thermostat-guard-registry"') < source.index('"climate-extrema-registry"')
-    assert source.index('"climate-extrema-registry"') < source.index('"named-rule-status"')
+    assert source.index('"named-rule-status"') < source.index('"climate-metric-extrema"')
+    assert source.index('"climate-metric-extrema"') < source.index('"execution-contract"')

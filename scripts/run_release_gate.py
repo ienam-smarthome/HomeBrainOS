@@ -4,25 +4,11 @@ import subprocess
 import sys
 
 
-RELEASE_GATE_TESTS = [
-    "tests/test_device_model.py",
-    "tests/test_entity_request_policy.py",
-    "tests/test_entity_resolution.py",
-    "tests/test_hubitat_maker.py",
-    "tests/test_normalizer.py",
-    "tests/test_hubitat_mcp_ai_control_focus.py",
-    "tests/test_hubitat_mcp_ai_docs.py",
-    "tests/test_hubitat_mcp_ai_hub_firmware_update_workflow.py",
-    "tests/test_hubitat_mcp_ai_release_metadata.py",
-    "tests/test_hubitat_mcp_ai_route_registry.py",
-    "tests/test_deterministic_entity_read.py",
-    "tests/test_hubitat_mcp_ai_room_inventory_and_cpu_percent.py",
-    "tests/test_hubitat_mcp_ai_state_broker.py",
-    "tests/test_room_inventory_parser.py",
-    "tests/test_repository_hygiene.py",
-    "tests/test_request_layer_registry.py",
-    "tests/test_analyze_request_layers.py",
-]
+# The release gate intentionally runs the complete test suite. Historical failures
+# remain visible as non-strict xfails through tests/conftest.py; every other failure
+# blocks release. Keeping a hand-maintained subset here previously allowed roadmap
+# registry/composition regressions to pass CI unnoticed.
+RELEASE_GATE_TESTS = ["tests"]
 
 
 def main() -> int:

@@ -27,11 +27,11 @@ def test_semantic_home_routes_share_one_registry_in_original_order():
     assert '"semantic-home-query-registry"' not in source
 
 
-def test_semantic_home_registry_remains_between_hub_health_and_summary_guard():
+def test_semantic_home_registry_remains_between_hub_health_and_summary_thermostat():
     source = ENTRYPOINT.read_text(encoding="utf-8")
 
     assert source.index("hub-health-display-registry") < source.index("semantic-home-registry")
-    assert source.index("semantic-home-registry") < source.index("home-summary-guard-registry")
+    assert source.index("semantic-home-registry") < source.index("summary-thermostat-registry")
 
 
 def test_runtime_bridge_stays_outside_ask_composition_capture():
