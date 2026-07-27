@@ -377,6 +377,7 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
         motion_active = 0
         low_batteries = 0
         states_read = 0
+        active_rooms: dict[str, dict[str, int]] = {}
 
         for item in devices:
             if item.get("disabled") is True:
@@ -386,13 +387,25 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
                 states_read += 1
             groups = self._groups(item)
             switch = _normalise(attrs.get("switch"))
+            room = _room_name(item).strip()
+            light_is_on = switch == "on" and "light" in groups
+            motion_is_active = _normalise(attrs.get("motion")) == "active"
             if switch == "on":
                 if "light" in groups:
                     lights_on += 1
                 else:
                     switches_on += 1
-            if _normalise(attrs.get("motion")) == "active":
+            if motion_is_active:
                 motion_active += 1
+            if room and (light_is_on or motion_is_active):
+                activity = active_rooms.setdefault(
+                    room,
+                    {"lights_on": 0, "motion_active": 0},
+                )
+                if light_is_on:
+                    activity["lights_on"] += 1
+                if motion_is_active:
+                    activity["motion_active"] += 1
             try:
                 battery = float(str(attrs.get("battery")).replace("%", "").strip())
             except (TypeError, ValueError):
@@ -411,6 +424,18 @@ class CapabilityCatalogueDeviceIndex(DeviceIntelligenceIndex):
             "lights_on": lights_on,
             "switches_on": switches_on,
             "motion_active": motion_active,
+            "active_rooms": len(active_rooms),
+            "active_room_names": sorted(
+                active_rooms,
+                key=str.casefold,
+            ),
+            "active_room_details": [
+                {
+                    "room": room,
+                    **active_rooms[room],
+                }
+                for room in sorted(active_rooms, key=str.casefold)
+            ],
             "low_batteries": low_batteries,
             "selected_devices": len(devices),
             "state_records": states_read,

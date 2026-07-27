@@ -90,7 +90,7 @@ function startVoice(){const Recognition=window.SpeechRecognition||window.webkitS
 HOME_BRAIN_MOBILE_PATCH = r"""
 #status{display:none}
 .status-row{align-items:center}
-#summaryCard.dashboard-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+#summaryCard.dashboard-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .summary-tile{width:auto;margin:0;background:var(--tile);color:var(--text);text-align:left;border-radius:14px;padding:14px;min-height:88px;transition:background .15s,box-shadow .15s,transform .15s}
 .summary-tile:hover,.summary-tile:focus{background:#3a3a3d;box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}
 .summary-tile:active{transform:translateY(1px)}

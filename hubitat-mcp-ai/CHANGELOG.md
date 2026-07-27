@@ -1,3 +1,16 @@
+## 0.10.164
+
+### Add active-room and power dashboard summaries
+
+- Adds an Active rooms tile driven by authoritative motion activity and
+  light-on state, with deduplicated room names.
+- Adds a Power tile comparing the whole-house meter with the aggregate of
+  actively monitored device readings.
+- Keeps room and power data independently fail-open so one unavailable source
+  does not suppress the rest of the live dashboard.
+- Rebalances the six summary cards for desktop and mobile layouts.
+- Adds API, room-classification, fallback and rendered-dashboard regressions.
+
 ## 0.10.163
 
 ### Complete the final layer consolidations

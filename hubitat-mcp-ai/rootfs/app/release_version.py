@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 
-PREVIOUS_RELEASE_VERSION = "0.10.162"
-RELEASE_VERSION = "0.10.163"
+PREVIOUS_RELEASE_VERSION = "0.10.163"
+RELEASE_VERSION = "0.10.164"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 

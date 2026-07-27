@@ -4,6 +4,8 @@ import asyncio
 import time
 from typing import Any
 
+from power_accounting import PowerAccountingService
+
 
 class DashboardSnapshot:
     """Small cached HomeBrain-style live summary for the web dashboard."""
@@ -13,9 +15,11 @@ class DashboardSnapshot:
         fallback: Any,
         ttl_seconds: float = 30.0,
         device_index: Any | None = None,
+        power_accounting: Any | None = None,
     ) -> None:
         self.fallback = fallback
         self.device_index = device_index
+        self.power_accounting = power_accounting
         self.ttl_seconds = max(10.0, float(ttl_seconds))
         self._value: dict[str, Any] | None = None
         self._expires_at = 0.0
@@ -31,9 +35,10 @@ class DashboardSnapshot:
             if not force and self._value is not None and now < self._expires_at:
                 return dict(self._value)
 
-            device_result, health_result = await asyncio.gather(
+            device_result, health_result, power_result = await asyncio.gather(
                 self._device_metrics(force=force),
                 self._health_metrics(),
+                self._power_metrics(),
                 return_exceptions=True,
             )
 
@@ -43,6 +48,9 @@ class DashboardSnapshot:
                     "lights_on": None,
                     "switches_on": None,
                     "motion_active": None,
+                    "active_rooms": None,
+                    "active_room_names": [],
+                    "active_room_details": [],
                     "low_batteries": None,
                     "error": str(device_result),
                     "updated_at": time.time(),
@@ -66,6 +74,21 @@ class DashboardSnapshot:
             else:
                 value.update(health_result)
 
+            if isinstance(power_result, Exception):
+                value.update(
+                    {
+                        "power_success": False,
+                        "whole_house_power_w": None,
+                        "monitored_device_power_w": None,
+                        "active_power_reading_count": None,
+                        "active_power_readings": [],
+                        "power_error": str(power_result),
+                        "power_source": "unavailable",
+                    }
+                )
+            else:
+                value.update(power_result)
+
             self._value = value
             self._expires_at = time.monotonic() + self.ttl_seconds
             return dict(value)
@@ -87,9 +110,47 @@ class DashboardSnapshot:
             "lights_on": self._integer(metrics.get("lights on")),
             "switches_on": self._integer(metrics.get("switches on")),
             "motion_active": self._integer(metrics.get("motion active")),
+            "active_rooms": None,
+            "active_room_names": [],
+            "active_room_details": [],
             "low_batteries": self._integer(metrics.get("low batteries")),
             "updated_at": time.time(),
             "source": "fallback-home-summary",
+        }
+
+    async def _power_metrics(self) -> dict[str, Any]:
+        if self.power_accounting is None:
+            return {
+                "power_success": False,
+                "whole_house_power_w": None,
+                "monitored_device_power_w": None,
+                "active_power_reading_count": None,
+                "active_power_readings": [],
+                "power_source": "unavailable",
+            }
+
+        answer = await self.power_accounting.answer(
+            "Compare whole-house power with monitored devices"
+        )
+        active_readings = [
+            {
+                "label": str(item.get("label") or "Monitored device"),
+                "power_w": item.get("value"),
+            }
+            for item in (answer.get("active_power_readings") or [])[:5]
+            if isinstance(item, dict)
+        ]
+        return {
+            "power_success": bool(answer.get("success")),
+            "whole_house_power_w": answer.get("whole_house_power_w"),
+            "monitored_device_power_w": answer.get(
+                "monitored_device_power_w"
+            ),
+            "active_power_reading_count": self._integer(
+                answer.get("active_reading_count")
+            ),
+            "active_power_readings": active_readings,
+            "power_source": "deterministic-power-accounting",
         }
 
     async def _health_metrics(self) -> dict[str, Any]:
@@ -149,6 +210,7 @@ def install_dashboard_api(
         application.fallback,
         ttl_seconds=ttl_seconds,
         device_index=device_index,
+        power_accounting=PowerAccountingService(application),
     )
 
     @application.app.get("/api/dashboard", response_model=None)
