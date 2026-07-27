@@ -37,11 +37,11 @@ def test_separate_home_summary_and_thermostat_wrappers_are_removed():
     assert '"thermostat-guard-registry"' not in source
 
 
-def test_consolidated_registry_keeps_original_neighbours_and_runtime_setup():
+def test_consolidated_registry_keeps_final_neighbours_and_runtime_setup():
     source = ENTRYPOINT.read_text(encoding="utf-8")
 
     assert source.index("semantic-home-registry") < source.index("summary-thermostat-registry")
-    assert source.index("summary-thermostat-registry") < source.index("read-terminal-registry")
+    assert source.index("summary-thermostat-registry") < source.index("read-execution-registry")
     assert source.index("auxiliary_request_layers.finalize()") < source.index(
         "install_runtime_route_bridge(_core.application)"
     )
