@@ -19,7 +19,7 @@ jobs:
           HUBITAT_MCP_AI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: python scripts/validate_addon.py
       - name: Python syntax check
-        run: python -m compileall backend addon/homebrainos/rootfs/app homebrainos/rootfs/app hubitat-mcp-ai/rootfs/app
+        run: python -m compileall backend hubitat-mcp-ai/rootfs/app
       - name: Install test dependencies
         run: python -m pip install -r requirements-test.txt
       - name: Run blocking release gate

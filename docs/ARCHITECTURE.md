@@ -2,8 +2,9 @@
 
 ## Current add-ons
 
-- `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
-- `homebrainos/` is the legacy Maker API dashboard and assistant.
+- `hubitat-mcp-ai/` is the maintained and only Hubitat MCP assistant. The
+  legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
+  and removed from this repository.
 
 The maintained assistant starts at `hubitat-mcp-ai/rootfs/app/entrypoint.py`, composes the established services from `entrypoint_core.py`, and rebinds the final FastAPI routes through `runtime_route_bridge.py`.
 
