@@ -7,7 +7,6 @@ from assistant_contracts import RouteClass, VerificationOutcome
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
-
 _ROUTE_ALIASES: dict[str, RouteClass] = {
     "mcp-fast": RouteClass.FAST_READ,
     "mcp-rule-control": RouteClass.FAST_CONTROL,
@@ -67,12 +66,24 @@ def annotate_execution_contract(response: dict[str, Any]) -> dict[str, Any]:
     return annotated
 
 
+async def execution_contract_guard(
+    request: Any,
+    response: dict[str, Any],
+) -> dict[str, Any]:
+    """Registry-compatible answer guard for canonical execution metadata."""
+
+    del request
+    return annotate_execution_contract(response)
+
+
 def install_execution_contract_bridge(application: Any) -> AskHandler:
+    """Compatibility installer retained for standalone consumers and tests."""
+
     original_ask: AskHandler = application.ask
 
     async def ask_with_execution_contract(request: Any) -> dict[str, Any]:
         response = await original_ask(request)
-        return annotate_execution_contract(response)
+        return await execution_contract_guard(request, response)
 
     application.ask = ask_with_execution_contract
     application.execution_contract_bridge = ask_with_execution_contract
@@ -82,6 +93,7 @@ def install_execution_contract_bridge(application: Any) -> AskHandler:
 __all__ = [
     "annotate_execution_contract",
     "classify_legacy_route",
+    "execution_contract_guard",
     "infer_verification_outcome",
     "install_execution_contract_bridge",
 ]
