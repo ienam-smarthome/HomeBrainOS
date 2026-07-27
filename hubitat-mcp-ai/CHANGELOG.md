@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.171
+
+### Migrate climate extrema into the terminal-route registry
+
+- Moves highest and lowest room temperature and humidity reads into
+  `AnswerGuardRegistry` as an ordered terminal route.
+- Preserves room filtering, measurement validation, deterministic wording and
+  fail-open delegation when live evidence cannot be read.
+- Retains the legacy installer for standalone compatibility.
+- Leaves all other guards and terminal routes unchanged.
+
 ## 0.10.170
 
 ### Migrate thermostat summary handling into the registry
