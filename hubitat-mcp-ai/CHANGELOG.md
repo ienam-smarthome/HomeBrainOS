@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.10.170
+
+### Migrate thermostat summary handling into the registry
+
+- Splits the existing thermostat wrapper into an ordered terminal route for
+  direct live reads and an answer guard for summary corrections.
+- Installs both steps through `AnswerGuardRegistry` at the wrapper's original
+  request-stack position.
+- Preserves live `hub_list_devices` and bounded `hub_get_device` evidence reads,
+  direct thermostat wording and summary correction metadata.
+- Retains the legacy combined installer for standalone compatibility.
+- Leaves every other guard and terminal route unchanged.
+
 ## 0.10.169
 
 ### Migrate the home-summary consistency guard
