@@ -165,11 +165,10 @@ execution_contract_bridge = auxiliary_request_layers.capture(
     "answer-guard-registry",
     answer_guard_registry.install,
 )
-runtime_request_registry = auxiliary_request_layers.capture(
-    "runtime-route-bridge",
-    lambda: install_runtime_route_bridge(_core.application),
-)
 auxiliary_request_handler = auxiliary_request_layers.finalize()
+# The runtime bridge only rebinds HTTP routes; it intentionally no longer wraps
+# application.ask. Run it after the declared request stack has been finalized.
+runtime_request_registry = install_runtime_route_bridge(_core.application)
 
 app = _core.app
 
