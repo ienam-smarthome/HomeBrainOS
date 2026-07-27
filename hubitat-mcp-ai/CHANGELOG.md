@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.180
+
+### Consolidate summary and thermostat guards
+
+- Registers the thermostat live-state terminal route, home-summary consistency
+  guard and thermostat-summary guard in one ordered `AnswerGuardRegistry`.
+- Preserves thermostat-first routing followed by home-summary consistency and
+  thermostat-summary post-processing.
+- Removes one redundant request wrapper without changing any route or guard.
+- Keeps the consolidated registry between semantic-home handling and the
+  read-only terminal-route registry.
+
 ## 0.10.179
 
 ### Consolidate read-only terminal routes
