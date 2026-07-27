@@ -128,27 +128,22 @@ summary_thermostat_routes = auxiliary_request_layers.capture(
     "summary-thermostat-registry",
     summary_thermostat_registry.install,
 )
-read_terminal_registry = AnswerGuardRegistry(_core.application)
-read_terminal_registry.register_terminal_route(
+read_execution_registry = AnswerGuardRegistry(_core.application)
+read_execution_registry.register_terminal_route(
     "named-rule-status",
     build_named_rule_status_terminal_route(_core.named_rule_controller),
 )
-read_terminal_registry.register_terminal_route(
+read_execution_registry.register_terminal_route(
     "climate-metric-extrema",
     build_climate_metric_extrema_route(_core.semantic_metric_comparison),
 )
-read_terminal_routes = auxiliary_request_layers.capture(
-    "read-terminal-registry",
-    read_terminal_registry.install,
-)
-answer_guard_registry = AnswerGuardRegistry(_core.application)
-answer_guard_registry.register_guard(
+read_execution_registry.register_guard(
     "execution-contract",
     execution_contract_guard,
 )
-execution_contract_bridge = auxiliary_request_layers.capture(
-    "answer-guard-registry",
-    answer_guard_registry.install,
+read_execution_routes = auxiliary_request_layers.capture(
+    "read-execution-registry",
+    read_execution_registry.install,
 )
 auxiliary_request_handler = auxiliary_request_layers.finalize()
 runtime_request_registry = install_runtime_route_bridge(_core.application)
