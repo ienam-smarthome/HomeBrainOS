@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.178
+
+### Restore semantic summary registry wiring
+
+- Restores the exact semantic home-summary route to `AnswerGuardRegistry` after
+  the startup hotfix accidentally reverted only the public entrypoint wiring.
+- Keeps the 0.10.177 startup fix: request composition is finalised before the
+  runtime HTTP route bridge is installed directly.
+- Preserves exact-summary evidence collection, required-fact validation,
+  synthesis fallback and response metadata.
+- Adds a regression covering both registry wiring and direct runtime route setup.
+
 ## 0.10.177
 
 ### Fix runtime route bridge startup
