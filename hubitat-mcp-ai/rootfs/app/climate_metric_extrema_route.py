@@ -7,7 +7,7 @@ from semantic_metric_comparison import _SPECS, format_measurement
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
-
+TerminalRoute = Callable[[Any], Awaitable[dict[str, Any] | None]]
 _NON_ROOM_CLIMATE_TERMS = (
     "appliance",
     "appliances",
@@ -84,22 +84,21 @@ def select_metric_extreme(
     return chooser(valid, key=lambda item: float(item["value"]))
 
 
-def install_climate_metric_extrema_route(
-    application: Any,
+def build_climate_metric_extrema_route(
     metric_executor: Any,
-) -> AskHandler:
-    original_ask: AskHandler = application.ask
+) -> TerminalRoute:
+    """Build the registry terminal route for authoritative climate extrema reads."""
 
-    async def climate_metric_ask(request: Any) -> dict[str, Any]:
+    async def climate_metric_route(request: Any) -> dict[str, Any] | None:
         query = str(getattr(request, "query", "") or "").strip()
         requested = _metric_request(query)
         if requested is None:
-            return await original_ask(request)
+            return None
 
         metric, direction = requested
         spec = _SPECS.get(metric)
         if spec is None:
-            return await original_ask(request)
+            return None
 
         try:
             result = await metric_executor._fresh_capability_result(spec)
@@ -111,7 +110,7 @@ def install_climate_metric_extrema_route(
                 direction=direction,
             )
         except Exception:
-            return await original_ask(request)
+            return None
 
         if selected is None:
             return {
@@ -150,12 +149,31 @@ def install_climate_metric_extrema_route(
             "answered_by": "Deterministic climate measurement reader",
         }
 
+    return climate_metric_route
+
+
+def install_climate_metric_extrema_route(
+    application: Any,
+    metric_executor: Any,
+) -> AskHandler:
+    """Compatibility installer for the registry-compatible terminal route."""
+
+    original_ask: AskHandler = application.ask
+    terminal_route = build_climate_metric_extrema_route(metric_executor)
+
+    async def climate_metric_ask(request: Any) -> dict[str, Any]:
+        answer = await terminal_route(request)
+        if answer is not None:
+            return answer
+        return await original_ask(request)
+
     application.ask = climate_metric_ask
     application.climate_metric_extrema_route = climate_metric_ask
     return climate_metric_ask
 
 
 __all__ = [
+    "build_climate_metric_extrema_route",
     "install_climate_metric_extrema_route",
     "select_metric_extreme",
 ]
