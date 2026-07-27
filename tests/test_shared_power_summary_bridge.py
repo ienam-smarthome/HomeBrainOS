@@ -19,13 +19,16 @@ class FakeAccounting:
             "active_power_readings": [
                 {"id": "1", "label": "Fridge", "room": "Appliances", "value": 72.0}
             ],
-            "technical": {
-                "targeted_fallback_used": True,
-                "targeted_detail": {"candidate_count": 8, "numeric_power_reading_count": 2},
-                "idle_readings": [
-                    {"id": "2", "label": "TV", "room": "Multimedia", "value": 0.0}
-                ],
-            },
+            # PowerAccountingService returns safe_debug JSON at runtime.
+            "technical": json.dumps(
+                {
+                    "targeted_fallback_used": True,
+                    "targeted_detail": {"candidate_count": 8, "numeric_power_reading_count": 2},
+                    "idle_readings": [
+                        {"id": "2", "label": "TV", "room": "Multimedia", "value": 0.0}
+                    ],
+                }
+            ),
         }
 
 
@@ -47,6 +50,27 @@ def test_shared_summary_reuses_accounting_discovery(monkeypatch):
     assert answer["idle_power_readings"][0]["label"] == "TV"
     assert technical["shared_power_discovery"] is True
     assert technical["targeted_fallback_used"] is True
+
+
+def test_invalid_serialized_technical_payload_falls_back_safely(monkeypatch):
+    class InvalidTechnicalAccounting(FakeAccounting):
+        async def answer(self, query):
+            answer = await super().answer(query)
+            answer["technical"] = "not-json"
+            return answer
+
+    monkeypatch.setattr(bridge, "PowerAccountingService", InvalidTechnicalAccounting)
+    service = ControlFocusMode(
+        SimpleNamespace(VERSION="test"),
+        metric_executor=SimpleNamespace(),
+        enabled=False,
+    )
+
+    answer = asyncio.run(bridge.shared_power_summary(service, "show power devices"))
+
+    assert answer["route"] == "mcp-power-summary"
+    assert answer["active_power_readings"][0]["label"] == "Fridge"
+    assert answer["idle_power_readings"] == []
 
 
 def test_install_patches_existing_service_and_repairs_octopus_export():
