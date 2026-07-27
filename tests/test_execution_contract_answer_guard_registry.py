@@ -59,13 +59,13 @@ def test_registry_delegates_once_and_applies_execution_contract_guard():
     )
 
 
-def test_public_entrypoint_migrates_only_execution_contract_guard():
+def test_public_entrypoint_places_execution_contract_in_final_read_registry():
     source = ENTRYPOINT.read_text(encoding="utf-8")
 
     assert "from answer_guard_registry import AnswerGuardRegistry" in source
     assert "from execution_contract_bridge import execution_contract_guard" in source
-    assert 'register_guard(\n    "execution-contract",\n    execution_contract_guard,' in source
-    assert '"answer-guard-registry",\n    answer_guard_registry.install,' in source
+    assert 'read_execution_registry.register_guard(\n    "execution-contract",\n    execution_contract_guard,' in source
+    assert '"read-execution-registry",\n    read_execution_registry.install,' in source
     assert "install_execution_contract_bridge" not in source
-    assert '"home-summary-consistency"' in source
-    assert '"thermostat-summary"' in source
+    assert source.index('"named-rule-status"') < source.index('"climate-metric-extrema"')
+    assert source.index('"climate-metric-extrema"') < source.index('"execution-contract"')
