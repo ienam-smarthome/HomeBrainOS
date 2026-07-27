@@ -1,5 +1,19 @@
 # Hubitat MCP AI changelog
 
+## 0.10.185
+
+### Discover monitored power devices from sparse inventories
+
+- Expands the targeted fallback used when detailed Hubitat inventory projections
+  return no usable device rows.
+- Ranks explicit power-meter capabilities first, then metering plugs, MQTT/Tasmota
+  devices and likely monitored appliances.
+- Excludes virtual network-block switches and common sensor-only devices from the
+  bounded detail probe set.
+- Reports selected candidate labels, scores and the number of numeric power
+  readings found for easier live diagnosis.
+- Keeps missing readings distinct from genuine 0 W idle readings.
+
 ## 0.10.184
 
 ### Answer active-room dashboard questions deterministically
