@@ -1,3 +1,14 @@
+## 0.10.162
+
+### Recognize intentional analyzer layers
+
+- Adds a narrow, family-scoped cluster-analysis allowlist for the documented
+  `ollama_agent_fast` and `ollama_agent_inference` layers.
+- Reports those live sibling layers as intentional instead of suspect.
+- Keeps unlisted sibling-only modules suspicious and allowlisted modules with
+  no importers orphaned, preserving the analyzer's ability to detect drift.
+- Adds regression coverage for both the intended chain and the negative cases.
+
 ## 0.10.161
 
 ### Consolidate the home snapshot service family

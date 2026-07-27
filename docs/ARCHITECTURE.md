@@ -29,7 +29,9 @@ New phrasings should normally be handled by semantic intent classification. Rege
 Several older areas are implemented as load-bearing inheritance or wrapper chains. They must be flattened incrementally with regression tests rather than deleted by filename:
 
 - `ollama_agent_*`: consolidated live chain is `fast → inference → claude → unified`;
-  superseded compatibility modules have been removed.
+  superseded compatibility modules have been removed. The cluster analyzer
+  explicitly recognizes `ollama_agent_fast` and `ollama_agent_inference` as
+  intentional documented layers; other sibling-only modules remain suspect.
 - `control_agent_*`: core confirmation state, base execution, verified-level
   control and rescue behavior are consolidated in `control_agent_rescue.py`;
   actuator eligibility and read-only-device safeguards are consolidated in
