@@ -1,4 +1,4 @@
-name: Package HomeBrain OS add-on
+name: Package Hubitat MCP AI add-on
 
 on:
   workflow_dispatch:
@@ -14,8 +14,8 @@ jobs:
       - name: Create add-on archive
         run: |
           mkdir -p dist
-          tar -czf dist/homebrainos-addon.tar.gz homebrainos
+          tar -czf dist/hubitat-mcp-ai-addon.tar.gz hubitat-mcp-ai
       - uses: actions/upload-artifact@v4
         with:
-          name: homebrainos-addon
-          path: dist/homebrainos-addon.tar.gz
+          name: hubitat-mcp-ai-addon
+          path: dist/hubitat-mcp-ai-addon.tar.gz

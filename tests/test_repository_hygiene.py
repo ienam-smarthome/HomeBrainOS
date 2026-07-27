@@ -39,6 +39,16 @@ def test_temporary_ci_trigger_artifacts_are_not_tracked():
     )
 
 
+def test_legacy_homebrainos_addon_is_retired():
+    assert not (ROOT / "homebrainos").exists()
+    assert not (ROOT / "addon" / "homebrainos").exists()
+
+    release_workflow = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+    assert "hubitat-mcp-ai-addon.tar.gz" in release_workflow
+    assert "tar -czf dist/hubitat-mcp-ai-addon.tar.gz hubitat-mcp-ai" in release_workflow
+    assert "homebrainos-addon" not in release_workflow
+
+
 def test_rule_writes_are_opt_in_for_new_installations():
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     entrypoint = (

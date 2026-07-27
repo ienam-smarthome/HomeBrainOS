@@ -1,6 +1,6 @@
 # GitHub Workflow
 
-HomeBrain OS uses GitHub Actions to validate the repository and package the Home Assistant add-on.
+HomeBrainOS uses GitHub Actions to validate the repository and package the Hubitat MCP AI add-on.
 
 ## Validation
 
@@ -15,8 +15,8 @@ Every push and pull request to `main` runs:
 To create a package manually:
 
 1. Go to **Actions**.
-2. Select **Package Release**.
+2. Select **Package Hubitat MCP AI add-on**.
 3. Click **Run workflow**.
-4. Download the generated `homebrainos-addon` artifact.
+4. Download the generated `hubitat-mcp-ai-addon` artifact.
 
 Later we can turn this into full GitHub Releases and Home Assistant repository updates.

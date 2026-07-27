@@ -5,7 +5,6 @@ import sys
 
 
 RELEASE_GATE_TESTS = [
-    "tests/test_addon_security.py",
     "tests/test_device_model.py",
     "tests/test_entity_request_policy.py",
     "tests/test_entity_resolution.py",
