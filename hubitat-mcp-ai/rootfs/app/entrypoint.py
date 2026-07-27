@@ -31,6 +31,7 @@ from release_version import (
 from request_composition import AskCompositionBuilder
 from semantic_home_query_registry import build_semantic_home_query_terminal_route
 from semantic_home_summary_registry import build_semantic_home_summary_terminal_route
+from shared_power_summary_bridge import install_shared_power_summary_bridge
 from thermostat_summary_registry import (
     build_thermostat_summary_guard,
     build_thermostat_terminal_route,
@@ -69,6 +70,7 @@ _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
 
 power_device_discovery_fallback = install_power_device_discovery_fallback()
+shared_power_summary_bridge = install_shared_power_summary_bridge()
 
 climate_measurement_guard = install_climate_measurement_guard(
     _core.ai_evidence_planner,
