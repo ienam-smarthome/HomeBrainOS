@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.168
+
+### Migrate the first answer guard
+
+- Moves execution-contract annotation into the ordered `AnswerGuardRegistry`.
+- Preserves the execution-contract response fields and the surrounding request
+  wrapper order.
+- Keeps the legacy installer available for standalone compatibility while the
+  maintained entrypoint uses the registry path.
+- Adds focused delegation, metadata and wiring regression tests.
+- Leaves every other answer guard and terminal route unchanged.
+
 ## 0.10.167
 
 ### Add the answer guard registry foundation

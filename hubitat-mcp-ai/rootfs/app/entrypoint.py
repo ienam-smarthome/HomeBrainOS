@@ -5,8 +5,9 @@ import uvicorn
 import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
 from ai_evidence_climate_guard import install_climate_measurement_guard
+from answer_guard_registry import AnswerGuardRegistry
 from climate_metric_extrema_route import install_climate_metric_extrema_route
-from execution_contract_bridge import install_execution_contract_bridge
+from execution_contract_bridge import execution_contract_guard
 from home_summary_consistency_guard import install_home_summary_consistency_guard
 from hub_firmware_backup_retry import install_firmware_backup_settle_retry
 from hub_health_display_bridge import install_hub_health_display_bridge
@@ -119,9 +120,14 @@ named_rule_status_route = auxiliary_request_layers.capture(
         _core.named_rule_controller,
     ),
 )
-execution_contract_bridge = auxiliary_request_layers.capture(
+answer_guard_registry = AnswerGuardRegistry(_core.application)
+answer_guard_registry.register_guard(
     "execution-contract",
-    lambda: install_execution_contract_bridge(_core.application),
+    execution_contract_guard,
+)
+execution_contract_bridge = auxiliary_request_layers.capture(
+    "answer-guard-registry",
+    answer_guard_registry.install,
 )
 runtime_request_registry = auxiliary_request_layers.capture(
     "runtime-route-bridge",
