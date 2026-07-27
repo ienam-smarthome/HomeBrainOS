@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.10.174
+
+### Migrate semantic home queries into the terminal-route registry
+
+- Moves broad whole-home summary and attention handling into
+  `AnswerGuardRegistry` as an ordered terminal route.
+- Preserves semantic classification, verified evidence collection, synthesis and
+  category-specific attention filtering.
+- Keeps write-like, direct-device and failed-evidence requests on the existing
+  passthrough path.
+- Retains the legacy installer behind an isolated compatibility adapter.
+- Leaves every other guard and terminal route unchanged.
+
 ## 0.10.173
 
 ### Migrate the hub-health display guard

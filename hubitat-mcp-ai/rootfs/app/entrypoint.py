@@ -23,7 +23,7 @@ from release_version import (
     runtime_release_version,
 )
 from request_composition import AskCompositionBuilder
-from semantic_home_query_router import install_semantic_home_query_router
+from semantic_home_query_registry import build_semantic_home_query_terminal_route
 from semantic_home_summary_agent import install_semantic_home_summary_agent
 from thermostat_summary_registry import (
     build_thermostat_summary_guard,
@@ -102,9 +102,14 @@ semantic_home_summary_agent = auxiliary_request_layers.capture(
         _core.home_snapshot,
     ),
 )
-semantic_home_query_router = auxiliary_request_layers.capture(
+semantic_home_query_registry = AnswerGuardRegistry(_core.application)
+semantic_home_query_registry.register_terminal_route(
     "semantic-home-query",
-    lambda: install_semantic_home_query_router(_core.application),
+    build_semantic_home_query_terminal_route(_core.application),
+)
+semantic_home_query_router = auxiliary_request_layers.capture(
+    "semantic-home-query-registry",
+    semantic_home_query_registry.install,
 )
 home_summary_guard_registry = AnswerGuardRegistry(_core.application)
 home_summary_guard_registry.register_guard(
