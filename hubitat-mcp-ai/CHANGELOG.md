@@ -1,5 +1,14 @@
 # Hubitat MCP AI changelog
 
+## 0.10.177
+
+### Fix runtime route bridge startup
+
+- Finalises the declared `application.ask` composition before rebinding HTTP routes.
+- Runs `install_runtime_route_bridge()` as route setup rather than as an ask-layer installer.
+- Fixes the startup crash reporting that `runtime-route-bridge` did not wrap `application.ask`.
+- Preserves the already composed request handler, cancellable `/api/ask`, runtime version routes and Web UI rebinding.
+
 ## 0.10.176
 
 ### Migrate exact semantic home summaries into the terminal-route registry
