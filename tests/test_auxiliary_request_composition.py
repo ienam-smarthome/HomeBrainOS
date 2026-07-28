@@ -98,6 +98,7 @@ def test_entrypoint_captures_final_auxiliary_request_wrappers():
         "semantic-home-registry",
         "summary-thermostat-registry",
         "read-execution-registry",
+        "ai-grounding-registry",
     )
 
     assert "auxiliary_request_layers = AskCompositionBuilder(" in source

@@ -40,6 +40,7 @@ class RequestTraceStore:
 
 
 def _performance(trace: dict[str, Any], answer: dict[str, Any] | None) -> dict[str, Any]:
+    response = answer or {}
     events = [
         event
         for event in trace.get("mcp_events", [])
@@ -54,10 +55,22 @@ def _performance(trace: dict[str, Any], answer: dict[str, Any] | None) -> dict[s
         "trace_id": trace["trace_id"],
         "route_selected": trace["route_selected"],
         "route_reason": trace["route_reason"],
-        "final_route": (answer or {}).get("route") or trace.get("final_route") or "error",
-        "answering_layer": (answer or {}).get("answering_layer"),
-        "answering_layer_tier": (answer or {}).get("answering_layer_tier"),
-        "ask_layer_count": len((answer or {}).get("ask_layers_traversed") or []),
+        "final_route": response.get("route") or trace.get("final_route") or "error",
+        "winning_router": response.get("route") or trace.get("final_route") or "error",
+        "winning_intent": response.get("intent"),
+        "winning_agent": (
+            response.get("answered_by")
+            or response.get("agent_orchestrator")
+            or response.get("answering_layer")
+        ),
+        "routing_confidence": (
+            response.get("routing_confidence")
+            or response.get("intent_confidence")
+            or response.get("confidence")
+        ),
+        "answering_layer": response.get("answering_layer"),
+        "answering_layer_tier": response.get("answering_layer_tier"),
+        "ask_layer_count": len(response.get("ask_layers_traversed") or []),
         "elapsed_ms": trace.get("elapsed_ms", 0),
         "mcp_duration_ms": sum(
             int(event.get("duration_ms") or 0)
@@ -89,7 +102,7 @@ def _performance(trace: dict[str, Any], answer: dict[str, Any] | None) -> dict[s
             event.get("cache") in {"bypass", "disabled"} for event in events
         ),
         "cancelled": bool(trace.get("cancelled")),
-        "model": (answer or {}).get("model") or (answer or {}).get("response_model"),
+        "model": response.get("model") or response.get("response_model"),
     }
 
 
@@ -223,6 +236,10 @@ def install_request_tracing(
                     "route_selected": trace["route_selected"],
                     "route_reason": trace["route_reason"],
                     "final_route": performance["final_route"],
+                    "winning_router": performance["winning_router"],
+                    "winning_intent": performance["winning_intent"],
+                    "winning_agent": performance["winning_agent"],
+                    "routing_confidence": performance["routing_confidence"],
                     "answering_layer": performance["answering_layer"],
                     "answering_layer_tier": performance["answering_layer_tier"],
                     "ask_layer_count": performance["ask_layer_count"],

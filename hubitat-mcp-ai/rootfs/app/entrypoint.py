@@ -6,6 +6,7 @@ import entrypoint_core as _core
 from entrypoint_core import *  # noqa: F401,F403
 from active_rooms_route import build_active_rooms_terminal_route
 from ai_evidence_climate_guard import install_climate_measurement_guard
+from ai_grounding_guard import install_ai_grounding_guard
 from answer_guard_registry import AnswerGuardRegistry
 from climate_metric_extrema_route import build_climate_metric_extrema_route
 from execution_contract_bridge import execution_contract_guard
@@ -189,10 +190,24 @@ read_execution_routes = auxiliary_request_layers.capture(
     "read-execution-registry",
     read_execution_registry.install,
 )
+ai_grounding_guard = install_ai_grounding_guard(
+    _core.application,
+    _core.device_index,
+)
+ai_grounding_registry = AnswerGuardRegistry(_core.application)
+ai_grounding_registry.register_guard(
+    "ai-grounding",
+    ai_grounding_guard.guard,
+)
+ai_grounding_routes = auxiliary_request_layers.capture(
+    "ai-grounding-registry",
+    ai_grounding_registry.install,
+)
 auxiliary_request_handler = auxiliary_request_layers.finalize()
 route_shadow_observer = install_route_shadow_observer(
     _core.application,
     _core.application.route_registry,
+    arbiter=_core.application.routing_arbiter,
     limit=500,
 )
 runtime_request_registry = install_runtime_route_bridge(_core.application)

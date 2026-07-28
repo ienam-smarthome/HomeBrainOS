@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.195
+
+### Repair MCP invalidation and add grounded routing safeguards
+
+- Fixes the indexed state broker's stale invalidation override so uncached MCP
+  reads no longer fail after the safety-aware base signature receives arguments.
+- Rejects AI device claims absent from their supplied MCP evidence, falls back
+  to verified structured evidence, and exposes grounding trigger-rate metrics.
+- Adds a four-tier catalogue arbiter in passive shadow mode and records the
+  winning router, intent, agent, capability and confidence for every final answer.
+
 ## 0.10.194
 
 ### Route natural log-purpose queries to Hubitat logs

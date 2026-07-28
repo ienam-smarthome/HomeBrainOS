@@ -22,8 +22,8 @@ def test_final_request_registry_audit_passes():
     assert result["passed"] is True
     assert result["registry_order_valid"] is True
     assert result["runtime_legacy_installer_calls"] == []
-    assert result["capture_count"] == 5
-    assert result["registry_install_count"] == 4
+    assert result["capture_count"] == 6
+    assert result["registry_install_count"] == 5
     assert result["direct_runtime_bridge"] is True
     assert result["finalized_before_runtime_bridge"] is True
 
@@ -37,4 +37,5 @@ def test_audit_declares_registry_migration_complete():
         "semantic-home-registry",
         "summary-thermostat-registry",
         "read-execution-registry",
+        "ai-grounding-registry",
     ]
