@@ -75,10 +75,10 @@ Several older areas are implemented as load-bearing inheritance or wrapper chain
   outside the family.
 - `automation_rule_workflow_*`: live schema, release safeguards and native Rule
   Machine execution are consolidated in
-  `automation_rule_workflow_native_rm.py`; notification discovery, guarded
+  `automation_rule_workflow_hubitat.py`; notification discovery, guarded
   washing-rule compilation, backup preflight/confirmation, filename safety,
   write recovery and repair safety are consolidated behind the externally wired
-  `automation_rule_workflow_repair_id_safe.py`.
+  `automation_rule_workflow_recovery.py`.
 - `fast_fallback_*`: the base, weather and live-state kernel is consolidated in
   `fast_fallback_live.py`; verified control, attention, group control,
   device-health and speech behavior is consolidated in
@@ -120,7 +120,7 @@ another request wrapper.
 
 ## Import graph health
 
-The add-on has 115 production Python modules, all reachable from a
+The add-on has 130 production Python modules, all reachable from a
 declared entrypoint. `scripts/analyze_imports.py` reports zero orphans.
 
 `scripts/analyze_clusters.py` distinguishes same-family inheritance from plain

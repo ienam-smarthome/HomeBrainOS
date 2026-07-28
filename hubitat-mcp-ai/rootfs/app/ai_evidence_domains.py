@@ -5,7 +5,7 @@ from typing import Any
 import ai_evidence_planner as planner_module
 from control_focus_mode import install_control_focus_mode
 from control_focus_octopus_energy import install_control_focus_octopus_energy
-from control_focus_power_summary_safe import install_control_focus_power_summary_safe
+from control_focus_power_summary import install_control_focus_power_summary
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 
 
@@ -58,7 +58,7 @@ def install_ai_evidence_domains(*, activate_runtime: bool = True) -> tuple[str, 
 
     if restricted_focus_enabled:
         planner_module.is_ai_evidence_query = lambda _query: False
-        install_control_focus_power_summary_safe()
+        install_control_focus_power_summary()
         metric_executor = SemanticMetricComparisonExecutor(application.fallback)
         install_control_focus_mode(
             application,

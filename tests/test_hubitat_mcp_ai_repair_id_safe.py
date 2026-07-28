@@ -11,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from automation_rule_workflow_repair_id_safe import (  # noqa: E402
+from automation_rule_workflow_recovery import (  # noqa: E402
     RepairIdSafeWashingRuleMachineWorkflow,
 )
-from automation_rule_workflow_repair_id_safe import _REPAIR_RE  # noqa: E402
+from automation_rule_workflow_recovery import _REPAIR_RE  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 
@@ -121,7 +121,7 @@ def test_generic_rule_list_falls_back_to_health_labels_and_finds_newest_match():
 
 def test_repair_command_and_installer_dispatch_rule_4155():
     match = _REPAIR_RE.fullmatch("Repair rule 4155")
-    source = (APP_DIR / "automation_rule_workflow_repair_id_safe.py").read_text(
+    source = (APP_DIR / "automation_rule_workflow_recovery.py").read_text(
         encoding="utf-8"
     )
 

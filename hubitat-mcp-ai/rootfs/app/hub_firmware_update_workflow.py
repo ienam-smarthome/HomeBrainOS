@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from presenter import display_payload, first_mapping, first_value, safe_debug
-from system_presenter_v2 import present_hub_info_v2
+from system_presenter import present_hub_info
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -233,7 +233,7 @@ class HubFirmwareUpdateWorkflow:
             }
 
         data = first_mapping(result.data)
-        _message, hub_display = present_hub_info_v2(data)
+        _message, hub_display = present_hub_info(data)
         platform = hub_display.get("platform_update") or {}
         raw_platform = data.get("platformUpdate")
         raw_platform = raw_platform if isinstance(raw_platform, dict) else {}

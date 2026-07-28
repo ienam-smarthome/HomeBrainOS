@@ -1,5 +1,22 @@
 # Hubitat MCP AI changelog
 
+## 0.10.196
+
+### Canonicalize the large live module owners
+
+- Renames the Hubitat Rule Machine and guarded recovery modules to canonical
+  capability names while preserving the complete safety inheritance order.
+- Retires the remaining `_safe` and `_v2` production filenames for power,
+  system and weather presentation without compatibility shims.
+- Removes three tracked source backup copies; Git history remains the recovery
+  source for superseded implementations.
+- Adds repository checks that prevent new patch/version-suffixed production
+  modules and tracked `.backup` copies.
+- Prevents a selected device named `Battery` from making ordinary low-battery
+  prose fail the AI grounding guard.
+- Includes verified non-light devices that are on in whole-home semantic
+  summaries so active appliances are no longer hidden from synthesis.
+
 ## 0.10.195
 
 ### Repair MCP invalidation and add grounded routing safeguards

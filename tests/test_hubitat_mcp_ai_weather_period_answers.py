@@ -8,7 +8,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from routing import is_fast_path_query  # noqa: E402
-from weather_presenter_v2 import present_weather  # noqa: E402
+from weather_presenter import present_weather  # noqa: E402
 
 
 WEATHER_DATA = {

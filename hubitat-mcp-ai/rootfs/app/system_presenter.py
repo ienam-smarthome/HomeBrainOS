@@ -8,7 +8,7 @@ from presenter import (
     first_mapping,
     first_value,
     format_memory_kb,
-    present_hub_info,
+    present_hub_info as present_base_hub_info,
 )
 
 
@@ -143,8 +143,8 @@ def _app_status(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def present_hub_info_v2(value: Any) -> tuple[str, dict[str, Any]]:
-    base_message, base_display = present_hub_info(value)
+def present_hub_info(value: Any) -> tuple[str, dict[str, Any]]:
+    base_message, base_display = present_base_hub_info(value)
     # The older presenter collapses platformUpdate into a single line. Remove it
     # so the tri-state platform result below is the only update statement shown.
     base_message = "\n".join(

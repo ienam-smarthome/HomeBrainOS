@@ -15,6 +15,7 @@ _PROSE_KEYS = {
     "analysis",
 }
 _GENERIC_ENTITY_NAMES = {
+    "battery",
     "home",
     "hubitat",
     "homebrain",

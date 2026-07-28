@@ -17,6 +17,7 @@ class FakeDeviceIndex:
         return [
             {"id": "1", "label": "Kitchen Lamp"},
             {"id": "2", "label": "Roborock Q7 Max"},
+            {"id": "3", "label": "Battery"},
         ]
 
 
@@ -67,6 +68,33 @@ def test_ai_device_claim_is_kept_when_tool_evidence_names_it():
         result = await guard.guard(SimpleNamespace(query="Is it on?"), answer)
 
         assert result["message"] == "Kitchen Lamp is on."
+        assert result["grounding_guard"]["triggered"] is False
+        assert guard.response()["trigger_rate_percent"] == 0.0
+
+    asyncio.run(scenario())
+
+
+def test_common_attribute_word_is_not_treated_as_a_named_device():
+    async def scenario():
+        guard = AIGroundingGuard(FakeDeviceIndex())
+        answer = {
+            "route": "ai-semantic-home-evidence",
+            "message": "Fridge Door has a low battery at 14%.",
+            "semantic_evidence": {
+                "low_batteries": {
+                    "count": 1,
+                    "items": [{"device": "Fridge Door", "value": 14.0, "unit": "%"}],
+                }
+            },
+            "tools_used": [{"name": "home_snapshot", "success": True}],
+        }
+
+        result = await guard.guard(
+            SimpleNamespace(query="What's happening at home?"),
+            answer,
+        )
+
+        assert result["message"] == "Fridge Door has a low battery at 14%."
         assert result["grounding_guard"]["triggered"] is False
         assert guard.response()["trigger_rate_percent"] == 0.0
 

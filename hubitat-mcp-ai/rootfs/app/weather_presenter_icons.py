@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from weather_presenter_v2 import present_weather as _present_weather
+from weather_presenter import present_weather as _present_weather
 
 
 def weather_condition_icon(value: Any) -> str:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
+APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 TEMPORARY_GITHUB_FILES = {
     "ci-touch.txt",
     "full-validation-trigger",
@@ -31,6 +32,30 @@ def test_temporary_ci_trigger_artifacts_are_not_tracked():
     github_dir = ROOT / ".github"
     offenders = sorted(
         name for name in TEMPORARY_GITHUB_FILES if (github_dir / name).exists()
+    )
+
+
+def test_production_modules_do_not_use_version_or_patch_suffixes():
+    forbidden = re.compile(r"_(?:final|safe|verified|fixed|v2|new|release)$")
+    offenders = sorted(
+        path.name
+        for path in APP_DIR.glob("*.py")
+        if forbidden.search(path.stem)
+    )
+
+    assert offenders == [], (
+        "Move live behavior into a canonical capability owner instead of "
+        "creating version/patch-suffixed modules: "
+        + ", ".join(offenders)
+    )
+
+
+def test_source_tree_does_not_track_backup_module_copies():
+    offenders = sorted(path.name for path in APP_DIR.glob("*.backup"))
+
+    assert offenders == [], (
+        "Use Git history instead of tracked source backup copies: "
+        + ", ".join(offenders)
     )
 
     assert offenders == [], (
