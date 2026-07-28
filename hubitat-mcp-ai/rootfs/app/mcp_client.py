@@ -220,7 +220,7 @@ class HubitatMCPClient:
                 "args": {
                     "detailed": True,
                     "fields": [
-                        "id", "name", "label", "roomName",
+                        "id", "name", "label", "room",
                         "capabilities", "currentStates",
                     ],
                     "limit": 50,

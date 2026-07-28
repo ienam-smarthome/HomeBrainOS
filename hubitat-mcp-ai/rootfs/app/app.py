@@ -174,7 +174,19 @@ async def status() -> dict[str, Any]:
 
 @app.get("/api/dashboard")
 async def dashboard() -> dict[str, Any]:
-    devices = await mcp.get_cached_devices()
+    try:
+        devices = await mcp.get_cached_devices()
+    except Exception as exc:
+        logger.warning("Dashboard device enrichment failed: %s", exc)
+        return {
+            "success": False,
+            "error": str(exc),
+            "devices": None,
+            "lights_on": None,
+            "motion_active": None,
+            "switches_on": None,
+            "low_batteries": None,
+        }
     lights_on = motion_active = switches_on = low_batteries = 0
     for device in devices:
         attrs = device.get("attributes") or device.get("states") or {}

@@ -87,7 +87,7 @@ async def test_device_manifest_uses_consolidated_read_gateway(monkeypatch):
             "args": {
                 "detailed": True,
                 "fields": [
-                    "id", "name", "label", "roomName",
+                    "id", "name", "label", "room",
                     "capabilities", "currentStates",
                 ],
                 "limit": 50,
