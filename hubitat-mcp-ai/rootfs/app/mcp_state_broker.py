@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mcp_client import HubitatMCPClient, MCPToolResult
+from mcp_tool_safety import classify_tool_safety, effective_tool_name
 
 
 _current_trace: ContextVar[dict[str, Any] | None] = ContextVar(
@@ -258,7 +259,7 @@ class MCPStateBroker:
                     event["gateway"] = gateway
                 _trace_event(event)
             if not result.is_error:
-                await self._invalidate_for_write(name)
+                await self._invalidate_for_write(name, arguments)
             return result
 
         category, ttl_seconds = policy
@@ -378,15 +379,47 @@ class MCPStateBroker:
             return "hub", self.hub_ttl_seconds
         return None
 
-    async def _invalidate_for_write(self, name: str) -> None:
-        if name in self.DEVICE_WRITE_TOOLS or name.startswith("hub_call_device_"):
+    async def _invalidate_for_write(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> None:
+        safety = classify_tool_safety(name, arguments)
+        if safety == "read":
+            return
+        if safety == "destructive":
+            await self.invalidate("all")
+            return
+
+        leaf = effective_tool_name(name, arguments)
+        if (
+            leaf in self.DEVICE_WRITE_TOOLS
+            or leaf.startswith("hub_call_device_")
+            or leaf.startswith(("hub_create_device", "hub_update_device"))
+            or leaf == "hub_manage_virtual_device"
+        ):
             await self.invalidate("devices")
             return
-        if name.startswith(self.RULE_WRITE_PREFIXES):
+        if (
+            leaf.startswith(self.RULE_WRITE_PREFIXES)
+            or any(
+                token in leaf
+                for token in (
+                    "_app",
+                    "_bundle",
+                    "_connector",
+                    "_dashboard",
+                    "_driver",
+                    "_library",
+                    "_room",
+                    "_rule",
+                    "_variable",
+                )
+            )
+        ):
             await self.invalidate("catalog")
             return
-        if name.startswith(self.GLOBAL_WRITE_PREFIXES):
-            await self.invalidate("all")
+        await self.invalidate("all")
 
     async def invalidate(self, category: str = "all") -> int:
         async with self._lock:

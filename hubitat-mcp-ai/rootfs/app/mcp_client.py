@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -19,6 +19,8 @@ class MCPTool:
     name: str
     description: str
     input_schema: dict[str, Any]
+    output_schema: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, Any] = field(default_factory=dict)
 
     def as_ollama_tool(self) -> dict[str, Any]:
         schema = self.input_schema if isinstance(self.input_schema, dict) else {}
@@ -169,6 +171,8 @@ class HubitatMCPClient:
                         "type": "object",
                         "properties": {},
                     },
+                    output_schema=item.get("outputSchema") or {},
+                    annotations=item.get("annotations") or {},
                 )
                 parsed[tool.name] = tool
             self._tools = parsed

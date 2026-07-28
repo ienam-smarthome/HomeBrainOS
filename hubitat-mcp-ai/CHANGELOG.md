@@ -1,5 +1,19 @@
 # Hubitat MCP AI changelog
 
+## 0.10.193
+
+### Catalogue live routes and centralize MCP safety metadata
+
+- Expands the passive route catalogue with structured capability IDs, required
+  MCP tools, slot schemas, safety classes and runtime route/intent aliases.
+- Measures shadow agreement only for comparable runtime identifiers and reports
+  unmapped capabilities separately instead of counting false disagreements.
+- Preserves MCP output schemas and annotation hints, and reports read, mutate
+  and destructive coverage for both visible and gateway-contained tools.
+- Centralizes conservative destructive-call confirmation for AI tool execution.
+- Invalidates cached state after every recognized mutation family, including
+  direct gateway calls.
+
 ## 0.10.192
 
 ### Query a real 24-hour hub-log issue window

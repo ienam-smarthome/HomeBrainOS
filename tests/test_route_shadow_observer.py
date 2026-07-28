@@ -37,6 +37,13 @@ def test_shadow_observer_records_full_match_set_without_changing_answer():
     assert data["recent"][0]["matched_routes"] == ["high", "low"]
     assert data["recent"][0]["selected_by_registry"] == "high"
     assert data["recent"][0]["actual_route"] == "actual-route"
+    assert data["capability_count"] == 2
+    assert data["capability_safety_counts"] == {
+        "read": 2,
+        "mutate": 0,
+        "destructive": 0,
+    }
+    assert [item["name"] for item in data["catalogue"]] == ["high", "low"]
 
 
 def test_entrypoint_installs_shadow_after_final_composition():
@@ -48,3 +55,47 @@ def test_entrypoint_installs_shadow_after_final_composition():
     observer = source.index("install_route_shadow_observer(")
     runtime = source.index("install_runtime_route_bridge(_core.application)")
     assert finalize < observer < runtime
+
+
+def test_shadow_disagreement_uses_declared_runtime_aliases_not_conceptual_name():
+    application = App()
+    registry = RouteRegistry(
+        (
+            RouteDescriptor(
+                "hub-logs",
+                200,
+                True,
+                lambda _q: True,
+                "logs",
+                capability_id="diagnostics.hub-logs",
+                runtime_routes=("mcp-fast",),
+                runtime_intents=("fallback-hub-logs",),
+            ),
+        )
+    )
+    observer = install_route_shadow_observer(application, registry, limit=20)
+
+    asyncio.run(application.ask(SimpleNamespace(query="check logs")))
+
+    data = observer.response()
+    assert data["comparable_queries"] == 1
+    assert data["agreement_queries"] == 0
+    assert data["registry_actual_disagreements"] == 1
+    assert data["recent"][0]["comparison"] == "disagree"
+    assert data["recent"][0]["selected_capability"] == "diagnostics.hub-logs"
+
+
+def test_shadow_unmapped_capabilities_are_not_false_disagreements():
+    application = App()
+    registry = RouteRegistry(
+        (RouteDescriptor("conceptual", 100, True, lambda _q: True, "test"),)
+    )
+    observer = install_route_shadow_observer(application, registry, limit=20)
+
+    asyncio.run(application.ask(SimpleNamespace(query="anything")))
+
+    data = observer.response()
+    assert data["comparable_queries"] == 0
+    assert data["unmapped_queries"] == 1
+    assert data["registry_actual_disagreements"] == 0
+    assert data["recent"][0]["comparison"] == "unmapped"

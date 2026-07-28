@@ -29,13 +29,22 @@ class RouteShadowObserver:
         self.selected_counts: Counter[str] = Counter()
         self.actual_counts: Counter[str] = Counter()
         self.disagreements = 0
+        self.agreements = 0
+        self.comparable = 0
+        self.unmapped = 0
 
     def record(self, query: str, answer: dict[str, Any], selection: Any) -> None:
         matches = [match.name for match in selection.matches]
         selected = selection.selected.name if selection.selected else None
         actual = str(answer.get("route") or "") or None
+        actual_intent = str(answer.get("intent") or "") or None
         overlap = len(matches) > 1
-        disagreement = bool(selected and actual and selected != actual)
+        comparison = (
+            selection.selected.compare_answer(answer)
+            if selection.selected is not None
+            else None
+        )
+        disagreement = comparison is False
 
         self.total += 1
         if overlap:
@@ -44,15 +53,32 @@ class RouteShadowObserver:
             self.selected_counts[selected] += 1
         if actual:
             self.actual_counts[actual] += 1
-        if disagreement:
+        if comparison is True:
+            self.comparable += 1
+            self.agreements += 1
+        elif comparison is False:
+            self.comparable += 1
             self.disagreements += 1
+        else:
+            self.unmapped += 1
 
         item = {
             "query": query,
             "matched_routes": matches,
             "selected_by_registry": selected,
+            "selected_capability": (
+                selection.selected.capability_id if selection.selected else None
+            ),
             "actual_route": actual,
+            "actual_intent": actual_intent,
             "overlap": overlap,
+            "comparison": (
+                "agree"
+                if comparison is True
+                else "disagree"
+                if comparison is False
+                else "unmapped"
+            ),
             "disagreement": disagreement,
         }
         self._items.appendleft(item)
@@ -65,7 +91,15 @@ class RouteShadowObserver:
     def response(self) -> dict[str, Any]:
         overlap_rate = (self.overlaps / self.total * 100.0) if self.total else 0.0
         disagreement_rate = (
-            self.disagreements / self.total * 100.0 if self.total else 0.0
+            self.disagreements / self.comparable * 100.0 if self.comparable else 0.0
+        )
+        descriptors = self.registry.descriptors()
+        safety_counts = {
+            safety: sum(1 for item in descriptors if item.safety_class == safety)
+            for safety in ("read", "mutate", "destructive")
+        }
+        declared_tools = sorted(
+            {tool for item in descriptors for tool in item.mcp_tools}
         )
         return {
             "success": True,
@@ -74,10 +108,18 @@ class RouteShadowObserver:
             "total_queries": self.total,
             "overlap_queries": self.overlaps,
             "overlap_rate_percent": round(overlap_rate, 2),
+            "comparable_queries": self.comparable,
+            "agreement_queries": self.agreements,
+            "unmapped_queries": self.unmapped,
             "registry_actual_disagreements": self.disagreements,
             "disagreement_rate_percent": round(disagreement_rate, 2),
             "selected_by_registry": dict(self.selected_counts.most_common()),
             "actual_routes": dict(self.actual_counts.most_common()),
+            "capability_count": len(descriptors),
+            "capability_safety_counts": safety_counts,
+            "declared_mcp_tool_count": len(declared_tools),
+            "declared_mcp_tools": declared_tools,
+            "catalogue": self.registry.describe(),
             "recent": list(self._items),
         }
 
