@@ -20,6 +20,7 @@ from named_app_control import install_named_app_controller
 from named_entity_resolution_adapters import install_named_entity_resolution_adapters
 from named_rule_disable_guard import install_named_rule_disable_guard
 from named_rule_status_route import build_named_rule_status_terminal_route
+from persistent_request_diagnostics import install_persistent_request_diagnostics
 from power_device_discovery_fallback import install_power_device_discovery_fallback
 from recent_log_diagnostics_route import build_recent_log_diagnostics_terminal_route
 from release_version import (
@@ -73,6 +74,9 @@ application.BAKED_VERSION = RUNTIME_RELEASE_VERSION
 _core.PREVIOUS_RELEASE_VERSION = PREVIOUS_RELEASE_VERSION
 _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
 
+request_diagnostics_persistence = install_persistent_request_diagnostics(
+    _core.request_traces
+)
 power_device_discovery_fallback = install_power_device_discovery_fallback()
 shared_power_summary_bridge = install_shared_power_summary_bridge()
 structured_health_reader = install_structured_health_contract(_core.application)
