@@ -189,7 +189,12 @@ async def dashboard() -> dict[str, Any]:
         }
     lights_on = motion_active = switches_on = low_batteries = 0
     for device in devices:
-        attrs = device.get("attributes") or device.get("states") or {}
+        attrs = (
+            device.get("currentStates")
+            or device.get("attributes")
+            or device.get("states")
+            or {}
+        )
         if isinstance(attrs, list):
             attrs = {
                 str(item.get("name")): item.get("currentValue", item.get("value"))
