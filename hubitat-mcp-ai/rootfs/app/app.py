@@ -37,11 +37,12 @@ def load_options() -> dict[str, Any]:
     options: dict[str, Any] = {
         "hubitat_mcp_url": "",
         "hubitat_mcp_token": "",
-        "gemini_enabled": True,
-        "gemini_base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "gemini_api_key": "",
-        "gemini_model": "gemini-3.6-flash",
-        "gemini_timeout_seconds": 15,
+        "ollama_direct_cloud_enabled": True,
+        "ollama_direct_cloud_base_url": "https://ollama.com",
+        "ollama_direct_cloud_api_key": "",
+        "ollama_direct_cloud_model": "gemma4:31b",
+        "ollama_cloud_model": "gemma4:31b-cloud",
+        "ollama_agent_timeout_seconds": 60,
         "mcp_timeout_seconds": 25,
         "mcp_device_cache_seconds": 12,
         "confirmation_ttl_seconds": 120,
@@ -72,13 +73,14 @@ mcp = HubitatMCPClient(
 )
 agent = UnifiedMCPAgent(
     mcp_client=mcp,
-    gemini_api_key=str(OPTIONS.get("gemini_api_key") or ""),
-    model_name=str(OPTIONS.get("gemini_model") or "gemini-3.6-flash"),
-    gemini_base_url=str(
-        OPTIONS.get("gemini_base_url")
-        or "https://generativelanguage.googleapis.com/v1beta"
+    api_key=str(OPTIONS.get("ollama_direct_cloud_api_key") or ""),
+    model_name=str(
+        OPTIONS.get("ollama_direct_cloud_model")
+        or OPTIONS.get("ollama_cloud_model")
+        or "gemma4:31b"
     ),
-    timeout_seconds=float(OPTIONS.get("gemini_timeout_seconds") or 15),
+    base_url=str(OPTIONS.get("ollama_direct_cloud_base_url") or "https://ollama.com"),
+    timeout_seconds=float(OPTIONS.get("ollama_agent_timeout_seconds") or 60),
     tool_limit=int(OPTIONS.get("unified_mcp_tool_limit") or 48),
     require_sensitive_confirmation=_bool(
         OPTIONS.get("require_sensitive_confirmation"), True
@@ -127,8 +129,8 @@ class ChatRequest(BaseModel):
 
 
 async def _answer(request: ChatRequest) -> str:
-    if not _bool(OPTIONS.get("gemini_enabled"), True):
-        raise HTTPException(status_code=503, detail="Gemini is disabled")
+    if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+        raise HTTPException(status_code=503, detail="Ollama Online is disabled")
     try:
         return await agent.process_user_request(
             request.message,
@@ -155,10 +157,12 @@ async def health() -> dict[str, Any]:
         "agent": "unified_mcp_agent",
         "version": VERSION,
         "mcp": status,
-        "gemini": {
-            "enabled": _bool(OPTIONS.get("gemini_enabled"), True),
-            "configured": bool(OPTIONS.get("gemini_api_key")),
-            "model": OPTIONS.get("gemini_model"),
+        "ollama": {
+            "enabled": _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True),
+            "configured": agent.configured,
+            "online": agent.configured,
+            "provider": "Ollama Online",
+            "model": agent.model_name,
         },
     }
 
@@ -166,6 +170,44 @@ async def health() -> dict[str, Any]:
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
     return await health()
+
+
+@app.get("/api/dashboard")
+async def dashboard() -> dict[str, Any]:
+    devices = await mcp.get_cached_devices()
+    lights_on = motion_active = switches_on = low_batteries = 0
+    for device in devices:
+        attrs = device.get("attributes") or device.get("states") or {}
+        if isinstance(attrs, list):
+            attrs = {
+                str(item.get("name")): item.get("currentValue", item.get("value"))
+                for item in attrs if isinstance(item, dict) and item.get("name")
+            }
+        if not isinstance(attrs, dict):
+            attrs = {}
+        capabilities = " ".join(map(str, device.get("capabilities") or [])).lower()
+        switch = str(attrs.get("switch") or device.get("switch") or "").lower()
+        if switch == "on":
+            if "light" in capabilities or "bulb" in capabilities:
+                lights_on += 1
+            else:
+                switches_on += 1
+        if str(attrs.get("motion") or device.get("motion") or "").lower() == "active":
+            motion_active += 1
+        try:
+            battery = float(attrs.get("battery", device.get("battery")))
+            if battery <= 20:
+                low_batteries += 1
+        except (TypeError, ValueError):
+            pass
+    return {
+        "success": True,
+        "devices": len(devices),
+        "lights_on": lights_on,
+        "motion_active": motion_active,
+        "switches_on": switches_on,
+        "low_batteries": low_batteries,
+    }
 
 
 @app.get("/api/tools")
@@ -207,7 +249,7 @@ async def ask(request: ChatRequest) -> dict[str, Any]:
         "route": "unified-mcp-agent",
         "intent": "native-function-calling",
         "message": message,
-        "model": OPTIONS.get("gemini_model"),
+        "model": agent.model_name,
         "elapsed_ms": round((time.perf_counter() - started) * 1000),
         "version": VERSION,
     }

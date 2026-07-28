@@ -1,49 +1,49 @@
 # Hubitat MCP AI
 
-Home Assistant add-on providing a native Gemini function-calling bridge to
-kingpanther13's Hubitat MCP Rule Server.
+Home Assistant add-on providing a native Ollama Online function-calling bridge
+to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.202**.
+Current add-on version: **0.10.203**.
 
 ## Architecture
 
-Requests flow directly from FastAPI to `UnifiedMCPAgent`. The agent loads the
-live MCP tool catalogue and device manifest, lets Gemini select native function
-calls, executes those calls through `HubitatMCPClient`, and returns Gemini's
-final response. There are no regex pre-routers, entity resolvers, confidence
-gates, or Ollama fallback chains in the active runtime.
+FastAPI sends requests directly to `UnifiedMCPAgent`. The agent loads the live
+MCP tool catalogue and device manifest, lets Ollama Online select native
+function calls, executes those calls through `HubitatMCPClient`, and returns the
+final answer. No regex routers, manual entity resolvers, or confidence cascades
+are used.
 
-Sensitive or destructive MCP tools are enforced in code and require an explicit
-confirmation tied to the browser or API session before execution.
+Sensitive MCP mutations require an explicit, session-scoped confirmation.
+Read-only gateway operations do not require confirmation.
 
 ## Setup
 
 1. Install and configure `MCP Rule Server` on Hubitat.
-2. Copy its local MCP endpoint.
-3. Create a Gemini API key in Google AI Studio.
+2. Copy its local MCP endpoint and token.
+3. Create an API key in your ollama.com account.
 4. Configure the add-on:
 
    ```yaml
    hubitat_mcp_url: http://192.168.1.100/apps/api/123/mcp
    hubitat_mcp_token: YOUR_HUBITAT_TOKEN
-   gemini_api_key: YOUR_GEMINI_API_KEY
-   gemini_model: gemini-3.6-flash
+   ollama_direct_cloud_enabled: true
+   ollama_direct_cloud_base_url: https://ollama.com
+   ollama_direct_cloud_api_key: YOUR_OLLAMA_API_KEY
+   ollama_direct_cloud_model: gemma4:31b
    require_sensitive_confirmation: true
    ```
 
 5. Start the add-on and open its Home Assistant sidebar panel.
 
-The complete endpoint may instead include `?access_token=...`; in that case,
-leave `hubitat_mcp_token` empty. Tokens and API keys are Home Assistant password
-options and are not included in responses or diagnostics.
+The WebUI includes live dashboard tiles, smart-home shortcuts, typed and spoken
+queries, optional read-aloud answers, response metadata, copy, and expandable
+technical details.
 
 ## API
 
-- `GET /api/status` — MCP and Gemini readiness
+- `GET /api/status` — MCP and Ollama Online readiness
+- `GET /api/dashboard` — cached live-state dashboard counts
 - `POST /api/ask` — process a request through the unified MCP agent
 - `POST /api/chat` — compatibility alias for `/api/ask`
-- `POST /api/refresh` — refresh the MCP tool catalogue
+- `POST /api/refresh` — refresh MCP tools and device manifest
 - `GET /health` — add-on health probe
-
-Home Assistant ingress uses relative API paths, while direct access remains
-available at `http://HOME_ASSISTANT_IP:8788`.

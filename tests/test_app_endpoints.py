@@ -43,13 +43,15 @@ def test_empty_prompt_is_rejected(monkeypatch, tmp_path):
     assert response.status_code == 422
 
 
-def test_root_renders_gemini_webui(monkeypatch, tmp_path):
+def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     module = load_app(monkeypatch, tmp_path)
     with TestClient(module.app) as client:
         response = client.get("/")
     assert response.status_code == 200
-    assert "Gemini model" in response.text
-    assert "Ollama model" not in response.text
+    assert "Ollama model" in response.text
+    assert "Read answers aloud" in response.text
+    assert "Technical details" in response.text
+    assert "api/dashboard" in response.text
     assert "apiPath('api/status')" in response.text
     assert "location.pathname.replace" in response.text
     assert "globalThis.crypto?.randomUUID?.()" in response.text

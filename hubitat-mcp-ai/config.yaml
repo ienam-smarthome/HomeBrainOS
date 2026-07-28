@@ -1,7 +1,7 @@
 name: "Hubitat MCP AI"
-version: "0.10.202"
+version: "0.10.203"
 slug: hubitat_mcp_ai
-description: "HomeBrainOS native Gemini function-calling bridge for Hubitat MCP"
+description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
 stage: stable
 arch:
@@ -23,11 +23,12 @@ webui: "http://[HOST]:[PORT:8788]"
 options:
   hubitat_mcp_url: ""
   hubitat_mcp_token: ""
-  gemini_enabled: true
-  gemini_base_url: "https://generativelanguage.googleapis.com/v1beta"
-  gemini_api_key: ""
-  gemini_model: "gemini-3.6-flash"
-  gemini_timeout_seconds: 15
+  ollama_direct_cloud_enabled: true
+  ollama_direct_cloud_base_url: "https://ollama.com"
+  ollama_direct_cloud_api_key: ""
+  ollama_direct_cloud_model: "gemma4:31b"
+  ollama_cloud_model: "gemma4:31b-cloud"
+  ollama_agent_timeout_seconds: 60
   mcp_timeout_seconds: 25
   mcp_device_cache_seconds: 12
   conversation_context_ttl_seconds: 600
@@ -41,11 +42,12 @@ options:
 schema:
   hubitat_mcp_url: str
   hubitat_mcp_token: password
-  gemini_enabled: bool
-  gemini_base_url: str
-  gemini_api_key: password
-  gemini_model: str
-  gemini_timeout_seconds: int
+  ollama_direct_cloud_enabled: bool
+  ollama_direct_cloud_base_url: str
+  ollama_direct_cloud_api_key: password
+  ollama_direct_cloud_model: str
+  ollama_cloud_model: str
+  ollama_agent_timeout_seconds: int
   mcp_timeout_seconds: int
   mcp_device_cache_seconds: int
   conversation_context_ttl_seconds: int
