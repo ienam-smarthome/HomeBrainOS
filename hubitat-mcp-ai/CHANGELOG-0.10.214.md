@@ -11,3 +11,10 @@
   explicit confirmation.
 - Aligns low-battery answers with the dashboard threshold of 20 percent or
   below, explicitly excluding devices at 30 or 35 percent.
+- Separates explicitly offline devices from devices that are merely stale,
+  including last-activity context and warnings for normally quiet sensors.
+- Restores a useful multi-category whole-home summary covering presence,
+  motion, active lights/switches, contacts/locks, batteries, alerts, and
+  climate, and prevents contradictory "quiet" summaries.
+- Lets a new Web UI question abort and supersede the previous request, ignores
+  late responses, and cancels any unconfirmed sensitive-action queue.

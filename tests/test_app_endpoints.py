@@ -64,6 +64,11 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "location.pathname.replace" in response.text
     assert "globalThis.crypto?.randomUUID?.()" in response.text
     assert "Math.random().toString(36)" in response.text
+    assert "new AbortController()" in response.text
+    assert "activeRequest.abort()" in response.text
+    assert "sequence===requestSequence" in response.text
+    assert "Ask another question to replace this request." in response.text
+    assert "ask.disabled=true" not in response.text
     assert "fetch('/api/status')" not in response.text
 
 

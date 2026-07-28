@@ -78,3 +78,22 @@ def test_read_only_gateway_does_not_require_confirmation():
     )
     assert not UnifiedMCPAgent._is_sensitive(tool, {"operation": "list_devices"})
     assert UnifiedMCPAgent._is_sensitive(tool, {"operation": "set_switch"})
+
+
+@pytest.mark.asyncio
+async def test_new_question_cancels_pending_confirmation():
+    mcp = FakeMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {"name": "hub_restart", "arguments": {}}
+        }]}},
+        {"message": {"role": "assistant", "content": "The hub is online."}},
+        {"message": {"role": "assistant", "content": "Nothing was restarted."}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+    await agent.process_user_request("Restart hub", session_id="replace")
+    answer = await agent.process_user_request("What is the hub status?", session_id="replace")
+    assert answer == "The hub is online."
+    confirm = await agent.process_user_request("confirm", session_id="replace")
+    assert confirm == "Nothing was restarted."
+    assert not mcp.calls

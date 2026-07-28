@@ -42,6 +42,7 @@ _DIAGNOSTIC_TERMS = {
     "logs", "matter", "memory", "radio", "software", "update", "updates",
     "version", "zigbee", "zwave",
 }
+_DEVICE_HEALTH_TERMS = {"offline", "stale", "unavailable"}
 _ROOM_TERMS = {"room", "rooms"}
 _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
@@ -174,7 +175,11 @@ class UnifiedMCPAgent:
     @classmethod
     def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
         names: set[str] | None = None
-        if cls._matches(prompt, _APP_TERMS):
+        if cls._matches(prompt, _DEVICE_HEALTH_TERMS):
+            names = {
+                "hub_read_devices", "hub_read_diagnostics", "hub_search_tools",
+            }
+        elif cls._matches(prompt, _APP_TERMS):
             names = {
                 "hub_read_apps_code", "hub_read_rules",
                 "hub_search_tools",
@@ -332,6 +337,32 @@ class UnifiedMCPAgent:
                 "is at or below 20 percent, matching the dashboard. Exclude every device "
                 "above 20 percent. Do not reinterpret 30 or 35 percent as low."
             )
+        health_section = ""
+        if self._matches(user_prompt, _DEVICE_HEALTH_TERMS):
+            health_section = (
+                "\n\nDEVICE HEALTH RULES\nSeparate results into Offline and Stale "
+                "sections. Call a device offline only when Hubitat explicitly reports "
+                "offline, unavailable, or a failed health status. Stale means no recent "
+                "event (normally over 24 hours) and does not prove a device is offline. "
+                "Battery sensors, buttons, remotes, tariff records, and rarely changing "
+                "devices may be healthy but stale. Include last activity or stale age "
+                "when returned, and say when no devices are explicitly offline."
+            )
+        home_section = ""
+        if any(
+            re.search(pattern, user_prompt.lower()) is not None
+            for pattern in _HOME_STATE_PATTERNS
+        ):
+            home_section = (
+                "\n\nWHOLE-HOME SUMMARY RULES\nGive a compact structured snapshot "
+                "covering: people/presence; active motion; lights and notable switches "
+                "that are on; open doors/windows and unlocked locks; low batteries at "
+                "or below 20 percent; hub/security alerts; and notable climate or weather "
+                "conditions when present. Omit empty categories. Do not say the home is "
+                "quiet when anyone is present, motion is active, a contact is open, a "
+                "light is on, or an alert exists. Distinguish named-person presence from "
+                "room presence sensors."
+            )
         return (
             "You are HomeBrainOS, a concise smart-home assistant. The live device manifest "
             "is a tool-fetched state snapshot and may be used directly for live state "
@@ -345,7 +376,7 @@ class UnifiedMCPAgent:
             "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
             "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
-            f"{battery_section}"
+            f"{battery_section}{health_section}{home_section}"
         )
 
     @staticmethod
@@ -475,6 +506,7 @@ class UnifiedMCPAgent:
             self._pending.pop(session_id, None)
             return None
         if " ".join(prompt.strip().lower().split()) not in _CONFIRM_WORDS:
+            self._pending.pop(session_id, None)
             return None
         self._pending.pop(session_id, None)
         return pending
