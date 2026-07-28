@@ -84,6 +84,13 @@ def test_read_only_gateway_does_not_require_confirmation():
             "args": {"deviceId": "1", "command": "off"},
         },
     )
+    assert not UnifiedMCPAgent._is_sensitive(
+        tool,
+        {
+            "tool": "hub_call_device_command",
+            "args": {"deviceId": "1", "command": "ping"},
+        },
+    )
     assert UnifiedMCPAgent._is_sensitive(
         tool,
         {

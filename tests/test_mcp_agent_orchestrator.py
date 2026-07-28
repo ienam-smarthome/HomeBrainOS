@@ -194,7 +194,8 @@ def test_device_health_query_gets_read_and_diagnostic_gateways():
         "List devices that are offline or stale", tools
     )
     assert [tool.name for tool in selected] == [
-        "hub_read_devices", "hub_read_diagnostics", "hub_search_tools",
+        "hub_read_devices", "hub_read_diagnostics",
+        "hub_manage_devices", "hub_search_tools",
     ]
 
 
@@ -206,6 +207,31 @@ async def test_device_health_prompt_distinguishes_stale_from_offline():
     )
     assert "Stale means no recent event" in instruction
     assert "does not prove a device is offline" in instruction
+    assert "rtt=timeout" in instruction
+    assert "command='ping'" in instruction
+    assert "Limit active checks to five devices" in instruction
+
+
+@pytest.mark.asyncio
+async def test_health_manifest_includes_explicit_driver_status():
+    class HealthMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [{
+                "id": "9",
+                "label": "Remote",
+                "capabilities": ["HealthCheck"],
+                "attributes": [
+                    {"name": "healthStatus", "value": "offline"},
+                    {"name": "rtt", "value": "timeout"},
+                    {"name": "Status", "value": "clear"},
+                ],
+            }]
+
+    agent = UnifiedMCPAgent(HealthMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("find offline or stale devices")
+    assert "healthStatus=offline" in instruction
+    assert "rtt=timeout" in instruction
+    assert "Status=clear" in instruction
 
 
 @pytest.mark.asyncio
