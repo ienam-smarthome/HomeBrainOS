@@ -2,7 +2,7 @@
 
 ## 0.10.194
 
-### Route natural log-purpose queries to Hubitat logs
+### Repair log diagnostics and add grounded routing safeguards
 
 - Keeps natural log requests such as `Check logs to see if there are any
   issues` on the authoritative 24-hour `hub_get_logs` route instead of the
@@ -11,6 +11,12 @@
   for issues, errors, and warnings.
 - Preserves the separate bounded request-trace route for explicit HomeBrain,
   assistant, and request diagnostics.
+- Fixes the indexed state broker's stale invalidation override so uncached MCP
+  reads no longer fail after the safety-aware base signature receives arguments.
+- Rejects AI device claims absent from their supplied MCP evidence, falls back
+  to verified structured evidence, and exposes grounding trigger-rate metrics.
+- Adds a four-tier catalogue arbiter in passive shadow mode and records the
+  winning router, intent, agent, capability and confidence for every final answer.
 
 ## 0.10.193
 

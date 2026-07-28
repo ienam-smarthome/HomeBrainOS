@@ -6,6 +6,7 @@ from collections import Counter, deque
 from typing import Any, Awaitable, Callable
 
 from route_registry import RouteRegistry
+from unified_routing_arbiter import RoutingInterpretation, UnifiedRoutingArbiter
 
 
 AskHandler = Callable[[Any], Awaitable[dict[str, Any]]]
@@ -20,8 +21,15 @@ class RouteShadowObserver:
     route which actually answered through the maintained request stack.
     """
 
-    def __init__(self, registry: RouteRegistry, *, limit: int = 200) -> None:
+    def __init__(
+        self,
+        registry: RouteRegistry,
+        *,
+        arbiter: UnifiedRoutingArbiter | None = None,
+        limit: int = 200,
+    ) -> None:
         self.registry = registry
+        self.arbiter = arbiter or UnifiedRoutingArbiter(registry)
         self.limit = max(20, min(2000, int(limit)))
         self._items: deque[dict[str, Any]] = deque(maxlen=self.limit)
         self.total = 0
@@ -32,8 +40,15 @@ class RouteShadowObserver:
         self.agreements = 0
         self.comparable = 0
         self.unmapped = 0
+        self.intent_tier_counts: Counter[str] = Counter()
 
-    def record(self, query: str, answer: dict[str, Any], selection: Any) -> None:
+    def record(
+        self,
+        query: str,
+        answer: dict[str, Any],
+        interpretation: RoutingInterpretation,
+    ) -> dict[str, Any]:
+        selection = interpretation.selection
         matches = [match.name for match in selection.matches]
         selected = selection.selected.name if selection.selected else None
         actual = str(answer.get("route") or "") or None
@@ -53,6 +68,7 @@ class RouteShadowObserver:
             self.selected_counts[selected] += 1
         if actual:
             self.actual_counts[actual] += 1
+        self.intent_tier_counts[interpretation.intent_tier] += 1
         if comparison is True:
             self.comparable += 1
             self.agreements += 1
@@ -69,8 +85,17 @@ class RouteShadowObserver:
             "selected_capability": (
                 selection.selected.capability_id if selection.selected else None
             ),
+            "intent_tier": interpretation.intent_tier,
+            "routing_confidence": interpretation.confidence,
             "actual_route": actual,
             "actual_intent": actual_intent,
+            "winning_router": actual,
+            "winning_agent": (
+                answer.get("answered_by")
+                or answer.get("agent_orchestrator")
+                or answer.get("answering_layer")
+            ),
+            "answering_layer": answer.get("answering_layer"),
             "overlap": overlap,
             "comparison": (
                 "agree"
@@ -87,6 +112,7 @@ class RouteShadowObserver:
             "route_shadow_selection %s",
             json.dumps(item, ensure_ascii=False, separators=(",", ":")),
         )
+        return item
 
     def response(self) -> dict[str, Any]:
         overlap_rate = (self.overlaps / self.total * 100.0) if self.total else 0.0
@@ -115,6 +141,7 @@ class RouteShadowObserver:
             "disagreement_rate_percent": round(disagreement_rate, 2),
             "selected_by_registry": dict(self.selected_counts.most_common()),
             "actual_routes": dict(self.actual_counts.most_common()),
+            "intent_tiers": dict(self.intent_tier_counts.most_common()),
             "capability_count": len(descriptors),
             "capability_safety_counts": safety_counts,
             "declared_mcp_tool_count": len(declared_tools),
@@ -128,18 +155,44 @@ def install_route_shadow_observer(
     application: Any,
     registry: RouteRegistry,
     *,
+    arbiter: UnifiedRoutingArbiter | None = None,
     limit: int = 200,
 ) -> RouteShadowObserver:
     """Wrap the final ask handler for diagnostics without changing dispatch."""
 
     real_ask: AskHandler = application.ask
-    observer = RouteShadowObserver(registry, limit=limit)
+    observer = RouteShadowObserver(registry, arbiter=arbiter, limit=limit)
 
     async def shadow_logged_ask(request: Any) -> dict[str, Any]:
         query = str(getattr(request, "query", "") or "").strip()
-        selection = registry.select(query)
+        interpretation = observer.arbiter.interpret(query)
         answer = dict(await real_ask(request))
-        observer.record(query, answer, selection)
+        routing_trace = observer.record(query, answer, interpretation)
+        answer["routing_trace"] = {
+            key: routing_trace.get(key)
+            for key in (
+                "winning_router",
+                "winning_agent",
+                "actual_intent",
+                "answering_layer",
+                "selected_by_registry",
+                "selected_capability",
+                "intent_tier",
+                "routing_confidence",
+                "matched_routes",
+                "comparison",
+            )
+        }
+        routing_technical = "Routing decision\n" + json.dumps(
+            answer["routing_trace"],
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        )
+        if answer.get("technical") not in (None, ""):
+            answer["technical"] = routing_technical + "\n\n" + str(answer["technical"])
+        else:
+            answer["technical"] = routing_technical
         return answer
 
     shadow_logged_ask.__name__ = "ask_with_route_registry_shadow_observer"

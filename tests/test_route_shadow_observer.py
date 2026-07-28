@@ -17,7 +17,7 @@ class App:
         self.ask = ask
 
 
-def test_shadow_observer_records_full_match_set_without_changing_answer():
+def test_shadow_observer_records_full_match_set_and_attaches_winner_trace():
     application = App()
     registry = RouteRegistry(
         (
@@ -29,7 +29,11 @@ def test_shadow_observer_records_full_match_set_without_changing_answer():
 
     answer = asyncio.run(application.ask(SimpleNamespace(query="show power")))
 
-    assert answer == {"route": "actual-route", "message": "ok"}
+    assert answer["route"] == "actual-route"
+    assert answer["message"] == "ok"
+    assert answer["routing_trace"]["winning_router"] == "actual-route"
+    assert answer["routing_trace"]["selected_by_registry"] == "high"
+    assert "Routing decision" in answer["technical"]
     data = observer.response()
     assert data["dispatch_changed"] is False
     assert data["total_queries"] == 1

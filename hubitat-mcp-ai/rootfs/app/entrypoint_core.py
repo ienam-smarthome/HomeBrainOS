@@ -74,6 +74,7 @@ from release_version import (
     runtime_release_version,
 )
 from route_catalogue import build_route_registry
+from unified_routing_arbiter import UnifiedRoutingArbiter
 from semantic_metric_comparison_live import SemanticMetricComparisonExecutor
 from semantic_read_pipeline import install_semantic_read_pipeline
 from temperature_insight_hybrid import HybridTemperatureInsightService
@@ -175,6 +176,7 @@ def _replace_ollama_agent() -> None:
 
 install_dashboard_health_tile()
 application.route_registry = build_route_registry()
+application.routing_arbiter = UnifiedRoutingArbiter(application.route_registry)
 _replace_mcp_client()
 device_index = _create_device_index()
 _replace_fallback_router(device_index)

@@ -16,6 +16,7 @@ EXPECTED_REGISTRIES = (
     "semantic-home-registry",
     "summary-thermostat-registry",
     "read-execution-registry",
+    "ai-grounding-registry",
 )
 
 LEGACY_RUNTIME_INSTALLERS = (
@@ -85,8 +86,8 @@ def audit() -> dict[str, Any]:
             not runtime_legacy_calls,
             direct_runtime_bridge,
             finalized_before_bridge,
-            capture_count == 5,
-            registry_install_count == 4,
+            capture_count == 6,
+            registry_install_count == 5,
         )
     )
 

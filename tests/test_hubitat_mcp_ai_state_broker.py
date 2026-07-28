@@ -12,6 +12,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
+from device_index_broker import IndexedMCPStateBroker  # noqa: E402
 from mcp_state_broker import MCPStateBroker  # noqa: E402
 from request_tracing import install_request_tracing  # noqa: E402
 from webui import render_page  # noqa: E402
@@ -218,6 +219,26 @@ def test_direct_gateway_mutation_invalidates_using_nested_leaf_tool():
     asyncio.run(scenario())
 
 
+def test_indexed_broker_accepts_arguments_when_classifying_uncached_read():
+    async def scenario():
+        raw = FakeMCP()
+        broker = IndexedMCPStateBroker(raw, device_ttl_seconds=30)
+
+        result = await broker.call_tool(
+            "hub_get_logs",
+            {"level": "warn", "since": "24h"},
+        )
+
+        assert result.is_error is False
+        assert raw.calls[-1] == (
+            "hub_get_logs",
+            {"level": "warn", "since": "24h"},
+        )
+        assert broker.stats()["invalidations"] == 0
+
+    asyncio.run(scenario())
+
+
 def test_request_trace_attaches_route_cache_and_tool_timings():
     async def scenario():
         raw = FakeMCP()
@@ -255,6 +276,8 @@ def test_request_trace_attaches_route_cache_and_tool_timings():
 
         assert answer["performance"]["route_selected"] == "mcp-fast"
         assert answer["performance"]["final_route"] == "mcp-fast"
+        assert answer["performance"]["winning_router"] == "mcp-fast"
+        assert answer["performance"]["winning_agent"] == "unified-mcp-ai-first"
         assert answer["performance"]["mcp_calls"] == 1
         assert answer["performance"]["cache_misses"] == 1
         assert "Request performance" in answer["technical"]
@@ -265,6 +288,8 @@ def test_request_trace_attaches_route_cache_and_tool_timings():
         recent = store.response()
         assert recent["count"] == 1
         assert recent["requests"][0]["query"] == "Which lights are on?"
+        assert recent["requests"][0]["winning_router"] == "mcp-fast"
+        assert recent["requests"][0]["winning_agent"] == "unified-mcp-ai-first"
 
     asyncio.run(scenario())
 

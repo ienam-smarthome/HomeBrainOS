@@ -321,7 +321,11 @@ class IndexedMCPStateBroker(AdaptiveGatewayMCPStateBroker):
         if callback not in self._invalidation_callbacks:
             self._invalidation_callbacks.append(callback)
 
-    async def _invalidate_for_write(self, name: str) -> None:
+    async def _invalidate_for_write(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> None:
         lowered = str(name or "").lower()
         unprefixed = lowered[4:] if lowered.startswith("hub_") else lowered
         if "rule" in unprefixed and unprefixed.startswith(
@@ -329,7 +333,7 @@ class IndexedMCPStateBroker(AdaptiveGatewayMCPStateBroker):
         ):
             await self.invalidate("catalog")
             return
-        await super()._invalidate_for_write(name)
+        await super()._invalidate_for_write(name, arguments)
 
     async def invalidate(self, category: str = "all") -> int:
         count = await super().invalidate(category)
