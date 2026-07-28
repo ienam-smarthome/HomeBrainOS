@@ -183,6 +183,20 @@ class UnifiedMCPAgent:
             raise RuntimeError("Ollama returned no assistant message")
         return message
 
+    async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
+        final_messages = [
+            *messages,
+            {
+                "role": "user",
+                "content": (
+                    "Answer the original request now using only the MCP results already "
+                    "provided. Do not request another tool. Be concise and factual."
+                ),
+            },
+        ]
+        response = await self._chat(final_messages, [])
+        return str(response.get("content") or "The MCP request completed without a written answer.")
+
     def _take_confirmation(
         self, session_id: str, prompt: str
     ) -> PendingConfirmation | None:
@@ -231,6 +245,7 @@ class UnifiedMCPAgent:
             *self._history(conversation_history),
             {"role": "user", "content": str(user_prompt).strip()},
         ]
+        completed_calls: set[str] = set()
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
@@ -272,6 +287,12 @@ class UnifiedMCPAgent:
                 arguments = function.get("arguments") or {}
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
+                signature = json.dumps(
+                    [name, arguments], sort_keys=True, ensure_ascii=False, default=str
+                )
+                if signature in completed_calls:
+                    return await self._final_answer(messages)
+                completed_calls.add(signature)
                 try:
                     tool = by_name.get(name)
                     if not tool:
@@ -284,7 +305,7 @@ class UnifiedMCPAgent:
                     logger.exception("MCP tool %s failed", name)
                     content = json.dumps({"error": str(exc)})
                 messages.append({"role": "tool", "tool_name": name, "content": content})
-        raise RuntimeError("The agent exceeded its MCP tool-round limit")
+        return await self._final_answer(messages)
 
 
 __all__ = ["UnifiedMCPAgent"]
