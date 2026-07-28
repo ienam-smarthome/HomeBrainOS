@@ -47,7 +47,9 @@ def render_page(title: str, version: str) -> str:
 <p class="muted">Powered by Gemini native function calling and Hubitat MCP.</p>
 </main>
 <script>
-const TITLE=__TITLE__,VERSION=__VERSION__,sessionId=sessionStorage.getItem('hmcp_session_id')||crypto.randomUUID();
+const TITLE=__TITLE__,VERSION=__VERSION__;
+const newSessionId=()=>globalThis.crypto?.randomUUID?.()||`hmcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+const sessionId=sessionStorage.getItem('hmcp_session_id')||newSessionId();
 sessionStorage.setItem('hmcp_session_id',sessionId);
 document.getElementById('title').textContent=TITLE;document.getElementById('version').textContent='v'+VERSION;
 const query=document.getElementById('query'),ask=document.getElementById('ask'),answer=document.getElementById('answer');
