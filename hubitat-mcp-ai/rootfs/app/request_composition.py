@@ -82,6 +82,7 @@ def classify_ask_layer(
         "request_tracing",
         "cancellable_requests",
         "conversation_context",
+        "route_shadow_observer",
     }:
         return "request-observability"
     if module.startswith(("semantic_", "ai_evidence_")) or module in {

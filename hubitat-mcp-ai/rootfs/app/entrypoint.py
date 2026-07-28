@@ -22,7 +22,6 @@ from named_rule_disable_guard import install_named_rule_disable_guard
 from named_rule_status_route import build_named_rule_status_terminal_route
 from power_device_discovery_fallback import install_power_device_discovery_fallback
 from recent_log_diagnostics_route import build_recent_log_diagnostics_terminal_route
-from runtime_route_bridge import install_runtime_route_bridge
 from release_version import (
     BAKED_VERSION_PATH,
     PREVIOUS_RELEASE_VERSION,
@@ -30,6 +29,8 @@ from release_version import (
     runtime_release_version,
 )
 from request_composition import AskCompositionBuilder
+from route_shadow_observer import install_route_shadow_observer
+from runtime_route_bridge import install_runtime_route_bridge
 from semantic_attention_reconciliation import wrap_semantic_home_query_route
 from semantic_home_query_registry import build_semantic_home_query_terminal_route
 from semantic_home_summary_registry import build_semantic_home_summary_terminal_route
@@ -184,6 +185,11 @@ read_execution_routes = auxiliary_request_layers.capture(
     read_execution_registry.install,
 )
 auxiliary_request_handler = auxiliary_request_layers.finalize()
+route_shadow_observer = install_route_shadow_observer(
+    _core.application,
+    _core.application.route_registry,
+    limit=500,
+)
 runtime_request_registry = install_runtime_route_bridge(_core.application)
 
 app = _core.app
