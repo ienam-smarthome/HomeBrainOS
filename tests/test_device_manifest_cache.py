@@ -54,3 +54,45 @@ async def test_device_manifest_refresh_bypasses_cache(monkeypatch):
     await client.get_cached_devices(refresh=True)
     assert calls == ["get_devices", "get_devices"]
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_manifest_uses_consolidated_read_gateway(monkeypatch):
+    client = HubitatMCPClient("http://hub/mcp")
+    calls = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "device gateway", {"type": "object"})]
+
+    async def call_tool(name, arguments):
+        calls.append((name, arguments))
+        return MCPToolResult(
+            name,
+            arguments,
+            {},
+            "",
+            {"result": {"devices": [{"id": "7", "label": "Kitchen Light"}]}},
+        )
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+
+    devices = await client.get_cached_devices()
+
+    assert devices == [{"id": "7", "label": "Kitchen Light"}]
+    assert calls == [(
+        "hub_read_devices",
+        {
+            "tool": "hub_list_devices",
+            "args": {
+                "detailed": True,
+                "fields": [
+                    "id", "name", "label", "roomName",
+                    "capabilities", "currentStates",
+                ],
+                "limit": 50,
+                "offset": 0,
+            },
+        },
+    )]
+    await client.close()

@@ -210,20 +210,73 @@ class HubitatMCPClient:
             ),
             None,
         )
+        arguments: dict[str, Any] = {}
+        using_gateway = False
+        if not tool_name and "hub_read_devices" in names:
+            tool_name = "hub_read_devices"
+            using_gateway = True
+            arguments = {
+                "tool": "hub_list_devices",
+                "args": {
+                    "detailed": True,
+                    "fields": [
+                        "id", "name", "label", "roomName",
+                        "capabilities", "currentStates",
+                    ],
+                    "limit": 50,
+                    "offset": 0,
+                },
+            }
         if not tool_name:
             return list(self._cached_devices)
 
-        result = await self.call_tool(tool_name, {})
-        value = result.data
-        if isinstance(value, dict):
-            for key in ("devices", "items", "results"):
-                if isinstance(value.get(key), list):
-                    value = value[key]
-                    break
+        result = await self.call_tool(tool_name, arguments)
+        value = self._find_device_list(result.data)
+        if using_gateway:
+            devices = list(value or [])
+            page = self._find_device_page(result.data)
+            while page and page.get("hasMore") is True and page.get("nextOffset") is not None:
+                arguments["args"]["offset"] = int(page["nextOffset"])
+                result = await self.call_tool(tool_name, arguments)
+                devices.extend(self._find_device_list(result.data) or [])
+                page = self._find_device_page(result.data)
+            value = devices
         if isinstance(value, list):
             self._cached_devices = [item for item in value if isinstance(item, dict)]
             self._devices_cached_at = now
         return list(self._cached_devices)
+
+    @classmethod
+    def _find_device_list(cls, value: Any) -> list[Any] | None:
+        if isinstance(value, list):
+            if not value or all(isinstance(item, dict) for item in value):
+                return value
+            return None
+        if not isinstance(value, dict):
+            return None
+        for key in ("devices", "items", "results"):
+            candidate = value.get(key)
+            if isinstance(candidate, list):
+                return candidate
+        for key in ("result", "data", "output", "content"):
+            if key in value:
+                candidate = cls._find_device_list(value[key])
+                if candidate is not None:
+                    return candidate
+        return None
+
+    @classmethod
+    def _find_device_page(cls, value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        if any(key in value for key in ("devices", "items", "results")):
+            return value
+        for key in ("result", "data", "output", "content"):
+            if key in value:
+                candidate = cls._find_device_page(value[key])
+                if candidate is not None:
+                    return candidate
+        return None
 
     async def supported_arguments(
         self,
