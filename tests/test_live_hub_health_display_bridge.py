@@ -53,13 +53,14 @@ def _metrics(answer):
     return {item["label"]: item["value"] for item in answer["display"]["metrics"]}
 
 
-def test_live_bridge_moves_database_note_into_tile_and_marks_current_firmware():
+def test_live_bridge_moves_database_note_and_qualifies_update_channel():
     answer = enhance_hub_health_answer(_answer(available=False))
     metrics = _metrics(answer)
     assert metrics["Installed firmware"] == "2.5.1.134"
-    assert metrics["Software update"] == "Up to date"
+    assert metrics["Software update"] == "None reported"
     assert metrics["Database size"] == "156 MB"
     assert answer["display"]["note"] is None
+    assert "beta or preview builds may differ" in answer["message"]
 
 
 def test_live_bridge_shows_available_firmware_version():

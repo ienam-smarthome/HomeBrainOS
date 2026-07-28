@@ -446,7 +446,12 @@ async def _synthesise_attention(application: Any, query: str, attention: dict[st
     agent = application.ollama
     client = getattr(agent, "_http", None)
     post = getattr(client, "post", None)
-    model = str(getattr(agent, "cloud_model", "") or getattr(agent, "model", "") or "").strip()
+    model = str(
+        getattr(agent, "reasoning_model", "")
+        or getattr(agent, "cloud_model", "")
+        or getattr(agent, "model", "")
+        or ""
+    ).strip()
     if not callable(post) or not model:
         return fallback, None, "Synthesis model unavailable"
     try:

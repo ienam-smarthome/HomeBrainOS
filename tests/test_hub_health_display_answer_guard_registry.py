@@ -52,7 +52,7 @@ def test_hub_health_display_guard_enhances_matching_display():
 
     metrics = {item["label"]: item["value"] for item in answer["display"]["metrics"]}
     assert metrics["Installed firmware"] == "2.4.1.170"
-    assert metrics["Software update"] == "Up to date"
+    assert metrics["Software update"] == "None reported"
     assert metrics["Database size"] == "42 MB"
     assert answer["display"]["note"] is None
 

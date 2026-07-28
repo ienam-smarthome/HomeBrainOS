@@ -262,7 +262,12 @@ async def _synthesise(application: Any, query: str, evidence: dict[str, Any]) ->
     agent = application.ollama
     client = getattr(agent, "_http", None)
     post = getattr(client, "post", None)
-    model = str(getattr(agent, "cloud_model", "") or getattr(agent, "model", "") or "").strip()
+    model = str(
+        getattr(agent, "reasoning_model", "")
+        or getattr(agent, "cloud_model", "")
+        or getattr(agent, "model", "")
+        or ""
+    ).strip()
     fallback = _fallback(evidence)
     if not callable(post) or not model:
         return fallback, None, "Synthesis model unavailable"
@@ -337,7 +342,12 @@ def install_semantic_home_summary_agent(application: Any, snapshot_service: Any)
             "required_facts": evidence.get("required_facts"),
             "fact_manifest": _fact_manifest(evidence),
             "tools_used": list(evidence.get("tools_used") or []),
-            "model": str(getattr(application.ollama, "cloud_model", "") or getattr(application.ollama, "model", "") or "") or None,
+            "model": str(
+                getattr(application.ollama, "reasoning_model", "")
+                or getattr(application.ollama, "cloud_model", "")
+                or getattr(application.ollama, "model", "")
+                or ""
+            ) or None,
             "provider": provider,
             "synthesis_error": synthesis_error,
             "answered_by": "AI using semantic HomeBrain evidence tools",

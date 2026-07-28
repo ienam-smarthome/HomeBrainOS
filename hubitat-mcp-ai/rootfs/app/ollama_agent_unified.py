@@ -124,6 +124,12 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         direct_cloud_api_key: str = "",
         direct_cloud_model: str = "",
         direct_cloud_fallback_local_proxy: bool = True,
+        gemini_enabled: bool = False,
+        gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta",
+        gemini_api_key: str = "",
+        gemini_model: str = "",
+        gemini_timeout_seconds: float = 20.0,
+        gemini_fallback_ollama_cloud: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -159,6 +165,20 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             min(90.0, float(cloud_timeout_seconds)),
         )
         self._cloud_present_hint: bool | None = None
+        self.gemini_enabled = bool(gemini_enabled)
+        self.gemini_model = str(gemini_model or "").strip()
+        self.gemini_timeout_seconds = max(
+            5.0,
+            min(90.0, float(gemini_timeout_seconds)),
+        )
+        self.gemini_ready = bool(
+            self.gemini_enabled
+            and str(gemini_api_key or "").strip()
+            and self.gemini_model
+        )
+        self.reasoning_model = (
+            self.gemini_model if self.gemini_ready else self.cloud_model or self.model
+        )
 
         existing_http = self._http
         self._http = HybridOllamaHTTPClient(
@@ -176,6 +196,13 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             ),
             fallback_local_proxy=bool(
                 direct_cloud_fallback_local_proxy
+            ),
+            gemini_enabled=self.gemini_enabled,
+            gemini_base_url=str(gemini_base_url or ""),
+            gemini_api_key=str(gemini_api_key or ""),
+            gemini_model=self.gemini_model,
+            gemini_fallback_ollama_cloud=bool(
+                gemini_fallback_ollama_cloud and self.cloud_enabled
             ),
             client=existing_http,
         )
@@ -211,6 +238,13 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
                     ),
                     "direct_cloud_model": transport.direct_model or None,
                     "direct_cloud_error": transport.last_direct_error,
+                    "gemini_enabled": self.gemini_enabled,
+                    "gemini_ready": self.gemini_ready,
+                    "gemini_model": self.gemini_model or None,
+                    "gemini_api_key_configured": bool(
+                        getattr(transport, "gemini_api_key_configured", False)
+                    ),
+                    "gemini_error": getattr(transport, "last_gemini_error", None),
                 }
             )
             return result
@@ -224,7 +258,9 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         self._cloud_present_hint = cloud_present
 
         result = dict(status)
-        result["model_present"] = bool(cloud_present or local_present)
+        result["model_present"] = bool(
+            self.gemini_ready or cloud_present or local_present
+        )
         result["cloud_present"] = cloud_present
         result["local_fallback_present"] = local_present
         result["cloud_model"] = self.cloud_model or None
@@ -237,6 +273,13 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         result["direct_cloud_base_url"] = transport.direct_base_url or None
         result["direct_cloud_model"] = transport.direct_model or None
         result["direct_cloud_error"] = transport.last_direct_error
+        result["gemini_enabled"] = self.gemini_enabled
+        result["gemini_ready"] = self.gemini_ready
+        result["gemini_model"] = self.gemini_model or None
+        result["gemini_api_key_configured"] = bool(
+            getattr(transport, "gemini_api_key_configured", False)
+        )
+        result["gemini_error"] = getattr(transport, "last_gemini_error", None)
         result["ollama_provider"] = transport.last_provider()
         return result
 
@@ -281,9 +324,18 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
                     transport.fallback_local_proxy
                 ),
                 "direct_cloud_error": transport.last_direct_error,
+                "gemini_enabled": self.gemini_enabled,
+                "gemini_ready": self.gemini_ready,
+                "gemini_model": self.gemini_model or None,
+                "gemini_api_key_configured": bool(
+                    getattr(transport, "gemini_api_key_configured", False)
+                ),
+                "gemini_error": getattr(transport, "last_gemini_error", None),
                 "ollama_provider": transport.last_provider(),
                 "preferred_response_model": (
-                    self.cloud_model
+                    self.reasoning_model
+                    if self.gemini_ready
+                    else self.cloud_model
                     if cloud_present
                     else self.local_fallback_model
                     if local_present
@@ -312,7 +364,9 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         planner_model = self._resolve_planner_model(installed)
         deep_reasoning = self._is_deep_reasoning_query(query)
         response_model = (
-            self.model if deep_reasoning else self._resolve_routine_model(installed)
+            self._resolve_reasoning_model()
+            if deep_reasoning
+            else self._resolve_routine_model(installed)
         )
         response_timeout = (
             self.response_timeout_seconds
@@ -1027,11 +1081,18 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         return self._preferred_family_model(installed_models)
 
     def _resolve_routine_model(self, installed_models: list[str]) -> str:
+        if bool(getattr(self, "gemini_ready", False)):
+            return str(getattr(self, "reasoning_model", "") or self.model)
         if self.configured_routine_model:
             if self._model_matches(self.configured_routine_model, installed_models):
                 return self.configured_routine_model
             return self.model
         return self._preferred_family_model(installed_models)
+
+    def _resolve_reasoning_model(self) -> str:
+        if bool(getattr(self, "gemini_ready", False)):
+            return str(getattr(self, "reasoning_model", "") or self.model)
+        return self.model
 
     async def _answer_from_verified_context(
         self,
@@ -1471,13 +1532,18 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
         temperature: float,
     ) -> dict[str, Any]:
         requested_model = str(model or "").strip()
+        gemini_requested = bool(
+            self.gemini_ready
+            and self.gemini_model
+            and requested_model.lower() == self.gemini_model.lower()
+        )
         cloud_requested = bool(
             self.cloud_enabled
             and self.cloud_model
             and requested_model.lower() == self.cloud_model.lower()
         )
 
-        if not cloud_requested:
+        if not cloud_requested and not gemini_requested:
             body = await self._final_answer_chat(
                 model=requested_model,
                 messages=messages,
@@ -1495,9 +1561,11 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             return result
 
         cloud_error: Exception | None = None
-        if self._cloud_present_hint is not False:
-            cloud_timeout = min(
-                self.cloud_timeout_seconds,
+        if gemini_requested or self._cloud_present_hint is not False:
+            remote_timeout = min(
+                self.gemini_timeout_seconds
+                if gemini_requested
+                else self.cloud_timeout_seconds,
                 max(8.0, float(timeout_seconds)),
             )
             try:
@@ -1505,7 +1573,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
                     model=requested_model,
                     messages=messages,
                     tools=tools,
-                    timeout_seconds=cloud_timeout,
+                    timeout_seconds=remote_timeout,
                     num_ctx=num_ctx,
                     num_predict=num_predict,
                     temperature=temperature,
@@ -1736,7 +1804,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             {"role": "tool", "tool_name": "hub_list_devices", "content": tool_text}
         ]
         body = await self._chat(
-            model=self.model,
+            model=self._resolve_reasoning_model(),
             messages=self._synthesis_messages(
                 query=query,
                 history=history,
@@ -1757,7 +1825,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             "route": "ollama+mcp",
             "intent": "device-inventory",
             "message": content,
-            "model": self.model,
+            "model": self._resolve_reasoning_model(),
             "tools_used": [
                 {
                     "name": "hub_list_devices",
@@ -1798,7 +1866,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             }
         ]
         body = await self._chat(
-            model=self.model,
+            model=self._resolve_reasoning_model(),
             messages=self._synthesis_messages(
                 query=query,
                 history=history,
@@ -1821,7 +1889,7 @@ class UnifiedAdaptiveMCPAgent(ClaudeStyleOllamaAgent):
             "route": "ollama+mcp",
             "intent": "unified-targeted-device-recovery",
             "message": content,
-            "model": self.model,
+            "model": self._resolve_reasoning_model(),
             "planner_model": self._last_agent_status.get("planner_model"),
             "tools_used": [
                 {
