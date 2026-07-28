@@ -147,6 +147,34 @@ async def test_weather_request_loads_device_manifest():
     assert "'Couch Lamp' | ID: 42" in instruction
 
 
+@pytest.mark.asyncio
+async def test_manifest_includes_compact_live_states():
+    class StateMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [{
+                "id": "7",
+                "label": "Hallway Sensor",
+                "room": "Hallway",
+                "capabilities": ["MotionSensor"],
+                "attributes": [
+                    {"name": "motion", "value": "active"},
+                    {"name": "battery", "value": 91},
+                ],
+            }]
+
+    agent = UnifiedMCPAgent(StateMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("Which motion sensors are active?")
+    assert "Current: motion=active, battery=91" in instruction
+
+
+@pytest.mark.asyncio
+async def test_update_prompt_requires_status_reconciliation():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("software update")
+    assert "includeAppUpdate=true" in instruction
+    assert "never summarize those values as up to date" in instruction
+
+
 def test_large_tool_results_are_bounded():
     agent = UnifiedMCPAgent(
         FakeMCP(), "key", "model", ai_client=FakeAI([]),

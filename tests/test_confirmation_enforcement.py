@@ -46,6 +46,31 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
     assert mcp.calls == [("hub_restart", {})]
 
 
+@pytest.mark.asyncio
+async def test_multiple_sensitive_device_actions_share_one_confirmation():
+    mcp = FakeMCP()
+    calls = [
+        {"function": {"name": "hub_restart", "arguments": {"device": "1"}}},
+        {"function": {"name": "hub_restart", "arguments": {"device": "2"}}},
+    ]
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": calls}},
+        {"message": {"role": "assistant", "content": "Both actions completed."}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    prompt = await agent.process_user_request("Restart both devices", session_id="group")
+    assert "2 sensitive Hubitat actions" in prompt
+    assert not mcp.calls
+
+    answer = await agent.process_user_request("confirm", session_id="group")
+    assert answer == "Both actions completed."
+    assert mcp.calls == [
+        ("hub_restart", {"device": "1"}),
+        ("hub_restart", {"device": "2"}),
+    ]
+
+
 def test_read_only_gateway_does_not_require_confirmation():
     tool = MCPTool(
         "hub_manage_devices", "Gateway", {"type": "object"},
