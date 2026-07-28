@@ -107,15 +107,34 @@ class FakeGatewayClient:
                 ]
             }
         elif hidden == "hub_get_logs":
-            data = {
-                "logs": [
-                    {
-                        "level": "error",
-                        "message": "Example device timeout",
-                        "date": "2026-07-17T15:00:00Z",
-                    }
-                ]
-            }
+            if str(args.get("level") or "").lower() == "warn":
+                data = {
+                    "logs": [
+                        {
+                            "name": "2026-07-28 09:18:00.000",
+                            "level": "WARN",
+                            "message": "dev|42|Iron|Missed check-in; entering recovery mode",
+                            "time": "",
+                        },
+                        {
+                            "name": "2026-07-28 08:18:00.000",
+                            "level": "WARN",
+                            "message": "dev|42|Iron|Missed check-in; entering recovery mode",
+                            "time": "",
+                        },
+                    ]
+                }
+            else:
+                data = {
+                    "logs": [
+                        {
+                            "name": "2026-07-28 07:00:00.000",
+                            "level": "ERROR",
+                            "message": "app|7|HADB Bridge|Example device timeout",
+                            "time": "",
+                        }
+                    ]
+                }
         elif hidden == "hub_list_devices":
             data = {
                 "devices": [
@@ -212,6 +231,10 @@ def test_installed_apps_and_logs_use_direct_gateway_reads():
     assert logs["success"] is True
     assert logs["intent"] == "fallback-hub-logs"
     assert "Example device timeout" in logs["message"]
+    assert "Iron: 2 warnings" in logs["message"]
+    assert logs["error_count"] == 1
+    assert logs["warning_count"] == 2
+    assert logs["window"] == "24h"
 
     issues = asyncio.run(router.answer("Check logs for any issues"))
     assert issues["success"] is True
@@ -219,6 +242,16 @@ def test_installed_apps_and_logs_use_direct_gateway_reads():
     assert "Example device timeout" in issues["message"]
     assert fake.calls[-1][0] == "hub_read_diagnostics"
     assert fake.calls[-1][1]["tool"] == "hub_get_logs"
+    assert fake.calls[-2][1]["args"] == {
+        "since": "24h",
+        "level": "error",
+        "limit": 500,
+    }
+    assert fake.calls[-1][1]["args"] == {
+        "since": "24h",
+        "level": "warn",
+        "limit": 500,
+    }
 
 
 def test_prayer_times_status_and_events_resolve_selected_device():
