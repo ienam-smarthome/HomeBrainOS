@@ -110,3 +110,55 @@ async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
     assert answer == "The couch lamp is on."
     assert len(mcp.calls) == 1
     assert ai.requests[-1][1]["json"]["tools"] is None
+
+
+def test_app_request_limits_visible_gateways():
+    tools = [
+        MCPTool("hub_read_devices", "devices", {"type": "object"}),
+        MCPTool("hub_read_apps_code", "apps", {"type": "object"}),
+        MCPTool(
+            "hub_manage_native_rules_and_apps", "manage apps", {"type": "object"}
+        ),
+        MCPTool("hub_manage_logs", "logs", {"type": "object"}),
+    ]
+    selected = UnifiedMCPAgent._select_tools("pause humidity app", tools)
+    assert [tool.name for tool in selected] == [
+        "hub_read_apps_code",
+        "hub_manage_native_rules_and_apps",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_app_prompt_uses_cached_app_manifest_and_omits_devices():
+    class AppMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_read_apps_code", "apps", {"type": "object"}),
+                MCPTool(
+                    "hub_manage_native_rules_and_apps",
+                    "manage apps",
+                    {"type": "object"},
+                ),
+            ]
+
+        async def get_cached_devices(self):
+            raise AssertionError("device manifest should not load for app requests")
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {"apps": [{"id": "3995", "label": "01. Humidity Controller"}]},
+            )
+
+    mcp = AppMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+    prompt = await agent._system_prompt("pause humidity app")
+    again = await agent._system_prompt("resume humidity app")
+    assert "'01. Humidity Controller' | appId: 3995" in prompt
+    assert "hub_set_rule_paused" in prompt
+    assert again
+    assert len(mcp.calls) == 1

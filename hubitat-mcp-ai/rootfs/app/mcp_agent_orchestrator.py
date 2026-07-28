@@ -27,6 +27,14 @@ _READ_ONLY_TERMS = {
     "capabilities", "details", "devices", "find", "get", "health", "inventory",
     "list", "read", "rooms", "search", "state", "status",
 }
+_APP_TERMS = {
+    "app", "apps", "automation", "automations", "pause", "paused", "resume",
+    "rule", "rules",
+}
+_DEVICE_TERMS = {
+    "battery", "batteries", "device", "devices", "door", "light", "lights",
+    "lock", "motion", "sensor", "switch", "temperature", "thermostat",
+}
 
 
 @dataclass(slots=True)
@@ -67,6 +75,8 @@ class UnifiedMCPAgent:
         self.require_sensitive_confirmation = bool(require_sensitive_confirmation)
         self.confirmation_ttl_seconds = max(10.0, float(confirmation_ttl_seconds))
         self._pending: dict[str, PendingConfirmation] = {}
+        self._app_manifest: list[dict[str, Any]] = []
+        self._app_manifest_at = 0.0
         self.ai_client = ai_client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -81,25 +91,87 @@ class UnifiedMCPAgent:
         if callable(close):
             await close()
 
-    async def _system_prompt(self) -> str:
-        rows: list[str] = []
+    @staticmethod
+    def _matches(prompt: str, terms: set[str]) -> bool:
+        value = prompt.lower()
+        return any(term in value for term in terms)
+
+    @classmethod
+    def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
+        names: set[str] | None = None
+        if cls._matches(prompt, _APP_TERMS):
+            names = {
+                "hub_read_apps_code", "hub_read_rules",
+                "hub_manage_native_rules_and_apps", "hub_manage_rules",
+                "hub_search_tools",
+            }
+        elif cls._matches(prompt, _DEVICE_TERMS):
+            names = {
+                "hub_read_devices", "hub_manage_devices",
+                "hub_get_info", "hub_search_tools",
+            }
+        if names is None:
+            return tools
+        selected = [tool for tool in tools if tool.name in names]
+        return selected or tools
+
+    async def _cached_app_manifest(self) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        if self._app_manifest and now - self._app_manifest_at < 300:
+            return list(self._app_manifest)
+        names = {tool.name for tool in await self.mcp.list_tools()}
+        if "hub_read_apps_code" not in names:
+            return []
         try:
-            for device in await self.mcp.get_cached_devices():
-                label = device.get("label") or device.get("name") or "Unknown device"
-                device_id = device.get("id") or device.get("deviceId")
-                room = device.get("room") or device.get("roomName") or "Unassigned"
-                capabilities = device.get("capabilities") or []
-                if isinstance(capabilities, dict):
-                    capabilities = list(capabilities)
-                if not isinstance(capabilities, list):
-                    capabilities = [capabilities]
-                rows.append(
-                    f"- {label!r} | ID: {device_id} | Room: {room} | "
-                    f"Capabilities: {', '.join(map(str, capabilities)) or 'unknown'}"
-                )
+            result = await self.mcp.call_tool(
+                "hub_read_apps_code",
+                {"tool": "hub_list_apps", "args": {"scope": "instances"}},
+            )
+            candidates = HubitatMCPClient._find_device_list(result.data) or []
+            self._app_manifest = [
+                item for item in candidates if isinstance(item, dict)
+            ]
+            self._app_manifest_at = now
         except Exception as exc:
-            logger.warning("Could not build live device manifest: %s", exc)
-        manifest = "\n".join(rows) or "No live device manifest is currently available."
+            logger.warning("Could not build app manifest: %s", exc)
+        return list(self._app_manifest)
+
+    async def _system_prompt(self, user_prompt: str = "") -> str:
+        rows: list[str] = []
+        if not self._matches(user_prompt, _APP_TERMS):
+            try:
+                for device in await self.mcp.get_cached_devices():
+                    label = device.get("label") or device.get("name") or "Unknown device"
+                    device_id = device.get("id") or device.get("deviceId")
+                    room = device.get("room") or device.get("roomName") or "Unassigned"
+                    capabilities = device.get("capabilities") or []
+                    if isinstance(capabilities, dict):
+                        capabilities = list(capabilities)
+                    if not isinstance(capabilities, list):
+                        capabilities = [capabilities]
+                    rows.append(
+                        f"- {label!r} | ID: {device_id} | Room: {room} | "
+                        f"Capabilities: {', '.join(map(str, capabilities)) or 'unknown'}"
+                    )
+            except Exception as exc:
+                logger.warning("Could not build live device manifest: %s", exc)
+        manifest = "\n".join(rows) or "Device manifest omitted or unavailable."
+        app_section = ""
+        if self._matches(user_prompt, _APP_TERMS):
+            apps = await self._cached_app_manifest()
+            app_rows = []
+            for app in apps:
+                app_id = app.get("id") or app.get("appId")
+                label = app.get("label") or app.get("name") or app.get("displayName")
+                if app_id is not None and label:
+                    app_rows.append(f"- {label!r} | appId: {app_id}")
+            app_section = (
+                "\n\nLIVE APP MANIFEST\n"
+                + ("\n".join(app_rows) if app_rows else "No live app manifest available.")
+                + "\nPause/resume Rule Machine apps through "
+                "hub_manage_native_rules_and_apps with tool='hub_set_rule_paused' "
+                "and args={'appId': <id>, 'value': true to pause or false to resume}."
+            )
         return (
             "You are HomeBrainOS, a concise smart-home assistant. Use Hubitat MCP tools "
             "for every live state claim and action. Match informal names against the live "
@@ -110,7 +182,7 @@ class UnifiedMCPAgent:
             "args={<sub-tool arguments>}. For device questions, use hub_read_devices "
             "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
             "gateway with empty arguments.\n\n"
-            f"LIVE DEVICE MANIFEST\n{manifest}"
+            f"LIVE DEVICE MANIFEST\n{manifest}{app_section}"
         )
 
     @staticmethod
@@ -238,14 +310,20 @@ class UnifiedMCPAgent:
         *,
         session_id: str = "default",
     ) -> str:
-        declared = (await self.mcp.list_tools())[: self.tool_limit]
+        all_tools = (await self.mcp.list_tools())[: self.tool_limit]
+        pending = self._take_confirmation(session_id, user_prompt)
+        if pending:
+            declared = [
+                tool for tool in all_tools if tool.name == pending.tool_name
+            ] or all_tools
+        else:
+            declared = self._select_tools(user_prompt, all_tools)
         by_name = {tool.name: tool for tool in declared}
         tools = [self._tool_schema(tool) for tool in declared]
-        pending = self._take_confirmation(session_id, user_prompt)
         if pending:
             return await self._resume_confirmation(pending, tools)
         messages = [
-            {"role": "system", "content": await self._system_prompt()},
+            {"role": "system", "content": await self._system_prompt(user_prompt)},
             *self._history(conversation_history),
             {"role": "user", "content": str(user_prompt).strip()},
         ]
