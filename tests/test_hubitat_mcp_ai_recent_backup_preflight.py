@@ -159,4 +159,8 @@ def test_today_date_only_hubitat_filename_is_accepted_as_recent():
     parsed = _backup_timestamp_ms(item, now_ms)
 
     assert parsed is not None
-    assert 0 <= now_ms - parsed < 24 * 60 * 60 * 1000
+    # Date-only filenames are resolved against the current clock inside the parser.
+    # Allow a tiny forward skew when the parser's clock advances after now_ms was
+    # captured; the semantic requirement is still that the backup is within 24h.
+    age_ms = now_ms - parsed
+    assert -1000 <= age_ms < 24 * 60 * 60 * 1000
