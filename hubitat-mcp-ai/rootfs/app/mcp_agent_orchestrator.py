@@ -177,7 +177,8 @@ class UnifiedMCPAgent:
         names: set[str] | None = None
         if cls._matches(prompt, _DEVICE_HEALTH_TERMS):
             names = {
-                "hub_read_devices", "hub_read_diagnostics", "hub_search_tools",
+                "hub_read_devices", "hub_read_diagnostics",
+                "hub_manage_devices", "hub_search_tools",
             }
         elif cls._matches(prompt, _APP_TERMS):
             names = {
@@ -263,7 +264,8 @@ class UnifiedMCPAgent:
                         attributes = {}
                     common = {
                         "battery", "condition", "contact", "humidity", "level",
-                        "lock", "motion", "presence", "pressure", "switch",
+                        "healthstatus", "lock", "motion", "networkstatus",
+                        "presence", "pressure", "rtt", "status", "switch",
                         "temperature", "wind", "windspeed",
                     }
                     is_weather = "weather" in str(label).lower()
@@ -342,11 +344,18 @@ class UnifiedMCPAgent:
             health_section = (
                 "\n\nDEVICE HEALTH RULES\nSeparate results into Offline and Stale "
                 "sections. Call a device offline only when Hubitat explicitly reports "
-                "offline, unavailable, or a failed health status. Stale means no recent "
+                "healthStatus=offline, networkStatus=offline/unavailable, rtt=timeout, "
+                "or a failed health status. Never say no devices are offline when any "
+                "of those explicit states is present. Stale means no recent "
                 "event (normally over 24 hours) and does not prove a device is offline. "
                 "Battery sensors, buttons, remotes, tariff records, and rarely changing "
                 "devices may be healthy but stale. Include last activity or stale age "
-                "when returned, and say when no devices are explicitly offline."
+                "when returned. Prefer explicit health/network/RTT states over age. "
+                "When health is absent or ambiguous and a device has HealthCheck/Ping, "
+                "you may call hub_manage_devices with tool='hub_call_device_command' "
+                "and command='ping' (or 'refresh'), then re-read its status. Ping and "
+                "refresh are non-sensitive checks. Limit active checks to five devices "
+                "per request and report which devices were not actively checked."
             )
         home_section = ""
         if any(
@@ -464,8 +473,8 @@ class UnifiedMCPAgent:
                 "remove", "replace", "swap", "unlock",
             }
             routine = {
-                "off", "on", "setcolor", "setcolortemperature", "setlevel",
-                "toggle",
+                "off", "on", "ping", "refresh", "setcolor",
+                "setcolortemperature", "setlevel", "toggle",
             }
             if tokens & routine and not tokens & dangerous:
                 return False
