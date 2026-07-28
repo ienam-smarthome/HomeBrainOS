@@ -105,7 +105,11 @@ class UnifiedMCPAgent:
             "for every live state claim and action. Match informal names against the live "
             "manifest and use exact IDs whenever possible. Never invent devices, states, "
             "tool results, or successful actions. Ask one short clarification only when "
-            "needed. Sensitive actions are confirmed by the host.\n\n"
+            "needed. Sensitive actions are confirmed by the host. This MCP server uses "
+            "category gateways: call a gateway with tool='<sub-tool name>' and "
+            "args={<sub-tool arguments>}. For device questions, use hub_read_devices "
+            "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
+            "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}"
         )
 
