@@ -119,154 +119,194 @@ class AskLayerRegistry:
     def __init__(self, application: ModuleType) -> None:
         self.application = application
         self._records: list[AskLayerRecord] = []
-        self._wrapped: weakref.WeakKeyDictionary[Callable[..., Any], AskHandler] = (
-            weakref.WeakKeyDictionary()
-        )
-        self._assignment_count = 0
-        self._original_class: type[ModuleType] | None = None
-        self._tracking_class: type[ModuleType] | None = None
+        self._names: Counter[str] = Counter()
+        self._observed_handlers: weakref.WeakSet[AskHandler] = weakref.WeakSet()
 
-    def start(self) -> "AskLayerRegistry":
-        if self._tracking_class is not None:
-            return self
+    def _unique_name(self, source_module: str, source_function: str) -> str:
+        module = source_module.rsplit(".", 1)[-1]
+        function = re.sub(r"^install_", "", source_function)
+        stem = re.sub(r"[^a-z0-9]+", "-", f"{module}:{function}".lower()).strip("-")
+        self._names[stem] += 1
+        suffix = self._names[stem]
+        return stem if suffix == 1 else f"{stem}-{suffix}"
 
-        registry = self
-        original_class = self.application.__class__
-
-        class TrackedApplicationModule(original_class):
-            def __setattr__(self, name: str, value: Any) -> None:
-                if name == "ask" and callable(value):
-                    value = registry._instrument_assignment(value)
-                super().__setattr__(name, value)
-
-        self._original_class = original_class
-        self._tracking_class = TrackedApplicationModule
-        self.application.__class__ = TrackedApplicationModule
-
-        current = getattr(self.application, "ask", None)
-        if callable(current):
-            self.application.ask = current
-        return self
-
-    def stop(self) -> None:
-        if self._original_class is None:
-            return
-        self.application.__class__ = self._original_class
-        self._original_class = None
-        self._tracking_class = None
-
-    def _instrument_assignment(self, handler: Callable[..., Any]) -> AskHandler:
-        if getattr(handler, "__homebrain_layer_wrapper__", False):
+    def wrap(
+        self,
+        handler: AskHandler,
+        *,
+        source_module: str,
+        source_function: str,
+        name: str | None = None,
+        tier: AskLayerTier | None = None,
+    ) -> AskHandler:
+        if not callable(handler):
+            raise TypeError("application.ask must remain callable")
+        if handler in self._observed_handlers:
             return handler
-        cached = self._wrapped.get(handler)
-        if cached is not None:
-            return cached
 
-        frame = inspect.currentframe()
-        caller = frame.f_back.f_back if frame and frame.f_back else None
-        source_module = str((caller.f_globals.get("__name__") if caller else "") or "")
-        source_function = str((caller.f_code.co_name if caller else "") or "")
-        self._assignment_count += 1
+        effective_function = source_function
+        if source_function == "<module>":
+            effective_function = str(
+                getattr(handler, "__name__", source_function)
+            )
         record = AskLayerRecord(
-            name=getattr(handler, "__name__", "ask"),
-            tier=classify_ask_layer(source_module, source_function),
+            name=name or self._unique_name(source_module, effective_function),
+            tier=tier or classify_ask_layer(source_module, effective_function),
             source_module=source_module,
-            source_function=source_function,
-            order=self._assignment_count,
+            source_function=effective_function,
+            order=len(self._records),
         )
         self._records.append(record)
+        previous = self.application.__dict__.get("ask")
+        previous_layers = tuple(
+            getattr(previous, "__homebrain_ask_layers__", ())
+        )
 
         @functools.wraps(handler)
         async def observed(request: Any) -> dict[str, Any]:
             execution = _ACTIVE_ASK_EXECUTION.get()
-            if execution is not None:
-                execution.traversed.append(record)
-            answer = await handler(request)
-            if execution is not None and execution.answering is None:
-                execution.answering = record
-            return answer
+            token: contextvars.Token[_AskExecution | None] | None = None
+            if execution is None:
+                execution = _AskExecution(traversed=[])
+                token = _ACTIVE_ASK_EXECUTION.set(execution)
+            execution.traversed.append(record)
+            execution.answering = record
+            try:
+                answer = await handler(request)
+                if isinstance(answer, dict):
+                    answering = execution.answering or record
+                    answer["answering_layer"] = answering.name
+                    answer["answering_layer_tier"] = answering.tier
+                    answer["ask_layers_traversed"] = [
+                        item.name for item in execution.traversed
+                    ]
+                return answer
+            finally:
+                if token is not None:
+                    _ACTIVE_ASK_EXECUTION.reset(token)
 
-        observed.__homebrain_layer_wrapper__ = True
-        observed.__homebrain_layer_record__ = record
-        self._wrapped[handler] = observed
+        self._observed_handlers.add(observed)
+        setattr(observed, "__homebrain_ask_layer__", record)
+        setattr(
+            observed,
+            "__homebrain_ask_layers__",
+            (record.name, *previous_layers),
+        )
         return observed
 
-    def records(self) -> list[dict[str, Any]]:
-        return [record.as_dict() for record in self._records]
+    def records(self) -> list[AskLayerRecord]:
+        return list(self._records)
 
-    def summary(self) -> dict[str, Any]:
-        counts = Counter(record.tier for record in self._records)
+    def response(self) -> dict[str, Any]:
+        records = self.records()
+        by_tier = Counter(record.tier for record in records)
         return {
-            "layer_count": len(self._records),
-            "tiers": dict(sorted(counts.items())),
-            "layers": self.records(),
+            "success": True,
+            "count": len(records),
+            "tiers": dict(sorted(by_tier.items())),
+            "layers": [record.as_dict() for record in records],
         }
 
 
-def install_ask_layer_tracking(application: ModuleType) -> AskLayerRegistry:
+class _AskTrackedModule(ModuleType):
+    """Module subtype that observes assignments to the public ask handler."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        registry = self.__dict__.get("_homebrain_ask_layer_registry")
+        if name == "ask" and isinstance(registry, AskLayerRegistry):
+            caller = inspect.currentframe()
+            caller = caller.f_back if caller is not None else None
+            value = registry.wrap(
+                value,
+                source_module=str(
+                    (caller.f_globals if caller is not None else {}).get(
+                        "__name__",
+                        "unknown",
+                    )
+                ),
+                source_function=(
+                    caller.f_code.co_name if caller is not None else "unknown"
+                ),
+            )
+        super().__setattr__(name, value)
+
+
+def install_ask_layer_tracking(application: Any) -> AskLayerRegistry:
+    """Observe all maintained ``application.ask`` assignments without reordering."""
+
+    if not isinstance(application, ModuleType):
+        raise TypeError("Ask-layer assignment tracking requires an application module")
+    existing = application.__dict__.get("_homebrain_ask_layer_registry")
+    if isinstance(existing, AskLayerRegistry):
+        return existing
+
     registry = AskLayerRegistry(application)
-    registry.start()
-    application.ask_layer_registry = registry
+    application.__class__ = _AskTrackedModule
+    ModuleType.__setattr__(
+        application,
+        "_homebrain_ask_layer_registry",
+        registry,
+    )
+    base_handler = registry.wrap(
+        application.ask,
+        source_module=str(getattr(application, "__name__", "app")),
+        source_function="base_ask",
+        name="base-application-route",
+        tier="deterministic-fast-read",
+    )
+    ModuleType.__setattr__(application, "ask", base_handler)
     return registry
 
 
+@dataclass(frozen=True)
 class AskLayer:
-    """Named middleware layer used by explicit request composition."""
+    """Named request layer that wraps the next handler in the pipeline."""
 
-    def __init__(
-        self,
-        name: str,
-        factory: AskLayerFactory,
-    ) -> None:
-        clean = str(name or "").strip()
-        if not clean:
-            raise ValueError("AskLayer name must be non-empty")
-        if not callable(factory):
-            raise TypeError("AskLayer factory must be callable")
-        self.name = clean
-        self.factory = factory
+    name: str
+    factory: AskLayerFactory
 
     def wrap(self, next_handler: AskHandler) -> AskHandler:
         handler = self.factory(next_handler)
         if not callable(handler):
-            raise TypeError(f"AskLayer {self.name!r} did not return a callable handler")
-        handler.__homebrain_ask_layer__ = self.name
+            raise TypeError(f"Ask layer {self.name!r} did not return a callable handler")
         return handler
 
 
 def compose_ask_layers(
     base_handler: AskHandler,
     *layers: AskLayer,
-    base_name: str = "base-handler",
+    base_name: str = "legacy-route-stack",
 ) -> AskHandler:
-    """Compose ordered middleware while preserving legacy outermost-first order."""
+    """Build one immutable request pipeline from inner to outer layers."""
 
     if not callable(base_handler):
-        raise TypeError("Base ask handler must be callable")
+        raise TypeError("The base ask handler must be callable")
+
     handler = base_handler
-    names = [str(base_name or "base-handler")]
+    order = [base_name]
     for layer in layers:
         handler = layer.wrap(handler)
-        names.append(layer.name)
-    handler.__homebrain_composed_layers__ = tuple(names)
+        order.insert(0, layer.name)
+
+    setattr(handler, "__homebrain_ask_layers__", tuple(order))
     return handler
 
 
 class AskCompositionBuilder:
-    """Capture legacy installers and republish them as one explicit composition.
+    """Capture compatibility installers behind one typed startup composition."""
 
-    Each captured installer may still assign ``application.ask`` internally for
-    compatibility with standalone tests. The builder restores the previous handler
-    immediately, then records the produced wrapper as an explicit ``AskLayer``.
-    Calling :meth:`finalize` publishes exactly one composed handler.
-    """
-
-    def __init__(self, application: ModuleType, *, base_name: str = "base-handler") -> None:
+    def __init__(
+        self,
+        application: Any,
+        *,
+        base_name: str = "core-request-stack",
+    ) -> None:
         self.application = application
         self.base_handler: AskHandler = application.ask
-        self.base_name = str(base_name or "base-handler")
-        self._layers: list[AskLayer] = []
-        self._names: set[str] = set()
+        self.current_handler: AskHandler = application.ask
+        self.base_name = base_name
+        self.layers: list[AskLayer] = []
+        self._layer_names: set[str] = set()
         self._finalized = False
 
     def capture(
@@ -274,99 +314,74 @@ class AskCompositionBuilder:
         name: str,
         installer: Callable[[], InstallerResult],
     ) -> InstallerResult:
+        """Run one compatibility installer and record its exact wrapper."""
+
         if self._finalized:
-            raise RuntimeError("Cannot capture after request composition is finalized")
-        clean = str(name or "").strip()
-        if not clean:
-            raise ValueError("Captured layer name must be non-empty")
-        if clean in self._names:
-            raise ValueError(f"Duplicate captured layer name: {clean}")
-
-        previous = self.application.ask
-        result = installer()
-        installed = self.application.ask
-        self.application.ask = previous
-        if installed is previous:
-            raise RuntimeError(f"Installer {clean!r} did not assign application.ask")
-
-        def factory(next_handler: AskHandler, *, installed_handler: AskHandler = installed) -> AskHandler:
-            closure = inspect.getclosurevars(installed_handler)
-            legacy_candidates = [
-                value
-                for value in closure.nonlocals.values()
-                if callable(value) and value is not installed_handler
-            ]
-            legacy = next(
-                (
-                    value
-                    for value in legacy_candidates
-                    if value is previous
-                    or getattr(value, "__homebrain_layer_wrapper__", False)
-                    or hasattr(value, "__homebrain_composed_layers__")
-                ),
-                None,
+            raise RuntimeError("Cannot capture an ask layer after finalization")
+        if not name or name in self._layer_names:
+            raise ValueError(f"Ask layer name must be non-empty and unique: {name!r}")
+        if self.application.ask is not self.current_handler:
+            raise RuntimeError(
+                f"Untracked application.ask mutation before layer {name!r}"
             )
-            if legacy is None:
+
+        previous_handler = self.current_handler
+        result = installer()
+        installed_handler = self.application.ask
+        if installed_handler is previous_handler:
+            raise RuntimeError(f"Installer for ask layer {name!r} did not wrap application.ask")
+        if not callable(installed_handler):
+            raise TypeError(f"Installer for ask layer {name!r} produced a non-callable handler")
+
+        def captured_factory(
+            next_handler: AskHandler,
+            *,
+            expected: AskHandler = previous_handler,
+            captured: AskHandler = installed_handler,
+            layer_name: str = name,
+        ) -> AskHandler:
+            if next_handler is not expected:
                 raise RuntimeError(
-                    f"Installer {clean!r} does not retain a replaceable downstream handler"
+                    f"Ask layer {layer_name!r} was composed above an unexpected handler"
                 )
+            return captured
 
-            async def composed(request: Any) -> dict[str, Any]:
-                if next_handler is legacy:
-                    return await installed_handler(request)
-
-                original_wrapped = self.application.ask
-                try:
-                    self.application.ask = next_handler
-                    return await installed_handler(request)
-                finally:
-                    self.application.ask = original_wrapped
-
-            composed.__name__ = getattr(installed_handler, "__name__", clean.replace("-", "_"))
-            return composed
-
-        self._layers.append(AskLayer(clean, factory))
-        self._names.add(clean)
+        self.layers.append(AskLayer(name, captured_factory))
+        self._layer_names.add(name)
+        self.current_handler = installed_handler
         return result
 
     def finalize(self) -> AskHandler:
+        """Verify and publish the declared auxiliary request stack."""
+
         if self._finalized:
-            return self.application.ask
-        handler = compose_ask_layers(
+            return self.current_handler
+        if self.application.ask is not self.current_handler:
+            raise RuntimeError("Untracked application.ask mutation before finalization")
+
+        composed = compose_ask_layers(
             self.base_handler,
-            *self._layers,
+            *self.layers,
             base_name=self.base_name,
         )
-        self.application.ask = handler
+        if composed is not self.current_handler:
+            raise RuntimeError("Captured ask composition did not reproduce the live handler")
+
+        self.application.ask = composed
+        self.current_handler = composed
         self._finalized = True
-        return handler
-
-
-async def run_with_ask_layer_tracking(
-    handler: AskHandler,
-    request: Any,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    execution = _AskExecution(traversed=[])
-    token = _ACTIVE_ASK_EXECUTION.set(execution)
-    try:
-        answer = await handler(request)
-    finally:
-        _ACTIVE_ASK_EXECUTION.reset(token)
-    return answer, {
-        "traversed": [record.as_dict() for record in execution.traversed],
-        "answering": execution.answering.as_dict() if execution.answering else None,
-    }
+        return composed
 
 
 __all__ = [
     "AskCompositionBuilder",
     "AskHandler",
     "AskLayer",
+    "AskLayerFactory",
     "AskLayerRecord",
     "AskLayerRegistry",
     "AskLayerTier",
     "classify_ask_layer",
     "compose_ask_layers",
     "install_ask_layer_tracking",
-    "run_with_ask_layer_tracking",
 ]
