@@ -114,6 +114,39 @@ def test_default_and_diagnostic_tool_sets_are_lean():
     ]
 
 
+def test_read_state_question_is_not_misclassified_as_mutation():
+    assert not UnifiedMCPAgent._requests_mutation("Which switches are on?")
+    assert not UnifiedMCPAgent._requests_mutation("Which doors are open?")
+    assert UnifiedMCPAgent._requests_mutation("turn off hallway lights")
+    assert UnifiedMCPAgent._requests_mutation("pause humidity app")
+
+
+def test_read_queries_exclude_manage_gateways():
+    tools = [
+        MCPTool("hub_read_devices", "read devices", {}),
+        MCPTool("hub_manage_devices", "manage devices", {}),
+        MCPTool("hub_read_rooms", "read rooms", {}),
+        MCPTool("hub_manage_rooms", "manage rooms", {}),
+        MCPTool("hub_search_tools", "search", {}),
+        MCPTool("hub_get_info", "info", {}),
+    ]
+    switches = UnifiedMCPAgent._select_tools("Which switches are on?", tools)
+    rooms = UnifiedMCPAgent._select_tools("List my Hubitat rooms", tools)
+    control = UnifiedMCPAgent._select_tools("turn off hallway lights", tools)
+    assert "hub_manage_devices" not in [tool.name for tool in switches]
+    assert [tool.name for tool in rooms] == [
+        "hub_read_rooms", "hub_search_tools",
+    ]
+    assert "hub_manage_devices" in [tool.name for tool in control]
+
+
+@pytest.mark.asyncio
+async def test_weather_request_loads_device_manifest():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("What is the weather?")
+    assert "'Couch Lamp' | ID: 42" in instruction
+
+
 def test_large_tool_results_are_bounded():
     agent = UnifiedMCPAgent(
         FakeMCP(), "key", "model", ai_client=FakeAI([]),
