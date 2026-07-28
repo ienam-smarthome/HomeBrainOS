@@ -272,6 +272,7 @@ async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
 async def test_control_request_cannot_claim_done_without_write_tool():
     ai = FakeAI([
         {"message": {"role": "assistant", "content": "Done."}},
+        {"message": {"role": "assistant", "content": "Still done."}},
     ])
     agent = UnifiedMCPAgent(
         FakeMCP(), "key", "model", ai_client=ai,
@@ -281,6 +282,37 @@ async def test_control_request_cannot_claim_done_without_write_tool():
     answer = await agent.process_user_request("turn off hallway lights")
 
     assert "did not execute a Hubitat control tool" in answer
+    assert len(ai.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_control_request_retries_once_and_executes_tool():
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "I will do that."}},
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "set_switch",
+                "arguments": {"device_id": "42", "state": "off"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "The couch lamp is off."}},
+    ])
+    mcp = FakeMCP()
+    agent = UnifiedMCPAgent(
+        mcp, "key", "model", ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+    answer = await agent.process_user_request("turn off the couch lamp")
+    assert answer == "The couch lamp is off."
+    assert mcp.calls == [("set_switch", {"device_id": "42", "state": "off"})]
+
+
+@pytest.mark.asyncio
+async def test_control_prompt_documents_fast_routine_commands():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("turn off the couch lamp")
+    assert "ROUTINE DEVICE CONTROL" in instruction
+    assert "do not require confirmation" in instruction
 
 
 def test_app_request_limits_visible_gateways():

@@ -363,6 +363,20 @@ class UnifiedMCPAgent:
                 "light is on, or an alert exists. Distinguish named-person presence from "
                 "room presence sensors."
             )
+        control_section = ""
+        if (
+            self._needs_device_manifest(user_prompt)
+            and self._requests_mutation(user_prompt)
+        ):
+            control_section = (
+                "\n\nROUTINE DEVICE CONTROL\nFor light/switch on, off, toggle, "
+                "setLevel, setColor, or setColorTemperature, call "
+                "hub_manage_devices with tool='hub_call_device_command' and exact "
+                "deviceId/command arguments. Execute one call per matched device. "
+                "These routine commands do not require confirmation. Locks, garage "
+                "doors, destructive device operations, and security controls remain "
+                "sensitive."
+            )
         return (
             "You are HomeBrainOS, a concise smart-home assistant. The live device manifest "
             "is a tool-fetched state snapshot and may be used directly for live state "
@@ -376,7 +390,7 @@ class UnifiedMCPAgent:
             "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
             "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
-            f"{battery_section}{health_section}{home_section}"
+            f"{battery_section}{health_section}{home_section}{control_section}"
         )
 
     @staticmethod
@@ -445,6 +459,16 @@ class UnifiedMCPAgent:
         argument_text = str(arguments).lower().replace("-", "_")
         tokens = set(re.findall(r"[a-z0-9]+", argument_text))
         if name == "hub_manage_devices":
+            dangerous = {
+                "close", "delete", "factory", "garage", "lock", "open",
+                "remove", "replace", "swap", "unlock",
+            }
+            routine = {
+                "off", "on", "setcolor", "setcolortemperature", "setlevel",
+                "toggle",
+            }
+            if tokens & routine and not tokens & dangerous:
+                return False
             if tokens & _MUTATION_TERMS:
                 return True
             if tokens & _READ_ONLY_TERMS:
@@ -569,11 +593,27 @@ class UnifiedMCPAgent:
         mutation_requested = self._requests_mutation(user_prompt)
         successful_mutations = 0
         failed_mutation = ""
+        control_retry_used = False
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
                 if mutation_requested and successful_mutations == 0:
+                    if not control_retry_used:
+                        control_retry_used = True
+                        messages.extend([
+                            assistant,
+                            {
+                                "role": "user",
+                                "content": (
+                                    "You have not executed the requested control. "
+                                    "Call the declared Hubitat management tool now "
+                                    "using the exact manifest device ID. Do not merely "
+                                    "describe the action."
+                                ),
+                            },
+                        ])
+                        continue
                     if failed_mutation:
                         return f"The Hubitat action failed: {failed_mutation}"
                     return (

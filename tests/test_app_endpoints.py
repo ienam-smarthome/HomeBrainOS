@@ -69,6 +69,11 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "sequence===requestSequence" in response.text
     assert "Ask another question to replace this request." in response.text
     assert "ask.disabled=true" not in response.text
+    assert "🔊 Read answer" in response.text
+    assert "■ Stop audio" in response.text
+    assert "function stopAudio()" in response.text
+    assert "function speakAnswer(" in response.text
+    assert "function startVoice(){stopAudio()" in response.text
     assert "fetch('/api/status')" not in response.text
 
 
