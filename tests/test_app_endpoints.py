@@ -54,6 +54,9 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "api/dashboard" in response.text
     assert "hmcp_last_query" in response.text
     assert "query.value=text" in response.text
+    assert "document.execCommand('copy')" in response.text
+    assert 'id="micFab"' in response.text
+    assert "copy-button" in response.text
     assert "apiPath('api/status')" in response.text
     assert "location.pathname.replace" in response.text
     assert "globalThis.crypto?.randomUUID?.()" in response.text
