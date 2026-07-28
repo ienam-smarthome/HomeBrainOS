@@ -31,8 +31,13 @@ _HUB_LOG_QUERY = re.compile(
     r"^(?:please\s+)?(?:(?:check|show|review|inspect|scan|list|get)\s+|look\s+at\s+)"
     r"(?:the\s+)?(?:(?:hub|hubitat)\s+)?(?:logs?|errors?|warnings?)"
     r"(?:\s+and\s+(?:errors?|warnings?))?"
-    r"(?:\s+(?:for|and\s+(?:show|list))\s+(?:any\s+)?"
-    r"(?:issues?|errors?|warnings?))?[?.!]*$",
+    r"(?:\s+(?:"
+    r"(?:for|and\s+(?:show|list))\s+(?:any\s+)?"
+    r"(?:issues?|errors?|warnings?)"
+    r"|(?:to|and)\s+(?:see|check|find)\s+"
+    r"(?:(?:if|whether)\s+)?(?:there\s+(?:are|is)\s+)?(?:any\s+)?"
+    r"(?:issues?|errors?|warnings?)"
+    r"))?[?.!]*$",
     re.IGNORECASE,
 )
 

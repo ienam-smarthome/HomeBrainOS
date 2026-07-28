@@ -13,6 +13,9 @@
 - Centralizes conservative destructive-call confirmation for AI tool execution.
 - Invalidates cached state after every recognized mutation family, including
   direct gateway calls.
+- Keeps natural log requests such as `Check logs to see if there are any
+  issues` on the authoritative 24-hour `hub_get_logs` route instead of the
+  household device-attention scan.
 
 ## 0.10.192
 
