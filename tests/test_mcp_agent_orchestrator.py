@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from google.genai import types
 
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
@@ -29,51 +27,44 @@ class FakeMCP:
         return MCPToolResult(name, arguments, {}, "ok", {"switch": "on"})
 
 
-class FakeModels:
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.payload
+
+
+class FakeAI:
     def __init__(self, responses):
         self.responses = iter(responses)
         self.requests = []
 
-    async def generate_content(self, **kwargs):
-        self.requests.append(kwargs)
-        return next(self.responses)
+    async def post(self, url, **kwargs):
+        self.requests.append((url, kwargs))
+        return FakeResponse(next(self.responses))
 
-
-class FakeAI:
-    _homebrain_test_client = True
-
-    def __init__(self, responses):
-        self.aio = SimpleNamespace(models=FakeModels(responses), aclose=self._close)
-
-    async def _close(self):
+    async def aclose(self):
         return None
 
 
-def response_with_call(name, args):
-    content = types.Content(
-        role="model",
-        parts=[types.Part(function_call=types.FunctionCall(name=name, args=args))],
-    )
-    return types.GenerateContentResponse(candidates=[types.Candidate(content=content)])
-
-
-def response_with_text(text):
-    content = types.Content(
-        role="model",
-        parts=[types.Part.from_text(text=text)],
-    )
-    return types.GenerateContentResponse(candidates=[types.Candidate(content=content)])
-
-
 @pytest.mark.asyncio
-async def test_sdk_native_multi_round_tool_execution():
+async def test_ollama_native_multi_round_tool_execution():
     mcp = FakeMCP()
     ai = FakeAI([
-        response_with_call("set_switch", {"device_id": "42", "state": "on"}),
-        response_with_text("The couch lamp is on."),
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "set_switch",
+                "arguments": {"device_id": "42", "state": "on"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "The couch lamp is on."}},
     ])
     agent = UnifiedMCPAgent(
-        mcp, "test-key", "test-model", ai_client=ai,
+        mcp, "test-key", "gemma4:31b", ai_client=ai,
         require_sensitive_confirmation=False,
     )
 
@@ -81,13 +72,15 @@ async def test_sdk_native_multi_round_tool_execution():
 
     assert answer == "The couch lamp is on."
     assert mcp.calls == [("set_switch", {"device_id": "42", "state": "on"})]
-    second_contents = ai.aio.models.requests[1]["contents"]
-    assert second_contents[-1].role == "user"
-    assert second_contents[-1].parts[0].function_response.name == "set_switch"
+    assert ai.requests[0][0] == "https://ollama.com/api/chat"
+    assert ai.requests[0][1]["headers"]["Authorization"] == "Bearer test-key"
+    messages = ai.requests[1][1]["json"]["messages"]
+    assert messages[-1]["role"] == "tool"
+    assert messages[-1]["tool_name"] == "set_switch"
 
 
 @pytest.mark.asyncio
 async def test_manifest_contains_live_device_identity():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
-    instruction = await agent._build_system_instruction()
+    instruction = await agent._system_prompt()
     assert "'Couch Lamp' | ID: 42 | Room: Lounge" in instruction

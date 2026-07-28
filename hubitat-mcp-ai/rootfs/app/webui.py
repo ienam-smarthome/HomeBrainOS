@@ -26,16 +26,21 @@ def render_page(title: str, version: str) -> str:
 </head>
 <body><main class="wrap">
 <h1>🏠 <span id="title"></span> <small id="version"></small></h1>
-<section class="card row"><span class="pill" id="mcp">MCP unknown</span><span class="pill" id="gemini">Gemini unknown</span></section>
+<section class="card row"><span class="pill" id="mcp">MCP unknown</span><span class="pill" id="ollama">Ollama unknown</span></section>
 <section class="card grid">
+<button class="tile secondary" data-q="Which lights are on?"><div class="big" id="dashLights">—</div><div>Lights on</div><div class="muted">Tap for live details</div></button>
+<button class="tile secondary" data-q="Which motion sensors are active?"><div class="big" id="dashMotion">—</div><div>Motion active</div><div class="muted">Live Hubitat states</div></button>
+<button class="tile secondary" data-q="Which switches are on?"><div class="big" id="dashSwitches">—</div><div>Switches on</div><div class="muted">Excludes lights</div></button>
+<button class="tile secondary" data-q="Which batteries are low?"><div class="big" id="dashBatteries">—</div><div>Low batteries</div><div class="muted">At or below 20%</div></button>
 <div class="tile"><div class="big" id="tools">—</div><div class="muted">MCP tools</div></div>
-<div class="tile"><div class="big" id="model">—</div><div class="muted">Gemini model</div></div>
+<div class="tile"><div class="big" id="model">—</div><div class="muted">Ollama model</div></div>
 <div class="tile"><div class="big" id="lastRoute">—</div><div class="muted">Last route</div></div>
 <div class="tile"><div class="big" id="lastTime">—</div><div class="muted">Response time</div></div>
 </section>
 <section class="card">
 <input id="query" placeholder="Ask your Hubitat…" autocomplete="off">
 <button id="ask">Ask</button><button class="secondary" id="speak">🎤 Speak</button>
+<label class="muted"><input id="readAnswers" type="checkbox" style="width:auto"> Read answers aloud</label>
 <div class="answer" id="answer">Ready</div>
 </section>
 <section class="card grid" id="shortcuts">
@@ -44,9 +49,14 @@ def render_page(title: str, version: str) -> str:
 <button class="secondary" data-q="Which batteries are low?">🪫 Low batteries</button>
 <button class="secondary" data-q="List my Hubitat rooms">🚪 Rooms</button>
 <button class="secondary" data-q="List automation rules">⚙️ Rules</button>
+<button class="secondary" data-q="Check the hub health status">🧠 Hub health</button>
+<button class="secondary" data-q="Show hub CPU and free memory">📊 Hub resources</button>
+<button class="secondary" data-q="List devices that are offline or stale">⚠️ Device health</button>
+<button class="secondary" data-q="What is the weather?">🌦️ Weather</button>
+<button class="secondary" data-q="Recommend useful automations for my home">✨ Recommendations</button>
 <button class="secondary" id="refresh">🧰 Refresh MCP tools</button>
 </section>
-<p class="muted">Powered by Gemini native function calling and Hubitat MCP.</p>
+<p class="muted">Powered by Ollama Online native function calling and Hubitat MCP.</p>
 </main>
 <script>
 const TITLE=__TITLE__,VERSION=__VERSION__;
@@ -58,8 +68,9 @@ const query=document.getElementById('query'),ask=document.getElementById('ask'),
 const apiPath=path=>`${location.pathname.replace(/\/?$/,'/')}${path}`;
 function pill(id,ok,text){const node=document.getElementById(id);node.textContent=text;node.className='pill '+(ok?'ok':'error')}
 async function jsonResponse(response){const raw=await response.text();try{return JSON.parse(raw)}catch(error){throw new Error(`HTTP ${response.status}: ${raw||'empty response'}`)}}
-function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';[data.route,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);const text=document.createElement('div');text.className='answer-text';text.textContent=data.message||data.detail||'No response';answer.appendChild(text);if(/please confirm/i.test(text.textContent)){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const pre=document.createElement('pre');pre.textContent=JSON.stringify(data,null,2);details.append(summary,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`}
-async function status(){try{const data=await jsonResponse(await fetch(apiPath('api/status')));pill('mcp',data.mcp?.online,data.mcp?.online?`MCP online · ${data.mcp.tools||0} tools`:`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('gemini',data.gemini?.configured,data.gemini?.configured?`Gemini ready · ${data.gemini.model}`:'Gemini API key required');document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.gemini?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}}
+let readAnswers=localStorage.getItem('hmcp_read_answers')==='true';document.getElementById('readAnswers').checked=readAnswers;document.getElementById('readAnswers').onchange=event=>{readAnswers=event.target.checked;localStorage.setItem('hmcp_read_answers',String(readAnswers))};
+function showAnswer(data){answer.replaceChildren();const meta=document.createElement('div');meta.className='answer-meta';[data.route,data.model,data.elapsed_ms===undefined?null:`${(data.elapsed_ms/1000).toFixed(1)}s`].filter(Boolean).forEach(value=>{const badge=document.createElement('span');badge.className='badge';badge.textContent=value;meta.appendChild(badge)});if(meta.children.length)answer.appendChild(meta);const text=document.createElement('div');text.className='answer-text';text.textContent=data.message||data.detail||'No response';answer.appendChild(text);if(/please confirm/i.test(text.textContent)){const confirm=document.createElement('button');confirm.className='confirm';confirm.textContent='Confirm action';confirm.onclick=()=>submit('confirm');answer.appendChild(confirm)}const copy=document.createElement('button');copy.className='secondary';copy.textContent='Copy answer';copy.onclick=()=>navigator.clipboard?.writeText(text.textContent);answer.appendChild(copy);const details=document.createElement('details');details.className='technical';const summary=document.createElement('summary');summary.textContent='Technical details';const pre=document.createElement('pre');pre.textContent=JSON.stringify(data,null,2);details.append(summary,pre);answer.appendChild(details);document.getElementById('lastRoute').textContent=data.route||'—';document.getElementById('lastTime').textContent=data.elapsed_ms===undefined?'—':`${(data.elapsed_ms/1000).toFixed(1)}s`;if(readAnswers&&speechSynthesis&&text.textContent.length<1500){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(text.textContent))}}
+async function status(){try{const [data,dash]=await Promise.all([jsonResponse(await fetch(apiPath('api/status'))),jsonResponse(await fetch(apiPath('api/dashboard')))]);pill('mcp',data.mcp?.online,data.mcp?.online?`MCP online · ${data.mcp.tools||0} tools`:`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('ollama',data.ollama?.configured,data.ollama?.configured?`Ollama Online ready · ${data.ollama.model}`:'Ollama Online API key required');document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.ollama?.model||'—';document.getElementById('dashLights').textContent=dash.lights_on??'—';document.getElementById('dashMotion').textContent=dash.motion_active??'—';document.getElementById('dashSwitches').textContent=dash.switches_on??'—';document.getElementById('dashBatteries').textContent=dash.low_batteries??'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}}
 async function submit(text){text=(text||query.value).trim();if(!text)return;query.value='';ask.disabled=true;answer.classList.add('busy');answer.textContent='Working…';try{const data=await jsonResponse(await fetch(apiPath('api/ask'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,session_id:sessionId})}));showAnswer(data)}catch(error){showAnswer({success:false,route:'error',message:'Request failed: '+error.message})}finally{ask.disabled=false;answer.classList.remove('busy');status()}}
 ask.onclick=()=>submit();query.onkeydown=event=>{if(event.key==='Enter')submit()};document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>submit(button.dataset.q));
 document.getElementById('refresh').onclick=async()=>{try{const data=await jsonResponse(await fetch(apiPath('api/refresh'),{method:'POST'}));answer.textContent=`MCP tools refreshed: ${data.tools}.`;status()}catch(error){answer.textContent='Refresh failed: '+error.message}};
