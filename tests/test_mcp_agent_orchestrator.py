@@ -175,6 +175,14 @@ async def test_update_prompt_requires_status_reconciliation():
     assert "never summarize those values as up to date" in instruction
 
 
+@pytest.mark.asyncio
+async def test_low_battery_prompt_matches_dashboard_threshold():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("Which batteries are low?")
+    assert "at or below 20 percent" in instruction
+    assert "Exclude every device above 20 percent" in instruction
+
+
 def test_large_tool_results_are_bounded():
     agent = UnifiedMCPAgent(
         FakeMCP(), "key", "model", ai_client=FakeAI([]),

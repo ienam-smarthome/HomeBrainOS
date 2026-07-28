@@ -9,3 +9,5 @@
   confirmed as a single group, enabling normal room-level multi-device control.
 - Keeps the confirmation boundary intact: no grouped action runs before the
   explicit confirmation.
+- Aligns low-battery answers with the dashboard threshold of 20 percent or
+  below, explicitly excluding devices at 30 or 35 percent.

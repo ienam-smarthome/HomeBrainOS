@@ -325,6 +325,13 @@ class UnifiedMCPAgent:
                 "available; never summarize those values as up to date. Distinguish hub "
                 "firmware updates from MCP Server App updates."
             )
+        battery_section = ""
+        if self._matches(user_prompt, {"battery", "batteries"}):
+            battery_section = (
+                "\n\nLOW BATTERY RULE\nA battery is low only when its numeric level "
+                "is at or below 20 percent, matching the dashboard. Exclude every device "
+                "above 20 percent. Do not reinterpret 30 or 35 percent as low."
+            )
         return (
             "You are HomeBrainOS, a concise smart-home assistant. The live device manifest "
             "is a tool-fetched state snapshot and may be used directly for live state "
@@ -338,6 +345,7 @@ class UnifiedMCPAgent:
             "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
             "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
+            f"{battery_section}"
         )
 
     @staticmethod
