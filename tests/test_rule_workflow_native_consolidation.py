@@ -10,7 +10,7 @@ if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
 
 from automation_rule_workflow import AutomationRuleWorkflow
-import automation_rule_workflow_native_rm as native
+import automation_rule_workflow_hubitat as native
 
 
 REMOVED_MODULES = (
@@ -20,7 +20,7 @@ REMOVED_MODULES = (
 
 
 def test_rule_schema_and_release_have_one_native_owner() -> None:
-    assert (APP / "automation_rule_workflow_native_rm.py").is_file()
+    assert (APP / "automation_rule_workflow_hubitat.py").is_file()
     for module_name in REMOVED_MODULES:
         assert not (APP / f"{module_name}.py").exists()
 

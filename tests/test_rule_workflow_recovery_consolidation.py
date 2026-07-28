@@ -10,7 +10,7 @@ if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
 
 import automation_rule_direct_contact as direct_contact
-import automation_rule_workflow_repair_id_safe as recovery
+import automation_rule_workflow_recovery as recovery
 
 
 REMOVED_MODULES = (
@@ -22,7 +22,7 @@ REMOVED_MODULES = (
 
 
 def test_recovery_layers_have_one_externally_wired_owner() -> None:
-    assert (APP / "automation_rule_workflow_repair_id_safe.py").is_file()
+    assert (APP / "automation_rule_workflow_recovery.py").is_file()
     for module_name in REMOVED_MODULES:
         assert not (APP / f"{module_name}.py").exists()
 

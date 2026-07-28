@@ -7,7 +7,7 @@ import ai_evidence_planner as planner_module
 import request_tracing
 from control_agent_intent import is_control_candidate
 from control_focus_mode import ControlFocusMode, is_control_followup, is_power_summary_query
-from control_focus_power_summary_safe import install_control_focus_power_summary_safe
+from control_focus_power_summary import install_control_focus_power_summary
 from control_focus_octopus_energy import OctopusLiveMeterSummary
 from device_health_fast_route import is_device_health_query
 from fallback_router import _device_id, _label
@@ -244,7 +244,7 @@ def _requested_periods(query: str) -> tuple[str, ...]:
 def install_hybrid_verified_read_routes(application: Any, metric_executor: Any) -> dict[str, Any]:
     """Install fast verified reads outside optional restricted Control Focus mode."""
 
-    install_control_focus_power_summary_safe()
+    install_control_focus_power_summary()
     power_service = ControlFocusMode(
         application,
         metric_executor,

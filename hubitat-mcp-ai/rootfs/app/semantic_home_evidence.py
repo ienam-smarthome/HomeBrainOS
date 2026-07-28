@@ -109,6 +109,13 @@ def _is_household_battery(label: str, room: str) -> bool:
 
 def _required_facts(data: dict[str, Any]) -> list[str]:
     required = ["mode", "motion.active_count", "contacts.open_count", "lights.on_count"]
+    active_devices = (
+        data.get("active_devices")
+        if isinstance(data.get("active_devices"), dict)
+        else {}
+    )
+    if int(active_devices.get("on_count") or 0):
+        required.append("active_devices.on_count")
     low = data.get("low_batteries") if isinstance(data.get("low_batteries"), dict) else {}
     if int(low.get("count") or 0):
         required.append("low_batteries.count")
@@ -219,6 +226,10 @@ class SemanticHomeEvidenceBroker:
             "lights": {
                 "on_count": len(list(snapshot.get("lights_on") or [])),
                 "on": list(snapshot.get("lights_on") or [])[:limit],
+            },
+            "active_devices": {
+                "on_count": len(list(snapshot.get("devices_on") or [])),
+                "on": list(snapshot.get("devices_on") or [])[:limit],
             },
             "heating": list(snapshot.get("heating") or [])[:limit],
             "attention": list(snapshot.get("attention") or [])[:limit],

@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable
 
 import hybrid_assistant_mode as hybrid_module
 from automation_rule_workflow import _normalise, _session_id
-from automation_rule_workflow_repair_id_safe import (
+from automation_rule_workflow_recovery import (
     RepairIdSafeWashingRuleMachineWorkflow,
     install_repair_id_safe_rule_machine_workflow,
 )

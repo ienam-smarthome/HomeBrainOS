@@ -9,9 +9,9 @@ APP = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
 
-import automation_rule_workflow_repair_id_safe as repair
-import automation_rule_workflow_repair_id_safe as washing
-from automation_rule_workflow_native_rm import NativeRuleMachineAutomationWorkflow
+import automation_rule_workflow_recovery as repair
+import automation_rule_workflow_recovery as washing
+from automation_rule_workflow_hubitat import NativeRuleMachineAutomationWorkflow
 
 
 REMOVED_MODULES = (
@@ -22,7 +22,7 @@ REMOVED_MODULES = (
 
 
 def test_notification_and_final_washing_layers_have_one_owner() -> None:
-    assert (APP / "automation_rule_workflow_repair_id_safe.py").is_file()
+    assert (APP / "automation_rule_workflow_recovery.py").is_file()
     for module_name in REMOVED_MODULES:
         assert not (APP / f"{module_name}.py").exists()
 

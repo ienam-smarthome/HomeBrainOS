@@ -15,8 +15,8 @@ APP_DIR = (
 sys.path.insert(0, str(APP_DIR))
 
 from control_focus_mode import ControlFocusMode
-from control_focus_power_summary_safe import (
-    install_control_focus_power_summary_safe,
+from control_focus_power_summary import (
+    install_control_focus_power_summary,
 )
 
 
@@ -50,7 +50,7 @@ class FakeMetricExecutor:
 
 
 def test_power_summary_technical_diagnostics_are_compact():
-    install_control_focus_power_summary_safe()
+    install_control_focus_power_summary()
 
     instance = object.__new__(ControlFocusMode)
     instance.metric_executor = FakeMetricExecutor()

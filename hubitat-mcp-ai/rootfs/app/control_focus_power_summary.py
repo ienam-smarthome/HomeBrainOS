@@ -9,7 +9,7 @@ from semantic_metric_comparison import _SPECS, format_measurement
 from semantic_read_intent import SemanticReadIntent
 
 
-def install_control_focus_power_summary_safe() -> None:
+def install_control_focus_power_summary() -> None:
     """Replace the 0.7.1 formatter with a structured-evidence-safe version.
 
     Semantic metric responses intentionally pass their diagnostic payload through
@@ -167,4 +167,4 @@ def install_control_focus_power_summary_safe() -> None:
     ControlFocusMode.power_summary = power_summary
 
 
-__all__ = ["install_control_focus_power_summary_safe"]
+__all__ = ["install_control_focus_power_summary"]

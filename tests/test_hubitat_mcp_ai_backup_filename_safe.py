@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from automation_rule_workflow_repair_id_safe import (  # noqa: E402
+from automation_rule_workflow_recovery import (  # noqa: E402
     FilenameSafeBackupWashingRuleMachineWorkflow,
     _hubitat_backup_filename_date,
 )

@@ -76,6 +76,24 @@ def test_fact_manifest_covers_every_non_empty_authoritative_domain():
     assert manifest["low_batteries"]["names"] == ["Livingroom TRV", "Fridge Door"]
 
 
+def test_active_non_light_devices_are_visible_and_required():
+    evidence = sample_evidence()
+    evidence["data"]["active_devices"] = {
+        "on_count": 1,
+        "on": [{"title": "Fan Boost", "room": "Living Room"}],
+    }
+
+    assert "active_devices.on_count" in _required_facts(evidence["data"])
+    manifest = {item["domain"]: item for item in _fact_manifest(evidence)}
+    assert manifest["active_devices"] == {
+        "domain": "active_devices",
+        "count": 1,
+        "names": ["Fan Boost"],
+        "required": True,
+    }
+    assert "Fan Boost" in _fallback(evidence)
+
+
 def test_synthesis_validation_requires_all_non_empty_domain_names():
     evidence = sample_evidence()
     good = (

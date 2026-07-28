@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from system_presenter_v2 import present_hub_info_v2
+from system_presenter import present_hub_info
 
 
 def _metric(display, label):
@@ -14,7 +14,7 @@ def _metric(display, label):
 
 
 def test_hub_health_shows_available_firmware_and_database_size_tiles():
-    message, display = present_hub_info_v2(
+    message, display = present_hub_info(
         {
             "name": "Hub C8 Pro",
             "firmwareVersion": "2.5.1.132",
@@ -35,7 +35,7 @@ def test_hub_health_shows_available_firmware_and_database_size_tiles():
 
 
 def test_hub_health_marks_current_firmware_up_to_date():
-    _, display = present_hub_info_v2(
+    _, display = present_hub_info(
         {
             "firmwareVersion": "2.5.1.134",
             "platformUpdate": {

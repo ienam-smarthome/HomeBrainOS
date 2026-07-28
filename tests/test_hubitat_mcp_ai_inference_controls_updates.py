@@ -13,7 +13,7 @@ from fast_fallback_device_health import (  # noqa: E402
 )
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from ollama_agent_inference import OllamaMCPAgent  # noqa: E402
-from system_presenter_v2 import present_hub_info_v2  # noqa: E402
+from system_presenter import present_hub_info  # noqa: E402
 from webui import render_page  # noqa: E402
 
 
@@ -145,7 +145,7 @@ def test_hub_health_surfaces_platform_and_mcp_updates():
 
 
 def test_available_version_overrides_stale_false_platform_flag():
-    message, display = present_hub_info_v2(
+    message, display = present_hub_info(
         {
             "name": "Hub C8 Pro",
             "firmwareVersion": "2.5.1.128",

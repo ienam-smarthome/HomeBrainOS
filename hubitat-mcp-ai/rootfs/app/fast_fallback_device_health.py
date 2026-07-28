@@ -23,7 +23,7 @@ from presenter import (
     safe_debug,
 )
 from spoken_device_name import unique_spoken_match
-from system_presenter_v2 import present_hub_info_v2
+from system_presenter import present_hub_info
 
 _GROUP_WORDS = {
     "light",
@@ -430,7 +430,7 @@ class VerifiedFastFallbackRouter(LiveFastFallbackRouter):
             if not follow_up.is_error:
                 result = follow_up
 
-        message, display = present_hub_info_v2(result.data)
+        message, display = present_hub_info(result.data)
         return self._decorate(
             self._response(message, "fallback-hub-info", True, result),
             display,
@@ -909,7 +909,7 @@ class AttentionFastFallbackRouter(VerifiedFastFallbackRouter):
                         priority=4,
                     )
 
-            _message, hub_display = present_hub_info_v2(hub_result.data)
+            _message, hub_display = present_hub_info(hub_result.data)
             platform = hub_display.get("platform_update") or {}
             app_update = hub_display.get("app_update") or {}
             if platform.get("available") is True:

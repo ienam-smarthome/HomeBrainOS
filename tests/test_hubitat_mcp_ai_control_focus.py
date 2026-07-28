@@ -20,8 +20,8 @@ from control_focus_mode import (  # noqa: E402
     is_power_summary_query,
     is_verified_read_query,
 )
-from control_focus_power_summary_safe import (  # noqa: E402
-    install_control_focus_power_summary_safe,
+from control_focus_power_summary import (  # noqa: E402
+    install_control_focus_power_summary,
 )
 from control_focus_octopus_energy import (  # noqa: E402
     OctopusLiveMeterSummary,
@@ -34,7 +34,7 @@ from hybrid_assistant_mode import (  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
 
-install_control_focus_power_summary_safe()
+install_control_focus_power_summary()
 
 
 class FakeMetricExecutor:
@@ -226,7 +226,7 @@ def test_release_configuration_and_hybrid_installation_are_aligned():
     entrypoint = (APP_DIR / "entrypoint.py").read_text(encoding="utf-8")
     domains = (APP_DIR / "ai_evidence_domains.py").read_text(encoding="utf-8")
     hybrid = (APP_DIR / "hybrid_assistant_mode.py").read_text(encoding="utf-8")
-    safe_power = (APP_DIR / "control_focus_power_summary_safe.py").read_text(encoding="utf-8")
+    safe_power = (APP_DIR / "control_focus_power_summary.py").read_text(encoding="utf-8")
     automation_ui = (APP_DIR / "automation_recommendation_webui.py").read_text(encoding="utf-8")
     config = (ROOT / "hubitat-mcp-ai" / "config.yaml").read_text(encoding="utf-8")
     changelog = (ROOT / "hubitat-mcp-ai" / "CHANGELOG.md").read_text(encoding="utf-8")

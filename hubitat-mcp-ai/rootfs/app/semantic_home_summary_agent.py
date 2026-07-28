@@ -30,6 +30,7 @@ _DOMAIN_TERMS = {
     "motion": ("motion sensor", "motion sensors", "motion"),
     "contacts": ("contact sensor", "contact sensors", "contact", "door", "window", "open"),
     "lights": ("light", "lights", "lamp", "lamps", "on"),
+    "active_devices": ("device", "devices", "appliance", "appliances", "on", "running"),
     "low_batteries": ("low battery", "low batteries", "battery", "batteries"),
     "heating": ("heating", "thermostat", "trv", "radiator"),
 }
@@ -73,6 +74,7 @@ def _fact_manifest(evidence: dict[str, Any]) -> list[dict[str, Any]]:
         ("motion", "active_count", "active"),
         ("contacts", "open_count", "open"),
         ("lights", "on_count", "on"),
+        ("active_devices", "on_count", "on"),
         ("low_batteries", "count", "items"),
     ):
         block = data.get(domain) if isinstance(data.get(domain), dict) else {}
@@ -130,6 +132,19 @@ def _fallback(evidence: dict[str, Any]) -> str:
             f"{'is' if light_count == 1 else 'are'} on: {_names(list(lights.get('on') or []))}."
         )
 
+    active_devices = (
+        data.get("active_devices")
+        if isinstance(data.get("active_devices"), dict)
+        else {}
+    )
+    active_device_count = int(active_devices.get("on_count") or 0)
+    if active_device_count:
+        sentences.append(
+            f"{_count_phrase(active_device_count, 'other device')} "
+            f"{'is' if active_device_count == 1 else 'are'} on: "
+            f"{_names(list(active_devices.get('on') or []))}."
+        )
+
     low = data.get("low_batteries") if isinstance(data.get("low_batteries"), dict) else {}
     low_count = int(low.get("count") or 0)
     if low_count:
@@ -148,7 +163,7 @@ def _fallback(evidence: dict[str, Any]) -> str:
     if heating:
         sentences.append(f"Heating is active on {_names(heating)}.")
 
-    return " ".join(sentences[:5])
+    return " ".join(sentences[:7])
 
 
 def _public_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
@@ -160,6 +175,7 @@ def _public_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         "motion": data.get("motion"),
         "contacts": data.get("contacts"),
         "lights": data.get("lights"),
+        "active_devices": data.get("active_devices"),
         "heating": data.get("heating"),
         "low_batteries": data.get("low_batteries"),
         "climate": data.get("climate"),
@@ -258,7 +274,7 @@ async def _synthesise(application: Any, query: str, evidence: dict[str, Any]) ->
         "Include every fact marked required in fact_manifest, preserving exact counts and exact device names. "
         "Keep each domain's count in the same sentence as that domain. "
         "For a zero motion count, say no motion sensors are active. "
-        "Mention non-empty open contacts, lights on, heating, low batteries and important climate conditions. "
+        "Mention non-empty open contacts, lights on, active appliances/devices, heating, low batteries and important climate conditions. "
         "If a room is unusually warm or humid, mention the room and sensor reading. "
         "Prioritise anything needing attention. "
         "Do not mention coverage, states read, tool names, JSON, technical details or evidence gathering. "
