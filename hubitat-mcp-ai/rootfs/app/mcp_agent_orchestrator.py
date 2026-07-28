@@ -42,6 +42,7 @@ _DIAGNOSTIC_TERMS = {
     "logs", "matter", "memory", "radio", "software", "update", "updates",
     "version", "zigbee", "zwave",
 }
+_DEVICE_HEALTH_TERMS = {"offline", "stale", "unavailable"}
 _ROOM_TERMS = {"room", "rooms"}
 _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
@@ -52,8 +53,7 @@ _HOME_STATE_PATTERNS = (
 @dataclass(slots=True)
 class PendingConfirmation:
     expires_at: float
-    tool_name: str
-    arguments: dict[str, Any]
+    actions: list[tuple[str, dict[str, Any]]]
     messages: list[dict[str, Any]]
     assistant_message: dict[str, Any]
 
@@ -175,7 +175,11 @@ class UnifiedMCPAgent:
     @classmethod
     def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
         names: set[str] | None = None
-        if cls._matches(prompt, _APP_TERMS):
+        if cls._matches(prompt, _DEVICE_HEALTH_TERMS):
+            names = {
+                "hub_read_devices", "hub_read_diagnostics", "hub_search_tools",
+            }
+        elif cls._matches(prompt, _APP_TERMS):
             names = {
                 "hub_read_apps_code", "hub_read_rules",
                 "hub_search_tools",
@@ -246,9 +250,41 @@ class UnifiedMCPAgent:
                         capabilities = list(capabilities)
                     if not isinstance(capabilities, list):
                         capabilities = [capabilities]
+                    attributes = device.get("attributes") or device.get("currentStates") or {}
+                    if isinstance(attributes, list):
+                        attributes = {
+                            str(item.get("name")): item.get(
+                                "currentValue", item.get("value")
+                            )
+                            for item in attributes
+                            if isinstance(item, dict) and item.get("name")
+                        }
+                    if not isinstance(attributes, dict):
+                        attributes = {}
+                    common = {
+                        "battery", "condition", "contact", "humidity", "level",
+                        "lock", "motion", "presence", "pressure", "switch",
+                        "temperature", "wind", "windspeed",
+                    }
+                    is_weather = "weather" in str(label).lower()
+                    states = []
+                    for key, value in attributes.items():
+                        normalized = str(key).lower().replace("_", "")
+                        if (
+                            normalized not in common
+                            and not (is_weather and len(states) < 16)
+                        ):
+                            continue
+                        rendered = str(value)
+                        if len(rendered) > 80:
+                            rendered = rendered[:77] + "..."
+                        states.append(f"{key}={rendered}")
+                        if len(states) >= (16 if is_weather else 10):
+                            break
                     rows.append(
                         f"- {label!r} | ID: {device_id} | Room: {room} | "
                         f"Capabilities: {', '.join(map(str, capabilities)) or 'unknown'}"
+                        + (f" | Current: {', '.join(states)}" if states else "")
                     )
             except Exception as exc:
                 logger.warning("Could not build live device manifest: %s", exc)
@@ -284,9 +320,54 @@ class UnifiedMCPAgent:
                 "hub_manage_native_rules_and_apps with tool='hub_set_rule_paused' "
                 "and args={'appId': <id>, 'value': true to pause or false to resume}."
             )
+        update_section = ""
+        if self._matches(user_prompt, {"firmware", "software", "update", "updates"}):
+            update_section = (
+                "\n\nUPDATE STATUS RULES\nCall hub_get_info with includeAppUpdate=true. "
+                "Compare the current firmware/app versions with every returned update "
+                "version and status field. Values such as 'Update Available', "
+                "updateAvailable=true, or a newer hubUpdateVersion mean an update is "
+                "available; never summarize those values as up to date. Distinguish hub "
+                "firmware updates from MCP Server App updates."
+            )
+        battery_section = ""
+        if self._matches(user_prompt, {"battery", "batteries"}):
+            battery_section = (
+                "\n\nLOW BATTERY RULE\nA battery is low only when its numeric level "
+                "is at or below 20 percent, matching the dashboard. Exclude every device "
+                "above 20 percent. Do not reinterpret 30 or 35 percent as low."
+            )
+        health_section = ""
+        if self._matches(user_prompt, _DEVICE_HEALTH_TERMS):
+            health_section = (
+                "\n\nDEVICE HEALTH RULES\nSeparate results into Offline and Stale "
+                "sections. Call a device offline only when Hubitat explicitly reports "
+                "offline, unavailable, or a failed health status. Stale means no recent "
+                "event (normally over 24 hours) and does not prove a device is offline. "
+                "Battery sensors, buttons, remotes, tariff records, and rarely changing "
+                "devices may be healthy but stale. Include last activity or stale age "
+                "when returned, and say when no devices are explicitly offline."
+            )
+        home_section = ""
+        if any(
+            re.search(pattern, user_prompt.lower()) is not None
+            for pattern in _HOME_STATE_PATTERNS
+        ):
+            home_section = (
+                "\n\nWHOLE-HOME SUMMARY RULES\nGive a compact structured snapshot "
+                "covering: people/presence; active motion; lights and notable switches "
+                "that are on; open doors/windows and unlocked locks; low batteries at "
+                "or below 20 percent; hub/security alerts; and notable climate or weather "
+                "conditions when present. Omit empty categories. Do not say the home is "
+                "quiet when anyone is present, motion is active, a contact is open, a "
+                "light is on, or an alert exists. Distinguish named-person presence from "
+                "room presence sensors."
+            )
         return (
-            "You are HomeBrainOS, a concise smart-home assistant. Use Hubitat MCP tools "
-            "for every live state claim and action. Match informal names against the live "
+            "You are HomeBrainOS, a concise smart-home assistant. The live device manifest "
+            "is a tool-fetched state snapshot and may be used directly for live state "
+            "answers; call Hubitat MCP when the needed state is absent. Use Hubitat MCP "
+            "for every action. Match informal names against the live "
             "manifest and use exact IDs whenever possible. Never invent devices, states, "
             "tool results, or successful actions. Ask one short clarification only when "
             "needed. Sensitive actions are confirmed by the host. This MCP server uses "
@@ -294,7 +375,8 @@ class UnifiedMCPAgent:
             "args={<sub-tool arguments>}. For device questions, use hub_read_devices "
             "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
             "gateway with empty arguments.\n\n"
-            f"LIVE DEVICE MANIFEST\n{manifest}{app_section}"
+            f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
+            f"{battery_section}{health_section}{home_section}"
         )
 
     @staticmethod
@@ -424,6 +506,7 @@ class UnifiedMCPAgent:
             self._pending.pop(session_id, None)
             return None
         if " ".join(prompt.strip().lower().split()) not in _CONFIRM_WORDS:
+            self._pending.pop(session_id, None)
             return None
         self._pending.pop(session_id, None)
         return pending
@@ -431,16 +514,19 @@ class UnifiedMCPAgent:
     async def _resume_confirmation(
         self, pending: PendingConfirmation, tools: list[dict[str, Any]]
     ) -> str:
-        try:
-            result = await self.mcp.call_tool(pending.tool_name, pending.arguments)
-            content = self._result_payload(result)
-        except Exception as exc:
-            content = json.dumps({"error": str(exc)})
         messages = [
             *pending.messages,
             pending.assistant_message,
-            {"role": "tool", "tool_name": pending.tool_name, "content": content},
         ]
+        for tool_name, arguments in pending.actions:
+            try:
+                result = await self.mcp.call_tool(tool_name, arguments)
+                content = self._result_payload(result)
+            except Exception as exc:
+                content = json.dumps({"error": str(exc)})
+            messages.append(
+                {"role": "tool", "tool_name": tool_name, "content": content}
+            )
         response = await self._chat(messages, tools)
         return str(response.get("content") or "Confirmed command completed.")
 
@@ -456,8 +542,9 @@ class UnifiedMCPAgent:
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
+            pending_names = {name for name, _ in pending.actions}
             declared = [
-                tool for tool in all_tools if tool.name == pending.tool_name
+                tool for tool in all_tools if tool.name in pending_names
             ] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
@@ -512,17 +599,21 @@ class UnifiedMCPAgent:
             if sensitive:
                 if session_id == "default":
                     return "A unique session_id is required before I can queue a sensitive Hubitat action."
-                if len(sensitive) > 1:
-                    return "This request proposed multiple sensitive actions. Please request and confirm them one at a time."
-                name, arguments = sensitive[0]
+                if len(sensitive) > 12:
+                    return "This request proposed more than 12 sensitive actions. Please split it into smaller groups."
                 self._pending[session_id] = PendingConfirmation(
                     time.monotonic() + self.confirmation_ttl_seconds,
-                    name,
-                    arguments,
+                    list(sensitive),
                     list(messages),
                     assistant,
                 )
-                return f"Please confirm before I run the sensitive Hubitat action `{name}`."
+                names = sorted({name for name, _ in sensitive})
+                if len(sensitive) == 1:
+                    return f"Please confirm before I run the sensitive Hubitat action `{names[0]}`."
+                return (
+                    f"Please confirm before I run {len(sensitive)} sensitive Hubitat "
+                    f"actions through `{', '.join(names)}`."
+                )
             messages.append(assistant)
             for call in calls:
                 function = call.get("function") or {}

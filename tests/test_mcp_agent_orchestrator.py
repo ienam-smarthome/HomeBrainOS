@@ -147,6 +147,77 @@ async def test_weather_request_loads_device_manifest():
     assert "'Couch Lamp' | ID: 42" in instruction
 
 
+@pytest.mark.asyncio
+async def test_manifest_includes_compact_live_states():
+    class StateMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [{
+                "id": "7",
+                "label": "Hallway Sensor",
+                "room": "Hallway",
+                "capabilities": ["MotionSensor"],
+                "attributes": [
+                    {"name": "motion", "value": "active"},
+                    {"name": "battery", "value": 91},
+                ],
+            }]
+
+    agent = UnifiedMCPAgent(StateMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("Which motion sensors are active?")
+    assert "Current: motion=active, battery=91" in instruction
+
+
+@pytest.mark.asyncio
+async def test_update_prompt_requires_status_reconciliation():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("software update")
+    assert "includeAppUpdate=true" in instruction
+    assert "never summarize those values as up to date" in instruction
+
+
+@pytest.mark.asyncio
+async def test_low_battery_prompt_matches_dashboard_threshold():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("Which batteries are low?")
+    assert "at or below 20 percent" in instruction
+    assert "Exclude every device above 20 percent" in instruction
+
+
+def test_device_health_query_gets_read_and_diagnostic_gateways():
+    tools = [
+        MCPTool("hub_read_devices", "devices", {}),
+        MCPTool("hub_read_diagnostics", "diagnostics", {}),
+        MCPTool("hub_manage_devices", "manage", {}),
+        MCPTool("hub_search_tools", "search", {}),
+    ]
+    selected = UnifiedMCPAgent._select_tools(
+        "List devices that are offline or stale", tools
+    )
+    assert [tool.name for tool in selected] == [
+        "hub_read_devices", "hub_read_diagnostics", "hub_search_tools",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_device_health_prompt_distinguishes_stale_from_offline():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt(
+        "List devices that are offline or stale"
+    )
+    assert "Stale means no recent event" in instruction
+    assert "does not prove a device is offline" in instruction
+
+
+@pytest.mark.asyncio
+async def test_whole_home_prompt_requires_multi_category_snapshot():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("What's happening at home?")
+    assert "WHOLE-HOME SUMMARY RULES" in instruction
+    assert "active motion" in instruction
+    assert "open doors/windows" in instruction
+    assert "Do not say the home is quiet when anyone is present" in instruction
+
+
 def test_large_tool_results_are_bounded():
     agent = UnifiedMCPAgent(
         FakeMCP(), "key", "model", ai_client=FakeAI([]),
