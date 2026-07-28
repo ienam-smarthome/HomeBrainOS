@@ -77,7 +77,20 @@ def test_read_only_gateway_does_not_require_confirmation():
         annotations={"destructiveHint": True},
     )
     assert not UnifiedMCPAgent._is_sensitive(tool, {"operation": "list_devices"})
-    assert UnifiedMCPAgent._is_sensitive(tool, {"operation": "set_switch"})
+    assert not UnifiedMCPAgent._is_sensitive(
+        tool,
+        {
+            "tool": "hub_call_device_command",
+            "args": {"deviceId": "1", "command": "off"},
+        },
+    )
+    assert UnifiedMCPAgent._is_sensitive(
+        tool,
+        {
+            "tool": "hub_call_device_command",
+            "args": {"deviceId": "1", "command": "unlock"},
+        },
+    )
 
 
 @pytest.mark.asyncio
