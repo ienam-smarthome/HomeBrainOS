@@ -101,6 +101,34 @@ def is_hub_logs_query(query: str) -> bool:
     )
 
 
+def _log_identity(row: dict[str, Any]) -> tuple[str, str, str, str]:
+    """Return stable timestamp, level, source and detail fields for a Hubitat log row."""
+
+    level = (_text(row, "level", "severity", "type") or "info").strip().lower()
+    timestamp = _text(row, "date", "timestamp", "time", "name") or ""
+    message = _text(row, "message", "msg", "description") or ""
+    parts = message.split("|", 3)
+    if len(parts) == 4 and parts[0] in {"app", "dev"}:
+        source = parts[2].strip() or f"{parts[0]} {parts[1]}"
+        detail = parts[3].strip() or message
+    else:
+        source = _text(row, "source", "appName", "deviceName") or "Hubitat"
+        detail = message
+    return timestamp, level, source, detail
+
+
+def _dedupe_log_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        timestamp, level, _source, detail = _log_identity(row)
+        unique.setdefault((timestamp, level, detail), dict(row))
+    return sorted(
+        unique.values(),
+        key=lambda row: _log_identity(row)[0],
+        reverse=True,
+    )
+
+
 def _needs_empty_device_detail(
     item: dict[str, Any],
     attrs: dict[str, Any],
@@ -1784,29 +1812,174 @@ class FastFallbackRouter(DeviceStatusRouter):
         return response
 
     async def _logs(self, q: str) -> dict[str, Any]:
-        result = await self._read_tool("hub_get_logs")
-        rows = _rows(result.data, ("logs", "entries", "items"))
-        error_only = any(term in q for term in ("error", "warning", "warn", "issue"))
-        if error_only:
-            rows = [
-                row
-                for row in rows
-                if (_text(row, "level", "severity", "type") or "").lower()
-                in {"error", "warn", "warning", "fatal"}
-            ]
-        return self._response_with_rows(
-            result=result,
-            intent="fallback-hub-logs",
-            title="Hub logs and errors",
-            subtitle=f"{len(rows)} recent entr{'y' if len(rows) == 1 else 'ies'}",
-            rows=rows,
-            title_fields=("message", "msg", "description"),
-            value_fields=("level", "severity", "type"),
-            subtitle_fields=("date", "timestamp", "time", "source", "appName", "deviceName"),
-            icon="📜",
-            note="Read from the MCP hub_get_logs diagnostic tool.",
-            empty_message="No matching recent hub log entries were returned.",
+        issue_only = any(
+            term in q for term in ("error", "warning", "warn", "issue")
         )
+        if not issue_only:
+            result = await self._read_tool(
+                "hub_get_logs",
+                {"since": "24h", "limit": 500},
+            )
+            rows = _rows(result.data, ("logs", "entries", "items"))
+            return self._response_with_rows(
+                result=result,
+                intent="fallback-hub-logs",
+                title="Hub logs",
+                subtitle=f"{len(rows)} entr{'y' if len(rows) == 1 else 'ies'} from the last 24 hours",
+                rows=rows,
+                title_fields=("message", "msg", "description"),
+                value_fields=("level", "severity", "type"),
+                subtitle_fields=(
+                    "date",
+                    "timestamp",
+                    "time",
+                    "name",
+                    "source",
+                    "appName",
+                    "deviceName",
+                ),
+                icon="📜",
+                note="Read from hub_get_logs with a 24-hour window.",
+                empty_message="No hub log entries were returned for the last 24 hours.",
+            )
+
+        results: list[MCPToolResult] = []
+        failures: list[str] = []
+        issue_rows: list[dict[str, Any]] = []
+        for level in ("error", "warn"):
+            try:
+                result = await self._read_tool(
+                    "hub_get_logs",
+                    {
+                        "since": "24h",
+                        "level": level,
+                        "limit": 500,
+                    },
+                )
+            except MCPError as exc:
+                failures.append(f"{level}: {exc}")
+                continue
+            results.append(result)
+            issue_rows.extend(_rows(result.data, ("logs", "entries", "items")))
+
+        if not results:
+            raise MCPError(
+                "Could not read 24-hour warning or error logs"
+                + (": " + "; ".join(failures) if failures else "")
+            )
+
+        rows = _dedupe_log_rows(issue_rows)
+        errors = [
+            row
+            for row in rows
+            if _log_identity(row)[1] in {"error", "fatal"}
+        ]
+        warnings = [
+            row
+            for row in rows
+            if _log_identity(row)[1] in {"warn", "warning"}
+        ]
+
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            source = _log_identity(row)[2]
+            grouped.setdefault(source, []).append(row)
+        ordered_groups = sorted(
+            grouped.items(),
+            key=lambda item: (-len(item[1]), item[0].casefold()),
+        )
+
+        items: list[dict[str, Any]] = []
+        lines: list[str] = []
+        for source, source_rows in ordered_groups[:20]:
+            latest, _level, _source, detail = _log_identity(source_rows[0])
+            source_errors = sum(
+                _log_identity(row)[1] in {"error", "fatal"}
+                for row in source_rows
+            )
+            source_warnings = len(source_rows) - source_errors
+            counts = []
+            if source_errors:
+                counts.append(
+                    f"{source_errors} error{'s' if source_errors != 1 else ''}"
+                )
+            if source_warnings:
+                counts.append(
+                    f"{source_warnings} warning{'s' if source_warnings != 1 else ''}"
+                )
+            count_text = ", ".join(counts)
+            items.append(
+                {
+                    "icon": "❌" if source_errors else "⚠️",
+                    "title": source,
+                    "value": count_text,
+                    "subtitle": " · ".join(
+                        value for value in (latest, detail) if value
+                    ),
+                    "tone": "danger" if source_errors else "warning",
+                }
+            )
+            lines.append(
+                f"- {source}: {count_text}"
+                + (f". Latest: {detail}" if detail else "")
+            )
+
+        if rows:
+            opening = (
+                f"Found {len(errors)} error{'s' if len(errors) != 1 else ''} "
+                f"and {len(warnings)} warning{'s' if len(warnings) != 1 else ''} "
+                f"across {len(grouped)} source{'s' if len(grouped) != 1 else ''} "
+                "in the last 24 hours."
+            )
+            message = opening + ("\n" + "\n".join(lines) if lines else "")
+        else:
+            message = "No errors or warnings were returned for the last 24 hours."
+
+        display = display_payload(
+            "fallback-hub-logs",
+            "Hub log issues",
+            subtitle="Server-filtered warning and error entries from the last 24 hours",
+            metrics=[
+                {"label": "Errors", "value": str(len(errors)), "icon": "❌"},
+                {"label": "Warnings", "value": str(len(warnings)), "icon": "⚠️"},
+                {"label": "Sources", "value": str(len(grouped)), "icon": "🧩"},
+                {"label": "Window", "value": "24h", "icon": "🕘"},
+            ],
+            items=items,
+            note=(
+                "Read from hub_get_logs using separate server-side error and warning "
+                "filters, then deduplicated and grouped by source."
+            ),
+        )
+        combined = MCPToolResult(
+            name="hub_get_logs",
+            arguments={"since": "24h", "levels": ["error", "warn"], "limit": 500},
+            raw={},
+            text="",
+            data={
+                "window": "24h",
+                "errors": len(errors),
+                "warnings": len(warnings),
+                "sources": len(grouped),
+                "entries": rows,
+                "partial_failures": failures,
+            },
+            is_error=False,
+        )
+        response = self._response(
+            message,
+            "fallback-hub-logs",
+            not failures,
+            combined,
+        )
+        response["display"] = display
+        response["error_count"] = len(errors)
+        response["warning_count"] = len(warnings)
+        response["source_count"] = len(grouped)
+        response["window"] = "24h"
+        response["partial"] = bool(failures)
+        response["technical"] = safe_debug(combined.data)
+        return response
 
     async def _performance(self) -> dict[str, Any]:
         result = await self._read_tool("hub_get_performance_stats")

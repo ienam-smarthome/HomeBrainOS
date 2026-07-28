@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.10.192
+
+### Query a real 24-hour hub-log issue window
+
+- Requests warning and error logs separately from `hub_get_logs` using
+  server-side level filters, a 24-hour window and the maximum 500-row limit.
+- Avoids filtering only the default latest 100 INFO/DEBUG-heavy entries, which
+  could cover only seconds of activity and falsely report no issues.
+- Deduplicates returned rows and groups recurring warnings/errors by Hubitat
+  app or device source.
+- Reports error, warning and affected-source counts with representative latest
+  messages and timestamps.
+
 ## 0.10.191
 
 ### Read actual Hubitat logs for log queries
