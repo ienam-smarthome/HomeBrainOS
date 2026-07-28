@@ -6,6 +6,11 @@ on:
     paths:
       - "hubitat-mcp-ai/**"
       - "tests/test_hubitat_mcp_ai_*.py"
+      - "tests/test_app_endpoints.py"
+      - "tests/test_mcp_agent_orchestrator.py"
+      - "tests/test_confirmation_enforcement.py"
+      - "tests/test_device_manifest_cache.py"
+      - "tests/test_mcp_structured_content_priority.py"
       - "tests/test_repository_hygiene.py"
       - "requirements.txt"
       - "requirements-test.txt"
@@ -15,6 +20,11 @@ on:
     paths:
       - "hubitat-mcp-ai/**"
       - "tests/test_hubitat_mcp_ai_*.py"
+      - "tests/test_app_endpoints.py"
+      - "tests/test_mcp_agent_orchestrator.py"
+      - "tests/test_confirmation_enforcement.py"
+      - "tests/test_device_manifest_cache.py"
+      - "tests/test_mcp_structured_content_priority.py"
       - "tests/test_repository_hygiene.py"
       - "requirements.txt"
       - "requirements-test.txt"
@@ -60,40 +70,3 @@ jobs:
           name: hubitat-mcp-ai-pytest-failure-output
           path: pytest-output.txt
           retention-days: 3
-
-  legacy-audit:
-    name: Legacy regression audit (non-blocking)
-    continue-on-error: true
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install test dependencies
-        run: python -m pip install -r requirements-test.txt
-
-
-        continue-on-error: true
-
-      - name: Run historical Hubitat MCP AI suite
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          python -m pytest -q tests/test_hubitat_mcp_ai_*.py 2>&1 | tee pytest-legacy-output.txt
-
-      - name: Upload legacy audit output
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hubitat-mcp-ai-legacy-audit-output
-          path: pytest-legacy-output.txt
-          retention-days: 7

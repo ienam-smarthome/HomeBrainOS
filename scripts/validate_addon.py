@@ -1,4 +1,3 @@
-import ast
 import os
 import re
 from pathlib import Path
@@ -12,39 +11,8 @@ required = [
     'hubitat-mcp-ai/run.sh',
     'hubitat-mcp-ai/rootfs/app/app.py',
     'hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py',
-    'hubitat-mcp-ai/rootfs/app/entrypoint.py',
     'hubitat-mcp-ai/rootfs/app/mcp_client.py',
-    'hubitat-mcp-ai/rootfs/app/mcp_state_broker.py',
-    'hubitat-mcp-ai/rootfs/app/device_index_broker.py',
-    'hubitat-mcp-ai/rootfs/app/device_intelligence_index.py',
-    'hubitat-mcp-ai/rootfs/app/device_intelligence_catalogue.py',
-    'hubitat-mcp-ai/rootfs/app/device_intelligence_api.py',
-    'hubitat-mcp-ai/rootfs/app/device_intelligence_webui.py',
-    'hubitat-mcp-ai/rootfs/app/mcp_tool_catalogue.py',
-    'hubitat-mcp-ai/rootfs/app/request_tracing.py',
-    'hubitat-mcp-ai/rootfs/app/ollama_agent_fast.py',
-    'hubitat-mcp-ai/rootfs/app/ollama_agent_inference.py',
-    'hubitat-mcp-ai/rootfs/app/ollama_agent_claude.py',
-    'hubitat-mcp-ai/rootfs/app/cancellable_requests.py',
-    'hubitat-mcp-ai/rootfs/app/control_language.py',
-    'hubitat-mcp-ai/rootfs/app/control_confirmation.py',
-    'hubitat-mcp-ai/rootfs/app/conversation_context.py',
-    'hubitat-mcp-ai/rootfs/app/home_snapshot.py',
-    'hubitat-mcp-ai/rootfs/app/dashboard_api.py',
-    'hubitat-mcp-ai/rootfs/app/fastpath_ai_handoff.py',
-    'hubitat-mcp-ai/rootfs/app/routing_policy.py',
-    'hubitat-mcp-ai/rootfs/app/fast_fallback_live.py',
-    'hubitat-mcp-ai/rootfs/app/fast_fallback_device_health.py',
-    'hubitat-mcp-ai/rootfs/app/fast_fallback_extended_reads.py',
-    'hubitat-mcp-ai/rootfs/app/hub_cpu_probe.py',
-    'hubitat-mcp-ai/rootfs/app/hub_metric_formatting.py',
-    'hubitat-mcp-ai/rootfs/app/presenter.py',
-    'hubitat-mcp-ai/rootfs/app/weather_presenter.py',
-    'hubitat-mcp-ai/rootfs/app/system_presenter.py',
-    'hubitat-mcp-ai/rootfs/app/request_composition.py',
-    'hubitat-mcp-ai/rootfs/app/routing.py',
     'hubitat-mcp-ai/rootfs/app/webui.py',
-    'hubitat-mcp-ai/rootfs/app/kingpanther_skill.py',
     'hubitat-mcp-ai/rootfs/app/requirements.txt',
     'hubitat-mcp-ai/LICENSE-UPSTREAM',
     'hubitat-mcp-ai/UPSTREAM.md',
@@ -68,42 +36,11 @@ def yaml_version(path: str) -> str:
     return match.group(1)
 
 
-def python_string_assignment(path: str, name: str) -> str:
-    tree = ast.parse(Path(path).read_text(encoding='utf-8'), filename=path)
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
-            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-                return node.value.value
-    raise ValueError(f'No string assignment for {name} found in {path}')
-
-
-mcp_ai_versions = {
-    'hubitat-mcp-ai/config.yaml': yaml_version('hubitat-mcp-ai/config.yaml'),
-    'hubitat-mcp-ai/rootfs/app/release_version.py': python_string_assignment(
-        'hubitat-mcp-ai/rootfs/app/release_version.py',
-        'RELEASE_VERSION',
-    ),
-}
-if len(set(mcp_ai_versions.values())) != 1:
-    print('Hubitat MCP AI version sources differ:')
-    for path, version in mcp_ai_versions.items():
-        print(f' - {path}: {version}')
+mcp_ai_version = yaml_version('hubitat-mcp-ai/config.yaml')
+changelog = Path(f'hubitat-mcp-ai/CHANGELOG-{mcp_ai_version}.md')
+if not changelog.exists():
+    print(f'Missing Hubitat MCP AI release notes: {changelog}')
     sys.exit(1)
-
-mcp_ai_version = next(iter(mcp_ai_versions.values()))
-mcp_ai_previous_version = python_string_assignment(
-    'hubitat-mcp-ai/rootfs/app/release_version.py',
-    'PREVIOUS_RELEASE_VERSION',
-)
-if mcp_ai_previous_version == mcp_ai_version:
-    print('Hubitat MCP AI previous and current release versions are identical')
-    sys.exit(1)
-
-for version in (mcp_ai_previous_version, mcp_ai_version):
-    changelog = Path(f'hubitat-mcp-ai/CHANGELOG-{version}.md')
-    if not changelog.exists():
-        print(f'Missing Hubitat MCP AI release notes: {changelog}')
-        sys.exit(1)
 
 base_sha = os.environ.get('HUBITAT_MCP_AI_BASE_SHA', '').strip()
 if base_sha:

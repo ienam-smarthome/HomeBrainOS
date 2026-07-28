@@ -1,19 +1,35 @@
 from __future__ import annotations
 
-import json
 import logging
+import time
+from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
 
-import httpx
+from google import genai
+from google.genai import types
 
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
 
+_CONFIRM_WORDS = {"confirm", "confirmed", "proceed", "yes", "yes proceed", "do it"}
+_SENSITIVE_TERMS = {
+    "backup", "delete", "disable", "enable", "factory_reset", "firmware",
+    "garage", "lock", "reboot", "restart", "rule", "security", "shutdown", "unlock",
+}
+
+
+@dataclass(slots=True)
+class PendingConfirmation:
+    expires_at: float
+    tool_name: str
+    arguments: dict[str, Any]
+    contents: list[types.Content]
+    model_content: types.Content
+
 
 class UnifiedMCPAgent:
-    """Native Gemini function-calling agent backed by live Hubitat MCP schemas."""
+    """Gemini SDK agent that executes live Hubitat MCP function declarations."""
 
     def __init__(
         self,
@@ -21,23 +37,51 @@ class UnifiedMCPAgent:
         gemini_api_key: str,
         model_name: str = "gemini-3.6-flash",
         *,
-        gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta",
+        gemini_base_url: str = "https://generativelanguage.googleapis.com",
         timeout_seconds: float = 15,
         tool_limit: int = 48,
         max_tool_rounds: int = 6,
         require_sensitive_confirmation: bool = True,
+        confirmation_ttl_seconds: float = 120,
+        ai_client: Any | None = None,
     ) -> None:
         self.mcp = mcp_client
         self.api_key = str(gemini_api_key or "").strip()
         self.model_name = str(model_name or "").strip()
-        self.base_url = str(gemini_base_url or "").rstrip("/")
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
         self.require_sensitive_confirmation = bool(require_sensitive_confirmation)
-        self._http = httpx.AsyncClient(timeout=httpx.Timeout(max(3.0, float(timeout_seconds))))
+        self.confirmation_ttl_seconds = max(10.0, float(confirmation_ttl_seconds))
+        self._pending: dict[str, PendingConfirmation] = {}
+        self._client_options = (gemini_base_url, timeout_seconds)
+        if ai_client is not None:
+            self.ai_client = ai_client
+        else:
+            self.ai_client = None
+
+    def _ensure_client(self) -> Any:
+        if self.ai_client is not None:
+            return self.ai_client
+        if not self.api_key:
+            raise RuntimeError("Gemini API key is not configured")
+        gemini_base_url, timeout_seconds = self._client_options
+        base_url = str(gemini_base_url or "").rstrip("/")
+        if base_url.endswith("/v1beta"):
+            base_url = base_url[: -len("/v1beta")]
+        self.ai_client = genai.Client(
+            api_key=self.api_key,
+            http_options=types.HttpOptions(
+                base_url=base_url or None,
+                api_version="v1beta",
+                timeout=int(max(3.0, float(timeout_seconds)) * 1000),
+            ),
+        )
+        return self.ai_client
 
     async def close(self) -> None:
-        await self._http.aclose()
+        close = getattr(getattr(self.ai_client, "aio", None), "aclose", None)
+        if callable(close):
+            await close()
 
     async def _build_system_instruction(self) -> str:
         rows: list[str] = []
@@ -57,35 +101,28 @@ class UnifiedMCPAgent:
                 )
         except Exception as exc:
             logger.warning("Could not build the live device manifest: %s", exc)
-
         manifest = "\n".join(rows) or "No live device manifest is currently available."
-        confirmation = (
-            "Before any sensitive, destructive, security, hub-management, or automation-rule "
-            "write, ask for explicit confirmation and do not call the write tool in that turn."
-            if self.require_sensitive_confirmation
-            else ""
-        )
         return (
-            "You are HomeBrainOS, a concise smart-home assistant. Use the supplied Hubitat MCP "
-            "functions for every live state claim and action. Match informal names against the "
-            "live manifest, using exact IDs when a tool supports them. Never invent devices, "
-            "states, tool results, or successful actions. If a target is genuinely ambiguous, "
-            "ask one short clarifying question. "
-            f"{confirmation}\n\nLIVE DEVICE MANIFEST\n{manifest}"
+            "You are HomeBrainOS, a concise smart-home assistant. Use Hubitat MCP functions "
+            "for every live state claim and action. Match informal names against the live "
+            "manifest and use exact IDs whenever possible. Never invent devices, states, "
+            "tool results, or successful actions. Ask one short question when a target is "
+            "genuinely ambiguous. Sensitive calls are confirmed and enforced by the host.\n\n"
+            f"LIVE DEVICE MANIFEST\n{manifest}"
         )
 
     @staticmethod
-    def _tool_declaration(tool: MCPTool) -> dict[str, Any]:
+    def _tool_declaration(tool: MCPTool) -> types.FunctionDeclaration:
         schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
-        return {
-            "name": tool.name,
-            "description": tool.description or tool.name,
-            "parameters": schema or {"type": "object", "properties": {}},
-        }
+        return types.FunctionDeclaration(
+            name=tool.name,
+            description=tool.description or tool.name,
+            parameters_json_schema=schema or {"type": "object", "properties": {}},
+        )
 
     @staticmethod
-    def _normalise_history(history: Any) -> list[dict[str, Any]]:
-        contents: list[dict[str, Any]] = []
+    def _normalise_history(history: Any) -> list[types.Content]:
+        contents: list[types.Content] = []
         for item in list(history or [])[-20:]:
             if hasattr(item, "model_dump"):
                 item = item.model_dump()
@@ -94,105 +131,160 @@ class UnifiedMCPAgent:
             role = "model" if item.get("role") in {"assistant", "model"} else "user"
             text = item.get("content") or item.get("text")
             if text:
-                contents.append({"role": role, "parts": [{"text": str(text)}]})
+                contents.append(types.Content(
+                    role=role,
+                    parts=[types.Part.from_text(text=str(text))],
+                ))
         return contents
-
-    async def _generate(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.api_key:
-            raise RuntimeError("Gemini API key is not configured")
-        if not self.model_name:
-            raise RuntimeError("Gemini model is not configured")
-        url = (
-            f"{self.base_url}/models/{quote(self.model_name, safe='')}:generateContent"
-            f"?key={quote(self.api_key, safe='')}"
-        )
-        response = await self._http.post(url, json=payload)
-        if response.status_code >= 400:
-            detail = response.text.strip()
-            raise RuntimeError(f"Gemini HTTP {response.status_code}: {detail[:500]}")
-        value = response.json()
-        if not isinstance(value, dict):
-            raise RuntimeError("Gemini returned an invalid response")
-        return value
-
-    @staticmethod
-    def _content(response: dict[str, Any]) -> dict[str, Any]:
-        candidates = response.get("candidates") or []
-        if not candidates or not isinstance(candidates[0], dict):
-            feedback = response.get("promptFeedback") or {}
-            raise RuntimeError(f"Gemini returned no candidate: {feedback}")
-        content = candidates[0].get("content") or {}
-        if not isinstance(content, dict):
-            raise RuntimeError("Gemini candidate contained no content")
-        return content
-
-    @staticmethod
-    def _text(content: dict[str, Any]) -> str:
-        return "\n".join(
-            str(part.get("text"))
-            for part in content.get("parts") or []
-            if isinstance(part, dict) and part.get("text")
-        ).strip()
 
     @staticmethod
     def _result_payload(result: MCPToolResult) -> dict[str, Any]:
         if result.is_error:
             return {"error": result.text or "MCP tool failed"}
-        value = result.data if result.data is not None else result.text
-        return {"result": value}
+        return {"result": result.data if result.data is not None else result.text}
+
+    @staticmethod
+    def _is_sensitive(tool: MCPTool) -> bool:
+        if (tool.annotations or {}).get("destructiveHint") is True:
+            return True
+        name = tool.name.lower().replace("-", "_")
+        return any(term in name for term in _SENSITIVE_TERMS)
+
+    def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
+        pending = self._pending.get(session_id)
+        if not pending:
+            return None
+        if pending.expires_at <= time.monotonic():
+            self._pending.pop(session_id, None)
+            return None
+        if " ".join(prompt.strip().lower().split()) not in _CONFIRM_WORDS:
+            return None
+        self._pending.pop(session_id, None)
+        return pending
+
+    async def _generate(
+        self,
+        contents: list[types.Content],
+        *,
+        instruction: str,
+        tool: types.Tool | None,
+    ) -> Any:
+        client = self._ensure_client()
+        return await client.aio.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                tools=[tool] if tool else None,
+                temperature=0.1,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            ),
+        )
+
+    async def _resume_confirmation(
+        self,
+        pending: PendingConfirmation,
+        *,
+        instruction: str,
+        tool: types.Tool | None,
+    ) -> str:
+        try:
+            result = await self.mcp.call_tool(pending.tool_name, pending.arguments)
+            payload = self._result_payload(result)
+        except Exception as exc:
+            payload = {"error": str(exc)}
+        contents = [*pending.contents, pending.model_content, types.Content(
+            role="tool",
+            parts=[types.Part.from_function_response(
+                name=pending.tool_name,
+                response=payload,
+            )],
+        )]
+        response = await self._generate(contents, instruction=instruction, tool=tool)
+        return response.text or "Confirmed command completed."
 
     async def process_user_request(
         self,
         user_prompt: str,
         conversation_history: Any = None,
+        *,
+        session_id: str = "default",
     ) -> str:
         tools = (await self.mcp.list_tools())[: self.tool_limit]
+        tool_by_name = {tool.name: tool for tool in tools}
+        sdk_tool = types.Tool(
+            function_declarations=[self._tool_declaration(item) for item in tools]
+        ) if tools else None
+        instruction = await self._build_system_instruction()
+        pending = self._take_confirmation(session_id, user_prompt)
+        if pending:
+            return await self._resume_confirmation(
+                pending, instruction=instruction, tool=sdk_tool
+            )
+
         contents = self._normalise_history(conversation_history)
-        contents.append({"role": "user", "parts": [{"text": str(user_prompt).strip()}]})
-        payload: dict[str, Any] = {
-            "systemInstruction": {
-                "parts": [{"text": await self._build_system_instruction()}]
-            },
-            "contents": contents,
-            "generationConfig": {"temperature": 0.1},
-        }
-        if tools:
-            payload["tools"] = [
-                {"functionDeclarations": [self._tool_declaration(tool) for tool in tools]}
-            ]
-
+        contents.append(types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=str(user_prompt).strip())],
+        ))
         for _ in range(self.max_tool_rounds):
-            content = self._content(await self._generate(payload))
-            calls = [
-                part["functionCall"]
-                for part in content.get("parts") or []
-                if isinstance(part, dict) and isinstance(part.get("functionCall"), dict)
-            ]
+            response = await self._generate(contents, instruction=instruction, tool=sdk_tool)
+            calls = list(response.function_calls or [])
             if not calls:
-                return self._text(content) or "Done."
-
-            payload["contents"].append(content)
-            result_parts: list[dict[str, Any]] = []
-            for call in calls:
-                name = str(call.get("name") or "")
-                arguments = call.get("args") if isinstance(call.get("args"), dict) else {}
-                logger.info("Executing MCP tool %s", name)
-                try:
-                    result = await self.mcp.call_tool(name, arguments)
-                    response_value = self._result_payload(result)
-                except Exception as exc:
-                    logger.exception("MCP tool %s failed", name)
-                    response_value = {"error": str(exc)}
-                result_parts.append(
-                    {
-                        "functionResponse": {
-                            "name": name,
-                            "response": response_value,
-                        }
-                    }
+                return response.text or "Done."
+            model_content = response.candidates[0].content
+            sensitive_calls = [
+                call
+                for call in calls
+                if (declared := tool_by_name.get(str(call.name or ""))) is not None
+                and self.require_sensitive_confirmation
+                and self._is_sensitive(declared)
+            ]
+            if sensitive_calls:
+                if session_id == "default":
+                    return (
+                        "A unique session_id is required before I can queue a sensitive "
+                        "Hubitat action for confirmation."
+                    )
+                if len(sensitive_calls) > 1:
+                    return (
+                        "This request proposed multiple sensitive actions. Please request "
+                        "and confirm them one at a time."
+                    )
+                call = sensitive_calls[0]
+                name = str(call.name or "")
+                self._pending[session_id] = PendingConfirmation(
+                    expires_at=time.monotonic() + self.confirmation_ttl_seconds,
+                    tool_name=name,
+                    arguments=dict(call.args or {}),
+                    contents=list(contents),
+                    model_content=model_content,
                 )
-            payload["contents"].append({"role": "user", "parts": result_parts})
-
+                return (
+                    f"Please confirm before I run the sensitive Hubitat action "
+                    f"`{name}`. Reply “confirm” to proceed."
+                )
+            result_parts: list[types.Part] = []
+            for call in calls:
+                name = str(call.name or "")
+                arguments = dict(call.args or {})
+                declared = tool_by_name.get(name)
+                if declared is None:
+                    payload = {"error": f"Model requested undeclared MCP tool: {name}"}
+                else:
+                    try:
+                        result = await self.mcp.call_tool(name, arguments)
+                        payload = self._result_payload(result)
+                    except Exception as exc:
+                        logger.exception("MCP tool %s failed", name)
+                        payload = {"error": str(exc)}
+                result_parts.append(types.Part.from_function_response(
+                    name=name, response=payload
+                ))
+            contents.extend([
+                model_content,
+                types.Content(role="tool", parts=result_parts),
+            ])
         raise RuntimeError("The agent exceeded its MCP tool-round limit")
 
 

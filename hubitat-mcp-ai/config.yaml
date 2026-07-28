@@ -1,9 +1,9 @@
 name: "Hubitat MCP AI"
-version: "0.10.198"
+version: "0.10.199"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Gemini function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
-stage: experimental
+stage: stable
 arch:
   - amd64
   - aarch64
@@ -31,6 +31,7 @@ options:
   mcp_timeout_seconds: 25
   mcp_device_cache_seconds: 12
   conversation_context_ttl_seconds: 600
+  confirmation_ttl_seconds: 120
   unified_mcp_agent_enabled: true
   unified_mcp_tool_limit: 48
   require_sensitive_confirmation: true
@@ -48,6 +49,7 @@ schema:
   mcp_timeout_seconds: int
   mcp_device_cache_seconds: int
   conversation_context_ttl_seconds: int
+  confirmation_ttl_seconds: int
   unified_mcp_agent_enabled: bool
   unified_mcp_tool_limit: int
   require_sensitive_confirmation: bool

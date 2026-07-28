@@ -43,6 +43,7 @@ def load_options() -> dict[str, Any]:
         "gemini_timeout_seconds": 15,
         "mcp_timeout_seconds": 25,
         "mcp_device_cache_seconds": 12,
+        "confirmation_ttl_seconds": 120,
         "unified_mcp_tool_limit": 48,
         "require_sensitive_confirmation": True,
         "web_title": "Hubitat MCP AI",
@@ -81,6 +82,7 @@ agent = UnifiedMCPAgent(
     require_sensitive_confirmation=_bool(
         OPTIONS.get("require_sensitive_confirmation"), True
     ),
+    confirmation_ttl_seconds=float(OPTIONS.get("confirmation_ttl_seconds") or 120),
 )
 
 
@@ -109,6 +111,7 @@ class ChatRequest(BaseModel):
     prompt: str | None = Field(default=None, max_length=2000)
     query: str | None = Field(default=None, max_length=2000)
     history: list[HistoryItem] = Field(default_factory=list)
+    session_id: str = Field(default="default", min_length=1, max_length=160)
 
     @model_validator(mode="after")
     def require_message(self) -> "ChatRequest":
@@ -126,7 +129,11 @@ async def _answer(request: ChatRequest) -> str:
     if not _bool(OPTIONS.get("gemini_enabled"), True):
         raise HTTPException(status_code=503, detail="Gemini is disabled")
     try:
-        return await agent.process_user_request(request.message, request.history)
+        return await agent.process_user_request(
+            request.message,
+            request.history,
+            session_id=request.session_id,
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -147,7 +154,11 @@ async def health() -> dict[str, Any]:
         "agent": "unified_mcp_agent",
         "version": VERSION,
         "mcp": status,
-        "gemini_configured": bool(OPTIONS.get("gemini_api_key")),
+        "gemini": {
+            "enabled": _bool(OPTIONS.get("gemini_enabled"), True),
+            "configured": bool(OPTIONS.get("gemini_api_key")),
+            "model": OPTIONS.get("gemini_model"),
+        },
     }
 
 
@@ -171,6 +182,14 @@ async def tools() -> dict[str, Any]:
             for tool in values
         ],
     }
+
+
+@app.post("/api/refresh")
+async def refresh() -> dict[str, Any]:
+    await mcp.initialize(force=True)
+    values = await mcp.list_tools(refresh=True)
+    await mcp.get_cached_devices(refresh=True)
+    return {"success": True, "tools": len(values), "version": VERSION}
 
 
 @app.post("/api/chat")
