@@ -341,6 +341,45 @@ async def test_control_prompt_documents_fast_routine_commands():
     assert "do not require confirmation" in instruction
 
 
+@pytest.mark.asyncio
+async def test_log_prompt_requires_actual_hub_get_logs_call():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("check hub logs")
+    assert "LIVE HUB LOG RULES" in instruction
+    assert "tool='hub_get_logs'" in instruction
+    assert "'since': '30m'" in instruction
+    assert "Never infer logs" in instruction
+
+
+def test_live_log_call_detection_requires_exact_gateway_subtool():
+    assert UnifiedMCPAgent._is_live_log_call(
+        "hub_read_diagnostics",
+        {"tool": "hub_get_logs", "args": {"since": "30m"}},
+    )
+    assert not UnifiedMCPAgent._is_live_log_call(
+        "hub_read_diagnostics",
+        {"tool": "hub_get_metrics", "args": {}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_log_question_refuses_inferred_answer_after_retry():
+    class LogMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_read_diagnostics", "diagnostics", {"type": "object"}),
+            ]
+
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "The logs look busy."}},
+        {"message": {"role": "assistant", "content": "They still look busy."}},
+    ])
+    agent = UnifiedMCPAgent(LogMCP(), "key", "model", ai_client=ai)
+    answer = await agent.process_user_request("check hub logs")
+    assert "could not retrieve the actual Hubitat logs" in answer
+    assert len(ai.requests) == 2
+
+
 def test_app_request_limits_visible_gateways():
     tools = [
         MCPTool("hub_read_devices", "devices", {"type": "object"}),
