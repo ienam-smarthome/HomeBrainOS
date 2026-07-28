@@ -43,6 +43,7 @@ _DIAGNOSTIC_TERMS = {
     "version", "zigbee", "zwave",
 }
 _DEVICE_HEALTH_TERMS = {"offline", "stale", "unavailable"}
+_LOG_TERMS = {"log", "logs"}
 _ROOM_TERMS = {"room", "rooms"}
 _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
@@ -171,6 +172,12 @@ class UnifiedMCPAgent:
                 ):
                     return False
         return True
+
+    @staticmethod
+    def _is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
+        if name != "hub_read_diagnostics":
+            return False
+        return str(arguments.get("tool") or "") == "hub_get_logs"
 
     @classmethod
     def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
@@ -386,6 +393,19 @@ class UnifiedMCPAgent:
                 "doors, destructive device operations, and security controls remain "
                 "sensitive."
             )
+        log_section = ""
+        if self._matches(user_prompt, _LOG_TERMS):
+            log_section = (
+                "\n\nLIVE HUB LOG RULES\nYou must fetch actual hub logs before "
+                "answering. Call hub_read_diagnostics with tool='hub_get_logs' and "
+                "args={'since': '30m', 'limit': 100} unless the user requested another "
+                "window, level, source, device, or app. Never infer logs from the device "
+                "manifest, events, or prior conversation. State the queried time window "
+                "and returned entry count. Count warn and error entries separately, "
+                "prioritize them over repetitive info telemetry, and include timestamps "
+                "for representative findings. If the tool fails or returns no logs, say "
+                "that explicitly rather than constructing a plausible summary."
+            )
         return (
             "You are HomeBrainOS, a concise smart-home assistant. The live device manifest "
             "is a tool-fetched state snapshot and may be used directly for live state "
@@ -400,6 +420,7 @@ class UnifiedMCPAgent:
             "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
             f"{battery_section}{health_section}{home_section}{control_section}"
+            f"{log_section}"
         )
 
     @staticmethod
@@ -600,6 +621,9 @@ class UnifiedMCPAgent:
         ]
         completed_calls: set[str] = set()
         mutation_requested = self._requests_mutation(user_prompt)
+        logs_requested = self._matches(user_prompt, _LOG_TERMS)
+        logs_checked = False
+        log_retry_used = False
         successful_mutations = 0
         failed_mutation = ""
         control_retry_used = False
@@ -607,6 +631,26 @@ class UnifiedMCPAgent:
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                if logs_requested and not logs_checked:
+                    if not log_retry_used:
+                        log_retry_used = True
+                        messages.extend([
+                            assistant,
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Do not answer yet. Fetch the actual logs now by "
+                                    "calling hub_read_diagnostics with "
+                                    "tool='hub_get_logs' and args={'since':'30m',"
+                                    "'limit':100}, then summarize only that result."
+                                ),
+                            },
+                        ])
+                        continue
+                    return (
+                        "I could not retrieve the actual Hubitat logs, so I will not "
+                        "provide an inferred log summary."
+                    )
                 if mutation_requested and successful_mutations == 0:
                     if not control_retry_used:
                         control_retry_used = True
@@ -683,6 +727,8 @@ class UnifiedMCPAgent:
                     else:
                         mcp_started = time.monotonic()
                         result = await self.mcp.call_tool(name, dict(arguments))
+                        if self._is_live_log_call(name, dict(arguments)):
+                            logs_checked = self._tool_succeeded(result)
                         logger.info(
                             "MCP tool %s completed in %.3fs",
                             name,
