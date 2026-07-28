@@ -46,6 +46,16 @@ def resolve_hybrid_profile(options: dict[str, Any]) -> dict[str, Any]:
     use_cloud = bool(cloud_enabled and prefer_cloud and cloud_model)
     effective_response = cloud_model if use_cloud else configured_response
     effective_routine = cloud_model if use_cloud else configured_routine
+    gemini_enabled = _as_bool(options.get("gemini_enabled"), False)
+    gemini_model = str(
+        options.get("gemini_model") or "gemini-3.6-flash"
+    ).strip()
+    gemini_ready = bool(
+        gemini_enabled
+        and str(options.get("gemini_api_key") or "").strip()
+        and gemini_model
+    )
+    reasoning_model = gemini_model if gemini_ready else effective_response
 
     return {
         "configured_response_model": configured_response,
@@ -56,6 +66,10 @@ def resolve_hybrid_profile(options: dict[str, Any]) -> dict[str, Any]:
         "cloud_enabled": cloud_enabled,
         "prefer_cloud_response": prefer_cloud,
         "cloud_model": cloud_model,
+        "gemini_enabled": gemini_enabled,
+        "gemini_ready": gemini_ready,
+        "gemini_model": gemini_model,
+        "reasoning_model": reasoning_model,
         "local_fallback_model": local_fallback,
         "legacy_saved_model_overridden": bool(
             use_cloud

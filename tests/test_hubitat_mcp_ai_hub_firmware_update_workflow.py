@@ -12,6 +12,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from hub_firmware_update_workflow import (  # noqa: E402
+    HubFirmwareUpdateWorkflow,
     install_hub_firmware_update_workflow,
 )
 from automation_rule_workflow_recovery import (  # noqa: E402
@@ -285,7 +286,7 @@ def test_real_filename_safe_backup_layer_accepts_and_forwards_force():
     assert forwarded == [("BP-CONFIRM-2401", True)]
 
 
-def test_up_to_date_status_lists_installed_version_without_confirmation():
+def test_no_update_status_does_not_overclaim_unchecked_beta_channel():
     async def scenario():
         fallback_calls: list[str] = []
 
@@ -302,12 +303,30 @@ def test_up_to_date_status_lists_installed_version_without_confirmation():
         return application, backup_service, await application.ask(request("update software"))
 
     application, backup_service, answer = asyncio.run(scenario())
-    assert answer["intent"] == "hub-firmware-up-to-date"
+    assert answer["intent"] == "hub-firmware-no-update-reported"
     assert "confirmation_required" not in answer
     assert "2.5.1.132" in answer["message"]
+    assert "does not rule out a beta or preview build" in answer["message"]
+    assert answer["display"]["metrics"][1]["value"] == "None reported"
     assert "actions" not in answer["display"]
     assert backup_service.calls == []
     assert [name for name, _ in application.mcp.calls] == ["hub_get_info"]
+
+
+def test_explicit_beta_channel_can_be_reported_as_current():
+    answer = HubFirmwareUpdateWorkflow._status_without_confirmation(
+        {
+            "available": False,
+            "current_version": "2.5.1.136",
+            "channel": "beta",
+            "error": None,
+            "raw": {"available": False, "channel": "beta"},
+        }
+    )
+
+    assert answer["intent"] == "hub-firmware-channel-up-to-date"
+    assert answer["display"]["metrics"][1]["value"] == "No beta update"
+    assert "no newer beta software" in answer["message"].lower()
 
 
 def test_release_installs_firmware_workflow_outside_ai_routes():

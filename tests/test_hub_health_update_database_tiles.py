@@ -34,7 +34,7 @@ def test_hub_health_shows_available_firmware_and_database_size_tiles():
     assert display["database_size"] == "204.0 MB"
 
 
-def test_hub_health_marks_current_firmware_up_to_date():
+def test_hub_health_qualifies_channel_less_update_status():
     _, display = present_hub_info(
         {
             "firmwareVersion": "2.5.1.134",
@@ -46,4 +46,4 @@ def test_hub_health_marks_current_firmware_up_to_date():
         }
     )
 
-    assert _metric(display, "Software update")["value"] == "Up to date"
+    assert _metric(display, "Software update")["value"] == "None reported"

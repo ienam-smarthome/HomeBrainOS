@@ -167,11 +167,24 @@ class HubFirmwareUpdateWorkflow:
     def _status_without_confirmation(status: dict[str, Any]) -> dict[str, Any]:
         current = str(status.get("current_version") or "Unknown")
         available = status.get("available")
+        channel = str(status.get("channel") or "").strip()
         error = str(status.get("error") or "").strip()
         if available is False:
-            title = "Hub software is up to date"
-            message = f"The Hubitat hub is already running the latest software ({current})."
-            intent = "hub-firmware-up-to-date"
+            if channel:
+                title = f"No {channel} hub update reported"
+                message = (
+                    f"Hubitat MCP reports no newer {channel} software than "
+                    f"{current}."
+                )
+                intent = "hub-firmware-channel-up-to-date"
+            else:
+                title = "No hub update reported by MCP"
+                message = (
+                    f"Hubitat MCP reports no newer software than {current} on "
+                    "the channel it checked. This does not rule out a beta or "
+                    "preview build shown in the Hubitat admin UI."
+                )
+                intent = "hub-firmware-no-update-reported"
             success = True
         else:
             title = "Could not verify hub software"
@@ -195,11 +208,20 @@ class HubFirmwareUpdateWorkflow:
                     {"label": "Installed", "value": current, "icon": "🧩"},
                     {
                         "label": "Update",
-                        "value": "Up to date" if available is False else "Unknown",
-                        "icon": "✅" if available is False else "❓",
+                        "value": (
+                            f"No {channel} update"
+                            if available is False and channel
+                            else "None reported"
+                            if available is False
+                            else "Unknown"
+                        ),
+                        "icon": "ℹ️" if available is False else "❓",
                     },
                 ],
-                note="No firmware update command was sent.",
+                note=(
+                    "No firmware update command was sent. Hubitat beta/preview "
+                    "availability may differ from the MCP-reported channel."
+                ),
             ),
             "tools_used": [
                 {
