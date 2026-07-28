@@ -112,6 +112,21 @@ async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
     assert ai.requests[-1][1]["json"]["tools"] is None
 
 
+@pytest.mark.asyncio
+async def test_control_request_cannot_claim_done_without_write_tool():
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "Done."}},
+    ])
+    agent = UnifiedMCPAgent(
+        FakeMCP(), "key", "model", ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    answer = await agent.process_user_request("turn off hallway lights")
+
+    assert "did not execute a Hubitat control tool" in answer
+
+
 def test_app_request_limits_visible_gateways():
     tools = [
         MCPTool("hub_read_devices", "devices", {"type": "object"}),

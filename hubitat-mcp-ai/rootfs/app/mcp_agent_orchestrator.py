@@ -94,7 +94,45 @@ class UnifiedMCPAgent:
     @staticmethod
     def _matches(prompt: str, terms: set[str]) -> bool:
         value = prompt.lower()
-        return any(term in value for term in terms)
+        return any(
+            re.search(rf"\b{re.escape(term.lower())}\b", value) is not None
+            for term in terms
+        )
+
+    @staticmethod
+    def _requests_mutation(prompt: str) -> bool:
+        tokens = set(re.findall(r"[a-z0-9]+", prompt.lower()))
+        return bool(tokens & _MUTATION_TERMS)
+
+    @classmethod
+    def _call_is_mutation(
+        cls, tool: MCPTool | None, arguments: dict[str, Any]
+    ) -> bool:
+        if not tool or (tool.annotations or {}).get("readOnlyHint") is True:
+            return False
+        name = tool.name.lower().replace("-", "_")
+        tokens = set(re.findall(r"[a-z0-9]+", str(arguments).lower()))
+        return (
+            bool(tokens & _MUTATION_TERMS)
+            or name.startswith(("set_", "create_", "delete_", "update_"))
+            or "_manage_" in name
+        )
+
+    @staticmethod
+    def _tool_succeeded(result: MCPToolResult) -> bool:
+        if result.is_error:
+            return False
+        data = result.data
+        if isinstance(data, dict):
+            if data.get("success") is False or data.get("error"):
+                return False
+            for key in ("result", "data", "output"):
+                nested = data.get(key)
+                if isinstance(nested, dict) and (
+                    nested.get("success") is False or nested.get("error")
+                ):
+                    return False
+        return True
 
     @classmethod
     def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
@@ -328,10 +366,20 @@ class UnifiedMCPAgent:
             {"role": "user", "content": str(user_prompt).strip()},
         ]
         completed_calls: set[str] = set()
+        mutation_requested = self._requests_mutation(user_prompt)
+        successful_mutations = 0
+        failed_mutation = ""
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                if mutation_requested and successful_mutations == 0:
+                    if failed_mutation:
+                        return f"The Hubitat action failed: {failed_mutation}"
+                    return (
+                        "I did not execute a Hubitat control tool, so no device state "
+                        "was changed. Please try again with the exact device name."
+                    )
                 return str(assistant.get("content") or "Done.")
             sensitive: list[tuple[str, dict[str, Any]]] = []
             for call in calls:
@@ -380,12 +428,18 @@ class UnifiedMCPAgent:
                     if not tool:
                         content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
                     else:
-                        content = self._result_payload(
-                            await self.mcp.call_tool(name, dict(arguments))
-                        )
+                        result = await self.mcp.call_tool(name, dict(arguments))
+                        content = self._result_payload(result)
+                        if self._call_is_mutation(tool, dict(arguments)):
+                            if self._tool_succeeded(result):
+                                successful_mutations += 1
+                            else:
+                                failed_mutation = result.text or "MCP reported an error"
                 except Exception as exc:
                     logger.exception("MCP tool %s failed", name)
                     content = json.dumps({"error": str(exc)})
+                    if self._call_is_mutation(by_name.get(name), dict(arguments)):
+                        failed_mutation = str(exc)
                 messages.append({"role": "tool", "tool_name": name, "content": content})
         return await self._final_answer(messages)
 
