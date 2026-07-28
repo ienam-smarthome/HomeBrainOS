@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +17,15 @@ _CONFIRM_WORDS = {"confirm", "confirmed", "proceed", "yes", "yes proceed", "do i
 _SENSITIVE_TERMS = {
     "backup", "delete", "disable", "enable", "factory_reset", "firmware",
     "garage", "lock", "reboot", "restart", "rule", "security", "shutdown", "unlock",
+}
+_MUTATION_TERMS = {
+    "close", "create", "delete", "disable", "enable", "lock", "off", "on",
+    "open", "pause", "reboot", "remove", "restart", "resume", "set", "start",
+    "stop", "toggle", "unlock", "update", "write",
+}
+_READ_ONLY_TERMS = {
+    "capabilities", "details", "devices", "find", "get", "health", "inventory",
+    "list", "read", "rooms", "search", "state", "status",
 }
 
 
@@ -144,11 +154,22 @@ class UnifiedMCPAgent:
         return {"result": result.data if result.data is not None else result.text}
 
     @staticmethod
-    def _is_sensitive(tool: MCPTool) -> bool:
-        if (tool.annotations or {}).get("destructiveHint") is True:
-            return True
+    def _is_sensitive(tool: MCPTool, arguments: dict[str, Any]) -> bool:
+        annotations = tool.annotations or {}
+        if annotations.get("readOnlyHint") is True:
+            return False
         name = tool.name.lower().replace("-", "_")
-        return any(term in name for term in _SENSITIVE_TERMS)
+        argument_text = str(arguments).lower().replace("-", "_")
+        argument_tokens = set(re.findall(r"[a-z0-9]+", argument_text))
+        if name == "hub_manage_devices":
+            if argument_tokens & _MUTATION_TERMS:
+                return True
+            if argument_tokens & _READ_ONLY_TERMS:
+                return False
+        if annotations.get("destructiveHint") is True:
+            return True
+        combined = f"{name} {argument_text}"
+        return any(term in combined for term in _SENSITIVE_TERMS)
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
         pending = self._pending.get(session_id)
@@ -194,7 +215,7 @@ class UnifiedMCPAgent:
         except Exception as exc:
             payload = {"error": str(exc)}
         contents = [*pending.contents, pending.model_content, types.Content(
-            role="tool",
+            role="user",
             parts=[types.Part.from_function_response(
                 name=pending.tool_name,
                 response=payload,
@@ -238,7 +259,7 @@ class UnifiedMCPAgent:
                 for call in calls
                 if (declared := tool_by_name.get(str(call.name or ""))) is not None
                 and self.require_sensitive_confirmation
-                and self._is_sensitive(declared)
+                and self._is_sensitive(declared, dict(call.args or {}))
             ]
             if sensitive_calls:
                 if session_id == "default":
@@ -283,7 +304,7 @@ class UnifiedMCPAgent:
                 ))
             contents.extend([
                 model_content,
-                types.Content(role="tool", parts=result_parts),
+                types.Content(role="user", parts=result_parts),
             ])
         raise RuntimeError("The agent exceeded its MCP tool-round limit")
 

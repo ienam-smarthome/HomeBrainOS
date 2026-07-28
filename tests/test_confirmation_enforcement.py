@@ -86,3 +86,16 @@ async def test_sensitive_action_requires_unique_session_id():
     answer = await agent.process_user_request("Restart the hub")
     assert "unique session_id is required" in answer
     assert mcp.calls == []
+
+
+def test_read_only_manage_devices_gateway_does_not_require_confirmation():
+    tool = MCPTool(
+        "hub_manage_devices",
+        "Device gateway",
+        {"type": "object"},
+        annotations={"destructiveHint": True},
+    )
+    assert not UnifiedMCPAgent._is_sensitive(tool, {"operation": "list_devices"})
+    assert UnifiedMCPAgent._is_sensitive(
+        tool, {"operation": "set_switch", "arguments": {"state": "on"}}
+    )

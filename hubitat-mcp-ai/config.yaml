@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.10.201"
+version: "0.10.202"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Gemini function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
