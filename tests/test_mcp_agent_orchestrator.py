@@ -84,3 +84,29 @@ async def test_manifest_contains_live_device_identity():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt()
     assert "'Couch Lamp' | ID: 42 | Room: Lounge" in instruction
+
+
+@pytest.mark.asyncio
+async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
+    repeated = {"message": {"role": "assistant", "content": "", "tool_calls": [{
+        "function": {
+            "name": "set_switch",
+            "arguments": {"device_id": "42", "state": "on"},
+        }
+    }]}}
+    ai = FakeAI([
+        repeated,
+        repeated,
+        {"message": {"role": "assistant", "content": "The couch lamp is on."}},
+    ])
+    mcp = FakeMCP()
+    agent = UnifiedMCPAgent(
+        mcp, "key", "model", ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    answer = await agent.process_user_request("Turn on the couch lamp")
+
+    assert answer == "The couch lamp is on."
+    assert len(mcp.calls) == 1
+    assert ai.requests[-1][1]["json"]["tools"] is None
