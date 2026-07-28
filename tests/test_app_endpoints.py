@@ -50,5 +50,6 @@ def test_root_renders_gemini_webui(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert "Gemini model" in response.text
     assert "Ollama model" not in response.text
-    assert "fetch('api/status')" in response.text
+    assert "apiPath('api/status')" in response.text
+    assert "location.pathname.replace" in response.text
     assert "fetch('/api/status')" not in response.text

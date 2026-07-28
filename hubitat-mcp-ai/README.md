@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Gemini function-calling bridge to
 kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.199**.
+Current add-on version: **0.10.200**.
 
 ## Architecture
 
