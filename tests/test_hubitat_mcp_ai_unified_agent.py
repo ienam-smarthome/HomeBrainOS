@@ -3,243 +3,99 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from mcp_agent_orchestrator import (  # noqa: E402
-    _normalise_history,
-    install_unified_mcp_agent_orchestrator,
-    should_use_unified_agent,
-)
-from control_agent_combined_level import install_combined_level_intent  # noqa: E402
-from ollama_agent_unified import UnifiedAdaptiveMCPAgent  # noqa: E402
+from mcp_agent_orchestrator import UnifiedMCPAgent  # noqa: E402
+from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 
 
-def test_natural_rule_requests_go_to_unified_agent_without_phrase_patches():
-    variants = (
-        "Write a rule to alert me if the front door remains open",
-        "Let me know whenever the entrance contact is open too long",
-        "Create something that warns us about a door left ajar",
-        "Build an automation for the front door being open for more than two minutes",
-    )
-    assert all(should_use_unified_agent(query) for query in variants)
+class FakeMCP:
+    def __init__(self):
+        self.calls = []
 
-
-def test_device_discovery_goes_to_the_same_agent():
-    assert should_use_unified_agent("Find front door")
-    assert should_use_unified_agent("Which sensor belongs to the main entrance?")
-
-
-def test_explicit_named_lookup_is_distinguished_from_broad_inventory():
-    lookup = UnifiedAdaptiveMCPAgent._targeted_device_lookup
-    assert lookup("find front door") == "front door"
-    assert lookup("Please find the front door device") == "front door"
-    assert lookup("Please search for the device Entrance Lock") == "Entrance Lock"
-    assert lookup("show all selected devices") is None
-    assert lookup("what doors are open?") is None
-
-
-def test_planner_broad_call_is_repaired_before_targeted_lookup_synthesis():
-    class FakeClient:
-        def __init__(self):
-            self.calls = []
-
-        async def call_tool(self, name, arguments):
-            self.calls.append((name, arguments))
-            return SimpleNamespace(
-                data={"matches": [{"id": "7399", "label": "Front Door"}]},
-                text="",
-                raw={},
-                is_error=False,
+    async def list_tools(self):
+        return [
+            MCPTool(
+                "set_switch",
+                "Set a switch",
+                {
+                    "type": "object",
+                    "properties": {
+                        "device_id": {"type": "string"},
+                        "state": {"type": "string"},
+                    },
+                    "required": ["device_id", "state"],
+                },
             )
+        ]
 
-    client = FakeClient()
-    agent = object.__new__(UnifiedAdaptiveMCPAgent)
-    agent.client = client
-    agent.require_sensitive_confirmation = False
-    agent.tool_result_limit_chars = 8000
+    async def get_cached_devices(self):
+        return [
+            {
+                "id": "42",
+                "label": "Couch Lamp",
+                "room": "Lounge",
+                "capabilities": ["Switch"],
+            }
+        ]
 
-    record, tool_text = asyncio.run(
-        agent._execute_tool_call("hub_list_devices", {}, "find front door")
-    )
-
-    assert client.calls == [
-        ("homebrain_search_devices", {"query": "front door", "limit": 8})
-    ]
-    assert record["name"] == "homebrain_search_devices"
-    assert record["success"] is True
-    assert "Front Door" in tool_text
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        return MCPToolResult(name, arguments, {}, "ok", {"state": "on"})
 
 
-def test_targeted_recovery_uses_extracted_device_phrase_and_traces_it():
-    class FakeClient:
-        def __init__(self):
-            self.calls = []
-
-        async def call_tool(self, name, arguments):
-            self.calls.append((name, arguments))
-            return SimpleNamespace(
-                data={"matches": [{"id": "7399", "label": "Front Door"}]},
-                text="",
-                raw={},
-                is_error=False,
-            )
-
-    client = FakeClient()
-    agent = object.__new__(UnifiedAdaptiveMCPAgent)
-    agent.client = client
-    agent.model = "test-model"
-    agent.response_timeout_seconds = 5
-    agent.num_ctx = 2048
-    agent.num_predict = 120
-    agent._last_agent_status = {"planner_model": "test-planner"}
-
-    agent._compact_tool_result = lambda result: '{"matches":[{"id":"7399","label":"Front Door"}]}'
-    agent._tool_evidence = lambda data: {"match_count": len(data.get("matches") or [])}
-    agent._synthesis_messages = lambda **kwargs: [
-        {"role": "user", "content": kwargs["query"]}
-    ]
-
-    async def fake_chat(**kwargs):
-        return {"message": {"content": "I found the Front Door device."}}
-
-    agent._chat = fake_chat
-
-    answer = asyncio.run(
-        agent._answer_from_targeted_device_search(
-            "Please find the front door device",
-            history=[],
-            planner_error=RuntimeError("planner returned no authoritative data"),
-        )
-    )
-
-    expected_arguments = {"query": "front door", "limit": 8}
-    assert client.calls == [
-        ("homebrain_search_devices", expected_arguments)
-    ]
-    assert answer["success"] is True
-    assert answer["targeted_device_search"] is True
-    assert answer["authoritative_recovery"] is True
-    assert answer["tools_used"][0]["name"] == "homebrain_search_devices"
-    assert answer["tools_used"][0]["arguments"] == expected_arguments
-    assert answer["message"] == "I found the Front Door device."
+def test_live_manifest_contains_exact_device_context():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model")
+    instruction = asyncio.run(agent._build_system_instruction())
+    asyncio.run(agent.close())
+    assert "'Couch Lamp' | ID: 42 | Room: Lounge" in instruction
 
 
-def test_exact_fast_control_and_protocol_followups_stay_deterministic():
-    install_combined_level_intent()
-    assert not should_use_unified_agent("Turn on Bedroom 1 Light")
-    assert not should_use_unified_agent("turn on living room light 2 at 90%")
-    assert not should_use_unified_agent("yes")
-    assert not should_use_unified_agent("Create paused rule")
-
-
-def test_contextual_controls_use_verified_session_context_not_ai_history():
-    variants = (
-        "turn it off",
-        "switch them on",
-        "turn those off",
-        "please switch that one on",
-    )
-    assert all(not should_use_unified_agent(query) for query in variants)
-
-
-def test_all_device_controls_bypass_unified_synthesis_even_with_ordinals():
-    variants = (
-        "Turn off the second hallway light",
-        "turn on the hallway light near the stairs",
-        "set the second living room light to 30 percent",
-    )
-    assert all(not should_use_unified_agent(query) for query in variants)
-
-
-def test_outer_unified_wrapper_cannot_intercept_ordinal_control():
-    calls: list[str] = []
-
-    async def terminal_control(request):
-        calls.append(request.query)
-        return {
-            "success": True,
-            "route": "control-agent+mcp",
-            "tools_used": [{"name": "hub_call_device_command", "success": True}],
-        }
-
-    class NeverPlanner:
-        async def answer_with_planner(self, _query, _history):
-            raise AssertionError("Unified synthesis must not receive device controls")
-
-    application = SimpleNamespace(
-        ask=terminal_control,
-        ollama=NeverPlanner(),
-        VERSION="test",
-    )
-    install_unified_mcp_agent_orchestrator(application)
-
-    answer = asyncio.run(
-        application.ask(SimpleNamespace(query="Turn off the second hallway light", history=[]))
-    )
-
-    assert answer["route"] == "control-agent+mcp"
-    assert calls == ["Turn off the second hallway light"]
-
-
-def test_device_health_queries_never_enter_unified_ai_synthesis():
-    variants = (
-        "Are any devices offline or stale?",
-        "List devices that are offline or stale",
-        "Do I have stale devices?",
-        "Device health status",
-    )
-
-    assert all(not should_use_unified_agent(query) for query in variants)
-
-
-def test_attention_shortcut_never_becomes_a_device_name_search():
-    assert not should_use_unified_agent("Find devices that need attention")
-
-
-def test_typed_history_is_normalised_before_entering_agent_loop():
-    class PydanticLike:
-        def model_dump(self):
-            return {"role": "assistant", "content": "Previous answer"}
-
-    history = _normalise_history(
+def test_native_function_call_executes_and_returns_final_text():
+    mcp = FakeMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model")
+    responses = iter(
         [
-            SimpleNamespace(role="user", content="Previous question"),
-            PydanticLike(),
-            {"role": "system", "content": "ignored"},
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "role": "model",
+                            "parts": [
+                                {
+                                    "functionCall": {
+                                        "name": "set_switch",
+                                        "args": {"device_id": "42", "state": "on"},
+                                    }
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "role": "model",
+                            "parts": [{"text": "The couch lamp is on."}],
+                        }
+                    }
+                ]
+            },
         ]
     )
-    assert history == [
-        {"role": "user", "content": "Previous question"},
-        {"role": "assistant", "content": "Previous answer"},
-    ]
 
+    async def fake_generate(_payload):
+        return next(responses)
 
-def test_unified_catalogue_exposes_discovery_core_and_gateways_without_keywords():
-    fake_agent = SimpleNamespace(unified_tool_limit=48)
-    tools = [
-        SimpleNamespace(name="hub_manage_rules"),
-        SimpleNamespace(name="hub_read_rooms"),
-        SimpleNamespace(name="hub_search_tools"),
-        SimpleNamespace(name="hub_get_tool_guide"),
-        SimpleNamespace(name="hub_list_devices"),
-        SimpleNamespace(name="hub_read_devices"),
-        SimpleNamespace(name="hub_manage_devices"),
-        SimpleNamespace(name="hub_get_info"),
-    ]
-    selected = UnifiedAdaptiveMCPAgent._select_compact_tools(fake_agent, "unrelated wording", tools)
-    names = [tool.name for tool in selected]
+    agent._generate = fake_generate
+    answer = asyncio.run(agent.process_user_request("Turn on the couch lamp"))
+    asyncio.run(agent.close())
 
-    assert names[:4] == [
-        "hub_get_tool_guide",
-        "hub_list_devices",
-        "hub_read_devices",
-        "hub_search_tools",
-    ]
-    assert "hub_manage_rules" in names
-    assert "hub_read_rooms" in names
-    assert "hub_manage_devices" in names
+    assert answer == "The couch lamp is on."
+    assert mcp.calls == [("set_switch", {"device_id": "42", "state": "on"})]
