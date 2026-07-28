@@ -74,6 +74,13 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "function stopAudio()" in response.text
     assert "function speakAnswer(" in response.text
     assert "function startVoice(){stopAudio()" in response.text
+    assert "(?:IDs?|device IDs?)" in response.text
+    assert ".replace(/=/g,' ')" in response.text
+    assert "'$1 hours'" in response.text
+    assert ".replace(/\\n+/g,'. ')" in response.text
+    assert "utterance.rate=.95" in response.text
+    assert "voice.localService" in response.text
+    assert "'response time'" in response.text
     assert "fetch('/api/status')" not in response.text
 
 
