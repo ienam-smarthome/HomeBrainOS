@@ -33,8 +33,19 @@ _APP_TERMS = {
 }
 _DEVICE_TERMS = {
     "battery", "batteries", "device", "devices", "door", "light", "lights",
-    "lock", "motion", "sensor", "switch", "temperature", "thermostat",
+    "fan", "humidity", "lamp", "lamps", "lock", "motion", "outlet", "plug",
+    "presence", "sensor", "state", "switch", "temperature", "thermostat",
 }
+_DIAGNOSTIC_TERMS = {
+    "backup", "cpu", "diagnostic", "diagnostics", "firmware", "health", "log",
+    "logs", "matter", "memory", "radio", "software", "update", "updates",
+    "version", "zigbee", "zwave",
+}
+_ROOM_TERMS = {"room", "rooms"}
+_HOME_STATE_PATTERNS = (
+    r"\bwhat(?:'s| is) happening\b",
+    r"\bhome (?:status|summary|overview)\b",
+)
 
 
 @dataclass(slots=True)
@@ -61,6 +72,7 @@ class UnifiedMCPAgent:
         max_tool_rounds: int = 6,
         require_sensitive_confirmation: bool = True,
         confirmation_ttl_seconds: float = 120,
+        max_tool_result_chars: int = 24000,
         ai_client: Any | None = None,
     ) -> None:
         self.mcp = mcp_client
@@ -74,6 +86,7 @@ class UnifiedMCPAgent:
         self.max_tool_rounds = max(1, int(max_tool_rounds))
         self.require_sensitive_confirmation = bool(require_sensitive_confirmation)
         self.confirmation_ttl_seconds = max(10.0, float(confirmation_ttl_seconds))
+        self.max_tool_result_chars = max(2000, int(max_tool_result_chars))
         self._pending: dict[str, PendingConfirmation] = {}
         self._app_manifest: list[dict[str, Any]] = []
         self._app_manifest_at = 0.0
@@ -103,6 +116,13 @@ class UnifiedMCPAgent:
     def _requests_mutation(prompt: str) -> bool:
         tokens = set(re.findall(r"[a-z0-9]+", prompt.lower()))
         return bool(tokens & _MUTATION_TERMS)
+
+    @classmethod
+    def _needs_device_manifest(cls, prompt: str) -> bool:
+        return cls._matches(prompt, _DEVICE_TERMS) or any(
+            re.search(pattern, prompt.lower()) is not None
+            for pattern in _HOME_STATE_PATTERNS
+        )
 
     @classmethod
     def _call_is_mutation(
@@ -148,8 +168,23 @@ class UnifiedMCPAgent:
                 "hub_read_devices", "hub_manage_devices",
                 "hub_get_info", "hub_search_tools",
             }
-        if names is None:
-            return tools
+        elif cls._matches(prompt, _ROOM_TERMS):
+            names = {
+                "hub_read_rooms", "hub_manage_rooms",
+                "hub_read_devices", "hub_search_tools",
+            }
+        elif cls._matches(prompt, _DIAGNOSTIC_TERMS):
+            names = {
+                "hub_get_info", "hub_read_diagnostics", "hub_search_tools",
+            }
+            if cls._requests_mutation(prompt):
+                names.update({
+                    "hub_manage_diagnostics", "hub_manage_logs",
+                    "hub_manage_radio", "hub_manage_destructive_ops",
+                    "hub_update_firmware",
+                })
+        else:
+            names = {"hub_get_info", "hub_search_tools"}
         selected = [tool for tool in tools if tool.name in names]
         return selected or tools
 
@@ -176,7 +211,7 @@ class UnifiedMCPAgent:
 
     async def _system_prompt(self, user_prompt: str = "") -> str:
         rows: list[str] = []
-        if not self._matches(user_prompt, _APP_TERMS):
+        if self._needs_device_manifest(user_prompt):
             try:
                 for device in await self.mcp.get_cached_devices():
                     label = device.get("label") or device.get("name") or "Unknown device"
@@ -248,14 +283,37 @@ class UnifiedMCPAgent:
                 messages.append({"role": role, "content": str(content)})
         return messages
 
-    @staticmethod
-    def _result_payload(result: MCPToolResult) -> str:
+    def _result_payload(self, result: MCPToolResult) -> str:
         payload = (
             {"error": result.text or "MCP tool failed"}
             if result.is_error
             else {"result": result.data if result.data is not None else result.text}
         )
-        return json.dumps(payload, ensure_ascii=False, default=str)
+        serialized = json.dumps(payload, ensure_ascii=False, default=str)
+        if len(serialized) <= self.max_tool_result_chars:
+            return serialized
+        return json.dumps(
+            {
+                "result_excerpt": serialized[: self.max_tool_result_chars],
+                "truncated": True,
+                "original_chars": len(serialized),
+                "instruction": "Use pagination or a narrower query for more detail.",
+            },
+            ensure_ascii=False,
+        )
+
+    @staticmethod
+    def _discovered_tools(
+        result: MCPToolResult, available: dict[str, MCPTool]
+    ) -> list[MCPTool]:
+        if result.is_error:
+            return []
+        searchable = json.dumps(result.data, ensure_ascii=False, default=str)
+        return [
+            tool for name, tool in available.items()
+            if name != "hub_search_tools"
+            and re.search(rf"\b{re.escape(name)}\b", searchable)
+        ]
 
     @staticmethod
     def _is_sensitive(tool: MCPTool, arguments: dict[str, Any]) -> bool:
@@ -279,6 +337,7 @@ class UnifiedMCPAgent:
     ) -> dict[str, Any]:
         if not self.configured:
             raise RuntimeError("Ollama Online API key is not configured")
+        started = time.monotonic()
         response = await self.ai_client.post(
             f"{self.base_url}/api/chat",
             headers={"Authorization": f"Bearer {self.api_key}"},
@@ -295,6 +354,11 @@ class UnifiedMCPAgent:
         message = payload.get("message")
         if not isinstance(message, dict):
             raise RuntimeError("Ollama returned no assistant message")
+        logger.info(
+            "Ollama round completed in %.3fs with %d declared tools",
+            time.monotonic() - started,
+            len(tools),
+        )
         return message
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
@@ -348,7 +412,9 @@ class UnifiedMCPAgent:
         *,
         session_id: str = "default",
     ) -> str:
+        request_started = time.monotonic()
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
+        all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
             declared = [
@@ -360,8 +426,16 @@ class UnifiedMCPAgent:
         tools = [self._tool_schema(tool) for tool in declared]
         if pending:
             return await self._resume_confirmation(pending, tools)
+        prompt_started = time.monotonic()
+        system_prompt = await self._system_prompt(user_prompt)
+        logger.info(
+            "System prompt built in %.3fs (%d chars, manifest=%s)",
+            time.monotonic() - prompt_started,
+            len(system_prompt),
+            self._needs_device_manifest(user_prompt),
+        )
         messages = [
-            {"role": "system", "content": await self._system_prompt(user_prompt)},
+            {"role": "system", "content": system_prompt},
             *self._history(conversation_history),
             {"role": "user", "content": str(user_prompt).strip()},
         ]
@@ -428,8 +502,29 @@ class UnifiedMCPAgent:
                     if not tool:
                         content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
                     else:
+                        mcp_started = time.monotonic()
                         result = await self.mcp.call_tool(name, dict(arguments))
+                        logger.info(
+                            "MCP tool %s completed in %.3fs",
+                            name,
+                            time.monotonic() - mcp_started,
+                        )
                         content = self._result_payload(result)
+                        if name == "hub_search_tools":
+                            additions = [
+                                item for item in self._discovered_tools(
+                                    result, all_by_name
+                                )
+                                if item.name not in by_name
+                            ]
+                            if additions:
+                                declared.extend(additions)
+                                by_name.update({item.name: item for item in additions})
+                                tools = [self._tool_schema(item) for item in declared]
+                                logger.info(
+                                    "Tool search expanded registry with: %s",
+                                    ", ".join(item.name for item in additions),
+                                )
                         if self._call_is_mutation(tool, dict(arguments)):
                             if self._tool_succeeded(result):
                                 successful_mutations += 1
@@ -441,6 +536,10 @@ class UnifiedMCPAgent:
                     if self._call_is_mutation(by_name.get(name), dict(arguments)):
                         failed_mutation = str(exc)
                 messages.append({"role": "tool", "tool_name": name, "content": content})
+        logger.warning(
+            "Agent reached tool-round limit after %.3fs",
+            time.monotonic() - request_started,
+        )
         return await self._final_answer(messages)
 
 

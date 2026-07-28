@@ -47,6 +47,7 @@ def load_options() -> dict[str, Any]:
         "mcp_device_cache_seconds": 12,
         "confirmation_ttl_seconds": 120,
         "unified_mcp_tool_limit": 48,
+        "max_tool_result_chars": 24000,
         "require_sensitive_confirmation": True,
         "web_title": "Hubitat MCP AI",
     }
@@ -82,6 +83,7 @@ agent = UnifiedMCPAgent(
     base_url=str(OPTIONS.get("ollama_direct_cloud_base_url") or "https://ollama.com"),
     timeout_seconds=float(OPTIONS.get("ollama_agent_timeout_seconds") or 60),
     tool_limit=int(OPTIONS.get("unified_mcp_tool_limit") or 48),
+    max_tool_result_chars=int(OPTIONS.get("max_tool_result_chars") or 24000),
     require_sensitive_confirmation=_bool(
         OPTIONS.get("require_sensitive_confirmation"), True
     ),
