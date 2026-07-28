@@ -113,7 +113,6 @@ async def test_new_question_cancels_pending_confirmation():
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
     await agent.process_user_request("Restart hub", session_id="replace")
     answer = await agent.process_user_request("What is the hub status?", session_id="replace")
-    assert answer == "The hub is online."
-    confirm = await agent.process_user_request("confirm", session_id="replace")
-    assert confirm == "Nothing was restarted."
+    assert "could not retrieve verified live Hubitat evidence" in answer
+    assert "replace" not in agent._pending
     assert not mcp.calls

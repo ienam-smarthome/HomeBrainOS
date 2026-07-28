@@ -4,7 +4,9 @@ import json
 import logging
 import re
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -59,6 +61,13 @@ class PendingConfirmation:
     assistant_message: dict[str, Any]
 
 
+@dataclass(slots=True)
+class AgentOutcome:
+    message: str
+    request_class: str
+    evidence: list[dict[str, Any]]
+
+
 class UnifiedMCPAgent:
     """Ollama Online agent that executes live Hubitat MCP function calls."""
 
@@ -92,6 +101,12 @@ class UnifiedMCPAgent:
         self._pending: dict[str, PendingConfirmation] = {}
         self._app_manifest: list[dict[str, Any]] = []
         self._app_manifest_at = 0.0
+        self._evidence: ContextVar[list[dict[str, Any]] | None] = ContextVar(
+            "hubitat_evidence", default=None
+        )
+        self._request_class: ContextVar[str] = ContextVar(
+            "hubitat_request_class", default="live-read"
+        )
         self.ai_client = ai_client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -135,6 +150,87 @@ class UnifiedMCPAgent:
         ):
             return True
         return False
+
+    def _classify_request(self, prompt: str, session_id: str) -> str:
+        normalized = " ".join(prompt.strip().lower().split())
+        if (
+            self._requests_mutation(prompt)
+            or (
+                normalized in _CONFIRM_WORDS
+                and session_id in self._pending
+            )
+        ):
+            return "write"
+        conversational = (
+            r"(?:hi|hello|hey|thanks|thank you|good morning|good evening)[.!? ]*",
+            r"(?:help|what can you do|who are you)[.!? ]*",
+        )
+        if any(re.fullmatch(pattern, normalized) for pattern in conversational):
+            return "conversational"
+        # This is a Hubitat assistant: an unmatched factual request is safer when
+        # treated as a live read than when the model is allowed to answer from memory.
+        return "live-read"
+
+    @staticmethod
+    def _redact(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                str(key): (
+                    "[redacted]"
+                    if any(part in str(key).lower() for part in (
+                        "authorization", "password", "secret", "token", "api_key",
+                    ))
+                    else UnifiedMCPAgent._redact(item)
+                )
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [UnifiedMCPAgent._redact(item) for item in value[:20]]
+        rendered = value
+        if isinstance(rendered, str) and len(rendered) > 240:
+            return rendered[:237] + "..."
+        return rendered
+
+    @staticmethod
+    def _result_summary(result: MCPToolResult) -> str:
+        data = result.data
+        if isinstance(data, dict):
+            keys = ", ".join(map(str, list(data)[:10]))
+            return f"object fields: {keys}" if keys else "empty object"
+        if isinstance(data, list):
+            return f"{len(data)} result items"
+        text = str(result.text or data or "").strip()
+        return (text[:157] + "...") if len(text) > 160 else (text or "empty result")
+
+    def _record_evidence(
+        self,
+        gateway: str,
+        arguments: dict[str, Any],
+        *,
+        success: bool,
+        elapsed_ms: int,
+        summary: str,
+        supports_live_claim: bool = True,
+    ) -> None:
+        receipts = self._evidence.get()
+        if receipts is None:
+            return
+        receipts.append({
+            "tool": gateway,
+            "sub_tool": arguments.get("tool"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "elapsed_ms": elapsed_ms,
+            "success": success,
+            "supports_live_claim": supports_live_claim,
+            "arguments": self._redact(arguments),
+            "summary": summary,
+        })
+
+    def _has_live_evidence(self) -> bool:
+        return any(
+            receipt.get("success") and receipt.get("supports_live_claim")
+            for receipt in (self._evidence.get() or [])
+        )
 
     @classmethod
     def _needs_device_manifest(cls, prompt: str) -> bool:
@@ -232,9 +328,18 @@ class UnifiedMCPAgent:
         if "hub_read_apps_code" not in names:
             return []
         try:
+            started = time.monotonic()
             result = await self.mcp.call_tool(
                 "hub_read_apps_code",
                 {"tool": "hub_list_apps", "args": {"scope": "instances"}},
+            )
+            self._record_evidence(
+                "hub_read_apps_code",
+                {"tool": "hub_list_apps", "args": {"scope": "instances"}},
+                success=self._tool_succeeded(result),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=self._result_summary(result),
+                supports_live_claim=False,
             )
             candidates = HubitatMCPClient._find_device_list(result.data) or []
             self._app_manifest = [
@@ -249,7 +354,16 @@ class UnifiedMCPAgent:
         rows: list[str] = []
         if self._needs_device_manifest(user_prompt):
             try:
-                for device in await self.mcp.get_cached_devices():
+                started = time.monotonic()
+                devices = await self.mcp.get_cached_devices()
+                self._record_evidence(
+                    "hub_read_devices",
+                    {"tool": "hub_list_devices", "source": "short_ttl_cache"},
+                    success=True,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=f"{len(devices)} live device records",
+                )
+                for device in devices:
                     label = device.get("label") or device.get("name") or "Unknown device"
                     device_id = device.get("id") or device.get("deviceId")
                     room = device.get("room") or device.get("roomName") or "Unassigned"
@@ -574,9 +688,24 @@ class UnifiedMCPAgent:
         ]
         for tool_name, arguments in pending.actions:
             try:
+                started = time.monotonic()
                 result = await self.mcp.call_tool(tool_name, arguments)
+                self._record_evidence(
+                    tool_name,
+                    arguments,
+                    success=self._tool_succeeded(result),
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=self._result_summary(result),
+                )
                 content = self._result_payload(result)
             except Exception as exc:
+                self._record_evidence(
+                    tool_name,
+                    arguments,
+                    success=False,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                )
                 content = json.dumps({"error": str(exc)})
             messages.append(
                 {"role": "tool", "tool_name": tool_name, "content": content}
@@ -584,7 +713,47 @@ class UnifiedMCPAgent:
         response = await self._chat(messages, tools)
         return str(response.get("content") or "Confirmed command completed.")
 
+    async def process_user_request_result(
+        self,
+        user_prompt: str,
+        conversation_history: Any = None,
+        *,
+        session_id: str = "default",
+    ) -> AgentOutcome:
+        request_class = self._classify_request(user_prompt, session_id)
+        evidence_token = self._evidence.set([])
+        class_token = self._request_class.set(request_class)
+        try:
+            message = await self._process_user_request(
+                user_prompt,
+                conversation_history,
+                session_id=session_id,
+            )
+            return AgentOutcome(
+                message=message,
+                request_class=request_class,
+                evidence=list(self._evidence.get() or []),
+            )
+        finally:
+            self._request_class.reset(class_token)
+            self._evidence.reset(evidence_token)
+
     async def process_user_request(
+        self,
+        user_prompt: str,
+        conversation_history: Any = None,
+        *,
+        session_id: str = "default",
+    ) -> str:
+        return (
+            await self.process_user_request_result(
+                user_prompt,
+                conversation_history,
+                session_id=session_id,
+            )
+        ).message
+
+    async def _process_user_request(
         self,
         user_prompt: str,
         conversation_history: Any = None,
@@ -627,6 +796,7 @@ class UnifiedMCPAgent:
         successful_mutations = 0
         failed_mutation = ""
         control_retry_used = False
+        evidence_retry_used = False
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
@@ -672,6 +842,29 @@ class UnifiedMCPAgent:
                     return (
                         "I did not execute a Hubitat control tool, so no device state "
                         "was changed. Please try again with the exact device name."
+                    )
+                if (
+                    self._request_class.get() == "live-read"
+                    and not self._has_live_evidence()
+                ):
+                    if not evidence_retry_used:
+                        evidence_retry_used = True
+                        messages.extend([
+                            assistant,
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Do not answer from memory or inference. No successful "
+                                    "live evidence receipt exists yet. Call the most relevant "
+                                    "declared Hubitat read tool now, then answer only from its "
+                                    "result. Tool discovery alone is not evidence."
+                                ),
+                            },
+                        ])
+                        continue
+                    return (
+                        "I could not retrieve verified live Hubitat evidence, so I will "
+                        "not provide an inferred answer."
                     )
                 return str(assistant.get("content") or "Done.")
             sensitive: list[tuple[str, dict[str, Any]]] = []
@@ -727,6 +920,15 @@ class UnifiedMCPAgent:
                     else:
                         mcp_started = time.monotonic()
                         result = await self.mcp.call_tool(name, dict(arguments))
+                        elapsed_ms = round((time.monotonic() - mcp_started) * 1000)
+                        self._record_evidence(
+                            name,
+                            dict(arguments),
+                            success=self._tool_succeeded(result),
+                            elapsed_ms=elapsed_ms,
+                            summary=self._result_summary(result),
+                            supports_live_claim=name != "hub_search_tools",
+                        )
                         if self._is_live_log_call(name, dict(arguments)):
                             logs_checked = self._tool_succeeded(result)
                         logger.info(
@@ -757,6 +959,15 @@ class UnifiedMCPAgent:
                                 failed_mutation = result.text or "MCP reported an error"
                 except Exception as exc:
                     logger.exception("MCP tool %s failed", name)
+                    self._record_evidence(
+                        name,
+                        dict(arguments),
+                        success=False,
+                        elapsed_ms=round((time.monotonic() - mcp_started) * 1000)
+                        if "mcp_started" in locals() else 0,
+                        summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                        supports_live_claim=name != "hub_search_tools",
+                    )
                     content = json.dumps({"error": str(exc)})
                     if self._call_is_mutation(by_name.get(name), dict(arguments)):
                         failed_mutation = str(exc)
@@ -768,4 +979,4 @@ class UnifiedMCPAgent:
         return await self._final_answer(messages)
 
 
-__all__ = ["UnifiedMCPAgent"]
+__all__ = ["AgentOutcome", "UnifiedMCPAgent"]
