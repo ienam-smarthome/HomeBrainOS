@@ -21,6 +21,7 @@ from named_entity_resolution_adapters import install_named_entity_resolution_ada
 from named_rule_disable_guard import install_named_rule_disable_guard
 from named_rule_status_route import build_named_rule_status_terminal_route
 from power_device_discovery_fallback import install_power_device_discovery_fallback
+from recent_log_diagnostics_route import build_recent_log_diagnostics_terminal_route
 from runtime_route_bridge import install_runtime_route_bridge
 from release_version import (
     BAKED_VERSION_PATH,
@@ -29,6 +30,7 @@ from release_version import (
     runtime_release_version,
 )
 from request_composition import AskCompositionBuilder
+from semantic_attention_reconciliation import wrap_semantic_home_query_route
 from semantic_home_query_registry import build_semantic_home_query_terminal_route
 from semantic_home_summary_registry import build_semantic_home_summary_terminal_route
 from shared_power_summary_bridge import install_shared_power_summary_bridge
@@ -107,6 +109,13 @@ hub_health_display_bridge = auxiliary_request_layers.capture(
 )
 semantic_home_registry = AnswerGuardRegistry(_core.application)
 semantic_home_registry.register_terminal_route(
+    "recent-log-diagnostics",
+    build_recent_log_diagnostics_terminal_route(
+        _core.application,
+        _core.request_traces,
+    ),
+)
+semantic_home_registry.register_terminal_route(
     "semantic-home-summary",
     build_semantic_home_summary_terminal_route(
         _core.application,
@@ -115,7 +124,9 @@ semantic_home_registry.register_terminal_route(
 )
 semantic_home_registry.register_terminal_route(
     "semantic-home-query",
-    build_semantic_home_query_terminal_route(_core.application),
+    wrap_semantic_home_query_route(
+        build_semantic_home_query_terminal_route(_core.application)
+    ),
 )
 semantic_home_routes = auxiliary_request_layers.capture(
     "semantic-home-registry",
