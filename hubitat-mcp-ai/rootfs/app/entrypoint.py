@@ -34,6 +34,7 @@ from semantic_attention_reconciliation import wrap_semantic_home_query_route
 from semantic_home_query_registry import build_semantic_home_query_terminal_route
 from semantic_home_summary_registry import build_semantic_home_summary_terminal_route
 from shared_power_summary_bridge import install_shared_power_summary_bridge
+from structured_health_contract import install_structured_health_contract
 from thermostat_summary_registry import (
     build_thermostat_summary_guard,
     build_thermostat_terminal_route,
@@ -73,6 +74,7 @@ _core.RELEASE_VERSION = RUNTIME_RELEASE_VERSION
 
 power_device_discovery_fallback = install_power_device_discovery_fallback()
 shared_power_summary_bridge = install_shared_power_summary_bridge()
+structured_health_reader = install_structured_health_contract(_core.application)
 
 climate_measurement_guard = install_climate_measurement_guard(
     _core.ai_evidence_planner,
