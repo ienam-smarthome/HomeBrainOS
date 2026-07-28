@@ -254,7 +254,7 @@ class HubitatMCPClient:
             return None
         if not isinstance(value, dict):
             return None
-        for key in ("devices", "items", "results"):
+        for key in ("devices", "apps", "items", "results"):
             candidate = value.get(key)
             if isinstance(candidate, list):
                 return candidate
@@ -269,7 +269,7 @@ class HubitatMCPClient:
     def _find_device_page(cls, value: Any) -> dict[str, Any] | None:
         if not isinstance(value, dict):
             return None
-        if any(key in value for key in ("devices", "items", "results")):
+        if any(key in value for key in ("devices", "apps", "items", "results")):
             return value
         for key in ("result", "data", "output", "content"):
             if key in value:
