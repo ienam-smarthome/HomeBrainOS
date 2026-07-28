@@ -1,5 +1,19 @@
 # Hubitat MCP AI changelog
 
+## 0.10.188
+
+### Route diagnostics explicitly and reconcile health evidence
+
+- Routes requests to inspect HomeBrain logs, errors or warnings to deterministic
+  bounded request diagnostics instead of whole-home attention analysis.
+- States clearly that Home Assistant Supervisor and add-on log files were not read
+  when only HomeBrain's in-memory request history is available.
+- Reconciles semantic attention results with authoritative device-health evidence.
+- Keeps explicit negative `healthStatus` rows offline, keeps genuine telemetry
+  failures stale and suppresses quiet event-age rows from fault counts.
+- Rebuilds the attention summary from reconciled facts so headline counts match
+  the authoritative health evidence.
+
 ## 0.10.187
 
 ### Fix serialized power-summary diagnostics crash
