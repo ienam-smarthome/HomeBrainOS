@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.194
+
+### Route natural log-purpose queries to Hubitat logs
+
+- Keeps natural log requests such as `Check logs to see if there are any
+  issues` on the authoritative 24-hour `hub_get_logs` route instead of the
+  household device-attention scan.
+- Supports equivalent `check whether`, `find`, and `and see` purpose clauses
+  for issues, errors, and warnings.
+- Preserves the separate bounded request-trace route for explicit HomeBrain,
+  assistant, and request diagnostics.
+
 ## 0.10.193
 
 ### Catalogue live routes and centralize MCP safety metadata
@@ -13,9 +25,6 @@
 - Centralizes conservative destructive-call confirmation for AI tool execution.
 - Invalidates cached state after every recognized mutation family, including
   direct gateway calls.
-- Keeps natural log requests such as `Check logs to see if there are any
-  issues` on the authoritative 24-hour `hub_get_logs` route instead of the
-  household device-attention scan.
 
 ## 0.10.192
 

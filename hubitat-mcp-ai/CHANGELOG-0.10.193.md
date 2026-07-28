@@ -13,5 +13,3 @@
   execution.
 - Invalidates cached state after device, rule, app, room, variable, dashboard,
   code, hub and direct-gateway mutations.
-- Recognizes natural log-purpose clauses such as `to see if there are any
-  issues`, keeping them on the authoritative 24-hour Hubitat log scan.
