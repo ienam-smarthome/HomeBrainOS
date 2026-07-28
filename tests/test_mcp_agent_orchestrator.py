@@ -82,8 +82,60 @@ async def test_ollama_native_multi_round_tool_execution():
 @pytest.mark.asyncio
 async def test_manifest_contains_live_device_identity():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
-    instruction = await agent._system_prompt()
+    instruction = await agent._system_prompt("What is the couch lamp state?")
     assert "'Couch Lamp' | ID: 42 | Room: Lounge" in instruction
+
+
+@pytest.mark.asyncio
+async def test_non_device_prompt_omits_device_manifest():
+    class NoDeviceMCP(FakeMCP):
+        async def get_cached_devices(self):
+            raise AssertionError("unrelated requests must not load the device manifest")
+
+    agent = UnifiedMCPAgent(NoDeviceMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("Is a software update available?")
+    assert "Device manifest omitted or unavailable." in instruction
+
+
+def test_default_and_diagnostic_tool_sets_are_lean():
+    tools = [
+        MCPTool("hub_get_info", "info", {"type": "object"}),
+        MCPTool("hub_search_tools", "search", {"type": "object"}),
+        MCPTool("hub_read_diagnostics", "diagnostics", {"type": "object"}),
+        MCPTool("hub_read_devices", "devices", {"type": "object"}),
+    ]
+
+    default = UnifiedMCPAgent._select_tools("help me inspect the hub", tools)
+    update = UnifiedMCPAgent._select_tools("software update available?", tools)
+
+    assert [tool.name for tool in default] == ["hub_get_info", "hub_search_tools"]
+    assert [tool.name for tool in update] == [
+        "hub_get_info", "hub_search_tools", "hub_read_diagnostics",
+    ]
+
+
+def test_large_tool_results_are_bounded():
+    agent = UnifiedMCPAgent(
+        FakeMCP(), "key", "model", ai_client=FakeAI([]),
+        max_tool_result_chars=2000,
+    )
+    result = MCPToolResult("tool", {}, {}, "", {"content": "x" * 5000})
+    payload = agent._result_payload(result)
+    parsed = __import__("json").loads(payload)
+    assert parsed["truncated"] is True
+    assert parsed["original_chars"] > 5000
+
+
+def test_tool_search_discovers_declared_gateway():
+    tools = {
+        "hub_search_tools": MCPTool("hub_search_tools", "search", {}),
+        "hub_read_files": MCPTool("hub_read_files", "files", {}),
+    }
+    result = MCPToolResult(
+        "hub_search_tools", {}, {}, "", {"matches": [{"gateway": "hub_read_files"}]}
+    )
+    discovered = UnifiedMCPAgent._discovered_tools(result, tools)
+    assert [tool.name for tool in discovered] == ["hub_read_files"]
 
 
 @pytest.mark.asyncio
