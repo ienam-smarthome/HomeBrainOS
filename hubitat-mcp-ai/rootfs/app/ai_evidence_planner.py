@@ -289,6 +289,8 @@ class AIEvidencePlanner:
 
     def _model_candidates(self) -> list[tuple[str, str, float]]:
         agent = self.application.ollama
+        reasoning = str(getattr(agent, "reasoning_model", "") or "").strip()
+        gemini_ready = bool(getattr(agent, "gemini_ready", False))
         cloud = str(getattr(agent, "cloud_model", "") or "").strip()
         local = str(
             getattr(agent, "planner_model", "")
@@ -304,9 +306,13 @@ class AIEvidencePlanner:
                 seen.add(key)
                 values.append((model, provider, timeout))
 
+        if self.prefer_cloud and gemini_ready:
+            add(reasoning, "Google Gemini evidence planner", self.plan_timeout_seconds)
         if self.prefer_cloud and bool(getattr(agent, "cloud_enabled", False)):
             add(cloud, "Ollama Cloud evidence planner", self.plan_timeout_seconds)
         add(local, "Local Ollama evidence planner", min(self.plan_timeout_seconds, 6.0))
+        if not self.prefer_cloud and gemini_ready:
+            add(reasoning, "Google Gemini evidence planner", self.plan_timeout_seconds)
         if not self.prefer_cloud and bool(getattr(agent, "cloud_enabled", False)):
             add(cloud, "Ollama Cloud evidence planner", self.plan_timeout_seconds)
         return values
@@ -855,7 +861,11 @@ class AIEvidencePlanner:
         evidence = [item for round_items in evidence_rounds for item in round_items]
         deterministic = self._deterministic_answer(query, evidence)
         agent = self.application.ollama
-        model = plan.model or str(getattr(agent, "cloud_model", "") or getattr(agent, "model", "")).strip()
+        model = plan.model or str(
+            getattr(agent, "reasoning_model", "")
+            or getattr(agent, "cloud_model", "")
+            or getattr(agent, "model", "")
+        ).strip()
         if not model:
             return deterministic, None, None, "No synthesis model is configured"
         messages = [

@@ -41,7 +41,8 @@ def build_semantic_home_summary_terminal_route(
         )
         fact_manifest = _fact_manifest(evidence)
         model = str(
-            getattr(application.ollama, "cloud_model", "")
+            getattr(application.ollama, "reasoning_model", "")
+            or getattr(application.ollama, "cloud_model", "")
             or getattr(application.ollama, "model", "")
             or ""
         ) or None

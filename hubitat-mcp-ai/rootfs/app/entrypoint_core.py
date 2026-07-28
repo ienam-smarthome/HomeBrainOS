@@ -152,6 +152,19 @@ def _replace_ollama_agent() -> None:
         direct_cloud_fallback_local_proxy=application.option_bool(
             "ollama_direct_cloud_fallback_local_proxy", True
         ),
+        gemini_enabled=application.option_bool("gemini_enabled", False),
+        gemini_base_url=str(
+            options.get("gemini_base_url")
+            or "https://generativelanguage.googleapis.com/v1beta"
+        ),
+        gemini_api_key=str(options.get("gemini_api_key") or ""),
+        gemini_model=str(options.get("gemini_model") or "gemini-3.6-flash"),
+        gemini_timeout_seconds=float(
+            options.get("gemini_timeout_seconds") or 20
+        ),
+        gemini_fallback_ollama_cloud=application.option_bool(
+            "gemini_fallback_ollama_cloud", True
+        ),
         health_timeout_seconds=float(options.get("ollama_health_timeout_seconds") or 3),
         planner_timeout_seconds=max(10.0, float(options.get("ollama_planner_timeout_seconds") or 25)),
         response_timeout_seconds=float(options.get("ollama_response_timeout_seconds") or 35),

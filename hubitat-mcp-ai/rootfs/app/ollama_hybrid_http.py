@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 
+from gemini_reasoning import post_gemini_chat
+
 
 _PROVIDER: ContextVar[str | None] = ContextVar(
     "homebrain_ollama_http_provider",
@@ -42,6 +44,11 @@ class HybridOllamaHTTPClient:
         direct_api_key: str,
         direct_model: str = "",
         fallback_local_proxy: bool = True,
+        gemini_enabled: bool = False,
+        gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta",
+        gemini_api_key: str = "",
+        gemini_model: str = "",
+        gemini_fallback_ollama_cloud: bool = True,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.local_base_url = _normalise_host(local_base_url)
@@ -51,8 +58,17 @@ class HybridOllamaHTTPClient:
         self._direct_api_key = str(direct_api_key or "").strip()
         self.direct_model = direct_model_name(self.cloud_model, direct_model)
         self.fallback_local_proxy = bool(fallback_local_proxy)
+        self.gemini_enabled = bool(gemini_enabled)
+        self.gemini_base_url = _normalise_host(
+            gemini_base_url,
+            "https://generativelanguage.googleapis.com/v1beta",
+        )
+        self._gemini_api_key = str(gemini_api_key or "").strip()
+        self.gemini_model = str(gemini_model or "").strip()
+        self.gemini_fallback_ollama_cloud = bool(gemini_fallback_ollama_cloud)
         self._client = client or httpx.AsyncClient(follow_redirects=True)
         self._last_direct_error: str | None = None
+        self._last_gemini_error: str | None = None
         self._local_tags_online: bool | None = None
         self._direct_tags_online: bool | None = None
 
@@ -69,6 +85,23 @@ class HybridOllamaHTTPClient:
     @property
     def direct_api_key_configured(self) -> bool:
         return bool(self._direct_api_key)
+
+    @property
+    def gemini_ready(self) -> bool:
+        return bool(
+            self.gemini_enabled
+            and self.gemini_base_url
+            and self._gemini_api_key
+            and self.gemini_model
+        )
+
+    @property
+    def gemini_api_key_configured(self) -> bool:
+        return bool(self._gemini_api_key)
+
+    @property
+    def last_gemini_error(self) -> str | None:
+        return self._last_gemini_error
 
     @property
     def last_direct_error(self) -> str | None:
@@ -101,6 +134,16 @@ class HybridOllamaHTTPClient:
             )
         )
 
+    def _is_gemini_request(self, payload: Any) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        requested = str(payload.get("model") or "").strip().lower()
+        return bool(
+            requested
+            and self.gemini_model
+            and requested == self.gemini_model.lower()
+        )
+
     def _direct_headers(self, supplied: Any = None) -> dict[str, str]:
         headers: dict[str, str] = {}
         if isinstance(supplied, dict):
@@ -120,6 +163,31 @@ class HybridOllamaHTTPClient:
 
     async def post(self, url: str, **kwargs: Any) -> httpx.Response:
         payload = kwargs.get("json")
+        if self.gemini_ready and self._is_gemini_request(payload):
+            try:
+                response = await post_gemini_chat(
+                    self._client,
+                    base_url=self.gemini_base_url,
+                    api_key=self._gemini_api_key,
+                    model=self.gemini_model,
+                    payload=dict(payload),
+                    timeout=kwargs.get("timeout"),
+                )
+                self._last_gemini_error = None
+                _PROVIDER.set("Google Gemini")
+                return response
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._last_gemini_error = str(exc).strip() or type(exc).__name__
+                if not self.gemini_fallback_ollama_cloud or not self.cloud_model:
+                    raise
+                fallback_kwargs = dict(kwargs)
+                fallback_payload = copy.deepcopy(dict(payload))
+                fallback_payload["model"] = self.cloud_model
+                fallback_kwargs["json"] = fallback_payload
+                return await self.post(url, **fallback_kwargs)
+
         if self.direct_ready and self._is_cloud_request(payload):
             direct_kwargs = dict(kwargs)
             direct_kwargs["json"] = self._direct_payload(dict(payload))
@@ -154,7 +222,9 @@ class HybridOllamaHTTPClient:
         return response
 
     async def get(self, url: str, **kwargs: Any) -> httpx.Response:
-        if str(url).rstrip("/").endswith("/api/tags") and self.direct_ready:
+        if str(url).rstrip("/").endswith("/api/tags") and (
+            self.direct_ready or self.gemini_ready
+        ):
             local_response: httpx.Response | None = None
             local_error: Exception | None = None
             try:
@@ -173,24 +243,29 @@ class HybridOllamaHTTPClient:
             direct_error: Exception | None = None
             direct_kwargs = dict(kwargs)
             direct_kwargs["headers"] = self._direct_headers(kwargs.get("headers"))
-            try:
-                direct_response = await self._client.get(
-                    f"{self.direct_base_url}/api/tags",
-                    **direct_kwargs,
-                )
-                if not self._response_ok(direct_response):
-                    direct_response.raise_for_status()
-                self._last_direct_error = None
-                self._direct_tags_online = True
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                direct_error = exc
-                self._last_direct_error = str(exc).strip() or type(exc).__name__
-                direct_response = None
-                self._direct_tags_online = False
+            if self.direct_ready:
+                try:
+                    direct_response = await self._client.get(
+                        f"{self.direct_base_url}/api/tags",
+                        **direct_kwargs,
+                    )
+                    if not self._response_ok(direct_response):
+                        direct_response.raise_for_status()
+                    self._last_direct_error = None
+                    self._direct_tags_online = True
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    direct_error = exc
+                    self._last_direct_error = str(exc).strip() or type(exc).__name__
+                    direct_response = None
+                    self._direct_tags_online = False
 
-            if local_response is None and direct_response is None:
+            if (
+                local_response is None
+                and direct_response is None
+                and not self.gemini_ready
+            ):
                 raise direct_error or local_error or RuntimeError("No Ollama endpoint is reachable")
 
             local_models = self._models(local_response)
@@ -206,6 +281,16 @@ class HybridOllamaHTTPClient:
                     merged.append(item)
                     seen.add(name)
 
+            if self.gemini_ready and self.gemini_model.lower() not in seen:
+                merged.append(
+                    {
+                        "name": self.gemini_model,
+                        "model": self.gemini_model,
+                        "details": {"family": "google-gemini-reasoning"},
+                    }
+                )
+                seen.add(self.gemini_model.lower())
+
             if direct_response is not None and self._direct_model_present(direct_models):
                 alias = self.cloud_model.lower()
                 if alias and alias not in seen:
@@ -217,13 +302,14 @@ class HybridOllamaHTTPClient:
                         }
                     )
 
-            _PROVIDER.set(
-                "Hybrid local + direct Ollama"
-                if local_response is not None and direct_response is not None
-                else "Ollama Cloud Direct"
-                if direct_response is not None
-                else "Local Ollama"
-            )
+            providers = []
+            if local_response is not None:
+                providers.append("Local Ollama")
+            if direct_response is not None:
+                providers.append("Ollama Cloud Direct")
+            if self.gemini_ready:
+                providers.append("Google Gemini")
+            _PROVIDER.set(" + ".join(providers))
             return httpx.Response(
                 200,
                 json={"models": merged},

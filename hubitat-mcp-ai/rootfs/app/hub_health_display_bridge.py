@@ -69,12 +69,29 @@ def enhance_hub_health_answer(answer: dict[str, Any]) -> dict[str, Any]:
 
     available = platform.get("available")
     available_version = platform.get("availableVersion") or platform.get("latestVersion")
+    channel = str(
+        platform.get("channel")
+        or platform.get("releaseChannel")
+        or platform.get("track")
+        or ""
+    ).strip()
     if available is True:
         update_value = f"Available {available_version}" if available_version else "Available"
         update_icon = "⬆️"
     elif available is False:
-        update_value = "Up to date"
-        update_icon = "✅"
+        update_value = f"No {channel} update" if channel else "None reported"
+        update_icon = "ℹ️"
+        if not channel:
+            message = str(answer.get("message") or "")
+            answer["message"] = re.sub(
+                r"Platform update:\s*Up to date\.?",
+                (
+                    "Platform update: none reported on the checked channel; "
+                    "beta or preview builds may differ."
+                ),
+                message,
+                flags=re.IGNORECASE,
+            )
     else:
         update_value = "Unknown"
         update_icon = "❔"

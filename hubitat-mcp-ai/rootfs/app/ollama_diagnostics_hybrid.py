@@ -40,6 +40,15 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
         direct_key = bool(runtime.get("direct_cloud_api_key_configured"))
         direct_model = str(runtime.get("direct_cloud_model") or "")
         direct_error = str(runtime.get("direct_cloud_error") or "").strip()
+        gemini_ready = bool(
+            runtime.get("gemini_ready") or profile.get("gemini_ready")
+        )
+        gemini_model = str(
+            runtime.get("gemini_model")
+            or profile.get("gemini_model")
+            or "gemini-3.6-flash"
+        )
+        gemini_error = str(runtime.get("gemini_error") or "").strip()
 
         cloud_model = str(
             runtime.get("cloud_model")
@@ -59,7 +68,8 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
             or fallback_model
         )
         response_model = str(
-            profile.get("effective_response_model")
+            profile.get("reasoning_model")
+            or profile.get("effective_response_model")
             or runtime.get("preferred_response_model")
             or runtime.get("model")
             or cloud_model
@@ -76,7 +86,9 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
         cloud_status = "Ready" if cloud_present else "Unavailable"
         fallback_status = "Ready" if fallback_present else "Missing"
         response_status = (
-            "Cloud"
+            "Gemini"
+            if gemini_ready and response_model.lower() == gemini_model.lower()
+            else "Cloud"
             if response_model.lower() == cloud_model.lower() and cloud_present
             else "Local"
         )
@@ -89,6 +101,7 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
             f"Direct Ollama Cloud: {direct_status.lower()}",
             f"Direct Cloud API key: {'configured' if direct_key else 'missing'}",
             f"Direct Cloud model: {direct_model or 'automatic'}",
+            f"Gemini reasoning: {gemini_model} ({'ready' if gemini_ready else 'not configured'})",
             f"Effective response model: {response_model} ({response_status.lower()})",
             f"Cloud model: {cloud_model} ({cloud_status.lower()})",
             f"Planner model: {planner_model}",
@@ -101,6 +114,8 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
             )
         if direct_error:
             lines.append(f"Last direct Cloud error: {direct_error}")
+        if gemini_error:
+            lines.append(f"Last Gemini error: {gemini_error}")
         if last_agent.get("error"):
             lines.append(f"Last agent error: {last_agent['error']}")
 
@@ -114,7 +129,9 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
 
         answer.update(
             {
-                "success": server_online and bool(cloud_present or fallback_present),
+                "success": server_online and bool(
+                    gemini_ready or cloud_present or fallback_present
+                ),
                 "route": "system",
                 "intent": "ollama-diagnostics",
                 "message": "\n".join(lines),
@@ -132,6 +149,11 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
                             "label": "AI transport",
                             "value": "Online" if server_online else "Offline",
                             "icon": "🟢" if server_online else "🔴",
+                        },
+                        {
+                            "label": "Gemini",
+                            "value": "Ready" if gemini_ready else "Not configured",
+                            "icon": "✨",
                         },
                         {
                             "label": "Direct Cloud",
@@ -161,9 +183,10 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
                     ],
                     "items": [],
                     "note": (
+                        "Gemini is used only for configured reasoning and evidence synthesis. "
                         "Direct Cloud calls use ollama.com with the configured bearer key. "
                         "Local model calls remain on the configured LAN Ollama host. The API "
-                        "key is never included in diagnostics."
+                        "keys are never included in diagnostics."
                         + migration_note
                     ),
                 },
@@ -180,6 +203,8 @@ def install_hybrid_ollama_diagnostics(application: Any) -> DiagnosticsHandler:
                         "direct_cloud_online": direct_online,
                         "direct_cloud_api_key_configured": direct_key,
                         "direct_cloud_model": direct_model or None,
+                        "gemini_ready": gemini_ready,
+                        "gemini_model": gemini_model if gemini_ready else None,
                     },
                     ensure_ascii=False,
                     indent=2,

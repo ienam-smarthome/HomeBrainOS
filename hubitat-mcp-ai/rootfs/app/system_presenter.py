@@ -52,6 +52,7 @@ def _platform_status(data: dict[str, Any]) -> dict[str, Any]:
     )
     available = _bool_or_none(platform.get("available"))
     note = first_value(platform, "note", "message", "error")
+    channel = first_value(platform, "channel", "releaseChannel", "track")
 
     # A version advertised as available is stronger evidence than a stale false flag.
     if available_version and str(available_version) != str(current):
@@ -75,9 +76,16 @@ def _platform_status(data: dict[str, Any]) -> dict[str, Any]:
         )
         tone = "warning"
     elif available is False:
-        label = "Up to date"
-        message = "Hub platform software is up to date."
-        tone = "success"
+        if channel:
+            label = f"No {channel} update"
+            message = f"No newer {channel} Hub platform software was reported."
+        else:
+            label = "None reported"
+            message = (
+                "No Hub platform update was reported on the checked channel; "
+                "beta or preview builds may still be shown in the Hubitat admin UI."
+            )
+        tone = "neutral"
     else:
         label = "Unknown"
         message = "Hub platform update status could not be read reliably."
@@ -89,6 +97,7 @@ def _platform_status(data: dict[str, Any]) -> dict[str, Any]:
         "message": message,
         "current": current,
         "available_version": available_version,
+        "channel": channel,
         "note": note,
         "tone": tone,
     }

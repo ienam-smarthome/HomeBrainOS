@@ -2,7 +2,7 @@
 
 A Home Assistant add-on that provides a HomeBrain-style interface while using **kingpanther13's Hubitat MCP Rule Server** as the authoritative smart-home data and control layer.
 
-Current add-on version: **0.10.166**. This is the repository's sole Home
+Current add-on version: **0.10.196**. This is the repository's sole Home
 Assistant add-on.
 
 ## Architecture
@@ -11,7 +11,7 @@ Assistant add-on.
 - **Exact states and controls:** deterministic local HomeBrain routes
 - **Broad natural-language questions:** AI semantic intent routing to typed evidence workflows
 - **MCP planning:** local `qwen3.5:4b` when the PC is available; direct Cloud planner when it is not
-- **AI response synthesis:** direct Ollama Cloud from Home Assistant, with the signed-in Windows Ollama service as a backup proxy
+- **AI response synthesis:** optional Google Gemini reasoning, then direct Ollama Cloud, the signed-in Windows Ollama proxy and local Ollama
 - **Evidence validation:** required counts and exact entity names are checked before AI wording is accepted
 - **AI safety fallback:** local `qwen3.5:4b`, then deterministic Hubitat output
 - **Rule writes:** deterministic schema-aware compiler with explicit confirmation
@@ -37,11 +37,14 @@ For the live request flow, module ownership and consolidation rules, see [`../do
    - Put the ollama.com API key in `ollama_direct_cloud_api_key`.
    - Keep `ollama_direct_cloud_base_url` as `https://ollama.com`.
    - Leave `ollama_direct_cloud_model` empty to convert `gemma4:31b-cloud` automatically to the direct API name `gemma4:31b`, or enter the exact model returned by the direct `/api/tags` endpoint.
+   - Optionally create a Gemini API key in Google AI Studio, put it in
+     `gemini_api_key`, and set `gemini_enabled: true`.
 6. Start the add-on and open it from the Home Assistant sidebar or port `8788`.
 
 You may alternatively paste the complete Hubitat endpoint, including `?access_token=...`, into `hubitat_mcp_url` and leave `hubitat_mcp_token` empty.
 
-The API key is stored as a Home Assistant password option. HomeBrain never includes it in diagnostics, answers or technical details.
+API keys are stored as Home Assistant password options. HomeBrain never includes
+them in diagnostics, answers or technical details.
 
 ## Recommended hybrid AI profile
 
@@ -61,6 +64,13 @@ ollama_direct_cloud_api_key: YOUR_OLLAMA_API_KEY
 ollama_direct_cloud_model: ""
 ollama_direct_cloud_fallback_local_proxy: true
 
+gemini_enabled: false
+gemini_base_url: https://generativelanguage.googleapis.com/v1beta
+gemini_api_key: YOUR_GEMINI_API_KEY
+gemini_model: gemini-3.6-flash
+gemini_timeout_seconds: 20
+gemini_fallback_ollama_cloud: true
+
 ollama_num_ctx: 2048
 rule_write_enabled: false
 rule_create_paused_required: true
@@ -74,11 +84,20 @@ stage. Existing installations retain their saved option value.
 
 ### AI failover order
 
-For Cloud-model requests:
+For reasoning and evidence-synthesis requests when Gemini is enabled:
 
-1. Direct `ollama.com` API from the Home Assistant add-on.
-2. Signed-in Ollama Cloud proxy on the configured PC host.
-3. Local `qwen3.5:4b` fallback.
-4. Deterministic Hubitat answer where supported.
+1. Google Gemini API.
+2. Direct `ollama.com` API from the Home Assistant add-on.
+3. Signed-in Ollama Cloud proxy on the configured PC host.
+4. Local `qwen3.5:4b` fallback.
+5. Deterministic Hubitat answer where supported.
 
-Local-model requests always remain on the configured LAN Ollama host. Exact controls and fast live-state questions do not need either AI endpoint.
+Gemini is not given control authority and does not execute MCP tools. The local
+planner selects bounded MCP reads, then Gemini may phrase the verified evidence.
+Exact controls and fast live-state questions stay on deterministic/local paths.
+
+Google currently states that free-tier Gemini Developer API content may be used
+to improve its products; paid-service prompts and responses are not used for
+that purpose. Do not enable Gemini for household evidence unless that privacy
+trade-off is acceptable. Rate limits vary by model and project, so HomeBrain
+uses provider fallback rather than assuming a fixed free-tier quota.
