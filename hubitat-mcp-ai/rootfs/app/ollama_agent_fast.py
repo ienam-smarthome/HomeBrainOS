@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from mcp_tool_safety import requires_explicit_confirmation
 from kingpanther_skill import KINGPANTHER_SYSTEM_PROMPT
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
@@ -306,26 +307,11 @@ class OllamaMCPAgent:
     ) -> bool:
         if not self.require_sensitive_confirmation:
             return False
-        latest = latest_query.lower()
-        confirmed = any(
-            phrase in latest
-            for phrase in (
-                "confirm", "i confirm", "yes, do it", "yes do it",
-                "proceed with", "approved",
-            )
+        return requires_explicit_confirmation(
+            name,
+            arguments,
+            latest_query,
         )
-        if confirmed:
-            return False
-
-        combined = f"{name} {json.dumps(arguments, ensure_ascii=False)}".lower()
-        sensitive_terms = (
-            "unlock", "open garage", "disarm", "delete", "remove",
-            "reboot", "shutdown", "wipe", "reset radio", "factory",
-            "firmware", "update_firmware", "code", "driver", "app source",
-            "restore backup", "disable cloud", "network disconnect",
-            "hsm", "security",
-        )
-        return any(term in combined for term in sensitive_terms)
 
     @staticmethod
     def _tool_result_text(result: MCPToolResult) -> str:

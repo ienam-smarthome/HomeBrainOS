@@ -109,4 +109,4 @@ def test_default_cache_profile_reduces_hub_load_without_caching_writes():
     assert 'options.get("mcp_catalog_cache_seconds") or 300' in entrypoint
     assert 'options.get("device_index_metadata_ttl_seconds") or 600' in entrypoint
     assert "if policy is None:" in broker
-    assert "await self._invalidate_for_write(name)" in broker
+    assert "await self._invalidate_for_write(name, arguments)" in broker

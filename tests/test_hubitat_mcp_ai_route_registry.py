@@ -45,6 +45,44 @@ def test_bare_log_issue_query_selects_authoritative_hub_logs():
     assert decision.selected.terminal is True
 
 
+def test_live_terminal_routes_are_represented_with_capability_metadata():
+    cases = {
+        "Which rooms are active?": "active-rooms",
+        "Which room has the highest humidity?": "climate-metric-extrema",
+        "What is the thermostat setpoint?": "thermostat-live-state",
+        "What is the status of Washing Machine rule?": "named-rule-status",
+        "Compare Octopus power and power devices": "power-accounting",
+        "Check HomeBrain request diagnostics": "recent-request-diagnostics",
+        "Suggest a useful home automation": "automation-recommendation",
+    }
+    registry = build_route_registry()
+    for query, expected in cases.items():
+        match = registry.select(query).selected
+        assert match is not None, query
+        assert match.name == expected, query
+        assert match.capability_id
+        assert match.safety_class == "read"
+
+
+def test_mutating_capabilities_declare_safety_and_required_tools():
+    descriptors = {
+        item.name: item for item in build_route_registry().descriptors()
+    }
+    assert descriptors["device-control"].safety_class == "mutate"
+    assert "hub_call_device_command" in descriptors["device-control"].mcp_tools
+    assert descriptors["hub-administration"].safety_class == "destructive"
+    assert "hub_create_backup" in descriptors["hub-administration"].mcp_tools
+
+
+def test_descriptor_response_exposes_structured_capability_contract():
+    match = build_route_registry().select("Which rooms are active?").selected
+    assert match is not None
+    payload = match.response_dict()
+    assert payload["capability_id"] == "home.active-rooms"
+    assert payload["mcp_tools"] == ["hub_list_devices", "hub_list_rooms"]
+    assert payload["runtime_intents"] == ["active-rooms"]
+
+
 def test_duplicate_route_names_are_rejected():
     registry = RouteRegistry()
     route = RouteDescriptor("same", 1, False, lambda query: True, "test")

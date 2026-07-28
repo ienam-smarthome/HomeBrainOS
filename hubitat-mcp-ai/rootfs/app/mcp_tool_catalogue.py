@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app_management_capability import install_app_management_capability
+from mcp_tool_safety import classify_tool_safety
 
 
 async def build_mcp_tool_catalogue(
@@ -34,6 +35,10 @@ async def build_mcp_tool_catalogue(
                 "tools": names,
                 "description": str(getattr(tool, "description", "") or ""),
                 "read_only": gateway.startswith("hub_read_"),
+                "safety_class": classify_tool_safety(
+                    gateway,
+                    annotations=dict(getattr(tool, "annotations", {}) or {}),
+                ),
             }
         )
 
@@ -44,6 +49,19 @@ async def build_mcp_tool_catalogue(
     )
     hidden = sorted(gateway_map)
     underlying = sorted(set(core) | set(hidden))
+    safety_by_tool = {
+        name: classify_tool_safety(
+            name,
+            annotations=dict(
+                getattr(visible_by_name.get(name), "annotations", {}) or {}
+            ),
+        )
+        for name in underlying
+    }
+    safety_counts = {
+        safety: sum(1 for value in safety_by_tool.values() if value == safety)
+        for safety in ("read", "mutate", "destructive")
+    }
 
     return {
         "success": True,
@@ -56,6 +74,8 @@ async def build_mcp_tool_catalogue(
         "core_tools": core,
         "gateways": gateway_rows,
         "all_underlying_tools": underlying,
+        "safety_counts": safety_counts,
+        "tool_safety": safety_by_tool,
         "note": (
             "Gateway mode keeps the model prompt compact. Hidden tools remain callable "
             "through their category gateway and are translated automatically by HomeBrain."

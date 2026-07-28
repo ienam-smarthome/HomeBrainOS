@@ -178,6 +178,46 @@ def test_device_write_invalidates_cached_state_before_verification_read():
     asyncio.run(scenario())
 
 
+def test_all_device_mutation_names_invalidate_cached_inventory():
+    async def scenario():
+        raw = FakeMCP()
+        broker = MCPStateBroker(raw, device_ttl_seconds=30)
+        args = {"detailed": False, "format": "summary"}
+
+        await broker.call_tool("hub_list_devices", args)
+        await broker.call_tool(
+            "hub_update_device",
+            {"deviceId": "1", "label": "Renamed"},
+        )
+        await broker.call_tool("hub_list_devices", args)
+
+        assert [name for name, _args in raw.calls].count("hub_list_devices") == 2
+        assert broker.stats()["invalidations"] >= 1
+
+    asyncio.run(scenario())
+
+
+def test_direct_gateway_mutation_invalidates_using_nested_leaf_tool():
+    async def scenario():
+        raw = FakeMCP()
+        broker = MCPStateBroker(raw, device_ttl_seconds=30)
+        args = {"detailed": False, "format": "summary"}
+
+        await broker.call_tool("hub_list_devices", args)
+        await broker.call_tool(
+            "hub_manage_devices",
+            {
+                "tool": "hub_update_device",
+                "args": {"deviceId": "1", "label": "Renamed"},
+            },
+        )
+        await broker.call_tool("hub_list_devices", args)
+
+        assert [name for name, _args in raw.calls].count("hub_list_devices") == 2
+
+    asyncio.run(scenario())
+
+
 def test_request_trace_attaches_route_cache_and_tool_timings():
     async def scenario():
         raw = FakeMCP()
