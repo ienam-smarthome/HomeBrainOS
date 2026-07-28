@@ -122,10 +122,15 @@ def reconcile_semantic_attention(answer: dict[str, Any]) -> dict[str, Any]:
         return answer
 
     technical = _technical_object(answer.get("technical"))
-    health_answer = technical.get("health_evidence")
+    health_answer = answer.get("_health_evidence")
+    if not isinstance(health_answer, dict):
+        health_answer = technical.get("health_evidence")
     structured = _health_items(health_answer)
     if not structured:
-        return answer
+        result = dict(answer)
+        result.pop("_health_evidence", None)
+        result.pop("_health_evidence_error", None)
+        return result
 
     authoritative: dict[str, dict[str, Any]] = {
         _identity(item): item
@@ -180,6 +185,8 @@ def reconcile_semantic_attention(answer: dict[str, Any]) -> dict[str, Any]:
     )
 
     result = dict(answer)
+    result.pop("_health_evidence", None)
+    result.pop("_health_evidence_error", None)
     result["semantic_attention"] = updated
     result["message"] = _accurate_message(updated)
     result["health_reconciled"] = True

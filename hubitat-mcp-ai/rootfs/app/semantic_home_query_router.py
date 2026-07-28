@@ -582,6 +582,8 @@ def install_semantic_home_query_router(application: Any) -> AskHandler:
             "synthesis_error": synthesis_error,
             "classification_error": classification_error,
             "answered_by": "HomeBrain attention analysis engine",
+            "_health_evidence": health_answer,
+            "_health_evidence_error": health_error,
             "technical": safe_debug(
                 {
                     "intent": intent,

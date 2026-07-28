@@ -27,6 +27,15 @@ from presenter import (
 _ACTIVE_RULE_STATES = {"active", "enabled", "running"}
 _INACTIVE_RULE_STATES = {"paused", "disabled", "inactive", "stopped"}
 
+_HUB_LOG_QUERY = re.compile(
+    r"^(?:please\s+)?(?:(?:check|show|review|inspect|scan|list|get)\s+|look\s+at\s+)"
+    r"(?:the\s+)?(?:(?:hub|hubitat)\s+)?(?:logs?|errors?|warnings?)"
+    r"(?:\s+and\s+(?:errors?|warnings?))?"
+    r"(?:\s+(?:for|and\s+(?:show|list))\s+(?:any\s+)?"
+    r"(?:issues?|errors?|warnings?))?[?.!]*$",
+    re.IGNORECASE,
+)
+
 _COMPARE_RE = re.compile(
     r"^compare\s+(humidity|temperature)\s+(?:in|between)\s+(?:the\s+)?(.+?)\s+and\s+(?:the\s+)?(.+?)[?.!]*$",
     re.IGNORECASE,
@@ -65,6 +74,31 @@ _ROOM_DEVICE_PATTERNS = (
 )
 
 _MAX_EMPTY_SENSOR_DETAIL_PROBES = 4
+
+
+def is_hub_logs_query(query: str) -> bool:
+    """Match live Hubitat logs without claiming HomeBrain self-diagnostics."""
+
+    q = _normalise(query)
+    if re.search(
+        r"\b(?:homebrain|assistant|request)\s+"
+        r"(?:logs?|errors?|warnings?|diagnostics?)\b",
+        q,
+    ):
+        return False
+    return bool(
+        _HUB_LOG_QUERY.match(str(query or "").strip())
+        or q
+        in {
+            "logs",
+            "errors",
+            "warnings",
+            "logs and errors",
+            "hub logs",
+            "hub errors",
+            "hub warnings",
+        }
+    )
 
 
 def _needs_empty_device_detail(
@@ -1671,10 +1705,7 @@ class FastFallbackRouter(DeviceStatusRouter):
 
     @staticmethod
     def _is_logs_query(q: str) -> bool:
-        return bool(
-            re.search(r"\bhub\s+(?:logs?|errors?|warnings?)\b", q)
-            or q in {"logs", "errors", "logs and errors", "show logs", "show errors"}
-        )
+        return is_hub_logs_query(q)
 
     @staticmethod
     def _is_installed_apps_query(q: str) -> bool:
@@ -1755,16 +1786,14 @@ class FastFallbackRouter(DeviceStatusRouter):
     async def _logs(self, q: str) -> dict[str, Any]:
         result = await self._read_tool("hub_get_logs")
         rows = _rows(result.data, ("logs", "entries", "items"))
-        error_only = any(term in q for term in ("error", "warning", "warn"))
+        error_only = any(term in q for term in ("error", "warning", "warn", "issue"))
         if error_only:
-            important = [
+            rows = [
                 row
                 for row in rows
                 if (_text(row, "level", "severity", "type") or "").lower()
                 in {"error", "warn", "warning", "fatal"}
             ]
-            if important:
-                rows = important
         return self._response_with_rows(
             result=result,
             intent="fallback-hub-logs",
@@ -1971,4 +2000,5 @@ __all__ = [
     "_needs_empty_device_detail",
     "_room_device_states",
     "_rows",
+    "is_hub_logs_query",
 ]

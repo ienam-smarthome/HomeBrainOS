@@ -79,3 +79,35 @@ def test_quiet_rows_are_not_promoted_to_offline_and_stale_counts_match_kind():
 def test_non_attention_answers_are_unchanged():
     answer = {"route": "mcp-fast", "message": "OK"}
     assert reconcile_semantic_attention(answer) == answer
+
+
+def test_top_level_health_evidence_survives_truncated_debug_payload():
+    answer = {
+        "route": "ai-semantic-home-attention",
+        "message": "Incomplete answer",
+        "semantic_attention": {
+            "low_batteries": {"count": 0, "items": []},
+            "offline": {"count": 0, "items": []},
+            "stale": {"count": 0, "items": []},
+            "warnings": {"count": 0, "items": []},
+            "updates": {"count": 0, "items": []},
+            "open_contacts": {"open_count": 0, "open": []},
+        },
+        "_health_evidence": {
+            "health_items": [
+                {
+                    "id": "1",
+                    "title": "Iron",
+                    "kind": "offline",
+                    "reason": "Live healthStatus is offline.",
+                }
+            ]
+        },
+        "technical": '{"health_evidence": {"health_items": [',
+    }
+
+    result = reconcile_semantic_attention(answer)
+
+    assert result["health_reconciled"] is True
+    assert result["semantic_attention"]["offline"]["count"] == 1
+    assert "Iron" in result["message"]

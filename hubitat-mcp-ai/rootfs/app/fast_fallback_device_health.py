@@ -1580,6 +1580,7 @@ class FastFallbackRouter(GroupFastFallbackRouter):
                     continue
                 label = _label(device) or f"Device {_device_id(device)}"
                 issues[_normalise(label)] = {
+                    "id": _device_id(device),
                     "icon": "📡",
                     "title": label,
                     "value": "Offline",
@@ -1618,6 +1619,7 @@ class FastFallbackRouter(GroupFastFallbackRouter):
                 classified_rows.append(classified)
                 if classified["kind"] == "offline":
                     issues[key] = {
+                        "id": _device_id(device),
                         "icon": "📡",
                         "title": label,
                         "value": "Offline",
@@ -1628,6 +1630,7 @@ class FastFallbackRouter(GroupFastFallbackRouter):
                     }
                 elif classified["kind"] == "stale":
                     issues[key] = {
+                        "id": _device_id(device),
                         "icon": "📈",
                         "title": label,
                         "value": f"Telemetry stale {self.attention_stale_hours:g}h+",
@@ -1639,6 +1642,7 @@ class FastFallbackRouter(GroupFastFallbackRouter):
                 else:
                     quiet.append(
                         {
+                            "id": _device_id(device),
                             "icon": "🕒",
                             "title": label,
                             "value": "Quiet, not offline",
@@ -1751,6 +1755,14 @@ class FastFallbackRouter(GroupFastFallbackRouter):
         response["offline_count"] = offline_count
         response["stale_telemetry_count"] = stale_count
         response["quiet_timestamp_count"] = len(quiet)
+        response["health_items"] = [*issue_items, *quiet]
+        response["offline_devices"] = [
+            item for item in issue_items if item["kind"] == "offline"
+        ]
+        response["stale_devices"] = [
+            item for item in issue_items if item["kind"] == "stale"
+        ]
+        response["quiet_devices"] = list(quiet)
         response["technical"] = safe_debug(
             {
                 "threshold_hours": self.attention_stale_hours,
