@@ -2,17 +2,15 @@
 
 ## 0.10.188
 
-### Route diagnostics explicitly and reconcile health evidence
+### Route diagnostics explicitly and preserve structured health classification
 
-- Routes requests to inspect HomeBrain logs, errors or warnings to deterministic
-  bounded request diagnostics instead of whole-home attention analysis.
-- States clearly that Home Assistant Supervisor and add-on log files were not read
-  when only HomeBrain's in-memory request history is available.
-- Reconciles semantic attention results with authoritative device-health evidence.
-- Keeps explicit negative `healthStatus` rows offline, keeps genuine telemetry
-  failures stale and suppresses quiet event-age rows from fault counts.
-- Rebuilds the attention summary from reconciled facts so headline counts match
-  the authoritative health evidence.
+- Routes HomeBrain diagnostics questions to the bounded request-trace evidence domain instead of treating them as generic household attention requests.
+- States clearly when Home Assistant Supervisor and add-on log files were not inspected.
+- Preserves the authoritative `offline`, `stale` and `quiet` device-health kind end-to-end instead of reconstructing it from rendered phrases.
+- Prevents `Quiet, not offline` from being negation-blindly relabelled as offline.
+- Deduplicates health evidence by device ID, falling back to a normalized label only when an ID is unavailable.
+- Keeps quiet event-age rows out of fault counts and assigns danger/warning tones only to explicit offline/stale kinds.
+- Verifies final offline and stale counts against the authoritative structured health rows.
 
 ## 0.10.187
 
