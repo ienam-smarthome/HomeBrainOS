@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -52,9 +53,11 @@ class HubitatMCPClient:
         endpoint_url: str,
         access_token: str = "",
         timeout_seconds: float = 25,
+        device_cache_seconds: float = 12,
     ) -> None:
         self.endpoint_url = self._with_token(endpoint_url.strip(), access_token.strip())
         self.timeout_seconds = max(3.0, float(timeout_seconds))
+        self.device_cache_seconds = max(0.0, float(device_cache_seconds))
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -70,6 +73,8 @@ class HubitatMCPClient:
         self._tools: dict[str, MCPTool] = {}
         self._lock = asyncio.Lock()
         self.server_info: dict[str, Any] = {}
+        self._cached_devices: list[dict[str, Any]] = []
+        self._devices_cached_at = 0.0
 
     @staticmethod
     def _with_token(url: str, token: str) -> str:
@@ -181,6 +186,42 @@ class HubitatMCPClient:
     async def get_tool(self, name: str) -> MCPTool | None:
         await self.list_tools()
         return self._tools.get(name)
+
+    async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
+        """Return a short-lived live device manifest using the server's own tool schema."""
+
+        now = time.monotonic()
+        if (
+            not refresh
+            and self._cached_devices
+            and now - self._devices_cached_at < self.device_cache_seconds
+        ):
+            return list(self._cached_devices)
+
+        tools = await self.list_tools()
+        names = {tool.name for tool in tools}
+        tool_name = next(
+            (
+                candidate
+                for candidate in ("hub_list_devices", "get_devices", "list_devices")
+                if candidate in names
+            ),
+            None,
+        )
+        if not tool_name:
+            return list(self._cached_devices)
+
+        result = await self.call_tool(tool_name, {})
+        value = result.data
+        if isinstance(value, dict):
+            for key in ("devices", "items", "results"):
+                if isinstance(value.get(key), list):
+                    value = value[key]
+                    break
+        if isinstance(value, list):
+            self._cached_devices = [item for item in value if isinstance(item, dict)]
+            self._devices_cached_at = now
+        return list(self._cached_devices)
 
     async def supported_arguments(
         self,
