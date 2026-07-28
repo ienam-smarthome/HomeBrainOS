@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -20,11 +21,15 @@ def test_chat_and_ask_use_unified_agent(monkeypatch, tmp_path):
     module = load_app(monkeypatch, tmp_path)
     calls = []
 
-    async def answer(prompt, history, *, session_id):
+    async def answer_result(prompt, history, *, session_id):
         calls.append((prompt, session_id))
-        return "Completed."
+        return SimpleNamespace(
+            message="Completed.",
+            request_class="live-read",
+            evidence=[{"tool": "hub_read_devices", "success": True}],
+        )
 
-    monkeypatch.setattr(module.agent, "process_user_request", answer)
+    monkeypatch.setattr(module.agent, "process_user_request_result", answer_result)
     with TestClient(module.app) as client:
         chat = client.post("/api/chat", json={"prompt": "Lights?", "session_id": "mobile"})
         ask = client.post("/api/ask", json={"query": "Lights?", "session_id": "web"})
@@ -33,6 +38,8 @@ def test_chat_and_ask_use_unified_agent(monkeypatch, tmp_path):
     assert chat.json() == {"response": "Completed."}
     assert ask.status_code == 200
     assert ask.json()["route"] == "unified-mcp-agent"
+    assert ask.json()["request_class"] == "live-read"
+    assert ask.json()["evidence"][0]["tool"] == "hub_read_devices"
     assert calls == [("Lights?", "mobile"), ("Lights?", "web")]
 
 

@@ -130,11 +130,11 @@ class ChatRequest(BaseModel):
         return (self.prompt or self.query or "").strip()
 
 
-async def _answer(request: ChatRequest) -> str:
+async def _answer_result(request: ChatRequest) -> Any:
     if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
         raise HTTPException(status_code=503, detail="Ollama Online is disabled")
     try:
-        return await agent.process_user_request(
+        return await agent.process_user_request_result(
             request.message,
             request.history,
             session_id=request.session_id,
@@ -144,6 +144,10 @@ async def _answer(request: ChatRequest) -> str:
     except Exception as exc:
         logger.exception("Unified MCP request failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+async def _answer(request: ChatRequest) -> str:
+    return (await _answer_result(request)).message
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -262,12 +266,14 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
 @app.post("/api/ask")
 async def ask(request: ChatRequest) -> dict[str, Any]:
     started = time.perf_counter()
-    message = await _answer(request)
+    outcome = await _answer_result(request)
     return {
         "success": True,
         "route": "unified-mcp-agent",
         "intent": "native-function-calling",
-        "message": message,
+        "request_class": outcome.request_class,
+        "message": outcome.message,
+        "evidence": outcome.evidence,
         "model": agent.model_name,
         "elapsed_ms": round((time.perf_counter() - started) * 1000),
         "version": VERSION,

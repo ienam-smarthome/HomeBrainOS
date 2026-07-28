@@ -121,6 +121,57 @@ def test_read_state_question_is_not_misclassified_as_mutation():
     assert UnifiedMCPAgent._requests_mutation("pause humidity app")
 
 
+def test_general_request_classification():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    assert agent._classify_request("hello", "s") == "conversational"
+    assert agent._classify_request("What is the hub status?", "s") == "live-read"
+    assert agent._classify_request("turn off hallway lights", "s") == "write"
+
+
+@pytest.mark.asyncio
+async def test_live_read_without_evidence_retries_then_fails_closed():
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "It looks healthy."}},
+        {"message": {"role": "assistant", "content": "It still looks healthy."}},
+    ])
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Check hub status")
+
+    assert "could not retrieve verified live Hubitat evidence" in outcome.message
+    assert outcome.request_class == "live-read"
+    assert outcome.evidence == []
+    assert "No successful live evidence receipt exists" in (
+        ai.requests[1][1]["json"]["messages"][-1]["content"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_successful_tool_call_returns_sanitized_evidence_receipt():
+    class ReadMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_get_info", "Hub info", {"type": "object"})]
+
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "hub_get_info",
+                "arguments": {"includeAppUpdate": True, "token": "secret-value"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "The hub is healthy."}},
+    ])
+    agent = UnifiedMCPAgent(ReadMCP(), "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Check hub status")
+
+    assert outcome.message == "The hub is healthy."
+    assert outcome.evidence[0]["tool"] == "hub_get_info"
+    assert outcome.evidence[0]["supports_live_claim"] is True
+    assert outcome.evidence[0]["arguments"]["token"] == "[redacted]"
+    assert outcome.evidence[0]["timestamp"].endswith("+00:00")
+
+
 def test_read_queries_exclude_manage_gateways():
     tools = [
         MCPTool("hub_read_devices", "read devices", {}),
