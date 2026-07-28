@@ -1,5 +1,15 @@
 # Hubitat MCP AI changelog
 
+## 0.10.189
+
+### Observe route overlap without changing dispatch
+
+- Activates the existing `RouteRegistry` as a passive production shadow observer.
+- Records every query's complete catalogue match set, selected catalogue route and actual answering route.
+- Calculates overlap and registry-versus-runtime disagreement rates in a bounded in-memory report.
+- Exposes `/api/route-shadow` for Phase 0 evidence gathering.
+- Leaves the maintained request stack fully authoritative; the observer never dispatches or modifies answers.
+
 ## 0.10.188
 
 ### Route diagnostics explicitly and preserve structured health classification
