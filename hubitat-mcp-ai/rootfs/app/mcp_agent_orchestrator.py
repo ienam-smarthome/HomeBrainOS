@@ -35,6 +35,7 @@ _DEVICE_TERMS = {
     "battery", "batteries", "device", "devices", "door", "light", "lights",
     "fan", "humidity", "lamp", "lamps", "lock", "motion", "outlet", "plug",
     "presence", "sensor", "state", "switch", "temperature", "thermostat",
+    "weather",
 }
 _DIAGNOSTIC_TERMS = {
     "backup", "cpu", "diagnostic", "diagnostics", "firmware", "health", "log",
@@ -114,8 +115,25 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _requests_mutation(prompt: str) -> bool:
-        tokens = set(re.findall(r"[a-z0-9]+", prompt.lower()))
-        return bool(tokens & _MUTATION_TERMS)
+        value = " ".join(prompt.lower().split())
+        strong_verbs = {
+            "create", "delete", "disable", "enable", "pause", "reboot", "remove",
+            "restart", "resume", "set", "shutdown", "start", "stop", "toggle",
+            "unlock", "update", "write",
+        }
+        tokens = re.findall(r"[a-z0-9]+", value)
+        if tokens and tokens[0] in strong_verbs | {"close", "lock", "open"}:
+            return True
+        if re.search(r"\b(?:turn|switch|power)\b.+\b(?:on|off)\b", value):
+            return True
+        if re.search(
+            r"\bplease\s+(?:close|create|delete|disable|enable|lock|open|pause|"
+            r"reboot|remove|restart|resume|set|shutdown|start|stop|toggle|"
+            r"unlock|update|write)\b",
+            value,
+        ):
+            return True
+        return False
 
     @classmethod
     def _needs_device_manifest(cls, prompt: str) -> bool:
@@ -160,19 +178,25 @@ class UnifiedMCPAgent:
         if cls._matches(prompt, _APP_TERMS):
             names = {
                 "hub_read_apps_code", "hub_read_rules",
-                "hub_manage_native_rules_and_apps", "hub_manage_rules",
                 "hub_search_tools",
             }
+            if cls._requests_mutation(prompt):
+                names.update({
+                    "hub_manage_native_rules_and_apps",
+                    "hub_manage_rule_machine",
+                })
         elif cls._matches(prompt, _DEVICE_TERMS):
             names = {
-                "hub_read_devices", "hub_manage_devices",
-                "hub_get_info", "hub_search_tools",
+                "hub_read_devices", "hub_get_info", "hub_search_tools",
             }
+            if cls._requests_mutation(prompt):
+                names.add("hub_manage_devices")
         elif cls._matches(prompt, _ROOM_TERMS):
             names = {
-                "hub_read_rooms", "hub_manage_rooms",
-                "hub_read_devices", "hub_search_tools",
+                "hub_read_rooms", "hub_search_tools",
             }
+            if cls._requests_mutation(prompt):
+                names.add("hub_manage_rooms")
         elif cls._matches(prompt, _DIAGNOSTIC_TERMS):
             names = {
                 "hub_get_info", "hub_read_diagnostics", "hub_search_tools",
@@ -237,10 +261,25 @@ class UnifiedMCPAgent:
                 app_id = app.get("id") or app.get("appId")
                 label = app.get("label") or app.get("name") or app.get("displayName")
                 if app_id is not None and label:
-                    app_rows.append(f"- {label!r} | appId: {app_id}")
+                    state = " | ".join(
+                        f"{key}: {app[key]}"
+                        for key in (
+                            "status", "enabled", "paused", "active", "broken",
+                        )
+                        if app.get(key) is not None
+                    )
+                    app_rows.append(
+                        f"- {label!r} | appId: {app_id}"
+                        + (f" | {state}" if state else "")
+                    )
             app_section = (
                 "\n\nLIVE APP MANIFEST\n"
                 + ("\n".join(app_rows) if app_rows else "No live app manifest available.")
+                + "\nThis cached manifest is for name-to-ID matching only. For current "
+                "automation status, always call hub_read_apps_code with "
+                "tool='hub_list_apps' and args={'scope': 'instances'}, and use "
+                "hub_read_rules for live Rule Machine rule state. Report enabled, "
+                "paused, broken, and active state when returned."
                 + "\nPause/resume Rule Machine apps through "
                 "hub_manage_native_rules_and_apps with tool='hub_set_rule_paused' "
                 "and args={'appId': <id>, 'value': true to pause or false to resume}."
