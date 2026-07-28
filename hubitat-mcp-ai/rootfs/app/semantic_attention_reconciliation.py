@@ -23,49 +23,38 @@ def _device_name(item: dict[str, Any]) -> str:
     return str(item.get("device") or item.get("title") or item.get("label") or "").strip()
 
 
-def _health_classifications(answer: Any) -> dict[str, str]:
+def _device_id(item: dict[str, Any]) -> str | None:
+    value = item.get("id") or item.get("deviceId") or item.get("device_id")
+    text = str(value or "").strip()
+    return text or None
+
+
+def _identity(item: dict[str, Any]) -> str:
+    device_id = _device_id(item)
+    return f"id:{device_id}" if device_id else f"name:{_device_name(item).casefold()}"
+
+
+def _health_items(answer: Any) -> list[dict[str, Any]]:
     if not isinstance(answer, dict):
-        return {}
+        return []
+    values = answer.get("health_items")
+    if isinstance(values, list):
+        return [dict(item) for item in values if isinstance(item, dict)]
 
-    classifications: dict[str, str] = {}
-    display = answer.get("display")
-    if not isinstance(display, dict):
-        return classifications
-
-    for item in display.get("items") or []:
-        if not isinstance(item, dict):
-            continue
-        name = _device_name(item)
-        if not name:
-            continue
-        text = " ".join(
-            str(item.get(key) or "")
-            for key in ("value", "subtitle", "tone")
-        ).casefold()
-        if any(term in text for term in ("offline", "unavailable", "unreachable", "not responding")):
-            kind = "offline"
-        elif "stale" in text and "quiet" not in text:
-            kind = "stale"
-        elif any(
-            term in text
-            for term in (
-                "quiet timestamp",
-                "quiet timestamps",
-                "old lastactivity",
-                "event age",
-                "not proof",
-                "no negative live health",
-                "normally static",
-                "unchanged state",
-            )
-        ):
-            kind = "quiet"
-        else:
-            # Device-health display rows that are neither explicitly negative nor
-            # stale are informational. They must not be promoted to offline.
-            kind = "quiet"
-        classifications[name.casefold()] = kind
-    return classifications
+    technical = _technical_object(answer.get("technical"))
+    items: list[dict[str, Any]] = []
+    for kind, key in (
+        ("offline", "offline_devices"),
+        ("stale", "stale_telemetry"),
+        ("quiet", "quiet_timestamp_devices"),
+    ):
+        for raw in technical.get(key) or []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            item["kind"] = kind
+            items.append(item)
+    return items
 
 
 def _names(items: list[dict[str, Any]]) -> str:
@@ -113,6 +102,18 @@ def _accurate_message(attention: dict[str, Any]) -> str:
     return " ".join(parts) if parts else "Nothing currently stands out as needing attention."
 
 
+def _row_from_health(item: dict[str, Any]) -> dict[str, Any]:
+    kind = str(item.get("kind") or "").strip().lower()
+    return {
+        "id": _device_id(item),
+        "device": _device_name(item),
+        "room": item.get("room"),
+        "value": "Offline" if kind == "offline" else "Stale",
+        "detail": item.get("subtitle") or item.get("detail") or item.get("reason"),
+        "kind": kind,
+    }
+
+
 def reconcile_semantic_attention(answer: dict[str, Any]) -> dict[str, Any]:
     if str(answer.get("route") or "") != "ai-semantic-home-attention":
         return answer
@@ -121,52 +122,56 @@ def reconcile_semantic_attention(answer: dict[str, Any]) -> dict[str, Any]:
         return answer
 
     technical = _technical_object(answer.get("technical"))
-    classifications = _health_classifications(technical.get("health_evidence"))
-    if not classifications:
+    health_answer = technical.get("health_evidence")
+    structured = _health_items(health_answer)
+    if not structured:
         return answer
 
-    offline_rows = [item for item in (attention.get("offline") or {}).get("items", []) if isinstance(item, dict)]
-    stale_rows = [item for item in (attention.get("stale") or {}).get("items", []) if isinstance(item, dict)]
-    other_rows = [
-        item
-        for item in offline_rows + stale_rows
-        if _device_name(item).casefold() not in classifications
-    ]
+    authoritative: dict[str, dict[str, Any]] = {
+        _identity(item): item
+        for item in structured
+        if _identity(item) not in {"name:"}
+    }
 
     reconciled_offline: list[dict[str, Any]] = []
     reconciled_stale: list[dict[str, Any]] = []
-    for item in offline_rows + stale_rows:
-        name = _device_name(item)
-        kind = classifications.get(name.casefold())
+    for item in authoritative.values():
+        kind = str(item.get("kind") or "").strip().lower()
         if kind == "offline":
-            row = dict(item)
-            row["value"] = "Offline"
-            if not any(_device_name(existing).casefold() == name.casefold() for existing in reconciled_offline):
-                reconciled_offline.append(row)
+            reconciled_offline.append(_row_from_health(item))
         elif kind == "stale":
-            row = dict(item)
-            row["value"] = "Stale"
-            if not any(_device_name(existing).casefold() == name.casefold() for existing in reconciled_stale):
-                reconciled_stale.append(row)
-        elif kind is None:
-            text = " ".join(str(item.get(key) or "") for key in ("value", "detail")).casefold()
-            target = reconciled_offline if "offline" in text else reconciled_stale
-            if not any(_device_name(existing).casefold() == name.casefold() for existing in target):
-                target.append(dict(item))
+            reconciled_stale.append(_row_from_health(item))
+        # Quiet is deliberately omitted: event age alone is not a fault.
 
-    # Preserve unrelated rows that were not part of device-health evidence.
-    for item in other_rows:
-        name = _device_name(item)
-        text = " ".join(str(item.get(key) or "") for key in ("value", "detail")).casefold()
-        target = reconciled_offline if "offline" in text else reconciled_stale
-        if not any(_device_name(existing).casefold() == name.casefold() for existing in target):
-            target.append(dict(item))
+    # Preserve unrelated structured rows only when they carry an explicit kind and
+    # do not refer to a device already covered by authoritative health evidence.
+    covered = set(authoritative)
+    for category, target in (
+        ("offline", reconciled_offline),
+        ("stale", reconciled_stale),
+    ):
+        block = attention.get(category)
+        rows = block.get("items") if isinstance(block, dict) else []
+        for raw in rows or []:
+            if not isinstance(raw, dict):
+                continue
+            identity = _identity(raw)
+            if identity in covered:
+                continue
+            if str(raw.get("kind") or "").strip().lower() != category:
+                continue
+            if identity not in {_identity(existing) for existing in target}:
+                target.append(dict(raw))
+
+    reconciled_offline.sort(key=lambda item: _device_name(item).casefold())
+    reconciled_stale.sort(key=lambda item: _device_name(item).casefold())
 
     updated = dict(attention)
     updated["offline"] = {"count": len(reconciled_offline), "items": reconciled_offline}
     updated["stale"] = {"count": len(reconciled_stale), "items": reconciled_stale}
     updated["quiet_health_rows_suppressed"] = sum(
-        kind == "quiet" for kind in classifications.values()
+        str(item.get("kind") or "").strip().lower() == "quiet"
+        for item in structured
     )
     updated["issue_count"] = sum(
         int((updated.get(name) or {}).get("count") or 0)
@@ -183,8 +188,12 @@ def reconcile_semantic_attention(answer: dict[str, Any]) -> dict[str, Any]:
             **technical,
             "attention": updated,
             "health_reconciliation": {
-                "classifications": classifications,
-                "quiet_rows_suppressed": updated["quiet_health_rows_suppressed"],
+                "authoritative_kind_counts": {
+                    "offline": len(reconciled_offline),
+                    "stale": len(reconciled_stale),
+                    "quiet": updated["quiet_health_rows_suppressed"],
+                },
+                "identity_strategy": "device id, falling back to normalized label",
             },
         },
         ensure_ascii=False,
