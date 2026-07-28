@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable
 import request_tracing
 from control_focus_octopus_energy import OctopusLiveMeterSummary, is_octopus_energy_query
 from device_health_fast_route import is_attention_query, is_device_health_query
+from fast_fallback_extended_reads import is_hub_logs_query
 from home_priority_insight import WholeHomePriorityInsight, is_home_priority_query
 from routing_policy import RouteDecision
 
@@ -102,6 +103,26 @@ def build_device_health_fast_route(application: Any) -> TerminalRoute:
     return route
 
 
+def build_hub_logs_route(application: Any) -> TerminalRoute:
+    """Build an authoritative Hubitat log-reading terminal route."""
+
+    async def route(request: Any) -> dict[str, Any] | None:
+        query = str(getattr(request, "query", "") or "").strip()
+        if not is_hub_logs_query(query):
+            return None
+        answer = dict(await application.fallback.answer(query))
+        if answer.get("intent") != "fallback-hub-logs":
+            return None
+        answer["route"] = "mcp-fast"
+        answer["model"] = None
+        answer["answered_by"] = "Deterministic Hubitat log diagnostics"
+        answer["selected_tools"] = ["hub_get_logs"]
+        answer.setdefault("version", application.VERSION)
+        return answer
+
+    return route
+
+
 def build_control_focus_octopus_energy(application: Any) -> TerminalRoute:
     """Build the authoritative whole-house Octopus read terminal route."""
 
@@ -122,6 +143,7 @@ def build_control_focus_octopus_energy(application: Any) -> TerminalRoute:
 __all__ = [
     "build_control_focus_octopus_energy",
     "build_device_health_fast_route",
+    "build_hub_logs_route",
     "configure_device_health_query_classifier",
     "configure_octopus_query_classifier",
 ]

@@ -1,5 +1,18 @@
 # Hubitat MCP AI changelog
 
+## 0.10.191
+
+### Read actual Hubitat logs for log queries
+
+- Routes bare requests such as `Check logs for any issues` to the read-only
+  `hub_get_logs` diagnostic tool instead of semantic household attention.
+- Keeps explicit HomeBrain request-diagnostics wording on its separate bounded
+  request-trace route.
+- Returns only warning/error/fatal rows when the request asks for issues.
+- Exposes device-health classifications as first-class structured rows so
+  semantic attention reconciliation cannot lose confirmed offline devices when
+  technical debug output is truncated.
+
 ## 0.10.190
 
 ### Keep ambiguous log requests in the household-health domain

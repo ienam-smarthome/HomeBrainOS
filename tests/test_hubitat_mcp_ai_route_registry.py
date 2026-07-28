@@ -38,6 +38,13 @@ def test_reasoning_questions_use_ai_evidence_before_general_assistant():
     assert [match.name for match in decision.matches][-1] == "general-assistant"
 
 
+def test_bare_log_issue_query_selects_authoritative_hub_logs():
+    decision = build_route_registry().select("Check logs for any issues")
+    assert decision.selected is not None
+    assert decision.selected.name == "hub-logs"
+    assert decision.selected.terminal is True
+
+
 def test_duplicate_route_names_are_rejected():
     registry = RouteRegistry()
     route = RouteDescriptor("same", 1, False, lambda query: True, "test")

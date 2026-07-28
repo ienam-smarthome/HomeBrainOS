@@ -213,6 +213,13 @@ def test_installed_apps_and_logs_use_direct_gateway_reads():
     assert logs["intent"] == "fallback-hub-logs"
     assert "Example device timeout" in logs["message"]
 
+    issues = asyncio.run(router.answer("Check logs for any issues"))
+    assert issues["success"] is True
+    assert issues["intent"] == "fallback-hub-logs"
+    assert "Example device timeout" in issues["message"]
+    assert fake.calls[-1][0] == "hub_read_diagnostics"
+    assert fake.calls[-1][1]["tool"] == "hub_get_logs"
+
 
 def test_prayer_times_status_and_events_resolve_selected_device():
     fake = FakeGatewayClient()

@@ -130,6 +130,16 @@ def test_live_healthstatus_from_all_selected_devices_overrides_empty_stale_rows(
 
     assert answer["success"] is True
     assert answer["offline_count"] == 3
+    assert [item["kind"] for item in answer["health_items"][:3]] == [
+        "offline",
+        "offline",
+        "offline",
+    ]
+    assert [item["title"] for item in answer["offline_devices"]] == [
+        "Generic outlet",
+        "Roborock Q7 Max",
+        "🔢 Tuya Remote (bedroom 3)",
+    ]
     assert answer["stale_telemetry_count"] == 0
     assert answer["quiet_timestamp_count"] == 1
     assert "Roborock Q7 Max" in answer["message"]

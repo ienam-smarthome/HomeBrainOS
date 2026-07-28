@@ -5,6 +5,7 @@ import re
 from ai_evidence_planner import is_ai_evidence_query
 from control_agent_intent import is_control_candidate
 from device_health_fast_route import is_device_health_query
+from fast_fallback_extended_reads import is_hub_logs_query
 from mcp_agent_orchestrator import _is_explicit_device_lookup, _requested_device_attribute
 from route_registry import RouteDescriptor, RouteRegistry
 
@@ -52,6 +53,13 @@ def build_route_registry() -> RouteRegistry:
                 terminal=True,
                 matcher=is_control_candidate,
                 reason="device writes use the guarded control agent",
+            ),
+            RouteDescriptor(
+                name="hub-logs",
+                priority=890,
+                terminal=True,
+                matcher=is_hub_logs_query,
+                reason="log diagnostics read authoritative recent Hubitat hub logs",
             ),
             RouteDescriptor(
                 name="device-measurement",
