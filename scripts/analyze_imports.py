@@ -7,14 +7,7 @@ import ast
 import json
 from pathlib import Path
 
-ENTRYPOINTS = {
-    "entrypoint",
-    "entrypoint_core",
-    "webui",
-    "runtime_route_bridge",
-    "dashboard_api",
-    "device_intelligence_api",
-}
+ENTRYPOINTS = {"app"}
 
 
 def parse_imports(path: Path, known: set[str]) -> set[str]:

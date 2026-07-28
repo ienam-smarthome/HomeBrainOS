@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from typing import Any
-
 import html
 import json
 
 
-def render_homebrain_page(title: str, version: str) -> str:
+def render_page(title: str, version: str) -> str:
+    """Render the self-contained Home Assistant ingress UI."""
+
     safe_title = html.escape(title)
     title_json = json.dumps(title)
     version_json = json.dumps(version)
-    page = r'''<!doctype html>
+    return (
+        r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -18,360 +19,51 @@ def render_homebrain_page(title: str, version: str) -> str:
 <meta name="theme-color" content="#0b0b0c">
 <title>__SAFE_TITLE__</title>
 <style>
-:root{color-scheme:dark;--bg:#0b0b0c;--card:#1f1f21;--tile:#303033;--tile2:#262629;--text:#fff;--muted:#b9b9bd;--blue:#2f7df6;--green:#15803d;--green-soft:#1f3128;--red:#7f1d1d;--amber:#92400e;--line:#343438}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}button,input{font:inherit}.wrap{max-width:960px;margin:auto;padding:24px 24px 92px}h1{font-size:36px;margin:8px 2px 18px;line-height:1.1}h1 small{font-size:.56em}.card{background:var(--card);border-radius:18px;padding:16px;margin:12px 0}.pill{display:inline-block;padding:8px 12px;border-radius:999px;background:#166534;font-size:14px}.pill.warning{background:var(--amber)}.pill.error{background:var(--red)}.pill.neutral{background:#3a3a3d}.status-row{display:flex;gap:8px;flex-wrap:wrap}.view-card{padding:10px 12px}.view-controls{display:flex;flex-wrap:wrap;gap:8px}.view-toggle{display:inline-flex;align-items:center;gap:6px;background:var(--tile);color:#d7d7db;border-radius:999px;padding:8px 11px;font-size:13px;line-height:1;user-select:none}.view-toggle input{width:auto;margin:0;accent-color:#22c55e}.is-hidden{display:none!important}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:var(--tile);border-radius:14px;padding:14px;min-width:0}.metric.selected{background:var(--green-soft);box-shadow:inset 0 0 0 2px rgba(34,197,94,.85)}.big{font-size:28px;font-weight:700;overflow-wrap:anywhere}.mini{color:var(--muted);font-size:12px;line-height:1.3;margin-top:4px;overflow-wrap:anywhere}input,button{width:100%;box-sizing:border-box;padding:14px;margin:8px 0;border-radius:12px;border:0;font-size:16px}input{background:#fff;color:#111}button{background:var(--blue);color:#fff;cursor:pointer}button:disabled{opacity:.5}.secondary{background:#333}.secondary.selected{background:#164e31;box-shadow:inset 0 0 0 2px rgba(34,197,94,.75)}.answer-shell{background:#000;border:1px solid transparent;border-radius:12px;padding:14px;margin-top:10px;min-height:52px;overflow:hidden}.answer-shell.active{border-color:rgba(34,197,94,.7);box-shadow:0 0 0 1px rgba(34,197,94,.25)}.answer-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px}.answer-title{font-weight:700;overflow-wrap:anywhere}.answer-meta{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.badge{background:#243044;color:#dce9ff;border-radius:999px;padding:4px 8px;font-size:11px;white-space:nowrap}.answer-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.45;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}.result-title{font-size:19px;font-weight:700;margin:2px 0}.result-subtitle{color:var(--muted);font-size:13px;margin:3px 0 11px}.result-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:10px 0}.result-metric,.result-item{background:#18181a;border:1px solid #2d2d31;border-radius:10px;padding:10px;min-width:0}.result-value{font-size:18px;font-weight:700;overflow-wrap:anywhere}.result-label,.result-sub{font-size:11px;color:var(--muted);overflow-wrap:anywhere}.result-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.result-item{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}.result-item.warning{border-color:#6b501b}.result-item.danger{border-color:#713137}.result-item.success{border-color:#245e3d}.result-main{min-width:0}.result-name{font-weight:700;overflow-wrap:anywhere}.result-side{font-weight:700;text-align:right;overflow-wrap:anywhere}.answer-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}.small-button{width:auto;margin:0;padding:7px 10px;background:#333;font-size:12px}.small-button.confirm-action{background:#166534}.working{display:none;color:var(--muted);font-size:12px;margin-top:7px}.working.show{display:block}details.tech{margin-top:10px;color:var(--muted)}details.tech summary{cursor:pointer;font-size:12px}details.tech pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:220px;overflow:auto;background:#111;padding:10px;border-radius:9px;font-size:11px}.shortcut-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}.shortcut-note{grid-column:1/-1;color:var(--muted);font-size:13px;margin:0 0 4px}.tools{grid-column:1/-1}.tools summary{cursor:pointer;color:#d2d2d7;font-weight:700;margin:5px 0}.tools-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:8px}.footer{color:var(--muted);font-size:11px;text-align:center;padding:14px}.mic-fab{position:fixed;right:18px;bottom:18px;z-index:5;width:64px;height:64px;margin:0;border-radius:50%;font-size:28px;background:var(--green);box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 0 0 1px rgba(134,239,172,.35)}.mic-fab.listening{background:#dc2626}
-@media(max-width:520px){.wrap{padding:10px 10px 86px;max-width:none}h1{font-size:27px;margin:8px 2px}.card{border-radius:12px;padding:10px;margin:8px 0}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{border-radius:10px;padding:10px;min-height:64px}.big{font-size:22px}.mini{font-size:11px}.view-card{position:sticky;top:0;z-index:3;background:#18181a;border:1px solid #29292d}.view-controls{gap:6px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.view-toggle{white-space:nowrap;padding:8px 10px}.shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.result-list{grid-template-columns:1fr}.result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.answer-head{display:block}.answer-meta{justify-content:flex-start;margin-top:7px}.answer-text{font-size:12px}.result-item{grid-template-columns:auto minmax(0,1fr);align-items:flex-start}.result-side{grid-column:2;text-align:left}.mic-fab{right:14px;bottom:14px;width:68px;height:68px;font-size:30px}input,button{padding:12px;font-size:15px;margin:6px 0}}
+:root{color-scheme:dark;--bg:#0b0b0c;--card:#1f1f21;--tile:#303033;--text:#fff;--muted:#b9b9bd;--blue:#2f7df6;--green:#166534;--red:#991b1b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}.wrap{max-width:960px;margin:auto;padding:24px}h1{font-size:36px;margin:8px 0 20px}.card{background:var(--card);border-radius:18px;padding:16px;margin:12px 0}.row,.grid{display:flex;gap:10px;flex-wrap:wrap}.pill{padding:8px 12px;border-radius:999px;background:#3a3a3d}.pill.ok{background:var(--green)}.pill.error{background:var(--red)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}.tile{background:var(--tile);border-radius:14px;padding:14px}.big{font-size:24px;font-weight:700}.muted{color:var(--muted);font-size:13px}input,button{width:100%;border:0;border-radius:12px;padding:14px;margin:7px 0;font:inherit}input{background:#fff;color:#111}button{background:var(--blue);color:#fff;cursor:pointer}.secondary{background:#333}.answer{background:#000;border-radius:12px;padding:14px;min-height:52px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.busy{opacity:.65}
+@media(max-width:520px){.wrap{padding:12px}h1{font-size:28px}.card{border-radius:12px;padding:11px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
-<body>
-<div class="wrap">
+<body><main class="wrap">
 <h1>🏠 <span id="title"></span> <small id="version"></small></h1>
-<div class="card"><div class="status-row"><span class="pill warning" id="status">Checking…</span><span class="pill neutral" id="mcpStatus">MCP unknown</span><span class="pill neutral" id="ollamaStatus">Ollama unknown</span></div></div>
-<div class="card view-card"><div class="view-controls">
-<label class="view-toggle"><input type="checkbox" data-view="summary" checked> Summary</label>
-<label class="view-toggle"><input type="checkbox" data-view="shortcuts" checked> Shortcuts</label>
-<label class="view-toggle"><input type="checkbox" data-view="output" checked> Output</label>
-<label class="view-toggle"><input type="checkbox" id="readAnswers"> Read answers</label>
-</div></div>
-<div class="card grid" id="summaryCard">
-<div class="metric"><div class="big" id="tools">—</div><div>MCP tools</div></div>
-<div class="metric"><div class="big" id="mcpState">—</div><div>MCP connection</div></div>
-<div class="metric"><div class="big" id="model">—</div><div>Ollama model</div></div>
-<div class="metric"><div class="big" id="ollamaState">—</div><div>Ollama connection</div></div>
-<div class="metric"><div class="big" id="lastRoute">—</div><div>Last route</div></div>
-<div class="metric"><div class="big" id="lastTime">—</div><div>Response time</div></div>
-</div>
-<div class="card">
+<section class="card row"><span class="pill" id="mcp">MCP unknown</span><span class="pill" id="gemini">Gemini unknown</span></section>
+<section class="card grid">
+<div class="tile"><div class="big" id="tools">—</div><div class="muted">MCP tools</div></div>
+<div class="tile"><div class="big" id="model">—</div><div class="muted">Gemini model</div></div>
+</section>
+<section class="card">
 <input id="query" placeholder="Ask your Hubitat…" autocomplete="off">
-<button id="ask">Ask</button>
-<button id="speak">🎤 Speak</button>
-<div id="working" class="working">Contacting Hubitat…</div>
-<div id="outputCard" class="answer-shell" aria-live="polite"><div class="answer-text">Ready</div></div>
-</div>
-<div class="card grid shortcut-grid" id="shortcutsCard">
-<div class="shortcut-note">Smart shortcuts for everyday use</div>
+<button id="ask">Ask</button><button class="secondary" id="speak">🎤 Speak</button>
+<div class="answer" id="answer">Ready</div>
+</section>
+<section class="card grid" id="shortcuts">
 <button class="secondary" data-q="What's happening at home?">🏠 What's happening?</button>
-<button class="secondary" data-q="Find devices that need attention">⚠️ Attention</button>
 <button class="secondary" data-q="Which lights are on?">💡 Lights</button>
 <button class="secondary" data-q="Which batteries are low?">🪫 Low batteries</button>
 <button class="secondary" data-q="List my Hubitat rooms">🚪 Rooms</button>
-<button class="secondary" data-q="What is the weather?">🌦️ Weather</button>
 <button class="secondary" data-q="List automation rules">⚙️ Rules</button>
-<button class="secondary" data-q="Check the hub health status">🧠 Hub health</button>
-<details class="tools"><summary>Health, Diagnostics & MCP</summary><div class="grid tools-grid">
-<button class="secondary" data-q="Show hub CPU and free memory">Hub resources</button>
-<button class="secondary" data-q="List devices that are offline or stale">Device health</button>
-<button class="secondary" data-q="List my Hubitat rooms and device counts">Room inventory</button>
-<button class="secondary" id="refreshMcp">Refresh MCP tools</button>
-</div></details>
-</div>
-<div class="footer">Powered by Ollama and kingpanther13's Hubitat MCP Rule Server. MCP is the live device-control source.</div>
-</div>
-<button id="micFab" class="mic-fab" aria-label="Speak">🎤</button>
+<button class="secondary" id="refresh">🧰 Refresh MCP tools</button>
+</section>
+<p class="muted">Powered by Gemini native function calling and Hubitat MCP.</p>
+</main>
 <script>
-const TITLE=__TITLE_JSON__,VERSION=__VERSION_JSON__;document.getElementById('title').textContent=TITLE;document.getElementById('version').textContent='v'+VERSION;
-const input=document.getElementById('query'),ask=document.getElementById('ask'),output=document.getElementById('outputCard'),working=document.getElementById('working');let history=JSON.parse(sessionStorage.getItem('hmcp_history')||'[]');let readAnswers=localStorage.getItem('hmcp_read_answers')==='true';document.getElementById('readAnswers').checked=readAnswers;
-function save(){sessionStorage.setItem('hmcp_history',JSON.stringify(history.slice(-12)))}function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node}function clearOutput(){output.replaceChildren();output.classList.add('active')}function setPill(id,state,text){const node=document.getElementById(id);node.textContent=text;node.className='pill '+(state===true?'':state===false?'error':'warning')}function metricGrid(metrics){if(!Array.isArray(metrics)||!metrics.length)return null;const grid=el('div','result-grid');metrics.forEach(item=>{const card=el('div','result-metric');card.appendChild(el('div','result-value',(item.icon?item.icon+' ':'')+String(item.value??'—')));card.appendChild(el('div','result-label',item.label||''));grid.appendChild(card)});return grid}function itemList(items){if(!Array.isArray(items)||!items.length)return null;const list=el('div','result-list');items.forEach(item=>{const row=el('div','result-item '+(item.tone||''));row.appendChild(el('div','',item.icon||'•'));const main=el('div','result-main');main.appendChild(el('div','result-name',item.title||''));if(item.subtitle)main.appendChild(el('div','result-sub',item.subtitle));row.appendChild(main);if(item.value!==undefined&&item.value!==null&&item.value!=='')row.appendChild(el('div','result-side',String(item.value)));list.appendChild(row)});return list}
-function showAnswer(answer){clearOutput();const head=el('div','answer-head'),title=el('div','answer-title',answer.display?.title||'Hubitat MCP AI'),meta=el('div','answer-meta');const seconds=Number.isFinite(answer.elapsed_ms)?(answer.elapsed_ms/1000).toFixed(1)+'s':'';meta.appendChild(el('span','badge',answer.route||'unknown'));if(answer.model)meta.appendChild(el('span','badge',answer.model));if(seconds)meta.appendChild(el('span','badge',seconds));head.appendChild(title);head.appendChild(meta);output.appendChild(head);if(answer.display){const displayTitle=answer.display.title||'Result';if(displayTitle!==(title.textContent||''))output.appendChild(el('div','result-title',displayTitle));if(answer.display.subtitle)output.appendChild(el('div','result-subtitle',answer.display.subtitle));const metrics=metricGrid(answer.display.metrics);if(metrics)output.appendChild(metrics);const items=itemList(answer.display.items);if(items)output.appendChild(items);if(answer.display.note)output.appendChild(el('div','mini',answer.display.note));if(Array.isArray(answer.display.actions)&&answer.display.actions.length){const actionBar=el('div','answer-actions');answer.display.actions.forEach(action=>{const button=el('button','small-button '+(action.tone==='primary'?'confirm-action':''),action.label||'Select');button.onclick=()=>{if(action.cancel){clearOutput();output.appendChild(el('div','answer-text','Cancelled. No command was sent.'));return}if(action.query){input.value=action.query;submit(action.query)}};actionBar.appendChild(button)});output.appendChild(actionBar)}if(answer.message&&!answer.display.metrics?.length&&!answer.display.items?.length)output.appendChild(el('div','answer-text',answer.message))}else output.appendChild(el('div','answer-text',answer.message||answer.detail||'No response'));const actions=el('div','answer-actions'),copy=el('button','small-button','Copy');copy.onclick=()=>navigator.clipboard?.writeText(answer.message||'');actions.appendChild(copy);output.appendChild(actions);if(answer.technical){const details=el('details','tech'),summary=el('summary','','Technical details');details.appendChild(summary);details.appendChild(el('pre','',answer.technical));output.appendChild(details)}document.getElementById('lastRoute').textContent=answer.route||'—';document.getElementById('lastTime').textContent=seconds||'—';if(readAnswers&&window.speechSynthesis&&answer.message&&answer.message.length<1200){const utterance=new SpeechSynthesisUtterance(answer.message.replace(/[-•]\s/g,''));utterance.rate=1;window.speechSynthesis.cancel();window.speechSynthesis.speak(utterance)}}
-async function status(){try{const response=await fetch('/api/status');const data=await response.json();setPill('status',data.mcp?.online,data.mcp?.online?'Online · Hubitat MCP ready':'MCP unavailable');setPill('mcpStatus',data.mcp?.online,data.mcp?.online?`MCP online · ${data.mcp.tools||0} tools`:`MCP offline · ${data.mcp?.error||'unavailable'}`);setPill('ollamaStatus',data.ollama?.online,data.ollama?.online?`Ollama online · ${data.ollama.model}`:`Ollama offline · ${data.ollama?.error||'unavailable'}`);document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('mcpState').textContent=data.mcp?.online?'Online':'Offline';document.getElementById('model').textContent=data.ollama?.model||'—';document.getElementById('ollamaState').textContent=data.ollama?.online?'Online':'Offline'}catch(error){setPill('status',false,'Status error: '+error.message)}}
-async function submit(query){query=(query||input.value).trim();if(!query)return;input.value='';const prior=history.slice(-10);history.push({role:'user',content:query});save();working.classList.add('show');ask.disabled=true;ask.textContent='Working…';clearOutput();output.appendChild(el('div','answer-text','Working on: '+query));try{const response=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,history:prior})});const answer=await response.json();showAnswer(answer);history.push({role:'assistant',content:answer.message||''});save()}catch(error){showAnswer({success:false,route:'error',message:'Request failed: '+error.message})}finally{working.classList.remove('show');ask.disabled=false;ask.textContent='Ask';status()}}
-ask.onclick=()=>submit();input.addEventListener('keydown',event=>{if(event.key==='Enter')submit()});document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>submit(button.dataset.q));document.getElementById('readAnswers').onchange=event=>{readAnswers=event.target.checked;localStorage.setItem('hmcp_read_answers',String(readAnswers))};document.querySelectorAll('[data-view]').forEach(box=>{const key='hmcp_view_'+box.dataset.view;box.checked=localStorage.getItem(key)!=='false';const target={summary:'summaryCard',shortcuts:'shortcutsCard',output:'outputCard'}[box.dataset.view];const apply=()=>document.getElementById(target)?.classList.toggle('is-hidden',!box.checked);box.onchange=()=>{localStorage.setItem(key,String(box.checked));apply()};apply()});document.getElementById('refreshMcp').onclick=async()=>{working.classList.add('show');try{const response=await fetch('/api/refresh',{method:'POST'});const data=await response.json();showAnswer({success:true,route:'system',message:`MCP tools refreshed: ${data.tools}.`,display:{title:'MCP tools refreshed',subtitle:`${data.tools} tools available`,metrics:[{label:'Tools',value:data.tools,icon:'🧰'}]}})}catch(error){showAnswer({success:false,route:'error',message:'Refresh failed: '+error.message})}finally{working.classList.remove('show');status()}};
-function startVoice(){const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){showAnswer({success:false,route:'browser',message:'Speech recognition is not supported by this browser.'});return}const recognition=new Recognition();recognition.lang='en-GB';recognition.interimResults=false;const fab=document.getElementById('micFab');fab.classList.add('listening');fab.textContent='■';recognition.onresult=event=>{const query=event.results[0][0].transcript;input.value=query;submit(query)};recognition.onerror=event=>showAnswer({success:false,route:'browser',message:'Speech recognition error: '+event.error});recognition.onend=()=>{fab.classList.remove('listening');fab.textContent='🎤'};recognition.start()}document.getElementById('speak').onclick=startVoice;document.getElementById('micFab').onclick=startVoice;status();setInterval(status,30000);
-</script>
-</body>
-</html>'''
-    return (
-        page.replace('__SAFE_TITLE__', safe_title)
-        .replace('__TITLE_JSON__', title_json)
-        .replace('__VERSION_JSON__', version_json)
+const TITLE=__TITLE__,VERSION=__VERSION__,sessionId=sessionStorage.getItem('hmcp_session_id')||crypto.randomUUID();
+sessionStorage.setItem('hmcp_session_id',sessionId);
+document.getElementById('title').textContent=TITLE;document.getElementById('version').textContent='v'+VERSION;
+const query=document.getElementById('query'),ask=document.getElementById('ask'),answer=document.getElementById('answer');
+function pill(id,ok,text){const node=document.getElementById(id);node.textContent=text;node.className='pill '+(ok?'ok':'error')}
+async function jsonResponse(response){const raw=await response.text();try{return JSON.parse(raw)}catch(error){throw new Error(`HTTP ${response.status}: ${raw||'empty response'}`)}}
+async function status(){try{const data=await jsonResponse(await fetch('api/status'));pill('mcp',data.mcp?.online,data.mcp?.online?`MCP online · ${data.mcp.tools||0} tools`:`MCP offline · ${data.mcp?.error||'unavailable'}`);pill('gemini',data.gemini?.configured,data.gemini?.configured?`Gemini ready · ${data.gemini.model}`:'Gemini API key required');document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('model').textContent=data.gemini?.model||'—'}catch(error){pill('mcp',false,'Status error · '+error.message)}}
+async function submit(text){text=(text||query.value).trim();if(!text)return;query.value='';ask.disabled=true;answer.classList.add('busy');answer.textContent='Working…';try{const data=await jsonResponse(await fetch('api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,session_id:sessionId})}));answer.textContent=data.message||data.detail||JSON.stringify(data,null,2)}catch(error){answer.textContent='Request failed: '+error.message}finally{ask.disabled=false;answer.classList.remove('busy');status()}}
+ask.onclick=()=>submit();query.onkeydown=event=>{if(event.key==='Enter')submit()};document.querySelectorAll('[data-q]').forEach(button=>button.onclick=()=>submit(button.dataset.q));
+document.getElementById('refresh').onclick=async()=>{try{const data=await jsonResponse(await fetch('api/refresh',{method:'POST'}));answer.textContent=`MCP tools refreshed: ${data.tools}.`;status()}catch(error){answer.textContent='Refresh failed: '+error.message}};
+document.getElementById('speak').onclick=()=>{const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){answer.textContent='Speech recognition is unavailable in this browser.';return}const recognition=new Recognition();recognition.lang='en-GB';recognition.onresult=event=>submit(event.results[0][0].transcript);recognition.start()};
+status();setInterval(status,30000);
+</script></body></html>"""
+        .replace("__SAFE_TITLE__", safe_title)
+        .replace("__TITLE__", title_json)
+        .replace("__VERSION__", version_json)
     )
 
 
-HOME_BRAIN_MOBILE_PATCH = r"""
-#status{display:none}
-.status-row{align-items:center}
-#summaryCard.dashboard-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.summary-tile{width:auto;margin:0;background:var(--tile);color:var(--text);text-align:left;border-radius:14px;padding:14px;min-height:88px;transition:background .15s,box-shadow .15s,transform .15s}
-.summary-tile:hover,.summary-tile:focus{background:#3a3a3d;box-shadow:inset 0 0 0 1px rgba(147,197,253,.35);outline:0}
-.summary-tile:active{transform:translateY(1px)}
-.summary-tile.warning{box-shadow:inset 0 0 0 1px rgba(245,158,11,.55)}
-.summary-tile .big{font-size:28px;line-height:1.05;overflow-wrap:normal}
-.summary-tile .mini{font-size:12px}
-.summary-meta{grid-column:1/-1;display:flex;gap:8px 16px;flex-wrap:wrap;align-items:center;padding:2px 2px 0;color:var(--muted);font-size:12px}
-.summary-meta strong{color:var(--text);font-weight:700}
-#ask.working-button{background:#1d4ed8}
-.result-list{max-height:68vh;overflow:auto;padding-right:2px}
-.answer-shell{min-width:0}
-.answer-text{max-width:100%}
-@media(max-width:820px){
-  #summaryCard.dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .shortcut-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .summary-tile{min-height:78px;padding:11px}
-  .summary-tile .big{font-size:23px}
-}
-@media(max-width:420px){
-  .status-row{display:grid;grid-template-columns:1fr;gap:6px}
-  .pill{font-size:12px;padding:7px 10px;overflow-wrap:anywhere}
-  .summary-tile .big{font-size:21px}
-  .summary-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
-  .result-list{max-height:58vh}
-}
-"""
-
-
-OLD_SUMMARY = """<div class="card grid" id="summaryCard">
-<div class="metric"><div class="big" id="tools">—</div><div>MCP tools</div></div>
-<div class="metric"><div class="big" id="mcpState">—</div><div>MCP connection</div></div>
-<div class="metric"><div class="big" id="model">—</div><div>Ollama model</div></div>
-<div class="metric"><div class="big" id="ollamaState">—</div><div>Ollama connection</div></div>
-<div class="metric"><div class="big" id="lastRoute">—</div><div>Last route</div></div>
-<div class="metric"><div class="big" id="lastTime">—</div><div>Response time</div></div>
-</div>"""
-
-NEW_SUMMARY = """<div class="card grid dashboard-grid" id="summaryCard">
-<button class="summary-tile" data-q="Which lights are on?"><div class="big" id="dashLights">—</div><div>Lights on</div><div class="mini">Tap for live details</div></button>
-<button class="summary-tile" data-q="Which motion sensors are active?"><div class="big" id="dashMotion">—</div><div>Motion active</div><div class="mini">Live Hubitat states</div></button>
-<button class="summary-tile" data-q="Which switches are on?"><div class="big" id="dashSwitches">—</div><div>Switches on</div><div class="mini">Excludes lights</div></button>
-<button class="summary-tile" id="batterySummary" data-q="Which batteries are low?"><div class="big" id="dashBatteries">—</div><div>Low batteries</div><div class="mini">At or below 20%</div></button>
-<div class="summary-meta"><span>AI <strong id="model">—</strong></span><span>Last route <strong id="lastRoute">—</strong></span><span>Last response <strong id="lastTime">—</strong></span><span>Dashboard <strong id="dashAge">Loading…</strong></span><span>State cache <strong id="dashCache">—</strong></span></div>
-</div>"""
-
-
-OLD_STATUS_FUNCTION = """async function status(){try{const response=await fetch('/api/status');const data=await response.json();setPill('status',data.mcp?.online,data.mcp?.online?'Online · Hubitat MCP ready':'MCP unavailable');setPill('mcpStatus',data.mcp?.online,data.mcp?.online?`MCP online · ${data.mcp.tools||0} tools`:`MCP offline · ${data.mcp?.error||'unavailable'}`);setPill('ollamaStatus',data.ollama?.online,data.ollama?.online?`Ollama online · ${data.ollama.model}`:`Ollama offline · ${data.ollama?.error||'unavailable'}`);document.getElementById('tools').textContent=data.mcp?.tools??'—';document.getElementById('mcpState').textContent=data.mcp?.online?'Online':'Offline';document.getElementById('model').textContent=data.ollama?.model||'—';document.getElementById('ollamaState').textContent=data.ollama?.online?'Online':'Offline'}catch(error){setPill('status',false,'Status error: '+error.message)}}"""
-
-NEW_STATUS_FUNCTION = """function setDash(id,value){const node=document.getElementById(id);if(node)node.textContent=value===null||value===undefined?'—':String(value)}async function status(){const results=await Promise.allSettled([fetch('/api/status'),fetch('/api/dashboard'),fetch('/api/mcp-cache')]);if(results[0].status==='fulfilled'){try{const data=await results[0].value.json();const runtime=data.ollama||{};setPill('mcpStatus',data.mcp?.online,data.mcp?.online?`Hubitat MCP · ${data.mcp.tools||0} tools`:`Hubitat MCP offline · ${data.mcp?.error||'unavailable'}`);let aiState=false,aiText='Ollama offline · '+(runtime.error||'unavailable');if(runtime.online){if(runtime.model_loaded){aiState=true;aiText=`AI ready · ${runtime.model}`;}else if(runtime.model_present){aiState=null;aiText=`AI available · ${runtime.model} loads on demand`;}else{aiText=`AI model missing · ${runtime.model||'not configured'}`;}}setPill('ollamaStatus',aiState,aiText);document.getElementById('model').textContent=runtime.routine_model||runtime.model||'—'}catch(error){setPill('mcpStatus',false,'Status error · '+error.message)}}else setPill('mcpStatus',false,'Status request failed');if(results[1].status==='fulfilled'){try{const dash=await results[1].value.json();setDash('dashLights',dash.lights_on);setDash('dashMotion',dash.motion_active);setDash('dashSwitches',dash.switches_on);setDash('dashBatteries',dash.low_batteries);const battery=document.getElementById('batterySummary');battery?.classList.toggle('warning',Number(dash.low_batteries)>0);const age=document.getElementById('dashAge');if(age)age.textContent=dash.success?'Live':'Unavailable'}catch(error){const age=document.getElementById('dashAge');if(age)age.textContent='Unavailable'}}if(results[2].status==='fulfilled'){try{const cache=(await results[2].value.json()).cache||{};const node=document.getElementById('dashCache');if(node)node.textContent=`${cache.entries||0} entries · ${cache.hits||0} hits`;}catch(error){const node=document.getElementById('dashCache');if(node)node.textContent='Unavailable'}}}"""
-
-CLIENT_STATE_MARKER = """document.getElementById('readAnswers').checked=readAnswers;"""
-CLIENT_STATE_REPLACEMENT = """document.getElementById('readAnswers').checked=readAnswers;input.value=localStorage.getItem('hmcp_last_query')||'';let activeController=null,activeRequestSerial=0,pendingUser=null;let clientId=localStorage.getItem('hmcp_client_id');if(!clientId){clientId=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():'hmcp-'+Date.now()+'-'+Math.random().toString(16).slice(2);localStorage.setItem('hmcp_client_id',clientId);}"""
-
-OLD_SUBMIT_FUNCTION = """async function submit(query){query=(query||input.value).trim();if(!query)return;input.value='';const prior=history.slice(-10);history.push({role:'user',content:query});save();working.classList.add('show');ask.disabled=true;ask.textContent='Working…';clearOutput();output.appendChild(el('div','answer-text','Working on: '+query));try{const response=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,history:prior})});const answer=await response.json();showAnswer(answer);history.push({role:'assistant',content:answer.message||''});save()}catch(error){showAnswer({success:false,route:'error',message:'Request failed: '+error.message})}finally{working.classList.remove('show');ask.disabled=false;ask.textContent='Ask';status()}}"""
-
-NEW_SUBMIT_FUNCTION = """async function submit(query){query=(query||input.value).trim();if(!query)return;input.value=query;localStorage.setItem('hmcp_last_query',query);if(activeController)activeController.abort();if(window.speechSynthesis)window.speechSynthesis.cancel();if(pendingUser&&history.length&&history[history.length-1]?.role==='user'&&history[history.length-1]?.content===pendingUser)history.pop();const prior=history.slice(-10);history.push({role:'user',content:query});pendingUser=query;save();const controller=new AbortController();activeController=controller;const serial=++activeRequestSerial;working.textContent='Working… submit another question to stop this request.';working.classList.add('show');ask.disabled=false;ask.classList.add('working-button');ask.textContent='Stop & ask';clearOutput();output.appendChild(el('div','answer-text','Working on: '+query));try{const response=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json','X-HMCP-Client':clientId},body:JSON.stringify({query,history:prior,session_id:clientId}),signal:controller.signal});if(serial!==activeRequestSerial)return;if(response.status===409)return;const answer=await response.json();showAnswer(answer);pendingUser=null;history.push({role:'assistant',content:answer.message||''});save()}catch(error){if(error.name==='AbortError')return;if(serial===activeRequestSerial)showAnswer({success:false,route:'error',message:'Request failed: '+error.message})}finally{if(serial===activeRequestSerial){activeController=null;working.classList.remove('show');ask.classList.remove('working-button');ask.textContent='Ask';status()}}}"""
-
-RECENT_HANDLER_MARKER = """document.getElementById('refreshMcp').onclick=async()=>{"""
-RECENT_HANDLER = """document.getElementById('recentRequests').onclick=async()=>{working.classList.add('show');try{const response=await fetch('/api/recent-requests');const data=await response.json();const requests=data.requests||[],cache=data.cache||{};showAnswer({success:true,route:'system',message:`${requests.length} recent requests.`,display:{title:'Recent requests',subtitle:`Cache: ${cache.hits||0} hits · ${cache.misses||0} misses · ${cache.coalesced||0} coalesced`,metrics:[{label:'Requests',value:requests.length,icon:'🧾'},{label:'Cache entries',value:cache.entries||0,icon:'⚡'},{label:'Upstream calls',value:cache.upstream_calls||0,icon:'📡'}],items:requests.map(item=>({icon:item.cancelled?'⏹️':item.error?'⚠️':'⏱️',title:item.query||'Request',value:((item.elapsed_ms||0)/1000).toFixed(1)+'s',subtitle:`${item.final_route||item.route_selected} · MCP ${item.mcp_duration_ms||0}ms · cache ${item.cache_hits||0} hit/${item.cache_misses||0} miss`,tone:item.error?'warning':null}))},technical:JSON.stringify(data,null,2)});}catch(error){showAnswer({success:false,route:'error',message:'Could not load request diagnostics: '+error.message})}finally{working.classList.remove('show')}};document.getElementById('clearMcpCache').onclick=async()=>{working.classList.add('show');try{const response=await fetch('/api/mcp-cache/clear',{method:'POST'});const data=await response.json();showAnswer({success:true,route:'system',message:`Cleared ${data.removed||0} cached MCP snapshots.`,display:{title:'MCP state cache cleared',subtitle:'The next live-state request will refresh from Hubitat',metrics:[{label:'Removed',value:data.removed||0,icon:'🧹'}]}});status()}catch(error){showAnswer({success:false,route:'error',message:'Could not clear MCP cache: '+error.message})}finally{working.classList.remove('show')}};document.getElementById('mcpToolCatalogue').onclick=async()=>{working.classList.add('show');try{const response=await fetch('/api/mcp-tool-catalogue');const data=await response.json();const gateways=data.gateways||[];showAnswer({success:true,route:'system',message:`${data.underlying_count||0} underlying MCP tools are available through ${data.visible_count||0} visible entries.`,display:{title:'MCP tool catalogue',subtitle:`${data.core_count||0} core tools · ${data.gateway_count||0} gateways · ${data.hidden_count||0} gateway tools`,metrics:[{label:'Underlying tools',value:data.underlying_count||0,icon:'🧰'},{label:'Visible entries',value:data.visible_count||0,icon:'👁️'},{label:'Gateways',value:data.gateway_count||0,icon:'🗂️'}],items:gateways.map(group=>({icon:group.read_only?'📖':'🛠️',title:group.gateway,value:group.count+' tools',subtitle:(group.tools||[]).slice(0,5).join(', ')+(group.count>5?'…':''),tone:group.read_only?null:'warning'})),note:data.note},technical:JSON.stringify(data,null,2)});}catch(error){showAnswer({success:false,route:'error',message:'Could not load the MCP tool catalogue: '+error.message})}finally{working.classList.remove('show')}};document.getElementById('refreshMcp').onclick=async()=>{"""
-
-
-def render_page(title: str, version: str) -> str:
-    """Render a compact HomeBrain-style interface with live cache diagnostics."""
-    page = render_homebrain_page(title, version)
-    page = page.replace(
-        '<button class="secondary" data-q="Which lights are on?">💡 Lights</button>',
-        "",
-    )
-    page = page.replace(
-        '<button class="secondary" data-q="Which batteries are low?">🪫 Low batteries</button>',
-        "",
-    )
-    page = page.replace(OLD_SUMMARY, NEW_SUMMARY)
-    page = page.replace(OLD_STATUS_FUNCTION, NEW_STATUS_FUNCTION)
-    page = page.replace(
-        '<button class="secondary" id="refreshMcp">Refresh MCP tools</button>',
-        '<button class="secondary" data-q="Ollama diagnostics">Ollama diagnostics</button>'
-        '<button class="secondary" id="recentRequests">Recent requests</button>'
-        '<button class="secondary" id="mcpToolCatalogue">MCP tool catalogue</button>'
-        '<button class="secondary" id="clearMcpCache">Clear state cache</button>'
-        '<button class="secondary" id="refreshMcp">Refresh MCP tools</button>',
-    )
-    page = page.replace(CLIENT_STATE_MARKER, CLIENT_STATE_REPLACEMENT)
-    page = page.replace(OLD_SUBMIT_FUNCTION, NEW_SUBMIT_FUNCTION)
-    page = page.replace(RECENT_HANDLER_MARKER, RECENT_HANDLER)
-    page = page.replace("setInterval(status,30000);", "setInterval(status,15000);")
-    return page.replace("</style>", HOME_BRAIN_MOBILE_PATCH + "</style>", 1)
-
-
-import re
-
-_COPY_HANDLER = (
-    "const actions=el('div','answer-actions'),copy=el('button','small-button','Copy');"
-    "copy.onclick=()=>navigator.clipboard?.writeText(answer.message||'');"
-    "actions.appendChild(copy);"
-)
-_COPY_REPLACEMENT = (
-    "const actions=el('div','answer-actions'),copy=el('button','small-button','Copy');"
-    "copy.onclick=()=>homebrainCopyResult(answer,copy);"
-    "actions.appendChild(copy);"
-)
-
-_COPY_CSS = r"""
-.small-button.copy-success{background:#166534;box-shadow:inset 0 0 0 1px rgba(134,239,172,.45)}
-.small-button.copy-error{background:#991b1b;box-shadow:inset 0 0 0 1px rgba(254,202,202,.35)}
-.copy-manual{margin-top:10px;padding:10px;border:1px solid #7c5c16;border-radius:10px;background:#221b0f;color:#fde68a}
-.copy-manual-label{font-size:12px;line-height:1.4;margin-bottom:7px}
-.copy-manual textarea{display:block;width:100%;min-height:180px;margin:0 0 8px;padding:9px;border:1px solid #6b7280;border-radius:8px;background:#fff;color:#111;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
-.copy-manual .small-button{margin:0}
-"""
-
-_COPY_HELPERS = r"""
-function homebrainCopyPayload(answer){
-  const parts=[];
-  const title=String(answer?.display?.title||'').trim();
-  const message=String(answer?.message||answer?.detail||'').trim();
-  let technical='';
-  if(answer?.technical!==undefined&&answer?.technical!==null){
-    try{technical=typeof answer.technical==='string'?answer.technical:JSON.stringify(answer.technical,null,2)}catch(error){technical=String(answer.technical)}
-    technical=String(technical||'').trim();
-  }
-  if(title)parts.push(title);
-  if(message&&message!==title)parts.push(message);
-  if(technical)parts.push('Technical details\n'+technical);
-  return parts.join('\n\n')||'No response';
-}
-function homebrainLegacyCopy(text){
-  const area=document.createElement('textarea');
-  area.value=text;
-  area.setAttribute('readonly','');
-  area.setAttribute('aria-hidden','true');
-  area.style.position='fixed';
-  area.style.left='0';
-  area.style.top='0';
-  area.style.width='2px';
-  area.style.height='2px';
-  area.style.padding='0';
-  area.style.border='0';
-  area.style.opacity='0.01';
-  area.style.pointerEvents='none';
-  area.style.fontSize='16px';
-  document.body.appendChild(area);
-  area.focus({preventScroll:true});
-  area.select();
-  area.setSelectionRange(0,area.value.length);
-  let copied=false;
-  try{copied=Boolean(document.execCommand&&document.execCommand('copy'))}catch(error){copied=false}
-  area.remove();
-  return copied;
-}
-function homebrainCopyFeedback(button,copied,label){
-  const original=button.dataset.copyLabel||button.textContent||'Copy';
-  button.dataset.copyLabel=original;
-  button.disabled=false;
-  button.textContent=label||(copied?'Copied':'Select text');
-  button.classList.toggle('copy-success',copied);
-  button.classList.toggle('copy-error',!copied);
-  window.setTimeout(()=>{
-    button.textContent=button.dataset.copyLabel||'Copy';
-    button.classList.remove('copy-success','copy-error');
-  },1800);
-}
-function homebrainShowManualCopy(text,button){
-  const host=button.closest('.answer-shell')||document.getElementById('outputCard')||document.body;
-  host.querySelector('.copy-manual')?.remove();
-  const panel=document.createElement('div');
-  panel.className='copy-manual';
-  const label=document.createElement('div');
-  label.className='copy-manual-label';
-  label.textContent='Automatic copy is blocked by this browser. The full result is selected below—use Copy from the browser menu.';
-  const area=document.createElement('textarea');
-  area.value=text;
-  area.setAttribute('readonly','');
-  const close=document.createElement('button');
-  close.type='button';
-  close.className='small-button';
-  close.textContent='Close';
-  close.onclick=()=>panel.remove();
-  panel.append(label,area,close);
-  host.appendChild(panel);
-  area.focus({preventScroll:false});
-  area.select();
-  area.setSelectionRange(0,area.value.length);
-  homebrainCopyFeedback(button,false,'Text selected');
-}
-function homebrainCopyResult(answer,button){
-  const text=homebrainCopyPayload(answer);
-  button.disabled=true;
-  // Run the legacy path synchronously while the browser still considers this a
-  // direct user tap. This is required on plain HTTP and some HA ingress clients.
-  if(homebrainLegacyCopy(text)){
-    homebrainCopyFeedback(button,true,'Copied');
-    return;
-  }
-  if(window.isSecureContext&&navigator.clipboard&&typeof navigator.clipboard.writeText==='function'){
-    navigator.clipboard.writeText(text).then(
-      ()=>homebrainCopyFeedback(button,true,'Copied'),
-      ()=>homebrainShowManualCopy(text,button)
-    );
-    return;
-  }
-  homebrainShowManualCopy(text,button);
-}
-"""
-
-
-def patch_clipboard(page: str) -> str:
-    """Make the result Copy button work in HA ingress and direct HTTP browsers."""
-
-    if "homebrainCopyResult" in page:
-        return page
-
-    if _COPY_HANDLER in page:
-        page = page.replace(_COPY_HANDLER, _COPY_REPLACEMENT, 1)
-    else:
-        page = re.sub(
-            r"copy\.onclick=\(\)=>navigator\.clipboard\?\.writeText\(answer\.message\|\|''\);",
-            "copy.onclick=()=>homebrainCopyResult(answer,copy);",
-            page,
-            count=1,
-        )
-
-    page = page.replace("</style>", _COPY_CSS + "</style>", 1)
-    page = page.replace("</script>", _COPY_HELPERS + "</script>", 1)
-    return page
-
-
-def install_clipboard_safe_webui(webui_module: Any) -> None:
-    """Wrap the final HomeBrain page patch exactly once."""
-
-    if getattr(webui_module, "_homebrain_clipboard_safe", False):
-        return
-    original_patch = webui_module.patch_page
-
-    def patched_page(page: str) -> str:
-        return patch_clipboard(original_patch(page))
-
-    webui_module.patch_page = patched_page
-    webui_module._homebrain_clipboard_safe = True
-
-
-
-_OLD_RESPONSE = (
-    "if(response.status===409)return;const answer=await response.json();"
-    "showAnswer(answer);pendingUser=null;history.push({role:'assistant',content:answer.message||''});save()"
-)
-_NEW_RESPONSE = (
-    "if(response.status===409)return;const raw=await response.text();let answer=null;"
-    "try{answer=raw?JSON.parse(raw):null}catch(parseError){answer=null}"
-    "if(!answer||typeof answer!=='object'){const preview=String(raw||'').trim();"
-    "answer={success:false,route:'server-error',message:`HomeBrain returned HTTP ${response.status}${response.statusText?' '+response.statusText:''}. ${preview||'The response body was empty.'}`,technical:`HTTP ${response.status}${response.statusText?' '+response.statusText:''}\nContent-Type: ${response.headers.get('content-type')||'unknown'}\n\n${preview||'<empty response>'}`};}"
-    "else if(!response.ok&&answer.success!==false){answer.success=false;answer.route=answer.route||'server-error';answer.message=answer.message||answer.detail||`HomeBrain returned HTTP ${response.status}.`;answer.technical=answer.technical||raw;}"
-    "showAnswer(answer);pendingUser=null;history.push({role:'assistant',content:answer.message||''});save()"
-)
-
-
-def patch_http_errors(page: str) -> str:
-    """Parse ask responses as text first so plain HTTP failures remain visible."""
-
-    if "HomeBrain returned HTTP ${response.status}" in page:
-        return page
-    return page.replace(_OLD_RESPONSE, _NEW_RESPONSE, 1)
-
-
-def install_http_safe_webui(webui_module: Any) -> None:
-    if getattr(webui_module, "_homebrain_http_safe", False):
-        return
-    original_patch = webui_module.patch_page
-
-    def patched_page(page: str) -> str:
-        return patch_http_errors(original_patch(page))
-
-    webui_module.patch_page = patched_page
-    webui_module._homebrain_http_safe = True
-
-
-__all__ = [
-    "install_clipboard_safe_webui",
-    "install_http_safe_webui",
-    "patch_clipboard",
-    "patch_http_errors",
-    "render_homebrain_page",
-    "render_page",
-]
+__all__ = ["render_page"]

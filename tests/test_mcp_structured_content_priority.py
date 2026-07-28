@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from device_intelligence_index import _device_rows  # noqa: E402
 from mcp_client import HubitatMCPClient  # noqa: E402
 
 
@@ -41,7 +40,7 @@ def test_tool_result_prefers_structured_content_when_text_is_also_present():
 
     assert result.text == "Found 106 devices."
     assert isinstance(result.data, dict)
-    rows = _device_rows(result.data)
+    rows = result.data["devices"]
     assert rows[0]["id"] == "7399"
     assert rows[0]["label"] == "Front Door"
 

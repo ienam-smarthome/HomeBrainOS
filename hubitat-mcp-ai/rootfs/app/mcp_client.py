@@ -5,7 +5,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
@@ -23,7 +23,7 @@ class MCPTool:
     output_schema: dict[str, Any] = field(default_factory=dict)
     annotations: dict[str, Any] = field(default_factory=dict)
 
-    def as_ollama_tool(self) -> dict[str, Any]:
+    def as_function_tool(self) -> dict[str, Any]:
         schema = self.input_schema if isinstance(self.input_schema, dict) else {}
         return {
             "type": "function",
@@ -54,10 +54,12 @@ class HubitatMCPClient:
         access_token: str = "",
         timeout_seconds: float = 25,
         device_cache_seconds: float = 12,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.endpoint_url = self._with_token(endpoint_url.strip(), access_token.strip())
         self.timeout_seconds = max(3.0, float(timeout_seconds))
         self.device_cache_seconds = max(0.0, float(device_cache_seconds))
+        self._clock = clock
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -190,7 +192,7 @@ class HubitatMCPClient:
     async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
         """Return a short-lived live device manifest using the server's own tool schema."""
 
-        now = time.monotonic()
+        now = self._clock()
         if (
             not refresh
             and self._cached_devices
