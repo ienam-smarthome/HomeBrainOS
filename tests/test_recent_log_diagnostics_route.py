@@ -18,8 +18,11 @@ class TraceStore:
 
 
 def test_log_diagnostics_query_matches_domain_not_home_attention():
-    assert is_recent_log_diagnostics_query("Check logs for any issues")
+    assert is_recent_log_diagnostics_query("Check HomeBrain logs for any issues")
     assert is_recent_log_diagnostics_query("Review HomeBrain errors")
+    assert is_recent_log_diagnostics_query("Show request diagnostics")
+    assert is_recent_log_diagnostics_query("Inspect assistant warnings")
+    assert not is_recent_log_diagnostics_query("Check logs for any issues")
     assert not is_recent_log_diagnostics_query("Check the home for any issues")
 
 
@@ -39,7 +42,9 @@ def test_log_diagnostics_reports_bounded_request_errors_without_claiming_supervi
         ),
     )
 
-    answer = asyncio.run(route(SimpleNamespace(query="Check logs for any issues")))
+    answer = asyncio.run(
+        route(SimpleNamespace(query="Check HomeBrain request diagnostics"))
+    )
 
     assert answer is not None
     assert answer["route"] == "homebrain-recent-request-diagnostics"
@@ -57,5 +62,16 @@ def test_log_diagnostics_falls_through_for_household_attention_query():
     )
 
     answer = asyncio.run(route(SimpleNamespace(query="What needs attention at home?")))
+
+    assert answer is None
+
+
+def test_log_diagnostics_falls_through_for_ambiguous_bare_log_query():
+    route = build_recent_log_diagnostics_terminal_route(
+        SimpleNamespace(VERSION="test"),
+        TraceStore([]),
+    )
+
+    answer = asyncio.run(route(SimpleNamespace(query="Check logs for any issues")))
 
     assert answer is None

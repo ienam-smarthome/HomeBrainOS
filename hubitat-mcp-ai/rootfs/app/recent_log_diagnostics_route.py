@@ -8,7 +8,8 @@ from presenter import display_payload, safe_debug
 
 _LOG_QUERY_RE = re.compile(
     r"^(?:please\s+)?(?:check|show|review|inspect|scan|look\s+at)\s+"
-    r"(?:the\s+)?(?:homebrain\s+)?(?:logs?|errors?|warnings?|diagnostics?)"
+    r"(?:the\s+)?(?:(?:homebrain|assistant)(?:\s+request)?|request)\s+"
+    r"(?:logs?|errors?|warnings?|diagnostics?|requests?)"
     r"(?:\s+(?:for|and\s+show|and\s+list)\s+(?:any\s+)?(?:issues?|errors?|warnings?))?"
     r"[?.!]*$",
     re.IGNORECASE,

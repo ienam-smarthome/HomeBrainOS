@@ -1,5 +1,16 @@
 # Hubitat MCP AI changelog
 
+## 0.10.190
+
+### Keep ambiguous log requests in the household-health domain
+
+- Requires an explicit `HomeBrain`, `assistant`, or `request` qualifier before
+  the bounded request-diagnostics route can intercept a log query.
+- Leaves bare requests such as `Check logs for any issues` available to the
+  semantic household-attention route.
+- Preserves explicit self-diagnostics requests such as `Check HomeBrain request
+  diagnostics`.
+
 ## 0.10.189
 
 ### Observe route overlap without changing dispatch
