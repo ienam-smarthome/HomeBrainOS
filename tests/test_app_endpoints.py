@@ -52,4 +52,6 @@ def test_root_renders_gemini_webui(monkeypatch, tmp_path):
     assert "Ollama model" not in response.text
     assert "apiPath('api/status')" in response.text
     assert "location.pathname.replace" in response.text
+    assert "globalThis.crypto?.randomUUID?.()" in response.text
+    assert "Math.random().toString(36)" in response.text
     assert "fetch('/api/status')" not in response.text
