@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 PREVIOUS_RELEASE_VERSION = "0.10.191"
-RELEASE_VERSION = "0.10.193"
+RELEASE_VERSION = "0.10.194"
 BAKED_VERSION_PATH = Path("/app/.homebrain-build-version")
 
 

@@ -45,6 +45,14 @@ def test_bare_log_issue_query_selects_authoritative_hub_logs():
     assert decision.selected.terminal is True
 
 
+def test_natural_log_issue_purpose_clause_selects_authoritative_hub_logs():
+    decision = build_route_registry().select(
+        "Check logs to see if there are any issues"
+    )
+    assert decision.selected is not None
+    assert decision.selected.name == "hub-logs"
+
+
 def test_live_terminal_routes_are_represented_with_capability_metadata():
     cases = {
         "Which rooms are active?": "active-rooms",
