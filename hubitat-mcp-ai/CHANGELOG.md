@@ -1,5 +1,17 @@
 # Hubitat MCP AI changelog
 
+## 0.10.188
+
+### Route diagnostics explicitly and preserve structured health classification
+
+- Routes HomeBrain diagnostics questions to the bounded request-trace evidence domain instead of treating them as generic household attention requests.
+- States clearly when Home Assistant Supervisor and add-on log files were not inspected.
+- Preserves the authoritative `offline`, `stale` and `quiet` device-health kind end-to-end instead of reconstructing it from rendered phrases.
+- Prevents `Quiet, not offline` from being negation-blindly relabelled as offline.
+- Deduplicates health evidence by device ID, falling back to a normalized label only when an ID is unavailable.
+- Keeps quiet event-age rows out of fault counts and assigns danger/warning tones only to explicit offline/stale kinds.
+- Verifies final offline and stale counts against the authoritative structured health rows.
+
 ## 0.10.187
 
 ### Fix serialized power-summary diagnostics crash
