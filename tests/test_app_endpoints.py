@@ -55,6 +55,9 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "hmcp_last_query" in response.text
     assert "query.value=text" in response.text
     assert "document.execCommand('copy')" in response.text
+    assert "Copy technical" in response.text
+    assert "renderMessage" in response.text
+    assert "speechText" in response.text
     assert 'id="micFab"' in response.text
     assert "copy-button" in response.text
     assert "apiPath('api/status')" in response.text
@@ -102,3 +105,33 @@ def test_dashboard_counts_current_states(monkeypatch, tmp_path):
         "switches_on": 1,
         "low_batteries": 1,
     }
+
+
+def test_dashboard_counts_detailed_attributes(monkeypatch, tmp_path):
+    module = load_app(monkeypatch, tmp_path)
+
+    async def devices():
+        return [
+            {
+                "id": "1",
+                "capabilities": ["Switch", "Light"],
+                "attributes": [
+                    {"name": "switch", "value": "on"},
+                    {"name": "battery", "value": 12},
+                ],
+            },
+            {
+                "id": "2",
+                "capabilities": ["MotionSensor"],
+                "attributes": [{"name": "motion", "value": "active"}],
+            },
+        ]
+
+    monkeypatch.setattr(module.mcp, "get_cached_devices", devices)
+    with TestClient(module.app) as client:
+        response = client.get("/api/dashboard")
+
+    assert response.status_code == 200
+    assert response.json()["lights_on"] == 1
+    assert response.json()["motion_active"] == 1
+    assert response.json()["low_batteries"] == 1

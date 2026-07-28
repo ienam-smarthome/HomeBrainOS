@@ -221,7 +221,7 @@ class HubitatMCPClient:
                     "detailed": True,
                     "fields": [
                         "id", "name", "label", "room",
-                        "capabilities", "currentStates",
+                        "capabilities", "attributes",
                     ],
                     "limit": 50,
                     "offset": 0,
