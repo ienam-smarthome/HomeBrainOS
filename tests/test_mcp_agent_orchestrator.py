@@ -82,7 +82,7 @@ async def test_sdk_native_multi_round_tool_execution():
     assert answer == "The couch lamp is on."
     assert mcp.calls == [("set_switch", {"device_id": "42", "state": "on"})]
     second_contents = ai.aio.models.requests[1]["contents"]
-    assert second_contents[-1].role == "tool"
+    assert second_contents[-1].role == "user"
     assert second_contents[-1].parts[0].function_response.name == "set_switch"
 
 

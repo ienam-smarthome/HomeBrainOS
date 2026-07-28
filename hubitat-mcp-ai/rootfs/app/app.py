@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -199,12 +200,15 @@ async def chat(request: ChatRequest) -> dict[str, Any]:
 
 @app.post("/api/ask")
 async def ask(request: ChatRequest) -> dict[str, Any]:
+    started = time.perf_counter()
     message = await _answer(request)
     return {
         "success": True,
         "route": "unified-mcp-agent",
         "intent": "native-function-calling",
         "message": message,
+        "model": OPTIONS.get("gemini_model"),
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
         "version": VERSION,
     }
 
