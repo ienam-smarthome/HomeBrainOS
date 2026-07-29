@@ -271,7 +271,67 @@ def test_read_queries_exclude_manage_gateways():
     assert [tool.name for tool in rooms] == [
         "hub_read_rooms", "hub_search_tools",
     ]
+    assert "hub_search_tools" not in [tool.name for tool in switches]
     assert "hub_manage_devices" in [tool.name for tool in control]
+
+
+@pytest.mark.asyncio
+async def test_low_battery_read_prefetches_complete_authoritative_snapshot():
+    class BatteryMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_read_devices", "read devices", {}),
+                MCPTool("hub_search_tools", "search tools", {}),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [
+                        {
+                            "id": "5401",
+                            "label": "Fridge Door",
+                            "attributes": {"battery": 14},
+                        },
+                        {
+                            "id": "4718",
+                            "label": "Livingroom TRV",
+                            "attributes": {"battery": 10},
+                        },
+                    ]
+                },
+            )
+
+    mcp = BatteryMCP()
+    ai = FakeAI([
+        {
+            "message": {
+                "role": "assistant",
+                "content": "Fridge Door is 14% and Livingroom TRV is 10%.",
+            }
+        },
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Which batteries are low?")
+
+    assert outcome.message == "Fridge Door is 14% and Livingroom TRV is 10%."
+    assert mcp.calls == [
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+    ]
+    assert outcome.evidence[0]["evidence_kind"] == (
+        "authoritative_state_snapshot"
+    )
+    assert outcome.evidence[0]["supports_live_claim"] is True
+    declared = ai.requests[0][1]["json"]["tools"]
+    assert [item["function"]["name"] for item in declared] == [
+        "hub_read_devices"
+    ]
 
 
 @pytest.mark.asyncio
@@ -329,7 +389,7 @@ def test_device_health_query_gets_read_and_diagnostic_gateways():
     )
     assert [tool.name for tool in selected] == [
         "hub_read_devices", "hub_read_diagnostics",
-        "hub_manage_devices", "hub_search_tools",
+        "hub_manage_devices",
     ]
 
 

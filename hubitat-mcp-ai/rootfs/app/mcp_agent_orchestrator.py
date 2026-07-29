@@ -130,7 +130,9 @@ class UnifiedMCPAgent:
     def _matches(prompt: str, terms: set[str]) -> bool:
         value = prompt.lower()
         return any(
-            re.search(rf"\b{re.escape(term.lower())}\b", value) is not None
+            re.search(
+                rf"\b{re.escape(term.lower())}(?:s|es)?\b", value
+            ) is not None
             for term in terms
         )
 
@@ -216,6 +218,7 @@ class UnifiedMCPAgent:
         elapsed_ms: int,
         summary: str,
         supports_live_claim: bool = True,
+        evidence_kind: str = "tool_result",
     ) -> None:
         receipts = self._evidence.get()
         if receipts is None:
@@ -227,6 +230,7 @@ class UnifiedMCPAgent:
             "elapsed_ms": elapsed_ms,
             "success": success,
             "supports_live_claim": supports_live_claim,
+            "evidence_kind": evidence_kind,
             "arguments": self._redact(arguments),
             "summary": summary,
         })
@@ -286,7 +290,7 @@ class UnifiedMCPAgent:
         if cls._matches(prompt, _DEVICE_HEALTH_TERMS):
             names = {
                 "hub_read_devices", "hub_read_diagnostics",
-                "hub_manage_devices", "hub_search_tools",
+                "hub_manage_devices",
             }
         elif cls._matches(prompt, _APP_TERMS):
             names = {
@@ -300,7 +304,7 @@ class UnifiedMCPAgent:
                 })
         elif cls._matches(prompt, _DEVICE_TERMS):
             names = {
-                "hub_read_devices", "hub_get_info", "hub_search_tools",
+                "hub_read_devices", "hub_get_info",
             }
             if cls._requests_mutation(prompt):
                 names.add("hub_manage_devices")
@@ -358,16 +362,52 @@ class UnifiedMCPAgent:
     async def _system_prompt(self, user_prompt: str = "") -> str:
         rows: list[str] = []
         if self._needs_device_manifest(user_prompt):
+            devices: list[dict[str, Any]] = []
+            if not self._requests_mutation(user_prompt):
+                try:
+                    available = {tool.name for tool in await self.mcp.list_tools()}
+                    if "hub_read_devices" in available:
+                        arguments = {"tool": "hub_list_devices", "args": {}}
+                        started = time.monotonic()
+                        result = await self.mcp.call_tool(
+                            "hub_read_devices", arguments
+                        )
+                        candidates = (
+                            HubitatMCPClient._find_device_list(result.data) or []
+                        )
+                        devices = [
+                            item for item in candidates if isinstance(item, dict)
+                        ]
+                        self._record_evidence(
+                            "hub_read_devices",
+                            arguments,
+                            success=self._tool_succeeded(result) and bool(devices),
+                            elapsed_ms=round(
+                                (time.monotonic() - started) * 1000
+                            ),
+                            summary=f"{len(devices)} authoritative device records",
+                            evidence_kind="authoritative_state_snapshot",
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Could not build authoritative device snapshot: %s", exc
+                    )
             try:
-                started = time.monotonic()
-                devices = await self.mcp.get_cached_devices()
-                self._record_evidence(
-                    "hub_read_devices",
-                    {"tool": "hub_list_devices", "source": "short_ttl_cache"},
-                    success=True,
-                    elapsed_ms=round((time.monotonic() - started) * 1000),
-                    summary=f"{len(devices)} live device records",
-                )
+                if not devices:
+                    started = time.monotonic()
+                    devices = await self.mcp.get_cached_devices()
+                    self._record_evidence(
+                        "hub_read_devices",
+                        {
+                            "tool": "hub_list_devices",
+                            "source": "short_ttl_cache",
+                        },
+                        success=True,
+                        elapsed_ms=round((time.monotonic() - started) * 1000),
+                        summary=f"{len(devices)} identity records",
+                        supports_live_claim=False,
+                        evidence_kind="identity_manifest",
+                    )
                 for device in devices:
                     label = device.get("label") or device.get("name") or "Unknown device"
                     device_id = device.get("id") or device.get("deviceId")
@@ -463,7 +503,9 @@ class UnifiedMCPAgent:
             battery_section = (
                 "\n\nLOW BATTERY RULE\nA battery is low only when its numeric level "
                 "is at or below 20 percent, matching the dashboard. Exclude every device "
-                "above 20 percent. Do not reinterpret 30 or 35 percent as low."
+                "above 20 percent. Do not reinterpret 30 or 35 percent as low. Use the "
+                "complete authoritative device snapshot; never use a label filter for "
+                "an exhaustive low-battery answer."
             )
         health_section = ""
         if self._matches(user_prompt, _DEVICE_HEALTH_TERMS):
