@@ -47,6 +47,45 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
 
 
 @pytest.mark.asyncio
+async def test_firmware_update_requires_confirmation_and_runs_once():
+    class FirmwareMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool(
+                    "hub_update_firmware",
+                    "Install available hub firmware",
+                    {
+                        "type": "object",
+                        "properties": {"confirm": {"type": "boolean"}},
+                    },
+                )
+            ]
+
+    mcp = FirmwareMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_update_firmware",
+                "arguments": {"confirm": True},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "Firmware update started."}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    prompt = await agent.process_user_request(
+        "Install the available firmware update", session_id="firmware"
+    )
+    assert "Please confirm" in prompt
+    assert "may restart" in prompt
+    assert not mcp.calls
+
+    answer = await agent.process_user_request("confirm", session_id="firmware")
+    assert answer == "Firmware update started."
+    assert mcp.calls == [("hub_update_firmware", {"confirm": True})]
+
+
+@pytest.mark.asyncio
 async def test_multiple_sensitive_device_actions_share_one_confirmation():
     mcp = FakeMCP()
     calls = [

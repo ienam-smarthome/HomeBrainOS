@@ -141,7 +141,7 @@ class UnifiedMCPAgent:
     def _requests_mutation(prompt: str) -> bool:
         value = " ".join(prompt.lower().split())
         strong_verbs = {
-            "create", "delete", "disable", "enable", "pause", "reboot", "remove",
+            "create", "delete", "disable", "enable", "install", "pause", "reboot", "remove",
             "restart", "resume", "set", "shutdown", "start", "stop", "toggle",
             "unlock", "update", "write",
         }
@@ -151,7 +151,7 @@ class UnifiedMCPAgent:
         if re.search(r"\b(?:turn|switch|power)\b.+\b(?:on|off)\b", value):
             return True
         if re.search(
-            r"\bplease\s+(?:close|create|delete|disable|enable|lock|open|pause|"
+            r"\bplease\s+(?:close|create|delete|disable|enable|install|lock|open|pause|"
             r"reboot|remove|restart|resume|set|shutdown|start|stop|toggle|"
             r"unlock|update|write)\b",
             value,
@@ -437,6 +437,7 @@ class UnifiedMCPAgent:
         return (
             bool(tokens & _MUTATION_TERMS)
             or name.startswith(("set_", "create_", "delete_", "update_"))
+            or name == "hub_update_firmware"
             or "_manage_" in name
         )
 
@@ -643,7 +644,13 @@ class UnifiedMCPAgent:
                 "version and status field. Values such as 'Update Available', "
                 "updateAvailable=true, or a newer hubUpdateVersion mean an update is "
                 "available; never summarize those values as up to date. Distinguish hub "
-                "firmware updates from MCP Server App updates."
+                "firmware updates from MCP Server App updates. If the user asks to "
+                "install an available Hubitat hub firmware update, first verify that "
+                "hub_get_info reports one, then call hub_update_firmware exactly once "
+                "with {'confirm': true}. This is a sensitive action and must remain "
+                "behind the session confirmation gate. Never claim that an update was "
+                "started unless hub_update_firmware succeeds. If it reports that a "
+                "backup is required, report that requirement and do not bypass it."
             )
         battery_section = ""
         if self._matches(user_prompt, {"battery", "batteries"}):
@@ -1179,6 +1186,12 @@ class UnifiedMCPAgent:
                 )
                 names = sorted({name for name, _ in sensitive})
                 if len(sensitive) == 1:
+                    if names[0] == "hub_update_firmware":
+                        return (
+                            "Please confirm before I install the available Hubitat "
+                            "firmware update. The hub may restart and be temporarily "
+                            "unavailable."
+                        )
                     return f"Please confirm before I run the sensitive Hubitat action `{names[0]}`."
                 return (
                     f"Please confirm before I run {len(sensitive)} sensitive Hubitat "
