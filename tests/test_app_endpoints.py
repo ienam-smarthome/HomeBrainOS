@@ -43,6 +43,16 @@ def test_chat_and_ask_use_unified_agent(monkeypatch, tmp_path):
     assert calls == [("Lights?", "mobile"), ("Lights?", "web")]
 
 
+def test_stream_idle_timeout_is_wired_to_agent(monkeypatch, tmp_path):
+    options = tmp_path / "options.json"
+    options.write_text('{"stream_idle_timeout_seconds": 7}', encoding="utf-8")
+    monkeypatch.setenv("CONFIG_PATH", str(options))
+    sys.modules.pop("app", None)
+    module = importlib.import_module("app")
+
+    assert module.agent.stream_idle_timeout_seconds == 7
+
+
 def test_empty_prompt_is_rejected(monkeypatch, tmp_path):
     module = load_app(monkeypatch, tmp_path)
     with TestClient(module.app) as client:

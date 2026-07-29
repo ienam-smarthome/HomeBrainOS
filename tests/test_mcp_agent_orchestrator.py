@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -51,6 +52,45 @@ class FakeAI:
         return None
 
 
+class FakeStreamResponse:
+    def __init__(self, lines, *, delay=0):
+        self.lines = lines
+        self.delay = delay
+
+    def raise_for_status(self):
+        return None
+
+    async def aiter_lines(self):
+        for line in self.lines:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            yield line
+
+
+class FakeStreamContext:
+    def __init__(self, response):
+        self.response = response
+
+    async def __aenter__(self):
+        return self.response
+
+    async def __aexit__(self, *_):
+        return None
+
+
+class FakeStreamingAI:
+    def __init__(self, lines, *, delay=0):
+        self.response = FakeStreamResponse(lines, delay=delay)
+        self.requests = []
+
+    def stream(self, method, url, **kwargs):
+        self.requests.append((method, url, kwargs))
+        return FakeStreamContext(self.response)
+
+    async def aclose(self):
+        return None
+
+
 @pytest.mark.asyncio
 async def test_ollama_native_multi_round_tool_execution():
     mcp = FakeMCP()
@@ -77,6 +117,49 @@ async def test_ollama_native_multi_round_tool_execution():
     messages = ai.requests[1][1]["json"]["messages"]
     assert messages[-1]["role"] == "tool"
     assert messages[-1]["tool_name"] == "set_switch"
+
+
+@pytest.mark.asyncio
+async def test_streaming_chat_assembles_content_and_tool_calls():
+    ai = FakeStreamingAI([
+        '{"message":{"role":"assistant","content":"Checking "}}',
+        '{"message":{"role":"assistant","content":"now.","tool_calls":['
+        '{"function":{"name":"hub_get_info","arguments":{}}}]}}',
+        '{"done":true}',
+    ])
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=ai)
+
+    message = await agent._chat([{"role": "user", "content": "status"}], [])
+
+    assert message["content"] == "Checking now."
+    assert message["tool_calls"][0]["function"]["name"] == "hub_get_info"
+    assert ai.requests[0][2]["json"]["stream"] is True
+
+
+@pytest.mark.asyncio
+async def test_streaming_chat_detects_idle_stall():
+    ai = FakeStreamingAI(
+        ['{"message":{"role":"assistant","content":"late"}}'],
+        delay=0.05,
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=ai)
+    agent.stream_idle_timeout_seconds = 0.01
+
+    with pytest.raises(TimeoutError, match="0.01s"):
+        await agent._chat([{"role": "user", "content": "status"}], [])
+
+
+@pytest.mark.asyncio
+async def test_post_only_test_client_keeps_non_streaming_compatibility():
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "ok"}},
+    ])
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=ai)
+
+    message = await agent._chat([{"role": "user", "content": "hello"}], [])
+
+    assert message["content"] == "ok"
+    assert ai.requests[0][1]["json"]["stream"] is False
 
 
 @pytest.mark.asyncio

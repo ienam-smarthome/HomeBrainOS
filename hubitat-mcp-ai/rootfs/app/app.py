@@ -44,6 +44,7 @@ def load_options() -> dict[str, Any]:
         "ollama_direct_cloud_model": "gemma4:31b",
         "ollama_cloud_model": "gemma4:31b-cloud",
         "ollama_agent_timeout_seconds": 60,
+        "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
         "mcp_device_cache_seconds": 12,
         "confirmation_ttl_seconds": 120,
@@ -83,6 +84,9 @@ agent = UnifiedMCPAgent(
     ),
     base_url=str(OPTIONS.get("ollama_direct_cloud_base_url") or "https://ollama.com"),
     timeout_seconds=float(OPTIONS.get("ollama_agent_timeout_seconds") or 60),
+    stream_idle_timeout_seconds=float(
+        OPTIONS.get("stream_idle_timeout_seconds") or 20
+    ),
     tool_limit=int(OPTIONS.get("unified_mcp_tool_limit") or 48),
     max_tool_result_chars=int(OPTIONS.get("max_tool_result_chars") or 24000),
     require_sensitive_confirmation=_bool(
