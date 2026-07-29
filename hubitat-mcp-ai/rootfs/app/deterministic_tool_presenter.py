@@ -8,6 +8,7 @@ _ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 _ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 _ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 _CONTROL_TOOL = "homebrain_control_devices"
+_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 
 _OPERATORS = {
     "eq": "=",
@@ -156,6 +157,39 @@ def _present_control(data: dict[str, Any]) -> str:
     return f"{verb} {_joined(succeeded) or 'the selected devices'}."
 
 
+def _present_hub_info(data: dict[str, Any]) -> str:
+    scope = str(data.get("scope") or "full")
+    installed = data.get("installed_firmware")
+    available = data.get("available_firmware")
+    update_available = bool(data.get("update_available"))
+    parts = []
+    if scope in {"firmware", "full"}:
+        if installed and update_available and available:
+            parts.append(
+                f"Hub firmware {installed} is installed and {available} is available."
+            )
+        elif installed:
+            parts.append(f"Hub firmware {installed} is up to date.")
+        else:
+            parts.append("The installed hub firmware version was not reported.")
+    if scope in {"resources", "full"}:
+        resources = []
+        for label, key in (
+            ("CPU load", "cpu_5_min"),
+            ("CPU", "cpu_percent"),
+            ("free memory", "free_memory"),
+            ("temperature", "temperature"),
+            ("uptime", "uptime"),
+            ("database size", "database_size"),
+        ):
+            value = data.get(key)
+            if value not in {None, ""}:
+                resources.append(f"{label}: {value}")
+        if resources:
+            parts.append("Hub resources — " + "; ".join(resources) + ".")
+    return " ".join(parts) or "The Hub Info device returned no usable attributes."
+
+
 def present_tool_result(
     tool_name: str,
     data: Any,
@@ -171,6 +205,7 @@ def present_tool_result(
         _ACTIVE_ROOMS_TOOL,
         _ACTIVE_SWITCHES_TOOL,
         _CONTROL_TOOL,
+        _HUB_INFO_TOOL,
     }:
         return None
     payload = data if isinstance(data, dict) else {}
@@ -184,6 +219,8 @@ def present_tool_result(
         return _present_active_rooms(payload)
     if tool_name == _ACTIVE_SWITCHES_TOOL:
         return _present_active_switches(payload)
+    if tool_name == _HUB_INFO_TOOL:
+        return _present_hub_info(payload)
     return _present_control(payload)
 
 

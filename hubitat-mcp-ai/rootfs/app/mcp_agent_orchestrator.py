@@ -66,6 +66,7 @@ _LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 _LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 _LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 _LOCAL_CONTROL_TOOL = "homebrain_control_devices"
+_LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 
 
 @dataclass(slots=True)
@@ -385,6 +386,34 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
+    def _hub_info_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_HUB_INFO_TOOL,
+            (
+                "Refresh and read the authoritative Hub Information Driver device. "
+                "Use this for Hubitat firmware availability, installed firmware, "
+                "CPU, memory, temperature, uptime, database size, hub health, or "
+                "general hub-information questions. This does not install firmware."
+            ),
+            {
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": ["firmware", "resources", "full"],
+                        "description": (
+                            "firmware runs Update Check; resources refreshes telemetry; "
+                            "full performs both before reading the Hub Info attributes."
+                        ),
+                    },
+                },
+                "required": ["scope"],
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
         attributes = (
             device.get("attributes")
@@ -401,6 +430,236 @@ class UnifiedMCPAgent:
                 if isinstance(item, dict) and item.get("name")
             }
         return dict(attributes) if isinstance(attributes, dict) else {}
+
+    @staticmethod
+    def _hub_info_device(
+        devices: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        matches = []
+        for device in devices:
+            if not isinstance(device, dict):
+                continue
+            label = str(
+                device.get("label")
+                or device.get("displayName")
+                or device.get("name")
+                or ""
+            )
+            normalized = normalized_name(label)
+            if normalized.startswith("hubinfo"):
+                matches.append(device)
+        return matches[0] if len(matches) == 1 else None
+
+    async def _hub_info_snapshot(
+        self, arguments: dict[str, Any]
+    ) -> MCPToolResult:
+        scope = str(arguments.get("scope") or "").strip().lower()
+        if scope not in {"firmware", "resources", "full"}:
+            return MCPToolResult(
+                _LOCAL_HUB_INFO_TOOL,
+                arguments,
+                {},
+                "Invalid Hub Info scope",
+                {"success": False, "error": "scope must be firmware, resources, or full"},
+                is_error=True,
+            )
+        try:
+            cached = await self.mcp.get_cached_devices()
+        except Exception as exc:
+            cached = []
+            logger.warning("Could not load Hub Info identity manifest: %s", exc)
+        hub_device = self._hub_info_device(list(cached or []))
+        if hub_device is None:
+            source = await self.mcp.call_tool(
+                "hub_read_devices",
+                {"tool": "hub_list_devices", "args": {"labelFilter": "Hub Info"}},
+            )
+            hub_device = self._hub_info_device(
+                [
+                    item
+                    for item in (
+                        HubitatMCPClient._find_device_list(source.data) or []
+                    )
+                    if isinstance(item, dict)
+                ]
+            )
+        if hub_device is None:
+            return MCPToolResult(
+                _LOCAL_HUB_INFO_TOOL,
+                arguments,
+                {},
+                "Hub Info device not found",
+                {
+                    "success": False,
+                    "error": (
+                        "A unique Hub Info device could not be found. Install or "
+                        "rename the Hub Information Driver device."
+                    ),
+                },
+                is_error=True,
+            )
+        device_id = str(
+            hub_device.get("id") or hub_device.get("deviceId") or ""
+        )
+        label = str(
+            hub_device.get("label")
+            or hub_device.get("displayName")
+            or hub_device.get("name")
+            or "Hub Info"
+        )
+        if not device_id:
+            return MCPToolResult(
+                _LOCAL_HUB_INFO_TOOL,
+                arguments,
+                {},
+                "Hub Info device has no device ID",
+                {"success": False, "error": "Hub Info device has no device ID"},
+                is_error=True,
+            )
+        cached_attributes = self._device_attributes(hub_device)
+        baseline_firmware = (
+            cached_attributes.get("hubUpdateStatus"),
+            cached_attributes.get("hubUpdateVersion"),
+        )
+
+        commands = []
+        if scope in {"resources", "full"}:
+            commands.append("refresh")
+        if scope in {"firmware", "full"}:
+            commands.append("updateCheck")
+        for command in commands:
+            result = await self.mcp.call_tool(
+                "hub_manage_devices",
+                {
+                    "tool": "hub_call_device_command",
+                    "args": {"deviceId": device_id, "command": command},
+                },
+            )
+            if not self._tool_succeeded(result):
+                return MCPToolResult(
+                    _LOCAL_HUB_INFO_TOOL,
+                    arguments,
+                    {},
+                    result.text,
+                    {
+                        "success": False,
+                        "error": (
+                            f"Hub Info command {command!r} failed: "
+                            f"{result.text or 'unknown error'}"
+                        ),
+                    },
+                    is_error=True,
+                )
+
+        live_device: dict[str, Any] | None = None
+        poll_attempts = 10 if scope in {"firmware", "full"} else 6
+        for attempt in range(poll_attempts):
+            source = await self.mcp.call_tool(
+                "hub_read_devices",
+                {
+                    "tool": "hub_list_devices",
+                    "args": {"labelFilter": label},
+                },
+            )
+            candidates = [
+                item
+                for item in (
+                    HubitatMCPClient._find_device_list(source.data) or []
+                )
+                if isinstance(item, dict)
+            ]
+            live_device = self._hub_info_device(candidates)
+            if live_device is not None:
+                attributes = self._device_attributes(live_device)
+                refreshed_firmware = (
+                    attributes.get("hubUpdateStatus"),
+                    attributes.get("hubUpdateVersion"),
+                )
+                firmware_settled = (
+                    refreshed_firmware != baseline_firmware
+                    or attempt == poll_attempts - 1
+                )
+                if (
+                    scope not in {"firmware", "full"}
+                    or (
+                        all(value is not None for value in refreshed_firmware)
+                        and firmware_settled
+                    )
+                ):
+                    break
+            if attempt < poll_attempts - 1:
+                await asyncio.sleep(0.5)
+        if live_device is None:
+            return MCPToolResult(
+                _LOCAL_HUB_INFO_TOOL,
+                arguments,
+                {},
+                "Hub Info attributes unavailable after refresh",
+                {
+                    "success": False,
+                    "error": "Hub Info attributes were unavailable after refresh",
+                },
+                is_error=True,
+            )
+        values = {
+            **live_device,
+            **self._device_attributes(live_device),
+        }
+
+        def value(*names: str) -> Any:
+            return next(
+                (
+                    values.get(name)
+                    for name in names
+                    if values.get(name) is not None
+                    and values.get(name) != ""
+                ),
+                None,
+            )
+
+        installed = value("firmwareVersionString", "firmwareVersion")
+        available = value("hubUpdateVersion")
+        update_status = value("hubUpdateStatus")
+        update_available = (
+            "available" in str(update_status or "").casefold()
+            or (
+                bool(installed)
+                and bool(available)
+                and str(installed) != str(available)
+            )
+        )
+        data = {
+            "success": True,
+            "source": label,
+            "device_id": device_id,
+            "scope": scope,
+            "installed_firmware": installed,
+            "update_status": update_status,
+            "available_firmware": available,
+            "update_available": update_available,
+            "hub_model": value("hubModel"),
+            "cpu_5_min": value("cpu5Min"),
+            "cpu_percent": value("cpuPct"),
+            "cpu_15_min": value("cpu15Min"),
+            "cpu_15_percent": value("cpu15Pct"),
+            "free_memory": value("freeMemory"),
+            "free_memory_15_min": value("freeMem15"),
+            "jvm_free": value("jvmFree"),
+            "jvm_size": value("jvmSize"),
+            "java_direct": value("javaDirect"),
+            "temperature": value("temperature", "temperatureC"),
+            "uptime": value("formattedUptime", "uptime"),
+            "database_size": value("dbSize"),
+            "ip_address": value("localIP", "ipAddress"),
+            "zigbee_healthy": value("zbHealthy"),
+            "zwave_healthy": value("zwHealthy"),
+            "hub_alerts": value("hubAlerts"),
+            "matter_status": value("matterStatus"),
+            "last_poll": value("lastPollTime"),
+        }
+        return MCPToolResult(
+            _LOCAL_HUB_INFO_TOOL, arguments, {}, json.dumps(data), data
+        )
 
     @staticmethod
     def _normalized_attribute(value: str) -> str:
@@ -1729,9 +1988,10 @@ class UnifiedMCPAgent:
         local_active_rooms = self._active_rooms_tool()
         local_active_switches = self._active_switches_tool()
         local_control = self._control_devices_tool()
+        local_hub_info = self._hub_info_tool()
         all_tools.extend([
             local_filter, local_active_lights, local_active_rooms,
-            local_active_switches, local_control
+            local_active_switches, local_control, local_hub_info
         ])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
@@ -1742,6 +2002,24 @@ class UnifiedMCPAgent:
             ] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
+            hub_info_request = (
+                self._matches(user_prompt, _DIAGNOSTIC_TERMS)
+                or bool(
+                    re.search(
+                        r"\bhub\s+(?:info|information|resources?|status)\b",
+                        user_prompt,
+                        flags=re.IGNORECASE,
+                    )
+                )
+            )
+            if hub_info_request:
+                declared = [
+                    tool for tool in declared if tool.name != "hub_get_info"
+                ]
+                if all(
+                    tool.name != _LOCAL_HUB_INFO_TOOL for tool in declared
+                ):
+                    declared.append(local_hub_info)
             if (
                 self._request_class.get() == "live-read"
                 and all(tool.name != _LOCAL_FILTER_TOOL for tool in declared)
@@ -1933,6 +2211,8 @@ class UnifiedMCPAgent:
                             result = await self._active_switches(dict(arguments))
                         elif name == _LOCAL_CONTROL_TOOL:
                             result = await self._control_devices(dict(arguments))
+                        elif name == _LOCAL_HUB_INFO_TOOL:
+                            result = await self._hub_info_snapshot(dict(arguments))
                         else:
                             result = await self.mcp.call_tool(
                                 name, dict(arguments)
@@ -1960,7 +2240,11 @@ class UnifiedMCPAgent:
                                             else (
                                                 "deterministic_device_control"
                                                 if name == _LOCAL_CONTROL_TOOL
-                                                else "tool_result"
+                                                else (
+                                                    "authoritative_hub_info_snapshot"
+                                                    if name == _LOCAL_HUB_INFO_TOOL
+                                                    else "tool_result"
+                                                )
                                             )
                                         )
                                     )
