@@ -39,9 +39,10 @@ def _error(data: dict[str, Any], fallback: str) -> str:
 
 def _present_filter(data: dict[str, Any]) -> str:
     attribute = str(data.get("attribute") or "attribute")
+    raw_operator = str(data.get("operator") or "")
     operator = _OPERATORS.get(
-        str(data.get("operator") or ""),
-        str(data.get("operator") or "matches"),
+        raw_operator,
+        raw_operator or "matches",
     )
     expected = data.get("comparison_value")
     condition = (
@@ -52,6 +53,31 @@ def _present_filter(data: dict[str, Any]) -> str:
     matches = [
         item for item in data.get("matches", []) if isinstance(item, dict)
     ]
+    if attribute.casefold() == "motion" and raw_operator == "eq" and str(
+        expected
+    ).casefold() == "active":
+        if not matches:
+            return "No motion sensors are currently active."
+        entries = []
+        for item in matches:
+            label = str(item.get("label") or item.get("id") or "Unknown sensor")
+            room = str(item.get("room") or "").strip()
+            entries.append(f"{label} ({room})" if room else label)
+        noun = "motion sensor is" if len(entries) == 1 else "motion sensors are"
+        return f"{len(entries)} {noun} active: {_joined(entries)}."
+    if attribute.casefold() == "battery" and raw_operator in {"lt", "lte"}:
+        if not matches:
+            return f"No devices have battery levels {operator} {expected}%."
+        entries = []
+        for item in matches:
+            label = str(item.get("label") or item.get("id") or "Unknown device")
+            value = item.get("value")
+            entries.append(f"{label} ({value}%)")
+        noun = "device has" if len(entries) == 1 else "devices have"
+        return (
+            f"{len(entries)} {noun} battery levels {operator} {expected}%: "
+            f"{_joined(entries)}."
+        )
     if not matches:
         return f"No devices matched {condition}."
     entries = []

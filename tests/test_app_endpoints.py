@@ -70,6 +70,7 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "Technical details" in response.text
     assert "api/dashboard" in response.text
     assert 'id="dashActiveRooms"' in response.text
+    assert "Loading live states…" in response.text
     assert 'id="dashActiveRoomNames"' in response.text
     assert 'id="roomGrid"' not in response.text
     assert 'id="hubInfoGrid"' not in response.text
