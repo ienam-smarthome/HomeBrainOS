@@ -276,7 +276,7 @@ def test_read_queries_exclude_manage_gateways():
 
 
 @pytest.mark.asyncio
-async def test_low_battery_read_prefetches_complete_authoritative_snapshot():
+async def test_model_invokes_general_filter_for_complete_low_battery_answer():
     class BatteryMCP(FakeMCP):
         async def list_tools(self):
             return [
@@ -312,6 +312,22 @@ async def test_low_battery_read_prefetches_complete_authoritative_snapshot():
         {
             "message": {
                 "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "function": {
+                        "name": "homebrain_filter_devices",
+                        "arguments": {
+                            "attribute": "battery",
+                            "operator": "lte",
+                            "value": 20,
+                        },
+                    }
+                }],
+            }
+        },
+        {
+            "message": {
+                "role": "assistant",
                 "content": "Fridge Door is 14% and Livingroom TRV is 10%.",
             }
         },
@@ -324,14 +340,29 @@ async def test_low_battery_read_prefetches_complete_authoritative_snapshot():
     assert mcp.calls == [
         ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
     ]
-    assert outcome.evidence[0]["evidence_kind"] == (
-        "authoritative_state_snapshot"
-    )
-    assert outcome.evidence[0]["supports_live_claim"] is True
+    kinds = [receipt["evidence_kind"] for receipt in outcome.evidence]
+    assert kinds == [
+        "identity_manifest",
+        "authoritative_state_snapshot",
+        "deterministic_attribute_filter",
+    ]
+    assert outcome.evidence[-1]["supports_live_claim"] is True
     declared = ai.requests[0][1]["json"]["tools"]
     assert [item["function"]["name"] for item in declared] == [
-        "hub_read_devices"
+        "hub_read_devices",
+        "homebrain_filter_devices",
     ]
+
+
+def test_general_device_attribute_comparisons_are_not_battery_specific():
+    compare = UnifiedMCPAgent._attribute_matches
+
+    assert compare(25.4, "gt", 20)
+    assert compare("17.5", "lte", 20)
+    assert compare("active", "eq", "ACTIVE")
+    assert compare("partly cloudy", "contains", "cloud")
+    assert compare(0, "exists", None)
+    assert compare(None, "not_exists", None)
 
 
 @pytest.mark.asyncio
