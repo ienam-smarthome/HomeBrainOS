@@ -854,6 +854,47 @@ async def test_high_level_control_accepts_unique_decorated_speech_match():
 
 
 @pytest.mark.asyncio
+async def test_high_level_control_falls_back_when_literal_filter_is_empty():
+    class EmptyFilteredLightMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [{
+                "id": "7045",
+                "label": "Livingroom Light 2",
+                "roomName": "Living Room",
+                "capabilities": ["Switch", "Light"],
+            }]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                return MCPToolResult(
+                    name, arguments, {}, "", {"devices": []}
+                )
+            return MCPToolResult(
+                name, arguments, {}, "ok", {"success": True}
+            )
+
+    mcp = EmptyFilteredLightMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+
+    result = await agent._control_devices({
+        "device_names": ["living room light two"],
+        "device_kind": "light",
+        "command": "on",
+    })
+
+    assert result.data["success"] is True
+    assert result.data["succeeded"][0]["id"] == "7045"
+    assert mcp.calls[0][1]["args"] == {
+        "labelFilter": "living room light two"
+    }
+    assert mcp.calls[1][1]["args"] == {
+        "deviceId": "7045",
+        "command": "on",
+    }
+
+
+@pytest.mark.asyncio
 async def test_weather_live_read_does_not_load_identity_manifest():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("What is the weather?")
