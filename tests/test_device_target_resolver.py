@@ -57,6 +57,34 @@ def test_typo_selects_numbered_light_with_clear_margin():
     assert resolution.confidence >= 0.86
 
 
+def test_exact_device_label_outranks_fuzzy_candidates():
+    resolution = resolve_device_candidate(
+        "TV",
+        [
+            {"id": "4221", "label": "TV"},
+            {"id": "5000", "label": "Block Google-TV-Streamer"},
+            {"id": "6000", "label": "Bot"},
+        ],
+    )
+
+    assert resolution.target["id"] == "4221"
+    assert resolution.confidence == 1.0
+    assert resolution.reason == "exact normalized name"
+
+
+def test_duplicate_exact_device_labels_remain_ambiguous():
+    resolution = resolve_device_candidate(
+        "TV",
+        [
+            {"id": "4221", "label": "TV"},
+            {"id": "4222", "label": "TV"},
+        ],
+    )
+
+    assert resolution.target is None
+    assert "multiple devices exactly" in resolution.reason
+
+
 def test_ambiguous_unnumbered_request_fails_with_choices():
     resolution = resolve_device_candidate(
         "hallway light",
@@ -79,4 +107,3 @@ def test_low_similarity_unique_candidate_is_not_blindly_selected():
 
     assert resolution.target is None
     assert resolution.confidence < 0.72
-

@@ -96,13 +96,42 @@ def resolve_device_candidate(
 ) -> CandidateResolution:
     """Resolve a speech-derived name without blindly choosing the closest."""
 
+    wanted = normalized_name(requested)
+    exact_matches: list[tuple[str, dict[str, Any]]] = []
     ranked: list[tuple[float, str, dict[str, Any]]] = []
     for device in candidates:
         names = _device_names(device)
         if not names:
             continue
+        exact_name = next(
+            (name for name in names if normalized_name(name) == wanted),
+            None,
+        )
+        if exact_name is not None:
+            exact_matches.append((exact_name, device))
         best_name = max(names, key=lambda name: _score(requested, name))
         ranked.append((_score(requested, best_name), best_name, device))
+    if len(exact_matches) == 1:
+        exact_name, exact_device = exact_matches[0]
+        return CandidateResolution(
+            exact_device,
+            exact_name,
+            1.0,
+            (exact_name,),
+            "exact normalized name",
+        )
+    if len(exact_matches) > 1:
+        exact_alternatives = tuple(name for name, _device in exact_matches[:3])
+        return CandidateResolution(
+            None,
+            None,
+            1.0,
+            exact_alternatives,
+            (
+                f"{requested!r} matches multiple devices exactly; the candidates are "
+                f"{', '.join(exact_alternatives)}."
+            ),
+        )
     ranked.sort(key=lambda item: (-item[0], item[1].casefold()))
     alternatives = tuple(item[1] for item in ranked[:3])
     if not ranked:
