@@ -12,7 +12,12 @@ from typing import Any
 
 import httpx
 
-from device_state_summary import active_non_light_switches, active_room_summary
+from device_state_summary import (
+    active_non_light_switches,
+    active_room_summary,
+    is_light_device,
+    room_name,
+)
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -56,6 +61,7 @@ _HOME_STATE_PATTERNS = (
 _LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 _LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 _LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
+_LOCAL_CONTROL_TOOL = "homebrain_control_devices"
 
 
 @dataclass(slots=True)
@@ -314,6 +320,50 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
+    def _control_devices_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_CONTROL_TOOL,
+            (
+                "Turn one or more Hubitat lights or switches on, off, or toggle them. "
+                "Resolve targets deterministically from either an exact room or one or "
+                "more device labels, then execute every matched command concurrently. "
+                "Use this for routine light and switch control instead of making "
+                "individual hub_manage_devices calls."
+            ),
+            {
+                "type": "object",
+                "properties": {
+                    "room": {
+                        "type": "string",
+                        "description": "Exact Hubitat room name. Selects every matching device_kind in that room.",
+                    },
+                    "device_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                        "description": "One or more exact Hubitat device labels. Do not combine with room.",
+                    },
+                    "device_kind": {
+                        "type": "string",
+                        "enum": ["light", "switch"],
+                        "description": "Whether targets must be lights or non-light switches.",
+                    },
+                    "command": {
+                        "type": "string",
+                        "enum": ["on", "off", "toggle"],
+                    },
+                },
+                "required": ["device_kind", "command"],
+                "oneOf": [
+                    {"required": ["room"]},
+                    {"required": ["device_names"]},
+                ],
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": False, "destructiveHint": False},
+        )
+
+    @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
         attributes = (
             device.get("attributes")
@@ -532,6 +582,215 @@ class UnifiedMCPAgent:
             _LOCAL_ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data
         )
 
+    @staticmethod
+    def _normalized_device_name(value: Any) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+
+    @staticmethod
+    def _is_switch_device(device: dict[str, Any]) -> bool:
+        capabilities = device.get("capabilities") or []
+        if isinstance(capabilities, dict):
+            capabilities = list(capabilities)
+        elif isinstance(capabilities, str):
+            capabilities = [capabilities]
+        capability_text = " ".join(
+            str(item.get("name") if isinstance(item, dict) else item)
+            for item in capabilities
+        ).casefold()
+        return "switch" in capability_text
+
+    async def _control_devices(
+        self, arguments: dict[str, Any]
+    ) -> MCPToolResult:
+        room = str(arguments.get("room") or "").strip()
+        names = arguments.get("device_names") or []
+        kind = str(arguments.get("device_kind") or "").strip().lower()
+        command = str(arguments.get("command") or "").strip()
+        if (
+            bool(room) == bool(names)
+            or not isinstance(names, list)
+            or kind not in {"light", "switch"}
+            or command not in {"on", "off", "toggle"}
+        ):
+            return MCPToolResult(
+                _LOCAL_CONTROL_TOOL,
+                arguments,
+                {},
+                "Invalid control arguments",
+                {
+                    "success": False,
+                    "error": (
+                        "Provide exactly one of room or device_names, plus a valid "
+                        "device_kind and command."
+                    ),
+                },
+                is_error=True,
+            )
+
+        devices = [
+            item for item in await self.mcp.get_cached_devices()
+            if isinstance(item, dict)
+        ]
+        candidates = [
+            device for device in devices
+            if (
+                is_light_device(device)
+                if kind == "light"
+                else self._is_switch_device(device) and not is_light_device(device)
+            )
+        ]
+        targets: list[dict[str, Any]] = []
+        resolution_errors: list[str] = []
+        if room:
+            wanted_room = room.casefold()
+            targets = [
+                device for device in candidates
+                if (room_name(device) or "").casefold() == wanted_room
+            ]
+            if not targets:
+                resolution_errors.append(
+                    f"No {kind}s were found in the exact room {room!r}."
+                )
+        else:
+            for requested in names:
+                wanted = self._normalized_device_name(requested)
+                matches = [
+                    device for device in candidates
+                    if self._normalized_device_name(
+                        device.get("label") or device.get("name")
+                    ) == wanted
+                ]
+                if len(matches) == 1:
+                    targets.append(matches[0])
+                elif not matches:
+                    resolution_errors.append(
+                        f"No exact {kind} matched {str(requested)!r}."
+                    )
+                else:
+                    resolution_errors.append(
+                        f"{str(requested)!r} matched multiple {kind}s."
+                    )
+
+        unique_targets: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for target in targets:
+            device_id = str(target.get("id") or target.get("deviceId") or "")
+            if not device_id:
+                resolution_errors.append(
+                    f"{target.get('label') or target.get('name')!r} has no device ID."
+                )
+            elif device_id not in seen_ids:
+                seen_ids.add(device_id)
+                unique_targets.append(target)
+        if resolution_errors:
+            data = {
+                "success": False,
+                "error": " ".join(resolution_errors),
+                "matched": [],
+                "executed": 0,
+            }
+            return MCPToolResult(
+                _LOCAL_CONTROL_TOOL, arguments, {}, json.dumps(data), data,
+                is_error=True,
+            )
+
+        semaphore = asyncio.Semaphore(8)
+
+        async def execute(target: dict[str, Any]) -> dict[str, Any]:
+            device_id = str(target.get("id") or target.get("deviceId"))
+            label = str(target.get("label") or target.get("name") or device_id)
+            call_arguments = {
+                "tool": "hub_call_device_command",
+                "args": {"deviceId": device_id, "command": command},
+            }
+            started = time.monotonic()
+            try:
+                async with semaphore:
+                    result = await self.mcp.call_tool(
+                        "hub_manage_devices", call_arguments
+                    )
+                success = self._tool_succeeded(result)
+                message = result.text
+            except Exception as exc:
+                success = False
+                message = f"{type(exc).__name__}: {exc}"
+                logger.exception(
+                    "High-level device command failed for %s", label
+                )
+            self._record_evidence(
+                "hub_manage_devices",
+                call_arguments,
+                success=success,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{command} {label}: {'success' if success else 'failed'}",
+                supports_live_claim=True,
+                evidence_kind="device_command_result",
+            )
+            return {
+                "id": device_id,
+                "label": label,
+                "room": room_name(target),
+                "success": success,
+                "message": message,
+            }
+
+        results = await asyncio.gather(*(execute(target) for target in unique_targets))
+        succeeded = [item for item in results if item["success"]]
+        failed = [item for item in results if not item["success"]]
+        data = {
+            "success": not failed and bool(succeeded),
+            "command": command,
+            "device_kind": kind,
+            "matched": len(unique_targets),
+            "executed": len(results),
+            "succeeded": succeeded,
+            "failed": failed,
+            "complete": True,
+        }
+        return MCPToolResult(
+            _LOCAL_CONTROL_TOOL, arguments, {}, json.dumps(data), data
+        )
+
+    @staticmethod
+    def _control_result_message(result: MCPToolResult) -> str:
+        data = result.data if isinstance(result.data, dict) else {}
+        if not data.get("success"):
+            succeeded = [
+                str(item.get("label"))
+                for item in data.get("succeeded", [])
+                if isinstance(item, dict) and item.get("label")
+            ]
+            failed = [
+                str(item.get("label"))
+                for item in data.get("failed", [])
+                if isinstance(item, dict) and item.get("label")
+            ]
+            if succeeded or failed:
+                parts = []
+                if succeeded:
+                    parts.append(f"Succeeded: {', '.join(succeeded)}.")
+                if failed:
+                    parts.append(f"Failed: {', '.join(failed)}.")
+                return " ".join(parts)
+            return str(
+                data.get("error")
+                or result.text
+                or "The Hubitat device command failed."
+            )
+        labels = [
+            str(item.get("label"))
+            for item in data.get("succeeded", [])
+            if isinstance(item, dict) and item.get("label")
+        ]
+        if len(labels) > 1:
+            targets = ", ".join(labels[:-1]) + f" and {labels[-1]}"
+        else:
+            targets = labels[0] if labels else "the selected devices"
+        verb = {"on": "Turned on", "off": "Turned off", "toggle": "Toggled"}.get(
+            str(data.get("command")), "Controlled"
+        )
+        return f"{verb} {targets}."
+
     @classmethod
     def _needs_device_manifest(cls, prompt: str) -> bool:
         return cls._matches(prompt, _DEVICE_TERMS) or any(
@@ -551,6 +810,7 @@ class UnifiedMCPAgent:
             bool(tokens & _MUTATION_TERMS)
             or name.startswith(("set_", "create_", "delete_", "update_"))
             or name == "hub_update_firmware"
+            or name == _LOCAL_CONTROL_TOOL
             or "_manage_" in name
         )
 
@@ -831,10 +1091,12 @@ class UnifiedMCPAgent:
         ):
             control_section = (
                 "\n\nROUTINE DEVICE CONTROL\nFor light/switch on, off, toggle, "
-                "setLevel, setColor, or setColorTemperature, call "
-                "hub_manage_devices with tool='hub_call_device_command' and exact "
-                "deviceId/command arguments. Execute one call per matched device. "
-                "These routine commands do not require confirmation. Locks, garage "
+                "call homebrain_control_devices once. For a room request pass the "
+                "exact room, device_kind, and command; for named devices pass exact "
+                "device_names, device_kind, and command. It resolves all targets and "
+                "executes them concurrently. For setLevel, setColor, or "
+                "setColorTemperature, use hub_manage_devices with exact device IDs. "
+                "Routine light/switch commands do not require confirmation. Locks, garage "
                 "doors, destructive device operations, and security controls remain "
                 "sensitive."
             )
@@ -1185,7 +1447,10 @@ class UnifiedMCPAgent:
         local_filter = self._device_filter_tool()
         local_active_rooms = self._active_rooms_tool()
         local_active_switches = self._active_switches_tool()
-        all_tools.extend([local_filter, local_active_rooms, local_active_switches])
+        local_control = self._control_devices_tool()
+        all_tools.extend([
+            local_filter, local_active_rooms, local_active_switches, local_control
+        ])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
@@ -1208,6 +1473,12 @@ class UnifiedMCPAgent:
                 and all(tool.name != _LOCAL_ACTIVE_SWITCHES_TOOL for tool in declared)
             ):
                 declared.append(local_active_switches)
+            if (
+                self._needs_device_manifest(user_prompt)
+                and self._requests_mutation(user_prompt)
+                and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)
+            ):
+                declared.append(local_control)
         by_name = {tool.name: tool for tool in declared}
         tools = [self._tool_schema(tool) for tool in declared]
         if pending:
@@ -1368,6 +1639,8 @@ class UnifiedMCPAgent:
                             result = await self._active_rooms(dict(arguments))
                         elif name == _LOCAL_ACTIVE_SWITCHES_TOOL:
                             result = await self._active_switches(dict(arguments))
+                        elif name == _LOCAL_CONTROL_TOOL:
+                            result = await self._control_devices(dict(arguments))
                         else:
                             result = await self.mcp.call_tool(
                                 name, dict(arguments)
@@ -1389,7 +1662,11 @@ class UnifiedMCPAgent:
                                     else (
                                         "deterministic_active_switches"
                                         if name == _LOCAL_ACTIVE_SWITCHES_TOOL
-                                        else "tool_result"
+                                        else (
+                                            "deterministic_device_control"
+                                            if name == _LOCAL_CONTROL_TOOL
+                                            else "tool_result"
+                                        )
                                     )
                                 )
                             ),
@@ -1422,6 +1699,8 @@ class UnifiedMCPAgent:
                                 successful_mutations += 1
                             else:
                                 failed_mutation = result.text or "MCP reported an error"
+                        if name == _LOCAL_CONTROL_TOOL:
+                            return self._control_result_message(result)
                 except Exception as exc:
                     logger.exception("MCP tool %s failed", name)
                     self._record_evidence(

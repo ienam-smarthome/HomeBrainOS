@@ -535,6 +535,117 @@ def test_general_device_attribute_comparisons_are_not_battery_specific():
 
 
 @pytest.mark.asyncio
+async def test_high_level_room_control_executes_concurrently_and_skips_synthesis():
+    class ControlMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_manage_devices", "manage devices", {})]
+
+        async def get_cached_devices(self):
+            return [
+                {
+                    "id": "1",
+                    "label": "Hallway Light 1",
+                    "roomName": "Hallway",
+                    "capabilities": ["Switch", "Light"],
+                },
+                {
+                    "id": "2",
+                    "label": "Hallway Light 2",
+                    "roomName": "Hallway",
+                    "capabilities": ["Switch", "Light"],
+                },
+                {
+                    "id": "3",
+                    "label": "Hallway socket",
+                    "roomName": "Hallway",
+                    "capabilities": ["Switch"],
+                },
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name, arguments, {}, "ok", {"success": True}
+            )
+
+    mcp = ControlMCP()
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_control_devices",
+                    "arguments": {
+                        "room": "Hallway",
+                        "device_kind": "light",
+                        "command": "off",
+                    },
+                }
+            }],
+        }
+    }])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Turn off hallway lights")
+
+    assert outcome.message == "Turned off Hallway Light 1 and Hallway Light 2."
+    assert len(ai.requests) == 1
+    assert mcp.calls == [
+        (
+            "hub_manage_devices",
+            {
+                "tool": "hub_call_device_command",
+                "args": {"deviceId": "1", "command": "off"},
+            },
+        ),
+        (
+            "hub_manage_devices",
+            {
+                "tool": "hub_call_device_command",
+                "args": {"deviceId": "2", "command": "off"},
+            },
+        ),
+    ]
+    assert [receipt["evidence_kind"] for receipt in outcome.evidence] == [
+        "identity_manifest",
+        "device_command_result",
+        "device_command_result",
+        "deterministic_device_control",
+    ]
+    declared = [
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    ]
+    assert "homebrain_control_devices" in declared
+
+
+@pytest.mark.asyncio
+async def test_high_level_control_fails_closed_when_device_name_is_unmatched():
+    class ControlMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [{
+                "id": "1",
+                "label": "Hallway Light 1",
+                "roomName": "Hallway",
+                "capabilities": ["Switch", "Light"],
+            }]
+
+    mcp = ControlMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+
+    result = await agent._control_devices({
+        "device_names": ["Unknown Light"],
+        "device_kind": "light",
+        "command": "on",
+    })
+
+    assert result.is_error
+    assert result.data["success"] is False
+    assert result.data["executed"] == 0
+    assert mcp.calls == []
+
+
+@pytest.mark.asyncio
 async def test_weather_request_loads_device_manifest():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("What is the weather?")
