@@ -57,6 +57,29 @@ def active_non_light_switches(
     )
 
 
+def active_lights(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return every light device whose current switch state is on."""
+
+    matches = []
+    for device in devices:
+        attributes = device_attributes(device)
+        switch = str(attributes.get("switch") or device.get("switch") or "").lower()
+        if switch != "on" or not is_light_device(device):
+            continue
+        matches.append(
+            {
+                "id": device.get("id") or device.get("deviceId"),
+                "label": device.get("label") or device.get("name"),
+                "room": room_name(device) or "Unassigned",
+                "switch": "on",
+            }
+        )
+    return sorted(
+        matches,
+        key=lambda item: str(item.get("label") or "").lower(),
+    )
+
+
 def active_room_summary(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return rooms with active motion or at least one light switched on."""
 
@@ -79,6 +102,7 @@ def active_room_summary(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 __all__ = [
+    "active_lights",
     "active_non_light_switches",
     "active_room_summary",
     "device_attributes",
