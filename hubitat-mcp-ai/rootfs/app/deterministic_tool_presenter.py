@@ -117,16 +117,35 @@ def _present_control(data: dict[str, Any]) -> str:
         for item in data.get("succeeded", [])
         if isinstance(item, dict) and item.get("label")
     ]
+    unverified = [
+        str(item.get("label"))
+        for item in data.get("failed", [])
+        if (
+            isinstance(item, dict)
+            and item.get("label")
+            and item.get("command_sent") is True
+            and item.get("verified") is False
+        )
+    ]
     failed = [
         str(item.get("label"))
         for item in data.get("failed", [])
-        if isinstance(item, dict) and item.get("label")
+        if (
+            isinstance(item, dict)
+            and item.get("label")
+            and item.get("command_sent") is not True
+        )
     ]
     if not data.get("success"):
-        if succeeded or failed:
+        if succeeded or unverified or failed:
             parts = []
             if succeeded:
                 parts.append(f"Succeeded: {_joined(succeeded)}.")
+            if unverified:
+                parts.append(
+                    f"Command sent but state verification failed: "
+                    f"{_joined(unverified)}."
+                )
             if failed:
                 parts.append(f"Failed: {_joined(failed)}.")
             return " ".join(parts)
