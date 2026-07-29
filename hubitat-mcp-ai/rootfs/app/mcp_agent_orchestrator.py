@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from device_state_summary import active_room_summary
+from device_state_summary import active_non_light_switches, active_room_summary
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -55,6 +55,7 @@ _HOME_STATE_PATTERNS = (
 )
 _LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 _LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
+_LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 
 
 @dataclass(slots=True)
@@ -296,6 +297,23 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
+    def _active_switches_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_ACTIVE_SWITCHES_TOOL,
+            (
+                "Fetch all live Hubitat devices and deterministically return devices "
+                "with switch=on while excluding lights and bulbs. Use this whenever "
+                "the user asks which switches are on."
+            ),
+            {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
         attributes = (
             device.get("attributes")
@@ -474,6 +492,44 @@ class UnifiedMCPAgent:
         }
         return MCPToolResult(
             _LOCAL_ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data
+        )
+
+    async def _active_switches(self, arguments: dict[str, Any]) -> MCPToolResult:
+        source_arguments = {"tool": "hub_list_devices", "args": {}}
+        started = time.monotonic()
+        source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+        devices = [
+            item
+            for item in (HubitatMCPClient._find_device_list(source.data) or [])
+            if isinstance(item, dict)
+        ]
+        self._record_evidence(
+            "hub_read_devices",
+            source_arguments,
+            success=self._tool_succeeded(source),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(devices)} source device records",
+            evidence_kind="authoritative_state_snapshot",
+        )
+        if not self._tool_succeeded(source):
+            return MCPToolResult(
+                _LOCAL_ACTIVE_SWITCHES_TOOL,
+                arguments,
+                {},
+                source.text,
+                {"error": source.text or "Live device read failed"},
+                is_error=True,
+            )
+        switches = active_non_light_switches(devices)
+        data = {
+            "switches": switches,
+            "count": len(switches),
+            "definition": "switch=on excluding light/bulb capabilities",
+            "total_scanned": len(devices),
+            "complete": True,
+        }
+        return MCPToolResult(
+            _LOCAL_ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data
         )
 
     @classmethod
@@ -757,6 +813,17 @@ class UnifiedMCPAgent:
                 "light in that room has switch=on, exactly matching the dashboard. "
                 "Do not filter for a generic active=true device attribute."
             )
+        switch_section = ""
+        if (
+            self._matches(user_prompt, {"switch", "switches"})
+            and not self._requests_mutation(user_prompt)
+        ):
+            switch_section = (
+                "\n\nACTIVE SWITCH RULE\nWhen asked which switches are on, call "
+                "homebrain_active_switches. It excludes devices with light or bulb "
+                "capabilities, exactly matching the dashboard Switches on tile. "
+                "Report the returned count and every returned device; do not add lights."
+            )
         control_section = ""
         if (
             self._needs_device_manifest(user_prompt)
@@ -799,7 +866,8 @@ class UnifiedMCPAgent:
             "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
             "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
-            f"{battery_section}{health_section}{home_section}{room_section}{control_section}"
+            f"{battery_section}{health_section}{home_section}{room_section}"
+            f"{switch_section}{control_section}"
             f"{log_section}"
         )
 
@@ -1116,7 +1184,8 @@ class UnifiedMCPAgent:
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
         local_filter = self._device_filter_tool()
         local_active_rooms = self._active_rooms_tool()
-        all_tools.extend([local_filter, local_active_rooms])
+        local_active_switches = self._active_switches_tool()
+        all_tools.extend([local_filter, local_active_rooms, local_active_switches])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
@@ -1133,6 +1202,12 @@ class UnifiedMCPAgent:
                 and all(tool.name != _LOCAL_ACTIVE_ROOMS_TOOL for tool in declared)
             ):
                 declared.append(local_active_rooms)
+            if (
+                self._matches(user_prompt, {"switch", "switches"})
+                and not self._requests_mutation(user_prompt)
+                and all(tool.name != _LOCAL_ACTIVE_SWITCHES_TOOL for tool in declared)
+            ):
+                declared.append(local_active_switches)
         by_name = {tool.name: tool for tool in declared}
         tools = [self._tool_schema(tool) for tool in declared]
         if pending:
@@ -1291,6 +1366,8 @@ class UnifiedMCPAgent:
                             result = await self._filter_devices(dict(arguments))
                         elif name == _LOCAL_ACTIVE_ROOMS_TOOL:
                             result = await self._active_rooms(dict(arguments))
+                        elif name == _LOCAL_ACTIVE_SWITCHES_TOOL:
+                            result = await self._active_switches(dict(arguments))
                         else:
                             result = await self.mcp.call_tool(
                                 name, dict(arguments)
@@ -1309,7 +1386,11 @@ class UnifiedMCPAgent:
                                 else (
                                     "deterministic_active_rooms"
                                     if name == _LOCAL_ACTIVE_ROOMS_TOOL
-                                    else "tool_result"
+                                    else (
+                                        "deterministic_active_switches"
+                                        if name == _LOCAL_ACTIVE_SWITCHES_TOOL
+                                        else "tool_result"
+                                    )
                                 )
                             ),
                         )

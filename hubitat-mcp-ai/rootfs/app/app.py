@@ -15,7 +15,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
-from device_state_summary import active_room_summary, device_attributes, room_name
+from device_state_summary import (
+    active_non_light_switches,
+    active_room_summary,
+    device_attributes,
+    is_light_device,
+    room_name,
+)
 from mcp_agent_orchestrator import UnifiedMCPAgent
 from mcp_client import HubitatMCPClient
 from webui import render_page
@@ -325,20 +331,17 @@ async def dashboard() -> dict[str, Any]:
             "active_rooms": [],
             "hub_info": {},
         }
-    lights_on = motion_active = switches_on = low_batteries = 0
+    lights_on = motion_active = low_batteries = 0
     room_counts: dict[str, int] = {}
     for device in devices:
         attrs = device_attributes(device)
         room = room_name(device)
         if room:
             room_counts[room] = room_counts.get(room, 0) + 1
-        capabilities = " ".join(map(str, device.get("capabilities") or [])).lower()
         switch = str(attrs.get("switch") or device.get("switch") or "").lower()
         if switch == "on":
-            if "light" in capabilities or "bulb" in capabilities:
+            if is_light_device(device):
                 lights_on += 1
-            else:
-                switches_on += 1
         if str(attrs.get("motion") or device.get("motion") or "").lower() == "active":
             motion_active += 1
         try:
@@ -352,7 +355,7 @@ async def dashboard() -> dict[str, Any]:
         "devices": len(devices),
         "lights_on": lights_on,
         "motion_active": motion_active,
-        "switches_on": switches_on,
+        "switches_on": len(active_non_light_switches(devices)),
         "low_batteries": low_batteries,
         "rooms": len(room_counts),
         "assigned_devices": sum(room_counts.values()),

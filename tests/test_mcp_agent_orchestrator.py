@@ -443,6 +443,86 @@ async def test_active_rooms_tool_matches_dashboard_definition():
     assert "homebrain_active_rooms" in declared
 
 
+@pytest.mark.asyncio
+async def test_active_switches_tool_excludes_lights_like_dashboard():
+    class ActiveSwitchMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_read_devices", "read devices", {})]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [
+                        {
+                            "id": "1",
+                            "label": "Fridge",
+                            "roomName": "Appliances",
+                            "capabilities": ["Switch"],
+                            "attributes": {"switch": "on"},
+                        },
+                        {
+                            "id": "2",
+                            "label": "Bedroom 1 Light",
+                            "roomName": "Bedroom 1",
+                            "capabilities": ["Switch", "Light"],
+                            "attributes": {"switch": "on"},
+                        },
+                        {
+                            "id": "3",
+                            "label": "Fan",
+                            "roomName": "Ventilation",
+                            "capabilities": ["Switch"],
+                            "attributes": {"switch": "off"},
+                        },
+                    ]
+                },
+            )
+
+    mcp = ActiveSwitchMCP()
+    ai = FakeAI([
+        {
+            "message": {
+                "role": "assistant",
+                "tool_calls": [{
+                    "function": {
+                        "name": "homebrain_active_switches",
+                        "arguments": {},
+                    }
+                }],
+            }
+        },
+        {
+            "message": {
+                "role": "assistant",
+                "content": "One non-light switch is on: Fridge.",
+            }
+        },
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Which switches are on?")
+
+    assert outcome.message == "One non-light switch is on: Fridge."
+    assert mcp.calls == [
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+    ]
+    assert [receipt["evidence_kind"] for receipt in outcome.evidence] == [
+        "identity_manifest",
+        "authoritative_state_snapshot",
+        "deterministic_active_switches",
+    ]
+    declared = [
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    ]
+    assert "homebrain_active_switches" in declared
+
+
 def test_general_device_attribute_comparisons_are_not_battery_specific():
     compare = UnifiedMCPAgent._attribute_matches
 
