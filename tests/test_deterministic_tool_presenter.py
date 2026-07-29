@@ -53,8 +53,61 @@ def test_motion_filter_presenter_uses_natural_domain_language():
     )
 
     assert message == (
-        "2 motion sensors are active: Kitchen Linptech (Living Room) and "
-        "Bedroom 3 Presence Sensor (Bedroom 3)."
+        "2 motion sensors are active: Kitchen Linptech and "
+        "Bedroom 3 Presence Sensor."
+    )
+
+
+def test_active_lights_omit_redundant_room_names():
+    message = present_tool_result(
+        "homebrain_active_lights",
+        {
+            "lights": [
+                {"label": "Bedroom 3 Light", "room": "Bedroom 3"},
+                {"label": "Livingroom Light 1", "room": "Living Room"},
+            ],
+        },
+    )
+
+    assert message == (
+        "2 lights are on: Bedroom 3 Light and Livingroom Light 1."
+    )
+
+
+def test_active_rooms_omit_internal_reason_details():
+    message = present_tool_result(
+        "homebrain_active_rooms",
+        {
+            "active_rooms": [
+                {"name": "Bedroom 3", "reasons": ["light on", "motion"]},
+                {"name": "Living Room", "reasons": ["motion"]},
+            ],
+        },
+    )
+
+    assert message == "2 rooms are active: Bedroom 3 and Living Room."
+
+
+def test_many_active_switches_are_grouped_by_room():
+    message = present_tool_result(
+        "homebrain_active_switches",
+        {
+            "switches": [
+                {"label": "Fridge", "room": "Appliances"},
+                {"label": "Freezer", "room": "Appliances"},
+                {"label": "TV", "room": "Multimedia"},
+                {"label": "Computer", "room": "Multimedia"},
+                {"label": "Nest Mini socket", "room": "Sockets"},
+                {"label": "LivCAM socket", "room": "Sockets"},
+            ],
+        },
+    )
+
+    assert message == (
+        "6 non-light switches are on:\n\n"
+        "- **Appliances:** Fridge and Freezer\n"
+        "- **Multimedia:** TV and Computer\n"
+        "- **Sockets:** Nest Mini socket and LivCAM socket"
     )
 
 
