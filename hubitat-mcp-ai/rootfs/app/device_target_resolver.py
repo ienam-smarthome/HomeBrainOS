@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from typing import Any
+
+
+_NUMBER_WORDS = {
+    "zero": "0",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+}
+_NAME_FIELDS = ("label", "name", "displayName", "deviceLabel")
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateResolution:
+    target: dict[str, Any] | None
+    matched_name: str | None
+    confidence: float
+    alternatives: tuple[str, ...]
+    reason: str
+
+
+def _plain_text(value: Any) -> str:
+    text = str(value or "").casefold()
+    text = re.sub(r"[\(\[\{].*?[\)\]\}]", " ", text)
+    for word, digit in _NUMBER_WORDS.items():
+        text = re.sub(rf"\b{word}\b", digit, text)
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def normalized_name(value: Any) -> str:
+    return _plain_text(value).replace(" ", "")
+
+
+def _tokens(value: Any) -> set[str]:
+    return set(_plain_text(value).split())
+
+
+def _device_names(device: dict[str, Any]) -> list[str]:
+    values = []
+    for field in _NAME_FIELDS:
+        value = str(device.get(field) or "").strip()
+        if value and value not in values:
+            values.append(value)
+    return values
+
+
+def _score(requested: str, candidate: str) -> float:
+    wanted = normalized_name(requested)
+    actual = normalized_name(candidate)
+    if not wanted or not actual:
+        return 0.0
+    if wanted == actual:
+        return 1.0
+    length_ratio = min(len(wanted), len(actual)) / max(len(wanted), len(actual))
+    if (
+        length_ratio >= 0.65
+        and (actual.startswith(wanted) or wanted.startswith(actual))
+    ):
+        return 0.94
+    sequence = SequenceMatcher(None, wanted, actual).ratio()
+    wanted_tokens = _tokens(requested)
+    actual_tokens = _tokens(candidate)
+    if not wanted_tokens or not actual_tokens:
+        return sequence
+    intersection = len(wanted_tokens & actual_tokens)
+    union = len(wanted_tokens | actual_tokens)
+    jaccard = intersection / union
+    containment = intersection / len(wanted_tokens)
+    score = max(sequence, (sequence + jaccard) / 2, containment * 0.9)
+    wanted_numbers = set(re.findall(r"\d+", wanted))
+    actual_numbers = set(re.findall(r"\d+", actual))
+    if wanted_numbers and actual_numbers and wanted_numbers != actual_numbers:
+        score = max(0.0, score - 0.30)
+    return score
+
+
+def resolve_device_candidate(
+    requested: str,
+    candidates: list[dict[str, Any]],
+    *,
+    unique_threshold: float = 0.72,
+    ranked_threshold: float = 0.86,
+    margin: float = 0.12,
+) -> CandidateResolution:
+    """Resolve a speech-derived name without blindly choosing the closest."""
+
+    ranked: list[tuple[float, str, dict[str, Any]]] = []
+    for device in candidates:
+        names = _device_names(device)
+        if not names:
+            continue
+        best_name = max(names, key=lambda name: _score(requested, name))
+        ranked.append((_score(requested, best_name), best_name, device))
+    ranked.sort(key=lambda item: (-item[0], item[1].casefold()))
+    alternatives = tuple(item[1] for item in ranked[:3])
+    if not ranked:
+        return CandidateResolution(
+            None, None, 0.0, (), f"No candidate matched {requested!r}."
+        )
+    top_score, top_name, top_device = ranked[0]
+    if len(ranked) == 1:
+        if top_score >= unique_threshold:
+            return CandidateResolution(
+                top_device,
+                top_name,
+                top_score,
+                alternatives,
+                "unique filtered candidate",
+            )
+        return CandidateResolution(
+            None,
+            None,
+            top_score,
+            alternatives,
+            f"The only candidate was not similar enough to {requested!r}.",
+        )
+    second_score = ranked[1][0]
+    if top_score >= ranked_threshold and top_score - second_score >= margin:
+        return CandidateResolution(
+            top_device,
+            top_name,
+            top_score,
+            alternatives,
+            "high-confidence ranked candidate",
+        )
+    return CandidateResolution(
+        None,
+        None,
+        top_score,
+        alternatives,
+        (
+            f"{requested!r} is ambiguous; the closest candidates are "
+            f"{', '.join(alternatives)}."
+        ),
+    )
+
+
+__all__ = [
+    "CandidateResolution",
+    "normalized_name",
+    "resolve_device_candidate",
+]
