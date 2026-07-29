@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
+from device_state_summary import active_room_summary, device_attributes, room_name
 from mcp_agent_orchestrator import UnifiedMCPAgent
 from mcp_client import HubitatMCPClient
 from webui import render_page
@@ -256,32 +257,8 @@ async def status() -> dict[str, Any]:
     return await health()
 
 
-def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
-    attrs = (
-        device.get("currentStates")
-        or device.get("attributes")
-        or device.get("states")
-        or {}
-    )
-    if isinstance(attrs, list):
-        attrs = {
-            str(item.get("name")): item.get("currentValue", item.get("value"))
-            for item in attrs
-            if isinstance(item, dict) and item.get("name")
-        }
-    return attrs if isinstance(attrs, dict) else {}
-
-
-def _room_name(device: dict[str, Any]) -> str | None:
-    room: Any = device.get("roomName") or device.get("room")
-    if isinstance(room, dict):
-        room = room.get("name") or room.get("label")
-    value = str(room or "").strip()
-    return value if value and value.lower() not in {"none", "null", "unassigned"} else None
-
-
 def _normalized_values(device: dict[str, Any]) -> dict[str, Any]:
-    values = {**device, **_device_attributes(device)}
+    values = {**device, **device_attributes(device)}
     return {
         re.sub(r"[^a-z0-9]", "", str(key).lower()): value
         for key, value in values.items()
@@ -350,10 +327,9 @@ async def dashboard() -> dict[str, Any]:
         }
     lights_on = motion_active = switches_on = low_batteries = 0
     room_counts: dict[str, int] = {}
-    active_rooms: dict[str, set[str]] = {}
     for device in devices:
-        attrs = _device_attributes(device)
-        room = _room_name(device)
+        attrs = device_attributes(device)
+        room = room_name(device)
         if room:
             room_counts[room] = room_counts.get(room, 0) + 1
         capabilities = " ".join(map(str, device.get("capabilities") or [])).lower()
@@ -361,14 +337,10 @@ async def dashboard() -> dict[str, Any]:
         if switch == "on":
             if "light" in capabilities or "bulb" in capabilities:
                 lights_on += 1
-                if room:
-                    active_rooms.setdefault(room, set()).add("light on")
             else:
                 switches_on += 1
         if str(attrs.get("motion") or device.get("motion") or "").lower() == "active":
             motion_active += 1
-            if room:
-                active_rooms.setdefault(room, set()).add("motion")
         try:
             battery = float(attrs.get("battery", device.get("battery")))
             if battery <= 20:
@@ -389,12 +361,7 @@ async def dashboard() -> dict[str, Any]:
             {"name": name, "devices": count}
             for name, count in sorted(room_counts.items(), key=lambda item: item[0].lower())
         ],
-        "active_rooms": [
-            {"name": name, "reasons": sorted(reasons)}
-            for name, reasons in sorted(
-                active_rooms.items(), key=lambda item: item[0].lower()
-            )
-        ],
+        "active_rooms": active_room_summary(devices),
         "hub_info": _hub_info(devices),
     }
 

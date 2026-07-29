@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 
+from device_state_summary import active_room_summary
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -53,6 +54,7 @@ _HOME_STATE_PATTERNS = (
     r"\bhome (?:status|summary|overview)\b",
 )
 _LOCAL_FILTER_TOOL = "homebrain_filter_devices"
+_LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 
 
 @dataclass(slots=True)
@@ -277,6 +279,23 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
+    def _active_rooms_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_ACTIVE_ROOMS_TOOL,
+            (
+                "Fetch all live Hubitat devices and deterministically return rooms "
+                "that have motion=active or at least one light with switch=on. Use "
+                "this whenever the user asks which rooms are active."
+            ),
+            {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
         attributes = (
             device.get("attributes")
@@ -417,6 +436,44 @@ class UnifiedMCPAgent:
         }
         return MCPToolResult(
             _LOCAL_FILTER_TOOL, arguments, {}, json.dumps(data), data
+        )
+
+    async def _active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
+        source_arguments = {"tool": "hub_list_devices", "args": {}}
+        started = time.monotonic()
+        source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+        devices = [
+            item
+            for item in (HubitatMCPClient._find_device_list(source.data) or [])
+            if isinstance(item, dict)
+        ]
+        self._record_evidence(
+            "hub_read_devices",
+            source_arguments,
+            success=self._tool_succeeded(source),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(devices)} source device records",
+            evidence_kind="authoritative_state_snapshot",
+        )
+        if not self._tool_succeeded(source):
+            return MCPToolResult(
+                _LOCAL_ACTIVE_ROOMS_TOOL,
+                arguments,
+                {},
+                source.text,
+                {"error": source.text or "Live device read failed"},
+                is_error=True,
+            )
+        rooms = active_room_summary(devices)
+        data = {
+            "active_rooms": rooms,
+            "count": len(rooms),
+            "definition": "motion=active OR light switch=on",
+            "total_scanned": len(devices),
+            "complete": True,
+        }
+        return MCPToolResult(
+            _LOCAL_ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data
         )
 
     @classmethod
@@ -692,6 +749,14 @@ class UnifiedMCPAgent:
                 "light is on, or an alert exists. Distinguish named-person presence from "
                 "room presence sensors."
             )
+        room_section = ""
+        if self._matches(user_prompt, _ROOM_TERMS):
+            room_section = (
+                "\n\nACTIVE ROOM RULE\nWhen asked which rooms are active, call "
+                "homebrain_active_rooms. Active means motion=active or at least one "
+                "light in that room has switch=on, exactly matching the dashboard. "
+                "Do not filter for a generic active=true device attribute."
+            )
         control_section = ""
         if (
             self._needs_device_manifest(user_prompt)
@@ -734,7 +799,7 @@ class UnifiedMCPAgent:
             "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
             "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
-            f"{battery_section}{health_section}{home_section}{control_section}"
+            f"{battery_section}{health_section}{home_section}{room_section}{control_section}"
             f"{log_section}"
         )
 
@@ -1050,7 +1115,8 @@ class UnifiedMCPAgent:
         request_started = time.monotonic()
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
         local_filter = self._device_filter_tool()
-        all_tools.append(local_filter)
+        local_active_rooms = self._active_rooms_tool()
+        all_tools.extend([local_filter, local_active_rooms])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
@@ -1062,6 +1128,11 @@ class UnifiedMCPAgent:
             declared = self._select_tools(user_prompt, all_tools)
             if all(tool.name != _LOCAL_FILTER_TOOL for tool in declared):
                 declared.append(local_filter)
+            if (
+                self._matches(user_prompt, _ROOM_TERMS)
+                and all(tool.name != _LOCAL_ACTIVE_ROOMS_TOOL for tool in declared)
+            ):
+                declared.append(local_active_rooms)
         by_name = {tool.name: tool for tool in declared}
         tools = [self._tool_schema(tool) for tool in declared]
         if pending:
@@ -1218,6 +1289,8 @@ class UnifiedMCPAgent:
                         mcp_started = time.monotonic()
                         if name == _LOCAL_FILTER_TOOL:
                             result = await self._filter_devices(dict(arguments))
+                        elif name == _LOCAL_ACTIVE_ROOMS_TOOL:
+                            result = await self._active_rooms(dict(arguments))
                         else:
                             result = await self.mcp.call_tool(
                                 name, dict(arguments)
@@ -1233,7 +1306,11 @@ class UnifiedMCPAgent:
                             evidence_kind=(
                                 "deterministic_attribute_filter"
                                 if name == _LOCAL_FILTER_TOOL
-                                else "tool_result"
+                                else (
+                                    "deterministic_active_rooms"
+                                    if name == _LOCAL_ACTIVE_ROOMS_TOOL
+                                    else "tool_result"
+                                )
                             ),
                         )
                         if self._is_live_log_call(name, dict(arguments)):
