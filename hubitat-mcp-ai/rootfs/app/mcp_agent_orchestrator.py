@@ -20,7 +20,7 @@ from device_state_summary import (
     room_name,
 )
 from deterministic_tool_presenter import present_tool_result
-from device_target_resolver import resolve_device_candidate
+from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -766,15 +766,67 @@ class UnifiedMCPAgent:
         targets: list[dict[str, Any]] = []
         resolution_errors: list[str] = []
         if room:
-            wanted_room = room.casefold()
+            wanted_room = normalized_name(room)
             targets = [
                 device for device in candidates
-                if (room_name(device) or "").casefold() == wanted_room
+                if normalized_name(room_name(device)) == wanted_room
             ]
             if not targets:
-                resolution_errors.append(
-                    f"No {kind}s were found in the exact room {room!r}."
-                )
+                started = time.monotonic()
+                try:
+                    manifest = await self.mcp.get_cached_devices()
+                except Exception as exc:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        {
+                            "tool": "hub_list_devices",
+                            "source": "short_ttl_cache",
+                        },
+                        success=False,
+                        elapsed_ms=round(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        summary=f"Room identity manifest unavailable: {exc}",
+                        supports_live_claim=False,
+                        evidence_kind="control_target_resolution",
+                    )
+                else:
+                    room_candidates = [
+                        device
+                        for device in (manifest or [])
+                        if isinstance(device, dict)
+                        and normalized_name(room_name(device)) == wanted_room
+                        and (
+                            is_light_device(device)
+                            if kind == "light"
+                            else (
+                                self._is_switch_device(device)
+                                and not is_light_device(device)
+                            )
+                        )
+                    ]
+                    self._record_evidence(
+                        "hub_read_devices",
+                        {
+                            "tool": "hub_list_devices",
+                            "source": "short_ttl_cache",
+                        },
+                        success=True,
+                        elapsed_ms=round(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        summary=(
+                            f"{len(room_candidates)} {kind} candidates in "
+                            f"normalized room {room!r}"
+                        ),
+                        supports_live_claim=False,
+                        evidence_kind="control_target_resolution",
+                    )
+                    targets = room_candidates
+                if not targets:
+                    resolution_errors.append(
+                        f"No {kind}s were found in room {room!r}."
+                    )
         else:
             fallback_candidates: list[dict[str, Any]] | None = None
             for requested, source_devices in zip(
