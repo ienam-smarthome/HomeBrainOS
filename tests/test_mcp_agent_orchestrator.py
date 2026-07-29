@@ -420,7 +420,7 @@ async def test_active_rooms_tool_matches_dashboard_definition():
     outcome = await agent.process_user_request_result("Which rooms are active?")
 
     assert outcome.message == (
-        "2 active rooms are: Bedroom 3 (motion) and Living Room (motion)."
+        "2 rooms are active: Bedroom 3 and Living Room."
     )
     assert len(ai.requests) == 1
     assert mcp.calls == [
@@ -493,7 +493,7 @@ async def test_active_lights_tool_returns_exhaustive_list_without_second_round()
 
     outcome = await agent.process_user_request_result("Which lights are on?")
 
-    assert outcome.message == "1 light is on: Bedroom 2 Light (Bedroom 2)."
+    assert outcome.message == "1 light is on: Bedroom 2 Light."
     assert len(ai.requests) == 1
     assert mcp.calls == [
         ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
@@ -565,7 +565,7 @@ async def test_active_switches_tool_excludes_lights_like_dashboard():
 
     outcome = await agent.process_user_request_result("Which switches are on?")
 
-    assert outcome.message == "1 non-light switch is on: Fridge (Appliances)."
+    assert outcome.message == "1 non-light switch is on: Fridge."
     assert len(ai.requests) == 1
     assert mcp.calls == [
         ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})

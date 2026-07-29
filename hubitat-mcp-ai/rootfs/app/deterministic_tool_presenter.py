@@ -58,11 +58,10 @@ def _present_filter(data: dict[str, Any]) -> str:
     ).casefold() == "active":
         if not matches:
             return "No motion sensors are currently active."
-        entries = []
-        for item in matches:
-            label = str(item.get("label") or item.get("id") or "Unknown sensor")
-            room = str(item.get("room") or "").strip()
-            entries.append(f"{label} ({room})" if room else label)
+        entries = [
+            str(item.get("label") or item.get("id") or "Unknown sensor")
+            for item in matches
+        ]
         noun = "motion sensor is" if len(entries) == 1 else "motion sensors are"
         return f"{len(entries)} {noun} active: {_joined(entries)}."
     if attribute.casefold() == "battery" and raw_operator in {"lt", "lte"}:
@@ -97,15 +96,9 @@ def _present_active_rooms(data: dict[str, Any]) -> str:
     ]
     if not rooms:
         return "No rooms are currently active."
-    entries = []
-    for item in rooms:
-        name = str(item.get("name") or "Unknown room")
-        reasons = [
-            str(reason) for reason in item.get("reasons", []) if reason
-        ]
-        entries.append(f"{name} ({', '.join(reasons)})" if reasons else name)
+    entries = [str(item.get("name") or "Unknown room") for item in rooms]
     noun = "room is" if len(entries) == 1 else "rooms are"
-    return f"{len(entries)} active {noun}: {_joined(entries)}."
+    return f"{len(entries)} {noun} active: {_joined(entries)}."
 
 
 def _present_active_switches(data: dict[str, Any]) -> str:
@@ -114,13 +107,25 @@ def _present_active_switches(data: dict[str, Any]) -> str:
     ]
     if not switches:
         return "No non-light switches are currently on."
-    entries = []
-    for item in switches:
-        label = str(item.get("label") or item.get("id") or "Unknown switch")
-        room = str(item.get("room") or "").strip()
-        entries.append(f"{label} ({room})" if room else label)
+    entries = [
+        str(item.get("label") or item.get("id") or "Unknown switch")
+        for item in switches
+    ]
     noun = "switch is" if len(entries) == 1 else "switches are"
-    return f"{len(entries)} non-light {noun} on: {_joined(entries)}."
+    if len(entries) <= 5:
+        return f"{len(entries)} non-light {noun} on: {_joined(entries)}."
+    grouped: dict[str, list[str]] = {}
+    for item, label in zip(switches, entries):
+        room = str(item.get("room") or "Other").strip() or "Other"
+        grouped.setdefault(room, []).append(label)
+    lines = [
+        f"- **{room}:** {_joined(labels)}"
+        for room, labels in grouped.items()
+    ]
+    return (
+        f"{len(entries)} non-light switches are on:\n\n"
+        + "\n".join(lines)
+    )
 
 
 def _present_active_lights(data: dict[str, Any]) -> str:
@@ -129,11 +134,10 @@ def _present_active_lights(data: dict[str, Any]) -> str:
     ]
     if not lights:
         return "No lights are currently on."
-    entries = []
-    for item in lights:
-        label = str(item.get("label") or item.get("id") or "Unknown light")
-        room = str(item.get("room") or "").strip()
-        entries.append(f"{label} ({room})" if room else label)
+    entries = [
+        str(item.get("label") or item.get("id") or "Unknown light")
+        for item in lights
+    ]
     noun = "light is" if len(entries) == 1 else "lights are"
     return f"{len(entries)} {noun} on: {_joined(entries)}."
 
