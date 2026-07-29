@@ -20,6 +20,7 @@ from device_state_summary import (
     room_name,
 )
 from deterministic_tool_presenter import present_tool_result
+from device_target_resolver import resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -641,10 +642,6 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
-    def _normalized_device_name(value: Any) -> str:
-        return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
-
-    @staticmethod
     def _is_switch_device(device: dict[str, Any]) -> bool:
         capabilities = device.get("capabilities") or []
         if isinstance(capabilities, dict):
@@ -710,6 +707,7 @@ class UnifiedMCPAgent:
             *(lookup(source_arguments) for source_arguments in lookup_arguments)
         )
         devices: list[dict[str, Any]] = []
+        source_groups: list[list[dict[str, Any]]] = []
         lookup_errors: list[str] = []
         seen_source_ids: set[str] = set()
         for source_arguments, (source, elapsed_ms) in zip(
@@ -722,6 +720,7 @@ class UnifiedMCPAgent:
                 )
                 if isinstance(item, dict)
             ]
+            source_groups.append(source_devices)
             succeeded = self._tool_succeeded(source)
             self._record_evidence(
                 "hub_read_devices",
@@ -777,24 +776,29 @@ class UnifiedMCPAgent:
                     f"No {kind}s were found in the exact room {room!r}."
                 )
         else:
-            for requested in names:
-                wanted = self._normalized_device_name(requested)
-                matches = [
-                    device for device in candidates
-                    if self._normalized_device_name(
-                        device.get("label") or device.get("name")
-                    ) == wanted
+            for requested, source_devices in zip(
+                names, source_groups, strict=True
+            ):
+                eligible = [
+                    device for device in source_devices
+                    if (
+                        is_light_device(device)
+                        if kind == "light"
+                        else (
+                            self._is_switch_device(device)
+                            and not is_light_device(device)
+                        )
+                    )
                 ]
-                if len(matches) == 1:
-                    targets.append(matches[0])
-                elif not matches:
-                    resolution_errors.append(
-                        f"No exact {kind} matched {str(requested)!r}."
-                    )
+                resolution = resolve_device_candidate(
+                    str(requested), eligible
+                )
+                if resolution.target is not None:
+                    target = dict(resolution.target)
+                    target["_resolved_label"] = resolution.matched_name
+                    targets.append(target)
                 else:
-                    resolution_errors.append(
-                        f"{str(requested)!r} matched multiple {kind}s."
-                    )
+                    resolution_errors.append(resolution.reason)
 
         unique_targets: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
@@ -823,7 +827,12 @@ class UnifiedMCPAgent:
 
         async def execute(target: dict[str, Any]) -> dict[str, Any]:
             device_id = str(target.get("id") or target.get("deviceId"))
-            label = str(target.get("label") or target.get("name") or device_id)
+            label = str(
+                target.get("_resolved_label")
+                or target.get("label")
+                or target.get("name")
+                or device_id
+            )
             call_arguments = {
                 "tool": "hub_call_device_command",
                 "args": {"deviceId": device_id, "command": command},
