@@ -57,6 +57,27 @@ async def test_device_manifest_refresh_bypasses_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_device_identities_use_known_manifest_without_ttl_refresh(monkeypatch):
+    client = HubitatMCPClient(
+        "http://hub/mcp",
+        device_cache_seconds=12,
+        clock=lambda: 1000.0,
+    )
+    client._cached_devices = [{"id": "1", "label": "Livingroom Light 2"}]
+    client._devices_cached_at = 1.0
+
+    async def unexpected_list_tools():
+        raise AssertionError("identity lookup must not refresh live device state")
+
+    monkeypatch.setattr(client, "list_tools", unexpected_list_tools)
+
+    assert await client.get_device_identities() == [
+        {"id": "1", "label": "Livingroom Light 2"}
+    ]
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_device_manifest_uses_consolidated_read_gateway(monkeypatch):
     client = HubitatMCPClient("http://hub/mcp")
     calls = []

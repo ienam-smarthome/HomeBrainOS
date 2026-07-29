@@ -1026,16 +1026,80 @@ class UnifiedMCPAgent:
                 is_error=True,
             )
 
-        lookup_arguments = (
-            [{"tool": "hub_list_devices", "args": {}}]
-            if room
-            else [
+        identity_started = time.monotonic()
+        identity_manifest: list[dict[str, Any]] = []
+        try:
+            identity_reader = getattr(
+                self.mcp, "get_device_identities", self.mcp.get_cached_devices
+            )
+            identity_manifest = [
+                device
+                for device in (await identity_reader() or [])
+                if isinstance(device, dict)
+            ]
+        except Exception as exc:
+            logger.warning("Fast control identity lookup unavailable: %s", exc)
+        identity_candidates = [
+            device
+            for device in identity_manifest
+            if (
+                is_light_device(device)
+                if kind == "light"
+                else self._is_switch_device(device) and not is_light_device(device)
+            )
+        ]
+        fast_targets: list[dict[str, Any]] = []
+        if room:
+            wanted_room = normalized_name(room)
+            fast_targets = [
+                device
+                for device in identity_candidates
+                if normalized_name(room_name(device)) == wanted_room
+            ]
+            fast_resolution_complete = bool(fast_targets)
+        else:
+            fast_resolution_complete = True
+            for requested in names:
+                resolution = resolve_device_candidate(
+                    str(requested), identity_candidates
+                )
+                if resolution.target is None:
+                    fast_resolution_complete = False
+                    fast_targets = []
+                    break
+                target = dict(resolution.target)
+                target["_resolved_label"] = resolution.matched_name
+                fast_targets.append(target)
+        if fast_resolution_complete:
+            self._record_evidence(
+                "hub_read_devices",
                 {
                     "tool": "hub_list_devices",
-                    "args": {"labelFilter": str(requested)},
-                }
-                for requested in names
-            ]
+                    "source": "identity_cache",
+                },
+                success=True,
+                elapsed_ms=round(
+                    (time.monotonic() - identity_started) * 1000
+                ),
+                summary=f"{len(fast_targets)} cached target candidates",
+                supports_live_claim=False,
+                evidence_kind="control_target_resolution",
+            )
+
+        lookup_arguments = (
+            []
+            if fast_resolution_complete
+            else (
+                [{"tool": "hub_list_devices", "args": {}}]
+                if room
+                else [
+                    {
+                        "tool": "hub_list_devices",
+                        "args": {"labelFilter": str(requested)},
+                    }
+                    for requested in names
+                ]
+            )
         )
 
         async def lookup(
@@ -1107,9 +1171,9 @@ class UnifiedMCPAgent:
                 else self._is_switch_device(device) and not is_light_device(device)
             )
         ]
-        targets: list[dict[str, Any]] = []
+        targets: list[dict[str, Any]] = list(fast_targets)
         resolution_errors: list[str] = []
-        if room:
+        if not targets and room:
             wanted_room = normalized_name(room)
             targets = [
                 device for device in candidates
@@ -1171,7 +1235,7 @@ class UnifiedMCPAgent:
                     resolution_errors.append(
                         f"No {kind}s were found in room {room!r}."
                     )
-        else:
+        elif not targets:
             fallback_candidates: list[dict[str, Any]] | None = None
             for requested, source_devices in zip(
                 names, source_groups, strict=True
@@ -1287,7 +1351,21 @@ class UnifiedMCPAgent:
             )
             call_arguments = {
                 "tool": "hub_call_device_command",
-                "args": {"deviceId": device_id, "command": command},
+                "args": {
+                    "deviceId": device_id,
+                    "command": command,
+                    **(
+                        {
+                            "waitFor": {
+                                "attribute": "switch",
+                                "expectedValue": command,
+                                "timeoutMs": 5000,
+                            }
+                        }
+                        if command in {"on", "off"}
+                        else {}
+                    ),
+                },
             }
             started = time.monotonic()
             command_success = False
@@ -1300,60 +1378,43 @@ class UnifiedMCPAgent:
                     )
                 command_success = self._tool_succeeded(result)
                 message = result.text
+                if command in {"on", "off"}:
+                    wait_for = (
+                        result.data.get("waitFor")
+                        if isinstance(result.data, dict)
+                        else None
+                    )
+                    verified = (
+                        bool(wait_for.get("converged"))
+                        if isinstance(wait_for, dict)
+                        else False
+                    )
+                    verification_message = (
+                        json.dumps(wait_for)
+                        if isinstance(wait_for, dict)
+                        else "Command response omitted waitFor confirmation."
+                    )
             except Exception as exc:
                 message = f"{type(exc).__name__}: {exc}"
                 logger.exception(
                     "High-level device command failed for %s", label
                 )
+            evidence_outcome = (
+                "verified"
+                if command_success and verified is True
+                else "sent"
+                if command_success
+                else "failed"
+            )
             self._record_evidence(
                 "hub_manage_devices",
                 call_arguments,
-                success=command_success,
+                success=command_success and verified is not False,
                 elapsed_ms=round((time.monotonic() - started) * 1000),
-                summary=(
-                    f"{command} {label}: "
-                    f"{'success' if command_success else 'failed'}"
-                ),
+                summary=f"{command} {label}: {evidence_outcome}",
                 supports_live_claim=True,
                 evidence_kind="device_command_result",
             )
-            if command_success and command in {"on", "off"}:
-                verify_arguments = {
-                    "tool": "hub_get_device_attribute",
-                    "args": {
-                        "deviceId": device_id,
-                        "attribute": "switch",
-                        "expectedValue": command,
-                    },
-                }
-                verify_started = time.monotonic()
-                try:
-                    async with semaphore:
-                        verification = await self.mcp.call_tool(
-                            "hub_manage_devices", verify_arguments
-                        )
-                    verified = self._tool_succeeded(verification)
-                    verification_message = verification.text
-                except Exception as exc:
-                    verified = False
-                    verification_message = f"{type(exc).__name__}: {exc}"
-                    logger.exception(
-                        "High-level device verification failed for %s", label
-                    )
-                self._record_evidence(
-                    "hub_manage_devices",
-                    verify_arguments,
-                    success=bool(verified),
-                    elapsed_ms=round(
-                        (time.monotonic() - verify_started) * 1000
-                    ),
-                    summary=(
-                        f"verify {label} switch={command}: "
-                        f"{'success' if verified else 'failed'}"
-                    ),
-                    supports_live_claim=True,
-                    evidence_kind="device_state_verification",
-                )
             success = command_success and verified is not False
             return {
                 "id": device_id,

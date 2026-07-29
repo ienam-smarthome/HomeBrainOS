@@ -25,8 +25,36 @@ def test_filter_presenter_preserves_every_match_and_count():
     )
 
     assert message == (
-        "3 devices matched battery <= 20: Door: battery=14, TRV: battery=10, "
-        "and Remote: battery=20."
+        "3 devices have battery levels <= 20%: Door (14%), TRV (10%), "
+        "and Remote (20%)."
+    )
+
+
+def test_motion_filter_presenter_uses_natural_domain_language():
+    message = present_tool_result(
+        "homebrain_filter_devices",
+        {
+            "attribute": "motion",
+            "operator": "eq",
+            "comparison_value": "active",
+            "matches": [
+                {
+                    "label": "Kitchen Linptech",
+                    "room": "Living Room",
+                    "value": "active",
+                },
+                {
+                    "label": "Bedroom 3 Presence Sensor",
+                    "room": "Bedroom 3",
+                    "value": "active",
+                },
+            ],
+        },
+    )
+
+    assert message == (
+        "2 motion sensors are active: Kitchen Linptech (Living Room) and "
+        "Bedroom 3 Presence Sensor (Bedroom 3)."
     )
 
 

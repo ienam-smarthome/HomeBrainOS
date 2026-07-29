@@ -246,6 +246,13 @@ class HubitatMCPClient:
             self._devices_cached_at = now
         return list(self._cached_devices)
 
+    async def get_device_identities(self) -> list[dict[str, Any]]:
+        """Return known identity metadata without refreshing an expired state TTL."""
+
+        if self._cached_devices:
+            return list(self._cached_devices)
+        return await self.get_cached_devices()
+
     @classmethod
     def _find_device_list(cls, value: Any) -> list[Any] | None:
         if isinstance(value, list):
