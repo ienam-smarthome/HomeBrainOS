@@ -65,10 +65,14 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     with TestClient(module.app) as client:
         response = client.get("/")
     assert response.status_code == 200
-    assert "Ollama model" in response.text
+    assert '<span class="muted">Model</span>' in response.text
     assert "Read answers aloud" in response.text
     assert "Technical details" in response.text
     assert "api/dashboard" in response.text
+    assert 'id="activeRoomGrid"' in response.text
+    assert 'id="roomGrid"' in response.text
+    assert 'id="hubInfoGrid"' in response.text
+    assert "Installed firmware" in response.text
     assert "hmcp_last_query" in response.text
     assert "query.value=text" in response.text
     assert "document.execCommand('copy')" in response.text
@@ -108,6 +112,7 @@ def test_dashboard_counts_current_states(monkeypatch, tmp_path):
         return [
             {
                 "id": "1",
+                "roomName": "Living Room",
                 "capabilities": ["Switch", "Light"],
                 "currentStates": [
                     {"name": "switch", "currentValue": "on"},
@@ -116,6 +121,7 @@ def test_dashboard_counts_current_states(monkeypatch, tmp_path):
             },
             {
                 "id": "2",
+                "room": {"name": "Hallway"},
                 "capabilities": ["MotionSensor"],
                 "currentStates": [{"name": "motion", "currentValue": "active"}],
             },
@@ -138,6 +144,18 @@ def test_dashboard_counts_current_states(monkeypatch, tmp_path):
         "motion_active": 1,
         "switches_on": 1,
         "low_batteries": 1,
+        "rooms": 2,
+        "assigned_devices": 2,
+        "unassigned_devices": 1,
+        "room_counts": [
+            {"name": "Hallway", "devices": 1},
+            {"name": "Living Room", "devices": 1},
+        ],
+        "active_rooms": [
+            {"name": "Hallway", "reasons": ["motion"]},
+            {"name": "Living Room", "reasons": ["light on"]},
+        ],
+        "hub_info": {},
     }
 
 
@@ -169,3 +187,44 @@ def test_dashboard_counts_detailed_attributes(monkeypatch, tmp_path):
     assert response.json()["lights_on"] == 1
     assert response.json()["motion_active"] == 1
     assert response.json()["low_batteries"] == 1
+
+
+def test_dashboard_reads_hub_info_device(monkeypatch, tmp_path):
+    module = load_app(monkeypatch, tmp_path)
+
+    async def devices():
+        return [
+            {
+                "id": "1089",
+                "label": "Hub Info (C8 Pro)",
+                "currentStates": [
+                    {"name": "hubModel", "currentValue": "C-8 Pro"},
+                    {"name": "firmwareVersionString", "currentValue": "2.5.1.135"},
+                    {"name": "hubUpdateStatus", "currentValue": "Update Available"},
+                    {"name": "hubUpdateVersion", "currentValue": "2.5.1.136"},
+                    {"name": "cpu5Min", "currentValue": 1.28},
+                    {"name": "cpuPct", "currentValue": 32.0},
+                    {"name": "freeMemory", "currentValue": 770.3},
+                    {"name": "internalTemp", "currentValue": 51.9},
+                    {"name": "formattedUptime", "currentValue": "3d:17h:16m:36s"},
+                    {"name": "dbSize", "currentValue": 170},
+                    {"name": "localIP", "currentValue": "192.168.1.239"},
+                    {"name": "matterStatus", "currentValue": "online"},
+                ],
+            }
+        ]
+
+    monkeypatch.setattr(module.mcp, "get_cached_devices", devices)
+    with TestClient(module.app) as client:
+        response = client.get("/api/dashboard")
+
+    assert response.status_code == 200
+    hub = response.json()["hub_info"]
+    assert hub["name"] == "Hub Info (C8 Pro)"
+    assert hub["model"] == "C-8 Pro"
+    assert hub["firmware_version"] == "2.5.1.135"
+    assert hub["update_status"] == "Update Available"
+    assert hub["update_version"] == "2.5.1.136"
+    assert hub["cpu_load"] == 1.28
+    assert hub["cpu_percent"] == 32.0
+    assert hub["free_memory"] == 770.3

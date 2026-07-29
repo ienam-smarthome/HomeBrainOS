@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -255,6 +256,79 @@ async def status() -> dict[str, Any]:
     return await health()
 
 
+def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
+    attrs = (
+        device.get("currentStates")
+        or device.get("attributes")
+        or device.get("states")
+        or {}
+    )
+    if isinstance(attrs, list):
+        attrs = {
+            str(item.get("name")): item.get("currentValue", item.get("value"))
+            for item in attrs
+            if isinstance(item, dict) and item.get("name")
+        }
+    return attrs if isinstance(attrs, dict) else {}
+
+
+def _room_name(device: dict[str, Any]) -> str | None:
+    room: Any = device.get("roomName") or device.get("room")
+    if isinstance(room, dict):
+        room = room.get("name") or room.get("label")
+    value = str(room or "").strip()
+    return value if value and value.lower() not in {"none", "null", "unassigned"} else None
+
+
+def _normalized_values(device: dict[str, Any]) -> dict[str, Any]:
+    values = {**device, **_device_attributes(device)}
+    return {
+        re.sub(r"[^a-z0-9]", "", str(key).lower()): value
+        for key, value in values.items()
+    }
+
+
+def _value(values: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        candidate = values.get(re.sub(r"[^a-z0-9]", "", name.lower()))
+        if candidate not in (None, ""):
+            return candidate
+    return None
+
+
+def _hub_info(devices: list[dict[str, Any]]) -> dict[str, Any]:
+    hub = next(
+        (
+            device
+            for device in devices
+            if "hub info"
+            in str(device.get("label") or device.get("name") or "").lower()
+        ),
+        None,
+    )
+    if hub is None:
+        return {}
+    values = _normalized_values(hub)
+    return {
+        "name": _value(values, "name", "label"),
+        "model": _value(values, "hubModel", "model"),
+        "firmware_version": _value(
+            values, "firmwareVersionString", "firmwareVersion"
+        ),
+        "update_status": _value(values, "hubUpdateStatus", "updateStatus"),
+        "update_version": _value(values, "hubUpdateVersion", "availableVersion"),
+        "cpu_load": _value(values, "cpu5Min", "cpuLoad", "cpu15Min"),
+        "cpu_percent": _value(values, "cpuPct", "cpu15Pct", "loadPct"),
+        "free_memory": _value(values, "freeMemory", "freeMem15"),
+        "java_free_memory": _value(values, "jvmFree", "javaDirect"),
+        "temperature": _value(values, "internalTemp", "temperature"),
+        "uptime": _value(values, "formattedUptime", "uptime"),
+        "database_size": _value(values, "dbSize", "databaseSize"),
+        "ip_address": _value(values, "localIP", "ipAddress"),
+        "matter_status": _value(values, "matterStatus"),
+    }
+
+
 @app.get("/api/dashboard")
 async def dashboard() -> dict[str, Any]:
     try:
@@ -269,31 +343,32 @@ async def dashboard() -> dict[str, Any]:
             "motion_active": None,
             "switches_on": None,
             "low_batteries": None,
+            "rooms": None,
+            "room_counts": [],
+            "active_rooms": [],
+            "hub_info": {},
         }
     lights_on = motion_active = switches_on = low_batteries = 0
+    room_counts: dict[str, int] = {}
+    active_rooms: dict[str, set[str]] = {}
     for device in devices:
-        attrs = (
-            device.get("currentStates")
-            or device.get("attributes")
-            or device.get("states")
-            or {}
-        )
-        if isinstance(attrs, list):
-            attrs = {
-                str(item.get("name")): item.get("currentValue", item.get("value"))
-                for item in attrs if isinstance(item, dict) and item.get("name")
-            }
-        if not isinstance(attrs, dict):
-            attrs = {}
+        attrs = _device_attributes(device)
+        room = _room_name(device)
+        if room:
+            room_counts[room] = room_counts.get(room, 0) + 1
         capabilities = " ".join(map(str, device.get("capabilities") or [])).lower()
         switch = str(attrs.get("switch") or device.get("switch") or "").lower()
         if switch == "on":
             if "light" in capabilities or "bulb" in capabilities:
                 lights_on += 1
+                if room:
+                    active_rooms.setdefault(room, set()).add("light on")
             else:
                 switches_on += 1
         if str(attrs.get("motion") or device.get("motion") or "").lower() == "active":
             motion_active += 1
+            if room:
+                active_rooms.setdefault(room, set()).add("motion")
         try:
             battery = float(attrs.get("battery", device.get("battery")))
             if battery <= 20:
@@ -307,6 +382,20 @@ async def dashboard() -> dict[str, Any]:
         "motion_active": motion_active,
         "switches_on": switches_on,
         "low_batteries": low_batteries,
+        "rooms": len(room_counts),
+        "assigned_devices": sum(room_counts.values()),
+        "unassigned_devices": len(devices) - sum(room_counts.values()),
+        "room_counts": [
+            {"name": name, "devices": count}
+            for name, count in sorted(room_counts.items(), key=lambda item: item[0].lower())
+        ],
+        "active_rooms": [
+            {"name": name, "reasons": sorted(reasons)}
+            for name, reasons in sorted(
+                active_rooms.items(), key=lambda item: item[0].lower()
+            )
+        ],
+        "hub_info": _hub_info(devices),
     }
 
 
