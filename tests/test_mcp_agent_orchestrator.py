@@ -895,6 +895,82 @@ async def test_high_level_control_falls_back_when_literal_filter_is_empty():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("room", ["Living Room", "Livingroom"])
+async def test_room_control_falls_back_to_enriched_identity_manifest(room):
+    class RoomIdentityMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [
+                {
+                    "id": "7044",
+                    "label": "Livingroom Light 1",
+                    "roomName": "Living Room",
+                    "capabilities": ["Switch", "Light"],
+                },
+                {
+                    "id": "7045",
+                    "label": "Livingroom Light 2",
+                    "roomName": "Living Room",
+                    "capabilities": ["Switch", "Light"],
+                },
+                {
+                    "id": "9000",
+                    "label": "Livingroom Socket",
+                    "roomName": "Living Room",
+                    "capabilities": ["Switch"],
+                },
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {
+                        "devices": [
+                            {
+                                "id": "7044",
+                                "label": "Livingroom Light 1",
+                                "capabilities": ["Switch", "Light"],
+                            },
+                            {
+                                "id": "7045",
+                                "label": "Livingroom Light 2",
+                                "capabilities": ["Switch", "Light"],
+                            },
+                        ]
+                    },
+                )
+            return MCPToolResult(
+                name, arguments, {}, "ok", {"success": True}
+            )
+
+    mcp = RoomIdentityMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+
+    result = await agent._control_devices({
+        "room": room,
+        "device_names": [],
+        "device_kind": "light",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    assert {item["id"] for item in result.data["succeeded"]} == {
+        "7044", "7045"
+    }
+    command_calls = [
+        call for call in mcp.calls
+        if call[1].get("tool") == "hub_call_device_command"
+    ]
+    assert [call[1]["args"]["deviceId"] for call in command_calls] == [
+        "7044", "7045"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_weather_live_read_does_not_load_identity_manifest():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("What is the weather?")
