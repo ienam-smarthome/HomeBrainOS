@@ -361,6 +361,88 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
     ]
 
 
+@pytest.mark.asyncio
+async def test_active_rooms_tool_matches_dashboard_definition():
+    class ActiveRoomMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_read_devices", "read devices", {}),
+                MCPTool("hub_read_rooms", "read rooms", {}),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [
+                        {
+                            "id": "1",
+                            "label": "Bedroom 3 Presence",
+                            "roomName": "Bedroom 3",
+                            "capabilities": ["MotionSensor"],
+                            "attributes": {"motion": "active"},
+                        },
+                        {
+                            "id": "2",
+                            "label": "Livingroom Presence",
+                            "roomName": "Living Room",
+                            "capabilities": ["MotionSensor"],
+                            "attributes": {"motion": "active"},
+                        },
+                        {
+                            "id": "3",
+                            "label": "Hallway Light",
+                            "roomName": "Hallway",
+                            "capabilities": ["Switch", "Light"],
+                            "attributes": {"switch": "off"},
+                        },
+                    ]
+                },
+            )
+
+    mcp = ActiveRoomMCP()
+    ai = FakeAI([
+        {
+            "message": {
+                "role": "assistant",
+                "tool_calls": [{
+                    "function": {
+                        "name": "homebrain_active_rooms",
+                        "arguments": {},
+                    }
+                }],
+            }
+        },
+        {
+            "message": {
+                "role": "assistant",
+                "content": "Bedroom 3 and Living Room are active.",
+            }
+        },
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Which rooms are active?")
+
+    assert outcome.message == "Bedroom 3 and Living Room are active."
+    assert mcp.calls == [
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+    ]
+    assert [receipt["evidence_kind"] for receipt in outcome.evidence] == [
+        "authoritative_state_snapshot",
+        "deterministic_active_rooms",
+    ]
+    declared = [
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    ]
+    assert "homebrain_active_rooms" in declared
+
+
 def test_general_device_attribute_comparisons_are_not_battery_specific():
     compare = UnifiedMCPAgent._attribute_matches
 
