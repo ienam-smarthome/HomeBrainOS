@@ -992,18 +992,16 @@ async def test_hub_info_snapshot_refreshes_firmware_before_reporting():
                 {},
                 "",
                 {
-                    "devices": [{
-                        "id": "1089",
-                        "label": "Hub Info (C8 Pro)",
-                        "attributes": {
-                            "firmwareVersionString": "2.5.1.136",
-                            "hubUpdateStatus": "Update Available",
-                            "hubUpdateVersion": "2.5.1.139",
-                            "cpu5Min": 0.77,
-                            "cpuPct": 19.25,
-                            "freeMemory": 948.12,
-                        },
-                    }]
+                    "id": "1089",
+                    "label": "Hub Info (C8 Pro)",
+                    "attributes": {
+                        "firmwareVersionString": "2.5.1.136",
+                        "hubUpdateStatus": "Update Available",
+                        "hubUpdateVersion": "2.5.1.139",
+                        "cpu5Min": 0.77,
+                        "cpuPct": 19.25,
+                        "freeMemory": 948.12,
+                    },
                 },
             )
 

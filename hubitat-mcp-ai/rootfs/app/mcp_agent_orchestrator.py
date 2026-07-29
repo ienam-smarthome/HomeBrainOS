@@ -451,6 +451,35 @@ class UnifiedMCPAgent:
         return matches[0] if len(matches) == 1 else None
 
     @classmethod
+    def _find_device_record(cls, value: Any) -> dict[str, Any] | None:
+        """Find one detailed device in direct or gateway-wrapped MCP output."""
+
+        if not isinstance(value, dict):
+            return None
+        if (
+            value.get("id") is not None
+            or value.get("deviceId") is not None
+        ) and any(
+            key in value
+            for key in (
+                "attributes",
+                "currentStates",
+                "states",
+                "capabilities",
+                "commands",
+                "label",
+                "displayName",
+            )
+        ):
+            return value
+        for key in ("device", "result", "data", "output", "content"):
+            if key in value:
+                candidate = cls._find_device_record(value[key])
+                if candidate is not None:
+                    return candidate
+        return None
+
+    @classmethod
     def _merge_device_identity(
         cls,
         live_devices: list[dict[str, Any]],
@@ -597,9 +626,9 @@ class UnifiedMCPAgent:
                 )
                 if isinstance(item, dict)
             ]
-            if not candidates and isinstance(source.data, dict):
-                candidate = source.data.get("device")
-                if isinstance(candidate, dict):
+            if not candidates:
+                candidate = self._find_device_record(source.data)
+                if candidate is not None:
                     candidates = [candidate]
             live_device = self._hub_info_device(candidates)
             if live_device is None and len(candidates) == 1:
