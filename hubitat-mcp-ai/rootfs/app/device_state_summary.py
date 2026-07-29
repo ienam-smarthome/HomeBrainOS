@@ -27,6 +27,36 @@ def room_name(device: dict[str, Any]) -> str | None:
     return value if value and value.lower() not in {"none", "null", "unassigned"} else None
 
 
+def is_light_device(device: dict[str, Any]) -> bool:
+    capabilities = str(device.get("capabilities") or "").lower()
+    return "light" in capabilities or "bulb" in capabilities
+
+
+def active_non_light_switches(
+    devices: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return switched-on devices, excluding every light/bulb device."""
+
+    matches = []
+    for device in devices:
+        attributes = device_attributes(device)
+        switch = str(attributes.get("switch") or device.get("switch") or "").lower()
+        if switch != "on" or is_light_device(device):
+            continue
+        matches.append(
+            {
+                "id": device.get("id") or device.get("deviceId"),
+                "label": device.get("label") or device.get("name"),
+                "room": room_name(device) or "Unassigned",
+                "switch": "on",
+            }
+        )
+    return sorted(
+        matches,
+        key=lambda item: str(item.get("label") or "").lower(),
+    )
+
+
 def active_room_summary(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return rooms with active motion or at least one light switched on."""
 
@@ -36,10 +66,9 @@ def active_room_summary(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not room:
             continue
         attributes = device_attributes(device)
-        capabilities = str(device.get("capabilities") or "").lower()
         switch = str(attributes.get("switch") or device.get("switch") or "").lower()
         motion = str(attributes.get("motion") or device.get("motion") or "").lower()
-        if switch == "on" and ("light" in capabilities or "bulb" in capabilities):
+        if switch == "on" and is_light_device(device):
             active.setdefault(room, set()).add("light on")
         if motion == "active":
             active.setdefault(room, set()).add("motion")
@@ -49,4 +78,10 @@ def active_room_summary(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-__all__ = ["active_room_summary", "device_attributes", "room_name"]
+__all__ = [
+    "active_non_light_switches",
+    "active_room_summary",
+    "device_attributes",
+    "is_light_device",
+    "room_name",
+]
