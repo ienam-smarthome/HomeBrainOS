@@ -13,11 +13,13 @@ from typing import Any
 import httpx
 
 from device_state_summary import (
+    active_lights,
     active_non_light_switches,
     active_room_summary,
     is_light_device,
     room_name,
 )
+from deterministic_tool_presenter import present_tool_result
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -59,6 +61,7 @@ _HOME_STATE_PATTERNS = (
     r"\bhome (?:status|summary|overview)\b",
 )
 _LOCAL_FILTER_TOOL = "homebrain_filter_devices"
+_LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 _LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 _LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 _LOCAL_CONTROL_TOOL = "homebrain_control_devices"
@@ -303,6 +306,23 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
+    def _active_lights_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_ACTIVE_LIGHTS_TOOL,
+            (
+                "Fetch all live Hubitat devices and deterministically return every "
+                "light or bulb whose switch state is on. Use this whenever the user "
+                "asks which lights are on."
+            ),
+            {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
     def _active_switches_tool() -> MCPTool:
         return MCPTool(
             _LOCAL_ACTIVE_SWITCHES_TOOL,
@@ -504,6 +524,44 @@ class UnifiedMCPAgent:
         }
         return MCPToolResult(
             _LOCAL_FILTER_TOOL, arguments, {}, json.dumps(data), data
+        )
+
+    async def _active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
+        source_arguments = {"tool": "hub_list_devices", "args": {}}
+        started = time.monotonic()
+        source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+        devices = [
+            item
+            for item in (HubitatMCPClient._find_device_list(source.data) or [])
+            if isinstance(item, dict)
+        ]
+        self._record_evidence(
+            "hub_read_devices",
+            source_arguments,
+            success=self._tool_succeeded(source),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(devices)} source device records",
+            evidence_kind="authoritative_state_snapshot",
+        )
+        if not self._tool_succeeded(source):
+            return MCPToolResult(
+                _LOCAL_ACTIVE_LIGHTS_TOOL,
+                arguments,
+                {},
+                source.text,
+                {"error": source.text or "Live device read failed"},
+                is_error=True,
+            )
+        lights = active_lights(devices)
+        data = {
+            "lights": lights,
+            "count": len(lights),
+            "definition": "light/bulb capability with switch=on",
+            "total_scanned": len(devices),
+            "complete": True,
+        }
+        return MCPToolResult(
+            _LOCAL_ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data
         )
 
     async def _active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
@@ -751,51 +809,19 @@ class UnifiedMCPAgent:
             _LOCAL_CONTROL_TOOL, arguments, {}, json.dumps(data), data
         )
 
-    @staticmethod
-    def _control_result_message(result: MCPToolResult) -> str:
-        data = result.data if isinstance(result.data, dict) else {}
-        if not data.get("success"):
-            succeeded = [
-                str(item.get("label"))
-                for item in data.get("succeeded", [])
-                if isinstance(item, dict) and item.get("label")
-            ]
-            failed = [
-                str(item.get("label"))
-                for item in data.get("failed", [])
-                if isinstance(item, dict) and item.get("label")
-            ]
-            if succeeded or failed:
-                parts = []
-                if succeeded:
-                    parts.append(f"Succeeded: {', '.join(succeeded)}.")
-                if failed:
-                    parts.append(f"Failed: {', '.join(failed)}.")
-                return " ".join(parts)
-            return str(
-                data.get("error")
-                or result.text
-                or "The Hubitat device command failed."
-            )
-        labels = [
-            str(item.get("label"))
-            for item in data.get("succeeded", [])
-            if isinstance(item, dict) and item.get("label")
-        ]
-        if len(labels) > 1:
-            targets = ", ".join(labels[:-1]) + f" and {labels[-1]}"
-        else:
-            targets = labels[0] if labels else "the selected devices"
-        verb = {"on": "Turned on", "off": "Turned off", "toggle": "Toggled"}.get(
-            str(data.get("command")), "Controlled"
-        )
-        return f"{verb} {targets}."
-
     @classmethod
     def _needs_device_manifest(cls, prompt: str) -> bool:
         return cls._matches(prompt, _DEVICE_TERMS) or any(
             re.search(pattern, prompt.lower()) is not None
             for pattern in _HOME_STATE_PATTERNS
+        )
+
+    def _include_identity_manifest(self, prompt: str) -> bool:
+        """Keep live-read facts behind tools instead of prompt-injected state."""
+
+        return (
+            self._needs_device_manifest(prompt)
+            and self._request_class.get() == "write"
         )
 
     @classmethod
@@ -913,7 +939,7 @@ class UnifiedMCPAgent:
 
     async def _system_prompt(self, user_prompt: str = "") -> str:
         rows: list[str] = []
-        if self._needs_device_manifest(user_prompt):
+        if self._include_identity_manifest(user_prompt):
             try:
                 started = time.monotonic()
                 devices = await self.mcp.get_cached_devices()
@@ -1084,6 +1110,17 @@ class UnifiedMCPAgent:
                 "capabilities, exactly matching the dashboard Switches on tile. "
                 "Report the returned count and every returned device; do not add lights."
             )
+        light_section = ""
+        if (
+            self._matches(user_prompt, {"light", "lights", "lamp", "lamps"})
+            and not self._requests_mutation(user_prompt)
+        ):
+            light_section = (
+                "\n\nACTIVE LIGHT RULE\nWhen asked which lights are on, call "
+                "homebrain_active_lights. It returns the exhaustive live list and "
+                "count using the same light classification as the dashboard. Do not "
+                "scan the device manifest or call a generic device read instead."
+            )
         control_section = ""
         if (
             self._needs_device_manifest(user_prompt)
@@ -1129,7 +1166,7 @@ class UnifiedMCPAgent:
             "gateway with empty arguments.\n\n"
             f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
             f"{battery_section}{health_section}{home_section}{room_section}"
-            f"{switch_section}{control_section}"
+            f"{switch_section}{light_section}{control_section}"
             f"{log_section}"
         )
 
@@ -1445,11 +1482,13 @@ class UnifiedMCPAgent:
         request_started = time.monotonic()
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
         local_filter = self._device_filter_tool()
+        local_active_lights = self._active_lights_tool()
         local_active_rooms = self._active_rooms_tool()
         local_active_switches = self._active_switches_tool()
         local_control = self._control_devices_tool()
         all_tools.extend([
-            local_filter, local_active_rooms, local_active_switches, local_control
+            local_filter, local_active_lights, local_active_rooms,
+            local_active_switches, local_control
         ])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
@@ -1462,6 +1501,12 @@ class UnifiedMCPAgent:
             declared = self._select_tools(user_prompt, all_tools)
             if all(tool.name != _LOCAL_FILTER_TOOL for tool in declared):
                 declared.append(local_filter)
+            if (
+                self._matches(user_prompt, {"light", "lights", "lamp", "lamps"})
+                and not self._requests_mutation(user_prompt)
+                and all(tool.name != _LOCAL_ACTIVE_LIGHTS_TOOL for tool in declared)
+            ):
+                declared.append(local_active_lights)
             if (
                 self._matches(user_prompt, _ROOM_TERMS)
                 and all(tool.name != _LOCAL_ACTIVE_ROOMS_TOOL for tool in declared)
@@ -1489,7 +1534,7 @@ class UnifiedMCPAgent:
             "System prompt built in %.3fs (%d chars, manifest=%s)",
             time.monotonic() - prompt_started,
             len(system_prompt),
-            self._needs_device_manifest(user_prompt),
+            self._include_identity_manifest(user_prompt),
         )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -1635,6 +1680,8 @@ class UnifiedMCPAgent:
                         mcp_started = time.monotonic()
                         if name == _LOCAL_FILTER_TOOL:
                             result = await self._filter_devices(dict(arguments))
+                        elif name == _LOCAL_ACTIVE_LIGHTS_TOOL:
+                            result = await self._active_lights(dict(arguments))
                         elif name == _LOCAL_ACTIVE_ROOMS_TOOL:
                             result = await self._active_rooms(dict(arguments))
                         elif name == _LOCAL_ACTIVE_SWITCHES_TOOL:
@@ -1657,15 +1704,19 @@ class UnifiedMCPAgent:
                                 "deterministic_attribute_filter"
                                 if name == _LOCAL_FILTER_TOOL
                                 else (
-                                    "deterministic_active_rooms"
-                                    if name == _LOCAL_ACTIVE_ROOMS_TOOL
+                                    "deterministic_active_lights"
+                                    if name == _LOCAL_ACTIVE_LIGHTS_TOOL
                                     else (
-                                        "deterministic_active_switches"
-                                        if name == _LOCAL_ACTIVE_SWITCHES_TOOL
+                                        "deterministic_active_rooms"
+                                        if name == _LOCAL_ACTIVE_ROOMS_TOOL
                                         else (
-                                            "deterministic_device_control"
-                                            if name == _LOCAL_CONTROL_TOOL
-                                            else "tool_result"
+                                            "deterministic_active_switches"
+                                            if name == _LOCAL_ACTIVE_SWITCHES_TOOL
+                                            else (
+                                                "deterministic_device_control"
+                                                if name == _LOCAL_CONTROL_TOOL
+                                                else "tool_result"
+                                            )
                                         )
                                     )
                                 )
@@ -1699,8 +1750,14 @@ class UnifiedMCPAgent:
                                 successful_mutations += 1
                             else:
                                 failed_mutation = result.text or "MCP reported an error"
-                        if name == _LOCAL_CONTROL_TOOL:
-                            return self._control_result_message(result)
+                        deterministic_message = present_tool_result(
+                            name,
+                            result.data,
+                            failed=not self._tool_succeeded(result),
+                            fallback_error=result.text,
+                        )
+                        if deterministic_message is not None:
+                            return deterministic_message
                 except Exception as exc:
                     logger.exception("MCP tool %s failed", name)
                     self._record_evidence(

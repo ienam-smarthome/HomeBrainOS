@@ -163,9 +163,13 @@ async def test_post_only_test_client_keeps_non_streaming_compatibility():
 
 
 @pytest.mark.asyncio
-async def test_manifest_contains_live_device_identity():
+async def test_write_prompt_contains_live_device_identity():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
-    instruction = await agent._system_prompt("What is the couch lamp state?")
+    request_token = agent._request_class.set("write")
+    try:
+        instruction = await agent._system_prompt("Turn on the couch lamp")
+    finally:
+        agent._request_class.reset(request_token)
     assert "'Couch Lamp' | ID: 42 | Room: Lounge" in instruction
 
 
@@ -315,41 +319,36 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
             )
 
     mcp = BatteryMCP()
-    ai = FakeAI([
-        {
-            "message": {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "function": {
-                        "name": "homebrain_filter_devices",
-                        "arguments": {
-                            "attribute": "battery",
-                            "operator": "lte",
-                            "value": 20,
-                        },
-                    }
-                }],
-            }
-        },
-        {
-            "message": {
-                "role": "assistant",
-                "content": "Fridge Door is 14% and Livingroom TRV is 10%.",
-            }
-        },
-    ])
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_filter_devices",
+                    "arguments": {
+                        "attribute": "battery",
+                        "operator": "lte",
+                        "value": 20,
+                    },
+                }
+            }],
+        }
+    }])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
     outcome = await agent.process_user_request_result("Which batteries are low?")
 
-    assert outcome.message == "Fridge Door is 14% and Livingroom TRV is 10%."
+    assert outcome.message == (
+        "2 devices matched battery <= 20: Fridge Door: battery=14 and "
+        "Livingroom TRV: battery=10."
+    )
+    assert len(ai.requests) == 1
     assert mcp.calls == [
         ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
     ]
     kinds = [receipt["evidence_kind"] for receipt in outcome.evidence]
     assert kinds == [
-        "identity_manifest",
         "authoritative_state_snapshot",
         "deterministic_attribute_filter",
     ]
@@ -405,30 +404,25 @@ async def test_active_rooms_tool_matches_dashboard_definition():
             )
 
     mcp = ActiveRoomMCP()
-    ai = FakeAI([
-        {
-            "message": {
-                "role": "assistant",
-                "tool_calls": [{
-                    "function": {
-                        "name": "homebrain_active_rooms",
-                        "arguments": {},
-                    }
-                }],
-            }
-        },
-        {
-            "message": {
-                "role": "assistant",
-                "content": "Bedroom 3 and Living Room are active.",
-            }
-        },
-    ])
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_active_rooms",
+                    "arguments": {},
+                }
+            }],
+        }
+    }])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
     outcome = await agent.process_user_request_result("Which rooms are active?")
 
-    assert outcome.message == "Bedroom 3 and Living Room are active."
+    assert outcome.message == (
+        "2 active rooms are: Bedroom 3 (motion) and Living Room (motion)."
+    )
+    assert len(ai.requests) == 1
     assert mcp.calls == [
         ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
     ]
@@ -441,6 +435,78 @@ async def test_active_rooms_tool_matches_dashboard_definition():
         for item in ai.requests[0][1]["json"]["tools"]
     ]
     assert "homebrain_active_rooms" in declared
+
+
+@pytest.mark.asyncio
+async def test_active_lights_tool_returns_exhaustive_list_without_second_round():
+    class ActiveLightMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_read_devices", "read devices", {})]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [
+                        {
+                            "id": "1",
+                            "label": "Bedroom 2 Light",
+                            "roomName": "Bedroom 2",
+                            "capabilities": ["Switch", "Light"],
+                            "attributes": {"switch": "on"},
+                        },
+                        {
+                            "id": "2",
+                            "label": "Hallway Light",
+                            "roomName": "Hallway",
+                            "capabilities": ["Switch", "Light"],
+                            "attributes": {"switch": "off"},
+                        },
+                        {
+                            "id": "3",
+                            "label": "Fridge",
+                            "roomName": "Appliances",
+                            "capabilities": ["Switch"],
+                            "attributes": {"switch": "on"},
+                        },
+                    ]
+                },
+            )
+
+    mcp = ActiveLightMCP()
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_active_lights",
+                    "arguments": {},
+                }
+            }],
+        }
+    }])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Which lights are on?")
+
+    assert outcome.message == "1 light is on: Bedroom 2 Light (Bedroom 2)."
+    assert len(ai.requests) == 1
+    assert mcp.calls == [
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+    ]
+    assert [receipt["evidence_kind"] for receipt in outcome.evidence] == [
+        "authoritative_state_snapshot",
+        "deterministic_active_lights",
+    ]
+    declared = [
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    ]
+    assert "homebrain_active_lights" in declared
 
 
 @pytest.mark.asyncio
@@ -484,35 +550,27 @@ async def test_active_switches_tool_excludes_lights_like_dashboard():
             )
 
     mcp = ActiveSwitchMCP()
-    ai = FakeAI([
-        {
-            "message": {
-                "role": "assistant",
-                "tool_calls": [{
-                    "function": {
-                        "name": "homebrain_active_switches",
-                        "arguments": {},
-                    }
-                }],
-            }
-        },
-        {
-            "message": {
-                "role": "assistant",
-                "content": "One non-light switch is on: Fridge.",
-            }
-        },
-    ])
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_active_switches",
+                    "arguments": {},
+                }
+            }],
+        }
+    }])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
     outcome = await agent.process_user_request_result("Which switches are on?")
 
-    assert outcome.message == "One non-light switch is on: Fridge."
+    assert outcome.message == "1 non-light switch is on: Fridge (Appliances)."
+    assert len(ai.requests) == 1
     assert mcp.calls == [
         ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
     ]
     assert [receipt["evidence_kind"] for receipt in outcome.evidence] == [
-        "identity_manifest",
         "authoritative_state_snapshot",
         "deterministic_active_switches",
     ]
@@ -646,14 +704,15 @@ async def test_high_level_control_fails_closed_when_device_name_is_unmatched():
 
 
 @pytest.mark.asyncio
-async def test_weather_request_loads_device_manifest():
+async def test_weather_live_read_does_not_load_identity_manifest():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("What is the weather?")
-    assert "'Couch Lamp' | ID: 42" in instruction
+    assert "Device manifest omitted or unavailable." in instruction
+    assert "'Couch Lamp' | ID: 42" not in instruction
 
 
 @pytest.mark.asyncio
-async def test_manifest_includes_compact_live_states():
+async def test_live_read_does_not_inject_compact_cached_states():
     class StateMCP(FakeMCP):
         async def get_cached_devices(self):
             return [{
@@ -669,7 +728,8 @@ async def test_manifest_includes_compact_live_states():
 
     agent = UnifiedMCPAgent(StateMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("Which motion sensors are active?")
-    assert "Current: motion=active, battery=91" in instruction
+    assert "Current: motion=active, battery=91" not in instruction
+    assert "Device manifest omitted or unavailable." in instruction
 
 
 @pytest.mark.asyncio
@@ -718,7 +778,7 @@ async def test_device_health_prompt_distinguishes_stale_from_offline():
 
 
 @pytest.mark.asyncio
-async def test_health_manifest_includes_explicit_driver_status():
+async def test_live_read_prompt_omits_cached_identity_state():
     class HealthMCP(FakeMCP):
         async def get_cached_devices(self):
             return [{
@@ -734,9 +794,10 @@ async def test_health_manifest_includes_explicit_driver_status():
 
     agent = UnifiedMCPAgent(HealthMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("find offline or stale devices")
-    assert "healthStatus=offline" in instruction
-    assert "rtt=timeout" in instruction
-    assert "Status=clear" in instruction
+    assert "Device manifest omitted or unavailable." in instruction
+    assert "'Remote' | ID: 9" not in instruction
+    assert "rtt=timeout" in instruction  # Health-check policy, not cached state.
+    assert not agent._evidence.get()
 
 
 @pytest.mark.asyncio
