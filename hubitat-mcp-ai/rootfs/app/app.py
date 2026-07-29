@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
@@ -91,11 +92,72 @@ agent = UnifiedMCPAgent(
 )
 
 
+class RequestCoordinator:
+    """Own in-flight agent tasks so supersede and disconnect cancel backend work."""
+
+    def __init__(self) -> None:
+        self._tasks: dict[str, asyncio.Task[Any]] = {}
+        self._lock = asyncio.Lock()
+
+    async def run(
+        self,
+        key: str,
+        operation: Awaitable[Any],
+        *,
+        connection: Request | None = None,
+    ) -> Any:
+        task = asyncio.create_task(operation, name=f"homebrain-request:{key}")
+        async with self._lock:
+            previous = self._tasks.get(key)
+            self._tasks[key] = task
+
+        if previous is not None and previous is not task and not previous.done():
+            previous.cancel("superseded by a newer request")
+            with suppress(asyncio.CancelledError):
+                await previous
+
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=0.1)
+                if task in done:
+                    return task.result()
+                if connection is not None and await connection.is_disconnected():
+                    task.cancel("client disconnected")
+                    with suppress(asyncio.CancelledError):
+                        await task
+                    raise HTTPException(status_code=499, detail="Client disconnected")
+        except asyncio.CancelledError:
+            if not task.done():
+                task.cancel("request handler cancelled")
+                with suppress(asyncio.CancelledError):
+                    await task
+            raise
+        finally:
+            async with self._lock:
+                if self._tasks.get(key) is task:
+                    self._tasks.pop(key, None)
+
+    async def close(self) -> None:
+        async with self._lock:
+            tasks = list(self._tasks.values())
+            self._tasks.clear()
+        for task in tasks:
+            if not task.done():
+                task.cancel("application shutdown")
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
+
+
+request_coordinator = RequestCoordinator()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        await request_coordinator.close()
         await agent.close()
         await mcp.close()
 
@@ -117,6 +179,7 @@ class ChatRequest(BaseModel):
     query: str | None = Field(default=None, max_length=2000)
     history: list[HistoryItem] = Field(default_factory=list)
     session_id: str = Field(default="default", min_length=1, max_length=160)
+    request_id: str | None = Field(default=None, min_length=1, max_length=160)
 
     @model_validator(mode="after")
     def require_message(self) -> "ChatRequest":
@@ -129,25 +192,35 @@ class ChatRequest(BaseModel):
     def message(self) -> str:
         return (self.prompt or self.query or "").strip()
 
+    @property
+    def coordination_key(self) -> str:
+        return self.session_id
 
-async def _answer_result(request: ChatRequest) -> Any:
+
+async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
     if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
         raise HTTPException(status_code=503, detail="Ollama Online is disabled")
     try:
-        return await agent.process_user_request_result(
-            request.message,
-            request.history,
-            session_id=request.session_id,
+        return await request_coordinator.run(
+            request.coordination_key,
+            agent.process_user_request_result(
+                request.message,
+                request.history,
+                session_id=request.session_id,
+            ),
+            connection=connection,
         )
     except HTTPException:
+        raise
+    except asyncio.CancelledError:
         raise
     except Exception as exc:
         logger.exception("Unified MCP request failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-async def _answer(request: ChatRequest) -> str:
-    return (await _answer_result(request)).message
+async def _answer(request: ChatRequest, connection: Request | None = None) -> str:
+    return (await _answer_result(request, connection)).message
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -259,14 +332,14 @@ async def refresh() -> dict[str, Any]:
 
 
 @app.post("/api/chat")
-async def chat(request: ChatRequest) -> dict[str, Any]:
-    return {"response": await _answer(request)}
+async def chat(request: ChatRequest, connection: Request) -> dict[str, Any]:
+    return {"response": await _answer(request, connection)}
 
 
 @app.post("/api/ask")
-async def ask(request: ChatRequest) -> dict[str, Any]:
+async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
     started = time.perf_counter()
-    outcome = await _answer_result(request)
+    outcome = await _answer_result(request, connection)
     return {
         "success": True,
         "route": "unified-mcp-agent",
