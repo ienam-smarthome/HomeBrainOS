@@ -257,7 +257,7 @@ async def test_successful_tool_call_returns_sanitized_evidence_receipt():
     ])
     agent = UnifiedMCPAgent(ReadMCP(), "key", "model", ai_client=ai)
 
-    outcome = await agent.process_user_request_result("Check hub status")
+    outcome = await agent.process_user_request_result("Get location details")
 
     assert outcome.message == "The hub is healthy."
     assert outcome.evidence[0]["tool"] == "hub_get_info"
@@ -968,6 +968,128 @@ async def test_room_control_falls_back_to_enriched_identity_manifest(room):
     assert [call[1]["args"]["deviceId"] for call in command_calls] == [
         "7044", "7045"
     ]
+
+
+@pytest.mark.asyncio
+async def test_hub_info_snapshot_refreshes_firmware_before_reporting():
+    class HubInfoMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [{
+                "id": "1089",
+                "label": "Hub Info (C8 Pro)",
+                "capabilities": ["Actuator", "Refresh", "Sensor"],
+            }]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_manage_devices":
+                return MCPToolResult(
+                    name, arguments, {}, "ok", {"success": True}
+                )
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [{
+                        "id": "1089",
+                        "label": "Hub Info (C8 Pro)",
+                        "attributes": {
+                            "firmwareVersionString": "2.5.1.136",
+                            "hubUpdateStatus": "Update Available",
+                            "hubUpdateVersion": "2.5.1.139",
+                            "cpu5Min": 0.77,
+                            "cpuPct": 19.25,
+                            "freeMemory": 948.12,
+                        },
+                    }]
+                },
+            )
+
+    mcp = HubInfoMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+
+    result = await agent._hub_info_snapshot({"scope": "firmware"})
+
+    assert result.data["success"] is True
+    assert result.data["installed_firmware"] == "2.5.1.136"
+    assert result.data["available_firmware"] == "2.5.1.139"
+    assert result.data["update_available"] is True
+    assert mcp.calls[0] == (
+        "hub_manage_devices",
+        {
+            "tool": "hub_call_device_command",
+            "args": {"deviceId": "1089", "command": "updateCheck"},
+        },
+    )
+    assert mcp.calls[1][0] == "hub_read_devices"
+
+
+@pytest.mark.asyncio
+async def test_hub_info_request_uses_authoritative_snapshot_not_generic_info():
+    class HubInfoToolsMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_get_info", "generic info", {}),
+                MCPTool("hub_read_diagnostics", "diagnostics", {}),
+            ]
+
+        async def get_cached_devices(self):
+            return [{"id": "1089", "label": "Hub Info (C8 Pro)"}]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_manage_devices":
+                return MCPToolResult(
+                    name, arguments, {}, "ok", {"success": True}
+                )
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [{
+                        "id": "1089",
+                        "label": "Hub Info (C8 Pro)",
+                        "attributes": {
+                            "firmwareVersionString": "2.5.1.136",
+                            "hubUpdateStatus": "Current",
+                            "hubUpdateVersion": "2.5.1.136",
+                        },
+                    }]
+                },
+            )
+
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_hub_info_snapshot",
+                    "arguments": {"scope": "firmware"},
+                }
+            }],
+        }
+    }])
+    agent = UnifiedMCPAgent(
+        HubInfoToolsMCP(), "key", "model", ai_client=ai
+    )
+
+    outcome = await agent.process_user_request_result("firmware update?")
+
+    declared = [
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    ]
+    assert "homebrain_hub_info_snapshot" in declared
+    assert "hub_get_info" not in declared
+    assert outcome.message == "Hub firmware 2.5.1.136 is up to date."
+    assert outcome.evidence[-1]["evidence_kind"] == (
+        "authoritative_hub_info_snapshot"
+    )
 
 
 @pytest.mark.asyncio

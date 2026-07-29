@@ -54,6 +54,23 @@ def test_unknown_tools_remain_model_synthesized():
     assert present_tool_result("hub_read_diagnostics", {"logs": []}) is None
 
 
+def test_hub_info_firmware_snapshot_reports_available_update():
+    message = present_tool_result(
+        "homebrain_hub_info_snapshot",
+        {
+            "success": True,
+            "scope": "firmware",
+            "installed_firmware": "2.5.1.136",
+            "available_firmware": "2.5.1.139",
+            "update_available": True,
+        },
+    )
+
+    assert message == (
+        "Hub firmware 2.5.1.136 is installed and 2.5.1.139 is available."
+    )
+
+
 def test_control_presenter_distinguishes_unverified_from_unsent():
     message = present_tool_result(
         "homebrain_control_devices",
