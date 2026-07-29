@@ -432,6 +432,36 @@ class UnifiedMCPAgent:
         return dict(attributes) if isinstance(attributes, dict) else {}
 
     @staticmethod
+    def _device_attribute_units(device: dict[str, Any]) -> dict[str, str]:
+        attributes = (
+            device.get("attributes")
+            or device.get("currentStates")
+            or device.get("states")
+            or {}
+        )
+        if not isinstance(attributes, list):
+            return {}
+        return {
+            str(item.get("name")): str(item.get("unit")).strip()
+            for item in attributes
+            if isinstance(item, dict)
+            and item.get("name")
+            and item.get("unit") not in {None, ""}
+        }
+
+    @staticmethod
+    def _inferred_memory_unit(value: Any) -> str | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number >= 100_000:
+            return "KB"
+        if number >= 16:
+            return "MB"
+        return "GB"
+
+    @staticmethod
     def _hub_info_device(
         devices: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
@@ -672,6 +702,7 @@ class UnifiedMCPAgent:
             **live_device,
             **self._device_attributes(live_device),
         }
+        attribute_units = self._device_attribute_units(live_device)
 
         def value(*names: str) -> Any:
             return next(
@@ -695,6 +726,8 @@ class UnifiedMCPAgent:
                 and str(installed) != str(available)
             )
         )
+        free_memory = value("freeMemory")
+        temperature = value("temperatureC", "temperature", "temperatureF")
         data = {
             "success": True,
             "source": label,
@@ -709,14 +742,24 @@ class UnifiedMCPAgent:
             "cpu_percent": value("cpuPct"),
             "cpu_15_min": value("cpu15Min"),
             "cpu_15_percent": value("cpu15Pct"),
-            "free_memory": value("freeMemory"),
+            "free_memory": free_memory,
+            "free_memory_unit": (
+                attribute_units.get("freeMemory")
+                or self._inferred_memory_unit(free_memory)
+            ),
             "free_memory_15_min": value("freeMem15"),
             "jvm_free": value("jvmFree"),
             "jvm_size": value("jvmSize"),
             "java_direct": value("javaDirect"),
-            "temperature": value("temperature", "temperatureC"),
+            "temperature": temperature,
+            "temperature_unit": (
+                attribute_units.get("temperatureC")
+                or attribute_units.get("temperature")
+                or ("°C" if temperature is not None else None)
+            ),
             "uptime": value("formattedUptime", "uptime"),
             "database_size": value("dbSize"),
+            "database_size_unit": attribute_units.get("dbSize") or "MB",
             "ip_address": value("localIP", "ipAddress"),
             "zigbee_healthy": value("zbHealthy"),
             "zwave_healthy": value("zwHealthy"),

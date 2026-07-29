@@ -99,6 +99,34 @@ def test_hub_info_firmware_snapshot_reports_available_update():
     )
 
 
+def test_hub_info_resources_include_driver_units():
+    message = present_tool_result(
+        "homebrain_hub_info_snapshot",
+        {
+            "success": True,
+            "scope": "resources",
+            "cpu_5_min": 0.81,
+            "cpu_percent": 20.25,
+            "free_memory": 1.02,
+            "free_memory_unit": "GB",
+            "temperature": "53.5 °C",
+            "temperature_unit": "°C",
+            "uptime": "0d:0h:49m:47s",
+            "database_size": 243,
+            "database_size_unit": "MB",
+        },
+    )
+
+    assert message == (
+        "Hub resources:\n\n"
+        "- **CPU load (5 min):** 0.81 / 20.25%\n"
+        "- **Free memory:** 1.02 GB\n"
+        "- **Temperature:** 53.5 °C\n"
+        "- **Uptime:** 0d:0h:49m:47s\n"
+        "- **Database size:** 243 MB"
+    )
+
+
 def test_control_presenter_distinguishes_unverified_from_unsent():
     message = present_tool_result(
         "homebrain_control_devices",
