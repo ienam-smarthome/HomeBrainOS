@@ -685,10 +685,77 @@ class UnifiedMCPAgent:
                 is_error=True,
             )
 
-        devices = [
-            item for item in await self.mcp.get_cached_devices()
-            if isinstance(item, dict)
-        ]
+        lookup_arguments = (
+            [{"tool": "hub_list_devices", "args": {}}]
+            if room
+            else [
+                {
+                    "tool": "hub_list_devices",
+                    "args": {"labelFilter": str(requested)},
+                }
+                for requested in names
+            ]
+        )
+
+        async def lookup(
+            source_arguments: dict[str, Any]
+        ) -> tuple[MCPToolResult, int]:
+            started = time.monotonic()
+            source = await self.mcp.call_tool(
+                "hub_read_devices", source_arguments
+            )
+            return source, round((time.monotonic() - started) * 1000)
+
+        sources = await asyncio.gather(
+            *(lookup(source_arguments) for source_arguments in lookup_arguments)
+        )
+        devices: list[dict[str, Any]] = []
+        lookup_errors: list[str] = []
+        seen_source_ids: set[str] = set()
+        for source_arguments, (source, elapsed_ms) in zip(
+            lookup_arguments, sources, strict=True
+        ):
+            source_devices = [
+                item
+                for item in (
+                    HubitatMCPClient._find_device_list(source.data) or []
+                )
+                if isinstance(item, dict)
+            ]
+            succeeded = self._tool_succeeded(source)
+            self._record_evidence(
+                "hub_read_devices",
+                source_arguments,
+                success=succeeded,
+                elapsed_ms=elapsed_ms,
+                summary=f"{len(source_devices)} target candidates",
+                supports_live_claim=False,
+                evidence_kind="control_target_resolution",
+            )
+            if not succeeded:
+                lookup_errors.append(
+                    source.text or "Hubitat target lookup failed."
+                )
+                continue
+            for device in source_devices:
+                source_id = str(
+                    device.get("id") or device.get("deviceId") or id(device)
+                )
+                if source_id not in seen_source_ids:
+                    seen_source_ids.add(source_id)
+                    devices.append(device)
+        if lookup_errors:
+            data = {
+                "success": False,
+                "error": " ".join(lookup_errors),
+                "matched": [],
+                "executed": 0,
+            }
+            return MCPToolResult(
+                _LOCAL_CONTROL_TOOL, arguments, {}, json.dumps(data), data,
+                is_error=True,
+            )
+
         candidates = [
             device for device in devices
             if (
@@ -762,15 +829,17 @@ class UnifiedMCPAgent:
                 "args": {"deviceId": device_id, "command": command},
             }
             started = time.monotonic()
+            command_success = False
+            verified: bool | None = None
+            verification_message = ""
             try:
                 async with semaphore:
                     result = await self.mcp.call_tool(
                         "hub_manage_devices", call_arguments
                     )
-                success = self._tool_succeeded(result)
+                command_success = self._tool_succeeded(result)
                 message = result.text
             except Exception as exc:
-                success = False
                 message = f"{type(exc).__name__}: {exc}"
                 logger.exception(
                     "High-level device command failed for %s", label
@@ -778,18 +847,62 @@ class UnifiedMCPAgent:
             self._record_evidence(
                 "hub_manage_devices",
                 call_arguments,
-                success=success,
+                success=command_success,
                 elapsed_ms=round((time.monotonic() - started) * 1000),
-                summary=f"{command} {label}: {'success' if success else 'failed'}",
+                summary=(
+                    f"{command} {label}: "
+                    f"{'success' if command_success else 'failed'}"
+                ),
                 supports_live_claim=True,
                 evidence_kind="device_command_result",
             )
+            if command_success and command in {"on", "off"}:
+                verify_arguments = {
+                    "tool": "hub_get_device_attribute",
+                    "args": {
+                        "deviceId": device_id,
+                        "attribute": "switch",
+                        "expectedValue": command,
+                    },
+                }
+                verify_started = time.monotonic()
+                try:
+                    async with semaphore:
+                        verification = await self.mcp.call_tool(
+                            "hub_manage_devices", verify_arguments
+                        )
+                    verified = self._tool_succeeded(verification)
+                    verification_message = verification.text
+                except Exception as exc:
+                    verified = False
+                    verification_message = f"{type(exc).__name__}: {exc}"
+                    logger.exception(
+                        "High-level device verification failed for %s", label
+                    )
+                self._record_evidence(
+                    "hub_manage_devices",
+                    verify_arguments,
+                    success=bool(verified),
+                    elapsed_ms=round(
+                        (time.monotonic() - verify_started) * 1000
+                    ),
+                    summary=(
+                        f"verify {label} switch={command}: "
+                        f"{'success' if verified else 'failed'}"
+                    ),
+                    supports_live_claim=True,
+                    evidence_kind="device_state_verification",
+                )
+            success = command_success and verified is not False
             return {
                 "id": device_id,
                 "label": label,
                 "room": room_name(target),
                 "success": success,
+                "command_sent": command_success,
+                "verified": verified,
                 "message": message,
+                "verification_message": verification_message,
             }
 
         results = await asyncio.gather(*(execute(target) for target in unique_targets))
@@ -819,9 +932,16 @@ class UnifiedMCPAgent:
     def _include_identity_manifest(self, prompt: str) -> bool:
         """Keep live-read facts behind tools instead of prompt-injected state."""
 
+        tokens = set(re.findall(r"[a-z0-9]+", prompt.casefold()))
+        routine_control = (
+            self._requests_mutation(prompt)
+            and bool(tokens & {"on", "off", "toggle"})
+            and not bool(tokens & {"garage", "lock", "security", "unlock"})
+        )
         return (
             self._needs_device_manifest(prompt)
             and self._request_class.get() == "write"
+            and not routine_control
         )
 
     @classmethod
@@ -902,6 +1022,14 @@ class UnifiedMCPAgent:
                     "hub_manage_radio", "hub_manage_destructive_ops",
                     "hub_update_firmware",
                 })
+        elif (
+            cls._requests_mutation(prompt)
+            and not cls._matches(prompt, _SENSITIVE_TERMS)
+        ):
+            # Generic device writes (for example "turn on the TV") should not
+            # enter tool discovery merely because the noun is absent from a
+            # hand-maintained device vocabulary.
+            names = {_LOCAL_CONTROL_TOOL}
         else:
             names = {"hub_get_info", "hub_search_tools"}
         selected = [tool for tool in tools if tool.name in names]
@@ -1122,16 +1250,14 @@ class UnifiedMCPAgent:
                 "scan the device manifest or call a generic device read instead."
             )
         control_section = ""
-        if (
-            self._needs_device_manifest(user_prompt)
-            and self._requests_mutation(user_prompt)
-        ):
+        if self._requests_mutation(user_prompt):
             control_section = (
                 "\n\nROUTINE DEVICE CONTROL\nFor light/switch on, off, toggle, "
                 "call homebrain_control_devices once. For a room request pass the "
                 "exact room, device_kind, and command; for named devices pass exact "
                 "device_names, device_kind, and command. It resolves all targets and "
-                "executes them concurrently. For setLevel, setColor, or "
+                "executes and verifies them concurrently. Do not call hub_search_tools "
+                "or hub_read_devices before this high-level tool. For setLevel, setColor, or "
                 "setColorTemperature, use hub_manage_devices with exact device IDs. "
                 "Routine light/switch commands do not require confirmation. Locks, garage "
                 "doors, destructive device operations, and security controls remain "
@@ -1499,7 +1625,10 @@ class UnifiedMCPAgent:
             ] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
-            if all(tool.name != _LOCAL_FILTER_TOOL for tool in declared):
+            if (
+                self._request_class.get() == "live-read"
+                and all(tool.name != _LOCAL_FILTER_TOOL for tool in declared)
+            ):
                 declared.append(local_filter)
             if (
                 self._matches(user_prompt, {"light", "lights", "lamp", "lamps"})
@@ -1519,8 +1648,7 @@ class UnifiedMCPAgent:
             ):
                 declared.append(local_active_switches)
             if (
-                self._needs_device_manifest(user_prompt)
-                and self._requests_mutation(user_prompt)
+                self._requests_mutation(user_prompt)
                 and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)
             ):
                 declared.append(local_control)

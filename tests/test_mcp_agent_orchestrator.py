@@ -163,11 +163,11 @@ async def test_post_only_test_client_keeps_non_streaming_compatibility():
 
 
 @pytest.mark.asyncio
-async def test_write_prompt_contains_live_device_identity():
+async def test_non_routine_write_prompt_contains_live_device_identity():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     request_token = agent._request_class.set("write")
     try:
-        instruction = await agent._system_prompt("Turn on the couch lamp")
+        instruction = await agent._system_prompt("Set the couch lamp level to 50")
     finally:
         agent._request_class.reset(request_token)
     assert "'Couch Lamp' | ID: 42 | Room: Lounge" in instruction
@@ -595,33 +595,39 @@ def test_general_device_attribute_comparisons_are_not_battery_specific():
 @pytest.mark.asyncio
 async def test_high_level_room_control_executes_concurrently_and_skips_synthesis():
     class ControlMCP(FakeMCP):
+        devices = [
+            {
+                "id": "1",
+                "label": "Hallway Light 1",
+                "roomName": "Hallway",
+                "capabilities": ["Switch", "Light"],
+            },
+            {
+                "id": "2",
+                "label": "Hallway Light 2",
+                "roomName": "Hallway",
+                "capabilities": ["Switch", "Light"],
+            },
+            {
+                "id": "3",
+                "label": "Hallway socket",
+                "roomName": "Hallway",
+                "capabilities": ["Switch"],
+            },
+        ]
+
         async def list_tools(self):
             return [MCPTool("hub_manage_devices", "manage devices", {})]
 
         async def get_cached_devices(self):
-            return [
-                {
-                    "id": "1",
-                    "label": "Hallway Light 1",
-                    "roomName": "Hallway",
-                    "capabilities": ["Switch", "Light"],
-                },
-                {
-                    "id": "2",
-                    "label": "Hallway Light 2",
-                    "roomName": "Hallway",
-                    "capabilities": ["Switch", "Light"],
-                },
-                {
-                    "id": "3",
-                    "label": "Hallway socket",
-                    "roomName": "Hallway",
-                    "capabilities": ["Switch"],
-                },
-            ]
+            return self.devices
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                return MCPToolResult(
+                    name, arguments, {}, "", {"devices": self.devices}
+                )
             return MCPToolResult(
                 name, arguments, {}, "ok", {"success": True}
             )
@@ -648,28 +654,35 @@ async def test_high_level_room_control_executes_concurrently_and_skips_synthesis
 
     assert outcome.message == "Turned off Hallway Light 1 and Hallway Light 2."
     assert len(ai.requests) == 1
-    assert mcp.calls == [
-        (
-            "hub_manage_devices",
-            {
-                "tool": "hub_call_device_command",
-                "args": {"deviceId": "1", "command": "off"},
-            },
-        ),
-        (
-            "hub_manage_devices",
-            {
-                "tool": "hub_call_device_command",
-                "args": {"deviceId": "2", "command": "off"},
-            },
-        ),
+    assert mcp.calls[0] == (
+        "hub_read_devices",
+        {"tool": "hub_list_devices", "args": {}},
+    )
+    management_arguments = [
+        arguments for name, arguments in mcp.calls
+        if name == "hub_manage_devices"
     ]
-    assert [receipt["evidence_kind"] for receipt in outcome.evidence] == [
-        "identity_manifest",
-        "device_command_result",
-        "device_command_result",
-        "deterministic_device_control",
+    assert len(management_arguments) == 4
+    for device_id in ("1", "2"):
+        assert {
+            "tool": "hub_call_device_command",
+            "args": {"deviceId": device_id, "command": "off"},
+        } in management_arguments
+        assert {
+            "tool": "hub_get_device_attribute",
+            "args": {
+                "deviceId": device_id,
+                "attribute": "switch",
+                "expectedValue": "off",
+            },
+        } in management_arguments
+    evidence_kinds = [
+        receipt["evidence_kind"] for receipt in outcome.evidence
     ]
+    assert evidence_kinds[0] == "control_target_resolution"
+    assert evidence_kinds[-1] == "deterministic_device_control"
+    assert evidence_kinds.count("device_command_result") == 2
+    assert evidence_kinds.count("device_state_verification") == 2
     declared = [
         item["function"]["name"]
         for item in ai.requests[0][1]["json"]["tools"]
@@ -700,7 +713,95 @@ async def test_high_level_control_fails_closed_when_device_name_is_unmatched():
     assert result.is_error
     assert result.data["success"] is False
     assert result.data["executed"] == 0
-    assert mcp.calls == []
+    assert mcp.calls == [
+        (
+            "hub_read_devices",
+            {
+                "tool": "hub_list_devices",
+                "args": {"labelFilter": "Unknown Light"},
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_generic_tv_write_uses_only_high_level_control_and_verifies():
+    class TVMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_read_devices", "read devices", {}),
+                MCPTool("hub_manage_devices", "manage devices", {}),
+                MCPTool("hub_search_tools", "search tools", {}),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {
+                        "devices": [{
+                            "id": "4221",
+                            "label": "TV",
+                            "roomName": "Multimedia",
+                            "capabilities": ["Switch", "PowerMeter"],
+                        }]
+                    },
+                )
+            return MCPToolResult(
+                name, arguments, {}, "ok", {"success": True}
+            )
+
+    mcp = TVMCP()
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_control_devices",
+                    "arguments": {
+                        "device_names": ["TV"],
+                        "device_kind": "switch",
+                        "command": "on",
+                    },
+                }
+            }],
+        }
+    }])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("turn on the tv")
+
+    assert outcome.message == "Turned on TV."
+    assert len(ai.requests) == 1
+    declared = [
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    ]
+    assert declared == ["homebrain_control_devices"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_read_devices",
+        "hub_manage_devices",
+        "hub_manage_devices",
+    ]
+    assert mcp.calls[0][1]["args"] == {"labelFilter": "TV"}
+    assert mcp.calls[-1][1] == {
+        "tool": "hub_get_device_attribute",
+        "args": {
+            "deviceId": "4221",
+            "attribute": "switch",
+            "expectedValue": "on",
+        },
+    }
+    assert [receipt["evidence_kind"] for receipt in outcome.evidence] == [
+        "control_target_resolution",
+        "device_command_result",
+        "device_state_verification",
+        "deterministic_device_control",
+    ]
 
 
 @pytest.mark.asyncio

@@ -52,3 +52,29 @@ def test_failed_local_read_returns_tool_error_without_model_rewrite():
 
 def test_unknown_tools_remain_model_synthesized():
     assert present_tool_result("hub_read_diagnostics", {"logs": []}) is None
+
+
+def test_control_presenter_distinguishes_unverified_from_unsent():
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": False,
+            "failed": [
+                {
+                    "label": "TV",
+                    "command_sent": True,
+                    "verified": False,
+                },
+                {
+                    "label": "Socket",
+                    "command_sent": False,
+                    "verified": None,
+                },
+            ],
+        },
+        failed=True,
+    )
+
+    assert message == (
+        "Command sent but state verification failed: TV. Failed: Socket."
+    )
