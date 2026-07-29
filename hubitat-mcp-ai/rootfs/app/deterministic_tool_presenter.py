@@ -200,19 +200,35 @@ def _present_hub_info(data: dict[str, Any]) -> str:
             parts.append("The installed hub firmware version was not reported.")
     if scope in {"resources", "full"}:
         resources = []
-        for label, key in (
-            ("CPU load", "cpu_5_min"),
-            ("CPU", "cpu_percent"),
-            ("free memory", "free_memory"),
-            ("temperature", "temperature"),
-            ("uptime", "uptime"),
-            ("database size", "database_size"),
-        ):
-            value = data.get(key)
-            if value not in {None, ""}:
-                resources.append(f"{label}: {value}")
+        cpu_load = data.get("cpu_5_min")
+        cpu_percent = data.get("cpu_percent")
+        if cpu_load not in {None, ""}:
+            cpu = f"{cpu_load}"
+            if cpu_percent not in {None, ""}:
+                cpu += f" / {cpu_percent}%"
+            resources.append(f"**CPU load (5 min):** {cpu}")
+        free_memory = data.get("free_memory")
+        if free_memory not in {None, ""}:
+            unit = str(data.get("free_memory_unit") or "").strip()
+            resources.append(
+                f"**Free memory:** {free_memory}{f' {unit}' if unit else ''}"
+            )
+        temperature = data.get("temperature")
+        if temperature not in {None, ""}:
+            rendered = str(temperature).strip()
+            unit = str(data.get("temperature_unit") or "").strip()
+            if unit and unit.casefold() not in rendered.casefold():
+                rendered += f" {unit}"
+            resources.append(f"**Temperature:** {rendered}")
+        uptime = data.get("uptime")
+        if uptime not in {None, ""}:
+            resources.append(f"**Uptime:** {uptime}")
+        database_size = data.get("database_size")
+        if database_size not in {None, ""}:
+            unit = str(data.get("database_size_unit") or "MB").strip()
+            resources.append(f"**Database size:** {database_size} {unit}")
         if resources:
-            parts.append("Hub resources — " + "; ".join(resources) + ".")
+            parts.append("Hub resources:\n\n- " + "\n- ".join(resources))
     return " ".join(parts) or "The Hub Info device returned no usable attributes."
 
 
