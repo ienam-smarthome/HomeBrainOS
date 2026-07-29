@@ -450,6 +450,35 @@ class UnifiedMCPAgent:
                 matches.append(device)
         return matches[0] if len(matches) == 1 else None
 
+    @classmethod
+    def _merge_device_identity(
+        cls,
+        live_devices: list[dict[str, Any]],
+        identity_devices: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Add cached identity metadata to authoritative live state records."""
+
+        identities = {
+            str(device.get("id") or device.get("deviceId")): device
+            for device in identity_devices
+            if isinstance(device, dict)
+            and (device.get("id") is not None or device.get("deviceId") is not None)
+        }
+        merged: list[dict[str, Any]] = []
+        for live in live_devices:
+            device_id = str(live.get("id") or live.get("deviceId") or "")
+            identity = identities.get(device_id, {})
+            identity_attributes = cls._device_attributes(identity)
+            live_attributes = cls._device_attributes(live)
+            device = {**identity, **live}
+            if identity_attributes or live_attributes:
+                device["attributes"] = {
+                    **identity_attributes,
+                    **live_attributes,
+                }
+            merged.append(device)
+        return merged
+
     async def _hub_info_snapshot(
         self, arguments: dict[str, Any]
     ) -> MCPToolResult:
@@ -557,8 +586,8 @@ class UnifiedMCPAgent:
             source = await self.mcp.call_tool(
                 "hub_read_devices",
                 {
-                    "tool": "hub_list_devices",
-                    "args": {"labelFilter": label},
+                    "tool": "hub_get_device",
+                    "args": {"deviceId": device_id},
                 },
             )
             candidates = [
@@ -568,8 +597,17 @@ class UnifiedMCPAgent:
                 )
                 if isinstance(item, dict)
             ]
+            if not candidates and isinstance(source.data, dict):
+                candidate = source.data.get("device")
+                if isinstance(candidate, dict):
+                    candidates = [candidate]
             live_device = self._hub_info_device(candidates)
+            if live_device is None and len(candidates) == 1:
+                live_device = candidates[0]
             if live_device is not None:
+                live_device = self._merge_device_identity(
+                    [live_device], [hub_device]
+                )[0]
                 attributes = self._device_attributes(live_device)
                 refreshed_firmware = (
                     attributes.get("hubUpdateStatus"),
@@ -795,6 +833,12 @@ class UnifiedMCPAgent:
             for item in (HubitatMCPClient._find_device_list(source.data) or [])
             if isinstance(item, dict)
         ]
+        try:
+            identities = list(await self.mcp.get_cached_devices() or [])
+        except Exception as exc:
+            logger.warning("Could not enrich live light states with identity: %s", exc)
+            identities = []
+        devices = self._merge_device_identity(devices, identities)
         self._record_evidence(
             "hub_read_devices",
             source_arguments,
@@ -833,6 +877,12 @@ class UnifiedMCPAgent:
             for item in (HubitatMCPClient._find_device_list(source.data) or [])
             if isinstance(item, dict)
         ]
+        try:
+            identities = list(await self.mcp.get_cached_devices() or [])
+        except Exception as exc:
+            logger.warning("Could not enrich live room states with identity: %s", exc)
+            identities = []
+        devices = self._merge_device_identity(devices, identities)
         self._record_evidence(
             "hub_read_devices",
             source_arguments,
@@ -871,6 +921,12 @@ class UnifiedMCPAgent:
             for item in (HubitatMCPClient._find_device_list(source.data) or [])
             if isinstance(item, dict)
         ]
+        try:
+            identities = list(await self.mcp.get_cached_devices() or [])
+        except Exception as exc:
+            logger.warning("Could not enrich live switch states with identity: %s", exc)
+            identities = []
+        devices = self._merge_device_identity(devices, identities)
         self._record_evidence(
             "hub_read_devices",
             source_arguments,
