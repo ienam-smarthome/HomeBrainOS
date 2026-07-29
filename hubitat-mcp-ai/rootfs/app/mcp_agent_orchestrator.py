@@ -52,6 +52,7 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
+_LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 
 
 @dataclass(slots=True)
@@ -241,6 +242,183 @@ class UnifiedMCPAgent:
             for receipt in (self._evidence.get() or [])
         )
 
+    @staticmethod
+    def _device_filter_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_FILTER_TOOL,
+            (
+                "Fetch all live Hubitat devices and return only devices whose "
+                "attribute satisfies a comparison. Use this for exhaustive lists, "
+                "thresholds, counts, or comparisons instead of scanning the device "
+                "manifest yourself."
+            ),
+            {
+                "type": "object",
+                "properties": {
+                    "attribute": {
+                        "type": "string",
+                        "description": "Hubitat attribute name, for example battery, temperature, humidity, power, switch, or motion.",
+                    },
+                    "operator": {
+                        "type": "string",
+                        "enum": [
+                            "eq", "ne", "lt", "lte", "gt", "gte",
+                            "contains", "exists", "not_exists",
+                        ],
+                    },
+                    "value": {
+                        "description": "Comparison value; omit only for exists/not_exists.",
+                    },
+                },
+                "required": ["attribute", "operator"],
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
+    def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
+        attributes = (
+            device.get("attributes")
+            or device.get("currentStates")
+            or device.get("states")
+            or {}
+        )
+        if isinstance(attributes, list):
+            return {
+                str(item.get("name")): item.get(
+                    "currentValue", item.get("value")
+                )
+                for item in attributes
+                if isinstance(item, dict) and item.get("name")
+            }
+        return dict(attributes) if isinstance(attributes, dict) else {}
+
+    @staticmethod
+    def _normalized_attribute(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", value.lower())
+
+    @classmethod
+    def _attribute_matches(
+        cls, actual: Any, operator: str, expected: Any
+    ) -> bool:
+        if operator == "exists":
+            return actual is not None
+        if operator == "not_exists":
+            return actual is None
+        if actual is None:
+            return False
+        if operator in {"lt", "lte", "gt", "gte"}:
+            left, right = float(actual), float(expected)
+            return {
+                "lt": left < right,
+                "lte": left <= right,
+                "gt": left > right,
+                "gte": left >= right,
+            }[operator]
+        if operator == "contains":
+            return str(expected).casefold() in str(actual).casefold()
+        try:
+            left_value: Any = float(actual)
+            right_value: Any = float(expected)
+        except (TypeError, ValueError):
+            left_value = str(actual).casefold()
+            right_value = str(expected).casefold()
+        return left_value == right_value if operator == "eq" else left_value != right_value
+
+    async def _filter_devices(
+        self, arguments: dict[str, Any]
+    ) -> MCPToolResult:
+        attribute = str(arguments.get("attribute") or "").strip()
+        operator = str(arguments.get("operator") or "").strip().lower()
+        expected = arguments.get("value")
+        valid = {
+            "eq", "ne", "lt", "lte", "gt", "gte",
+            "contains", "exists", "not_exists",
+        }
+        if not attribute or operator not in valid:
+            return MCPToolResult(
+                _LOCAL_FILTER_TOOL, arguments, {}, "Invalid filter arguments",
+                {"error": "attribute and a valid operator are required"},
+                is_error=True,
+            )
+        if operator not in {"exists", "not_exists"} and "value" not in arguments:
+            return MCPToolResult(
+                _LOCAL_FILTER_TOOL, arguments, {}, "Comparison value required",
+                {"error": "value is required for this operator"},
+                is_error=True,
+            )
+        source_arguments = {"tool": "hub_list_devices", "args": {}}
+        started = time.monotonic()
+        source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+        devices = [
+            item
+            for item in (
+                HubitatMCPClient._find_device_list(source.data) or []
+            )
+            if isinstance(item, dict)
+        ]
+        self._record_evidence(
+            "hub_read_devices",
+            source_arguments,
+            success=self._tool_succeeded(source),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(devices)} source device records",
+            evidence_kind="authoritative_state_snapshot",
+        )
+        if not self._tool_succeeded(source):
+            return MCPToolResult(
+                _LOCAL_FILTER_TOOL, arguments, {}, source.text,
+                {"error": source.text or "Live device read failed"},
+                is_error=True,
+            )
+        wanted = self._normalized_attribute(attribute)
+        matches: list[dict[str, Any]] = []
+        comparison_errors = 0
+        for device in devices:
+            attributes = self._device_attributes(device)
+            actual = next(
+                (
+                    value for key, value in attributes.items()
+                    if self._normalized_attribute(str(key)) == wanted
+                ),
+                None,
+            )
+            if actual is None:
+                actual = next(
+                    (
+                        value for key, value in device.items()
+                        if self._normalized_attribute(str(key)) == wanted
+                    ),
+                    None,
+                )
+            try:
+                matched = self._attribute_matches(actual, operator, expected)
+            except (TypeError, ValueError):
+                comparison_errors += 1
+                continue
+            if matched:
+                matches.append({
+                    "id": device.get("id") or device.get("deviceId"),
+                    "label": device.get("label") or device.get("name"),
+                    "room": device.get("room") or device.get("roomName"),
+                    "attribute": attribute,
+                    "value": actual,
+                })
+        data = {
+            "attribute": attribute,
+            "operator": operator,
+            "comparison_value": expected,
+            "matches": matches,
+            "count": len(matches),
+            "total_scanned": len(devices),
+            "comparison_errors": comparison_errors,
+            "complete": True,
+        }
+        return MCPToolResult(
+            _LOCAL_FILTER_TOOL, arguments, {}, json.dumps(data), data
+        )
+
     @classmethod
     def _needs_device_manifest(cls, prompt: str) -> bool:
         return cls._matches(prompt, _DEVICE_TERMS) or any(
@@ -362,52 +540,21 @@ class UnifiedMCPAgent:
     async def _system_prompt(self, user_prompt: str = "") -> str:
         rows: list[str] = []
         if self._needs_device_manifest(user_prompt):
-            devices: list[dict[str, Any]] = []
-            if not self._requests_mutation(user_prompt):
-                try:
-                    available = {tool.name for tool in await self.mcp.list_tools()}
-                    if "hub_read_devices" in available:
-                        arguments = {"tool": "hub_list_devices", "args": {}}
-                        started = time.monotonic()
-                        result = await self.mcp.call_tool(
-                            "hub_read_devices", arguments
-                        )
-                        candidates = (
-                            HubitatMCPClient._find_device_list(result.data) or []
-                        )
-                        devices = [
-                            item for item in candidates if isinstance(item, dict)
-                        ]
-                        self._record_evidence(
-                            "hub_read_devices",
-                            arguments,
-                            success=self._tool_succeeded(result) and bool(devices),
-                            elapsed_ms=round(
-                                (time.monotonic() - started) * 1000
-                            ),
-                            summary=f"{len(devices)} authoritative device records",
-                            evidence_kind="authoritative_state_snapshot",
-                        )
-                except Exception as exc:
-                    logger.warning(
-                        "Could not build authoritative device snapshot: %s", exc
-                    )
             try:
-                if not devices:
-                    started = time.monotonic()
-                    devices = await self.mcp.get_cached_devices()
-                    self._record_evidence(
-                        "hub_read_devices",
-                        {
-                            "tool": "hub_list_devices",
-                            "source": "short_ttl_cache",
-                        },
-                        success=True,
-                        elapsed_ms=round((time.monotonic() - started) * 1000),
-                        summary=f"{len(devices)} identity records",
-                        supports_live_claim=False,
-                        evidence_kind="identity_manifest",
-                    )
+                started = time.monotonic()
+                devices = await self.mcp.get_cached_devices()
+                self._record_evidence(
+                    "hub_read_devices",
+                    {
+                        "tool": "hub_list_devices",
+                        "source": "short_ttl_cache",
+                    },
+                    success=True,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=f"{len(devices)} identity records",
+                    supports_live_claim=False,
+                    evidence_kind="identity_manifest",
+                )
                 for device in devices:
                     label = device.get("label") or device.get("name") or "Unknown device"
                     device_id = device.get("id") or device.get("deviceId")
@@ -503,9 +650,7 @@ class UnifiedMCPAgent:
             battery_section = (
                 "\n\nLOW BATTERY RULE\nA battery is low only when its numeric level "
                 "is at or below 20 percent, matching the dashboard. Exclude every device "
-                "above 20 percent. Do not reinterpret 30 or 35 percent as low. Use the "
-                "complete authoritative device snapshot; never use a label filter for "
-                "an exhaustive low-battery answer."
+                "above 20 percent. Do not reinterpret 30 or 35 percent as low."
             )
         health_section = ""
         if self._matches(user_prompt, _DEVICE_HEALTH_TERMS):
@@ -568,10 +713,12 @@ class UnifiedMCPAgent:
                 "that explicitly rather than constructing a plausible summary."
             )
         return (
-            "You are HomeBrainOS, a concise smart-home assistant. The live device manifest "
-            "is a tool-fetched state snapshot and may be used directly for live state "
-            "answers; call Hubitat MCP when the needed state is absent. Use Hubitat MCP "
-            "for every action. Match informal names against the live "
+            "You are HomeBrainOS, a concise smart-home assistant. The device manifest "
+            "is for name and ID resolution only, not proof of current state. For "
+            "exhaustive lists, thresholds, counts, or comparisons over any device "
+            "attribute, call homebrain_filter_devices and report only its matches and "
+            "coverage. Do not scan the manifest yourself. Use Hubitat MCP for every "
+            "action. Match informal names against the "
             "manifest and use exact IDs whenever possible. Never invent devices, states, "
             "tool results, or successful actions. Ask one short clarification only when "
             "needed. Sensitive actions are confirmed by the host. This MCP server uses "
@@ -895,6 +1042,8 @@ class UnifiedMCPAgent:
     ) -> str:
         request_started = time.monotonic()
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
+        local_filter = self._device_filter_tool()
+        all_tools.append(local_filter)
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
@@ -904,6 +1053,8 @@ class UnifiedMCPAgent:
             ] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
+            if all(tool.name != _LOCAL_FILTER_TOOL for tool in declared):
+                declared.append(local_filter)
         by_name = {tool.name: tool for tool in declared}
         tools = [self._tool_schema(tool) for tool in declared]
         if pending:
@@ -1052,7 +1203,12 @@ class UnifiedMCPAgent:
                         content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
                     else:
                         mcp_started = time.monotonic()
-                        result = await self.mcp.call_tool(name, dict(arguments))
+                        if name == _LOCAL_FILTER_TOOL:
+                            result = await self._filter_devices(dict(arguments))
+                        else:
+                            result = await self.mcp.call_tool(
+                                name, dict(arguments)
+                            )
                         elapsed_ms = round((time.monotonic() - mcp_started) * 1000)
                         self._record_evidence(
                             name,
@@ -1061,6 +1217,11 @@ class UnifiedMCPAgent:
                             elapsed_ms=elapsed_ms,
                             summary=self._result_summary(result),
                             supports_live_claim=name != "hub_search_tools",
+                            evidence_kind=(
+                                "deterministic_attribute_filter"
+                                if name == _LOCAL_FILTER_TOOL
+                                else "tool_result"
+                            ),
                         )
                         if self._is_live_log_call(name, dict(arguments)):
                             logs_checked = self._tool_succeeded(result)
