@@ -186,14 +186,20 @@ def test_default_and_diagnostic_tool_sets_are_lean():
         MCPTool("hub_search_tools", "search", {"type": "object"}),
         MCPTool("hub_read_diagnostics", "diagnostics", {"type": "object"}),
         MCPTool("hub_read_devices", "devices", {"type": "object"}),
+        MCPTool("hub_update_firmware", "firmware", {"type": "object"}),
     ]
 
     default = UnifiedMCPAgent._select_tools("help me inspect the hub", tools)
     update = UnifiedMCPAgent._select_tools("software update available?", tools)
+    install = UnifiedMCPAgent._select_tools("install the firmware update", tools)
 
     assert [tool.name for tool in default] == ["hub_get_info", "hub_search_tools"]
     assert [tool.name for tool in update] == [
         "hub_get_info", "hub_search_tools", "hub_read_diagnostics",
+    ]
+    assert [tool.name for tool in install] == [
+        "hub_get_info", "hub_search_tools", "hub_read_diagnostics",
+        "hub_update_firmware",
     ]
 
 
@@ -202,6 +208,7 @@ def test_read_state_question_is_not_misclassified_as_mutation():
     assert not UnifiedMCPAgent._requests_mutation("Which doors are open?")
     assert UnifiedMCPAgent._requests_mutation("turn off hallway lights")
     assert UnifiedMCPAgent._requests_mutation("pause humidity app")
+    assert UnifiedMCPAgent._requests_mutation("install the firmware update")
 
 
 def test_general_request_classification():
