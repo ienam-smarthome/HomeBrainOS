@@ -1024,6 +1024,66 @@ async def test_hub_info_snapshot_refreshes_firmware_before_reporting():
         },
     )
     assert mcp.calls[1][0] == "hub_read_devices"
+    assert mcp.calls[1][1] == {
+        "tool": "hub_get_device",
+        "args": {"deviceId": "1089"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_active_lights_merges_cached_identity_with_compact_live_state():
+    class CompactActiveLightMCP(FakeMCP):
+        async def get_cached_devices(self):
+            return [
+                {
+                    "id": "1",
+                    "label": "Bedroom 2 Light",
+                    "roomName": "Bedroom 2",
+                    "capabilities": ["Switch", "Light"],
+                    "attributes": {"switch": "off"},
+                },
+                {
+                    "id": "2",
+                    "label": "Fridge",
+                    "roomName": "Appliances",
+                    "capabilities": ["Switch"],
+                    "attributes": {"switch": "off"},
+                },
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [
+                        {"id": "1", "attributes": {"switch": "on"}},
+                        {"id": "2", "attributes": {"switch": "on"}},
+                    ]
+                },
+            )
+
+    agent = UnifiedMCPAgent(
+        CompactActiveLightMCP(),
+        "key",
+        "model",
+        ai_client=FakeAI([]),
+    )
+
+    result = await agent._active_lights({})
+
+    assert result.data["count"] == 1
+    assert result.data["lights"] == [
+        {
+            "id": "1",
+            "label": "Bedroom 2 Light",
+            "room": "Bedroom 2",
+            "switch": "on",
+        }
+    ]
 
 
 @pytest.mark.asyncio
