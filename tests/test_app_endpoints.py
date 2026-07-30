@@ -90,7 +90,7 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "activeRequest.abort()" in response.text
     assert "sequence===requestSequence" in response.text
     assert "Ask another question to replace this request." in response.text
-    assert "Install firmware update" in response.text
+    assert "Update hub firmware" in response.text
     assert "suggestedAction==='firmware-update'" in response.text
     assert "JSON.stringify({query:text,history,session_id:sessionId})" in response.text
     assert "hmcp_history_" in response.text
