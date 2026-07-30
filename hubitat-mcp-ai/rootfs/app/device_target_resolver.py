@@ -146,6 +146,24 @@ def resolve_device_candidate(
             ),
         )
     semantic_wanted = _semantic_name(requested)
+    contextual_matches: list[tuple[str, dict[str, Any]]] = []
+    for _score_value, name, device in ranked:
+        room = str(device.get("roomName") or device.get("room") or "").strip()
+        if (
+            room
+            and semantic_wanted
+            and _semantic_name(f"{room} {name}") == semantic_wanted
+        ):
+            contextual_matches.append((name, device))
+    if len(contextual_matches) == 1:
+        contextual_name, contextual_device = contextual_matches[0]
+        return CandidateResolution(
+            contextual_device,
+            contextual_name,
+            0.99,
+            (contextual_name,),
+            "exact semantic room and device name",
+        )
     semantic_matches = [
         (name, device)
         for _score_value, name, device in ranked

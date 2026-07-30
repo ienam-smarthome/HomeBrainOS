@@ -77,6 +77,77 @@ async def test_query_devices_finds_highest_humidity():
 
 
 @pytest.mark.asyncio
+async def test_room_climate_query_excludes_hub_and_appliance_telemetry():
+    service = DeviceQueryService(
+        QueryMCP([
+            device("Hub Info (C8 Pro)", "Bridge", ["TemperatureMeasurement"], temperature=50.2),
+            device(
+                "Fridge Meter",
+                "Appliances",
+                ["TemperatureMeasurement", "RelativeHumidityMeasurement"],
+                temperature=2.0,
+                humidity=87,
+            ),
+            device(
+                "Bedroom Meter",
+                "Bedroom 1",
+                ["TemperatureMeasurement", "RelativeHumidityMeasurement"],
+                temperature=28.9,
+                humidity=43,
+            ),
+        ]),
+        lambda *args, **kwargs: None,
+    )
+
+    temperature = await service.query_devices({
+        "attribute": "temperature",
+        "operation": "maximum",
+        "group_by": "room",
+    })
+    humidity = await service.query_devices({
+        "attribute": "humidity",
+        "operation": "maximum",
+        "group_by": "room",
+    })
+
+    assert temperature.data["winner"]["label"] == "Bedroom Meter"
+    assert humidity.data["winner"]["label"] == "Bedroom Meter"
+
+
+@pytest.mark.asyncio
+async def test_weather_snapshot_selects_weather_device_and_all_attributes():
+    service = DeviceQueryService(
+        QueryMCP([
+            device(
+                "Livingroom Meter",
+                "Living Room",
+                ["TemperatureMeasurement"],
+                temperature=28.8,
+            ),
+            device(
+                "Weather Open-Meteo",
+                "Climate",
+                ["TemperatureMeasurement", "RelativeHumidityMeasurement"],
+                temperature=24.9,
+                humidity=50,
+                weather="partly cloudy",
+            ),
+        ]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.weather_snapshot({})
+
+    assert result.data["count"] == 1
+    assert result.data["primary"]["label"] == "Weather Open-Meteo"
+    assert result.data["primary"]["attributes"] == {
+        "temperature": 24.9,
+        "humidity": 50,
+        "weather": "partly cloudy",
+    }
+
+
+@pytest.mark.asyncio
 async def test_query_devices_ranks_only_sockets_by_power():
     service = DeviceQueryService(
         QueryMCP([
@@ -109,3 +180,18 @@ def test_target_resolution_accepts_spaced_room_name_and_omitted_kind():
 
     assert result.target["id"] == "2"
     assert result.reason == "exact semantic name with device-kind token omitted"
+
+
+def test_target_resolution_uses_room_metadata_for_spoken_device_name():
+    result = resolve_device_candidate(
+        "bedroom three big lamp",
+        [
+            {"id": "1", "label": "Bedroom 3 Light", "roomName": "Bedroom 3"},
+            {"id": "2", "label": "Big lamp", "roomName": "Bedroom 3"},
+            {"id": "3", "label": "My Floor Lamp", "roomName": "Bedroom 1"},
+        ],
+    )
+
+    assert result.target["id"] == "2"
+    assert result.matched_name == "Big lamp"
+    assert result.reason == "exact semantic room and device name"

@@ -24,6 +24,7 @@ ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
+WEATHER_SNAPSHOT_TOOL = "homebrain_weather_snapshot"
 
 
 class DeviceQueryService:
@@ -148,6 +149,33 @@ class DeviceQueryService:
         if kind == "sensor":
             return not bool(capabilities & {"switch", "outlet"}) and not is_light
         return True
+
+    @staticmethod
+    def _is_ambient_room_reading(
+        device: dict[str, Any],
+        attribute: str,
+    ) -> bool:
+        """Reject equipment telemetry from room climate comparisons."""
+
+        if attribute.casefold() not in {"temperature", "humidity"}:
+            return True
+        room = str(
+            device.get("room") or device.get("roomName") or ""
+        ).strip().casefold()
+        label = str(
+            device.get("label") or device.get("name") or ""
+        ).strip().casefold()
+        if room in {
+            "appliances", "bridge", "energy", "internet", "multimedia", "sockets",
+        }:
+            return False
+        return not (
+            label.startswith("hub info")
+            or any(
+                word in label
+                for word in ("fridge", "freezer", "refrigerator")
+            )
+        )
 
     @staticmethod
     def _numeric_value(value: Any) -> float:
@@ -337,6 +365,11 @@ class DeviceQueryService:
         for device in devices:
             if not self._matches_device_kind(device, device_kind):
                 continue
+            if (
+                group_by == "room"
+                and not self._is_ambient_room_reading(device, attribute)
+            ):
+                continue
             source_attribute, raw_value = self._attribute_value(device, attribute)
             if raw_value is None:
                 continue
@@ -414,6 +447,52 @@ class DeviceQueryService:
             ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data
         )
 
+    async def weather_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
+        """Return current attributes from the hub's weather device."""
+
+        source, devices = await self._live_devices(enrich_identity=True)
+        if not self._tool_succeeded(source):
+            return self._read_failure(WEATHER_SNAPSHOT_TOOL, arguments, source)
+
+        candidates: list[dict[str, Any]] = []
+        for device in devices:
+            label = str(
+                device.get("label") or device.get("name") or ""
+            ).strip()
+            room = str(
+                device.get("room") or device.get("roomName") or ""
+            ).strip()
+            capabilities = self._capability_names(device)
+            if not (
+                "weather" in label.casefold()
+                or "weather" in room.casefold()
+                or "weather" in capabilities
+            ):
+                continue
+            candidates.append({
+                "id": device.get("id") or device.get("deviceId"),
+                "label": label,
+                "room": room or None,
+                "attributes": self._device_attributes(device),
+            })
+
+        candidates.sort(
+            key=lambda item: (
+                "weather" not in str(item.get("label") or "").casefold(),
+                str(item.get("label") or "").casefold(),
+            )
+        )
+        data = {
+            "weather_devices": candidates,
+            "primary": candidates[0] if candidates else None,
+            "count": len(candidates),
+            "total_scanned": len(devices),
+            "complete": True,
+        }
+        return MCPToolResult(
+            WEATHER_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data
+        )
+
     async def active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
         source, devices = await self._live_devices(enrich_identity=True)
         if not self._tool_succeeded(source):
@@ -470,7 +549,14 @@ class DeviceQueryService:
             }
 
             presence_value = str(attrs.get("presence") or "").casefold()
-            if presence_value in {"present", "home", "arrived", "true", "active"}:
+            capabilities = self._capability_names(device)
+            if (
+                presence_value in {"present", "home", "arrived", "true", "active"}
+                and "switch" not in capabilities
+                and not bool(
+                    capabilities & {"actuator", "outlet"}
+                )
+            ):
                 presence.append({**identity, "presence": attrs.get("presence")})
             if str(attrs.get("motion") or "").casefold() == "active":
                 motion.append({**identity, "motion": "active"})

@@ -70,6 +70,7 @@ _LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 _LOCAL_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 _LOCAL_CONTROL_TOOL = "homebrain_control_devices"
 _LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
+_LOCAL_WEATHER_TOOL = "homebrain_weather_snapshot"
 _EVIDENCE_KINDS = {
     _LOCAL_FILTER_TOOL: "deterministic_attribute_filter",
     _LOCAL_QUERY_TOOL: "deterministic_attribute_query",
@@ -79,6 +80,7 @@ _EVIDENCE_KINDS = {
     _LOCAL_HOME_SNAPSHOT_TOOL: "deterministic_home_snapshot",
     _LOCAL_CONTROL_TOOL: "deterministic_device_control",
     _LOCAL_HUB_INFO_TOOL: "authoritative_hub_info_snapshot",
+    _LOCAL_WEATHER_TOOL: "authoritative_weather_snapshot",
 }
 
 
@@ -179,7 +181,10 @@ class UnifiedMCPAgent:
         tokens = re.findall(r"[a-z0-9]+", value)
         if tokens and tokens[0] in strong_verbs | {"close", "lock", "open"}:
             return True
-        if re.search(r"\b(?:turn|switch|power)\b.+\b(?:on|off)\b", value):
+        if (
+            re.search(r"\b(?:turn|switch|power)\b.+\b(?:on|off)\b", value)
+            or re.search(r"\b(?:turn|switch|power)\s+(?:on|off)\b", value)
+        ):
             return True
         if re.search(
             r"\bplease\s+(?:close|create|delete|disable|enable|install|lock|open|pause|"
@@ -189,6 +194,71 @@ class UnifiedMCPAgent:
         ):
             return True
         return False
+
+    @staticmethod
+    def _routine_control_arguments(
+        prompt: str,
+    ) -> dict[str, Any] | None:
+        """Parse generic control grammar without encoding device-name phrases."""
+
+        value = " ".join(str(prompt).strip().split())
+        patterns = (
+            r"^(?:please\s+)?(?:turn|switch|power)\s+"
+            r"(?P<command>on|off)\s+(?P<target>.+?)\s*[.!?]*$",
+            r"^(?:please\s+)?(?:turn|switch|power)\s+"
+            r"(?P<target>.+?)\s+(?P<command>on|off)\s*[.!?]*$",
+            r"^(?:please\s+)?(?P<command>toggle)\s+"
+            r"(?P<target>.+?)\s*[.!?]*$",
+        )
+        for pattern in patterns:
+            match = re.match(pattern, value, flags=re.IGNORECASE)
+            if not match:
+                continue
+            target = str(match.group("target") or "").strip()
+            if target:
+                return {
+                    "device_names": [target],
+                    "device_kind": "auto",
+                    "command": str(match.group("command")).casefold(),
+                }
+        return None
+
+    async def _routine_control_fallback(
+        self,
+        prompt: str,
+    ) -> str | None:
+        arguments = self._routine_control_arguments(prompt)
+        if arguments is None or self._matches(prompt, _SENSITIVE_TERMS):
+            return None
+        started = time.monotonic()
+        result = await self._control_devices(arguments)
+        self._record_evidence(
+            _LOCAL_CONTROL_TOOL,
+            arguments,
+            success=self._tool_succeeded(result),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=self._result_summary(result),
+            evidence_kind=_EVIDENCE_KINDS[_LOCAL_CONTROL_TOOL],
+        )
+        if isinstance(result.data, dict) and isinstance(
+            result.data.get("choices"), list
+        ):
+            self._choices.set([
+                str(choice)
+                for choice in result.data["choices"]
+                if str(choice).strip()
+            ])
+        if (
+            not self._tool_succeeded(result)
+            and not self._choices.get()
+        ):
+            return None
+        return present_tool_result(
+            _LOCAL_CONTROL_TOOL,
+            result.data,
+            failed=not self._tool_succeeded(result),
+            fallback_error=result.text,
+        )
 
     def _classify_request(self, prompt: str, session_id: str) -> str:
         normalized = " ".join(prompt.strip().lower().split())
@@ -352,6 +422,23 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
+    def _weather_snapshot_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_WEATHER_TOOL,
+            (
+                "Read all current attributes from the Hubitat weather device. "
+                "Use this for current-weather questions and when locating the "
+                "weather device. Do not substitute ordinary indoor sensors."
+            ),
+            {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
     def _active_rooms_tool() -> MCPTool:
         return MCPTool(
             _LOCAL_ACTIVE_ROOMS_TOOL,
@@ -446,8 +533,11 @@ class UnifiedMCPAgent:
                     },
                     "device_kind": {
                         "type": "string",
-                        "enum": ["light", "switch"],
-                        "description": "Whether targets must be lights or non-light switches.",
+                        "enum": ["auto", "light", "switch"],
+                        "description": (
+                            "Use light for lights, switch for non-light switches, "
+                            "or auto when a named target omits its device kind."
+                        ),
                     },
                     "command": {
                         "type": "string",
@@ -847,6 +937,12 @@ class UnifiedMCPAgent:
     ) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self._record_evidence)
         return await service.query_devices(arguments)
+
+    async def _weather_snapshot(
+        self, arguments: dict[str, Any]
+    ) -> MCPToolResult:
+        service = DeviceQueryService(self.mcp, self._record_evidence)
+        return await service.weather_snapshot(arguments)
 
     @staticmethod
     def _attribute_matches(actual: Any, operator: str, expected: Any) -> bool:
@@ -1367,9 +1463,11 @@ class UnifiedMCPAgent:
         local_home_snapshot = self._home_snapshot_tool()
         local_control = self._control_devices_tool()
         local_hub_info = self._hub_info_tool()
+        local_weather = self._weather_snapshot_tool()
         safe_read_tools = [
             local_filter, local_query, local_active_lights, local_active_rooms,
             local_active_switches, local_home_snapshot, local_hub_info,
+            local_weather,
         ]
         all_tools.extend([*safe_read_tools, local_control])
         all_by_name = {tool.name: tool for tool in all_tools}
@@ -1406,6 +1504,25 @@ class UnifiedMCPAgent:
             return await self._resume_confirmation(pending, tools)
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(user_prompt)
+        if self._matches(user_prompt, {"weather"}):
+            weather_started = time.monotonic()
+            weather_result = await self._weather_snapshot({})
+            self._record_evidence(
+                _LOCAL_WEATHER_TOOL,
+                {},
+                success=self._tool_succeeded(weather_result),
+                elapsed_ms=round(
+                    (time.monotonic() - weather_started) * 1000
+                ),
+                summary=self._result_summary(weather_result),
+                evidence_kind=_EVIDENCE_KINDS[_LOCAL_WEATHER_TOOL],
+            )
+            if self._tool_succeeded(weather_result):
+                system_prompt += (
+                    "\n\nAUTHORITATIVE CURRENT WEATHER SNAPSHOT\n"
+                    + self._result_payload(weather_result)
+                    + "\nAnswer weather questions only from this snapshot."
+                )
         logger.info(
             "System prompt built in %.3fs (%d chars, manifest=%s)",
             time.monotonic() - prompt_started,
@@ -1466,6 +1583,11 @@ class UnifiedMCPAgent:
                             },
                         ])
                         continue
+                    deterministic_control = await self._routine_control_fallback(
+                        user_prompt
+                    )
+                    if deterministic_control is not None:
+                        return deterministic_control
                     if failed_mutation:
                         return f"The Hubitat action failed: {failed_mutation}"
                     return (
@@ -1558,6 +1680,8 @@ class UnifiedMCPAgent:
                             result = await self._filter_devices(dict(arguments))
                         elif name == _LOCAL_QUERY_TOOL:
                             result = await self._query_devices(dict(arguments))
+                        elif name == _LOCAL_WEATHER_TOOL:
+                            result = await self._weather_snapshot(dict(arguments))
                         elif name == _LOCAL_ACTIVE_LIGHTS_TOOL:
                             result = await self._active_lights(dict(arguments))
                         elif name == _LOCAL_ACTIVE_ROOMS_TOOL:
@@ -1630,8 +1754,23 @@ class UnifiedMCPAgent:
                                 for choice in result.data["choices"]
                                 if str(choice).strip()
                             ])
+                        direct_home_snapshot = (
+                            name == _LOCAL_HOME_SNAPSHOT_TOOL
+                            and any(
+                                re.search(pattern, user_prompt.casefold())
+                                is not None
+                                for pattern in _HOME_STATE_PATTERNS
+                            )
+                        )
                         if deterministic_message is not None and (
-                            name != _LOCAL_QUERY_TOOL
+                            (
+                                name not in {
+                                    _LOCAL_QUERY_TOOL,
+                                    _LOCAL_HOME_SNAPSHOT_TOOL,
+                                    _LOCAL_WEATHER_TOOL,
+                                }
+                                or direct_home_snapshot
+                            )
                             or not self._tool_succeeded(result)
                         ):
                             return deterministic_message
