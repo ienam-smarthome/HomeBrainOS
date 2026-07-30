@@ -1496,11 +1496,11 @@ class UnifiedMCPAgent:
         local_home_snapshot = self._home_snapshot_tool()
         local_control = self._control_devices_tool()
         local_hub_info = self._hub_info_tool()
-        all_tools.extend([
+        safe_read_tools = [
             local_filter, local_active_lights, local_active_rooms,
-            local_active_switches, local_home_snapshot, local_control,
-            local_hub_info
-        ])
+            local_active_switches, local_home_snapshot, local_hub_info,
+        ]
+        all_tools.extend([*safe_read_tools, local_control])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
@@ -1510,57 +1510,20 @@ class UnifiedMCPAgent:
             ] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
-            hub_info_request = (
-                self._matches(user_prompt, _DIAGNOSTIC_TERMS)
-                or bool(
-                    re.search(
-                        r"\bhub\s+(?:info|information|resources?|status)\b",
-                        user_prompt,
-                        flags=re.IGNORECASE,
-                    )
-                )
-            )
-            if hub_info_request:
+            if (
+                self._request_class.get() == "live-read"
+            ):
+                # The local Hub Info service is authoritative and normalized;
+                # do not expose the overlapping generic MCP info tool.
                 declared = [
                     tool for tool in declared if tool.name != "hub_get_info"
                 ]
-                if all(
-                    tool.name != _LOCAL_HUB_INFO_TOOL for tool in declared
-                ):
-                    declared.append(local_hub_info)
-            if (
-                self._request_class.get() == "live-read"
-                and all(tool.name != _LOCAL_FILTER_TOOL for tool in declared)
-            ):
-                declared.append(local_filter)
-            if (
-                any(
-                    re.search(pattern, user_prompt.lower()) is not None
-                    for pattern in _HOME_STATE_PATTERNS
+                declared_names = {tool.name for tool in declared}
+                declared.extend(
+                    tool
+                    for tool in safe_read_tools
+                    if tool.name not in declared_names
                 )
-                and all(
-                    tool.name != _LOCAL_HOME_SNAPSHOT_TOOL
-                    for tool in declared
-                )
-            ):
-                declared.append(local_home_snapshot)
-            if (
-                self._matches(user_prompt, {"light", "lights", "lamp", "lamps"})
-                and not self._requests_mutation(user_prompt)
-                and all(tool.name != _LOCAL_ACTIVE_LIGHTS_TOOL for tool in declared)
-            ):
-                declared.append(local_active_lights)
-            if (
-                self._matches(user_prompt, _ROOM_TERMS)
-                and all(tool.name != _LOCAL_ACTIVE_ROOMS_TOOL for tool in declared)
-            ):
-                declared.append(local_active_rooms)
-            if (
-                self._matches(user_prompt, {"switch", "switches"})
-                and not self._requests_mutation(user_prompt)
-                and all(tool.name != _LOCAL_ACTIVE_SWITCHES_TOOL for tool in declared)
-            ):
-                declared.append(local_active_switches)
             if (
                 self._requests_mutation(user_prompt)
                 and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)

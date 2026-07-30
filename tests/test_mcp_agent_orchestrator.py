@@ -244,13 +244,15 @@ async def test_live_read_without_evidence_retries_then_fails_closed():
 async def test_successful_tool_call_returns_sanitized_evidence_receipt():
     class ReadMCP(FakeMCP):
         async def list_tools(self):
-            return [MCPTool("hub_get_info", "Hub info", {"type": "object"})]
+            return [
+                MCPTool("hub_read_devices", "Read devices", {"type": "object"})
+            ]
 
     ai = FakeAI([
         {"message": {"role": "assistant", "content": "", "tool_calls": [{
-            "function": {
-                "name": "hub_get_info",
-                "arguments": {"includeAppUpdate": True, "token": "secret-value"},
+                "function": {
+                    "name": "hub_read_devices",
+                    "arguments": {"includeAppUpdate": True, "token": "secret-value"},
             }
         }]}},
         {"message": {"role": "assistant", "content": "The hub is healthy."}},
@@ -260,7 +262,7 @@ async def test_successful_tool_call_returns_sanitized_evidence_receipt():
     outcome = await agent.process_user_request_result("Get location details")
 
     assert outcome.message == "The hub is healthy."
-    assert outcome.evidence[0]["tool"] == "hub_get_info"
+    assert outcome.evidence[0]["tool"] == "hub_read_devices"
     assert outcome.evidence[0]["supports_live_claim"] is True
     assert outcome.evidence[0]["arguments"]["token"] == "[redacted]"
     assert outcome.evidence[0]["timestamp"].endswith("+00:00")
@@ -340,7 +342,7 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
     outcome = await agent.process_user_request_result("Which batteries are low?")
 
     assert outcome.message == (
-        "2 devices have battery levels <= 20%: Fridge Door (14%) and "
+        "2 devices have battery levels at or below 20%: Fridge Door (14%) and "
         "Livingroom TRV (10%)."
     )
     assert len(ai.requests) == 1
@@ -357,6 +359,11 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
     assert [item["function"]["name"] for item in declared] == [
         "hub_read_devices",
         "homebrain_filter_devices",
+        "homebrain_active_lights",
+        "homebrain_active_rooms",
+        "homebrain_active_switches",
+        "homebrain_home_snapshot",
+        "homebrain_hub_info_snapshot",
     ]
 
 
@@ -494,6 +501,48 @@ async def test_whole_home_snapshot_is_complete_and_deterministic():
         for item in ai.requests[0][1]["json"]["tools"]
     ]
     assert "homebrain_home_snapshot" in declared
+
+
+@pytest.mark.asyncio
+async def test_home_snapshot_is_available_for_unseen_natural_paraphrase():
+    class ParaphraseMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_search_tools", "search tools", {})]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name, arguments, {}, "", {"devices": []}
+            )
+
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_home_snapshot",
+                    "arguments": {},
+                }
+            }],
+        }
+    }])
+    agent = UnifiedMCPAgent(
+        ParaphraseMCP(), "key", "model", ai_client=ai
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Give me a rundown of the house"
+    )
+
+    declared = {
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    }
+    assert "homebrain_home_snapshot" in declared
+    assert outcome.message.startswith("Everything appears quiet at home")
 
 
 @pytest.mark.asyncio

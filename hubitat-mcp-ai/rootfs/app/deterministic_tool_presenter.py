@@ -12,12 +12,12 @@ _CONTROL_TOOL = "homebrain_control_devices"
 _HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 
 _OPERATORS = {
-    "eq": "=",
-    "ne": "!=",
-    "lt": "<",
-    "lte": "<=",
-    "gt": ">",
-    "gte": ">=",
+    "eq": "equal to",
+    "ne": "not equal to",
+    "lt": "below",
+    "lte": "at or below",
+    "gt": "above",
+    "gte": "at or above",
     "contains": "contains",
     "exists": "exists",
     "not_exists": "does not exist",
