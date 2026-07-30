@@ -6,22 +6,9 @@ from typing import Any
 def render_device_manifest(devices: list[dict[str, Any]]) -> str:
     rows: list[str] = []
     common = {
-        "battery",
-        "condition",
-        "contact",
-        "humidity",
-        "level",
-        "healthstatus",
-        "lock",
-        "motion",
-        "networkstatus",
-        "presence",
-        "pressure",
-        "rtt",
-        "status",
-        "switch",
-        "temperature",
-        "wind",
+        "battery", "condition", "contact", "humidity", "level",
+        "healthstatus", "lock", "motion", "networkstatus", "presence",
+        "pressure", "rtt", "status", "switch", "temperature", "wind",
         "windspeed",
     }
     for device in devices:
@@ -36,9 +23,7 @@ def render_device_manifest(devices: list[dict[str, Any]]) -> str:
         attributes = device.get("attributes") or device.get("currentStates") or {}
         if isinstance(attributes, list):
             attributes = {
-                str(item.get("name")): item.get(
-                    "currentValue", item.get("value")
-                )
+                str(item.get("name")): item.get("currentValue", item.get("value"))
                 for item in attributes
                 if isinstance(item, dict) and item.get("name")
             }
@@ -110,41 +95,44 @@ def build_system_prompt(
         "homebrain_weather_snapshot and answer from its primary device attributes. "
         "Do not substitute ordinary indoor temperature sensors.\n"
         "- WHOLE-HOME SUMMARY RULES: For lights on, active rooms, non-light "
-        "switches on, or a whole-home "
-        "summary, call the matching homebrain_active_lights, "
-        "homebrain_active_rooms, homebrain_active_switches, or "
-        "homebrain_home_snapshot tool exactly once. The whole-home snapshot covers "
-        "presence, active motion, open doors/windows, locks, batteries, and alerts. "
-        "Do not say the home is quiet when anyone is present or another active "
-        "condition exists.\n"
+        "switches on, or a whole-home summary, call the matching "
+        "homebrain_active_lights, homebrain_active_rooms, "
+        "homebrain_active_switches, or homebrain_home_snapshot tool exactly once. "
+        "The whole-home snapshot covers presence, active motion, open doors/windows, "
+        "locks, batteries, and alerts. Do not say the home is quiet when anyone is "
+        "present or another active condition exists.\n"
         "- A low battery is a numeric battery level at or below 20 percent. "
         "Exclude every device above 20 percent.\n"
         "- For hub firmware and resources, call homebrain_hub_info_snapshot with "
-        "{'scope': 'firmware'} or {'scope': 'resources'}. Never substitute "
-        "generic hub_get_info. Never replace it with generic hub_get_info. "
-        "Only call hub_update_firmware after the snapshot reports "
-        "update_available=true and the host confirmation gate approves it.\n"
-        "- For current app status, call hub_read_apps_code with "
-        "tool='hub_list_apps' and args={'scope': 'instances'}; use "
-        "hub_read_rules for Rule Machine state. Use "
-        "hub_manage_native_rules_and_apps with tool='hub_set_rule_paused' for "
+        "{'scope': 'firmware'} or {'scope': 'resources'}. Never substitute generic "
+        "hub_get_info. Never replace it with generic hub_get_info. Only call "
+        "hub_update_firmware after the snapshot reports update_available=true and "
+        "the host confirmation gate approves it.\n"
+        "- For current app and automation status, call hub_read_apps_code with "
+        "tool='hub_list_apps' and args={'scope': 'instances'}, and call "
+        "hub_read_rules for Rule Machine state. Reconcile disabled before paused, "
+        "and never infer active from paused=false alone. Report every returned app "
+        "or rule under exactly one status: ACTIVE, DISABLED, PAUSED, BROKEN, or "
+        "UNKNOWN. Prefix every list item with the literal marker [ACTIVE], "
+        "[DISABLED], [PAUSED], [BROKEN], or [UNKNOWN], and use matching section "
+        "headings such as '### Active', '### Disabled', and '### Paused'. Keep each "
+        "rule name on its own bullet so the WebUI can colour the status clearly. "
+        "Use hub_manage_native_rules_and_apps with tool='hub_set_rule_paused' for "
         "pause/resume operations.\n"
-        "- ROUTINE DEVICE CONTROL: For routine light or switch on/off/toggle, "
-        "call homebrain_control_devices once with exact room or device_names, "
-        "device_kind, and command arguments. Routine controls do not require "
-        "confirmation. Locks, garage doors, destructive operations, security "
-        "controls, and firmware installation remain sensitive.\n"
-        "- For device health, distinguish explicit offline states from stale "
-        "activity. healthStatus=offline, networkStatus=offline/unavailable, or "
-        "rtt=timeout supports an offline claim. Stale means no recent event and "
-        "does not prove a device is offline. Ping or refresh at most five "
-        "ambiguous devices using command='ping' or command='refresh'. Limit "
-        "active checks to five devices.\n"
-        "- LIVE HUB LOG RULES: For hub logs, call hub_read_diagnostics with "
-        "the actual "
-        "tool='hub_get_logs' and "
-        "args={'since': '30m', 'limit': 100} unless the user specifies filters. "
-        "State the window and entry count. Never infer logs from manifests.\n"
+        "- ROUTINE DEVICE CONTROL: For routine light or switch on/off/toggle, call "
+        "homebrain_control_devices once with exact room or device_names, device_kind, "
+        "and command arguments. Routine controls do not require confirmation. Locks, "
+        "garage doors, destructive operations, security controls, and firmware "
+        "installation remain sensitive.\n"
+        "- For device health, distinguish explicit offline states from stale activity. "
+        "healthStatus=offline, networkStatus=offline/unavailable, or rtt=timeout "
+        "supports an offline claim. Stale means no recent event and does not prove a "
+        "device is offline. Ping or refresh at most five ambiguous devices using "
+        "command='ping' or command='refresh'. Limit active checks to five devices.\n"
+        "- LIVE HUB LOG RULES: For hub logs, call hub_read_diagnostics with the actual "
+        "tool='hub_get_logs' and args={'since': '30m', 'limit': 100} unless the user "
+        "specifies filters. State the window and entry count. Never infer logs from "
+        "manifests.\n"
         "- Never claim a mutation succeeded unless its tool result confirms it.\n\n"
         f"LIVE DEVICE MANIFEST\n{device_manifest}{app_manifest_section}"
     )
