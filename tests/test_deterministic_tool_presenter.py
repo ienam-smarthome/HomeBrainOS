@@ -25,9 +25,32 @@ def test_filter_presenter_preserves_every_match_and_count():
     )
 
     assert message == (
-        "3 devices have battery levels <= 20%: Door (14%), TRV (10%), "
+        "3 devices have battery levels at or below 20%: Door (14%), TRV (10%), "
         "and Remote (20%)."
     )
+
+
+def test_filter_presenter_uses_speech_friendly_comparisons():
+    expected_phrases = {
+        "eq": "temperature equal to 20",
+        "ne": "temperature not equal to 20",
+        "lt": "temperature below 20",
+        "lte": "temperature at or below 20",
+        "gt": "temperature above 20",
+        "gte": "temperature at or above 20",
+    }
+
+    for operator, phrase in expected_phrases.items():
+        message = present_tool_result(
+            "homebrain_filter_devices",
+            {
+                "attribute": "temperature",
+                "operator": operator,
+                "comparison_value": 20,
+                "matches": [],
+            },
+        )
+        assert message == f"No devices matched {phrase}."
 
 
 def test_motion_filter_presenter_uses_natural_domain_language():
