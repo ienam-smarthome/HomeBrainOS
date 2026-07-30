@@ -12,6 +12,11 @@ from typing import Any
 
 import httpx
 
+from agent_prompt_policy import (
+    build_system_prompt,
+    render_app_manifest,
+    render_device_manifest,
+)
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
 from device_query_service import DeviceQueryService
@@ -64,6 +69,15 @@ _LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 _LOCAL_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 _LOCAL_CONTROL_TOOL = "homebrain_control_devices"
 _LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
+_EVIDENCE_KINDS = {
+    _LOCAL_FILTER_TOOL: "deterministic_attribute_filter",
+    _LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
+    _LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
+    _LOCAL_ACTIVE_SWITCHES_TOOL: "deterministic_active_switches",
+    _LOCAL_HOME_SNAPSHOT_TOOL: "deterministic_home_snapshot",
+    _LOCAL_CONTROL_TOOL: "deterministic_device_control",
+    _LOCAL_HUB_INFO_TOOL: "authoritative_hub_info_snapshot",
+}
 
 
 @dataclass(slots=True)
@@ -949,7 +963,7 @@ class UnifiedMCPAgent:
         return list(self._app_manifest)
 
     async def _system_prompt(self, user_prompt: str = "") -> str:
-        rows: list[str] = []
+        manifest = "Device manifest omitted or unavailable."
         if self._include_identity_manifest(user_prompt):
             try:
                 started = time.monotonic()
@@ -966,217 +980,14 @@ class UnifiedMCPAgent:
                     supports_live_claim=False,
                     evidence_kind="identity_manifest",
                 )
-                for device in devices:
-                    label = device.get("label") or device.get("name") or "Unknown device"
-                    device_id = device.get("id") or device.get("deviceId")
-                    room = device.get("room") or device.get("roomName") or "Unassigned"
-                    capabilities = device.get("capabilities") or []
-                    if isinstance(capabilities, dict):
-                        capabilities = list(capabilities)
-                    if not isinstance(capabilities, list):
-                        capabilities = [capabilities]
-                    attributes = device.get("attributes") or device.get("currentStates") or {}
-                    if isinstance(attributes, list):
-                        attributes = {
-                            str(item.get("name")): item.get(
-                                "currentValue", item.get("value")
-                            )
-                            for item in attributes
-                            if isinstance(item, dict) and item.get("name")
-                        }
-                    if not isinstance(attributes, dict):
-                        attributes = {}
-                    common = {
-                        "battery", "condition", "contact", "humidity", "level",
-                        "healthstatus", "lock", "motion", "networkstatus",
-                        "presence", "pressure", "rtt", "status", "switch",
-                        "temperature", "wind", "windspeed",
-                    }
-                    is_weather = "weather" in str(label).lower()
-                    states = []
-                    for key, value in attributes.items():
-                        normalized = str(key).lower().replace("_", "")
-                        if (
-                            normalized not in common
-                            and not (is_weather and len(states) < 16)
-                        ):
-                            continue
-                        rendered = str(value)
-                        if len(rendered) > 80:
-                            rendered = rendered[:77] + "..."
-                        states.append(f"{key}={rendered}")
-                        if len(states) >= (16 if is_weather else 10):
-                            break
-                    rows.append(
-                        f"- {label!r} | ID: {device_id} | Room: {room} | "
-                        f"Capabilities: {', '.join(map(str, capabilities)) or 'unknown'}"
-                        + (f" | Current: {', '.join(states)}" if states else "")
-                    )
+                manifest = render_device_manifest(devices)
             except Exception as exc:
                 logger.warning("Could not build live device manifest: %s", exc)
-        manifest = "\n".join(rows) or "Device manifest omitted or unavailable."
         app_section = ""
         if self._matches(user_prompt, _APP_TERMS):
             apps = await self._cached_app_manifest()
-            app_rows = []
-            for app in apps:
-                app_id = app.get("id") or app.get("appId")
-                label = app.get("label") or app.get("name") or app.get("displayName")
-                if app_id is not None and label:
-                    state = " | ".join(
-                        f"{key}: {app[key]}"
-                        for key in (
-                            "status", "enabled", "paused", "active", "broken",
-                        )
-                        if app.get(key) is not None
-                    )
-                    app_rows.append(
-                        f"- {label!r} | appId: {app_id}"
-                        + (f" | {state}" if state else "")
-                    )
-            app_section = (
-                "\n\nLIVE APP MANIFEST\n"
-                + ("\n".join(app_rows) if app_rows else "No live app manifest available.")
-                + "\nThis cached manifest is for name-to-ID matching only. For current "
-                "automation status, always call hub_read_apps_code with "
-                "tool='hub_list_apps' and args={'scope': 'instances'}, and use "
-                "hub_read_rules for live Rule Machine rule state. Report enabled, "
-                "paused, broken, and active state when returned."
-                + "\nPause/resume Rule Machine apps through "
-                "hub_manage_native_rules_and_apps with tool='hub_set_rule_paused' "
-                "and args={'appId': <id>, 'value': true to pause or false to resume}."
-            )
-        update_section = ""
-        if self._matches(user_prompt, {"firmware", "software", "update", "updates"}):
-            update_section = (
-                "\n\nUPDATE STATUS RULES\nCall hub_get_info with includeAppUpdate=true. "
-                "Compare the current firmware/app versions with every returned update "
-                "version and status field. Values such as 'Update Available', "
-                "updateAvailable=true, or a newer hubUpdateVersion mean an update is "
-                "available; never summarize those values as up to date. Distinguish hub "
-                "firmware updates from MCP Server App updates. If the user asks to "
-                "install an available Hubitat hub firmware update, first verify that "
-                "hub_get_info reports one, then call hub_update_firmware exactly once "
-                "with {'confirm': true}. This is a sensitive action and must remain "
-                "behind the session confirmation gate. Never claim that an update was "
-                "started unless hub_update_firmware succeeds. If it reports that a "
-                "backup is required, report that requirement and do not bypass it."
-            )
-        battery_section = ""
-        if self._matches(user_prompt, {"battery", "batteries"}):
-            battery_section = (
-                "\n\nLOW BATTERY RULE\nA battery is low only when its numeric level "
-                "is at or below 20 percent, matching the dashboard. Exclude every device "
-                "above 20 percent. Do not reinterpret 30 or 35 percent as low."
-            )
-        health_section = ""
-        if self._matches(user_prompt, _DEVICE_HEALTH_TERMS):
-            health_section = (
-                "\n\nDEVICE HEALTH RULES\nSeparate results into Offline and Stale "
-                "sections. Call a device offline only when Hubitat explicitly reports "
-                "healthStatus=offline, networkStatus=offline/unavailable, rtt=timeout, "
-                "or a failed health status. Never say no devices are offline when any "
-                "of those explicit states is present. Stale means no recent "
-                "event (normally over 24 hours) and does not prove a device is offline. "
-                "Battery sensors, buttons, remotes, tariff records, and rarely changing "
-                "devices may be healthy but stale. Include last activity or stale age "
-                "when returned. Prefer explicit health/network/RTT states over age. "
-                "When health is absent or ambiguous and a device has HealthCheck/Ping, "
-                "you may call hub_manage_devices with tool='hub_call_device_command' "
-                "and command='ping' (or 'refresh'), then re-read its status. Ping and "
-                "refresh are non-sensitive checks. Limit active checks to five devices "
-                "per request and report which devices were not actively checked."
-            )
-        home_section = ""
-        if any(
-            re.search(pattern, user_prompt.lower()) is not None
-            for pattern in _HOME_STATE_PATTERNS
-        ):
-            home_section = (
-                "\n\nWHOLE-HOME SUMMARY RULES\nCall homebrain_home_snapshot exactly "
-                "once. It returns a complete, internally consistent live snapshot of "
-                "presence, active motion, active rooms, lights and notable switches that are "
-                "on, open doors/windows, unlocked locks, low batteries, and alerts. Do "
-                "not say the home is quiet when anyone is present or another active "
-                "condition exists. Do not replace it with individual attribute filters "
-                "or partial reads."
-            )
-        room_section = ""
-        if self._matches(user_prompt, _ROOM_TERMS):
-            room_section = (
-                "\n\nACTIVE ROOM RULE\nWhen asked which rooms are active, call "
-                "homebrain_active_rooms. Active means motion=active or at least one "
-                "light in that room has switch=on, exactly matching the dashboard. "
-                "Do not filter for a generic active=true device attribute."
-            )
-        switch_section = ""
-        if (
-            self._matches(user_prompt, {"switch", "switches"})
-            and not self._requests_mutation(user_prompt)
-        ):
-            switch_section = (
-                "\n\nACTIVE SWITCH RULE\nWhen asked which switches are on, call "
-                "homebrain_active_switches. It excludes devices with light or bulb "
-                "capabilities, exactly matching the dashboard Switches on tile. "
-                "Report the returned count and every returned device; do not add lights."
-            )
-        light_section = ""
-        if (
-            self._matches(user_prompt, {"light", "lights", "lamp", "lamps"})
-            and not self._requests_mutation(user_prompt)
-        ):
-            light_section = (
-                "\n\nACTIVE LIGHT RULE\nWhen asked which lights are on, call "
-                "homebrain_active_lights. It returns the exhaustive live list and "
-                "count using the same light classification as the dashboard. Do not "
-                "scan the device manifest or call a generic device read instead."
-            )
-        control_section = ""
-        if self._requests_mutation(user_prompt):
-            control_section = (
-                "\n\nROUTINE DEVICE CONTROL\nFor light/switch on, off, toggle, "
-                "call homebrain_control_devices once. For a room request pass the "
-                "exact room, device_kind, and command; for named devices pass exact "
-                "device_names, device_kind, and command. It resolves all targets and "
-                "executes and verifies them concurrently. Do not call hub_search_tools "
-                "or hub_read_devices before this high-level tool. For setLevel, setColor, or "
-                "setColorTemperature, use hub_manage_devices with exact device IDs. "
-                "Routine light/switch commands do not require confirmation. Locks, garage "
-                "doors, destructive device operations, and security controls remain "
-                "sensitive."
-            )
-        log_section = ""
-        if self._matches(user_prompt, _LOG_TERMS):
-            log_section = (
-                "\n\nLIVE HUB LOG RULES\nYou must fetch actual hub logs before "
-                "answering. Call hub_read_diagnostics with tool='hub_get_logs' and "
-                "args={'since': '30m', 'limit': 100} unless the user requested another "
-                "window, level, source, device, or app. Never infer logs from the device "
-                "manifest, events, or prior conversation. State the queried time window "
-                "and returned entry count. Count warn and error entries separately, "
-                "prioritize them over repetitive info telemetry, and include timestamps "
-                "for representative findings. If the tool fails or returns no logs, say "
-                "that explicitly rather than constructing a plausible summary."
-            )
-        return (
-            "You are HomeBrainOS, a concise smart-home assistant. The device manifest "
-            "is for name and ID resolution only, not proof of current state. For "
-            "exhaustive lists, thresholds, counts, or comparisons over any device "
-            "attribute, call homebrain_filter_devices and report only its matches and "
-            "coverage. Do not scan the manifest yourself. Use Hubitat MCP for every "
-            "action. Match informal names against the "
-            "manifest and use exact IDs whenever possible. Never invent devices, states, "
-            "tool results, or successful actions. Ask one short clarification only when "
-            "needed. Sensitive actions are confirmed by the host. This MCP server uses "
-            "category gateways: call a gateway with tool='<sub-tool name>' and "
-            "args={<sub-tool arguments>}. For device questions, use hub_read_devices "
-            "with tool='hub_list_devices' or tool='hub_get_device'; do not call the "
-            "gateway with empty arguments.\n\n"
-            f"LIVE DEVICE MANIFEST\n{manifest}{app_section}{update_section}"
-            f"{battery_section}{health_section}{home_section}{room_section}"
-            f"{switch_section}{light_section}{control_section}"
-            f"{log_section}"
-        )
+            app_section = render_app_manifest(apps)
+        return build_system_prompt(manifest, app_section)
 
     @staticmethod
     def _tool_schema(tool: MCPTool) -> dict[str, Any]:
@@ -1709,34 +1520,8 @@ class UnifiedMCPAgent:
                             elapsed_ms=elapsed_ms,
                             summary=self._result_summary(result),
                             supports_live_claim=name != "hub_search_tools",
-                            evidence_kind=(
-                                "deterministic_attribute_filter"
-                                if name == _LOCAL_FILTER_TOOL
-                                else (
-                                    "deterministic_active_lights"
-                                    if name == _LOCAL_ACTIVE_LIGHTS_TOOL
-                                    else (
-                                        "deterministic_active_rooms"
-                                        if name == _LOCAL_ACTIVE_ROOMS_TOOL
-                                        else (
-                                            "deterministic_active_switches"
-                                            if name == _LOCAL_ACTIVE_SWITCHES_TOOL
-                                            else (
-                                                "deterministic_home_snapshot"
-                                                if name == _LOCAL_HOME_SNAPSHOT_TOOL
-                                                else (
-                                                    "deterministic_device_control"
-                                                    if name == _LOCAL_CONTROL_TOOL
-                                                    else (
-                                                        "authoritative_hub_info_snapshot"
-                                                        if name == _LOCAL_HUB_INFO_TOOL
-                                                        else "tool_result"
-                                                    )
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
+                            evidence_kind=_EVIDENCE_KINDS.get(
+                                name, "tool_result"
                             ),
                         )
                         if self._is_live_log_call(name, dict(arguments)):

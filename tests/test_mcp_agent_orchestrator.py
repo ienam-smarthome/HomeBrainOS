@@ -1403,8 +1403,10 @@ async def test_live_read_does_not_inject_compact_cached_states():
 async def test_update_prompt_requires_status_reconciliation():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("software update")
-    assert "includeAppUpdate=true" in instruction
-    assert "never summarize those values as up to date" in instruction
+    assert "homebrain_hub_info_snapshot" in instruction
+    assert "{'scope': 'firmware'}" in instruction
+    assert "Never replace it with generic hub_get_info" in instruction
+    assert "update_available=true" in instruction
 
 
 @pytest.mark.asyncio
