@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -9,6 +10,8 @@ from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class MCPError(RuntimeError):
@@ -54,11 +57,17 @@ class HubitatMCPClient:
         access_token: str = "",
         timeout_seconds: float = 25,
         device_cache_seconds: float = 12,
+        retry_attempts: int = 3,
+        retry_backoff_seconds: float = 0.25,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.endpoint_url = self._with_token(endpoint_url.strip(), access_token.strip())
         self.timeout_seconds = max(3.0, float(timeout_seconds))
         self.device_cache_seconds = max(0.0, float(device_cache_seconds))
+        self.retry_attempts = max(1, min(5, int(retry_attempts)))
+        self.retry_backoff_seconds = max(
+            0.0, min(5.0, float(retry_backoff_seconds))
+        )
         self._clock = clock
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
@@ -356,11 +365,45 @@ class HubitatMCPClient:
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
 
-        response = await self._http.post(
-            self.endpoint_url,
-            json=payload,
-            headers=headers,
+        attempt_limit = (
+            self.retry_attempts if self._request_is_retryable(payload) else 1
         )
+        response: httpx.Response | None = None
+        for attempt in range(1, attempt_limit + 1):
+            try:
+                response = await self._http.post(
+                    self.endpoint_url,
+                    json=payload,
+                    headers=headers,
+                )
+            except httpx.TransportError:
+                if attempt >= attempt_limit:
+                    raise
+                delay = self.retry_backoff_seconds * (2 ** (attempt - 1))
+                logger.warning(
+                    "Transient MCP transport failure; retrying attempt %d/%d "
+                    "in %.2fs",
+                    attempt + 1,
+                    attempt_limit,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+
+            if response.status_code < 500 or attempt >= attempt_limit:
+                break
+            delay = self.retry_backoff_seconds * (2 ** (attempt - 1))
+            logger.warning(
+                "MCP returned HTTP %d; retrying attempt %d/%d in %.2fs",
+                response.status_code,
+                attempt + 1,
+                attempt_limit,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+        if response is None:
+            raise MCPError("MCP request completed without a response")
         if response.headers.get("Mcp-Session-Id"):
             self._session_id = response.headers["Mcp-Session-Id"]
 
@@ -399,6 +442,21 @@ class HubitatMCPClient:
         if not isinstance(value, dict):
             raise MCPError("MCP JSON response was not an object")
         return value
+
+    def _request_is_retryable(self, payload: dict[str, Any]) -> bool:
+        if payload.get("method") != "tools/call":
+            return True
+        params = payload.get("params")
+        if not isinstance(params, dict):
+            return False
+        name = str(params.get("name") or "")
+        tool = self._tools.get(name)
+        if tool and tool.annotations.get("readOnlyHint") is True:
+            return True
+        return name.startswith("hub_read_") or name in {
+            "hub_get_info",
+            "hub_search_tools",
+        }
 
     @staticmethod
     def _rpc_result(response: dict[str, Any]) -> dict[str, Any]:
