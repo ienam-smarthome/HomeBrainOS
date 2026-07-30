@@ -357,9 +357,10 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
     assert outcome.evidence[-1]["supports_live_claim"] is True
     declared = ai.requests[0][1]["json"]["tools"]
     assert [item["function"]["name"] for item in declared] == [
-        "hub_read_devices",
-        "homebrain_filter_devices",
-        "homebrain_active_lights",
+            "hub_read_devices",
+            "homebrain_filter_devices",
+            "homebrain_query_devices",
+            "homebrain_active_lights",
         "homebrain_active_rooms",
         "homebrain_active_switches",
         "homebrain_home_snapshot",

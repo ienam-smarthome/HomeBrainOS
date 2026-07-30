@@ -415,6 +415,7 @@ async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
         "intent": "native-function-calling",
         "request_class": outcome.request_class,
         "message": outcome.message,
+        "choices": getattr(outcome, "choices", []),
         "evidence": outcome.evidence,
         "model": agent.model_name,
         "elapsed_ms": round((time.perf_counter() - started) * 1000),

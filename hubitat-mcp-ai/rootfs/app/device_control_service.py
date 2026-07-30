@@ -231,6 +231,7 @@ class DeviceControlService:
         ]
         targets: list[dict[str, Any]] = list(fast_targets)
         resolution_errors: list[str] = []
+        resolution_choices: set[str] = set()
         if not targets and room:
             wanted_room = normalized_name(room)
             targets = [
@@ -373,6 +374,7 @@ class DeviceControlService:
                     targets.append(target)
                 else:
                     resolution_errors.append(resolution.reason)
+                    resolution_choices.update(resolution.alternatives)
 
         unique_targets: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
@@ -389,6 +391,7 @@ class DeviceControlService:
             data = {
                 "success": False,
                 "error": " ".join(resolution_errors),
+                "choices": sorted(resolution_choices),
                 "matched": [],
                 "executed": 0,
             }

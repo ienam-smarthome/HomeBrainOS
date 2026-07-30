@@ -43,6 +43,19 @@ def normalized_name(value: Any) -> str:
     return _plain_text(value).replace(" ", "")
 
 
+def _semantic_name(value: Any) -> str:
+    """Normalize speech variants that omit an already-known device kind."""
+
+    generic_kind_tokens = {
+        "bulb", "device", "lamp", "light", "outlet", "plug", "socket", "switch",
+    }
+    return "".join(
+        token
+        for token in _plain_text(value).split()
+        if token not in generic_kind_tokens
+    )
+
+
 def _tokens(value: Any) -> set[str]:
     return set(_plain_text(value).split())
 
@@ -131,6 +144,21 @@ def resolve_device_candidate(
                 f"{requested!r} matches multiple devices exactly; the candidates are "
                 f"{', '.join(exact_alternatives)}."
             ),
+        )
+    semantic_wanted = _semantic_name(requested)
+    semantic_matches = [
+        (name, device)
+        for _score_value, name, device in ranked
+        if semantic_wanted and _semantic_name(name) == semantic_wanted
+    ]
+    if len(semantic_matches) == 1:
+        semantic_name, semantic_device = semantic_matches[0]
+        return CandidateResolution(
+            semantic_device,
+            semantic_name,
+            0.98,
+            (semantic_name,),
+            "exact semantic name with device-kind token omitted",
         )
     ranked.sort(key=lambda item: (-item[0], item[1].casefold()))
     alternatives = tuple(item[1] for item in ranked[:3])
