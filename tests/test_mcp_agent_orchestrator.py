@@ -361,6 +361,142 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
 
 
 @pytest.mark.asyncio
+async def test_filter_reads_presence_from_current_states_list():
+    class PresenceMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_read_devices", "read devices", {})]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [{
+                        "id": "1",
+                        "label": "Muhsena Khan",
+                        "currentStates": [{
+                            "name": "presence",
+                            "currentValue": "present",
+                        }],
+                    }]
+                },
+            )
+
+    mcp = PresenceMCP()
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_filter_devices",
+                    "arguments": {
+                        "attribute": "presence",
+                        "operator": "exists",
+                    },
+                }
+            }],
+        }
+    }])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Who has presence data?")
+
+    assert outcome.message == (
+        "1 device matched presence exists: Muhsena Khan: presence=present."
+    )
+
+
+@pytest.mark.asyncio
+async def test_whole_home_snapshot_is_complete_and_deterministic():
+    class HomeMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_read_devices", "read devices", {})]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [
+                        {
+                            "id": "1",
+                            "label": "Muhsena Khan",
+                            "currentStates": [{
+                                "name": "presence",
+                                "currentValue": "present",
+                            }],
+                        },
+                        {
+                            "id": "2",
+                            "label": "Hallway Sensor",
+                            "roomName": "Hallway",
+                            "currentStates": [{
+                                "name": "motion",
+                                "currentValue": "active",
+                            }],
+                        },
+                        {
+                            "id": "3",
+                            "label": "Hallway Light 1",
+                            "roomName": "Hallway",
+                            "capabilities": ["Switch", "Light"],
+                            "currentStates": [{
+                                "name": "switch",
+                                "currentValue": "on",
+                            }],
+                        },
+                        {
+                            "id": "4",
+                            "label": "Fridge Door",
+                            "currentStates": [{
+                                "name": "battery",
+                                "currentValue": 14,
+                            }],
+                        },
+                    ]
+                },
+            )
+
+    mcp = HomeMCP()
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "tool_calls": [{
+                "function": {
+                    "name": "homebrain_home_snapshot",
+                    "arguments": {},
+                }
+            }],
+        }
+    }])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "What's happening at home?"
+    )
+
+    assert "**Present:** Muhsena Khan" in outcome.message
+    assert "active rooms: Hallway" in outcome.message
+    assert "motion: Hallway Sensor" in outcome.message
+    assert "**Lights on (1):** Hallway Light 1" in outcome.message
+    assert "**Low batteries:** Fridge Door (14%)" in outcome.message
+    declared = [
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    ]
+    assert "homebrain_home_snapshot" in declared
+
+
+@pytest.mark.asyncio
 async def test_active_rooms_tool_matches_dashboard_definition():
     class ActiveRoomMCP(FakeMCP):
         async def list_tools(self):

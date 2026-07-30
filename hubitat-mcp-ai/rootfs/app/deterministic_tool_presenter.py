@@ -7,6 +7,7 @@ _FILTER_TOOL = "homebrain_filter_devices"
 _ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 _ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 _ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
+_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 _CONTROL_TOOL = "homebrain_control_devices"
 _HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 
@@ -142,6 +143,69 @@ def _present_active_lights(data: dict[str, Any]) -> str:
     return f"{len(entries)} {noun} on: {_joined(entries)}."
 
 
+def _labels(data: dict[str, Any], key: str) -> list[str]:
+    return [
+        str(item.get("label") or item.get("name") or item.get("id") or "Unknown")
+        for item in data.get(key, [])
+        if isinstance(item, dict)
+    ]
+
+
+def _present_home_snapshot(data: dict[str, Any]) -> str:
+    sections: list[str] = []
+    present = _labels(data, "presence")
+    motion = _labels(data, "active_motion")
+    rooms = _labels(data, "active_rooms")
+    lights = _labels(data, "lights_on")
+    switches = _labels(data, "switches_on")
+    contacts = _labels(data, "open_contacts")
+    locks = _labels(data, "unlocked_locks")
+    alerts = _labels(data, "alerts")
+
+    if present:
+        sections.append(f"**Present:** {_joined(present)}")
+    activity = []
+    if rooms:
+        activity.append(f"active rooms: {_joined(rooms)}")
+    if motion:
+        activity.append(f"motion: {_joined(motion)}")
+    if activity:
+        sections.append(f"**Activity:** {'; '.join(activity)}")
+    if lights:
+        sections.append(
+            f"**Lights on ({len(lights)}):** {_joined(lights)}"
+        )
+    if switches:
+        visible = switches[:5]
+        remainder = len(switches) - len(visible)
+        suffix = f", plus {remainder} more" if remainder else ""
+        sections.append(
+            f"**Other switches on ({len(switches)}):** "
+            f"{_joined(visible)}{suffix}"
+        )
+    if contacts:
+        sections.append(f"**Open contacts:** {_joined(contacts)}")
+    if locks:
+        sections.append(f"**Unlocked locks:** {_joined(locks)}")
+
+    batteries = [
+        item for item in data.get("low_batteries", []) if isinstance(item, dict)
+    ]
+    if batteries:
+        rendered = [
+            f"{item.get('label') or item.get('id') or 'Unknown'} "
+            f"({item.get('battery')}%)"
+            for item in batteries
+        ]
+        sections.append(f"**Low batteries:** {_joined(rendered)}")
+    if alerts:
+        sections.append(f"**Alerts:** {_joined(alerts)}")
+
+    if not sections:
+        return "Everything appears quiet at home; no active conditions were reported."
+    return "Here’s what’s happening at home:\n\n- " + "\n- ".join(sections)
+
+
 def _present_control(data: dict[str, Any]) -> str:
     succeeded = [
         str(item.get("label"))
@@ -250,6 +314,7 @@ def present_tool_result(
         _ACTIVE_LIGHTS_TOOL,
         _ACTIVE_ROOMS_TOOL,
         _ACTIVE_SWITCHES_TOOL,
+        _HOME_SNAPSHOT_TOOL,
         _CONTROL_TOOL,
         _HUB_INFO_TOOL,
     }:
@@ -265,6 +330,8 @@ def present_tool_result(
         return _present_active_rooms(payload)
     if tool_name == _ACTIVE_SWITCHES_TOOL:
         return _present_active_switches(payload)
+    if tool_name == _HOME_SNAPSHOT_TOOL:
+        return _present_home_snapshot(payload)
     if tool_name == _HUB_INFO_TOOL:
         return _present_hub_info(payload)
     return _present_control(payload)
