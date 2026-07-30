@@ -4,19 +4,28 @@ from typing import Any
 
 
 def device_attributes(device: dict[str, Any]) -> dict[str, Any]:
-    attributes = (
-        device.get("attributes")
-        or device.get("currentStates")
-        or device.get("states")
-        or {}
-    )
-    if isinstance(attributes, list):
-        return {
-            str(item.get("name")): item.get("currentValue", item.get("value"))
-            for item in attributes
-            if isinstance(item, dict) and item.get("name")
-        }
-    return dict(attributes) if isinstance(attributes, dict) else {}
+    """Merge every Hubitat state container into one canonical attribute map."""
+
+    attributes: dict[str, Any] = {}
+    for raw in (
+        device.get("attributes"),
+        device.get("states"),
+        device.get("currentStates"),
+    ):
+        if isinstance(raw, dict):
+            attributes.update(raw)
+            continue
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name") or item.get("attribute")
+            if name:
+                attributes[str(name)] = item.get(
+                    "currentValue", item.get("value")
+                )
+    return attributes
 
 
 def room_name(device: dict[str, Any]) -> str | None:

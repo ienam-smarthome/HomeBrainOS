@@ -11,6 +11,7 @@ from device_state_summary import (
     active_lights,
     active_non_light_switches,
     active_room_summary,
+    device_attributes,
 )
 from mcp_client import HubitatMCPClient, MCPToolResult
 
@@ -21,6 +22,7 @@ DEVICE_FILTER_TOOL = "homebrain_filter_devices"
 ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
+HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 
 
 class DeviceQueryService:
@@ -80,21 +82,7 @@ class DeviceQueryService:
 
     @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
-        attributes: dict[str, Any] = {}
-        raw = device.get("attributes")
-        if isinstance(raw, dict):
-            attributes.update(raw)
-        elif isinstance(raw, list):
-            for item in raw:
-                if not isinstance(item, dict):
-                    continue
-                name = item.get("name") or item.get("attribute")
-                if name:
-                    attributes[str(name)] = item.get("currentValue", item.get("value"))
-        current_states = device.get("currentStates")
-        if isinstance(current_states, dict):
-            attributes.update(current_states)
-        return attributes
+        return device_attributes(device)
 
     @staticmethod
     def _merge_device_identity(
@@ -282,4 +270,94 @@ class DeviceQueryService:
         }
         return MCPToolResult(
             ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data
+        )
+
+    async def home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
+        """Return one complete, internally consistent whole-home snapshot."""
+
+        source, devices = await self._live_devices(enrich_identity=True)
+        if not self._tool_succeeded(source):
+            return self._read_failure(HOME_SNAPSHOT_TOOL, arguments, source)
+
+        presence: list[dict[str, Any]] = []
+        motion: list[dict[str, Any]] = []
+        contacts: list[dict[str, Any]] = []
+        locks: list[dict[str, Any]] = []
+        low_batteries: list[dict[str, Any]] = []
+        alerts: list[dict[str, Any]] = []
+        for device in devices:
+            attrs = device_attributes(device)
+            label = device.get("label") or device.get("name")
+            room = device.get("room") or device.get("roomName")
+            identity = {
+                "id": device.get("id") or device.get("deviceId"),
+                "label": label,
+                "room": room,
+            }
+
+            presence_value = str(attrs.get("presence") or "").casefold()
+            if presence_value in {"present", "home", "arrived", "true", "active"}:
+                presence.append({**identity, "presence": attrs.get("presence")})
+            if str(attrs.get("motion") or "").casefold() == "active":
+                motion.append({**identity, "motion": "active"})
+            if str(attrs.get("contact") or "").casefold() == "open":
+                contacts.append({**identity, "contact": "open"})
+            if str(attrs.get("lock") or "").casefold() == "unlocked":
+                locks.append({**identity, "lock": "unlocked"})
+
+            battery = attrs.get("battery")
+            try:
+                battery_number = float(str(battery).strip().rstrip("%"))
+            except (TypeError, ValueError):
+                battery_number = None
+            if battery_number is not None and battery_number <= 20:
+                rendered_battery: int | float = (
+                    int(battery_number)
+                    if battery_number.is_integer()
+                    else battery_number
+                )
+                low_batteries.append({**identity, "battery": rendered_battery})
+
+            health = str(
+                attrs.get("healthStatus")
+                or attrs.get("networkStatus")
+                or attrs.get("rtt")
+                or ""
+            ).casefold()
+            if health in {"offline", "unavailable", "timeout", "failed"}:
+                alerts.append({**identity, "status": health})
+            hub_alerts = attrs.get("hubAlerts")
+            if hub_alerts not in (None, "", "[]", []):
+                alerts.append({**identity, "status": hub_alerts})
+
+        lights = active_lights(devices)
+        switches = active_non_light_switches(devices)
+        rooms = active_room_summary(devices)
+        sort_key = lambda item: str(item.get("label") or "").casefold()
+        data = {
+            "presence": sorted(presence, key=sort_key),
+            "active_motion": sorted(motion, key=sort_key),
+            "lights_on": lights,
+            "switches_on": switches,
+            "active_rooms": rooms,
+            "open_contacts": sorted(contacts, key=sort_key),
+            "unlocked_locks": sorted(locks, key=sort_key),
+            "low_batteries": sorted(low_batteries, key=sort_key),
+            "alerts": sorted(alerts, key=sort_key),
+            "counts": {
+                "presence": len(presence),
+                "active_motion": len(motion),
+                "lights_on": len(lights),
+                "switches_on": len(switches),
+                "active_rooms": len(rooms),
+                "open_contacts": len(contacts),
+                "unlocked_locks": len(locks),
+                "low_batteries": len(low_batteries),
+                "alerts": len(alerts),
+            },
+            "total_scanned": len(devices),
+            "complete": True,
+        }
+        return MCPToolResult(
+            HOME_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data
         )

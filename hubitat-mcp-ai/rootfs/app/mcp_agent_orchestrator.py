@@ -15,6 +15,7 @@ import httpx
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
 from device_query_service import DeviceQueryService
+from device_state_summary import device_attributes
 from device_target_resolver import normalized_name
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 
@@ -60,6 +61,7 @@ _LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 _LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 _LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 _LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
+_LOCAL_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 _LOCAL_CONTROL_TOOL = "homebrain_control_devices"
 _LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 
@@ -337,6 +339,24 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
+    def _home_snapshot_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_HOME_SNAPSHOT_TOOL,
+            (
+                "Fetch one live Hubitat device snapshot and deterministically summarize "
+                "the whole home: presence, motion, active rooms, lights and non-light "
+                "switches on, open contacts, unlocked locks, low batteries, and health "
+                "alerts. Use this for broad questions such as what is happening at home."
+            ),
+            {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
     def _control_devices_tool() -> MCPTool:
         return MCPTool(
             _LOCAL_CONTROL_TOOL,
@@ -410,21 +430,7 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
-        attributes = (
-            device.get("attributes")
-            or device.get("currentStates")
-            or device.get("states")
-            or {}
-        )
-        if isinstance(attributes, list):
-            return {
-                str(item.get("name")): item.get(
-                    "currentValue", item.get("value")
-                )
-                for item in attributes
-                if isinstance(item, dict) and item.get("name")
-            }
-        return dict(attributes) if isinstance(attributes, dict) else {}
+        return device_attributes(device)
 
     @staticmethod
     def _device_attribute_units(device: dict[str, Any]) -> dict[str, str]:
@@ -789,6 +795,10 @@ class UnifiedMCPAgent:
         service = DeviceQueryService(self.mcp, self._record_evidence)
         return await service.active_switches(arguments)
 
+    async def _home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
+        service = DeviceQueryService(self.mcp, self._record_evidence)
+        return await service.home_snapshot(arguments)
+
     async def _control_devices(
         self, arguments: dict[str, Any]
     ) -> MCPToolResult:
@@ -1083,14 +1093,13 @@ class UnifiedMCPAgent:
             for pattern in _HOME_STATE_PATTERNS
         ):
             home_section = (
-                "\n\nWHOLE-HOME SUMMARY RULES\nGive a compact structured snapshot "
-                "covering: people/presence; active motion; lights and notable switches "
-                "that are on; open doors/windows and unlocked locks; low batteries at "
-                "or below 20 percent; hub/security alerts; and notable climate or weather "
-                "conditions when present. Omit empty categories. Do not say the home is "
-                "quiet when anyone is present, motion is active, a contact is open, a "
-                "light is on, or an alert exists. Distinguish named-person presence from "
-                "room presence sensors."
+                "\n\nWHOLE-HOME SUMMARY RULES\nCall homebrain_home_snapshot exactly "
+                "once. It returns a complete, internally consistent live snapshot of "
+                "presence, active motion, active rooms, lights and notable switches that are "
+                "on, open doors/windows, unlocked locks, low batteries, and alerts. Do "
+                "not say the home is quiet when anyone is present or another active "
+                "condition exists. Do not replace it with individual attribute filters "
+                "or partial reads."
             )
         room_section = ""
         if self._matches(user_prompt, _ROOM_TERMS):
@@ -1484,11 +1493,13 @@ class UnifiedMCPAgent:
         local_active_lights = self._active_lights_tool()
         local_active_rooms = self._active_rooms_tool()
         local_active_switches = self._active_switches_tool()
+        local_home_snapshot = self._home_snapshot_tool()
         local_control = self._control_devices_tool()
         local_hub_info = self._hub_info_tool()
         all_tools.extend([
             local_filter, local_active_lights, local_active_rooms,
-            local_active_switches, local_control, local_hub_info
+            local_active_switches, local_home_snapshot, local_control,
+            local_hub_info
         ])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
@@ -1522,6 +1533,17 @@ class UnifiedMCPAgent:
                 and all(tool.name != _LOCAL_FILTER_TOOL for tool in declared)
             ):
                 declared.append(local_filter)
+            if (
+                any(
+                    re.search(pattern, user_prompt.lower()) is not None
+                    for pattern in _HOME_STATE_PATTERNS
+                )
+                and all(
+                    tool.name != _LOCAL_HOME_SNAPSHOT_TOOL
+                    for tool in declared
+                )
+            ):
+                declared.append(local_home_snapshot)
             if (
                 self._matches(user_prompt, {"light", "lights", "lamp", "lamps"})
                 and not self._requests_mutation(user_prompt)
@@ -1706,6 +1728,8 @@ class UnifiedMCPAgent:
                             result = await self._active_rooms(dict(arguments))
                         elif name == _LOCAL_ACTIVE_SWITCHES_TOOL:
                             result = await self._active_switches(dict(arguments))
+                        elif name == _LOCAL_HOME_SNAPSHOT_TOOL:
+                            result = await self._home_snapshot(dict(arguments))
                         elif name == _LOCAL_CONTROL_TOOL:
                             result = await self._control_devices(dict(arguments))
                         elif name == _LOCAL_HUB_INFO_TOOL:
@@ -1735,12 +1759,16 @@ class UnifiedMCPAgent:
                                             "deterministic_active_switches"
                                             if name == _LOCAL_ACTIVE_SWITCHES_TOOL
                                             else (
-                                                "deterministic_device_control"
-                                                if name == _LOCAL_CONTROL_TOOL
+                                                "deterministic_home_snapshot"
+                                                if name == _LOCAL_HOME_SNAPSHOT_TOOL
                                                 else (
-                                                    "authoritative_hub_info_snapshot"
-                                                    if name == _LOCAL_HUB_INFO_TOOL
-                                                    else "tool_result"
+                                                    "deterministic_device_control"
+                                                    if name == _LOCAL_CONTROL_TOOL
+                                                    else (
+                                                        "authoritative_hub_info_snapshot"
+                                                        if name == _LOCAL_HUB_INFO_TOOL
+                                                        else "tool_result"
+                                                    )
                                                 )
                                             )
                                         )
