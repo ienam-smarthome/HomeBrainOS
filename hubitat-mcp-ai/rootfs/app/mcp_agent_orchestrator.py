@@ -63,6 +63,7 @@ _HOME_STATE_PATTERNS = (
     r"\bhome (?:status|summary|overview)\b",
 )
 _LOCAL_FILTER_TOOL = "homebrain_filter_devices"
+_LOCAL_QUERY_TOOL = "homebrain_query_devices"
 _LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 _LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 _LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
@@ -71,6 +72,7 @@ _LOCAL_CONTROL_TOOL = "homebrain_control_devices"
 _LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 _EVIDENCE_KINDS = {
     _LOCAL_FILTER_TOOL: "deterministic_attribute_filter",
+    _LOCAL_QUERY_TOOL: "deterministic_attribute_query",
     _LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
     _LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
     _LOCAL_ACTIVE_SWITCHES_TOOL: "deterministic_active_switches",
@@ -93,6 +95,7 @@ class AgentOutcome:
     message: str
     request_class: str
     evidence: list[dict[str, Any]]
+    choices: list[str]
 
 
 class UnifiedMCPAgent:
@@ -137,6 +140,9 @@ class UnifiedMCPAgent:
         )
         self._request_class: ContextVar[str] = ContextVar(
             "hubitat_request_class", default="live-read"
+        )
+        self._choices: ContextVar[list[str] | None] = ContextVar(
+            "hubitat_choices", default=None
         )
         self.ai_client = ai_client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
@@ -296,6 +302,50 @@ class UnifiedMCPAgent:
                     },
                 },
                 "required": ["attribute", "operator"],
+                "additionalProperties": False,
+            },
+            annotations={"readOnlyHint": True},
+        )
+
+    @staticmethod
+    def _device_query_tool() -> MCPTool:
+        return MCPTool(
+            _LOCAL_QUERY_TOOL,
+            (
+                "Query all live Hubitat devices and compute a numeric aggregate before "
+                "answering. Use maximum/minimum for highest or lowest, top/sort for "
+                "rankings, and count for totals. Set group_by=room when the user asks "
+                "which room, and device_kind=socket for socket or outlet questions."
+            ),
+            {
+                "type": "object",
+                "properties": {
+                    "attribute": {
+                        "type": "string",
+                        "description": "Numeric attribute such as power, temperature, humidity, or battery.",
+                    },
+                    "operation": {
+                        "type": "string",
+                        "enum": ["maximum", "minimum", "top", "sort", "count"],
+                    },
+                    "device_kind": {
+                        "type": "string",
+                        "enum": ["any", "light", "switch", "socket", "sensor"],
+                        "default": "any",
+                    },
+                    "group_by": {
+                        "type": "string",
+                        "enum": ["none", "room"],
+                        "default": "none",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 10,
+                    },
+                },
+                "required": ["attribute", "operation"],
                 "additionalProperties": False,
             },
             annotations={"readOnlyHint": True},
@@ -792,6 +842,12 @@ class UnifiedMCPAgent:
         service = DeviceQueryService(self.mcp, self._record_evidence)
         return await service.filter_devices(arguments)
 
+    async def _query_devices(
+        self, arguments: dict[str, Any]
+    ) -> MCPToolResult:
+        service = DeviceQueryService(self.mcp, self._record_evidence)
+        return await service.query_devices(arguments)
+
     @staticmethod
     def _attribute_matches(actual: Any, operator: str, expected: Any) -> bool:
         """Compatibility shim; deterministic comparison lives in the query service."""
@@ -1260,6 +1316,7 @@ class UnifiedMCPAgent:
     ) -> AgentOutcome:
         request_class = self._classify_request(user_prompt, session_id)
         evidence_token = self._evidence.set([])
+        choices_token = self._choices.set([])
         class_token = self._request_class.set(request_class)
         try:
             message = await self._process_user_request(
@@ -1271,10 +1328,12 @@ class UnifiedMCPAgent:
                 message=message,
                 request_class=request_class,
                 evidence=list(self._evidence.get() or []),
+                choices=list(self._choices.get() or []),
             )
         finally:
             self._request_class.reset(class_token)
             self._evidence.reset(evidence_token)
+            self._choices.reset(choices_token)
 
     async def process_user_request(
         self,
@@ -1301,6 +1360,7 @@ class UnifiedMCPAgent:
         request_started = time.monotonic()
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
         local_filter = self._device_filter_tool()
+        local_query = self._device_query_tool()
         local_active_lights = self._active_lights_tool()
         local_active_rooms = self._active_rooms_tool()
         local_active_switches = self._active_switches_tool()
@@ -1308,7 +1368,7 @@ class UnifiedMCPAgent:
         local_control = self._control_devices_tool()
         local_hub_info = self._hub_info_tool()
         safe_read_tools = [
-            local_filter, local_active_lights, local_active_rooms,
+            local_filter, local_query, local_active_lights, local_active_rooms,
             local_active_switches, local_home_snapshot, local_hub_info,
         ]
         all_tools.extend([*safe_read_tools, local_control])
@@ -1496,6 +1556,8 @@ class UnifiedMCPAgent:
                         mcp_started = time.monotonic()
                         if name == _LOCAL_FILTER_TOOL:
                             result = await self._filter_devices(dict(arguments))
+                        elif name == _LOCAL_QUERY_TOOL:
+                            result = await self._query_devices(dict(arguments))
                         elif name == _LOCAL_ACTIVE_LIGHTS_TOOL:
                             result = await self._active_lights(dict(arguments))
                         elif name == _LOCAL_ACTIVE_ROOMS_TOOL:
@@ -1558,7 +1620,20 @@ class UnifiedMCPAgent:
                             failed=not self._tool_succeeded(result),
                             fallback_error=result.text,
                         )
-                        if deterministic_message is not None:
+                        if (
+                            name == _LOCAL_CONTROL_TOOL
+                            and isinstance(result.data, dict)
+                            and isinstance(result.data.get("choices"), list)
+                        ):
+                            self._choices.set([
+                                str(choice)
+                                for choice in result.data["choices"]
+                                if str(choice).strip()
+                            ])
+                        if deterministic_message is not None and (
+                            name != _LOCAL_QUERY_TOOL
+                            or not self._tool_succeeded(result)
+                        ):
                             return deterministic_message
                 except Exception as exc:
                     logger.exception("MCP tool %s failed", name)

@@ -19,6 +19,7 @@ from mcp_client import HubitatMCPClient, MCPToolResult
 logger = logging.getLogger("HomeBrainOS.DeviceQuery")
 
 DEVICE_FILTER_TOOL = "homebrain_filter_devices"
+DEVICE_QUERY_TOOL = "homebrain_query_devices"
 ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
@@ -83,6 +84,84 @@ class DeviceQueryService:
     @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
         return device_attributes(device)
+
+    _ATTRIBUTE_ALIASES = {
+        "battery": ("battery", "batteryLevel"),
+        "humidity": ("humidity",),
+        "power": ("power", "activePower", "powerMeter"),
+        "temperature": ("temperature", "temperatureC"),
+    }
+
+    @classmethod
+    def _attribute_value(
+        cls, device: dict[str, Any], attribute: str
+    ) -> tuple[str | None, Any]:
+        wanted_names = cls._ATTRIBUTE_ALIASES.get(
+            cls._normalized_attribute(attribute), (attribute,)
+        )
+        wanted = {
+            cls._normalized_attribute(name)
+            for name in wanted_names
+        }
+        combined = {**device, **cls._device_attributes(device)}
+        for key, value in combined.items():
+            if cls._normalized_attribute(str(key)) in wanted and value is not None:
+                return str(key), value
+        return None, None
+
+    @staticmethod
+    def _capability_names(device: dict[str, Any]) -> set[str]:
+        values = device.get("capabilities") or []
+        names: set[str] = set()
+        if isinstance(values, dict):
+            values = values.keys()
+        for item in values if isinstance(values, (list, tuple, set, dict)) else []:
+            if isinstance(item, dict):
+                item = item.get("name") or item.get("capability")
+            if item:
+                names.add(str(item).casefold())
+        return names
+
+    @classmethod
+    def _matches_device_kind(cls, device: dict[str, Any], kind: str) -> bool:
+        kind = kind.casefold()
+        if kind in {"", "any"}:
+            return True
+        label = str(device.get("label") or device.get("name") or "").casefold()
+        room = str(device.get("room") or device.get("roomName") or "").casefold()
+        capabilities = cls._capability_names(device)
+        is_light = (
+            bool(capabilities & {"light", "bulb", "colorcontrol", "colortemperature"})
+            or any(word in label for word in (" light", "lamp", "bulb"))
+        )
+        is_socket = (
+            "outlet" in capabilities
+            or any(word in label for word in ("socket", "plug", "outlet"))
+            or room == "sockets"
+        )
+        if kind == "light":
+            return is_light
+        if kind in {"socket", "outlet", "plug"}:
+            return is_socket
+        if kind == "switch":
+            return "switch" in capabilities and not is_light
+        if kind == "sensor":
+            return not bool(capabilities & {"switch", "outlet"}) and not is_light
+        return True
+
+    @staticmethod
+    def _numeric_value(value: Any) -> float:
+        cleaned = re.sub(r"[^0-9.+-]", "", str(value))
+        return float(cleaned)
+
+    @staticmethod
+    def _unit_for(attribute: str) -> str | None:
+        return {
+            "battery": "%",
+            "humidity": "%",
+            "power": "W",
+            "temperature": "°C",
+        }.get(attribute.casefold())
 
     @staticmethod
     def _merge_device_identity(
@@ -222,6 +301,101 @@ class DeviceQueryService:
         }
         return MCPToolResult(
             DEVICE_FILTER_TOOL, arguments, {}, json.dumps(data), data
+        )
+
+    async def query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
+        """Compute aggregates over live device attributes before LLM synthesis."""
+
+        attribute = str(arguments.get("attribute") or "").strip()
+        operation = str(arguments.get("operation") or "").strip().lower()
+        device_kind = str(arguments.get("device_kind") or "any").strip().lower()
+        group_by = str(arguments.get("group_by") or "none").strip().lower()
+        try:
+            limit = min(100, max(1, int(arguments.get("limit") or 10)))
+        except (TypeError, ValueError):
+            limit = 10
+        if not attribute or operation not in {
+            "maximum", "minimum", "top", "sort", "count",
+        }:
+            return MCPToolResult(
+                DEVICE_QUERY_TOOL, arguments, {}, "Invalid query arguments",
+                {
+                    "error": (
+                        "attribute and operation maximum, minimum, top, sort, "
+                        "or count are required"
+                    )
+                },
+                is_error=True,
+            )
+
+        source, devices = await self._live_devices(enrich_identity=True)
+        if not self._tool_succeeded(source):
+            return self._read_failure(DEVICE_QUERY_TOOL, arguments, source)
+
+        rows: list[dict[str, Any]] = []
+        conversion_errors = 0
+        for device in devices:
+            if not self._matches_device_kind(device, device_kind):
+                continue
+            source_attribute, raw_value = self._attribute_value(device, attribute)
+            if raw_value is None:
+                continue
+            try:
+                numeric = self._numeric_value(raw_value)
+            except (TypeError, ValueError):
+                conversion_errors += 1
+                continue
+            rows.append({
+                "id": device.get("id") or device.get("deviceId"),
+                "label": device.get("label") or device.get("name"),
+                "room": device.get("room") or device.get("roomName"),
+                "attribute": attribute,
+                "source_attribute": source_attribute,
+                "value": int(numeric) if numeric.is_integer() else numeric,
+                "unit": self._unit_for(attribute),
+            })
+
+        reverse = operation != "minimum"
+        rows.sort(
+            key=lambda row: (
+                float(row["value"]),
+                str(row.get("label") or "").casefold(),
+            ),
+            reverse=reverse,
+        )
+        grouped: list[dict[str, Any]] = []
+        if group_by == "room":
+            by_room: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                room = str(row.get("room") or "Unassigned")
+                if room not in by_room:
+                    by_room[room] = row
+            grouped = [
+                {"room": room, **row}
+                for room, row in by_room.items()
+            ]
+            grouped.sort(key=lambda row: float(row["value"]), reverse=reverse)
+
+        if operation in {"maximum", "minimum"}:
+            results = (grouped or rows)[:1]
+        elif operation == "count":
+            results = []
+        else:
+            results = (grouped or rows)[:limit]
+        data = {
+            "operation": operation,
+            "attribute": attribute,
+            "device_kind": device_kind,
+            "group_by": group_by,
+            "count": len(rows),
+            "winner": results[0] if results else None,
+            "results": results,
+            "total_scanned": len(devices),
+            "conversion_errors": conversion_errors,
+            "complete": True,
+        }
+        return MCPToolResult(
+            DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data
         )
 
     async def active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
