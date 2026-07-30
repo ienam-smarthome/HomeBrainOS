@@ -66,7 +66,7 @@ class DeviceControlService:
         if (
             bool(room) == bool(names)
             or not isinstance(names, list)
-            or kind not in {"light", "switch"}
+            or kind not in {"auto", "light", "switch"}
             or command not in {"on", "off", "toggle"}
         ):
             return MCPToolResult(
@@ -103,7 +103,11 @@ class DeviceControlService:
             if (
                 is_light_device(device)
                 if kind == "light"
-                else self._is_switch_device(device) and not is_light_device(device)
+                else (
+                    self._is_switch_device(device) and not is_light_device(device)
+                    if kind == "switch"
+                    else self._is_switch_device(device) or is_light_device(device)
+                )
             )
         ]
         fast_targets: list[dict[str, Any]] = []

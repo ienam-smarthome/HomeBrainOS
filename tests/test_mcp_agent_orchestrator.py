@@ -211,8 +211,72 @@ def test_read_state_question_is_not_misclassified_as_mutation():
     assert not UnifiedMCPAgent._requests_mutation("Which switches are on?")
     assert not UnifiedMCPAgent._requests_mutation("Which doors are open?")
     assert UnifiedMCPAgent._requests_mutation("turn off hallway lights")
+    assert UnifiedMCPAgent._requests_mutation("switch on bedroom three big lamp")
     assert UnifiedMCPAgent._requests_mutation("pause humidity app")
     assert UnifiedMCPAgent._requests_mutation("install the firmware update")
+
+
+def test_generic_routine_control_grammar_extracts_speech_target():
+    assert UnifiedMCPAgent._routine_control_arguments(
+        "Turn on living room two"
+    ) == {
+        "device_names": ["living room two"],
+        "device_kind": "auto",
+        "command": "on",
+    }
+    assert UnifiedMCPAgent._routine_control_arguments(
+        "switch bedroom three big lamp on"
+    ) == {
+        "device_names": ["bedroom three big lamp"],
+        "device_kind": "auto",
+        "command": "on",
+    }
+
+
+@pytest.mark.asyncio
+async def test_weather_question_receives_authoritative_weather_snapshot():
+    class WeatherMCP(FakeMCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {
+                    "devices": [{
+                        "id": "7243",
+                        "label": "Weather Open-Meteo",
+                        "roomName": "Climate",
+                        "attributes": {
+                            "temperature": 24.9,
+                            "humidity": 50,
+                        },
+                    }]
+                },
+            )
+
+        async def get_cached_devices(self):
+            return []
+
+    ai = FakeAI([{
+        "message": {
+            "role": "assistant",
+            "content": "It is 24.9°C with 50% humidity.",
+        }
+    }])
+    agent = UnifiedMCPAgent(WeatherMCP(), "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("What is the weather?")
+
+    assert outcome.message == "It is 24.9°C with 50% humidity."
+    assert "AUTHORITATIVE CURRENT WEATHER SNAPSHOT" in (
+        ai.requests[0][1]["json"]["messages"][0]["content"]
+    )
+    assert any(
+        receipt["evidence_kind"] == "authoritative_weather_snapshot"
+        for receipt in outcome.evidence
+    )
 
 
 def test_general_request_classification():
@@ -362,10 +426,11 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
             "homebrain_query_devices",
             "homebrain_active_lights",
         "homebrain_active_rooms",
-        "homebrain_active_switches",
-        "homebrain_home_snapshot",
-        "homebrain_hub_info_snapshot",
-    ]
+            "homebrain_active_switches",
+            "homebrain_home_snapshot",
+            "homebrain_hub_info_snapshot",
+            "homebrain_weather_snapshot",
+        ]
 
 
 @pytest.mark.asyncio
@@ -519,17 +584,25 @@ async def test_home_snapshot_is_available_for_unseen_natural_paraphrase():
                 name, arguments, {}, "", {"devices": []}
             )
 
-    ai = FakeAI([{
-        "message": {
-            "role": "assistant",
-            "tool_calls": [{
-                "function": {
-                    "name": "homebrain_home_snapshot",
-                    "arguments": {},
-                }
-            }],
-        }
-    }])
+    ai = FakeAI([
+        {
+            "message": {
+                "role": "assistant",
+                "tool_calls": [{
+                    "function": {
+                        "name": "homebrain_home_snapshot",
+                        "arguments": {},
+                    }
+                }],
+            }
+        },
+        {
+            "message": {
+                "role": "assistant",
+                "content": "Everything appears quiet at home.",
+            }
+        },
+    ])
     agent = UnifiedMCPAgent(
         ParaphraseMCP(), "key", "model", ai_client=ai
     )
