@@ -1,208 +1,104 @@
 # HomeBrainOS architecture
 
+> Rewritten to match the native MCP-agent consolidation on `main` and the
+> structured automation-status work in PR #327 (add-on v0.10.250). The previous
+> document described the retired pre-consolidation stack (`entrypoint.py`,
+> `AskLayerRegistry`, `semantic_home_*`, `control_agent_*`, `fast_fallback_*`,
+> and related wrapper families). Use Git history when that implementation is
+> needed for reference.
+
 ## Current add-on
 
-- `hubitat-mcp-ai/` is the maintained and only Hubitat MCP assistant. The
-  legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
+- `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
+- The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
+- The maintained runtime is a flat set of eleven Python modules under
+  `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
+  directly; there is no `entrypoint.py`, request-layer registry, inheritance
+  chain, or runtime route-bridge stack.
 
-The maintained assistant starts at `hubitat-mcp-ai/rootfs/app/entrypoint.py`, composes the established services from `entrypoint_core.py`, and rebinds the final FastAPI routes through `runtime_route_bridge.py`.
+## Module map
+
+| Module | Role |
+| --- | --- |
+| `app.py` | Loads add-on options, constructs the shared services, owns `RequestCoordinator`, and defines `/`, `/health`, `/api/status`, `/api/dashboard`, `/api/tools`, `/api/refresh`, `/api/chat`, and `/api/ask`. |
+| `mcp_client.py` | `HubitatMCPClient`, the single JSON-RPC client used for Hubitat MCP access. Defines `MCPError`, `MCPTool`, and `MCPToolResult`. |
+| `mcp_agent_orchestrator.py` | `UnifiedMCPAgent`, the native Ollama tool-calling coordinator. It selects and executes tools, records evidence, enforces live grounding, handles confirmations, consumes streamed Ollama responses, and produces final answers. |
+| `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
+| `device_query_service.py` | Read-side queries over the cached device inventory, including filtering, comparison, aggregation, and room-aware reads. |
+| `device_control_service.py` | Write-side device commands such as on, off, toggle, and level changes. |
+| `device_target_resolver.py` | Resolves natural-language room and device references to concrete candidates using normalisation and token scoring. |
+| `device_state_summary.py` | Shared pure helpers for room names, light detection, active lights, active non-light switches, and active-room summaries. |
+| `deterministic_tool_presenter.py` | Formats selected tool results into fixed, non-AI-generated answers for common home-state questions. |
+| `agent_prompt_policy.py` | Builds the system prompt and renders the optional device and app identity manifests. |
+| `webui.py` | Renders the Home Assistant ingress UI, status badges, structured automation rows, controls, speech, clipboard actions, and technical details. |
 
 ## Request flow
 
-1. **Safety-critical deterministic routes** handle explicit controls, confirmations, named app/rule writes, firmware operations and exact authoritative reads.
-2. **Semantic home routing** maps broad natural-language questions to stable semantic intents rather than matching every possible phrase.
-3. **Evidence services** read Hubitat through MCP and return typed facts, counts and exact entity names.
-4. **AI synthesis** turns verified evidence into natural wording.
-5. **Fact validation** rejects AI output that omits or changes required facts and falls back to deterministic natural wording.
-6. **Presentation and tracing** add display metadata and technical diagnostics without changing authoritative facts.
+1. `/api/chat` or `/api/ask` receives a request in `app.py`.
+2. `RequestCoordinator` owns the in-flight task for the session. A newer request
+   supersedes the previous task, and client disconnects cancel backend work.
+3. Read-only automation-status questions are routed directly to
+   `AutomationStatusService`. The service reads live app and Rule Machine data,
+   reconciles each item deterministically, and returns both a concise message
+   and machine-readable `automation_items` without requiring Ollama.
+4. Other requests are handed to `UnifiedMCPAgent`.
+5. Common home-state questions can use local deterministic tools and
+   `deterministic_tool_presenter.py`, avoiding an additional synthesis round
+   where a fixed authoritative answer is sufficient.
+6. Remaining requests use the native Ollama tool-calling loop. The agent builds
+   a query-scoped system prompt, exposes an approved tool set, executes selected
+   tools through the shared `HubitatMCPClient`, and records an evidence receipt
+   for every call.
+7. A live-read answer requires successful evidence marked
+   `supports_live_claim=True`. If evidence cannot be obtained after the allowed
+   retry, the agent refuses rather than making an ungrounded live claim.
+8. Routine device controls can execute without a second confirmation. Sensitive
+   operations, including firmware installation and higher-risk mutations, are
+   stored as `PendingConfirmation` and execute only after a valid confirmation.
+9. `/api/ask` returns the message, route, request class, choices, evidence,
+   optional `automation_items`, model, elapsed time, and add-on version. The
+   WebUI renders structured automation rows directly when present.
 
-## Request-layer registry
+## Safety and correctness contracts
 
-The maintained startup installs `AskLayerRegistry` before the first
-`application.ask` wrapper. It observes every subsequent assignment, including
-nested compatibility installers, without changing handler identity, ordering
-or safety behavior. `/api/request-layers` exposes the live ordered registry;
-recent-request performance records include `answering_layer`,
-`answering_layer_tier` and the number of traversed layers.
+- All Hubitat access originates from the shared `HubitatMCPClient` created in
+  `app.py`.
+- Device identity manifests are for name resolution only and are not proof of
+  current state.
+- Live claims require authoritative tool evidence.
+- Mutation success is reported only when the corresponding tool result confirms
+  it.
+- Automation status precedence is deterministic: broken and disabled signals
+  are resolved before paused, and `paused=false` alone never proves active.
+- Unknown or incomplete status data is labelled `unknown` rather than guessed.
+- Firmware installation requires a firmware snapshot reporting an available
+  update plus approval through the host confirmation gate.
 
-The live request stack is documented by tier:
+## Known gaps
 
-1. **Safety-critical deterministic writes**: confirmations, named app/rule
-   control, automation workflows, backup, restart and firmware operations.
-2. **Deterministic fast reads**: cached home snapshots, device-derived
-   insights and automation recommendations.
-3. **Semantic-evidence routing**: semantic reads, evidence planning and
-   verified hybrid reads.
-4. **AI synthesis**: fast handoff, Ollama engagement and the unified MCP agent.
-5. **Answer guards**: home-summary, thermostat, climate, hub-health and
-   execution-contract validation.
-6. **Narrow terminal-route intercepts**: authoritative device health, Octopus
-   power, named-rule status, automation recommendations and Ollama help.
+- `mcp_agent_orchestrator.py` remains the largest module and still combines
+  classification, tool selection, confirmation state, evidence policy, tool
+  execution, retries, and final-answer handling. These concerns should be
+  extracted incrementally with regression coverage.
+- Conversation and tool-call messages can grow across long multi-round sessions;
+  a bounded history policy is still needed.
+- The browser receives the completed `/api/ask` response rather than streamed
+  progress and answer deltas.
+- Cancellation is coordinated at the request-task level; lower-level Ollama and
+  MCP cancellation should continue to be tested explicitly.
+- The repository-level `CHANGELOG.md` and add-on `0.10.x` release notes do not
+  use one consistently correlated version scheme.
 
-Conversation context and request tracing form a separate observability tier.
-They describe the request but do not relax the six safety-preserving tiers.
+## Repository hygiene
 
-`scripts/analyze_request_layers.py` statically covers all 51 raw assignment
-sites across 38 production modules, including dormant compatibility paths.
-Live main currently executes 36 wrappers plus the base route. All MCP access
-still originates from the single `HubitatMCPClient` in `app.py`, which startup
-wraps once with `IndexedMCPStateBroker`; no request-layer module constructs an
-independent MCP client or bypasses the shared catalogue/state caches.
-
-## Live semantic home modules
-
-- `semantic_home_query_router.py`: AI intent classification for broad whole-home questions.
-- `semantic_home_evidence.py`: typed current-home facts from the selected device inventory.
-- `semantic_home_summary_agent.py`: validated natural-language synthesis and deterministic fallback.
-
-New phrasings should normally be handled by semantic intent classification. Regex is reserved for explicit safety-sensitive commands, confirmations and narrow latency optimisations.
-
-## Major module families
-
-Several older areas are implemented as load-bearing inheritance or wrapper chains. They must be flattened incrementally with regression tests rather than deleted by filename:
-
-- `ollama_agent_*`: consolidated live chain is `fast → inference → claude → unified`;
-  superseded compatibility modules have been removed. The cluster analyzer
-  explicitly recognizes `ollama_agent_fast` and `ollama_agent_inference` as
-  intentional documented layers; other sibling-only modules remain suspect.
-- `control_agent_*`: core confirmation state, base execution, verified-level
-  control and rescue behavior are consolidated in `control_agent_rescue.py`;
-  actuator eligibility and read-only-device safeguards are consolidated in
-  `control_agent_graph.py`; Claude-first, goal-based, semantic-target and
-  combined-level interpretation are consolidated in
-  `control_agent_combined_level.py`. All remaining family modules are wired
-  outside the family.
-- `automation_rule_workflow_*`: live schema, release safeguards and native Rule
-  Machine execution are consolidated in
-  `automation_rule_workflow_hubitat.py`; notification discovery, guarded
-  washing-rule compilation, backup preflight/confirmation, filename safety,
-  write recovery and repair safety are consolidated behind the externally wired
-  `automation_rule_workflow_recovery.py`.
-- `fast_fallback_*`: the base, weather and live-state kernel is consolidated in
-  `fast_fallback_live.py`; verified control, attention, group control,
-  device-health and speech behavior is consolidated in
-  `fast_fallback_device_health.py`; inventory, dashboard, room, status and
-  extended-read behavior is consolidated in `fast_fallback_extended_reads.py`;
-  prayer-time, device-type, index, engagement, multi-control and light-usage
-  behavior is consolidated in `fast_fallback_light_usage.py`. All four
-  remaining family modules are wired outside the family.
-- `home_snapshot.py`: owns the base, truthful-state recovery and hybrid
-  Cloud-first snapshot services in one canonical module. The three public
-  service classes and installer functions remain available without a
-  sibling-only inheritance chain.
-- `device_intelligence_catalogue.py`: owns capability enrichment,
-  authoritative selected-device membership, safe state merging, dashboard
-  metrics (including motion/light-based active rooms), duplicate-name
-  diagnostics and conservative spoken-name matching.
-- `conversation_context.py`: owns the conservative per-session context store
-  and installer, including stale-pronoun clearing, reordered comparisons and
-  room-name-safe follow-ups.
-- `dashboard_api.py` composes device, health and deterministic whole-house power
-  metrics for the dashboard; each source fails open independently.
-- `webui_*`: the base HomeBrain renderer, responsive dashboard, clipboard
-  fallback and HTTP error handling are consolidated in `webui.py`;
-  feature-specific UI patchers remain separate modules.
-
-Use `scripts/analyze_imports.py`, `scripts/analyze_clusters.py` and
-`scripts/analyze_request_layers.py` before changing these families or adding
-another request wrapper.
-
-## Standing monitoring practice
-
-- Run `scripts/analyze_clusters.py` whenever a `_safe`, wrapper or sibling
-  compatibility module is introduced; run `scripts/analyze_request_layers.py`
-  whenever request routing changes.
-- Query Hubitat `hub_get_performance_stats` by both `pctBusy` and `averageMs`.
-  The first exposes frequent cumulative load; the second exposes rare,
-  individually expensive executions. Review call count and state size beside
-  both rankings so neither shape is hidden.
-
-## Import graph health
-
-The add-on has 130 production Python modules, all reachable from a
-declared entrypoint. `scripts/analyze_imports.py` reports zero orphans.
-
-`scripts/analyze_clusters.py` distinguishes same-family inheritance from plain
-module composition. Unlisted sibling-only subclass layers remain suspect;
-ordinary function composition, such as `semantic_home_summary_agent.py` using
-`semantic_home_evidence.py`, is reported as live.
-
-The former `sitecustomize.py` compatibility hook was retired after structured
-MCP result handling moved into `mcp_client.py`; Python's implicit
-`sitecustomize` loading therefore no longer hides behavior from the static
-import graph.
-
-## Consolidation rules
-
-1. Confirm the live import graph before moving or deleting code.
-2. Port missing safety checks from a superseded layer into the selected implementation.
-3. Add regression tests before removing the old layer.
-4. Change imports to the consolidated module.
-5. Run focused tests, repository validation and the release gate.
-6. Delete the superseded file only after no production or test importer remains.
-7. Use Git history for old implementations; do not keep `_final`, `_safe`, `_v2` or `_verified` copies unless they remain distinct live capabilities.
-
-## Planned consolidation order
-
-1. [done] Remove confirmed zero-importer production modules.
-2. [done] Flatten the Ollama inheritance chain behind `UnifiedAdaptiveMCPAgent`.
-3. [done] Consolidate overlapping control-agent wrappers behind maintained
-   public control services.
-4. [done] Consolidate automation Rule Machine safety layers behind the native,
-   washing and externally wired recovery owners.
-5. [done] Merge fast-fallback near-duplicates by semantic capability.
-6. [done] Fold Web UI safety wrappers into a single maintained Web UI implementation.
-7. [done] Replace the unified-agent `application.ask` monkey-patch with an
-   explicit maintained request-layer composition.
-8. [done] Fold capability-catalogue safety and duplicate-aware matching into
-   `device_intelligence_catalogue.py`.
-9. [done] Fold conservative follow-up handling into
-   `conversation_context.py`.
-10. [done] Distinguish subclass accretion from ordinary sibling composition in
-    the cluster analyzer.
-
-Each phase must preserve current public commands, MCP safety behaviour and Home Assistant startup.
-
-## Request-handler composition
-
-`entrypoint_core.py` is the maintained owner of the live request pipeline. It
-captures the complete control-agent and legacy route stack, builds the unified
-MCP agent as a pure handler layer, and assigns the composed handler once.
-
-`request_composition.py` provides the typed, named layer primitive and records
-the declared outer-to-inner order for diagnostics. The compatibility installer
-in `mcp_agent_orchestrator.py` remains available for isolated callers and tests,
-but the production entrypoint does not use its mutation-based API.
-
-`entrypoint.py` uses `AskCompositionBuilder` for every auxiliary request
-installer. The builder captures compatibility wrappers, preserves their service
-return values and non-request side effects, rejects untracked mutations, then
-verifies the reconstructed typed chain is the same live handler before
-finalizing it. Service-only installers remain direct calls because they do not
-participate in request ordering.
-
-## Ollama runtime wiring
-
-`entrypoint_core.py` installs `UnifiedAdaptiveMCPAgent` as the final
-request-serving object. The maintained inheritance chain now contains four
-behavior-bearing layers: `ollama_agent_fast`, `ollama_agent_inference`,
-`ollama_agent_claude` and `ollama_agent_unified`.
-
-Consolidated behavior is pinned by `tests/test_ollama_agent_live_chain.py`.
-Historical behavior-level tests import the live owner directly rather than
-keeping compatibility modules solely as test adapters.
-
-## Deferred Ollama startup
-
-The maintained `entrypoint_core.py` startup now requests deferred legacy Ollama
-initialization before importing `app.py`. During that import, `app.py` installs
-a lightweight temporary object rather than constructing a complete
-`ClaudeStyleOllamaAgent` and unused HTTP client.
-
-`entrypoint_core.py` then replaces the placeholder with
-`UnifiedAdaptiveMCPAgent`, as before. Direct standalone execution of `app.py`
-continues to construct the Claude-style agent for compatibility.
-
-This removes duplicate startup work while preserving the consolidated
-four-layer Ollama chain.
+- `CONTRIBUTING.md` bans new `_final`, `_safe`, `_verified`, and `_v2`-style
+  replacement modules unless they remain genuinely distinct live capabilities.
+- `tests/test_repository_hygiene.py` checks for prohibited suffix families and
+  case-insensitive duplicate module names.
+- Run `scripts/analyze_imports.py` and `scripts/validate_addon.py` when changing
+  the app directory.
+- Run the blocking release gate and focused tests before merging.
+- Confirm the live import graph before moving or deleting code, port required
+  safety checks first, update importers, and delete the superseded module only
+  after no production or test importer remains.
