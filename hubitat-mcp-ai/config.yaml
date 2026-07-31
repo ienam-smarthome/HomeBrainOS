@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.10.253"
+version: "0.10.254"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
