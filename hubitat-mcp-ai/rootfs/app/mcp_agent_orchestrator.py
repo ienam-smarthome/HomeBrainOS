@@ -44,6 +44,10 @@ _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
     "rule", "rules",
 }
+_SWITCH_TERMS = {
+    "switch", "switches", "which switches", "what switches",
+    "switches on", "switches are on",
+}
 _DEVICE_TERMS = {
     "battery", "batteries", "device", "devices", "door", "light", "lights",
     "fan", "humidity", "lamp", "lamps", "lock", "motion", "outlet", "plug",
@@ -1034,7 +1038,12 @@ class UnifiedMCPAgent:
     @classmethod
     def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
         names: set[str] | None = None
-        if cls._matches(prompt, _DEVICE_HEALTH_TERMS):
+        if cls._matches(prompt, _SWITCH_TERMS):
+            names = {
+                "homebrain_active_switches",
+                "hub_read_devices",
+            }
+        elif cls._matches(prompt, _DEVICE_HEALTH_TERMS):
             names = {
                 "hub_read_devices", "hub_read_diagnostics",
                 "hub_manage_devices",
