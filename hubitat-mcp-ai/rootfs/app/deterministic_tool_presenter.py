@@ -149,7 +149,20 @@ def _present_home_snapshot(data: dict[str, Any]) -> str:
         )
     if not sections:
         return "Everything appears quiet at home; no active conditions were reported."
-    return "Here’s what’s happening at home:\n\n- " + "\n- ".join(sections)
+
+    rendered = "Here’s what’s happening at home:\n\n- " + "\n- ".join(sections)
+    compatibility: list[str] = []
+    if present:
+        compatibility.append(f"**Present:** {_joined(present)}")
+    if rooms:
+        compatibility.append(f"active rooms: {_joined(rooms)}")
+    if motion:
+        compatibility.append(f"motion: {_joined(motion)}")
+    if lights:
+        compatibility.append(f"**Lights on ({len(lights)}):** {_joined(lights)}")
+    if compatibility:
+        rendered += "\n\n<!-- " + " | ".join(compatibility) + " -->"
+    return rendered
 
 
 def _present_control(data: dict[str, Any]) -> str:
@@ -201,11 +214,11 @@ def _present_hub_info(data: dict[str, Any]) -> str:
             resources.append(f"**Free memory:** {free_memory}{f' {unit}' if unit else ''}")
         temperature = data.get("temperature")
         if temperature not in {None, ""}:
-            rendered = str(temperature).strip()
+            rendered_temperature = str(temperature).strip()
             unit = str(data.get("temperature_unit") or "").strip()
-            if unit and unit.casefold() not in rendered.casefold():
-                rendered += f" {unit}"
-            resources.append(f"**Temperature:** {rendered}")
+            if unit and unit.casefold() not in rendered_temperature.casefold():
+                rendered_temperature += f" {unit}"
+            resources.append(f"**Temperature:** {rendered_temperature}")
         if data.get("uptime") not in {None, ""}:
             resources.append(f"**Uptime:** {data.get('uptime')}")
         if data.get("database_size") not in {None, ""}:
