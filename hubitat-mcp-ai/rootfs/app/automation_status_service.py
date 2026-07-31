@@ -10,6 +10,7 @@ from mcp_client import HubitatMCPClient, MCPToolResult
 
 _STATUSES = ("active", "disabled", "paused", "broken", "unknown")
 _ATTENTION_STATUSES = ("broken", "paused", "unknown")
+_STATUS_PRECEDENCE = ("broken", "paused", "disabled", "active")
 
 
 @dataclass(slots=True)
@@ -21,6 +22,7 @@ class AutomationStatusOutcome:
     automation_items: list[dict[str, Any]] = field(default_factory=list)
     automation_counts: dict[str, int] = field(default_factory=dict)
     attention_count: int = 0
+    conflict_count: int = 0
     route: str = "automation-status"
 
 
@@ -54,6 +56,9 @@ class AutomationStatusService:
         "broken", "disabled", "enabled", "paused", "active",
         "status", "state", "healthStatus",
     )
+    _SCHEMA_ONLY_KEYS = (
+        "input_schema", "inputSchema", "output_schema", "outputSchema", "parameters",
+    )
 
     @staticmethod
     def _name(item: dict[str, Any]) -> str:
@@ -78,39 +83,44 @@ class AutomationStatusService:
             for key in ("status", "state", "healthStatus")
         ).strip()
         name_text = cls._name(item).casefold()
-        broken = cls._bool(item.get("broken")) is True or any(
-            word in status_text for word in ("broken", "error", "failed")
-        ) or "*broken*" in name_text
-        paused = cls._bool(item.get("paused")) is True or "paused" in status_text or "(paused)" in name_text
-        disabled = (
-            cls._bool(item.get("disabled")) is True
-            or cls._bool(item.get("enabled")) is False
-            or "disabled" in status_text
-        )
-        active = (
-            cls._bool(item.get("active")) is True
-            or cls._bool(item.get("enabled")) is True
-            or any(word in status_text for word in ("active", "enabled", "running"))
-        )
         return {
-            "broken": broken,
-            "paused": paused,
-            "disabled": disabled,
-            "active": active,
+            "broken": (
+                cls._bool(item.get("broken")) is True
+                or any(word in status_text for word in ("broken", "error", "failed"))
+                or "*broken*" in name_text
+            ),
+            "paused": (
+                cls._bool(item.get("paused")) is True
+                or "paused" in status_text
+                or "(paused)" in name_text
+            ),
+            "disabled": (
+                cls._bool(item.get("disabled")) is True
+                or cls._bool(item.get("enabled")) is False
+                or "disabled" in status_text
+            ),
+            "active": (
+                cls._bool(item.get("active")) is True
+                or cls._bool(item.get("enabled")) is True
+                or any(word in status_text for word in ("active", "enabled", "running"))
+            ),
         }
+
+    @staticmethod
+    def conflicting_statuses(signals: dict[str, bool]) -> list[str]:
+        asserted = [status for status in _STATUS_PRECEDENCE if signals.get(status)]
+        if len(asserted) < 2:
+            return []
+        # Broken+paused is meaningful precedence, but it is still conflicting source
+        # evidence and should be visible to diagnostics/API consumers.
+        return asserted
 
     @classmethod
     def normalise_status(cls, item: dict[str, Any]) -> str:
         signals = cls._status_signals(item)
-        if signals["broken"]:
-            return "broken"
-        if signals["paused"]:
-            return "paused"
-        if signals["disabled"]:
-            return "disabled"
-        if signals["active"]:
-            return "active"
-
+        for status in _STATUS_PRECEDENCE:
+            if signals[status]:
+                return status
         status_text = " ".join(
             str(item.get(key) or "").casefold()
             for key in ("status", "state", "healthStatus")
@@ -135,20 +145,20 @@ class AutomationStatusService:
                 found.extend(AutomationStatusService._candidate_lists(child))
         return found
 
-    _SCHEMA_ONLY_KEYS = (
-        "input_schema", "inputSchema", "output_schema", "outputSchema",
-        "parameters",
-    )
-
     @classmethod
     def _looks_like_automation_item(cls, row: dict[str, Any]) -> bool:
-        name = row.get("label") or row.get("name") or row.get("displayName") or row.get("title")
-        if not name or any(key in row for key in cls._SCHEMA_ONLY_KEYS):
+        if not cls._name(row) or any(key in row for key in cls._SCHEMA_ONLY_KEYS):
             return False
         return any(key in row for key in ("id", "appId", "ruleId", *cls._STATE_FIELDS))
 
     @classmethod
-    def _items_from_result(cls, result: MCPToolResult, *, item_type: str, source: str) -> list[dict[str, Any]]:
+    def _items_from_result(
+        cls,
+        result: MCPToolResult,
+        *,
+        item_type: str,
+        source: str,
+    ) -> list[dict[str, Any]]:
         candidates = cls._candidate_lists(result.data)
         scored = [[row for row in rows if cls._looks_like_automation_item(row)] for rows in candidates]
         rows = max(scored, key=len, default=[])
@@ -158,9 +168,11 @@ class AutomationStatusService:
             if not name:
                 continue
             signals = cls._status_signals(row)
+            conflicts = cls.conflicting_statuses(signals)
+            identifier = row.get("id") or row.get("appId") or row.get("ruleId")
             items.append(
                 {
-                    "id": str(row.get("id") or row.get("appId") or row.get("ruleId")) if (row.get("id") or row.get("appId") or row.get("ruleId")) is not None else None,
+                    "id": str(identifier) if identifier is not None else None,
                     "name": name,
                     "display_name": cls.display_name(name),
                     "type": item_type,
@@ -168,6 +180,9 @@ class AutomationStatusService:
                     "broken": signals["broken"],
                     "paused": signals["paused"],
                     "disabled": signals["disabled"],
+                    "active": signals["active"],
+                    "status_conflict": bool(conflicts),
+                    "conflicting_statuses": conflicts,
                     "source": source,
                 }
             )
@@ -182,7 +197,12 @@ class AutomationStatusService:
         return counts
 
     @staticmethod
-    def _evidence(tool: str, arguments: dict[str, Any], result: MCPToolResult, elapsed_ms: int) -> dict[str, Any]:
+    def _evidence(
+        tool: str,
+        arguments: dict[str, Any],
+        result: MCPToolResult,
+        elapsed_ms: int,
+    ) -> dict[str, Any]:
         return {
             "tool": tool,
             "sub_tool": arguments.get("tool"),
@@ -201,9 +221,12 @@ class AutomationStatusService:
             return "No automation apps or Rule Machine rules were returned by Hubitat."
         counts = cls.status_counts(items)
         attention_count = sum(counts[status] for status in _ATTENTION_STATUSES)
+        conflict_count = sum(bool(item.get("status_conflict")) for item in items)
         summary = f"Hubitat returned {len(items)} automation items."
         if attention_count:
             summary += f" {attention_count} need attention."
+        if conflict_count:
+            summary += f" {conflict_count} have conflicting source-state signals."
         lines = [summary]
         for status in ("broken", "paused", "unknown", "disabled", "active"):
             matching = [item for item in items if item["status"] == status]
@@ -211,30 +234,44 @@ class AutomationStatusService:
                 lines.append(f"\n### {status.title()} ({len(matching)})")
                 lines.extend(
                     f"- [{status.upper()}] {item.get('display_name') or item['name']} ({item['type']})"
+                    + (" [conflicting source state]" if item.get("status_conflict") else "")
                     for item in matching
                 )
         return "\n".join(lines)
 
     async def snapshot(self) -> AutomationStatusOutcome:
-        calls = (("hub_read_apps_code", {"tool": "hub_list_apps", "args": {"scope": "instances"}}, "app"), ("hub_read_rules", {}, "rule"))
+        calls = (
+            ("hub_read_apps_code", {"tool": "hub_list_apps", "args": {"scope": "instances"}}, "app"),
+            ("hub_read_rules", {}, "rule"),
+        )
         items: list[dict[str, Any]] = []
         evidence: list[dict[str, Any]] = []
         for tool, arguments, item_type in calls:
             started = time.monotonic()
             result = await self.mcp.call_tool(tool, arguments)
-            evidence.append(self._evidence(tool, arguments, result, round((time.monotonic() - started) * 1000)))
+            evidence.append(
+                self._evidence(
+                    tool,
+                    arguments,
+                    result,
+                    round((time.monotonic() - started) * 1000),
+                )
+            )
             if not getattr(result, "is_error", False):
                 items.extend(self._items_from_result(result, item_type=item_type, source=tool))
         unique = {(i["type"], i.get("id") or "", i["name"].casefold()): i for i in items}
-        ordered = sorted(unique.values(), key=lambda i: (_STATUSES.index(i["status"]), i["name"].casefold()))
+        ordered = sorted(
+            unique.values(),
+            key=lambda item: (_STATUSES.index(item["status"]), item["name"].casefold()),
+        )
         counts = self.status_counts(ordered)
-        attention_count = sum(counts[status] for status in _ATTENTION_STATUSES)
         return AutomationStatusOutcome(
             message=self._message(ordered),
             evidence=evidence,
             automation_items=ordered,
             automation_counts=counts,
-            attention_count=attention_count,
+            attention_count=sum(counts[status] for status in _ATTENTION_STATUSES),
+            conflict_count=sum(bool(item.get("status_conflict")) for item in ordered),
         )
 
 
