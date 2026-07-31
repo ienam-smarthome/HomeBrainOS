@@ -23,6 +23,32 @@ from device_query_service import DeviceQueryService
 from device_state_summary import device_attributes
 from device_target_resolver import normalized_name
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
+from request_classification import (
+    matches as _matches,
+    requests_mutation as _requests_mutation,
+    routine_control_arguments as _routine_control_arguments,
+)
+from tool_registry import (
+    EVIDENCE_KINDS as _EVIDENCE_KINDS,
+    LOCAL_ACTIVE_LIGHTS_TOOL as _LOCAL_ACTIVE_LIGHTS_TOOL,
+    LOCAL_ACTIVE_ROOMS_TOOL as _LOCAL_ACTIVE_ROOMS_TOOL,
+    LOCAL_ACTIVE_SWITCHES_TOOL as _LOCAL_ACTIVE_SWITCHES_TOOL,
+    LOCAL_CONTROL_TOOL as _LOCAL_CONTROL_TOOL,
+    LOCAL_FILTER_TOOL as _LOCAL_FILTER_TOOL,
+    LOCAL_HOME_SNAPSHOT_TOOL as _LOCAL_HOME_SNAPSHOT_TOOL,
+    LOCAL_HUB_INFO_TOOL as _LOCAL_HUB_INFO_TOOL,
+    LOCAL_QUERY_TOOL as _LOCAL_QUERY_TOOL,
+    LOCAL_WEATHER_TOOL as _LOCAL_WEATHER_TOOL,
+    active_lights_tool as _active_lights_tool,
+    active_rooms_tool as _active_rooms_tool,
+    active_switches_tool as _active_switches_tool,
+    control_devices_tool as _control_devices_tool,
+    device_filter_tool as _device_filter_tool,
+    device_query_tool as _device_query_tool,
+    home_snapshot_tool as _home_snapshot_tool,
+    hub_info_tool as _hub_info_tool,
+    weather_snapshot_tool as _weather_snapshot_tool,
+)
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
 
@@ -66,26 +92,6 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
-_LOCAL_FILTER_TOOL = "homebrain_filter_devices"
-_LOCAL_QUERY_TOOL = "homebrain_query_devices"
-_LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
-_LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
-_LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
-_LOCAL_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
-_LOCAL_CONTROL_TOOL = "homebrain_control_devices"
-_LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
-_LOCAL_WEATHER_TOOL = "homebrain_weather_snapshot"
-_EVIDENCE_KINDS = {
-    _LOCAL_FILTER_TOOL: "deterministic_attribute_filter",
-    _LOCAL_QUERY_TOOL: "deterministic_attribute_query",
-    _LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
-    _LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
-    _LOCAL_ACTIVE_SWITCHES_TOOL: "deterministic_active_switches",
-    _LOCAL_HOME_SNAPSHOT_TOOL: "deterministic_home_snapshot",
-    _LOCAL_CONTROL_TOOL: "deterministic_device_control",
-    _LOCAL_HUB_INFO_TOOL: "authoritative_hub_info_snapshot",
-    _LOCAL_WEATHER_TOOL: "authoritative_weather_snapshot",
-}
 
 
 @dataclass(slots=True)
@@ -164,75 +170,12 @@ class UnifiedMCPAgent:
         if callable(close):
             await close()
 
-    @staticmethod
-    def _matches(prompt: str, terms: set[str]) -> bool:
-        value = prompt.lower()
-        return any(
-            re.search(
-                rf"\b{re.escape(term.lower())}(?:s|es)?\b", value
-            ) is not None
-            for term in terms
-        )
-
-    @staticmethod
-    def _requests_mutation(prompt: str) -> bool:
-        value = " ".join(prompt.lower().split())
-        strong_verbs = {
-            "create", "delete", "disable", "enable", "install", "pause", "reboot", "remove",
-            "restart", "resume", "set", "shutdown", "start", "stop", "toggle",
-            "unlock", "update", "write",
-        }
-        tokens = re.findall(r"[a-z0-9]+", value)
-        if tokens and tokens[0] in strong_verbs | {"close", "lock", "open"}:
-            return True
-        if (
-            re.search(r"\b(?:turn|switch|power)\b.+\b(?:on|off)\b", value)
-            or re.search(r"\b(?:turn|switch|power)\s+(?:on|off)\b", value)
-        ):
-            return True
-        if re.search(
-            r"\bplease\s+(?:close|create|delete|disable|enable|install|lock|open|pause|"
-            r"reboot|remove|restart|resume|set|shutdown|start|stop|toggle|"
-            r"unlock|update|write)\b",
-            value,
-        ):
-            return True
-        return False
-
-    @staticmethod
-    def _routine_control_arguments(
-        prompt: str,
-    ) -> dict[str, Any] | None:
-        """Parse generic control grammar without encoding device-name phrases."""
-
-        value = " ".join(str(prompt).strip().split())
-        patterns = (
-            r"^(?:please\s+)?(?:turn|switch|power)\s+"
-            r"(?P<command>on|off)\s+(?P<target>.+?)\s*[.!?]*$",
-            r"^(?:please\s+)?(?:turn|switch|power)\s+"
-            r"(?P<target>.+?)\s+(?P<command>on|off)\s*[.!?]*$",
-            r"^(?:please\s+)?(?P<command>toggle)\s+"
-            r"(?P<target>.+?)\s*[.!?]*$",
-        )
-        for pattern in patterns:
-            match = re.match(pattern, value, flags=re.IGNORECASE)
-            if not match:
-                continue
-            target = str(match.group("target") or "").strip()
-            if target:
-                return {
-                    "device_names": [target],
-                    "device_kind": "auto",
-                    "command": str(match.group("command")).casefold(),
-                }
-        return None
-
     async def _routine_control_fallback(
         self,
         prompt: str,
     ) -> str | None:
-        arguments = self._routine_control_arguments(prompt)
-        if arguments is None or self._matches(prompt, _SENSITIVE_TERMS):
+        arguments = _routine_control_arguments(prompt)
+        if arguments is None or _matches(prompt, _SENSITIVE_TERMS):
             return None
         started = time.monotonic()
         result = await self._control_devices(arguments)
@@ -267,7 +210,7 @@ class UnifiedMCPAgent:
     def _classify_request(self, prompt: str, session_id: str) -> str:
         normalized = " ".join(prompt.strip().lower().split())
         if (
-            self._requests_mutation(prompt)
+            _requests_mutation(prompt)
             or (
                 normalized in _CONFIRM_WORDS
                 and session_id in self._pending
@@ -280,8 +223,6 @@ class UnifiedMCPAgent:
         )
         if any(re.fullmatch(pattern, normalized) for pattern in conversational):
             return "conversational"
-        # This is a Hubitat assistant: an unmatched factual request is safer when
-        # treated as a live read than when the model is allowed to answer from memory.
         return "live-read"
 
     @staticmethod
@@ -347,244 +288,9 @@ class UnifiedMCPAgent:
             for receipt in (self._evidence.get() or [])
         )
 
-    @staticmethod
-    def _device_filter_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_FILTER_TOOL,
-            (
-                "Fetch all live Hubitat devices and return only devices whose "
-                "attribute satisfies a comparison. Use this for exhaustive lists, "
-                "thresholds, counts, or comparisons instead of scanning the device "
-                "manifest yourself."
-            ),
-            {
-                "type": "object",
-                "properties": {
-                    "attribute": {
-                        "type": "string",
-                        "description": "Hubitat attribute name, for example battery, temperature, humidity, power, switch, or motion.",
-                    },
-                    "operator": {
-                        "type": "string",
-                        "enum": [
-                            "eq", "ne", "lt", "lte", "gt", "gte",
-                            "contains", "exists", "not_exists",
-                        ],
-                    },
-                    "value": {
-                        "description": "Comparison value; omit only for exists/not_exists.",
-                    },
-                },
-                "required": ["attribute", "operator"],
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
-
-    @staticmethod
-    def _device_query_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_QUERY_TOOL,
-            (
-                "Query all live Hubitat devices and compute a numeric aggregate before "
-                "answering. Use maximum/minimum for highest or lowest, top/sort for "
-                "rankings, and count for totals. Set group_by=room when the user asks "
-                "which room, and device_kind=socket for socket or outlet questions."
-            ),
-            {
-                "type": "object",
-                "properties": {
-                    "attribute": {
-                        "type": "string",
-                        "description": "Numeric attribute such as power, temperature, humidity, or battery.",
-                    },
-                    "operation": {
-                        "type": "string",
-                        "enum": ["maximum", "minimum", "top", "sort", "count"],
-                    },
-                    "device_kind": {
-                        "type": "string",
-                        "enum": ["any", "light", "switch", "socket", "sensor"],
-                        "default": "any",
-                    },
-                    "group_by": {
-                        "type": "string",
-                        "enum": ["none", "room"],
-                        "default": "none",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 100,
-                        "default": 10,
-                    },
-                },
-                "required": ["attribute", "operation"],
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
-
-    @staticmethod
-    def _weather_snapshot_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_WEATHER_TOOL,
-            (
-                "Read all current attributes from the Hubitat weather device. "
-                "Use this for current-weather questions and when locating the "
-                "weather device. Do not substitute ordinary indoor sensors."
-            ),
-            {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
-
-    @staticmethod
-    def _active_rooms_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_ACTIVE_ROOMS_TOOL,
-            (
-                "Fetch all live Hubitat devices and deterministically return rooms "
-                "that have motion=active or at least one light with switch=on. Use "
-                "this whenever the user asks which rooms are active."
-            ),
-            {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
-
-    @staticmethod
-    def _active_lights_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_ACTIVE_LIGHTS_TOOL,
-            (
-                "Fetch all live Hubitat devices and deterministically return every "
-                "light or bulb whose switch state is on. Use this whenever the user "
-                "asks which lights are on."
-            ),
-            {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
-
-    @staticmethod
-    def _active_switches_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_ACTIVE_SWITCHES_TOOL,
-            (
-                "Fetch all live Hubitat devices and deterministically return devices "
-                "with switch=on while excluding lights and bulbs. Use this whenever "
-                "the user asks which switches are on."
-            ),
-            {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
-
-    @staticmethod
-    def _home_snapshot_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_HOME_SNAPSHOT_TOOL,
-            (
-                "Fetch one live Hubitat device snapshot and deterministically summarize "
-                "the whole home: presence, motion, active rooms, lights and non-light "
-                "switches on, open contacts, unlocked locks, low batteries, and health "
-                "alerts. Use this for broad questions such as what is happening at home."
-            ),
-            {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
-
-    @staticmethod
-    def _control_devices_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_CONTROL_TOOL,
-            (
-                "Turn one or more Hubitat lights or switches on, off, or toggle them. "
-                "Resolve targets deterministically from either an exact room or one or "
-                "more device labels, then execute every matched command concurrently. "
-                "Use this for routine light and switch control instead of making "
-                "individual hub_manage_devices calls."
-            ),
-            {
-                "type": "object",
-                "properties": {
-                    "room": {
-                        "type": "string",
-                        "description": "Exact Hubitat room name. Selects every matching device_kind in that room.",
-                    },
-                    "device_names": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "minItems": 1,
-                        "description": "One or more exact Hubitat device labels. Do not combine with room.",
-                    },
-                    "device_kind": {
-                        "type": "string",
-                        "enum": ["auto", "light", "switch"],
-                        "description": (
-                            "Use light for lights, switch for non-light switches, "
-                            "or auto when a named target omits its device kind."
-                        ),
-                    },
-                    "command": {
-                        "type": "string",
-                        "enum": ["on", "off", "toggle"],
-                    },
-                },
-                "required": ["device_kind", "command"],
-                "oneOf": [
-                    {"required": ["room"]},
-                    {"required": ["device_names"]},
-                ],
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": False, "destructiveHint": False},
-        )
-
-    @staticmethod
-    def _hub_info_tool() -> MCPTool:
-        return MCPTool(
-            _LOCAL_HUB_INFO_TOOL,
-            (
-                "Refresh and read the authoritative Hub Information Driver device. "
-                "Use this for Hubitat firmware availability, installed firmware, "
-                "CPU, memory, temperature, uptime, database size, hub health, or "
-                "general hub-information questions. This does not install firmware."
-            ),
-            {
-                "type": "object",
-                "properties": {
-                    "scope": {
-                        "type": "string",
-                        "enum": ["firmware", "resources", "full"],
-                        "description": (
-                            "firmware runs Update Check; resources refreshes telemetry; "
-                            "full performs both before reading the Hub Info attributes."
-                        ),
-                    },
-                },
-                "required": ["scope"],
-                "additionalProperties": False,
-            },
-            annotations={"readOnlyHint": True},
-        )
+    _matches = staticmethod(_matches)
+    _requests_mutation = staticmethod(_requests_mutation)
+    _routine_control_arguments = staticmethod(_routine_control_arguments)
 
     @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
@@ -641,8 +347,6 @@ class UnifiedMCPAgent:
 
     @classmethod
     def _find_device_record(cls, value: Any) -> dict[str, Any] | None:
-        """Find one detailed device in direct or gateway-wrapped MCP output."""
-
         if not isinstance(value, dict):
             return None
         if (
@@ -674,8 +378,6 @@ class UnifiedMCPAgent:
         live_devices: list[dict[str, Any]],
         identity_devices: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Add cached identity metadata to authoritative live state records."""
-
         identities = {
             str(device.get("id") or device.get("deviceId")): device
             for device in identity_devices
@@ -697,9 +399,7 @@ class UnifiedMCPAgent:
             merged.append(device)
         return merged
 
-    async def _hub_info_snapshot(
-        self, arguments: dict[str, Any]
-    ) -> MCPToolResult:
+    async def _hub_info_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         scope = str(arguments.get("scope") or "").strip().lower()
         if scope not in {"firmware", "resources", "full"}:
             return MCPToolResult(
@@ -724,9 +424,7 @@ class UnifiedMCPAgent:
             hub_device = self._hub_info_device(
                 [
                     item
-                    for item in (
-                        HubitatMCPClient._find_device_list(source.data) or []
-                    )
+                    for item in (HubitatMCPClient._find_device_list(source.data) or [])
                     if isinstance(item, dict)
                 ]
             )
@@ -745,9 +443,7 @@ class UnifiedMCPAgent:
                 },
                 is_error=True,
             )
-        device_id = str(
-            hub_device.get("id") or hub_device.get("deviceId") or ""
-        )
+        device_id = str(hub_device.get("id") or hub_device.get("deviceId") or "")
         label = str(
             hub_device.get("label")
             or hub_device.get("displayName")
@@ -768,7 +464,6 @@ class UnifiedMCPAgent:
             cached_attributes.get("hubUpdateStatus"),
             cached_attributes.get("hubUpdateVersion"),
         )
-
         commands = []
         if scope in {"resources", "full"}:
             commands.append("refresh")
@@ -797,7 +492,6 @@ class UnifiedMCPAgent:
                     },
                     is_error=True,
                 )
-
         live_device: dict[str, Any] | None = None
         poll_attempts = 10 if scope in {"firmware", "full"} else 6
         for attempt in range(poll_attempts):
@@ -810,9 +504,7 @@ class UnifiedMCPAgent:
             )
             candidates = [
                 item
-                for item in (
-                    HubitatMCPClient._find_device_list(source.data) or []
-                )
+                for item in (HubitatMCPClient._find_device_list(source.data) or [])
                 if isinstance(item, dict)
             ]
             if not candidates:
@@ -823,9 +515,7 @@ class UnifiedMCPAgent:
             if live_device is None and len(candidates) == 1:
                 live_device = candidates[0]
             if live_device is not None:
-                live_device = self._merge_device_identity(
-                    [live_device], [hub_device]
-                )[0]
+                live_device = self._merge_device_identity([live_device], [hub_device])[0]
                 attributes = self._device_attributes(live_device)
                 refreshed_firmware = (
                     attributes.get("hubUpdateStatus"),
@@ -851,16 +541,10 @@ class UnifiedMCPAgent:
                 arguments,
                 {},
                 "Hub Info attributes unavailable after refresh",
-                {
-                    "success": False,
-                    "error": "Hub Info attributes were unavailable after refresh",
-                },
+                {"success": False, "error": "Hub Info attributes were unavailable after refresh"},
                 is_error=True,
             )
-        values = {
-            **live_device,
-            **self._device_attributes(live_device),
-        }
+        values = {**live_device, **self._device_attributes(live_device)}
         attribute_units = self._device_attribute_units(live_device)
 
         def value(*names: str) -> Any:
@@ -868,8 +552,7 @@ class UnifiedMCPAgent:
                 (
                     values.get(name)
                     for name in names
-                    if values.get(name) is not None
-                    and values.get(name) != ""
+                    if values.get(name) is not None and values.get(name) != ""
                 ),
                 None,
             )
@@ -879,11 +562,7 @@ class UnifiedMCPAgent:
         update_status = value("hubUpdateStatus")
         update_available = (
             "available" in str(update_status or "").casefold()
-            or (
-                bool(installed)
-                and bool(available)
-                and str(installed) != str(available)
-            )
+            or (bool(installed) and bool(available) and str(installed) != str(available))
         )
         free_memory = value("freeMemory")
         temperature = value("temperatureC", "temperature", "temperatureF")
@@ -902,20 +581,13 @@ class UnifiedMCPAgent:
             "cpu_15_min": value("cpu15Min"),
             "cpu_15_percent": value("cpu15Pct"),
             "free_memory": free_memory,
-            "free_memory_unit": (
-                attribute_units.get("freeMemory")
-                or self._inferred_memory_unit(free_memory)
-            ),
+            "free_memory_unit": attribute_units.get("freeMemory") or self._inferred_memory_unit(free_memory),
             "free_memory_15_min": value("freeMem15"),
             "jvm_free": value("jvmFree"),
             "jvm_size": value("jvmSize"),
             "java_direct": value("javaDirect"),
             "temperature": temperature,
-            "temperature_unit": (
-                attribute_units.get("temperatureC")
-                or attribute_units.get("temperature")
-                or ("°C" if temperature is not None else None)
-            ),
+            "temperature_unit": attribute_units.get("temperatureC") or attribute_units.get("temperature") or ("°C" if temperature is not None else None),
             "uptime": value("formattedUptime", "uptime"),
             "database_size": value("dbSize"),
             "database_size_unit": attribute_units.get("dbSize") or "MB",
@@ -926,31 +598,22 @@ class UnifiedMCPAgent:
             "matter_status": value("matterStatus"),
             "last_poll": value("lastPollTime"),
         }
-        return MCPToolResult(
-            _LOCAL_HUB_INFO_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(_LOCAL_HUB_INFO_TOOL, arguments, {}, json.dumps(data), data)
 
-    async def _filter_devices(
-        self, arguments: dict[str, Any]
-    ) -> MCPToolResult:
+    async def _filter_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self._record_evidence)
         return await service.filter_devices(arguments)
 
-    async def _query_devices(
-        self, arguments: dict[str, Any]
-    ) -> MCPToolResult:
+    async def _query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self._record_evidence)
         return await service.query_devices(arguments)
 
-    async def _weather_snapshot(
-        self, arguments: dict[str, Any]
-    ) -> MCPToolResult:
+    async def _weather_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self._record_evidence)
         return await service.weather_snapshot(arguments)
 
     @staticmethod
     def _attribute_matches(actual: Any, operator: str, expected: Any) -> bool:
-        """Compatibility shim; deterministic comparison lives in the query service."""
         return DeviceQueryService._attribute_matches(actual, operator, expected)
 
     async def _active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
@@ -969,25 +632,21 @@ class UnifiedMCPAgent:
         service = DeviceQueryService(self.mcp, self._record_evidence)
         return await service.home_snapshot(arguments)
 
-    async def _control_devices(
-        self, arguments: dict[str, Any]
-    ) -> MCPToolResult:
+    async def _control_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceControlService(self.mcp, self._record_evidence)
         return await service.execute(arguments)
 
     @classmethod
     def _needs_device_manifest(cls, prompt: str) -> bool:
-        return cls._matches(prompt, _DEVICE_TERMS) or any(
+        return _matches(prompt, _DEVICE_TERMS) or any(
             re.search(pattern, prompt.lower()) is not None
             for pattern in _HOME_STATE_PATTERNS
         )
 
     def _include_identity_manifest(self, prompt: str) -> bool:
-        """Keep live-read facts behind tools instead of prompt-injected state."""
-
         tokens = set(re.findall(r"[a-z0-9]+", prompt.casefold()))
         routine_control = (
-            self._requests_mutation(prompt)
+            _requests_mutation(prompt)
             and bool(tokens & {"on", "off", "toggle"})
             and not bool(tokens & {"garage", "lock", "security", "unlock"})
         )
@@ -998,9 +657,7 @@ class UnifiedMCPAgent:
         )
 
     @classmethod
-    def _call_is_mutation(
-        cls, tool: MCPTool | None, arguments: dict[str, Any]
-    ) -> bool:
+    def _call_is_mutation(cls, tool: MCPTool | None, arguments: dict[str, Any]) -> bool:
         if not tool or (tool.annotations or {}).get("readOnlyHint") is True:
             return False
         name = tool.name.lower().replace("-", "_")
@@ -1031,62 +688,35 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
-        if name != "hub_read_diagnostics":
-            return False
-        return str(arguments.get("tool") or "") == "hub_get_logs"
+        return name == "hub_read_diagnostics" and str(arguments.get("tool") or "") == "hub_get_logs"
 
     @classmethod
     def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
         names: set[str] | None = None
-        if cls._matches(prompt, _SWITCH_TERMS):
-            names = {
-                "homebrain_active_switches",
-                "hub_read_devices",
-            }
-        elif cls._matches(prompt, _DEVICE_HEALTH_TERMS):
-            names = {
-                "hub_read_devices", "hub_read_diagnostics",
-                "hub_manage_devices",
-            }
-        elif cls._matches(prompt, _APP_TERMS):
-            names = {
-                "hub_read_apps_code", "hub_read_rules",
-                "hub_search_tools",
-            }
-            if cls._requests_mutation(prompt):
-                names.update({
-                    "hub_manage_native_rules_and_apps",
-                    "hub_manage_rule_machine",
-                })
-        elif cls._matches(prompt, _DEVICE_TERMS):
-            names = {
-                "hub_read_devices", "hub_get_info",
-            }
-            if cls._requests_mutation(prompt):
+        if _matches(prompt, _SWITCH_TERMS):
+            names = {"homebrain_active_switches", "hub_read_devices"}
+        elif _matches(prompt, _DEVICE_HEALTH_TERMS):
+            names = {"hub_read_devices", "hub_read_diagnostics", "hub_manage_devices"}
+        elif _matches(prompt, _APP_TERMS):
+            names = {"hub_read_apps_code", "hub_read_rules", "hub_search_tools"}
+            if _requests_mutation(prompt):
+                names.update({"hub_manage_native_rules_and_apps", "hub_manage_rule_machine"})
+        elif _matches(prompt, _DEVICE_TERMS):
+            names = {"hub_read_devices", "hub_get_info"}
+            if _requests_mutation(prompt):
                 names.add("hub_manage_devices")
-        elif cls._matches(prompt, _ROOM_TERMS):
-            names = {
-                "hub_read_rooms", "hub_search_tools",
-            }
-            if cls._requests_mutation(prompt):
+        elif _matches(prompt, _ROOM_TERMS):
+            names = {"hub_read_rooms", "hub_search_tools"}
+            if _requests_mutation(prompt):
                 names.add("hub_manage_rooms")
-        elif cls._matches(prompt, _DIAGNOSTIC_TERMS):
-            names = {
-                "hub_get_info", "hub_read_diagnostics", "hub_search_tools",
-            }
-            if cls._requests_mutation(prompt):
+        elif _matches(prompt, _DIAGNOSTIC_TERMS):
+            names = {"hub_get_info", "hub_read_diagnostics", "hub_search_tools"}
+            if _requests_mutation(prompt):
                 names.update({
-                    "hub_manage_diagnostics", "hub_manage_logs",
-                    "hub_manage_radio", "hub_manage_destructive_ops",
-                    "hub_update_firmware",
+                    "hub_manage_diagnostics", "hub_manage_logs", "hub_manage_radio",
+                    "hub_manage_destructive_ops", "hub_update_firmware",
                 })
-        elif (
-            cls._requests_mutation(prompt)
-            and not cls._matches(prompt, _SENSITIVE_TERMS)
-        ):
-            # Generic device writes (for example "turn on the TV") should not
-            # enter tool discovery merely because the noun is absent from a
-            # hand-maintained device vocabulary.
+        elif _requests_mutation(prompt) and not _matches(prompt, _SENSITIVE_TERMS):
             names = {_LOCAL_CONTROL_TOOL}
         else:
             names = {"hub_get_info", "hub_search_tools"}
@@ -1115,9 +745,7 @@ class UnifiedMCPAgent:
                 supports_live_claim=False,
             )
             candidates = HubitatMCPClient._find_device_list(result.data) or []
-            self._app_manifest = [
-                item for item in candidates if isinstance(item, dict)
-            ]
+            self._app_manifest = [item for item in candidates if isinstance(item, dict)]
             self._app_manifest_at = now
         except Exception as exc:
             logger.warning("Could not build app manifest: %s", exc)
@@ -1131,10 +759,7 @@ class UnifiedMCPAgent:
                 devices = await self.mcp.get_cached_devices()
                 self._record_evidence(
                     "hub_read_devices",
-                    {
-                        "tool": "hub_list_devices",
-                        "source": "short_ttl_cache",
-                    },
+                    {"tool": "hub_list_devices", "source": "short_ttl_cache"},
                     success=True,
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     summary=f"{len(devices)} identity records",
@@ -1145,7 +770,7 @@ class UnifiedMCPAgent:
             except Exception as exc:
                 logger.warning("Could not build live device manifest: %s", exc)
         app_section = ""
-        if self._matches(user_prompt, _APP_TERMS):
+        if _matches(user_prompt, _APP_TERMS):
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
         return build_system_prompt(manifest, app_section)
@@ -1195,16 +820,13 @@ class UnifiedMCPAgent:
         )
 
     @staticmethod
-    def _discovered_tools(
-        result: MCPToolResult, available: dict[str, MCPTool]
-    ) -> list[MCPTool]:
+    def _discovered_tools(result: MCPToolResult, available: dict[str, MCPTool]) -> list[MCPTool]:
         if result.is_error:
             return []
         searchable = json.dumps(result.data, ensure_ascii=False, default=str)
         return [
             tool for name, tool in available.items()
-            if name != "hub_search_tools"
-            and re.search(rf"\b{re.escape(name)}\b", searchable)
+            if name != "hub_search_tools" and re.search(rf"\b{re.escape(name)}\b", searchable)
         ]
 
     @staticmethod
@@ -1216,14 +838,8 @@ class UnifiedMCPAgent:
         argument_text = str(arguments).lower().replace("-", "_")
         tokens = set(re.findall(r"[a-z0-9]+", argument_text))
         if name == "hub_manage_devices":
-            dangerous = {
-                "close", "delete", "factory", "garage", "lock", "open",
-                "remove", "replace", "swap", "unlock",
-            }
-            routine = {
-                "off", "on", "ping", "refresh", "setcolor",
-                "setcolortemperature", "setlevel", "toggle",
-            }
+            dangerous = {"close", "delete", "factory", "garage", "lock", "open", "remove", "replace", "swap", "unlock"}
+            routine = {"off", "on", "ping", "refresh", "setcolor", "setcolortemperature", "setlevel", "toggle"}
             if tokens & routine and not tokens & dangerous:
                 return False
             if tokens & _MUTATION_TERMS:
@@ -1234,9 +850,7 @@ class UnifiedMCPAgent:
             return True
         return any(term in f"{name} {argument_text}" for term in _SENSITIVE_TERMS)
 
-    async def _chat(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         if not self.configured:
             raise RuntimeError("Ollama Online API key is not configured")
         if callable(getattr(self.ai_client, "stream", None)):
@@ -1265,9 +879,7 @@ class UnifiedMCPAgent:
         )
         return message
 
-    async def _chat_stream(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    async def _chat_stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         started = time.monotonic()
         first_chunk_at: float | None = None
         chunk_count = 0
@@ -1329,22 +941,16 @@ class UnifiedMCPAgent:
                     content.append(str(message["content"]))
                 calls = message.get("tool_calls")
                 if isinstance(calls, list):
-                    tool_calls.extend(
-                        call for call in calls if isinstance(call, dict)
-                    )
+                    tool_calls.extend(call for call in calls if isinstance(call, dict))
         if not content and not tool_calls:
             raise RuntimeError("Ollama returned no assistant message")
         logger.info(
-            "Ollama streamed round completed in %.3fs with %d chunks and %d "
-            "declared tools",
+            "Ollama streamed round completed in %.3fs with %d chunks and %d declared tools",
             time.monotonic() - started,
             chunk_count,
             len(tools),
         )
-        message: dict[str, Any] = {
-            "role": "assistant",
-            "content": "".join(content),
-        }
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
         if tool_calls:
             message["tool_calls"] = tool_calls
         return message
@@ -1363,9 +969,7 @@ class UnifiedMCPAgent:
         response = await self._chat(final_messages, [])
         return str(response.get("content") or "The MCP request completed without a written answer.")
 
-    def _take_confirmation(
-        self, session_id: str, prompt: str
-    ) -> PendingConfirmation | None:
+    def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
         pending = self._pending.get(session_id)
         if not pending:
             return None
@@ -1378,13 +982,8 @@ class UnifiedMCPAgent:
         self._pending.pop(session_id, None)
         return pending
 
-    async def _resume_confirmation(
-        self, pending: PendingConfirmation, tools: list[dict[str, Any]]
-    ) -> str:
-        messages = [
-            *pending.messages,
-            pending.assistant_message,
-        ]
+    async def _resume_confirmation(self, pending: PendingConfirmation, tools: list[dict[str, Any]]) -> str:
+        messages = [*pending.messages, pending.assistant_message]
         for tool_name, arguments in pending.actions:
             try:
                 started = time.monotonic()
@@ -1406,9 +1005,7 @@ class UnifiedMCPAgent:
                     summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                 )
                 content = json.dumps({"error": str(exc)})
-            messages.append(
-                {"role": "tool", "tool_name": tool_name, "content": content}
-            )
+            messages.append({"role": "tool", "tool_name": tool_name, "content": content})
         response = await self._chat(messages, tools)
         return str(response.get("content") or "Confirmed command completed.")
 
@@ -1464,46 +1061,33 @@ class UnifiedMCPAgent:
     ) -> str:
         request_started = time.monotonic()
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
-        local_filter = self._device_filter_tool()
-        local_query = self._device_query_tool()
-        local_active_lights = self._active_lights_tool()
-        local_active_rooms = self._active_rooms_tool()
-        local_active_switches = self._active_switches_tool()
-        local_home_snapshot = self._home_snapshot_tool()
-        local_control = self._control_devices_tool()
-        local_hub_info = self._hub_info_tool()
-        local_weather = self._weather_snapshot_tool()
+        local_filter = _device_filter_tool()
+        local_query = _device_query_tool()
+        local_active_lights = _active_lights_tool()
+        local_active_rooms = _active_rooms_tool()
+        local_active_switches = _active_switches_tool()
+        local_home_snapshot = _home_snapshot_tool()
+        local_control = _control_devices_tool()
+        local_hub_info = _hub_info_tool()
+        local_weather = _weather_snapshot_tool()
         safe_read_tools = [
             local_filter, local_query, local_active_lights, local_active_rooms,
-            local_active_switches, local_home_snapshot, local_hub_info,
-            local_weather,
+            local_active_switches, local_home_snapshot, local_hub_info, local_weather,
         ]
         all_tools.extend([*safe_read_tools, local_control])
         all_by_name = {tool.name: tool for tool in all_tools}
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
             pending_names = {name for name, _ in pending.actions}
-            declared = [
-                tool for tool in all_tools if tool.name in pending_names
-            ] or all_tools
+            declared = [tool for tool in all_tools if tool.name in pending_names] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
-            if (
-                self._request_class.get() == "live-read"
-            ):
-                # The local Hub Info service is authoritative and normalized;
-                # do not expose the overlapping generic MCP info tool.
-                declared = [
-                    tool for tool in declared if tool.name != "hub_get_info"
-                ]
+            if self._request_class.get() == "live-read":
+                declared = [tool for tool in declared if tool.name != "hub_get_info"]
                 declared_names = {tool.name for tool in declared}
-                declared.extend(
-                    tool
-                    for tool in safe_read_tools
-                    if tool.name not in declared_names
-                )
+                declared.extend(tool for tool in safe_read_tools if tool.name not in declared_names)
             if (
-                self._requests_mutation(user_prompt)
+                _requests_mutation(user_prompt)
                 and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)
             ):
                 declared.append(local_control)
@@ -1513,16 +1097,14 @@ class UnifiedMCPAgent:
             return await self._resume_confirmation(pending, tools)
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(user_prompt)
-        if self._matches(user_prompt, {"weather"}):
+        if _matches(user_prompt, {"weather"}):
             weather_started = time.monotonic()
             weather_result = await self._weather_snapshot({})
             self._record_evidence(
                 _LOCAL_WEATHER_TOOL,
                 {},
                 success=self._tool_succeeded(weather_result),
-                elapsed_ms=round(
-                    (time.monotonic() - weather_started) * 1000
-                ),
+                elapsed_ms=round((time.monotonic() - weather_started) * 1000),
                 summary=self._result_summary(weather_result),
                 evidence_kind=_EVIDENCE_KINDS[_LOCAL_WEATHER_TOOL],
             )
@@ -1544,8 +1126,8 @@ class UnifiedMCPAgent:
             {"role": "user", "content": str(user_prompt).strip()},
         ]
         completed_calls: set[str] = set()
-        mutation_requested = self._requests_mutation(user_prompt)
-        logs_requested = self._matches(user_prompt, _LOG_TERMS)
+        mutation_requested = _requests_mutation(user_prompt)
+        logs_requested = _matches(user_prompt, _LOG_TERMS)
         logs_checked = False
         log_retry_used = False
         successful_mutations = 0
@@ -1566,16 +1148,13 @@ class UnifiedMCPAgent:
                                 "content": (
                                     "Do not answer yet. Fetch the actual logs now by "
                                     "calling hub_read_diagnostics with "
-                                    "tool='hub_get_logs' and args={'since':'30m',"
-                                    "'limit':100}, then summarize only that result."
+                                    "tool='hub_get_logs' and args={'since':'30m','limit':100}, "
+                                    "then summarize only that result."
                                 ),
                             },
                         ])
                         continue
-                    return (
-                        "I could not retrieve the actual Hubitat logs, so I will not "
-                        "provide an inferred log summary."
-                    )
+                    return "I could not retrieve the actual Hubitat logs, so I will not provide an inferred log summary."
                 if mutation_requested and successful_mutations == 0:
                     if not control_retry_used:
                         control_retry_used = True
@@ -1584,29 +1163,20 @@ class UnifiedMCPAgent:
                             {
                                 "role": "user",
                                 "content": (
-                                    "You have not executed the requested control. "
-                                    "Call the declared Hubitat management tool now "
-                                    "using the exact manifest device ID. Do not merely "
-                                    "describe the action."
+                                    "You have not executed the requested control. Call the declared "
+                                    "Hubitat management tool now using the exact manifest device ID. "
+                                    "Do not merely describe the action."
                                 ),
                             },
                         ])
                         continue
-                    deterministic_control = await self._routine_control_fallback(
-                        user_prompt
-                    )
+                    deterministic_control = await self._routine_control_fallback(user_prompt)
                     if deterministic_control is not None:
                         return deterministic_control
                     if failed_mutation:
                         return f"The Hubitat action failed: {failed_mutation}"
-                    return (
-                        "I did not execute a Hubitat control tool, so no device state "
-                        "was changed. Please try again with the exact device name."
-                    )
-                if (
-                    self._request_class.get() == "live-read"
-                    and not self._has_live_evidence()
-                ):
+                    return "I did not execute a Hubitat control tool, so no device state was changed. Please try again with the exact device name."
+                if self._request_class.get() == "live-read" and not self._has_live_evidence():
                     if not evidence_retry_used:
                         evidence_retry_used = True
                         messages.extend([
@@ -1614,18 +1184,14 @@ class UnifiedMCPAgent:
                             {
                                 "role": "user",
                                 "content": (
-                                    "Do not answer from memory or inference. No successful "
-                                    "live evidence receipt exists yet. Call the most relevant "
-                                    "declared Hubitat read tool now, then answer only from its "
-                                    "result. Tool discovery alone is not evidence."
+                                    "Do not answer from memory or inference. No successful live evidence "
+                                    "receipt exists yet. Call the most relevant declared Hubitat read tool "
+                                    "now, then answer only from its result. Tool discovery alone is not evidence."
                                 ),
                             },
                         ])
                         continue
-                    return (
-                        "I could not retrieve verified live Hubitat evidence, so I will "
-                        "not provide an inferred answer."
-                    )
+                    return "I could not retrieve verified live Hubitat evidence, so I will not provide an inferred answer."
                 return str(assistant.get("content") or "Done.")
             sensitive: list[tuple[str, dict[str, Any]]] = []
             for call in calls:
@@ -1636,11 +1202,7 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
                 tool = by_name.get(name)
-                if (
-                    tool
-                    and self.require_sensitive_confirmation
-                    and self._is_sensitive(tool, arguments)
-                ):
+                if tool and self.require_sensitive_confirmation and self._is_sensitive(tool, arguments):
                     sensitive.append((name, arguments))
             if sensitive:
                 if session_id == "default":
@@ -1656,16 +1218,9 @@ class UnifiedMCPAgent:
                 names = sorted({name for name, _ in sensitive})
                 if len(sensitive) == 1:
                     if names[0] == "hub_update_firmware":
-                        return (
-                            "Please confirm before I install the available Hubitat "
-                            "firmware update. The hub may restart and be temporarily "
-                            "unavailable."
-                        )
+                        return "Please confirm before I install the available Hubitat firmware update. The hub may restart and be temporarily unavailable."
                     return f"Please confirm before I run the sensitive Hubitat action `{names[0]}`."
-                return (
-                    f"Please confirm before I run {len(sensitive)} sensitive Hubitat "
-                    f"actions through `{', '.join(names)}`."
-                )
+                return f"Please confirm before I run {len(sensitive)} sensitive Hubitat actions through `{', '.join(names)}`."
             messages.append(assistant)
             for call in calls:
                 function = call.get("function") or {}
@@ -1673,9 +1228,7 @@ class UnifiedMCPAgent:
                 arguments = function.get("arguments") or {}
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
-                signature = json.dumps(
-                    [name, arguments], sort_keys=True, ensure_ascii=False, default=str
-                )
+                signature = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False, default=str)
                 if signature in completed_calls:
                     return await self._final_answer(messages)
                 completed_calls.add(signature)
@@ -1704,9 +1257,7 @@ class UnifiedMCPAgent:
                         elif name == _LOCAL_HUB_INFO_TOOL:
                             result = await self._hub_info_snapshot(dict(arguments))
                         else:
-                            result = await self.mcp.call_tool(
-                                name, dict(arguments)
-                            )
+                            result = await self.mcp.call_tool(name, dict(arguments))
                         elapsed_ms = round((time.monotonic() - mcp_started) * 1000)
                         self._record_evidence(
                             name,
@@ -1715,33 +1266,22 @@ class UnifiedMCPAgent:
                             elapsed_ms=elapsed_ms,
                             summary=self._result_summary(result),
                             supports_live_claim=name != "hub_search_tools",
-                            evidence_kind=_EVIDENCE_KINDS.get(
-                                name, "tool_result"
-                            ),
+                            evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
                         )
                         if self._is_live_log_call(name, dict(arguments)):
                             logs_checked = self._tool_succeeded(result)
-                        logger.info(
-                            "MCP tool %s completed in %.3fs",
-                            name,
-                            time.monotonic() - mcp_started,
-                        )
+                        logger.info("MCP tool %s completed in %.3fs", name, time.monotonic() - mcp_started)
                         content = self._result_payload(result)
                         if name == "hub_search_tools":
                             additions = [
-                                item for item in self._discovered_tools(
-                                    result, all_by_name
-                                )
+                                item for item in self._discovered_tools(result, all_by_name)
                                 if item.name not in by_name
                             ]
                             if additions:
                                 declared.extend(additions)
                                 by_name.update({item.name: item for item in additions})
                                 tools = [self._tool_schema(item) for item in declared]
-                                logger.info(
-                                    "Tool search expanded registry with: %s",
-                                    ", ".join(item.name for item in additions),
-                                )
+                                logger.info("Tool search expanded registry with: %s", ", ".join(item.name for item in additions))
                         if self._call_is_mutation(tool, dict(arguments)):
                             if self._tool_succeeded(result):
                                 successful_mutations += 1
@@ -1766,18 +1306,13 @@ class UnifiedMCPAgent:
                         direct_home_snapshot = (
                             name == _LOCAL_HOME_SNAPSHOT_TOOL
                             and any(
-                                re.search(pattern, user_prompt.casefold())
-                                is not None
+                                re.search(pattern, user_prompt.casefold()) is not None
                                 for pattern in _HOME_STATE_PATTERNS
                             )
                         )
                         if deterministic_message is not None and (
                             (
-                                name not in {
-                                    _LOCAL_QUERY_TOOL,
-                                    _LOCAL_HOME_SNAPSHOT_TOOL,
-                                    _LOCAL_WEATHER_TOOL,
-                                }
+                                name not in {_LOCAL_QUERY_TOOL, _LOCAL_HOME_SNAPSHOT_TOOL, _LOCAL_WEATHER_TOOL}
                                 or direct_home_snapshot
                             )
                             or not self._tool_succeeded(result)
@@ -1789,8 +1324,7 @@ class UnifiedMCPAgent:
                         name,
                         dict(arguments),
                         success=False,
-                        elapsed_ms=round((time.monotonic() - mcp_started) * 1000)
-                        if "mcp_started" in locals() else 0,
+                        elapsed_ms=round((time.monotonic() - mcp_started) * 1000) if "mcp_started" in locals() else 0,
                         summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                         supports_live_claim=name != "hub_search_tools",
                     )
@@ -1798,10 +1332,7 @@ class UnifiedMCPAgent:
                     if self._call_is_mutation(by_name.get(name), dict(arguments)):
                         failed_mutation = str(exc)
                 messages.append({"role": "tool", "tool_name": name, "content": content})
-        logger.warning(
-            "Agent reached tool-round limit after %.3fs",
-            time.monotonic() - request_started,
-        )
+        logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         return await self._final_answer(messages)
 
 
