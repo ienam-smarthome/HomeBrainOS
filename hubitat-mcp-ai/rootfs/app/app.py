@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
+from automation_status_service import AutomationStatusService
 from device_state_summary import (
     active_non_light_switches,
     active_room_summary,
@@ -88,6 +89,7 @@ mcp = HubitatMCPClient(
         OPTIONS.get("mcp_retry_backoff_seconds") or 0.25
     ),
 )
+automation_status = AutomationStatusService(mcp)
 agent = UnifiedMCPAgent(
     mcp_client=mcp,
     api_key=str(OPTIONS.get("ollama_direct_cloud_api_key") or ""),
@@ -216,16 +218,21 @@ class ChatRequest(BaseModel):
 
 
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
-    if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
-        raise HTTPException(status_code=503, detail="Ollama Online is disabled")
     try:
-        return await request_coordinator.run(
-            request.coordination_key,
-            agent.process_user_request_result(
+        operation: Awaitable[Any]
+        if automation_status.matches_request(request.message):
+            operation = automation_status.snapshot()
+        else:
+            if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
+                raise HTTPException(status_code=503, detail="Ollama Online is disabled")
+            operation = agent.process_user_request_result(
                 request.message,
                 request.history,
                 session_id=request.session_id,
-            ),
+            )
+        return await request_coordinator.run(
+            request.coordination_key,
+            operation,
             connection=connection,
         )
     except HTTPException:
@@ -411,11 +418,12 @@ async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
     outcome = await _answer_result(request, connection)
     return {
         "success": True,
-        "route": "unified-mcp-agent",
+        "route": getattr(outcome, "route", "unified-mcp-agent"),
         "intent": "native-function-calling",
         "request_class": outcome.request_class,
         "message": outcome.message,
         "choices": getattr(outcome, "choices", []),
+        "automation_items": getattr(outcome, "automation_items", []),
         "evidence": outcome.evidence,
         "model": agent.model_name,
         "elapsed_ms": round((time.perf_counter() - started) * 1000),
