@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -8,6 +9,7 @@ from typing import Any
 from mcp_client import HubitatMCPClient, MCPToolResult
 
 _STATUSES = ("active", "disabled", "paused", "broken", "unknown")
+_ATTENTION_STATUSES = ("broken", "paused", "unknown")
 
 
 @dataclass(slots=True)
@@ -17,6 +19,8 @@ class AutomationStatusOutcome:
     evidence: list[dict[str, Any]] = field(default_factory=list)
     choices: list[str] = field(default_factory=list)
     automation_items: list[dict[str, Any]] = field(default_factory=list)
+    automation_counts: dict[str, int] = field(default_factory=dict)
+    attention_count: int = 0
     route: str = "automation-status"
 
 
@@ -61,6 +65,12 @@ class AutomationStatusService:
             or ""
         )
 
+    @staticmethod
+    def display_name(name: str) -> str:
+        value = re.sub(r"\s*\(Paused\)\s*", " ", str(name), flags=re.IGNORECASE)
+        value = re.sub(r"\s*\*BROKEN\*\s*", " ", value, flags=re.IGNORECASE)
+        return " ".join(value.split()).strip()
+
     @classmethod
     def _status_signals(cls, item: dict[str, Any]) -> dict[str, bool]:
         status_text = " ".join(
@@ -92,9 +102,6 @@ class AutomationStatusService:
     @classmethod
     def normalise_status(cls, item: dict[str, Any]) -> str:
         signals = cls._status_signals(item)
-
-        # Problem states must override generic active/disabled signals. Hubitat can
-        # expose an app as enabled while its display label says Paused or BROKEN.
         if signals["broken"]:
             return "broken"
         if signals["paused"]:
@@ -155,6 +162,7 @@ class AutomationStatusService:
                 {
                     "id": str(row.get("id") or row.get("appId") or row.get("ruleId")) if (row.get("id") or row.get("appId") or row.get("ruleId")) is not None else None,
                     "name": name,
+                    "display_name": cls.display_name(name),
                     "type": item_type,
                     "status": cls.normalise_status(row),
                     "broken": signals["broken"],
@@ -164,6 +172,14 @@ class AutomationStatusService:
                 }
             )
         return items
+
+    @staticmethod
+    def status_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+        counts = {status: 0 for status in _STATUSES}
+        for item in items:
+            status = str(item.get("status") or "unknown")
+            counts[status if status in counts else "unknown"] += 1
+        return counts
 
     @staticmethod
     def _evidence(tool: str, arguments: dict[str, Any], result: MCPToolResult, elapsed_ms: int) -> dict[str, Any]:
@@ -179,19 +195,24 @@ class AutomationStatusService:
             "summary": f"normalised live automation status from {tool}",
         }
 
-    @staticmethod
-    def _message(items: list[dict[str, Any]]) -> str:
+    @classmethod
+    def _message(cls, items: list[dict[str, Any]]) -> str:
         if not items:
             return "No automation apps or Rule Machine rules were returned by Hubitat."
-        counts = {status: 0 for status in _STATUSES}
-        for item in items:
-            counts[item["status"]] += 1
-        lines = [f"Hubitat returned {len(items)} automation items."]
-        for status in _STATUSES:
+        counts = cls.status_counts(items)
+        attention_count = sum(counts[status] for status in _ATTENTION_STATUSES)
+        summary = f"Hubitat returned {len(items)} automation items."
+        if attention_count:
+            summary += f" {attention_count} need attention."
+        lines = [summary]
+        for status in ("broken", "paused", "unknown", "disabled", "active"):
             matching = [item for item in items if item["status"] == status]
             if matching:
-                lines.append(f"\n### {status.title()}")
-                lines.extend(f"- [{status.upper()}] {item['name']} ({item['type']})" for item in matching)
+                lines.append(f"\n### {status.title()} ({len(matching)})")
+                lines.extend(
+                    f"- [{status.upper()}] {item.get('display_name') or item['name']} ({item['type']})"
+                    for item in matching
+                )
         return "\n".join(lines)
 
     async def snapshot(self) -> AutomationStatusOutcome:
@@ -206,7 +227,15 @@ class AutomationStatusService:
                 items.extend(self._items_from_result(result, item_type=item_type, source=tool))
         unique = {(i["type"], i.get("id") or "", i["name"].casefold()): i for i in items}
         ordered = sorted(unique.values(), key=lambda i: (_STATUSES.index(i["status"]), i["name"].casefold()))
-        return AutomationStatusOutcome(message=self._message(ordered), evidence=evidence, automation_items=ordered)
+        counts = self.status_counts(ordered)
+        attention_count = sum(counts[status] for status in _ATTENTION_STATUSES)
+        return AutomationStatusOutcome(
+            message=self._message(ordered),
+            evidence=evidence,
+            automation_items=ordered,
+            automation_counts=counts,
+            attention_count=attention_count,
+        )
 
 
 __all__ = ["AutomationStatusOutcome", "AutomationStatusService"]
