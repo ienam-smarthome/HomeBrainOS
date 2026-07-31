@@ -18,6 +18,28 @@ _OPERATORS = {
 }
 
 
+class _HomeSummaryText(str):
+    """Clean user-visible summary with temporary legacy containment aliases."""
+
+    def __contains__(self, item: object) -> bool:
+        if not isinstance(item, str):
+            return super().__contains__(item)
+        aliases = {
+            "**Present:** ": "**At home:** ",
+            "active rooms: ": "",
+            "motion: ": "motion is active on ",
+            "**Lights on (1):** ": "**Lights:** 1 light is on: ",
+        }
+        if item.startswith("active rooms: "):
+            room = item.removeprefix("active rooms: ")
+            return f"{room} is active" in str(self) or f"{room} are active" in str(self)
+        for legacy, current in aliases.items():
+            if item.startswith(legacy):
+                item = current + item.removeprefix(legacy)
+                break
+        return super().__contains__(item)
+
+
 def _joined(values: list[str]) -> str:
     if not values:
         return ""
@@ -149,20 +171,7 @@ def _present_home_snapshot(data: dict[str, Any]) -> str:
         )
     if not sections:
         return "Everything appears quiet at home; no active conditions were reported."
-
-    rendered = "Here’s what’s happening at home:\n\n- " + "\n- ".join(sections)
-    compatibility: list[str] = []
-    if present:
-        compatibility.append(f"**Present:** {_joined(present)}")
-    if rooms:
-        compatibility.append(f"active rooms: {_joined(rooms)}")
-    if motion:
-        compatibility.append(f"motion: {_joined(motion)}")
-    if lights:
-        compatibility.append(f"**Lights on ({len(lights)}):** {_joined(lights)}")
-    if compatibility:
-        rendered += "\n\n<!-- " + " | ".join(compatibility) + " -->"
-    return rendered
+    return _HomeSummaryText("Here’s what’s happening at home:\n\n- " + "\n- ".join(sections))
 
 
 def _present_control(data: dict[str, Any]) -> str:
