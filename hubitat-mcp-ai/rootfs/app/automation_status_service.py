@@ -51,29 +51,63 @@ class AutomationStatusService:
         "status", "state", "healthStatus",
     )
 
+    @staticmethod
+    def _name(item: dict[str, Any]) -> str:
+        return str(
+            item.get("label")
+            or item.get("name")
+            or item.get("displayName")
+            or item.get("title")
+            or ""
+        )
+
     @classmethod
-    def normalise_status(cls, item: dict[str, Any]) -> str:
+    def _status_signals(cls, item: dict[str, Any]) -> dict[str, bool]:
         status_text = " ".join(
             str(item.get(key) or "").casefold()
             for key in ("status", "state", "healthStatus")
         ).strip()
-        broken = cls._bool(item.get("broken"))
-        disabled = cls._bool(item.get("disabled"))
-        enabled = cls._bool(item.get("enabled"))
-        paused = cls._bool(item.get("paused"))
-        active = cls._bool(item.get("active"))
+        name_text = cls._name(item).casefold()
+        broken = cls._bool(item.get("broken")) is True or any(
+            word in status_text for word in ("broken", "error", "failed")
+        ) or "*broken*" in name_text
+        paused = cls._bool(item.get("paused")) is True or "paused" in status_text or "(paused)" in name_text
+        disabled = (
+            cls._bool(item.get("disabled")) is True
+            or cls._bool(item.get("enabled")) is False
+            or "disabled" in status_text
+        )
+        active = (
+            cls._bool(item.get("active")) is True
+            or cls._bool(item.get("enabled")) is True
+            or any(word in status_text for word in ("active", "enabled", "running"))
+        )
+        return {
+            "broken": broken,
+            "paused": paused,
+            "disabled": disabled,
+            "active": active,
+        }
 
-        if broken is True or any(word in status_text for word in ("broken", "error", "failed")):
+    @classmethod
+    def normalise_status(cls, item: dict[str, Any]) -> str:
+        signals = cls._status_signals(item)
+
+        # Problem states must override generic active/disabled signals. Hubitat can
+        # expose an app as enabled while its display label says Paused or BROKEN.
+        if signals["broken"]:
             return "broken"
-        if disabled is True or enabled is False or "disabled" in status_text:
-            return "disabled"
-        if paused is True or "paused" in status_text:
+        if signals["paused"]:
             return "paused"
-        if active is True or enabled is True or any(
-            word in status_text for word in ("active", "enabled", "running")
-        ):
+        if signals["disabled"]:
+            return "disabled"
+        if signals["active"]:
             return "active"
 
+        status_text = " ".join(
+            str(item.get(key) or "").casefold()
+            for key in ("status", "state", "healthStatus")
+        ).strip()
         has_state_signal = status_text or any(
             item.get(key) is not None
             for key in (*cls._STATE_FIELDS, "id", "appId", "ruleId")
@@ -111,17 +145,25 @@ class AutomationStatusService:
         candidates = cls._candidate_lists(result.data)
         scored = [[row for row in rows if cls._looks_like_automation_item(row)] for rows in candidates]
         rows = max(scored, key=len, default=[])
-        return [
-            {
-                "id": str(row.get("id") or row.get("appId") or row.get("ruleId")) if (row.get("id") or row.get("appId") or row.get("ruleId")) is not None else None,
-                "name": str(row.get("label") or row.get("name") or row.get("displayName") or row.get("title")),
-                "type": item_type,
-                "status": cls.normalise_status(row),
-                "source": source,
-            }
-            for row in rows
-            if row.get("label") or row.get("name") or row.get("displayName") or row.get("title")
-        ]
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            name = cls._name(row)
+            if not name:
+                continue
+            signals = cls._status_signals(row)
+            items.append(
+                {
+                    "id": str(row.get("id") or row.get("appId") or row.get("ruleId")) if (row.get("id") or row.get("appId") or row.get("ruleId")) is not None else None,
+                    "name": name,
+                    "type": item_type,
+                    "status": cls.normalise_status(row),
+                    "broken": signals["broken"],
+                    "paused": signals["paused"],
+                    "disabled": signals["disabled"],
+                    "source": source,
+                }
+            )
+        return items
 
     @staticmethod
     def _evidence(tool: str, arguments: dict[str, Any], result: MCPToolResult, elapsed_ms: int) -> dict[str, Any]:
