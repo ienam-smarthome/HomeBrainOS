@@ -59,15 +59,6 @@ _SENSITIVE_TERMS = {
     "backup", "delete", "disable", "enable", "factory_reset", "firmware",
     "garage", "lock", "reboot", "restart", "rule", "security", "shutdown", "unlock",
 }
-_MUTATION_TERMS = {
-    "close", "create", "delete", "disable", "enable", "lock", "off", "on",
-    "open", "pause", "reboot", "remove", "restart", "resume", "set", "start",
-    "stop", "toggle", "unlock", "update", "write",
-}
-_READ_ONLY_TERMS = {
-    "capabilities", "details", "devices", "find", "get", "health", "inventory",
-    "list", "read", "rooms", "search", "state", "status",
-}
 _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
     "rule", "rules",
@@ -665,43 +656,6 @@ class UnifiedMCPAgent:
             and not routine_control
         )
 
-    @classmethod
-    def _call_is_mutation(cls, tool: MCPTool | None, arguments: dict[str, Any]) -> bool:
-        if not tool:
-            return False
-        annotations = tool.annotations or {}
-        if annotations.get("mutates") is not None:
-            return bool(annotations.get("mutates"))
-        if annotations.get("readOnlyHint") is True:
-            return False
-        name = tool.name.lower().replace("-", "_")
-        tokens = set(re.findall(r"[a-z0-9]+", str(arguments).lower()))
-        return (
-            bool(tokens & _MUTATION_TERMS)
-            or name.startswith(("set_", "create_", "delete_", "update_"))
-            or name == "hub_update_firmware"
-            or name == _LOCAL_CONTROL_TOOL
-            or "_manage_" in name
-        )
-
-    @classmethod
-    def _shadow_tool_effect(
-        cls,
-        tool: MCPTool | None,
-        arguments: dict[str, Any],
-    ) -> ToolEffect:
-        effect = classify_tool_effect(tool, arguments)
-        legacy_mutates = cls._call_is_mutation(tool, arguments)
-        if effect.mutates != legacy_mutates:
-            logger.warning(
-                "Tool-effect shadow mismatch for %s/%s: effect=%s legacy_mutates=%s",
-                tool.name if tool else "undeclared",
-                arguments.get("tool") or arguments.get("operation") or arguments.get("action") or "",
-                effect.value,
-                legacy_mutates,
-            )
-        return effect
-
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:
         if result.is_error:
@@ -860,27 +814,6 @@ class UnifiedMCPAgent:
             tool for name, tool in available.items()
             if name != "hub_search_tools" and re.search(rf"\b{re.escape(name)}\b", searchable)
         ]
-
-    @staticmethod
-    def _is_sensitive(tool: MCPTool, arguments: dict[str, Any]) -> bool:
-        annotations = tool.annotations or {}
-        if annotations.get("readOnlyHint") is True:
-            return False
-        name = tool.name.lower().replace("-", "_")
-        argument_text = str(arguments).lower().replace("-", "_")
-        tokens = set(re.findall(r"[a-z0-9]+", argument_text))
-        if name == "hub_manage_devices":
-            dangerous = {"close", "delete", "factory", "garage", "lock", "open", "remove", "replace", "swap", "unlock"}
-            routine = {"off", "on", "ping", "refresh", "setcolor", "setcolortemperature", "setlevel", "toggle"}
-            if tokens & routine and not tokens & dangerous:
-                return False
-            if tokens & _MUTATION_TERMS:
-                return True
-            if tokens & _READ_ONLY_TERMS:
-                return False
-        if annotations.get("destructiveHint") is True:
-            return True
-        return any(term in f"{name} {argument_text}" for term in _SENSITIVE_TERMS)
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         if not self.configured:
@@ -1228,10 +1161,14 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
                 tool = by_name.get(name)
-                self._shadow_tool_effect(tool, arguments)
-                if self._call_is_mutation(tool, arguments):
+                effect = classify_tool_effect(tool, arguments)
+                if effect.mutates:
                     self._mutation_call_seen.set(True)
-                if tool and self.require_sensitive_confirmation and self._is_sensitive(tool, arguments):
+                if (
+                    tool
+                    and self.require_sensitive_confirmation
+                    and effect.requires_confirmation
+                ):
                     sensitive.append((name, arguments))
             if sensitive:
                 if session_id == "default":
@@ -1288,9 +1225,8 @@ class UnifiedMCPAgent:
                         else:
                             result = await self.mcp.call_tool(name, dict(arguments))
                         elapsed_ms = round((time.monotonic() - mcp_started) * 1000)
-                        mutates = self._call_is_mutation(tool, dict(arguments))
                         effect = classify_tool_effect(tool, dict(arguments))
-                        if mutates:
+                        if effect.mutates:
                             self._mutation_call_seen.set(True)
                         self._record_evidence(
                             name,
@@ -1300,7 +1236,7 @@ class UnifiedMCPAgent:
                             summary=self._result_summary(result),
                             supports_live_claim=name != "hub_search_tools",
                             evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
-                            mutates=mutates,
+                            mutates=effect.mutates,
                             effect=effect,
                         )
                         if self._is_live_log_call(name, dict(arguments)):
@@ -1357,8 +1293,9 @@ class UnifiedMCPAgent:
                         elapsed_ms=round((time.monotonic() - mcp_started) * 1000) if "mcp_started" in locals() else 0,
                         summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                         supports_live_claim=name != "hub_search_tools",
-                        mutates=self._call_is_mutation(by_name.get(name), dict(arguments)),
-                        effect=classify_tool_effect(by_name.get(name), dict(arguments)),
+                        effect=classify_tool_effect(
+                            by_name.get(name), dict(arguments)
+                        ),
                     )
                     content = json.dumps({"error": str(exc)})
                 messages.append({"role": "tool", "tool_name": name, "content": content})

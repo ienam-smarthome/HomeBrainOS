@@ -57,9 +57,9 @@
    operations, including firmware installation and higher-risk mutations, are
    stored as `PendingConfirmation` and execute only after a valid confirmation.
 9. Every actual structured tool call is classified as `read`, `routine_write`,
-   `sensitive_write`, or `destructive_write`. During the shadow phase this
-   effect is attached to evidence and compared with the legacy mutation gate;
-   disagreements are logged but do not change execution or confirmation.
+   `sensitive_write`, or `destructive_write`. This effect drives request-class
+   reporting and whether the call must enter the confirmation queue, and is
+   attached to evidence for auditability.
 10. `/api/ask` returns the message, route, request class, choices, evidence,
    optional `automation_items`, model, elapsed time, and add-on version. The
    WebUI renders structured automation rows directly when present.
@@ -114,9 +114,9 @@
 
 No text-based intent classification may gate control-versus-read behaviour.
 Mutation gating is checked when the actual tool call is received. The structured
-tool-effect registry is currently observed in shadow mode while the existing
-tool-call gate remains authoritative; a later release may cut over only after
-the disagreement tests and live telemetry are reviewed. Read and diagnostic
-answers use gathered evidence even when their wording contains control verbs.
-Live-state claims still require successful evidence with
-`supports_live_claim=true`.
+tool-effect registry is authoritative for mutation classification and sensitive
+confirmation. Known structured sub-operations override broad gateway hints, so
+read and routine calls are not over-classified; unknown management operations
+fail closed as sensitive writes. Read and diagnostic answers use gathered
+evidence even when their wording contains control verbs. Live-state claims still
+require successful evidence with `supports_live_claim=true`.
