@@ -10,13 +10,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from agent_prompt_policy import (
     build_system_prompt,
     render_app_manifest,
     render_device_manifest,
 )
+from chat_transport import ChatTransport
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
 from device_query_service import DeviceQueryService
@@ -130,14 +129,13 @@ class UnifiedMCPAgent:
         ai_client: Any | None = None,
     ) -> None:
         self.mcp = mcp_client
-        self.api_key = str(api_key or "").strip()
-        self.model_name = str(model_name or "").strip()
-        if self.model_name.lower().endswith("-cloud"):
-            self.model_name = self.model_name[:-6]
-        self.base_url = str(base_url or "https://ollama.com").rstrip("/")
-        self.timeout_seconds = max(3.0, float(timeout_seconds))
-        self.stream_idle_timeout_seconds = max(
-            1.0, float(stream_idle_timeout_seconds)
+        self.transport = ChatTransport(
+            api_key,
+            model_name,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            stream_idle_timeout_seconds=stream_idle_timeout_seconds,
+            client=ai_client,
         )
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
@@ -169,19 +167,40 @@ class UnifiedMCPAgent:
         self._mutation_call_seen: ContextVar[bool] = ContextVar(
             "hubitat_mutation_call_seen", default=False
         )
-        self.ai_client = ai_client or httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout_seconds),
-            follow_redirects=True,
-        )
-
     @property
     def configured(self) -> bool:
-        return bool(self.api_key and self.model_name and self.base_url)
+        return self.transport.configured
+
+    @property
+    def api_key(self) -> str:
+        return self.transport.api_key
+
+    @property
+    def model_name(self) -> str:
+        return self.transport.model_name
+
+    @property
+    def base_url(self) -> str:
+        return self.transport.base_url
+
+    @property
+    def timeout_seconds(self) -> float:
+        return self.transport.timeout_seconds
+
+    @property
+    def ai_client(self) -> Any:
+        return self.transport.client
+
+    @property
+    def stream_idle_timeout_seconds(self) -> float:
+        return self.transport.stream_idle_timeout_seconds
+
+    @stream_idle_timeout_seconds.setter
+    def stream_idle_timeout_seconds(self, value: float) -> None:
+        self.transport.stream_idle_timeout_seconds = max(0.001, float(value))
 
     async def close(self) -> None:
-        close = getattr(self.ai_client, "aclose", None)
-        if callable(close):
-            await close()
+        await self.transport.close()
 
     async def _routine_control_fallback(
         self,
@@ -906,110 +925,7 @@ class UnifiedMCPAgent:
         ]
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-        if not self.configured:
-            raise RuntimeError("Ollama Online API key is not configured")
-        if callable(getattr(self.ai_client, "stream", None)):
-            return await self._chat_stream(messages, tools)
-        started = time.monotonic()
-        model_messages = self._bounded_messages(messages)
-        response = await self.ai_client.post(
-            f"{self.base_url}/api/chat",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={
-                "model": self.model_name,
-                "messages": model_messages,
-                "tools": tools or None,
-                "stream": False,
-                "options": {"temperature": 0.1},
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
-        message = payload.get("message")
-        if not isinstance(message, dict):
-            raise RuntimeError("Ollama returned no assistant message")
-        logger.info(
-            "Ollama round completed in %.3fs with %d declared tools",
-            time.monotonic() - started,
-            len(tools),
-        )
-        return message
-
-    async def _chat_stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-        started = time.monotonic()
-        first_chunk_at: float | None = None
-        chunk_count = 0
-        content: list[str] = []
-        tool_calls: list[dict[str, Any]] = []
-        request = {
-            "model": self.model_name,
-            "messages": self._bounded_messages(messages),
-            "tools": tools or None,
-            "stream": True,
-            "options": {"temperature": 0.1},
-        }
-        async with self.ai_client.stream(
-            "POST",
-            f"{self.base_url}/api/chat",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json=request,
-        ) as response:
-            response.raise_for_status()
-            lines = response.aiter_lines()
-            while True:
-                try:
-                    line = await asyncio.wait_for(
-                        anext(lines), timeout=self.stream_idle_timeout_seconds
-                    )
-                except StopAsyncIteration:
-                    break
-                except asyncio.TimeoutError as exc:
-                    elapsed = time.monotonic() - started
-                    logger.warning(
-                        "Ollama stream stalled after %.3fs and %d chunks",
-                        elapsed,
-                        chunk_count,
-                    )
-                    raise TimeoutError(
-                        "Ollama stream produced no data for "
-                        f"{self.stream_idle_timeout_seconds:g}s "
-                        f"after {elapsed:.1f}s and {chunk_count} chunks"
-                    ) from exc
-                if not line.strip():
-                    continue
-                chunk_count += 1
-                if first_chunk_at is None:
-                    first_chunk_at = time.monotonic()
-                    logger.info(
-                        "Ollama first stream chunk arrived in %.3fs",
-                        first_chunk_at - started,
-                    )
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError("Ollama returned invalid streamed JSON") from exc
-                if payload.get("error"):
-                    raise RuntimeError(str(payload["error"]))
-                message = payload.get("message")
-                if not isinstance(message, dict):
-                    continue
-                if message.get("content"):
-                    content.append(str(message["content"]))
-                calls = message.get("tool_calls")
-                if isinstance(calls, list):
-                    tool_calls.extend(call for call in calls if isinstance(call, dict))
-        if not content and not tool_calls:
-            raise RuntimeError("Ollama returned no assistant message")
-        logger.info(
-            "Ollama streamed round completed in %.3fs with %d chunks and %d declared tools",
-            time.monotonic() - started,
-            chunk_count,
-            len(tools),
-        )
-        message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
-        if tool_calls:
-            message["tool_calls"] = tool_calls
-        return message
+        return await self.transport.chat(self._bounded_messages(messages), tools)
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         final_messages = [
