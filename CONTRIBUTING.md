@@ -71,7 +71,11 @@ Do not claim CI or tests passed without actual results.
 - Keep evidence receipt construction, nested argument redaction, and
   request-context storage in `evidence_recorder.py`. Keep authority decisions
   outside it: callers must explicitly decide whether a result supports a live
-  claim, and the orchestrator owns evidence retries and refusal policy.
+  claim.
+- Keep bounded evidence/log retry state and deterministic refusal wording in
+  `grounding_policy.py`. The policy may consume resolved booleans and executed
+  tool outcomes, but it must not inspect prompt text, execute tools, mark
+  receipts authoritative, or own successful-answer presentation.
 - Keep approved structured-call dispatch, timing, success normalisation,
   receipt emission, and bounded model-result serialization in
   `tool_executor.py`. Tool visibility, confirmation, live-claim authority,

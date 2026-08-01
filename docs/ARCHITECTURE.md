@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of eighteen Python modules under
+- The maintained runtime is a flat set of nineteen Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -27,6 +27,7 @@
 | `chat_transport.py` | Owns the Ollama HTTP client, provider configuration, request construction, streaming and non-streaming response assembly, idle-stall detection, and client shutdown. |
 | `confirmation_store.py` | Stores short-lived sensitive actions by session, applies TTL expiry, consumes confirmations once, cancels on replacement questions, isolates queued snapshots, and bounds pending-session capacity. |
 | `evidence_recorder.py` | Owns request-scoped evidence receipt storage, timestamps, nested argument redaction, effect metadata, immutable output snapshots, and successful live-evidence detection. |
+| `grounding_policy.py` | Owns request-local log and live-evidence retry state, exact log-call observation, and deterministic retry/refusal decisions when the model returns no tool calls. |
 | `tool_executor.py` | Dispatches one already-approved local or remote structured call, measures it, normalises success/failure, records its receipt, and prepares bounded model content. |
 | `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, deduplication, and request-local expansion. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
@@ -72,9 +73,13 @@
    arguments, attaches the structured tool effect and timestamp, and keeps
    receipts isolated to the active async request. The orchestrator still
    decides which results may set `supports_live_claim=True`.
-10. A live-read answer requires successful evidence marked
-   `supports_live_claim=True`. If evidence cannot be obtained after the allowed
-   retry, the agent refuses rather than making an ungrounded live claim.
+10. When the model returns no tool calls, `GroundingPolicy` applies the
+    request-local grounding state machine. An explicit log request must have a
+    successful `hub_read_diagnostics` / `hub_get_logs` outcome. Other
+    non-conversational answers require successful evidence already marked
+    `supports_live_claim=True` by the orchestrator. Each unmet requirement gets
+    at most one targeted retry; the next empty response is refused rather than
+    inferred.
 11. Routine device controls can execute without a second confirmation. Sensitive
    operations, including firmware installation and higher-risk mutations, are
    queued in `ConfirmationStore` and execute only after a valid same-session
@@ -125,10 +130,15 @@
   authoritative for classifying actual calls, limiting action groups, building
   confirmation wording, and executing confirmed tools.
 - `EvidenceRecorder` owns receipt construction and request-local storage only.
-  The orchestrator remains authoritative for deciding when evidence is
-  required, which results support live claims, when to retry, and when to
-  refuse. API snapshots are copied so consumers cannot mutate the active audit
-  context.
+  The orchestrator remains authoritative for deciding which executed results
+  support live claims and supplies only the resulting evidence boolean to
+  `GroundingPolicy`. API snapshots are copied so consumers cannot mutate the
+  active audit context.
+- `GroundingPolicy` owns retry counters, exact successful-log observation, and
+  retry/refusal wording only. It cannot inspect prompts, declare or execute
+  tools, classify effects, mark evidence authoritative, alter confirmation
+  state, or present a successful answer. Separate instances isolate concurrent
+  requests, and log grounding takes priority over unrelated live evidence.
 - `ToolExecutor` owns dispatch mechanics only after the orchestrator has
   approved a call. It cannot expose tools, approve mutations, bypass
   confirmation, decide live-claim authority, select retries, or present a
@@ -146,10 +156,11 @@
 ## Known gaps
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
-  evidence policy, confirmation policy, retries, and final-answer handling.
-  Transport, pending-state storage, evidence receipt mechanics, approved-call
-  execution, and discovery registry state are now separate; the remaining
-  concerns should be extracted incrementally with regression coverage.
+  evidence-authority decisions, confirmation policy, loop control, and
+  final-answer handling. Transport, pending-state storage, evidence receipt
+  mechanics, grounding retry state, approved-call execution, and discovery
+  registry state are now separate; the remaining concerns should be extracted
+  incrementally with regression coverage.
 - The current bounds are character-based rather than model-token-aware. If
   multiple model families are introduced, token-aware budgeting may provide a
   tighter context limit.
