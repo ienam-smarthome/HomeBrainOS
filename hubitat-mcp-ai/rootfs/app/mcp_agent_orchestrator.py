@@ -29,6 +29,7 @@ from request_classification import (
     requests_mutation as _requests_mutation,
     routine_control_arguments as _routine_control_arguments,
 )
+from rule_authoring_service import RuleAuthoringService
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
 from tool_registry import (
@@ -143,6 +144,10 @@ class UnifiedMCPAgent:
         self._app_manifest: list[dict[str, Any]] = []
         self._app_manifest_at = 0.0
         self.evidence = EvidenceRecorder()
+        self.rule_authoring = RuleAuthoringService(
+            self.mcp,
+            self.evidence.record,
+        )
         self.executor = ToolExecutor(
             self.mcp,
             self.evidence,
@@ -838,6 +843,42 @@ class UnifiedMCPAgent:
                     "Original-request discovery expanded registry with: %s",
                     ", ".join(item.name for item in capability_additions),
                 )
+        rule_decision = await self.rule_authoring.propose(
+            user_prompt,
+            available_gateways=set(catalog.declared_names),
+            can_read_rules="hub_read_rules" in catalog.available_names,
+        )
+        if rule_decision.handled:
+            if rule_decision.message is not None:
+                return rule_decision.message
+            sensitive = [
+                ("hub_manage_rule_machine", dict(arguments))
+                for arguments in rule_decision.actions
+            ]
+            self._mutation_call_seen.set(bool(sensitive))
+            decision = self.confirmation_policy.decide(session_id, sensitive)
+            if decision.action is ConfirmationAction.REJECT:
+                return str(decision.message)
+            assistant_message = {
+                "role": "assistant",
+                "content": str(decision.message),
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": name,
+                            "arguments": arguments,
+                        }
+                    }
+                    for name, arguments in sensitive
+                ],
+            }
+            self.confirmations.queue(
+                session_id,
+                sensitive,
+                [{"role": "user", "content": str(user_prompt).strip()}],
+                assistant_message,
+            )
+            return str(decision.message)
         tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(user_prompt)
