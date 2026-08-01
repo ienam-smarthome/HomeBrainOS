@@ -34,7 +34,7 @@
 | `capability_grounding.py` | Detects assistant-generated capability denials, permits one host-driven discovery recovery, and blocks unsupported limitation claims after known gateways were exposed. |
 | `hub_info_service.py` | Discovers the unique Hub Information Driver device, issues refresh and update-check commands, performs bounded polling, reconciles cached identity with live state, preserves units, and returns authoritative firmware/resource snapshots. |
 | `tool_executor.py` | Dispatches one already-approved local or remote structured call, measures it, normalises success/failure, records its receipt, and prepares bounded model content. |
-| `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, deduplication, and request-local expansion. |
+| `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, local-wrapper precedence, deduplication, and request-local expansion. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
 | `device_query_service.py` | Read-side queries over the cached device inventory, including filtering, comparison, aggregation, and room-aware reads. |
 | `device_history_service.py` | Resolves one named device and performs a bounded authoritative `hub_list_device_events` read, normalising newest-first history without inferring causation. |
@@ -77,8 +77,9 @@
    Driver before returning a structured snapshot.
 7. Remaining requests use the native Ollama tool-calling loop.
    `ToolDiscoveryCatalog` starts every request with the same bounded registry:
-   deterministic local tools, `hub_search_tools`, and the diagnostic gateway
-   when available. Prompt keywords do not select remote schemas. When another
+   deterministic local tools (including shared target resolution and bounded
+   device history), `hub_search_tools`, and the diagnostic gateway when
+   available. Prompt keywords do not select remote schemas. When another
    gateway is needed, the model calls `hub_search_tools`; only known gateways
    explicitly named by upstream `results[].gateway` (or the compatibility
    `matches[].gateway` form) in a recognised structured result envelope are
@@ -262,6 +263,13 @@ registry only when a successful `hub_search_tools` result names them. Discovery
 receipts are auditable but do not themselves support a live-state claim. Once a
 gateway is discovered, its actual structured call is still subject to the
 tool-effect and confirmation contracts above.
+
+When a structured search hit names an upstream operation already covered by a
+stricter local adapter, the local adapter keeps precedence and the broad remote
+gateway is not exposed for that hit. In particular, `hub_list_device_events`
+stays behind `homebrain_device_history`, preserving shared fuzzy-safe target
+resolution, bounded windows, authoritative event evidence, and causal-claim
+safeguards.
 
 The discovery parser mirrors the upstream wire contract: `hub_search_tools`
 returns `query`, `resultsCount`, `totalToolsSearched`, and `results[]`; each

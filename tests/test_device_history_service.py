@@ -114,6 +114,58 @@ async def test_reads_bounded_authoritative_history_after_targeted_resolution():
 
 
 @pytest.mark.asyncio
+async def test_short_name_resolves_prefixed_hyphenated_device_before_history():
+    class PrefixedHistoryMCP(HistoryMCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            operation = arguments.get("tool")
+            if operation == "hub_list_devices":
+                selected = arguments.get("args", {}).get("filter")
+                devices = []
+                if selected == "tab-s9":
+                    devices = [{
+                        "id": "6916",
+                        "label": "Block Tab-S9-FE",
+                        "capabilities": ["Switch"],
+                        "commands": ["blockInternet", "allowInternet"],
+                    }]
+                return MCPToolResult(
+                    name, arguments, {}, "ok", {"devices": devices}
+                )
+            if operation == EVENT_OPERATION:
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "ok",
+                    {
+                        "events": [{
+                            "name": "switch",
+                            "value": "off",
+                            "date": "2026-08-01T14:55:00.000+0100",
+                            "isStateChange": True,
+                        }]
+                    },
+                )
+            raise AssertionError(f"unexpected operation: {operation}")
+
+    mcp = PrefixedHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({"name": "tab s9"})
+
+    assert result.is_error is False
+    assert result.data["deviceId"] == "6916"
+    assert result.data["label"] == "Block Tab-S9-FE"
+    assert [
+        arguments["args"]["filter"]
+        for _, arguments in mcp.calls
+        if arguments.get("tool") == "hub_list_devices"
+    ] == ["tab s9", "tab-s9"]
+    assert mcp.calls[-1][1]["args"]["deviceId"] == "6916"
+
+
+@pytest.mark.asyncio
 async def test_unresolved_device_never_reads_event_history():
     mcp = HistoryMCP(resolve=False)
     service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)

@@ -27,12 +27,16 @@ def test_initial_registry_is_fixed_order_and_excludes_remote_gateways():
         tool("hub_read_diagnostics"),
         tool("hub_search_tools"),
         tool("homebrain_home_snapshot"),
+        tool("homebrain_resolve_device"),
+        tool("homebrain_device_history"),
     ])
 
     assert catalog.declared_names == (
         "hub_search_tools",
         "hub_get_tool_guide",
         "hub_read_diagnostics",
+        "homebrain_resolve_device",
+        "homebrain_device_history",
         "homebrain_home_snapshot",
         "homebrain_control_devices",
     )
@@ -111,6 +115,41 @@ def test_upstream_results_do_not_expand_from_tool_or_description_text():
 
     assert catalog.expand(result) == []
     assert catalog.declared_names == ("hub_search_tools",)
+
+
+def test_discovery_does_not_expose_gateway_for_locally_wrapped_history():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"),
+        tool("hub_read_devices"),
+        tool("homebrain_device_history"),
+    ])
+    result = search_result({
+        "results": [{
+            "tool": "hub_list_device_events",
+            "gateway": "hub_read_devices",
+        }]
+    })
+
+    assert catalog.expand(result) == []
+    assert "homebrain_device_history" in catalog.declared_names
+    assert catalog.declared_tool("hub_read_devices") is None
+
+
+def test_discovery_keeps_gateway_when_local_wrapper_is_unavailable():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"),
+        tool("hub_read_devices"),
+    ])
+    result = search_result({
+        "results": [{
+            "tool": "hub_list_device_events",
+            "gateway": "hub_read_devices",
+        }]
+    })
+
+    assert [item.name for item in catalog.expand(result)] == [
+        "hub_read_devices"
+    ]
 
 
 def test_expansion_supports_recognised_result_envelope_and_preserves_order():
