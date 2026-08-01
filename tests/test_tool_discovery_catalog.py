@@ -23,6 +23,7 @@ def test_initial_registry_is_fixed_order_and_excludes_remote_gateways():
     catalog = ToolDiscoveryCatalog([
         tool("hub_manage_devices"),
         tool("homebrain_control_devices"),
+        tool("hub_get_tool_guide"),
         tool("hub_read_diagnostics"),
         tool("hub_search_tools"),
         tool("homebrain_home_snapshot"),
@@ -30,6 +31,7 @@ def test_initial_registry_is_fixed_order_and_excludes_remote_gateways():
 
     assert catalog.declared_names == (
         "hub_search_tools",
+        "hub_get_tool_guide",
         "hub_read_diagnostics",
         "homebrain_home_snapshot",
         "homebrain_control_devices",

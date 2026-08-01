@@ -159,20 +159,17 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
             if name == "hub_read_apps_code":
                 return MCPToolResult(name, arguments, {}, "", {"apps": []})
             if name == "hub_manage_rule_machine":
-                assert arguments == {
-                    "tool": "hub_set_rule",
-                    "args": {"operation": "create", "args": {}},
-                }
+                assert arguments == {}
                 return MCPToolResult(
                     name,
                     arguments,
                     {},
                     "",
                     {
-                        "schema": {
-                            "operation": "create",
-                            "required": ["name", "addTriggers", "addActions"],
-                        },
+                        "tools": [{
+                            "name": "hub_set_rule",
+                            "requiredOnCreate": ["name"],
+                        }],
                     },
                 )
             if name == "hub_search_tools":
@@ -201,42 +198,52 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
     block_rule_arguments = {
         "tool": "hub_set_rule",
         "args": {
-            "operation": "create",
-            "args": {
-                "name": "Tab S9 FE - Block (9am)",
-                "addTriggers": [{"capability": "Certain Time", "time": "09:00"}],
-                "addActions": [{
-                    "capability": "runCommand",
-                    "deviceIds": [6916],
-                    "capabilityFilter": "Switch",
-                    "command": "blockInternet",
-                }],
-            },
+            "name": "Tab S9 FE - Block (9am)",
+            "bestPracticeKey": "live-key",
+            "addTriggers": [{
+                "capability": "Certain Time (and optional date)",
+                "time": "A specific time",
+                "atTime": "09:00",
+            }],
+            "addActions": [{
+                "capability": "runCommand",
+                "deviceIds": [6916],
+                "capabilityFilter": "Switch",
+                "command": "blockInternet",
+            }],
         },
     }
     unblock_rule_arguments = {
         "tool": "hub_set_rule",
         "args": {
-            "operation": "create",
-            "args": {
-                "name": "Tab S9 FE - Unblock (7pm)",
-                "addTriggers": [{"capability": "Certain Time", "time": "19:00"}],
-                "addActions": [{
-                    "capability": "runCommand",
-                    "deviceIds": [6916],
-                    "capabilityFilter": "Switch",
-                    "command": "allowInternet",
-                }],
-            },
+            "name": "Tab S9 FE - Unblock (7pm)",
+            "bestPracticeKey": "live-key",
+            "addTriggers": [{
+                "capability": "Certain Time (and optional date)",
+                "time": "A specific time",
+                "atTime": "19:00",
+            }],
+            "addActions": [{
+                "capability": "runCommand",
+                "deviceIds": [6916],
+                "capabilityFilter": "Switch",
+                "command": "allowInternet",
+            }],
         },
     }
     ai = FakeAI([
         {"message": {"role": "assistant", "tool_calls": [{
             "function": {
                 "name": "hub_manage_rule_machine",
+                "arguments": {},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_manage_rule_machine",
                 "arguments": {
                     "tool": "hub_set_rule",
-                    "args": {"operation": "create", "args": {}},
+                    "args": {"tool": "hub_set_rule"},
                 },
             }
         }]}},
@@ -278,10 +285,7 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
         ),
         (
             "hub_manage_rule_machine",
-            {
-                "tool": "hub_set_rule",
-                "args": {"operation": "create", "args": {}},
-            },
+            {},
         ),
     ]
     assert agent._pending["rule-authoring"].actions == [
@@ -296,6 +300,9 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
     assert "HOST ORIGINAL-REQUEST CAPABILITY DISCOVERY" in (
         ai.requests[0][1]["json"]["messages"][0]["content"]
     )
+    recovery_message = ai.requests[2][1]["json"]["messages"][-1]["content"]
+    assert "non-empty name" in recovery_message
+    assert "set_rule_reference" in recovery_message
 
 
 @pytest.mark.asyncio
@@ -311,7 +318,7 @@ async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_ve
             self.calls.append((name, arguments))
             assert name == "hub_manage_rule_machine"
             assert arguments["args"]["confirm"] is True
-            app_id = 4160 if "Block" in arguments["args"]["args"]["name"] else 4161
+            app_id = 4160 if "Block" in arguments["args"]["name"] else 4161
             return MCPToolResult(
                 name, arguments, {}, "",
                 {"success": True, "appId": app_id, "ruleId": app_id, "health": {"ok": True}},
@@ -322,11 +329,17 @@ async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_ve
     actions = [
         ("hub_manage_rule_machine", {
             "tool": "hub_set_rule",
-            "args": {"operation": "create", "args": {"name": "Tab S9 FE - Block (9am)"}},
+            "args": {
+                "name": "Tab S9 FE - Block (9am)",
+                "addAction": {"capability": "runCommand", "command": "blockInternet"},
+            },
         }),
         ("hub_manage_rule_machine", {
             "tool": "hub_set_rule",
-            "args": {"operation": "create", "args": {"name": "Tab S9 FE - Unblock (7pm)"}},
+            "args": {
+                "name": "Tab S9 FE - Unblock (7pm)",
+                "addAction": {"capability": "runCommand", "command": "allowInternet"},
+            },
         }),
     ]
     agent.confirmations.queue(
@@ -367,11 +380,17 @@ async def test_confirmed_rule_authoring_never_claims_success_without_verified_ru
         [
             ("hub_manage_rule_machine", {
                 "tool": "hub_set_rule",
-                "args": {"operation": "create", "args": {"name": "Tab S9 FE - Block (9am)"}},
+                "args": {
+                    "name": "Tab S9 FE - Block (9am)",
+                    "addAction": {"capability": "runCommand", "command": "blockInternet"},
+                },
             }),
             ("hub_manage_rule_machine", {
                 "tool": "hub_set_rule",
-                "args": {"operation": "create", "args": {"name": "Tab S9 FE - Unblock (7pm)"}},
+                "args": {
+                    "name": "Tab S9 FE - Unblock (7pm)",
+                    "addAction": {"capability": "runCommand", "command": "allowInternet"},
+                },
             }),
         ],
         [],
@@ -402,6 +421,9 @@ async def test_rule_authoring_prompt_documents_supported_gateway_path():
     assert "query 'create Rule Machine rule'" in instruction
     assert "hub_manage_rule_machine" in instruction
     assert "tool='hub_set_rule'" in instruction
+    assert "best_practice_reference" in instruction
+    assert "set_rule_reference" in instruction
+    assert "never invent an operation/create/args envelope" in instruction
     assert "Rule creation is supported" in instruction
     assert "complementary start and end actions" in instruction
 

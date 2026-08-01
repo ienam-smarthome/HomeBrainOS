@@ -28,6 +28,7 @@ SEARCH_TOOL = "hub_search_tools"
 
 INITIAL_TOOL_ORDER = (
     SEARCH_TOOL,
+    "hub_get_tool_guide",
     "hub_read_diagnostics",
     LOCAL_FILTER_TOOL,
     LOCAL_QUERY_TOOL,
