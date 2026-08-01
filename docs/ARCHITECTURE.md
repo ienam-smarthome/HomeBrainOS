@@ -256,7 +256,16 @@ as the upstream read-only schema probe. The documented `addTrigger` or
 `addAction` `{discover:true}` calls are read-only capability probes. Rule writes
 put `name`, `addTrigger(s)`, `addAction(s)`, and `bestPracticeKey` directly in
 the gateway `args`; an invented `operation/create/args` envelope is rejected
-before confirmation and returned to the model for correction.
+before confirmation and returned to the model for correction. Stable upstream
+shortcut invariants are validated at the same boundary: wall-clock triggers
+must use the documented Certain Time shape, mapped switch actions use `action`,
+custom driver commands use `runCommand`, and a time window is submitted as two
+atomic rules rather than one ambiguous many-trigger/many-action rule. These
+checks run again immediately before confirmed replay.
+
+Rule authoring resolves the target with a label-filtered device lookup and
+targeted command discovery. It must not load the complete device inventory for
+a named target or infer driver commands from a similarly named app.
 
 Confirmed Rule Machine completion is deterministic. HomeBrain requires a
 successful tool result, a returned `appId`/`ruleId`, no partial flag, and no
