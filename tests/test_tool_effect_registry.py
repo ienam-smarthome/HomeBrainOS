@@ -30,7 +30,6 @@ def test_rule_machine_schema_probe_is_read_but_apply_is_sensitive():
         "args": {
             "operation": "create",
             "args": {"name": "Daily block"},
-            "confirm": True,
         },
     }
 
@@ -251,7 +250,10 @@ async def test_sensitive_manage_write_still_waits_for_confirmation():
     )
 
     assert "Please confirm" in prompt
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+    ]
 
     answer = await agent.process_user_request("confirm", session_id="sensitive")
 

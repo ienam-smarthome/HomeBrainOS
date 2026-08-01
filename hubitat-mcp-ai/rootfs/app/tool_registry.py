@@ -132,7 +132,13 @@ def _is_rule_schema_probe(tool_name: str, arguments: dict[str, Any]) -> bool:
     if not isinstance(nested, dict):
         return False
     operation = _normalized_operation(nested.get("operation"))
-    return bool(operation) and nested.get("confirm") is not True
+    payload = nested.get("args")
+    schema_only = payload is None or payload == "" or payload == {} or payload == []
+    return (
+        bool(operation)
+        and nested.get("confirm") is not True
+        and schema_only
+    )
 
 
 def classify_tool_effect(

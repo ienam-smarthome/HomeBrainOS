@@ -784,11 +784,44 @@ class UnifiedMCPAgent:
             missing = catalog.replace_declared(pending_names)
             if missing:
                 return self.confirmation_policy.unavailable_tools_message(missing)
-        tools = catalog.schemas()
         if pending:
             return await self._resume_confirmation(pending, catalog)
+        capability_discovery = ""
+        capability_additions: list[MCPTool] = []
+        search_tool = catalog.declared_tool(SEARCH_TOOL)
+        if (
+            search_tool is not None
+            and not self._is_conversational_prompt(user_prompt)
+        ):
+            discovery = await self.executor.execute(
+                SEARCH_TOOL,
+                {"query": str(user_prompt).strip()},
+                tool=search_tool,
+                supports_live_claim=False,
+                record_evidence=False,
+            )
+            capability_additions = (
+                catalog.expand(discovery.result)
+                if discovery.result is not None
+                else []
+            )
+            capability_discovery = discovery.content
+            if capability_additions:
+                logger.info(
+                    "Original-request discovery expanded registry with: %s",
+                    ", ".join(item.name for item in capability_additions),
+                )
+        tools = catalog.schemas()
         prompt_started = time.monotonic()
         system_prompt = await self._system_prompt(user_prompt)
+        if capability_discovery:
+            system_prompt += (
+                "\n\nHOST ORIGINAL-REQUEST CAPABILITY DISCOVERY\n"
+                + capability_discovery
+                + "\nRelevant returned gateways are already declared. Complete the "
+                "user's requested operation; do not replace a create/edit request "
+                "with a report that the target does not yet exist."
+            )
         if _matches(user_prompt, {"weather"}):
             weather_started = time.monotonic()
             weather_result = await self._weather_snapshot({})
@@ -831,6 +864,22 @@ class UnifiedMCPAgent:
                 answer = str(assistant.get("content") or "")
                 capability_decision = capability_grounding.decide(answer)
                 if capability_decision.action is CapabilityAction.DISCOVER:
+                    if capability_discovery:
+                        capability_grounding.record_discovery(
+                            len(capability_additions)
+                        )
+                        messages.extend([
+                            assistant,
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"{capability_decision.message}\n\n"
+                                    "HOST DISCOVERY RESULT\n"
+                                    f"{capability_discovery}"
+                                ),
+                            },
+                        ])
+                        continue
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
                         execution = await self.executor.execute(
@@ -981,24 +1030,11 @@ class UnifiedMCPAgent:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
                         post_filter_discovery_used = True
-                        discovery = await self.executor.execute(
-                            SEARCH_TOOL,
-                            {"query": str(user_prompt).strip()},
-                            tool=search_tool,
-                            supports_live_claim=False,
-                        )
-                        additions = (
-                            catalog.expand(discovery.result)
-                            if discovery.result is not None
-                            else []
-                        )
-                        if additions:
-                            tools = catalog.schemas()
                         messages.append({
                             "role": "user",
                             "content": (
                                 "HOST POST-FILTER DISCOVERY RESULT\n"
-                                f"{discovery.content}\n"
+                                f"{capability_discovery}\n"
                                 "The local filter was an intermediate read, not proof that "
                                 "the original request is complete. Use any newly declared "
                                 "gateway needed to finish the original task."

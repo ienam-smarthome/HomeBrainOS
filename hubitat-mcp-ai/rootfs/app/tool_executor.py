@@ -119,8 +119,9 @@ class ToolExecutor:
         supports_live_claim: bool = True,
         evidence_kind: str = "tool_result",
         mutates: bool | None = None,
+        record_evidence: bool = True,
     ) -> ToolExecution:
-        """Dispatch one structured call and always record its outcome."""
+        """Dispatch one structured call and optionally record its outcome."""
 
         safe_arguments = deepcopy(arguments)
         receipt_arguments = deepcopy(arguments)
@@ -136,17 +137,18 @@ class ToolExecutor:
             )
             elapsed_ms = round((self._clock() - started) * 1000)
             success = self.succeeded(result)
-            self.evidence.record(
-                name,
-                receipt_arguments,
-                success=success,
-                elapsed_ms=elapsed_ms,
-                summary=self.result_summary(result),
-                supports_live_claim=supports_live_claim,
-                evidence_kind=evidence_kind,
-                mutates=effect.mutates if mutates is None else bool(mutates),
-                effect=effect,
-            )
+            if record_evidence:
+                self.evidence.record(
+                    name,
+                    receipt_arguments,
+                    success=success,
+                    elapsed_ms=elapsed_ms,
+                    summary=self.result_summary(result),
+                    supports_live_claim=supports_live_claim,
+                    evidence_kind=evidence_kind,
+                    mutates=effect.mutates if mutates is None else bool(mutates),
+                    effect=effect,
+                )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
             return ToolExecution(
                 name=name,
@@ -159,17 +161,18 @@ class ToolExecutor:
             )
         except Exception as exc:
             elapsed_ms = round((self._clock() - started) * 1000)
-            self.evidence.record(
-                name,
-                receipt_arguments,
-                success=False,
-                elapsed_ms=elapsed_ms,
-                summary=f"{type(exc).__name__}: {str(exc)[:140]}",
-                supports_live_claim=supports_live_claim,
-                evidence_kind=evidence_kind,
-                mutates=effect.mutates if mutates is None else bool(mutates),
-                effect=effect,
-            )
+            if record_evidence:
+                self.evidence.record(
+                    name,
+                    receipt_arguments,
+                    success=False,
+                    elapsed_ms=elapsed_ms,
+                    summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                    supports_live_claim=supports_live_claim,
+                    evidence_kind=evidence_kind,
+                    mutates=effect.mutates if mutates is None else bool(mutates),
+                    effect=effect,
+                )
             logger.exception("Tool %s failed", name)
             return ToolExecution(
                 name=name,

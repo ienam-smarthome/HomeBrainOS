@@ -157,36 +157,25 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
             if name == "hub_read_apps_code":
+                return MCPToolResult(name, arguments, {}, "", {"apps": []})
+            if name == "hub_manage_rule_machine":
+                assert arguments == {
+                    "tool": "hub_set_rule",
+                    "args": {"operation": "create", "args": {}},
+                }
                 return MCPToolResult(
                     name,
                     arguments,
                     {},
                     "",
                     {
-                        "apps": [{
-                            "id": "4111",
-                            "label": "Media: block Internet tablet",
-                            "status": "active",
-                        }],
+                        "schema": {
+                            "operation": "create",
+                            "required": ["name", "addTriggers", "addActions"],
+                        },
                     },
                 )
             if name == "hub_search_tools":
-                if arguments["query"] == "list apps":
-                    return MCPToolResult(
-                        name,
-                        arguments,
-                        {},
-                        "",
-                        {
-                            "query": arguments["query"],
-                            "resultsCount": 1,
-                            "totalToolsSearched": 142,
-                            "results": [{
-                                "tool": "hub_list_apps",
-                                "gateway": "hub_read_apps_code",
-                            }],
-                        },
-                    )
                 return MCPToolResult(
                     name,
                     arguments,
@@ -212,41 +201,45 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
     block_rule_arguments = {
         "tool": "hub_set_rule",
         "args": {
-            "name": "Tab S9 FE - Block (9am)",
-            "addTriggers": [{"type": "time", "time": "09:00"}],
-            "addActions": [{
-                "type": "deviceCommand",
-                "deviceId": "6916",
-                "command": "blockInternet",
-            }],
+            "operation": "create",
+            "args": {
+                "name": "Tab S9 FE - Block (9am)",
+                "addTriggers": [{"capability": "Certain Time", "time": "09:00"}],
+                "addActions": [{
+                    "capability": "runCommand",
+                    "deviceIds": [6916],
+                    "capabilityFilter": "Switch",
+                    "command": "blockInternet",
+                }],
+            },
         },
     }
     unblock_rule_arguments = {
         "tool": "hub_set_rule",
         "args": {
-            "name": "Tab S9 FE - Unblock (7pm)",
-            "addTriggers": [{"type": "time", "time": "19:00"}],
-            "addActions": [{
-                "type": "deviceCommand",
-                "deviceId": "6916",
-                "command": "allowInternet",
-            }],
+            "operation": "create",
+            "args": {
+                "name": "Tab S9 FE - Unblock (7pm)",
+                "addTriggers": [{"capability": "Certain Time", "time": "19:00"}],
+                "addActions": [{
+                    "capability": "runCommand",
+                    "deviceIds": [6916],
+                    "capabilityFilter": "Switch",
+                    "command": "allowInternet",
+                }],
+            },
         },
     }
     ai = FakeAI([
         {"message": {"role": "assistant", "tool_calls": [{
             "function": {
-                "name": "hub_search_tools",
-                "arguments": {"query": "list apps"},
+                "name": "hub_manage_rule_machine",
+                "arguments": {
+                    "tool": "hub_set_rule",
+                    "args": {"operation": "create", "args": {}},
+                },
             }
         }]}},
-        {"message": {
-            "role": "assistant",
-            "content": (
-                "I cannot create new rules or write automation logic. "
-                "I can only manage the state of existing ones."
-            ),
-        }},
         {"message": {"role": "assistant", "tool_calls": [
             {
                 "function": {
@@ -276,23 +269,33 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
         )
     assert mcp.calls == [
         (
+            "hub_search_tools",
+            {"query": "write a rule to block tab s9 from 9am to 7pm everyday"},
+        ),
+        (
             "hub_read_apps_code",
             {"tool": "hub_list_apps", "args": {"scope": "instances"}},
         ),
-        ("hub_search_tools", {"query": "list apps"}),
         (
-            "hub_search_tools",
-            {"query": "write a rule to block tab s9 from 9am to 7pm everyday"},
+            "hub_manage_rule_machine",
+            {
+                "tool": "hub_set_rule",
+                "args": {"operation": "create", "args": {}},
+            },
         ),
     ]
     assert agent._pending["rule-authoring"].actions == [
         ("hub_manage_rule_machine", block_rule_arguments),
         ("hub_manage_rule_machine", unblock_rule_arguments),
     ]
-    recovery_request = ai.requests[2][1]["json"]["messages"][-1]["content"]
-    assert "HOST DISCOVERY RESULT" in recovery_request
-    assert "hub_manage_rule_machine" in recovery_request
-    assert "wrong query" in recovery_request
+    first_tools = {
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    }
+    assert "hub_manage_rule_machine" in first_tools
+    assert "HOST ORIGINAL-REQUEST CAPABILITY DISCOVERY" in (
+        ai.requests[0][1]["json"]["messages"][0]["content"]
+    )
 
 
 @pytest.mark.asyncio
@@ -660,7 +663,7 @@ async def test_successful_tool_call_returns_sanitized_evidence_receipt():
         item["function"]["name"]
         for item in ai.requests[1][1]["json"]["tools"]
     }
-    assert "hub_read_devices" not in first_names
+    assert "hub_read_devices" in first_names
     assert "hub_read_devices" in second_names
 
 
@@ -773,17 +776,16 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
     )
     assert len(ai.requests) == 2
     assert mcp.calls == [
-        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}}),
         ("hub_search_tools", {"query": "Which batteries are low?"}),
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}}),
     ]
     kinds = [receipt["evidence_kind"] for receipt in outcome.evidence]
     assert kinds == [
         "authoritative_state_snapshot",
         "deterministic_attribute_filter",
-        "tool_result",
     ]
     assert outcome.evidence[-2]["supports_live_claim"] is True
-    assert outcome.evidence[-1]["supports_live_claim"] is False
+    assert outcome.evidence[-1]["supports_live_claim"] is True
     declared = ai.requests[0][1]["json"]["tools"]
     assert [item["function"]["name"] for item in declared] == [
             "hub_search_tools",
@@ -1426,10 +1428,11 @@ async def test_generic_tv_write_uses_only_high_level_control_and_verifies():
         "homebrain_control_devices",
     ]
     assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
         "hub_read_devices",
         "hub_manage_devices",
     ]
-    assert mcp.calls[0][1]["args"] == {"labelFilter": "TV"}
+    assert mcp.calls[1][1]["args"] == {"labelFilter": "TV"}
     assert mcp.calls[-1][1] == {
         "tool": "hub_call_device_command",
         "args": {
@@ -2126,7 +2129,11 @@ async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
     answer = await agent.process_user_request("Turn on the couch lamp")
 
     assert answer == "The couch lamp is on."
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools", "set_switch"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+        "set_switch",
+    ]
     assert ai.requests[-1][1]["json"]["tools"] is None
 
 
