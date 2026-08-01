@@ -51,14 +51,26 @@ def tab_device(label="Block Tab-S9-FE"):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "prompt",
+    ("prompt", "expected_filters"),
     [
-        "write a rule to block tab s9 from 9am to 7pm everyday",
-        "Create an automation to block Tab-S9-FE from 09:00 to 19:00 every day",
-        "set up a schedule to disable internet for the tab s9 from 9 a.m. until 7 p.m. daily",
+        (
+            "write a rule to block tab s9 from 9am to 7pm everyday",
+            ["tab s9", "tab-s9"],
+        ),
+        (
+            "Create an automation to block Tab-S9-FE from 09:00 to 19:00 every day",
+            ["tab s9 fe", "tab-s9-fe"],
+        ),
+        (
+            "set up a schedule to disable internet for the tab s9 from 9 a.m. until 7 p.m. daily",
+            ["tab s9", "tab-s9"],
+        ),
     ],
 )
-async def test_compiles_daily_block_window_into_two_atomic_rules(prompt):
+async def test_compiles_daily_block_window_into_two_atomic_rules(
+    prompt,
+    expected_filters,
+):
     mcp = RuleMCP([tab_device()])
     service = RuleAuthoringService(mcp, recorder)
 
@@ -91,7 +103,7 @@ async def test_compiles_daily_block_window_into_two_atomic_rules(prompt):
         for name, arguments in mcp.calls
         if name == "hub_read_devices"
     ]
-    assert filters[:2] == ["tab s9", "tab-s9"]
+    assert filters[:2] == expected_filters
 
 
 @pytest.mark.asyncio
