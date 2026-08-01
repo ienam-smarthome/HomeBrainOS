@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,7 +48,7 @@ def test_required_runtime_dependencies_are_declared() -> None:
         encoding="utf-8"
     )
     declared = {
-        line.partition("==")[0].partition(">=")[0].strip().lower()
+        re.split(r"[<>=!~;\[]", line.strip(), maxsplit=1)[0].lower()
         for line in requirements.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
