@@ -55,7 +55,9 @@ async def test_production_agent_delegates_final_answer_to_coordinator() -> None:
     assert isinstance(agent.final_answers, FinalAnswerCoordinator)
     assert answer == "Final grounded answer."
     payload = ai.requests[0]["json"]
-    assert payload["tools"] == []
+    # ChatTransport serialises an empty declared-tool list as JSON null. This is
+    # the established provider contract for a final round with no callable tools.
+    assert payload["tools"] is None
     assert payload["messages"][-1]["role"] == "user"
     assert "using only the MCP results already provided" in payload["messages"][-1]["content"]
 
