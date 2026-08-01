@@ -7,6 +7,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from mcp_agent_orchestrator import UnifiedMCPAgent  # noqa: E402
+from model_context_policy import ModelContextPolicy  # noqa: E402
 from request_classification import (  # noqa: E402
     matches,
     requests_mutation,
@@ -54,3 +55,21 @@ def test_tool_registry_builders_preserve_names_and_annotations():
         "readOnlyHint": True,
         "effect": ToolEffect.READ.value,
     }
+
+
+def test_context_policy_remains_available_through_agent_shims():
+    agent = UnifiedMCPAgent.__new__(UnifiedMCPAgent)
+    agent.context_policy = ModelContextPolicy(
+        max_history_messages=1,
+        max_history_chars=20,
+        max_tool_context_chars=4000,
+        compacted_tool_result_chars=500,
+    )
+
+    assert agent._history([
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "new"},
+    ]) == [{"role": "assistant", "content": "new"}]
+    assert agent._bounded_messages([
+        {"role": "tool", "content": "x" * 5000},
+    ])[0]["content"] != "x" * 5000
