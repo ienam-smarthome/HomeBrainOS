@@ -128,7 +128,7 @@ async def test_ollama_native_multi_round_tool_execution():
     assert mcp.calls[0][0] == "hub_search_tools"
     assert ai.requests[0][0] == "https://ollama.com/api/chat"
     assert ai.requests[0][1]["headers"]["Authorization"] == "Bearer test-key"
-    messages = ai.requests[1][1]["json"]["messages"]
+    messages = ai.requests[2][1]["json"]["messages"]
     assert messages[-1]["role"] == "tool"
     assert messages[-1]["tool_name"] == "set_switch"
 
@@ -1669,6 +1669,121 @@ def test_large_tool_results_are_bounded():
     parsed = __import__("json").loads(payload)
     assert parsed["truncated"] is True
     assert parsed["original_chars"] > 5000
+
+
+def test_conversation_history_keeps_recent_messages_with_char_budget():
+    agent = UnifiedMCPAgent(
+        FakeMCP(),
+        "key",
+        "model",
+        ai_client=FakeAI([]),
+        max_history_messages=4,
+        max_history_chars=110,
+    )
+    history = [
+        {
+            "role": "assistant" if index % 2 else "user",
+            "content": f"{index:02d}" + "x" * 38,
+        }
+        for index in range(10)
+    ]
+
+    bounded = agent._history(history)
+
+    assert len(bounded) == 3
+    assert bounded[-1]["content"].startswith("09")
+    assert bounded[0]["content"].startswith("07")
+    assert bounded[0]["content"].endswith("[earlier history truncated]")
+    assert sum(len(item["content"]) for item in bounded) <= 110
+
+
+def test_tool_context_compacts_oldest_results_before_newest():
+    agent = UnifiedMCPAgent(
+        FakeMCP(),
+        "key",
+        "model",
+        ai_client=FakeAI([]),
+        max_tool_context_chars=4000,
+        compacted_tool_result_chars=500,
+    )
+    messages = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "original question"},
+        {"role": "tool", "tool_name": "first", "content": "a" * 2500},
+        {"role": "tool", "tool_name": "second", "content": "b" * 2500},
+        {"role": "tool", "tool_name": "latest", "content": "c" * 1000},
+    ]
+
+    bounded = agent._bounded_messages(messages)
+    tool_messages = [item for item in bounded if item["role"] == "tool"]
+
+    assert sum(len(item["content"]) for item in tool_messages) <= 4000
+    assert __import__("json").loads(tool_messages[0]["content"])[
+        "context_compacted"
+    ] is True
+    assert tool_messages[-1]["content"] == "c" * 1000
+    assert messages[2]["content"] == "a" * 2500
+
+
+@pytest.mark.asyncio
+async def test_chat_sends_bounded_tool_context_to_model():
+    ai = FakeAI([{"message": {"role": "assistant", "content": "Done."}}])
+    agent = UnifiedMCPAgent(
+        FakeMCP(),
+        "key",
+        "model",
+        ai_client=ai,
+        max_tool_context_chars=4000,
+        compacted_tool_result_chars=500,
+    )
+    messages = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "question"},
+        {"role": "tool", "tool_name": "first", "content": "a" * 3000},
+        {"role": "tool", "tool_name": "latest", "content": "b" * 3000},
+    ]
+
+    response = await agent._chat(messages, [])
+
+    sent = ai.requests[0][1]["json"]["messages"]
+    sent_tool_chars = sum(
+        len(item["content"]) for item in sent if item["role"] == "tool"
+    )
+    assert response["content"] == "Done."
+    assert sent_tool_chars <= 4000
+    assert messages[-1]["content"] == "b" * 3000
+
+
+@pytest.mark.asyncio
+async def test_streaming_chat_sends_bounded_tool_context_to_model():
+    ai = FakeStreamingAI([
+        '{"message":{"role":"assistant","content":"Done."}}',
+        '{"done":true}',
+    ])
+    agent = UnifiedMCPAgent(
+        FakeMCP(),
+        "key",
+        "model",
+        ai_client=ai,
+        max_tool_context_chars=4000,
+        compacted_tool_result_chars=500,
+    )
+    messages = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "question"},
+        {"role": "tool", "tool_name": "first", "content": "a" * 3000},
+        {"role": "tool", "tool_name": "latest", "content": "b" * 3000},
+    ]
+
+    response = await agent._chat(messages, [])
+
+    sent = ai.requests[0][2]["json"]["messages"]
+    sent_tool_chars = sum(
+        len(item["content"]) for item in sent if item["role"] == "tool"
+    )
+    assert response["content"] == "Done."
+    assert sent_tool_chars <= 4000
+    assert messages[-1]["content"] == "b" * 3000
 
 
 def test_tool_search_discovers_declared_gateway():
