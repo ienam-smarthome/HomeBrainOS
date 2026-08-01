@@ -11,6 +11,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from mcp_agent_orchestrator import UnifiedMCPAgent  # noqa: E402
 from mcp_client import MCPTool  # noqa: E402
+from tool_registry import classify_tool_effect  # noqa: E402
 
 READ_DIAGNOSTIC_PHRASES = [
     "which switches are on?",
@@ -104,8 +105,24 @@ def test_mutation_metadata_is_checked_on_the_requested_tool():
         annotations={"mutates": False, "readOnlyHint": False},
     )
 
-    assert UnifiedMCPAgent._call_is_mutation(declared_write, {}) is True
-    assert UnifiedMCPAgent._call_is_mutation(declared_read, {"command": "off"}) is False
+    assert classify_tool_effect(declared_write, {}).mutates is True
+    assert classify_tool_effect(
+        declared_read, {"command": "off"}
+    ).mutates is False
+
+
+def test_structured_manage_read_is_not_misclassified_as_a_write():
+    gateway = MCPTool(
+        "hub_manage_devices",
+        "manage devices",
+        {"type": "object"},
+        annotations={"destructiveHint": True},
+    )
+
+    assert classify_tool_effect(
+        gateway,
+        {"tool": "hub_list_devices", "args": {}},
+    ).mutates is False
 
 
 def test_legacy_text_classifier_no_longer_controls_response_gate():
@@ -114,6 +131,16 @@ def test_legacy_text_classifier_no_longer_controls_response_gate():
     assert "mutation_requested = _requests_mutation(user_prompt)" not in source
     assert "if mutation_requested and successful_mutations == 0" not in source
     assert "self._mutation_call_seen.get()" in source
+
+
+def test_legacy_tool_effect_shadow_gate_has_been_removed():
+    source = (APP_DIR / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
+
+    assert "_shadow_tool_effect" not in source
+    assert "_MUTATION_TERMS" not in source
+    assert "_call_is_mutation" not in source
+    assert "def _is_sensitive" not in source
+    assert "classify_tool_effect(tool, arguments)" in source
 
 
 def test_confirmed_pending_actions_remain_mutating_in_source():

@@ -127,9 +127,9 @@ def classify_tool_effect(
 ) -> ToolEffect:
     """Classify an actual structured call without inspecting the user prompt.
 
-    Unknown management calls fail closed as sensitive writes. This function is
-    initially consumed in shadow mode; confirmation behaviour remains on the
-    legacy gate until comparison coverage is complete.
+    Unknown management calls fail closed as sensitive writes. Known structured
+    sub-operations take precedence over broad gateway annotations so read and
+    routine calls are not over-classified.
     """
 
     if tool is None:
@@ -138,7 +138,7 @@ def classify_tool_effect(
     annotations = tool.annotations or {}
     name = _normalized_operation(tool.name)
 
-    if annotations.get("destructiveHint") is True or name in _DESTRUCTIVE_GATEWAYS:
+    if name in _DESTRUCTIVE_GATEWAYS:
         return ToolEffect.DESTRUCTIVE_WRITE
     if name in _SENSITIVE_GATEWAYS:
         return ToolEffect.SENSITIVE_WRITE
@@ -150,8 +150,12 @@ def classify_tool_effect(
         return ToolEffect.READ
 
     operation_effect = _operation_effect(_structured_operations(arguments))
-    if name.startswith("hub_manage_") and operation_effect is not None:
-        return operation_effect
+    if name.startswith("hub_manage_"):
+        if operation_effect is not None:
+            return operation_effect
+        if annotations.get("destructiveHint") is True:
+            return ToolEffect.DESTRUCTIVE_WRITE
+        return ToolEffect.SENSITIVE_WRITE
 
     explicit_effect = str(annotations.get("effect") or "").strip().casefold()
     if explicit_effect in ToolEffect._value2member_map_:
@@ -163,13 +167,12 @@ def classify_tool_effect(
         return ToolEffect.SENSITIVE_WRITE
     if danger == "routine":
         return ToolEffect.ROUTINE_WRITE
+    if annotations.get("destructiveHint") is True:
+        return ToolEffect.DESTRUCTIVE_WRITE
     if annotations.get("readOnlyHint") is True or annotations.get("mutates") is False:
         return ToolEffect.READ
     if annotations.get("mutates") is True:
         return ToolEffect.SENSITIVE_WRITE
-    if name.startswith("hub_manage_"):
-        return ToolEffect.SENSITIVE_WRITE
-
     return operation_effect or ToolEffect.SENSITIVE_WRITE
 
 

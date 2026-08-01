@@ -11,6 +11,7 @@ sys.path.insert(0, str(APP_DIR))
 from mcp_agent_orchestrator import UnifiedMCPAgent  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from test_mcp_agent_orchestrator import FakeAI  # noqa: E402
+from tool_registry import classify_tool_effect  # noqa: E402
 
 
 class FakeMCP:
@@ -115,28 +116,30 @@ def test_read_only_gateway_does_not_require_confirmation():
         "hub_manage_devices", "Gateway", {"type": "object"},
         annotations={"destructiveHint": True},
     )
-    assert not UnifiedMCPAgent._is_sensitive(tool, {"operation": "list_devices"})
-    assert not UnifiedMCPAgent._is_sensitive(
+    assert not classify_tool_effect(
+        tool, {"operation": "list_devices"}
+    ).requires_confirmation
+    assert not classify_tool_effect(
         tool,
         {
             "tool": "hub_call_device_command",
             "args": {"deviceId": "1", "command": "off"},
         },
-    )
-    assert not UnifiedMCPAgent._is_sensitive(
+    ).requires_confirmation
+    assert not classify_tool_effect(
         tool,
         {
             "tool": "hub_call_device_command",
             "args": {"deviceId": "1", "command": "ping"},
         },
-    )
-    assert UnifiedMCPAgent._is_sensitive(
+    ).requires_confirmation
+    assert classify_tool_effect(
         tool,
         {
             "tool": "hub_call_device_command",
             "args": {"deviceId": "1", "command": "unlock"},
         },
-    )
+    ).requires_confirmation
 
 
 @pytest.mark.asyncio
