@@ -1094,7 +1094,10 @@ class UnifiedMCPAgent:
             declared = [tool for tool in all_tools if tool.name in pending_names] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
-            if not self._is_conversational_prompt(user_prompt):
+            if (
+                not self._is_conversational_prompt(user_prompt)
+                and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)
+            ):
                 declared = [tool for tool in declared if tool.name != "hub_get_info"]
                 declared_names = {tool.name for tool in declared}
                 declared.extend(tool for tool in safe_read_tools if tool.name not in declared_names)

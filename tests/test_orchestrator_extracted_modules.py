@@ -41,6 +41,11 @@ def test_tool_registry_builders_preserve_names_and_annotations():
     snapshot = home_snapshot_tool()
 
     assert control.name == LOCAL_CONTROL_TOOL
-    assert control.annotations == {"readOnlyHint": False, "destructiveHint": False}
+    assert control.annotations == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "mutates": True,
+        "danger": "routine",
+    }
     assert snapshot.name == LOCAL_HOME_SNAPSHOT_TOOL
     assert snapshot.annotations == {"readOnlyHint": True}
