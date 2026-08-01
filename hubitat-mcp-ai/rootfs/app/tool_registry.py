@@ -241,7 +241,7 @@ def control_devices_tool() -> MCPTool:
             ],
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": False, "destructiveHint": False},
+        annotations={"readOnlyHint": False, "destructiveHint": False, "mutates": True, "danger": "routine"},
     )
 
 

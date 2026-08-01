@@ -50,3 +50,5 @@ Keep the Hubitat MCP AI version aligned in:
 - documentation that displays the current maintained version
 
 Do not claim CI or tests passed without actual results.
+
+- Do not use query keywords or regex intent classes to gate read versus mutation behaviour; gate the actual requested tool call using tool metadata.

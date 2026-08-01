@@ -102,3 +102,7 @@
 - Confirm the live import graph before moving or deleting code, port required
   safety checks first, update importers, and delete the superseded module only
   after no production or test importer remains.
+
+## Tool-call-driven mutation safety
+
+No text-based intent classification may gate control-versus-read behaviour. Mutation gating is driven by metadata on the actual requested tool and is checked when the tool call is received. Read and diagnostic answers use gathered evidence even when their wording contains control verbs. Live-state claims still require successful evidence with `supports_live_claim=true`.
