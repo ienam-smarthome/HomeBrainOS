@@ -6,7 +6,9 @@ import sys
 
 required = [
     'repository.yaml',
+    'README.md',
     'hubitat-mcp-ai/config.yaml',
+    'hubitat-mcp-ai/README.md',
     'hubitat-mcp-ai/Dockerfile',
     'hubitat-mcp-ai/run.sh',
     'hubitat-mcp-ai/rootfs/app/app.py',
@@ -29,10 +31,22 @@ if missing:
         print(f' - {p}')
     sys.exit(1)
 
+
 def yaml_version(path: str) -> str:
-    match = re.search(r"(?m)^version:\s*['\"]?([^'\"\s]+)", Path(path).read_text(encoding='utf-8'))
+    match = re.search(
+        r"(?m)^version:\s*['\"]?([^'\"\s]+)",
+        Path(path).read_text(encoding='utf-8'),
+    )
     if not match:
         raise ValueError(f'No version found in {path}')
+    return match.group(1)
+
+
+def documented_version(path: str, pattern: str) -> str:
+    match = re.search(pattern, Path(path).read_text(encoding='utf-8'), re.MULTILINE)
+    if not match:
+        print(f'Could not find documented Hubitat MCP AI version in {path}')
+        sys.exit(1)
     return match.group(1)
 
 
@@ -41,6 +55,24 @@ changelog = Path(f'hubitat-mcp-ai/CHANGELOG-{mcp_ai_version}.md')
 if not changelog.exists():
     print(f'Missing Hubitat MCP AI release notes: {changelog}')
     sys.exit(1)
+
+readme_versions = {
+    'README.md': documented_version(
+        'README.md',
+        r'^\| \[Hubitat MCP AI\]\(hubitat-mcp-ai/README\.md\) \| ([0-9]+\.[0-9]+\.[0-9]+) \|',
+    ),
+    'hubitat-mcp-ai/README.md': documented_version(
+        'hubitat-mcp-ai/README.md',
+        r'^Current add-on version: \*\*([0-9]+\.[0-9]+\.[0-9]+)\*\*\.$',
+    ),
+}
+for path, documented in readme_versions.items():
+    if documented != mcp_ai_version:
+        print(
+            f'Hubitat MCP AI version mismatch in {path}: '
+            f'documented={documented}, config={mcp_ai_version}'
+        )
+        sys.exit(1)
 
 base_sha = os.environ.get('HUBITAT_MCP_AI_BASE_SHA', '').strip()
 if base_sha:
@@ -75,4 +107,4 @@ if base_sha:
             )
             sys.exit(1)
 
-print('Hubitat MCP AI repository layout OK')
+print('Hubitat MCP AI repository layout and version alignment OK')
