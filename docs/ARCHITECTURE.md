@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of twenty-five Python modules under
+- The maintained runtime is a flat set of twenty-six Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -28,6 +28,7 @@
 | `model_context_policy.py` | Bounds copied conversation history and cumulative tool-result content before provider calls, compacting older tool results without mutating authoritative request state. |
 | `confirmation_policy.py` | Makes stateless confirmation decisions from structured tool effects and proposed action groups, enforces the action limit and unique-session requirement, and renders deterministic queue or cancellation wording. |
 | `confirmation_store.py` | Stores short-lived sensitive actions by session, applies TTL expiry, consumes confirmations once, cancels on replacement questions, isolates queued snapshots, and bounds pending-session capacity. |
+| `confirmed_action_coordinator.py` | Revalidates consumed confirmation groups, injects upstream approval, executes sequentially, stops after an unverified Rule Machine write, and renders deterministic completion or failure reports. |
 | `evidence_recorder.py` | Owns request-scoped evidence receipt storage, timestamps, nested argument redaction, effect metadata, immutable output snapshots, and successful live-evidence detection. |
 | `grounding_policy.py` | Owns request-local log and live-evidence retry state, exact log-call observation, and deterministic retry/refusal decisions when the model returns no tool calls. |
 | `capability_grounding.py` | Detects assistant-generated capability denials, permits one host-driven discovery recovery, and blocks unsupported limitation claims after known gateways were exposed. |
@@ -110,6 +111,10 @@
    execute only after a valid same-session confirmation. Invalid follow-up
    wording consumes and cancels the pending action; expired entries are purged
    without execution.
+   Once a valid confirmation is consumed, `ConfirmedActionCoordinator`
+   revalidates the immutable payload, injects upstream approval, and dispatches
+   each action through `ToolExecutor`. Rule Machine groups stop on the first
+   unverified write and receive deterministic ID-and-health reporting.
 13. Every actual structured tool call is classified as `read`, `routine_write`,
    `sensitive_write`, or `destructive_write`. This effect drives request-class
    reporting and whether the call must enter the confirmation queue, and is
@@ -166,8 +171,11 @@
 - `ConfirmationStore` owns pending lifecycle only: bounded storage, isolated
   snapshots, TTL expiry, single consumption, and cancellation. The orchestrator
   remains responsible for passing structured effects to `ConfirmationPolicy`,
-  queuing approved groups, and dispatching confirmed actions through
-  `ToolExecutor`.
+  and queuing approved groups.
+- `ConfirmedActionCoordinator` owns post-consumption execution only. It cannot
+  queue, retain, or consume pending state; decide whether confirmation is
+  required; expose tools; or weaken Rule Machine verification. Every execution
+  still goes through `ToolExecutor` and its evidence path.
 - `EvidenceRecorder` owns receipt construction and request-local storage only.
   The orchestrator remains authoritative for deciding which executed results
   support live claims and supplies only the resulting evidence boolean to
@@ -201,8 +209,8 @@
 ## Known gaps
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
-  evidence-authority decisions, loop control, confirmed-action coordination,
-  and final-answer handling. Transport, model-context budgeting, confirmation
+  evidence-authority decisions, loop control, and final-answer handling.
+  Transport, model-context budgeting, confirmed-action coordination, confirmation
   decisions, pending-state storage, evidence receipt mechanics, grounding retry
   state, Hub Info refresh/reconciliation, approved-call execution, and discovery
   registry state are now separate; the remaining concerns should be extracted
