@@ -13,7 +13,7 @@ from device_state_summary import (
     active_room_summary,
     device_attributes,
 )
-from device_target_resolver import resolve_device_candidate
+from device_target_resolver import resolve_device_candidate, targeted_name_variants
 from mcp_client import HubitatMCPClient, MCPToolResult
 
 
@@ -335,16 +335,7 @@ class DeviceQueryService:
 
     @staticmethod
     def _targeted_name_variants(value: str) -> list[str]:
-        tokens = re.findall(r"[a-z0-9]+", value.casefold())
-        variants: list[str] = []
-        for candidate in (
-            " ".join(tokens),
-            "-".join(tokens),
-            next((token for token in tokens if any(char.isdigit() for char in token)), ""),
-        ):
-            if candidate and candidate not in variants:
-                variants.append(candidate)
-        return variants[:3]
+        return targeted_name_variants(value)
 
     async def resolve_device(self, arguments: dict[str, Any]) -> MCPToolResult:
         requested = str(arguments.get("name") or "").strip()

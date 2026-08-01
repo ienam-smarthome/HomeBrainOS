@@ -9,6 +9,7 @@ sys.path.insert(0, str(APP_DIR))
 from device_target_resolver import (  # noqa: E402
     normalized_name,
     resolve_device_candidate,
+    targeted_name_variants,
 )
 
 
@@ -32,6 +33,15 @@ LIGHTS = [
 def test_normalization_handles_room_spacing_and_spoken_numbers():
     assert normalized_name("living room light two") == "livingroomlight2"
     assert normalized_name("Livingroom Light 2") == "livingroomlight2"
+
+
+def test_targeted_variants_share_number_word_and_hyphen_normalization():
+    assert targeted_name_variants("Tab S nine") == [
+        "tab s 9",
+        "tab-s9",
+        "tab-s-9",
+        "s9",
+    ]
 
 
 def test_unique_filtered_candidate_accepts_decorated_state_label():

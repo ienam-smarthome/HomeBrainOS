@@ -43,6 +43,47 @@ def normalized_name(value: Any) -> str:
     return _plain_text(value).replace(" ", "")
 
 
+def targeted_name_variants(value: Any, *, limit: int = 4) -> list[str]:
+    """Build bounded server-side filters using shared name normalization."""
+
+    tokens = _plain_text(value).split()
+    if not tokens:
+        return []
+    compact_tokens: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if (
+            len(token) == 1
+            and token.isalpha()
+            and index + 1 < len(tokens)
+            and tokens[index + 1].isdigit()
+        ):
+            compact_tokens.append(token + tokens[index + 1])
+            index += 2
+            continue
+        compact_tokens.append(token)
+        index += 1
+    candidates = (
+        " ".join(tokens),
+        "-".join(compact_tokens),
+        "-".join(tokens),
+        next(
+            (
+                token
+                for token in compact_tokens
+                if any(character.isdigit() for character in token)
+            ),
+            "",
+        ),
+    )
+    variants: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in variants:
+            variants.append(candidate)
+    return variants[: max(1, int(limit))]
+
+
 def _semantic_name(value: Any) -> str:
     """Normalize speech variants that omit an already-known device kind."""
 
@@ -226,4 +267,5 @@ __all__ = [
     "CandidateResolution",
     "normalized_name",
     "resolve_device_candidate",
+    "targeted_name_variants",
 ]

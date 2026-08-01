@@ -134,7 +134,7 @@ async def test_ollama_native_multi_round_tool_execution():
 
 
 @pytest.mark.asyncio
-async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
+async def test_rule_authoring_uses_deterministic_compiler_before_model():
     class RuleAuthoringMCP(FakeMCP):
         async def list_tools(self):
             return [
@@ -149,6 +149,8 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
                     "Create and edit Rule Machine rules",
                     {"type": "object"},
                 ),
+                MCPTool("hub_read_devices", "Read devices", {"type": "object"}),
+                MCPTool("hub_read_rules", "Read rules", {"type": "object"}),
             ]
 
         async def get_cached_devices(self):
@@ -156,22 +158,20 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
-            if name == "hub_read_apps_code":
-                return MCPToolResult(name, arguments, {}, "", {"apps": []})
-            if name == "hub_manage_rule_machine":
-                assert arguments == {}
+            if name == "hub_read_devices":
+                found = []
+                if arguments.get("args", {}).get("filter") == "tab-s9":
+                    found = [{
+                        "id": "6916",
+                        "label": "Block Tab-S9-FE",
+                        "commands": ["blockInternet", "allowInternet", "addTime"],
+                        "capabilities": ["Switch"],
+                    }]
                 return MCPToolResult(
-                    name,
-                    arguments,
-                    {},
-                    "",
-                    {
-                        "tools": [{
-                            "name": "hub_set_rule",
-                            "requiredOnCreate": ["name"],
-                        }],
-                    },
+                    name, arguments, {}, "", {"devices": found}
                 )
+            if name == "hub_read_rules":
+                return MCPToolResult(name, arguments, {}, "", {"rules": []})
             if name == "hub_search_tools":
                 return MCPToolResult(
                     name,
@@ -189,98 +189,50 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
                                 "Call via hub_manage_rule_machine"
                                 "(tool=\"hub_set_rule\", args={...})"
                             ),
+                        }, {
+                            "tool": "hub_list_rules",
+                            "gateway": "hub_read_rules",
                         }],
                     },
                 )
-            raise AssertionError("rule mutation must wait for confirmation")
+            raise AssertionError((name, arguments))
 
     mcp = RuleAuthoringMCP()
     block_rule_arguments = {
         "tool": "hub_set_rule",
         "args": {
-            "name": "Tab S9 FE - Block (9am)",
-            "bestPracticeKey": "live-key",
-            "addTriggers": [{
+            "name": "Block Tab S9 FE (Start)",
+            "addTrigger": {
                 "capability": "Certain Time (and optional date)",
                 "time": "A specific time",
                 "atTime": "09:00",
-            }],
-            "addActions": [{
+            },
+            "addAction": {
                 "capability": "runCommand",
-                "deviceIds": [6916],
+                "deviceIds": ["6916"],
                 "capabilityFilter": "Switch",
                 "command": "blockInternet",
-            }],
+            },
         },
     }
     unblock_rule_arguments = {
         "tool": "hub_set_rule",
         "args": {
-            "name": "Tab S9 FE - Unblock (7pm)",
-            "bestPracticeKey": "live-key",
-            "addTriggers": [{
+            "name": "Block Tab S9 FE (End)",
+            "addTrigger": {
                 "capability": "Certain Time (and optional date)",
                 "time": "A specific time",
                 "atTime": "19:00",
-            }],
-            "addActions": [{
+            },
+            "addAction": {
                 "capability": "runCommand",
-                "deviceIds": [6916],
+                "deviceIds": ["6916"],
                 "capabilityFilter": "Switch",
                 "command": "allowInternet",
-            }],
+            },
         },
     }
-    ai = FakeAI([
-        {"message": {"role": "assistant", "tool_calls": [{
-            "function": {
-                "name": "hub_manage_rule_machine",
-                "arguments": {},
-            }
-        }]}},
-        {"message": {"role": "assistant", "tool_calls": [{
-            "function": {
-                "name": "hub_manage_rule_machine",
-                "arguments": {
-                    "tool": "hub_set_rule",
-                    "args": {
-                        "name": "Block Tab S9 FE (9am-7pm)",
-                        "bestPracticeKey": "time_based_block",
-                        "addTriggers": [
-                            {"capability": "time", "command": "09:00", "type": "time"},
-                            {"capability": "time", "command": "19:00", "type": "time"},
-                        ],
-                        "addActions": [
-                            {
-                                "capability": "switch",
-                                "command": "off",
-                                "deviceIds": ["6916"],
-                            },
-                            {
-                                "capability": "switch",
-                                "command": "on",
-                                "deviceIds": ["6916"],
-                            },
-                        ],
-                    },
-                },
-            }
-        }]}},
-        {"message": {"role": "assistant", "tool_calls": [
-            {
-                "function": {
-                    "name": "hub_manage_rule_machine",
-                    "arguments": block_rule_arguments,
-                }
-            },
-            {
-                "function": {
-                    "name": "hub_manage_rule_machine",
-                    "arguments": unblock_rule_arguments,
-                }
-            },
-        ]}},
-    ])
+    ai = FakeAI([])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
@@ -299,29 +251,23 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
             {"query": "write a rule to block tab s9 from 9am to 7pm everyday"},
         ),
         (
-            "hub_read_apps_code",
-            {"tool": "hub_list_apps", "args": {"scope": "instances"}},
+            "hub_read_devices",
+            {"tool": "hub_list_devices", "args": {"filter": "tab s9"}},
         ),
         (
-            "hub_manage_rule_machine",
-            {},
+            "hub_read_devices",
+            {"tool": "hub_list_devices", "args": {"filter": "tab-s9"}},
+        ),
+        (
+            "hub_read_rules",
+            {"tool": "hub_list_rules", "args": {}},
         ),
     ]
     assert agent._pending["rule-authoring"].actions == [
         ("hub_manage_rule_machine", block_rule_arguments),
         ("hub_manage_rule_machine", unblock_rule_arguments),
     ]
-    first_tools = {
-        item["function"]["name"]
-        for item in ai.requests[0][1]["json"]["tools"]
-    }
-    assert "hub_manage_rule_machine" in first_tools
-    assert "HOST ORIGINAL-REQUEST CAPABILITY DISCOVERY" in (
-        ai.requests[0][1]["json"]["messages"][0]["content"]
-    )
-    recovery_message = ai.requests[2][1]["json"]["messages"][-1]["content"]
-    assert "trigger 1 uses action-style or invented fields" in recovery_message
-    assert "set_rule_reference" in recovery_message
+    assert ai.requests == []
 
 
 @pytest.mark.asyncio

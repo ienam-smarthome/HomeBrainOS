@@ -93,6 +93,12 @@ Do not claim CI or tests passed without actual results.
   retain `matches[].gateway` only as a compatibility form. Expansion must
   accept only explicit known gateway fields; never scan prompt text,
   descriptions, `tool`, `callAs`, or arbitrary result strings for tool names.
+- Keep common daily Rule Machine schedule compilation in
+  `rule_authoring_service.py`. The model may express an intent, but it must not
+  author the final `hub_set_rule` JSON for a grammar the deterministic compiler
+  supports. New compiler patterns must be high-confidence, use the shared
+  targeted resolver, verify advertised commands, emit atomic rules, reject
+  ambiguity, and pass `rule_machine_proposal_error` before confirmation.
 - Keep Hub Information Driver discovery, refresh/update-check commands, bounded
   polling, identity reconciliation, units, and snapshot shaping in
   `hub_info_service.py`. Do not move tool visibility, evidence authority,

@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of twenty-one Python modules under
+- The maintained runtime is a flat set of twenty-three Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -37,6 +37,7 @@
 | `device_query_service.py` | Read-side queries over the cached device inventory, including filtering, comparison, aggregation, and room-aware reads. |
 | `device_control_service.py` | Write-side device commands such as on, off, toggle, and level changes. |
 | `device_target_resolver.py` | Resolves natural-language room and device references to concrete candidates using normalisation and token scoring. |
+| `rule_authoring_service.py` | Compiles supported daily device schedules into validated atomic `hub_set_rule` calls, using targeted shared device resolution, advertised commands, duplicate checks, confirmation, and verified writes without model-authored Rule Machine JSON. |
 | `device_state_summary.py` | Shared pure helpers for room names, light detection, active lights, active non-light switches, and active-room summaries. |
 | `deterministic_tool_presenter.py` | Formats selected tool results into fixed, non-AI-generated answers for common home-state questions. |
 | `agent_prompt_policy.py` | Builds the system prompt and renders the optional device and app identity manifests. |
@@ -54,6 +55,13 @@
    reconciles each item deterministically, and returns both a concise message
    and machine-readable `automation_items` without requiring Ollama.
 4. Other requests are handed to `UnifiedMCPAgent`.
+   Before model synthesis, `RuleAuthoringService` handles its bounded supported
+   grammar for daily start/end schedules. It resolves the named target through
+   filtered device reads, verifies both commands, checks existing rule names,
+   compiles two independently validated atomic rules, and hands the immutable
+   calls to the normal confirmation pipeline. Unsupported or more advanced Rule
+   Machine requests remain in the native discovery loop; the service never
+   guesses a target, command, recurrence, or payload field.
 5. Common home-state questions can use local deterministic tools and
    `deterministic_tool_presenter.py`, avoiding an additional synthesis round
    where a fixed authoritative answer is sufficient. Firmware and hub-resource
@@ -263,9 +271,17 @@ custom driver commands use `runCommand`, and a time window is submitted as two
 atomic rules rather than one ambiguous many-trigger/many-action rule. These
 checks run again immediately before confirmed replay.
 
-Rule authoring resolves the target with a label-filtered device lookup and
-targeted command discovery. It must not load the complete device inventory for
-a named target or infer driver commands from a similarly named app.
+Common daily time-window authoring is host-compiled by
+`RuleAuthoringService`; Gemma does not generate its `hub_set_rule` JSON. The
+compiler recognises only high-confidence daily block/unblock, off/on,
+lock/unlock, and close/open windows. It resolves the target with the shared
+label-filtered resolver, verifies that both commands are advertised, checks for
+duplicate rule names when `hub_read_rules` is available, emits two atomic
+single-trigger/single-action rules, and validates each proposal through the
+same `tool_registry` contract used at confirmation replay. It returns to the
+general tool loop when the request is outside that bounded grammar. It must not
+load the complete device inventory for a named target or infer driver commands
+from a similarly named app.
 
 Confirmation is a structured API state, never a phrase inferred by the browser.
 `AgentOutcome.confirmation_required` is true only while the same session has an
