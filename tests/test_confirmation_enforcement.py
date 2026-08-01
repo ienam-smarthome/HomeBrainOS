@@ -70,6 +70,29 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
 
 
 @pytest.mark.asyncio
+async def test_sensitive_tool_rejects_empty_session_id():
+    mcp = FakeMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "restart hub"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {"name": "hub_restart", "arguments": {}}
+        }]}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    prompt = await agent.process_user_request("Restart hub", session_id="")
+
+    assert "unique session_id is required" in prompt
+    assert agent._pending == {}
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+
+
+@pytest.mark.asyncio
 async def test_firmware_update_requires_confirmation_and_runs_once():
     class FirmwareMCP(FakeMCP):
         async def list_tools(self):
