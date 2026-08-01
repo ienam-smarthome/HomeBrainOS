@@ -8,7 +8,12 @@ import pytest
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from grounding_policy import EVIDENCE_REFUSAL, LOG_REFUSAL  # noqa: E402
+from grounding_policy import (  # noqa: E402
+    EVIDENCE_REFUSAL,
+    EVIDENCE_RETRY_INSTRUCTION,
+    LOG_REFUSAL,
+    LOG_RETRY_INSTRUCTION,
+)
 from mcp_agent_orchestrator import UnifiedMCPAgent  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 
@@ -96,8 +101,10 @@ async def test_live_read_retries_model_once_then_returns_hard_evidence_refusal()
     assert outcome.evidence == []
     assert len(ai.requests) == 2
     second_messages = ai.requests[1]["json"]["messages"]
-    assert second_messages[-1]["role"] == "user"
-    assert "authoritative live MCP evidence" in second_messages[-1]["content"]
+    assert second_messages[-1] == {
+        "role": "user",
+        "content": EVIDENCE_RETRY_INSTRUCTION,
+    }
 
 
 @pytest.mark.asyncio
@@ -123,5 +130,7 @@ async def test_log_request_retries_once_then_refuses_despite_unrelated_claims() 
     assert outcome.evidence == []
     assert len(ai.requests) == 2
     second_messages = ai.requests[1]["json"]["messages"]
-    assert second_messages[-1]["role"] == "user"
-    assert "authoritative Hubitat log tool" in second_messages[-1]["content"]
+    assert second_messages[-1] == {
+        "role": "user",
+        "content": LOG_RETRY_INSTRUCTION,
+    }
