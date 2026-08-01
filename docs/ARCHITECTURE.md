@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of twenty Python modules under
+- The maintained runtime is a flat set of twenty-one Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -29,6 +29,7 @@
 | `confirmation_store.py` | Stores short-lived sensitive actions by session, applies TTL expiry, consumes confirmations once, cancels on replacement questions, isolates queued snapshots, and bounds pending-session capacity. |
 | `evidence_recorder.py` | Owns request-scoped evidence receipt storage, timestamps, nested argument redaction, effect metadata, immutable output snapshots, and successful live-evidence detection. |
 | `grounding_policy.py` | Owns request-local log and live-evidence retry state, exact log-call observation, and deterministic retry/refusal decisions when the model returns no tool calls. |
+| `hub_info_service.py` | Discovers the unique Hub Information Driver device, issues refresh and update-check commands, performs bounded polling, reconciles cached identity with live state, preserves units, and returns authoritative firmware/resource snapshots. |
 | `tool_executor.py` | Dispatches one already-approved local or remote structured call, measures it, normalises success/failure, records its receipt, and prepares bounded model content. |
 | `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, deduplication, and request-local expansion. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
@@ -54,7 +55,9 @@
 4. Other requests are handed to `UnifiedMCPAgent`.
 5. Common home-state questions can use local deterministic tools and
    `deterministic_tool_presenter.py`, avoiding an additional synthesis round
-   where a fixed authoritative answer is sufficient.
+   where a fixed authoritative answer is sufficient. Firmware and hub-resource
+   questions use `HubInfoService` to refresh and poll the Hub Information
+   Driver before returning a structured snapshot.
 6. Remaining requests use the native Ollama tool-calling loop.
    `ToolDiscoveryCatalog` starts every request with the same bounded registry:
    deterministic local tools, `hub_search_tools`, and the diagnostic gateway
@@ -148,6 +151,11 @@
   tools, classify effects, mark evidence authoritative, alter confirmation
   state, or present a successful answer. Separate instances isolate concurrent
   requests, and log grounding takes priority over unrelated live evidence.
+- `HubInfoService` owns Hub Information Driver discovery, refresh commands,
+  bounded polling, identity/state reconciliation, unit handling, and snapshot
+  shaping only. The orchestrator still controls tool visibility and live-claim
+  authority; `ToolExecutor` still owns the outer evidence receipt and bounded
+  model payload; the deterministic presenter still owns user-facing wording.
 - `ToolExecutor` owns dispatch mechanics only after the orchestrator has
   approved a call. It cannot expose tools, approve mutations, bypass
   confirmation, decide live-claim authority, select retries, or present a
@@ -167,10 +175,11 @@
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
   evidence-authority decisions, loop control, confirmed-action coordination,
-  and final-answer handling. Transport, confirmation decisions, pending-state
-  storage, evidence receipt mechanics, grounding retry state, approved-call
-  execution, and discovery registry state are now separate; the remaining
-  concerns should be extracted incrementally with regression coverage.
+  context bounding, and final-answer handling. Transport, confirmation
+  decisions, pending-state storage, evidence receipt mechanics, grounding retry
+  state, Hub Info refresh/reconciliation, approved-call execution, and discovery
+  registry state are now separate; the remaining concerns should be extracted
+  incrementally with regression coverage.
 - The current bounds are character-based rather than model-token-aware. If
   multiple model families are introduced, token-aware budgeting may provide a
   tighter context limit.

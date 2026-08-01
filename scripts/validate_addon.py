@@ -16,6 +16,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/confirmation_policy.py',
     'hubitat-mcp-ai/rootfs/app/evidence_recorder.py',
     'hubitat-mcp-ai/rootfs/app/grounding_policy.py',
+    'hubitat-mcp-ai/rootfs/app/hub_info_service.py',
     'hubitat-mcp-ai/rootfs/app/tool_executor.py',
     'hubitat-mcp-ai/rootfs/app/tool_discovery_catalog.py',
     'hubitat-mcp-ai/rootfs/app/mcp_client.py',
