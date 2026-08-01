@@ -17,6 +17,7 @@ from mcp_client import MCPTool
 
 LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 LOCAL_QUERY_TOOL = "homebrain_query_devices"
+LOCAL_RESOLVE_TOOL = "homebrain_resolve_device"
 LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
@@ -28,6 +29,7 @@ LOCAL_WEATHER_TOOL = "homebrain_weather_snapshot"
 EVIDENCE_KINDS = {
     LOCAL_FILTER_TOOL: "deterministic_attribute_filter",
     LOCAL_QUERY_TOOL: "deterministic_attribute_query",
+    LOCAL_RESOLVE_TOOL: "deterministic_targeted_device_resolution",
     LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
     LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
     LOCAL_ACTIVE_SWITCHES_TOOL: "deterministic_active_switches",
@@ -464,6 +466,31 @@ def device_query_tool() -> MCPTool:
                 },
             },
             "required": ["attribute", "operation"],
+            "additionalProperties": False,
+        },
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
+    )
+
+
+def device_resolver_tool() -> MCPTool:
+    return MCPTool(
+        LOCAL_RESOLVE_TOOL,
+        (
+            "Resolve one user-supplied Hubitat device name using bounded targeted "
+            "label-filtered lookups. Returns the authoritative device ID, label, "
+            "capabilities, and commands without loading the full device inventory. "
+            "Use this before authoring any rule for a named device."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Device wording supplied by the user, such as tab s9 fe.",
+                },
+            },
+            "required": ["name"],
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},

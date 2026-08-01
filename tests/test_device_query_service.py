@@ -77,6 +77,43 @@ async def test_query_devices_finds_highest_humidity():
 
 
 @pytest.mark.asyncio
+async def test_targeted_resolver_handles_spaces_hyphens_and_label_prefixes():
+    class TargetedMCP:
+        def __init__(self):
+            self.calls = []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            label_filter = arguments["args"]["filter"]
+            devices = []
+            if label_filter == "tab-s9":
+                devices = [{
+                    "id": "6916",
+                    "label": "Block Tab-S9-FE",
+                    "capabilities": ["Switch"],
+                    "commands": ["blockInternet", "allowInternet", "addTime"],
+                }]
+            return MCPToolResult(name, arguments, {}, "ok", {"devices": devices})
+
+    mcp = TargetedMCP()
+    receipts = []
+    service = DeviceQueryService(mcp, lambda *args, **kwargs: receipts.append((args, kwargs)))
+
+    result = await service.resolve_device({"name": "tab s9"})
+
+    assert result.data["matched"] is True
+    assert result.data["deviceId"] == "6916"
+    assert result.data["label"] == "Block Tab-S9-FE"
+    assert result.data["target"]["commands"] == [
+        "blockInternet", "allowInternet", "addTime"
+    ]
+    assert [call[1]["args"]["filter"] for call in mcp.calls] == [
+        "tab s9", "tab-s9"
+    ]
+    assert len(receipts) == 2
+
+
+@pytest.mark.asyncio
 async def test_room_climate_query_excludes_hub_and_appliance_telemetry():
     service = DeviceQueryService(
         QueryMCP([
