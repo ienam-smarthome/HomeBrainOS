@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.262**.
+Current add-on version: **0.10.263**.
 
 ## Architecture
 
@@ -35,11 +35,18 @@ Read-only gateway operations do not require confirmation.
 
 5. Start the add-on and open its Home Assistant sidebar panel.
 
+The add-on uses authenticated Home Assistant ingress. Its direct host-port
+mapping is disabled by default so the control API is not exposed to the local
+network independently of Home Assistant. Do not enable a direct port mapping
+unless an authenticated reverse proxy or equivalent access control protects it.
+
 The WebUI includes live dashboard tiles, smart-home shortcuts, typed and spoken
 queries, optional read-aloud answers, response metadata, copy, and expandable
 technical details.
 
 ## API
+
+These endpoints are intended to be reached through Home Assistant ingress:
 
 - `GET /api/status` — MCP and Ollama Online readiness
 - `GET /api/dashboard` — cached live-state dashboard counts

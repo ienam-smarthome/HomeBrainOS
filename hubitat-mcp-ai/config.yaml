@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.10.262"
+version: "0.10.263"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -16,9 +16,9 @@ ingress_port: 8788
 panel_icon: mdi:home-assistant
 panel_title: "Hubitat MCP AI"
 ports:
-  8788/tcp: 8788
+  8788/tcp: null
 ports_description:
-  8788/tcp: "Hubitat MCP AI web interface"
+  8788/tcp: "Optional direct web interface (disabled by default; use Home Assistant ingress)"
 webui: "http://[HOST]:[PORT:8788]"
 options:
   hubitat_mcp_url: ""
