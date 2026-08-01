@@ -243,7 +243,26 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
                 "name": "hub_manage_rule_machine",
                 "arguments": {
                     "tool": "hub_set_rule",
-                    "args": {"tool": "hub_set_rule"},
+                    "args": {
+                        "name": "Block Tab S9 FE (9am-7pm)",
+                        "bestPracticeKey": "time_based_block",
+                        "addTriggers": [
+                            {"capability": "time", "command": "09:00", "type": "time"},
+                            {"capability": "time", "command": "19:00", "type": "time"},
+                        ],
+                        "addActions": [
+                            {
+                                "capability": "switch",
+                                "command": "off",
+                                "deviceIds": ["6916"],
+                            },
+                            {
+                                "capability": "switch",
+                                "command": "on",
+                                "deviceIds": ["6916"],
+                            },
+                        ],
+                    },
                 },
             }
         }]}},
@@ -301,7 +320,7 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
         ai.requests[0][1]["json"]["messages"][0]["content"]
     )
     recovery_message = ai.requests[2][1]["json"]["messages"][-1]["content"]
-    assert "non-empty name" in recovery_message
+    assert "trigger 1 uses action-style or invented fields" in recovery_message
     assert "set_rule_reference" in recovery_message
 
 
@@ -331,14 +350,24 @@ async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_ve
             "tool": "hub_set_rule",
             "args": {
                 "name": "Tab S9 FE - Block (9am)",
-                "addAction": {"capability": "runCommand", "command": "blockInternet"},
+                "addAction": {
+                    "capability": "runCommand",
+                    "command": "blockInternet",
+                    "deviceIds": ["6916"],
+                    "capabilityFilter": "Switch",
+                },
             },
         }),
         ("hub_manage_rule_machine", {
             "tool": "hub_set_rule",
             "args": {
                 "name": "Tab S9 FE - Unblock (7pm)",
-                "addAction": {"capability": "runCommand", "command": "allowInternet"},
+                "addAction": {
+                    "capability": "runCommand",
+                    "command": "allowInternet",
+                    "deviceIds": ["6916"],
+                    "capabilityFilter": "Switch",
+                },
             },
         }),
     ]
@@ -382,14 +411,24 @@ async def test_confirmed_rule_authoring_never_claims_success_without_verified_ru
                 "tool": "hub_set_rule",
                 "args": {
                     "name": "Tab S9 FE - Block (9am)",
-                    "addAction": {"capability": "runCommand", "command": "blockInternet"},
+                    "addAction": {
+                        "capability": "runCommand",
+                        "command": "blockInternet",
+                        "deviceIds": ["6916"],
+                        "capabilityFilter": "Switch",
+                    },
                 },
             }),
             ("hub_manage_rule_machine", {
                 "tool": "hub_set_rule",
                 "args": {
                     "name": "Tab S9 FE - Unblock (7pm)",
-                    "addAction": {"capability": "runCommand", "command": "allowInternet"},
+                    "addAction": {
+                        "capability": "runCommand",
+                        "command": "allowInternet",
+                        "deviceIds": ["6916"],
+                        "capabilityFilter": "Switch",
+                    },
                 },
             }),
         ],
@@ -425,7 +464,8 @@ async def test_rule_authoring_prompt_documents_supported_gateway_path():
     assert "set_rule_reference" in instruction
     assert "never invent an operation/create/args envelope" in instruction
     assert "Rule creation is supported" in instruction
-    assert "complementary start and end actions" in instruction
+    assert "time window MUST be represented as two independently named rules" in instruction
+    assert "targeted label-filtered hub_list_devices lookup" in instruction
 
 
 @pytest.mark.asyncio

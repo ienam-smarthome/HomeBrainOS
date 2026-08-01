@@ -148,6 +148,116 @@ def _is_rule_capability_probe(tool_name: str, arguments: dict[str, Any]) -> bool
     )
 
 
+def _rule_specs(
+    payload: dict[str, Any],
+    singular: str,
+    plural: str,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Return normalized shortcut specs without accepting malformed lists."""
+
+    specs: list[dict[str, Any]] = []
+    if singular in payload:
+        value = payload.get(singular)
+        if not isinstance(value, dict):
+            return [], f"{singular} must be an object"
+        specs.append(value)
+    if plural in payload:
+        value = payload.get(plural)
+        if not isinstance(value, list) or not value:
+            return [], f"{plural} must be a non-empty array"
+        if any(not isinstance(item, dict) for item in value):
+            return [], f"every {plural} item must be an object"
+        specs.extend(value)
+    return specs, None
+
+
+def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
+    """Validate stable upstream trigger/action shortcut invariants.
+
+    The live discovery schema remains authoritative for the full capability
+    catalog. These checks deliberately cover contract rules that must never be
+    guessed: time-trigger shape, mapped switch actions, custom commands, and
+    the ambiguous many-times/many-actions topology that caused a partial rule.
+    """
+
+    triggers, error = _rule_specs(payload, "addTrigger", "addTriggers")
+    if error:
+        return error
+    actions, error = _rule_specs(payload, "addAction", "addActions")
+    if error:
+        return error
+
+    for index, trigger in enumerate(triggers, 1):
+        capability = str(trigger.get("capability") or "").strip()
+        if not capability:
+            return f"trigger {index} requires capability"
+        if {"type", "command", "action"}.intersection(trigger):
+            return (
+                f"trigger {index} uses action-style or invented fields; trigger "
+                "specs use capability plus the fields returned by addTrigger "
+                "discovery"
+            )
+        if capability.casefold() == "time":
+            return (
+                f"trigger {index} uses unsupported capability='time'; daily "
+                "wall-clock triggers require capability='Certain Time (and "
+                "optional date)', time='A specific time', and atTime='HH:mm'"
+            )
+        if capability == "Certain Time (and optional date)":
+            mode = trigger.get("time")
+            if mode not in {"A specific time", "Sunrise", "Sunset"}:
+                return (
+                    f"trigger {index} requires time='A specific time', "
+                    "'Sunrise', or 'Sunset'"
+                )
+            if mode == "A specific time":
+                at_time = str(trigger.get("atTime") or "")
+                if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", at_time):
+                    return f"trigger {index} requires atTime in HH:mm form"
+
+    for index, action in enumerate(actions, 1):
+        capability = str(action.get("capability") or "").strip()
+        if not capability:
+            return f"action {index} requires capability"
+        if "type" in action:
+            return f"action {index} contains unsupported field 'type'"
+        if capability.casefold() == "switch":
+            if "command" in action:
+                return (
+                    f"action {index} maps capability='switch' with action=, not "
+                    "command=; use capability='runCommand' for a custom driver "
+                    "command"
+                )
+            if action.get("action") not in {
+                "on", "off", "toggle", "flash", "setPerMode", "choosePerMode",
+            }:
+                return f"action {index} has an invalid switch action"
+            if not isinstance(action.get("deviceIds"), list) or not action["deviceIds"]:
+                return f"action {index} requires non-empty deviceIds"
+        if capability == "runCommand":
+            if not str(action.get("command") or "").strip():
+                return f"action {index} runCommand requires command"
+            if not isinstance(action.get("deviceIds"), list) or not action["deviceIds"]:
+                return f"action {index} runCommand requires non-empty deviceIds"
+            if not str(action.get("capabilityFilter") or "").strip():
+                return f"action {index} runCommand requires capabilityFilter"
+
+    daily_times = {
+        str(trigger.get("atTime"))
+        for trigger in triggers
+        if trigger.get("capability") == "Certain Time (and optional date)"
+        and trigger.get("time") == "A specific time"
+    }
+    if len(daily_times) > 1 and len(actions) > 1:
+        return (
+            "one rule cannot safely pair multiple daily times with multiple "
+            "actions: every trigger can run the same action list. Submit one "
+            "independently named rule per time/action pair in the same confirmation "
+            "group (for example block at 09:00 and allow at 19:00)"
+        )
+    return None
+
+
 def rule_machine_proposal_error(
     tool_name: str,
     arguments: dict[str, Any],
@@ -209,6 +319,15 @@ def rule_machine_proposal_error(
             "trigger, action, or required expression; an empty shell will not be "
             "queued. Read hub_get_tool_guide(section=\"set_rule_reference\") and "
             "retry. No action was queued or executed."
+        )
+    shortcut_error = _rule_shortcut_error(payload)
+    if shortcut_error is not None:
+        return (
+            "Invalid Rule Machine proposal: "
+            f"{shortcut_error}. Read hub_get_tool_guide sections "
+            "'set_rule_reference' and the live addTrigger/addAction discovery "
+            "schemas, then retry with direct gateway args. No action was queued "
+            "or executed."
         )
     return None
 

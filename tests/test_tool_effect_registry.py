@@ -55,7 +55,11 @@ def test_incomplete_rule_machine_proposals_fail_before_confirmation():
         "tool": "hub_set_rule",
         "args": {
             "name": "Daily block",
-            "addActions": [{"capability": "switch", "action": "off"}],
+            "addActions": [{
+                "capability": "switch",
+                "action": "off",
+                "deviceIds": ["1"],
+            }],
         },
     }
 
@@ -74,6 +78,120 @@ def test_incomplete_rule_machine_proposals_fail_before_confirmation():
     assert rule_machine_proposal_error(
         "hub_manage_rule_machine", valid
     ) is None
+
+
+def test_observed_multi_time_rule_is_rejected_before_confirmation():
+    observed = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Block Tab S9 FE (9am-7pm)",
+            "bestPracticeKey": "time_based_block",
+            "addTriggers": [
+                {"capability": "time", "command": "09:00", "type": "time"},
+                {"capability": "time", "command": "19:00", "type": "time"},
+            ],
+            "addActions": [
+                {"capability": "switch", "command": "off", "deviceIds": ["6916"]},
+                {"capability": "switch", "command": "on", "deviceIds": ["6916"]},
+            ],
+        },
+    }
+
+    error = rule_machine_proposal_error("hub_manage_rule_machine", observed)
+
+    assert error is not None
+    assert "trigger 1" in error
+    assert "No action was queued or executed" in error
+
+
+def test_rule_time_window_requires_two_atomic_valid_rules():
+    def proposal(name: str, at_time: str, command: str):
+        return {
+            "tool": "hub_set_rule",
+            "args": {
+                "name": name,
+                "bestPracticeKey": "live-key",
+                "addTrigger": {
+                    "capability": "Certain Time (and optional date)",
+                    "time": "A specific time",
+                    "atTime": at_time,
+                },
+                "addAction": {
+                    "capability": "runCommand",
+                    "command": command,
+                    "deviceIds": ["6916"],
+                    "capabilityFilter": "Switch",
+                },
+            },
+        }
+
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine",
+        proposal("Tab S9 FE - Block (9am)", "09:00", "blockInternet"),
+    ) is None
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine",
+        proposal("Tab S9 FE - Unblock (7pm)", "19:00", "allowInternet"),
+    ) is None
+
+
+def test_multiple_times_and_actions_in_one_rule_are_rejected():
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Ambiguous time window",
+            "addTriggers": [
+                {
+                    "capability": "Certain Time (and optional date)",
+                    "time": "A specific time",
+                    "atTime": "09:00",
+                },
+                {
+                    "capability": "Certain Time (and optional date)",
+                    "time": "A specific time",
+                    "atTime": "19:00",
+                },
+            ],
+            "addActions": [
+                {
+                    "capability": "runCommand",
+                    "command": "blockInternet",
+                    "deviceIds": ["6916"],
+                    "capabilityFilter": "Switch",
+                },
+                {
+                    "capability": "runCommand",
+                    "command": "allowInternet",
+                    "deviceIds": ["6916"],
+                    "capabilityFilter": "Switch",
+                },
+            ],
+        },
+    }
+
+    error = rule_machine_proposal_error("hub_manage_rule_machine", proposal)
+
+    assert error is not None
+    assert "one rule cannot safely pair multiple daily times" in error
+
+
+@pytest.mark.parametrize(
+    ("action", "expected"),
+    [
+        ({"capability": "switch", "command": "off", "deviceIds": ["1"]},
+         "maps capability='switch' with action="),
+        ({"capability": "runCommand", "command": "off", "deviceIds": ["1"]},
+         "requires capabilityFilter"),
+    ],
+)
+def test_invalid_action_shortcuts_are_rejected(action, expected):
+    error = rule_machine_proposal_error(
+        "hub_manage_rule_machine",
+        {"tool": "hub_set_rule", "args": {"name": "Bad action", "addAction": action}},
+    )
+
+    assert error is not None
+    assert expected in error
 
 
 def gateway(name: str, **annotations: object) -> MCPTool:
