@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.291**.
+Current add-on version: **0.10.292**.
 
 ## Architecture
 
@@ -20,6 +20,11 @@ installs a context-local `LiveEvidenceAuthority` at the established grounding
 boundary so it alone combines current receipts with bounded retry/refusal state.
 Direct base-agent callers retain the original `GroundingPolicy` contract. No
 regex router or prompt-keyword tool gate controls read-versus-write behaviour.
+
+`RequestMetrics` provides a request-local, privacy-safe observability contract
+for fixed counters and stage timings. It rejects dynamic metric labels so device
+names, prompts, credentials, and tool arguments cannot become metric dimensions.
+Production wiring will be added separately after this component is validated.
 
 `ConfirmationPolicy` makes bounded decisions from structured tool effects;
 sensitive MCP mutations require an explicit, session-scoped confirmation kept
