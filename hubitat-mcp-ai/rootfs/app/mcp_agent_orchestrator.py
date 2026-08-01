@@ -15,6 +15,7 @@ from agent_prompt_policy import (
     render_device_manifest,
 )
 from chat_transport import ChatTransport
+from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import ConfirmationStore, PendingConfirmation
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
@@ -120,6 +121,9 @@ class UnifiedMCPAgent:
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
         self.require_sensitive_confirmation = bool(require_sensitive_confirmation)
+        self.confirmation_policy = ConfirmationPolicy(
+            enabled=self.require_sensitive_confirmation
+        )
         self.confirmations = ConfirmationStore(confirmation_ttl_seconds)
         self.max_tool_result_chars = max(2000, int(max_tool_result_chars))
         self.max_history_messages = max(0, int(max_history_messages))
@@ -943,10 +947,7 @@ class UnifiedMCPAgent:
             pending_names = list(dict.fromkeys(name for name, _ in pending.actions))
             missing = catalog.replace_declared(pending_names)
             if missing:
-                return (
-                    "The queued Hubitat action was cancelled because its tool is "
-                    f"no longer available: {', '.join(sorted(missing))}."
-                )
+                return self.confirmation_policy.unavailable_tools_message(missing)
         tools = catalog.schemas()
         if pending:
             return await self._resume_confirmation(pending, tools)
@@ -1015,27 +1016,20 @@ class UnifiedMCPAgent:
                     self._mutation_call_seen.set(True)
                 if (
                     tool
-                    and self.require_sensitive_confirmation
-                    and effect.requires_confirmation
+                    and self.confirmation_policy.requires_confirmation(effect)
                 ):
                     sensitive.append((name, arguments))
             if sensitive:
-                if not str(session_id).strip() or session_id == "default":
-                    return "A unique session_id is required before I can queue a sensitive Hubitat action."
-                if len(sensitive) > 12:
-                    return "This request proposed more than 12 sensitive actions. Please split it into smaller groups."
+                decision = self.confirmation_policy.decide(session_id, sensitive)
+                if decision.action is ConfirmationAction.REJECT:
+                    return str(decision.message)
                 self.confirmations.queue(
                     session_id,
                     sensitive,
                     messages,
                     assistant,
                 )
-                names = sorted({name for name, _ in sensitive})
-                if len(sensitive) == 1:
-                    if names[0] == "hub_update_firmware":
-                        return "Please confirm before I install the available Hubitat firmware update. The hub may restart and be temporarily unavailable."
-                    return f"Please confirm before I run the sensitive Hubitat action `{names[0]}`."
-                return f"Please confirm before I run {len(sensitive)} sensitive Hubitat actions through `{', '.join(names)}`."
+                return str(decision.message)
             messages.append(assistant)
             for call in calls:
                 function = call.get("function") or {}

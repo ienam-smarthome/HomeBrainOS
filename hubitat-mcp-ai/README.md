@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.273**.
+Current add-on version: **0.10.274**.
 
 ## Architecture
 
@@ -15,8 +15,10 @@ receipts are sanitised and isolated by `EvidenceRecorder`; `GroundingPolicy`
 allows at most one evidence or log retry before a deterministic refusal. No
 regex router or prompt-keyword tool gate controls read-versus-write behaviour.
 
-Sensitive MCP mutations require an explicit, session-scoped confirmation.
-Read-only gateway operations do not require confirmation.
+`ConfirmationPolicy` makes bounded decisions from structured tool effects;
+sensitive MCP mutations require an explicit, session-scoped confirmation kept
+by `ConfirmationStore`. Read-only and routine gateway operations do not require
+confirmation.
 
 ## Setup
 

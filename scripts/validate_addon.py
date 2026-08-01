@@ -13,6 +13,7 @@ required = [
     'hubitat-mcp-ai/run.sh',
     'hubitat-mcp-ai/rootfs/app/app.py',
     'hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py',
+    'hubitat-mcp-ai/rootfs/app/confirmation_policy.py',
     'hubitat-mcp-ai/rootfs/app/evidence_recorder.py',
     'hubitat-mcp-ai/rootfs/app/grounding_policy.py',
     'hubitat-mcp-ai/rootfs/app/tool_executor.py',

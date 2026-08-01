@@ -65,9 +65,11 @@ Do not claim CI or tests passed without actual results.
 - Keep provider HTTP and streaming mechanics in `chat_transport.py`. Transport
   code must not classify requests, execute Hubitat tools, or decide mutation
   confirmation policy.
-- Keep pending confirmation lifecycle in `confirmation_store.py`, but keep tool
-  effect classification, confirmation policy, user-facing prompts, and action
-  execution outside the store.
+- Keep pending confirmation lifecycle in `confirmation_store.py`. Keep
+  stateless confirmation eligibility, group limits, session validation, and
+  deterministic confirmation wording in `confirmation_policy.py`. Tool-effect
+  classification stays in `tool_registry.py`; action execution stays outside
+  both confirmation modules.
 - Keep evidence receipt construction, nested argument redaction, and
   request-context storage in `evidence_recorder.py`. Keep authority decisions
   outside it: callers must explicitly decide whether a result supports a live
