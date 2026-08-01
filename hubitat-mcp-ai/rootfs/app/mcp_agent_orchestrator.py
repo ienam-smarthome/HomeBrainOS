@@ -7,7 +7,6 @@ import re
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from agent_prompt_policy import (
@@ -22,6 +21,7 @@ from device_control_service import DeviceControlService
 from device_query_service import DeviceQueryService
 from device_state_summary import device_attributes
 from device_target_resolver import normalized_name
+from evidence_recorder import EvidenceRecorder
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from request_classification import (
     matches as _matches,
@@ -146,9 +146,7 @@ class UnifiedMCPAgent:
         )
         self._app_manifest: list[dict[str, Any]] = []
         self._app_manifest_at = 0.0
-        self._evidence: ContextVar[list[dict[str, Any]] | None] = ContextVar(
-            "hubitat_evidence", default=None
-        )
+        self.evidence = EvidenceRecorder()
         self._request_class: ContextVar[str] = ContextVar(
             "hubitat_request_class", default="live-read"
         )
@@ -210,7 +208,7 @@ class UnifiedMCPAgent:
             return None
         started = time.monotonic()
         result = await self._control_devices(arguments)
-        self._record_evidence(
+        self.evidence.record(
             _LOCAL_CONTROL_TOOL,
             arguments,
             success=self._tool_succeeded(result),
@@ -248,26 +246,6 @@ class UnifiedMCPAgent:
         return any(re.fullmatch(pattern, normalized) for pattern in conversational)
 
     @staticmethod
-    def _redact(value: Any) -> Any:
-        if isinstance(value, dict):
-            return {
-                str(key): (
-                    "[redacted]"
-                    if any(part in str(key).lower() for part in (
-                        "authorization", "password", "secret", "token", "api_key",
-                    ))
-                    else UnifiedMCPAgent._redact(item)
-                )
-                for key, item in value.items()
-            }
-        if isinstance(value, list):
-            return [UnifiedMCPAgent._redact(item) for item in value[:20]]
-        rendered = value
-        if isinstance(rendered, str) and len(rendered) > 240:
-            return rendered[:237] + "..."
-        return rendered
-
-    @staticmethod
     def _result_summary(result: MCPToolResult) -> str:
         data = result.data
         if isinstance(data, dict):
@@ -291,37 +269,26 @@ class UnifiedMCPAgent:
         mutates: bool | None = None,
         effect: ToolEffect | str | None = None,
     ) -> None:
-        receipts = self._evidence.get()
-        if receipts is None:
-            return
-        resolved_effect = (
-            effect
-            if isinstance(effect, ToolEffect)
-            else ToolEffect(effect)
-            if isinstance(effect, str) and effect in ToolEffect._value2member_map_
-            else classify_tool_effect(
-                MCPTool(gateway, gateway, {}), arguments
-            )
+        self.evidence.record(
+            gateway,
+            arguments,
+            success=success,
+            elapsed_ms=elapsed_ms,
+            summary=summary,
+            supports_live_claim=supports_live_claim,
+            evidence_kind=evidence_kind,
+            mutates=mutates,
+            effect=effect,
         )
-        receipts.append({
-            "tool": gateway,
-            "sub_tool": arguments.get("tool"),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "elapsed_ms": elapsed_ms,
-            "success": success,
-            "supports_live_claim": supports_live_claim,
-            "evidence_kind": evidence_kind,
-            "mutates": resolved_effect.mutates if mutates is None else bool(mutates),
-            "effect": resolved_effect.value,
-            "arguments": self._redact(arguments),
-            "summary": summary,
-        })
 
     def _has_live_evidence(self) -> bool:
-        return any(
-            receipt.get("success") and receipt.get("supports_live_claim")
-            for receipt in (self._evidence.get() or [])
-        )
+        return self.evidence.has_live_evidence()
+
+    @property
+    def _evidence(self) -> ContextVar[list[dict[str, Any]] | None]:
+        """Compatibility view; new code should use ``self.evidence``."""
+
+        return self.evidence.context
 
     _matches = staticmethod(_matches)
     _requests_mutation = staticmethod(_requests_mutation)
@@ -636,15 +603,15 @@ class UnifiedMCPAgent:
         return MCPToolResult(_LOCAL_HUB_INFO_TOOL, arguments, {}, json.dumps(data), data)
 
     async def _filter_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceQueryService(self.mcp, self._record_evidence)
+        service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.filter_devices(arguments)
 
     async def _query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceQueryService(self.mcp, self._record_evidence)
+        service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.query_devices(arguments)
 
     async def _weather_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceQueryService(self.mcp, self._record_evidence)
+        service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.weather_snapshot(arguments)
 
     @staticmethod
@@ -652,23 +619,23 @@ class UnifiedMCPAgent:
         return DeviceQueryService._attribute_matches(actual, operator, expected)
 
     async def _active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceQueryService(self.mcp, self._record_evidence)
+        service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.active_lights(arguments)
 
     async def _active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceQueryService(self.mcp, self._record_evidence)
+        service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.active_rooms(arguments)
 
     async def _active_switches(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceQueryService(self.mcp, self._record_evidence)
+        service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.active_switches(arguments)
 
     async def _home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceQueryService(self.mcp, self._record_evidence)
+        service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.home_snapshot(arguments)
 
     async def _control_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
-        service = DeviceControlService(self.mcp, self._record_evidence)
+        service = DeviceControlService(self.mcp, self.evidence.record)
         return await service.execute(arguments)
 
     @classmethod
@@ -735,7 +702,7 @@ class UnifiedMCPAgent:
                 "hub_read_apps_code",
                 {"tool": "hub_list_apps", "args": {"scope": "instances"}},
             )
-            self._record_evidence(
+            self.evidence.record(
                 "hub_read_apps_code",
                 {"tool": "hub_list_apps", "args": {"scope": "instances"}},
                 success=self._tool_succeeded(result),
@@ -756,7 +723,7 @@ class UnifiedMCPAgent:
             try:
                 started = time.monotonic()
                 devices = await self.mcp.get_cached_devices()
-                self._record_evidence(
+                self.evidence.record(
                     "hub_read_devices",
                     {"tool": "hub_list_devices", "source": "short_ttl_cache"},
                     success=True,
@@ -953,7 +920,7 @@ class UnifiedMCPAgent:
             try:
                 started = time.monotonic()
                 result = await self.mcp.call_tool(tool_name, arguments)
-                self._record_evidence(
+                self.evidence.record(
                     tool_name,
                     arguments,
                     success=self._tool_succeeded(result),
@@ -964,7 +931,7 @@ class UnifiedMCPAgent:
                 )
                 content = self._result_payload(result)
             except Exception as exc:
-                self._record_evidence(
+                self.evidence.record(
                     tool_name,
                     arguments,
                     success=False,
@@ -985,7 +952,7 @@ class UnifiedMCPAgent:
         *,
         session_id: str = "default",
     ) -> AgentOutcome:
-        evidence_token = self._evidence.set([])
+        evidence_token = self.evidence.begin()
         choices_token = self._choices.set([])
         mutation_token = self._mutation_call_seen.set(False)
         class_token = self._request_class.set("tool-driven")
@@ -995,7 +962,7 @@ class UnifiedMCPAgent:
                 conversation_history,
                 session_id=session_id,
             )
-            evidence = list(self._evidence.get() or [])
+            evidence = self.evidence.receipts()
             if self._mutation_call_seen.get():
                 request_class = "write"
             elif self._is_conversational_prompt(user_prompt) and not evidence:
@@ -1011,7 +978,7 @@ class UnifiedMCPAgent:
         finally:
             self._request_class.reset(class_token)
             self._mutation_call_seen.reset(mutation_token)
-            self._evidence.reset(evidence_token)
+            self.evidence.reset(evidence_token)
             self._choices.reset(choices_token)
 
     async def process_user_request(
@@ -1068,7 +1035,7 @@ class UnifiedMCPAgent:
         if _matches(user_prompt, {"weather"}):
             weather_started = time.monotonic()
             weather_result = await self._weather_snapshot({})
-            self._record_evidence(
+            self.evidence.record(
                 _LOCAL_WEATHER_TOOL,
                 {},
                 success=self._tool_succeeded(weather_result),
@@ -1119,7 +1086,10 @@ class UnifiedMCPAgent:
                         ])
                         continue
                     return "I could not retrieve the actual Hubitat logs, so I will not provide an inferred log summary."
-                if not self._is_conversational_prompt(user_prompt) and not self._has_live_evidence():
+                if (
+                    not self._is_conversational_prompt(user_prompt)
+                    and not self.evidence.has_live_evidence()
+                ):
                     if not evidence_retry_used:
                         evidence_retry_used = True
                         messages.extend([
@@ -1212,7 +1182,7 @@ class UnifiedMCPAgent:
                         effect = classify_tool_effect(tool, dict(arguments))
                         if effect.mutates:
                             self._mutation_call_seen.set(True)
-                        self._record_evidence(
+                        self.evidence.record(
                             name,
                             dict(arguments),
                             success=self._tool_succeeded(result),
@@ -1270,7 +1240,7 @@ class UnifiedMCPAgent:
                             return deterministic_message
                 except Exception as exc:
                     logger.exception("MCP tool %s failed", name)
-                    self._record_evidence(
+                    self.evidence.record(
                         name,
                         dict(arguments),
                         success=False,

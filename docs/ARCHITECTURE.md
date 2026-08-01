@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of fifteen Python modules under
+- The maintained runtime is a flat set of sixteen Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -23,9 +23,10 @@
 | --- | --- |
 | `app.py` | Loads add-on options, constructs the shared services, owns `RequestCoordinator`, and defines `/`, `/health`, `/api/status`, `/api/dashboard`, `/api/tools`, `/api/refresh`, `/api/chat`, and `/api/ask`. |
 | `mcp_client.py` | `HubitatMCPClient`, the single JSON-RPC client used for Hubitat MCP access. Defines `MCPError`, `MCPTool`, and `MCPToolResult`. |
-| `mcp_agent_orchestrator.py` | `UnifiedMCPAgent`, the native tool-calling coordinator. It prepares bounded context, executes tools, records evidence, enforces live grounding, handles confirmations, and produces final answers. |
+| `mcp_agent_orchestrator.py` | `UnifiedMCPAgent`, the native tool-calling coordinator. It prepares bounded context, executes tools, applies evidence and confirmation policy, and produces final answers. |
 | `chat_transport.py` | Owns the Ollama HTTP client, provider configuration, request construction, streaming and non-streaming response assembly, idle-stall detection, and client shutdown. |
 | `confirmation_store.py` | Stores short-lived sensitive actions by session, applies TTL expiry, consumes confirmations once, cancels on replacement questions, isolates queued snapshots, and bounds pending-session capacity. |
+| `evidence_recorder.py` | Owns request-scoped evidence receipt storage, timestamps, nested argument redaction, effect metadata, immutable output snapshots, and successful live-evidence detection. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
 | `device_query_service.py` | Read-side queries over the cached device inventory, including filtering, comparison, aggregation, and room-aware reads. |
 | `device_control_service.py` | Write-side device commands such as on, off, toggle, and level changes. |
@@ -60,24 +61,29 @@
    `ChatTransport`. The transport sends either a streaming or non-streaming
    native Ollama request and returns one assembled assistant message without
    knowing about Hubitat tools, evidence, or confirmation policy.
-8. A live-read answer requires successful evidence marked
+8. Every tool result handed to the audit path is recorded by
+   `EvidenceRecorder`. It sanitises nested arguments, attaches the structured
+   tool effect and timestamp, and keeps receipts isolated to the active async
+   request. The orchestrator still decides which results may set
+   `supports_live_claim=True`.
+9. A live-read answer requires successful evidence marked
    `supports_live_claim=True`. If evidence cannot be obtained after the allowed
    retry, the agent refuses rather than making an ungrounded live claim.
-9. Routine device controls can execute without a second confirmation. Sensitive
+10. Routine device controls can execute without a second confirmation. Sensitive
    operations, including firmware installation and higher-risk mutations, are
    queued in `ConfirmationStore` and execute only after a valid same-session
    confirmation. Invalid follow-up wording consumes and cancels the pending
    action; expired entries are purged without execution.
-10. Every actual structured tool call is classified as `read`, `routine_write`,
+11. Every actual structured tool call is classified as `read`, `routine_write`,
    `sensitive_write`, or `destructive_write`. This effect drives request-class
    reporting and whether the call must enter the confirmation queue, and is
    attached to evidence for auditability.
-11. Prior conversation is limited to the eight newest messages and 12,000
+12. Prior conversation is limited to the eight newest messages and 12,000
     characters. Across multi-round execution, retained tool-result content is
     capped at 48,000 characters; older results are compacted before newer ones.
     The system policy, current request, tool-call structure, and internal
     evidence receipts remain intact.
-12. `/api/ask` returns the message, route, request class, choices, evidence,
+13. `/api/ask` returns the message, route, request class, choices, evidence,
    optional `automation_items`, model, elapsed time, and add-on version. The
    WebUI renders structured automation rows directly when present.
 
@@ -106,6 +112,11 @@
 - `ConfirmationStore` owns pending state only. The orchestrator remains
   authoritative for classifying actual calls, limiting action groups, building
   confirmation wording, and executing confirmed tools.
+- `EvidenceRecorder` owns receipt construction and request-local storage only.
+  The orchestrator remains authoritative for deciding when evidence is
+  required, which results support live claims, when to retry, and when to
+  refuse. API snapshots are copied so consumers cannot mutate the active audit
+  context.
 - Automation status precedence is deterministic: broken and disabled signals
   are resolved before paused, and `paused=false` alone never proves active.
 - Unknown or incomplete status data is labelled `unknown` rather than guessed.
@@ -115,10 +126,10 @@
 ## Known gaps
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
-  dynamic discovery, confirmation policy, evidence policy, tool execution,
-  retries, and final-answer handling. Transport and pending-state storage are
-  now separate; the remaining concerns should be extracted incrementally with
-  regression coverage.
+  dynamic discovery, evidence policy, confirmation policy, tool execution,
+  retries, and final-answer handling. Transport, pending-state storage, and
+  evidence receipt mechanics are now separate; the remaining concerns should
+  be extracted incrementally with regression coverage.
 - The current bounds are character-based rather than model-token-aware. If
   multiple model families are introduced, token-aware budgeting may provide a
   tighter context limit.

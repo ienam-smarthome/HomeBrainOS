@@ -68,3 +68,7 @@ Do not claim CI or tests passed without actual results.
 - Keep pending confirmation lifecycle in `confirmation_store.py`, but keep tool
   effect classification, confirmation policy, user-facing prompts, and action
   execution outside the store.
+- Keep evidence receipt construction, nested argument redaction, and
+  request-context storage in `evidence_recorder.py`. Keep authority decisions
+  outside it: callers must explicitly decide whether a result supports a live
+  claim, and the orchestrator owns evidence retries and refusal policy.
