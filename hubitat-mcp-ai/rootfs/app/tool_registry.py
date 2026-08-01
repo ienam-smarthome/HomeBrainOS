@@ -121,24 +121,96 @@ def _operation_effect(operations: list[str]) -> ToolEffect | None:
     return None
 
 
-def _is_rule_schema_probe(tool_name: str, arguments: dict[str, Any]) -> bool:
-    """Recognise the upstream hub_set_rule no-confirm schema contract."""
+def _is_gateway_schema_probe(tool_name: str, arguments: dict[str, Any]) -> bool:
+    """Recognise the upstream no-argument gateway schema contract."""
+
+    return tool_name.startswith("hub_manage_") and not arguments
+
+
+def _is_rule_capability_probe(tool_name: str, arguments: dict[str, Any]) -> bool:
+    """Recognise documented non-mutating hub_set_rule capability discovery."""
 
     if tool_name != "hub_manage_rule_machine":
         return False
     if _normalized_operation(arguments.get("tool")) != "hub_set_rule":
         return False
-    nested = arguments.get("args")
-    if not isinstance(nested, dict):
+    payload = arguments.get("args")
+    if not isinstance(payload, dict) or payload.get("confirm") is True:
         return False
-    operation = _normalized_operation(nested.get("operation"))
-    payload = nested.get("args")
-    schema_only = payload is None or payload == "" or payload == {} or payload == []
-    return (
-        bool(operation)
-        and nested.get("confirm") is not True
-        and schema_only
+    visible = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"bestPracticeKey"}
+    }
+    return visible in (
+        {"addTrigger": {"discover": True}},
+        {"addAction": {"discover": True}},
     )
+
+
+def rule_machine_proposal_error(
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> str | None:
+    """Reject incomplete or invented hub_set_rule writes before confirmation."""
+
+    if tool_name != "hub_manage_rule_machine":
+        return None
+    if _normalized_operation(arguments.get("tool")) != "hub_set_rule":
+        return None
+    payload = arguments.get("args")
+    if not isinstance(payload, dict):
+        return (
+            "Invalid Rule Machine proposal: gateway args must be an object. "
+            "Read hub_get_tool_guide(section=\"set_rule_reference\") and retry. "
+            "No action was queued or executed."
+        )
+    if "operation" in payload or isinstance(payload.get("args"), dict):
+        return (
+            "Invalid Rule Machine proposal: hub_set_rule does not use an "
+            "operation/create/args envelope. Put name, addTrigger(s), and "
+            "addAction(s) directly inside the gateway args object. Read "
+            "hub_get_tool_guide(section=\"set_rule_reference\") and retry. "
+            "No action was queued or executed."
+        )
+    if payload.get("confirm") is True:
+        return (
+            "Invalid Rule Machine proposal: do not send confirm=true from the "
+            "model. HomeBrain adds upstream approval only after the user confirms. "
+            "No action was queued or executed."
+        )
+    app_id = payload.get("appId")
+    if app_id in {None, ""} and not str(payload.get("name") or "").strip():
+        return (
+            "Invalid Rule Machine proposal: creating hub_set_rule requires a "
+            "non-empty name. Read hub_get_tool_guide"
+            "(section=\"set_rule_reference\") and retry with the complete direct "
+            "payload. No action was queued or executed."
+        )
+    mutation_fields = {
+        "name", "settings", "button", "buttonRule", "walkStep", "patches",
+        "addTrigger", "addTriggers", "addAction", "addActions",
+        "addRequiredExpression", "replaceRequiredExpression", "replaceActions",
+        "removeAction", "clearActions", "moveAction", "removeTrigger",
+        "modifyTrigger", "addLocalVariable", "removeLocalVariable",
+    }
+    if not mutation_fields.intersection(payload):
+        return (
+            "Invalid Rule Machine proposal: hub_set_rule contains no rule change. "
+            "Read hub_get_tool_guide(section=\"set_rule_reference\") and retry. "
+            "No action was queued or executed."
+        )
+    if app_id in {None, ""} and not {
+        "addTrigger", "addTriggers", "addAction", "addActions",
+        "addRequiredExpression",
+    }.intersection(payload):
+        return (
+            "Invalid Rule Machine proposal: a new rule must contain at least one "
+            "trigger, action, or required expression; an empty shell will not be "
+            "queued. Read hub_get_tool_guide(section=\"set_rule_reference\") and "
+            "retry. No action was queued or executed."
+        )
+    return None
 
 
 def classify_tool_effect(
@@ -169,7 +241,9 @@ def classify_tool_effect(
     if name.startswith("hub_read_") or name in _READ_GATEWAYS:
         return ToolEffect.READ
 
-    if _is_rule_schema_probe(name, arguments):
+    if _is_gateway_schema_probe(name, arguments):
+        return ToolEffect.READ
+    if _is_rule_capability_probe(name, arguments):
         return ToolEffect.READ
 
     operation_effect = _operation_effect(_structured_operations(arguments))

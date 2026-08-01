@@ -53,6 +53,7 @@ from tool_registry import (
     weather_snapshot_tool as _weather_snapshot_tool,
     ToolEffect,
     classify_tool_effect,
+    rule_machine_proposal_error,
 )
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -673,6 +674,12 @@ class UnifiedMCPAgent:
         outcomes: list[tuple[str, dict[str, Any], Any]] = []
         for tool_name, arguments in pending.actions:
             self._mutation_call_seen.set(True)
+            proposal_error = rule_machine_proposal_error(tool_name, arguments)
+            if proposal_error is not None:
+                return (
+                    "The queued Rule Machine action was cancelled because its "
+                    f"payload is incomplete. {proposal_error}"
+                )
             tool = catalog.available_tool(tool_name)
             approved_arguments = self.confirmation_policy.approved_arguments(
                 tool_name,
@@ -930,6 +937,7 @@ class UnifiedMCPAgent:
                     return str(decision.message)
                 return str(assistant.get("content") or "Done.")
             sensitive: list[tuple[str, dict[str, Any]]] = []
+            proposal_errors: list[tuple[str, str]] = []
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -939,6 +947,9 @@ class UnifiedMCPAgent:
                 arguments = dict(arguments)
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
+                proposal_error = rule_machine_proposal_error(name, arguments)
+                if proposal_error is not None and effect.mutates:
+                    proposal_errors.append((name, proposal_error))
                 if effect.mutates:
                     self._mutation_call_seen.set(True)
                 if (
@@ -946,6 +957,26 @@ class UnifiedMCPAgent:
                     and self.confirmation_policy.requires_confirmation(effect)
                 ):
                     sensitive.append((name, arguments))
+            if proposal_errors:
+                messages.append(assistant)
+                errors_by_name = dict(proposal_errors)
+                for call in calls:
+                    function = call.get("function") or {}
+                    name = str(function.get("name") or "")
+                    content = errors_by_name.get(
+                        name,
+                        (
+                            "This action group was not executed because another "
+                            "Rule Machine proposal in the group was invalid. "
+                            "Resubmit the complete group after correcting it."
+                        ),
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_name": name,
+                        "content": json.dumps({"error": content}),
+                    })
+                continue
             if sensitive:
                 decision = self.confirmation_policy.decide(session_id, sensitive)
                 if decision.action is ConfirmationAction.REJECT:

@@ -248,11 +248,15 @@ write behavior.
 
 HomeBrain confirmation and upstream Hubitat authorization are separate gates.
 The model proposes a Rule Machine mutation without upstream approval; the host
-stores an immutable copy and asks the user to confirm. Only after that approval
-does the confirmation policy add the nested `confirm:true` required by
-`hub_set_rule`. A no-confirm `hub_set_rule` operation envelope is classified as
-a read-only schema probe, so the model can inspect the current authoring shape
-before proposing a write.
+first validates that the direct gateway payload contains a rule name and an
+actual rule change, stores an immutable copy, and asks the user to confirm. Only
+after that approval does the confirmation policy add the nested `confirm:true`
+required by `hub_set_rule`. A no-argument management-gateway call is classified
+as the upstream read-only schema probe. The documented `addTrigger` or
+`addAction` `{discover:true}` calls are read-only capability probes. Rule writes
+put `name`, `addTrigger(s)`, `addAction(s)`, and `bestPracticeKey` directly in
+the gateway `args`; an invented `operation/create/args` envelope is rejected
+before confirmation and returned to the model for correction.
 
 Confirmed Rule Machine completion is deterministic. HomeBrain requires a
 successful tool result, a returned `appId`/`ruleId`, no partial flag, and no

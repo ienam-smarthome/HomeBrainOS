@@ -16,25 +16,64 @@ from tool_registry import (  # noqa: E402
     classify_tool_effect,
     control_devices_tool,
     home_snapshot_tool,
+    rule_machine_proposal_error,
 )
 
 
-def test_rule_machine_schema_probe_is_read_but_apply_is_sensitive():
+def test_rule_machine_schema_and_capability_probes_are_read_but_apply_is_sensitive():
     tool = MCPTool("hub_manage_rule_machine", "Manage rules", {"type": "object"})
-    probe = {
+    trigger_probe = {
         "tool": "hub_set_rule",
-        "args": {"operation": "create", "args": {}},
+        "args": {"addTrigger": {"discover": True}},
     }
     apply = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Daily block",
+            "addAction": {"capability": "switch", "action": "off"},
+        },
+    }
+
+    assert classify_tool_effect(tool, {}) is ToolEffect.READ
+    assert classify_tool_effect(tool, trigger_probe) is ToolEffect.READ
+    assert classify_tool_effect(tool, apply) is ToolEffect.SENSITIVE_WRITE
+
+
+def test_incomplete_rule_machine_proposals_fail_before_confirmation():
+    observed_payload = {
+        "tool": "hub_set_rule",
+        "args": {"tool": "hub_set_rule"},
+    }
+    invented_envelope = {
         "tool": "hub_set_rule",
         "args": {
             "operation": "create",
             "args": {"name": "Daily block"},
         },
     }
+    valid = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Daily block",
+            "addActions": [{"capability": "switch", "action": "off"}],
+        },
+    }
 
-    assert classify_tool_effect(tool, probe) is ToolEffect.READ
-    assert classify_tool_effect(tool, apply) is ToolEffect.SENSITIVE_WRITE
+    observed_error = rule_machine_proposal_error(
+        "hub_manage_rule_machine", observed_payload
+    )
+    envelope_error = rule_machine_proposal_error(
+        "hub_manage_rule_machine", invented_envelope
+    )
+
+    assert observed_error is not None
+    assert "non-empty name" in observed_error
+    assert "No action was queued or executed" in observed_error
+    assert envelope_error is not None
+    assert "does not use an operation/create/args envelope" in envelope_error
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine", valid
+    ) is None
 
 
 def gateway(name: str, **annotations: object) -> MCPTool:

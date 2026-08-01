@@ -107,3 +107,25 @@ def test_unavailable_tool_message_is_sorted_and_deduplicated():
         "The queued Hubitat action was cancelled because its tool is no longer "
         "available: hub_restart, hub_shutdown."
     )
+
+
+def test_rule_machine_approval_preserves_direct_payload_and_adds_confirm():
+    proposed = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Tab S9 FE - Block (9am)",
+            "bestPracticeKey": "live-key",
+            "addTriggers": [{"atTime": "09:00"}],
+            "addActions": [{"command": "blockInternet"}],
+        },
+    }
+
+    approved = ConfirmationPolicy.approved_arguments(
+        "hub_manage_rule_machine", proposed
+    )
+
+    assert approved["args"] == {
+        **proposed["args"],
+        "confirm": True,
+    }
+    assert "confirm" not in proposed["args"]
