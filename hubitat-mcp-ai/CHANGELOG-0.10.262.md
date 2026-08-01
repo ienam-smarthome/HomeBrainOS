@@ -6,3 +6,4 @@
 - Preserve mutation classification after a queued sensitive action is explicitly confirmed.
 - Add regression coverage for past-tense and interrogative diagnostic wording containing control verbs.
 - Document the rule against text-based mutation gates.
+- Align the release gate with the new tool-call-driven behaviour.
