@@ -82,10 +82,17 @@ Do not claim CI or tests passed without actual results.
   receipt emission, and bounded model-result serialization in
   `tool_executor.py`. Tool visibility, confirmation, live-claim authority,
   retries, and user-facing presentation remain orchestrator policy.
+- Ground assistant-generated capability limitations through
+  `capability_grounding.py`. Allow one host-driven `hub_search_tools` recovery
+  using the unchanged original request, and never publish an unsupported
+  limitation after that recovery exposed known gateways. This output-side
+  check must not become a prompt-keyword read/write classifier.
 - Keep initial registry ordering, declared/available state, schema rendering,
   and structured search-result expansion in `tool_discovery_catalog.py`.
-  Expansion must accept only explicit known gateway fields; never scan prompt
-  text, descriptions, or arbitrary result strings for tool names.
+  Mirror the upstream `hub_search_tools` contract (`results[].gateway`) and
+  retain `matches[].gateway` only as a compatibility form. Expansion must
+  accept only explicit known gateway fields; never scan prompt text,
+  descriptions, `tool`, `callAs`, or arbitrary result strings for tool names.
 - Keep Hub Information Driver discovery, refresh/update-check commands, bounded
   polling, identity reconciliation, units, and snapshot shaping in
   `hub_info_service.py`. Do not move tool visibility, evidence authority,

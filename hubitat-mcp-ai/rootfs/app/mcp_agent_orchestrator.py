@@ -16,6 +16,7 @@ from agent_prompt_policy import (
 from chat_transport import ChatTransport
 from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import ConfirmationStore, PendingConfirmation
+from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
 from device_query_service import DeviceQueryService
@@ -29,7 +30,7 @@ from request_classification import (
     routine_control_arguments as _routine_control_arguments,
 )
 from tool_executor import ToolExecutor
-from tool_discovery_catalog import ToolDiscoveryCatalog
+from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
     LOCAL_ACTIVE_LIGHTS_TOOL as _LOCAL_ACTIVE_LIGHTS_TOOL,
@@ -713,10 +714,51 @@ class UnifiedMCPAgent:
             logs_requested=_matches(user_prompt, _LOG_TERMS),
             conversational=self._is_conversational_prompt(user_prompt),
         )
+        capability_grounding = CapabilityGroundingPolicy()
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                answer = str(assistant.get("content") or "")
+                capability_decision = capability_grounding.decide(answer)
+                if capability_decision.action is CapabilityAction.DISCOVER:
+                    search_tool = catalog.declared_tool(SEARCH_TOOL)
+                    if search_tool is not None:
+                        execution = await self.executor.execute(
+                            SEARCH_TOOL,
+                            {"query": str(user_prompt).strip()},
+                            tool=search_tool,
+                            supports_live_claim=False,
+                        )
+                        additions = (
+                            catalog.expand(execution.result)
+                            if execution.result is not None
+                            else []
+                        )
+                        capability_grounding.record_discovery(len(additions))
+                        if additions:
+                            tools = catalog.schemas()
+                            logger.info(
+                                "Capability recovery expanded registry with: %s",
+                                ", ".join(item.name for item in additions),
+                            )
+                        messages.extend([
+                            assistant,
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"{capability_decision.message}\n\n"
+                                    "HOST DISCOVERY RESULT\n"
+                                    f"{execution.content}"
+                                ),
+                            },
+                        ])
+                        continue
+                if (
+                    capability_decision.action
+                    is CapabilityAction.REJECT_UNGROUNDED
+                ):
+                    return str(capability_decision.message)
                 decision = grounding.decide_no_tool_calls(
                     has_live_evidence=self.evidence.has_live_evidence()
                 )
