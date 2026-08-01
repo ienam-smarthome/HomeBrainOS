@@ -62,3 +62,6 @@ Do not claim CI or tests passed without actual results.
   streaming and non-streaming Ollama requests. Never compact the authoritative
   evidence receipts or mutate the in-process transcript while preparing a
   model payload.
+- Keep provider HTTP and streaming mechanics in `chat_transport.py`. Transport
+  code must not classify requests, execute Hubitat tools, or decide mutation
+  confirmation policy.

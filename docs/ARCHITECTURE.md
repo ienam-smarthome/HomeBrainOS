@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of thirteen Python modules under
+- The maintained runtime is a flat set of fourteen Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -23,7 +23,8 @@
 | --- | --- |
 | `app.py` | Loads add-on options, constructs the shared services, owns `RequestCoordinator`, and defines `/`, `/health`, `/api/status`, `/api/dashboard`, `/api/tools`, `/api/refresh`, `/api/chat`, and `/api/ask`. |
 | `mcp_client.py` | `HubitatMCPClient`, the single JSON-RPC client used for Hubitat MCP access. Defines `MCPError`, `MCPTool`, and `MCPToolResult`. |
-| `mcp_agent_orchestrator.py` | `UnifiedMCPAgent`, the native Ollama tool-calling coordinator. It selects and executes tools, records evidence, enforces live grounding, handles confirmations, consumes streamed Ollama responses, and produces final answers. |
+| `mcp_agent_orchestrator.py` | `UnifiedMCPAgent`, the native tool-calling coordinator. It prepares bounded context, executes tools, records evidence, enforces live grounding, handles confirmations, and produces final answers. |
+| `chat_transport.py` | Owns the Ollama HTTP client, provider configuration, request construction, streaming and non-streaming response assembly, idle-stall detection, and client shutdown. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
 | `device_query_service.py` | Read-side queries over the cached device inventory, including filtering, comparison, aggregation, and room-aware reads. |
 | `device_control_service.py` | Write-side device commands such as on, off, toggle, and level changes. |
@@ -54,22 +55,26 @@
    keywords do not select remote schemas. When another gateway is needed, the
    model calls `hub_search_tools`; only gateways named by that structured result
    are added to the next model round.
-7. A live-read answer requires successful evidence marked
+7. `UnifiedMCPAgent` bounds the copied model context and hands it to
+   `ChatTransport`. The transport sends either a streaming or non-streaming
+   native Ollama request and returns one assembled assistant message without
+   knowing about Hubitat tools, evidence, or confirmation policy.
+8. A live-read answer requires successful evidence marked
    `supports_live_claim=True`. If evidence cannot be obtained after the allowed
    retry, the agent refuses rather than making an ungrounded live claim.
-8. Routine device controls can execute without a second confirmation. Sensitive
+9. Routine device controls can execute without a second confirmation. Sensitive
    operations, including firmware installation and higher-risk mutations, are
    stored as `PendingConfirmation` and execute only after a valid confirmation.
-9. Every actual structured tool call is classified as `read`, `routine_write`,
+10. Every actual structured tool call is classified as `read`, `routine_write`,
    `sensitive_write`, or `destructive_write`. This effect drives request-class
    reporting and whether the call must enter the confirmation queue, and is
    attached to evidence for auditability.
-10. Prior conversation is limited to the eight newest messages and 12,000
+11. Prior conversation is limited to the eight newest messages and 12,000
     characters. Across multi-round execution, retained tool-result content is
     capped at 48,000 characters; older results are compacted before newer ones.
     The system policy, current request, tool-call structure, and internal
     evidence receipts remain intact.
-11. `/api/ask` returns the message, route, request class, choices, evidence,
+12. `/api/ask` returns the message, route, request class, choices, evidence,
    optional `automation_items`, model, elapsed time, and add-on version. The
    WebUI renders structured automation rows directly when present.
 
@@ -92,6 +97,9 @@
 - Model payloads use bounded prior conversation and cumulative tool-result
   content. Compaction operates on copied request messages and never mutates the
   authoritative in-process transcript or evidence receipts.
+- Provider transport has no mutation, evidence, routing, or confirmation
+  authority. Those policies remain in `UnifiedMCPAgent`; `ChatTransport` only
+  sends prepared messages and assembles the provider response.
 - Automation status precedence is deterministic: broken and disabled signals
   are resolved before paused, and `paused=false` alone never proves active.
 - Unknown or incomplete status data is labelled `unknown` rather than guessed.
@@ -102,8 +110,8 @@
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
   dynamic discovery, confirmation state, evidence policy, tool execution,
-  retries, and final-answer handling. These concerns should be extracted
-  incrementally with regression coverage.
+  retries, and final-answer handling. Transport is now separate; the remaining
+  concerns should be extracted incrementally with regression coverage.
 - The current bounds are character-based rather than model-token-aware. If
   multiple model families are introduced, token-aware budgeting may provide a
   tighter context limit.
