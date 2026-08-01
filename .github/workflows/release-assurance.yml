@@ -1,0 +1,87 @@
+name: Release assurance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: release-assurance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validation:
+    name: Metadata and repository validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: hubitat-mcp-ai/rootfs/app/requirements.txt
+      - name: Install validation dependencies
+        run: python -m pip install --disable-pip-version-check pytest pyyaml
+      - name: Validate release metadata
+        run: python scripts/validate_release_consistency.py
+      - name: Validate add-on structure
+        run: python scripts/validate_addon.py
+      - name: Analyse maintained imports
+        run: python scripts/analyze_imports.py
+      - name: Run release assurance contracts
+        run: python -m pytest -q tests/test_release_assurance.py tests/test_repository_hygiene.py
+
+  tests:
+    name: Full Python test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: hubitat-mcp-ai/rootfs/app/requirements.txt
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r hubitat-mcp-ai/rootfs/app/requirements.txt
+          python -m pip install --disable-pip-version-check pytest pyyaml
+      - name: Run blocking release gate
+        run: python scripts/run_release_gate.py
+
+  container-smoke:
+    name: Add-on container smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read configured version
+        id: version
+        shell: bash
+        run: |
+          version="$(python - <<'PY'
+          import yaml
+          with open('hubitat-mcp-ai/config.yaml', encoding='utf-8') as handle:
+              print(yaml.safe_load(handle)['version'])
+          PY
+          )"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build add-on image
+        run: |
+          docker build \
+            --build-arg BUILD_FROM=ghcr.io/hassio-addons/base:15.0.8 \
+            --build-arg BUILD_VERSION=${{ steps.version.outputs.version }} \
+            --build-arg BUILD_ARCH=amd64 \
+            --tag homebrain-release-smoke:${{ github.sha }} \
+            hubitat-mcp-ai
+      - name: Verify packaged runtime
+        run: |
+          docker run --rm --entrypoint python3 \
+            homebrain-release-smoke:${{ github.sha }} \
+            -c "from pathlib import Path; import app; expected='${{ steps.version.outputs.version }}'; actual=Path('/app/.homebrain-build-version').read_text().strip(); assert actual == expected, (actual, expected)"
