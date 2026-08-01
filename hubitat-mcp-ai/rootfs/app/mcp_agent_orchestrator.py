@@ -14,6 +14,7 @@ from agent_prompt_policy import (
     render_device_manifest,
 )
 from chat_transport import ChatTransport
+from confirmed_action_coordinator import ConfirmedActionCoordinator
 from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirmation
 from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
@@ -186,6 +187,12 @@ class UnifiedMCPAgent:
         )
         self._mutation_call_seen: ContextVar[bool] = ContextVar(
             "hubitat_mutation_call_seen", default=False
+        )
+        self.confirmed_actions = ConfirmedActionCoordinator(
+            self.confirmation_policy,
+            self.executor,
+            self._chat,
+            lambda: self._mutation_call_seen.set(True),
         )
     @property
     def configured(self) -> bool:
@@ -526,46 +533,15 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _rule_result_data(execution: Any) -> dict[str, Any]:
-        data = execution.result.data if execution.result is not None else None
-        while isinstance(data, dict):
-            if any(
-                key in data
-                for key in ("success", "appId", "ruleId", "error", "partial", "health")
-            ):
-                break
-            nested = next(
-                (
-                    data[key]
-                    for key in ("result", "data", "output")
-                    if isinstance(data.get(key), dict)
-                ),
-                None,
-            )
-            if nested is None:
-                break
-            data = nested
-        return data if isinstance(data, dict) else {}
+        return ConfirmedActionCoordinator.rule_result_data(execution)
 
     @classmethod
     def _verified_rule_execution(cls, execution: Any) -> bool:
-        data = cls._rule_result_data(execution)
-        health = data.get("health") if isinstance(data.get("health"), dict) else {}
-        return (
-            execution.success
-            and data.get("success") is True
-            and (data.get("appId") or data.get("ruleId")) not in {None, ""}
-            and data.get("partial") is not True
-            and health.get("ok") is True
-        )
+        return ConfirmedActionCoordinator.verified_rule_execution(execution)
 
     @staticmethod
     def _queued_rule_name(arguments: dict[str, Any]) -> str:
-        payload = arguments.get("args")
-        if not isinstance(payload, dict):
-            return "Rule Machine rule"
-        envelope = payload.get("args")
-        source = envelope if isinstance(envelope, dict) else payload
-        return str(source.get("name") or "Rule Machine rule")
+        return ConfirmedActionCoordinator.queued_rule_name(arguments)
 
     def _confirmed_rule_report(
         self,
@@ -573,88 +549,13 @@ class UnifiedMCPAgent:
         *,
         queued_count: int,
     ) -> str | None:
-        if not outcomes or any(
-            name != "hub_manage_rule_machine" for name, _, _ in outcomes
-        ):
-            return None
-        lines: list[str] = []
-        failed = False
-        for _, arguments, execution in outcomes:
-            name = self._queued_rule_name(arguments)
-            data = self._rule_result_data(execution)
-            app_id = data.get("appId") or data.get("ruleId")
-            if self._verified_rule_execution(execution):
-                lines.append(
-                    f"- Created **{name}** (appId: {app_id}) and the hub "
-                    "reported it healthy."
-                )
-                continue
-            failed = True
-            detail = (
-                data.get("error")
-                or data.get("note")
-                or (
-                    str(execution.error)
-                    if execution.error is not None
-                    else "the hub did not return a verified rule ID and healthy result"
-                )
-            )
-            lines.append(f"- **{name} was not verified:** {detail}.")
-        skipped = max(0, queued_count - len(outcomes))
-        if skipped:
-            failed = True
-            lines.append(
-                f"- {skipped} remaining confirmed action"
-                f"{' was' if skipped == 1 else 's were'} not attempted after "
-                "the first unverified write."
-            )
-        heading = (
-            "The confirmed Rule Machine write was not fully completed."
-            if failed
-            else "Confirmed Rule Machine actions completed:"
+        return ConfirmedActionCoordinator.confirmed_rule_report(
+            outcomes,
+            queued_count=queued_count,
         )
-        return heading + "\n\n" + "\n".join(lines)
 
     async def _resume_confirmation(self, pending: PendingConfirmation, catalog: ToolDiscoveryCatalog) -> str:
-        messages = [*pending.messages, pending.assistant_message]
-        outcomes: list[tuple[str, dict[str, Any], Any]] = []
-        for tool_name, arguments in pending.actions:
-            self._mutation_call_seen.set(True)
-            proposal_error = rule_machine_proposal_error(tool_name, arguments)
-            if proposal_error is not None:
-                return (
-                    "The queued Rule Machine action was cancelled because its "
-                    f"payload is incomplete. {proposal_error}"
-                )
-            tool = catalog.available_tool(tool_name)
-            approved_arguments = self.confirmation_policy.approved_arguments(
-                tool_name,
-                arguments,
-                tool_schema=tool.input_schema if tool is not None else None,
-            )
-            execution = await self.executor.execute(
-                tool_name,
-                approved_arguments,
-                tool=tool or MCPTool(tool_name, tool_name, {}),
-                mutates=True,
-            )
-            outcomes.append((tool_name, approved_arguments, execution))
-            messages.append({
-                "role": "tool",
-                "tool_name": tool_name,
-                "content": execution.content,
-            })
-            if tool_name == "hub_manage_rule_machine":
-                if not self._verified_rule_execution(execution):
-                    break
-        deterministic_report = self._confirmed_rule_report(
-            outcomes,
-            queued_count=len(pending.actions),
-        )
-        if deterministic_report is not None:
-            return deterministic_report
-        response = await self._chat(messages, catalog.schemas())
-        return str(response.get("content") or "Confirmed command completed.")
+        return await self.confirmed_actions.resume(pending, catalog)
 
     async def process_user_request_result(
         self,

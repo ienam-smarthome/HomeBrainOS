@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.285**.
+Current add-on version: **0.10.286**.
 
 ## Architecture
 
@@ -19,6 +19,11 @@ regex router or prompt-keyword tool gate controls read-versus-write behaviour.
 sensitive MCP mutations require an explicit, session-scoped confirmation kept
 by `ConfirmationStore`. Read-only and routine gateway operations do not require
 confirmation.
+
+After a valid confirmation is consumed, `ConfirmedActionCoordinator`
+revalidates and executes the immutable action group. Rule Machine writes are
+sequential, fail closed on the first unverified result, and use deterministic
+ID-and-health reporting rather than model-generated success claims.
 
 `ModelContextPolicy` applies the conversation-history and cumulative
 tool-result budgets to copied provider payloads. It never mutates the

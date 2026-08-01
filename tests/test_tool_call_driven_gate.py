@@ -144,9 +144,14 @@ def test_legacy_tool_effect_shadow_gate_has_been_removed():
 
 
 def test_confirmed_pending_actions_remain_mutating_in_source():
-    source = (APP_DIR / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
-    confirmation = source[source.index("async def _resume_confirmation"):source.index("async def process_user_request_result")]
+    orchestrator = (APP_DIR / "mcp_agent_orchestrator.py").read_text(
+        encoding="utf-8"
+    )
+    coordinator = (APP_DIR / "confirmed_action_coordinator.py").read_text(
+        encoding="utf-8"
+    )
 
-    assert "self._mutation_call_seen.set(True)" in confirmation
-    assert "self.executor.execute(" in confirmation
-    assert confirmation.count("mutates=True") == 1
+    assert "self.confirmed_actions.resume(pending, catalog)" in orchestrator
+    assert "self._mark_mutation()" in coordinator
+    assert "self.executor.execute(" in coordinator
+    assert coordinator.count("mutates=True") == 1
