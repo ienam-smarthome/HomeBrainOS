@@ -29,6 +29,7 @@ from request_classification import (
     routine_control_arguments as _routine_control_arguments,
 )
 from tool_executor import ToolExecutor
+from tool_discovery_catalog import ToolDiscoveryCatalog
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
     LOCAL_ACTIVE_LIGHTS_TOOL as _LOCAL_ACTIVE_LIGHTS_TOOL,
@@ -74,21 +75,6 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
-
-_INITIAL_TOOL_ORDER = (
-    "hub_search_tools",
-    "hub_read_diagnostics",
-    _LOCAL_FILTER_TOOL,
-    _LOCAL_QUERY_TOOL,
-    _LOCAL_ACTIVE_LIGHTS_TOOL,
-    _LOCAL_ACTIVE_ROOMS_TOOL,
-    _LOCAL_ACTIVE_SWITCHES_TOOL,
-    _LOCAL_HOME_SNAPSHOT_TOOL,
-    _LOCAL_HUB_INFO_TOOL,
-    _LOCAL_WEATHER_TOOL,
-    _LOCAL_CONTROL_TOOL,
-)
-
 
 @dataclass(slots=True)
 class AgentOutcome:
@@ -680,12 +666,7 @@ class UnifiedMCPAgent:
     def _initial_tools(tools: list[MCPTool]) -> list[MCPTool]:
         """Return a stable lean registry without inspecting the user prompt."""
 
-        by_name = {tool.name: tool for tool in tools}
-        return [
-            by_name[name]
-            for name in _INITIAL_TOOL_ORDER
-            if name in by_name
-        ]
+        return ToolDiscoveryCatalog.initial_tools(tools)
 
     async def _cached_app_manifest(self) -> list[dict[str, Any]]:
         now = time.monotonic()
@@ -741,14 +722,7 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _tool_schema(tool: MCPTool) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description or tool.name,
-                "parameters": tool.input_schema or {"type": "object", "properties": {}},
-            },
-        }
+        return ToolDiscoveryCatalog.tool_schema(tool)
 
     def _history(self, history: Any) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
@@ -848,29 +822,7 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _discovered_tools(result: MCPToolResult, available: dict[str, MCPTool]) -> list[MCPTool]:
-        if result.is_error:
-            return []
-
-        named: set[str] = set()
-
-        def collect(value: Any) -> None:
-            if isinstance(value, str):
-                if value in available:
-                    named.add(value)
-                return
-            if isinstance(value, dict):
-                for item in value.values():
-                    collect(item)
-                return
-            if isinstance(value, list):
-                for item in value:
-                    collect(item)
-
-        collect(result.data)
-        return [
-            tool for name, tool in available.items()
-            if name != "hub_search_tools" and name in named
-        ]
+        return ToolDiscoveryCatalog.discovered_tools(result, available)
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         return await self.transport.chat(self._bounded_messages(messages), tools)
@@ -984,15 +936,17 @@ class UnifiedMCPAgent:
             local_active_switches, local_home_snapshot, local_hub_info, local_weather,
         ]
         all_tools.extend([*safe_read_tools, local_control])
-        all_by_name = {tool.name: tool for tool in all_tools}
+        catalog = ToolDiscoveryCatalog(all_tools)
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
-            pending_names = {name for name, _ in pending.actions}
-            declared = [tool for tool in all_tools if tool.name in pending_names] or all_tools
-        else:
-            declared = self._initial_tools(all_tools)
-        by_name = {tool.name: tool for tool in declared}
-        tools = [self._tool_schema(tool) for tool in declared]
+            pending_names = list(dict.fromkeys(name for name, _ in pending.actions))
+            missing = catalog.replace_declared(pending_names)
+            if missing:
+                return (
+                    "The queued Hubitat action was cancelled because its tool is "
+                    f"no longer available: {', '.join(sorted(missing))}."
+                )
+        tools = catalog.schemas()
         if pending:
             return await self._resume_confirmation(pending, tools)
         prompt_started = time.monotonic()
@@ -1079,7 +1033,7 @@ class UnifiedMCPAgent:
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
-                tool = by_name.get(name)
+                tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
                 if effect.mutates:
                     self._mutation_call_seen.set(True)
@@ -1117,7 +1071,7 @@ class UnifiedMCPAgent:
                 if signature in completed_calls:
                     return await self._final_answer(messages)
                 completed_calls.add(signature)
-                tool = by_name.get(name)
+                tool = catalog.declared_tool(name)
                 if not tool:
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
                 else:
@@ -1136,14 +1090,9 @@ class UnifiedMCPAgent:
                         logs_checked = execution.success
                     if result is not None:
                         if name == "hub_search_tools":
-                            additions = [
-                                item for item in self._discovered_tools(result, all_by_name)
-                                if item.name not in by_name
-                            ]
+                            additions = catalog.expand(result)
                             if additions:
-                                declared.extend(additions)
-                                by_name.update({item.name: item for item in additions})
-                                tools = [self._tool_schema(item) for item in declared]
+                                tools = catalog.schemas()
                                 logger.info("Tool search expanded registry with: %s", ", ".join(item.name for item in additions))
                         deterministic_message = present_tool_result(
                             name,

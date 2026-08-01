@@ -76,3 +76,7 @@ Do not claim CI or tests passed without actual results.
   receipt emission, and bounded model-result serialization in
   `tool_executor.py`. Tool visibility, confirmation, live-claim authority,
   retries, and user-facing presentation remain orchestrator policy.
+- Keep initial registry ordering, declared/available state, schema rendering,
+  and structured search-result expansion in `tool_discovery_catalog.py`.
+  Expansion must accept only explicit known gateway fields; never scan prompt
+  text, descriptions, or arbitrary result strings for tool names.

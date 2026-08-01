@@ -70,6 +70,48 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
 
 
 @pytest.mark.asyncio
+async def test_confirmation_fails_closed_when_queued_tool_disappears():
+    class ChangingMCP(FakeMCP):
+        def __init__(self):
+            super().__init__()
+            self.restart_available = True
+
+        async def list_tools(self):
+            tools = [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"})
+            ]
+            if self.restart_available:
+                tools.append(
+                    MCPTool("hub_restart", "Restart hub", {"type": "object"})
+                )
+            return tools
+
+    mcp = ChangingMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "restart hub"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {"name": "hub_restart", "arguments": {}}
+        }]}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    prompt = await agent.process_user_request("Restart hub", session_id="changing")
+    assert "Please confirm" in prompt
+    mcp.restart_available = False
+
+    answer = await agent.process_user_request("confirm", session_id="changing")
+
+    assert "cancelled" in answer
+    assert "hub_restart" in answer
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+
+
+@pytest.mark.asyncio
 async def test_sensitive_tool_rejects_empty_session_id():
     mcp = FakeMCP()
     ai = FakeAI([

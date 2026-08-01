@@ -3,17 +3,16 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.271**.
+Current add-on version: **0.10.272**.
 
 ## Architecture
 
-FastAPI sends requests directly to `UnifiedMCPAgent`. The agent starts with a
-bounded local/discovery registry, lets Ollama Online select native function
-calls, expands remote tools only through structured discovery, executes calls
-through a focused `ToolExecutor` and `HubitatMCPClient`, and returns the final
-answer. Request-scoped evidence receipts are sanitised and isolated by
-`EvidenceRecorder`. No regex router or prompt-keyword tool gate controls
-read-versus-write behaviour.
+FastAPI sends requests directly to `UnifiedMCPAgent`. A
+`ToolDiscoveryCatalog` supplies a fixed initial registry and expands it only
+from explicit structured gateway matches. Ollama Online selects native calls,
+which run through `ToolExecutor` and `HubitatMCPClient`. Request-scoped evidence
+receipts are sanitised and isolated by `EvidenceRecorder`. No regex router or
+prompt-keyword tool gate controls read-versus-write behaviour.
 
 Sensitive MCP mutations require an explicit, session-scoped confirmation.
 Read-only gateway operations do not require confirmation.
