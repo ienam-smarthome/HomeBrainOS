@@ -296,6 +296,96 @@ async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
 
 
 @pytest.mark.asyncio
+async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_verified_ids():
+    class ConfirmedRuleMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                MCPTool("hub_manage_rule_machine", "Manage rules", {"type": "object"}),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            assert name == "hub_manage_rule_machine"
+            assert arguments["args"]["confirm"] is True
+            app_id = 4160 if "Block" in arguments["args"]["args"]["name"] else 4161
+            return MCPToolResult(
+                name, arguments, {}, "",
+                {"success": True, "appId": app_id, "ruleId": app_id, "health": {"ok": True}},
+            )
+
+    ai = FakeAI([])
+    agent = UnifiedMCPAgent(ConfirmedRuleMCP(), "key", "model", ai_client=ai)
+    actions = [
+        ("hub_manage_rule_machine", {
+            "tool": "hub_set_rule",
+            "args": {"operation": "create", "args": {"name": "Tab S9 FE - Block (9am)"}},
+        }),
+        ("hub_manage_rule_machine", {
+            "tool": "hub_set_rule",
+            "args": {"operation": "create", "args": {"name": "Tab S9 FE - Unblock (7pm)"}},
+        }),
+    ]
+    agent.confirmations.queue(
+        "rule-confirmation", actions,
+        [{"role": "user", "content": "create the rules"}],
+        {"role": "assistant", "content": "Please confirm", "tool_calls": []},
+    )
+
+    outcome = await agent.process_user_request_result("confirm", session_id="rule-confirmation")
+
+    assert outcome.request_class == "write"
+    assert "Confirmed Rule Machine actions completed" in outcome.message
+    assert "appId: 4160" in outcome.message
+    assert "appId: 4161" in outcome.message
+    assert "healthy" in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_confirmed_rule_authoring_never_claims_success_without_verified_rule_id():
+    class FailedRuleMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                MCPTool("hub_manage_rule_machine", "Manage rules", {"type": "object"}),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name, arguments, {}, "",
+                {"success": False, "error": "Rule validation failed"},
+            )
+
+    agent = UnifiedMCPAgent(FailedRuleMCP(), "key", "model", ai_client=FakeAI([]))
+    agent.confirmations.queue(
+        "failed-rule",
+        [
+            ("hub_manage_rule_machine", {
+                "tool": "hub_set_rule",
+                "args": {"operation": "create", "args": {"name": "Tab S9 FE - Block (9am)"}},
+            }),
+            ("hub_manage_rule_machine", {
+                "tool": "hub_set_rule",
+                "args": {"operation": "create", "args": {"name": "Tab S9 FE - Unblock (7pm)"}},
+            }),
+        ],
+        [],
+        {"role": "assistant", "content": "Please confirm", "tool_calls": []},
+    )
+
+    outcome = await agent.process_user_request_result("confirm", session_id="failed-rule")
+
+    assert "not fully completed" in outcome.message
+    assert "was not verified" in outcome.message
+    assert "Rule validation failed" in outcome.message
+    assert "1 remaining confirmed action was not attempted" in outcome.message
+    assert "completed successfully" not in outcome.message.casefold()
+    assert len(agent.mcp.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_rule_authoring_prompt_documents_supported_gateway_path():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
 
@@ -654,22 +744,25 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
             )
 
     mcp = BatteryMCP()
-    ai = FakeAI([{
-        "message": {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{
-                "function": {
-                    "name": "homebrain_filter_devices",
-                    "arguments": {
-                        "attribute": "battery",
-                        "operator": "lte",
-                        "value": 20,
-                    },
-                }
-            }],
-        }
-    }])
+    ai = FakeAI([
+        {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "function": {
+                        "name": "homebrain_filter_devices",
+                        "arguments": {
+                            "attribute": "battery",
+                            "operator": "lte",
+                            "value": 20,
+                        },
+                    }
+                }],
+            }
+        },
+        {"message": {"role": "assistant", "content": "2 devices have battery levels at or below 20%: Fridge Door (14%) and Livingroom TRV (10%)."}},
+    ])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
     outcome = await agent.process_user_request_result("Which batteries are low?")
@@ -678,16 +771,19 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
         "2 devices have battery levels at or below 20%: Fridge Door (14%) and "
         "Livingroom TRV (10%)."
     )
-    assert len(ai.requests) == 1
+    assert len(ai.requests) == 2
     assert mcp.calls == [
-        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}}),
+        ("hub_search_tools", {"query": "Which batteries are low?"}),
     ]
     kinds = [receipt["evidence_kind"] for receipt in outcome.evidence]
     assert kinds == [
         "authoritative_state_snapshot",
         "deterministic_attribute_filter",
+        "tool_result",
     ]
-    assert outcome.evidence[-1]["supports_live_claim"] is True
+    assert outcome.evidence[-2]["supports_live_claim"] is True
+    assert outcome.evidence[-1]["supports_live_claim"] is False
     declared = ai.requests[0][1]["json"]["tools"]
     assert [item["function"]["name"] for item in declared] == [
             "hub_search_tools",
@@ -729,20 +825,23 @@ async def test_filter_reads_presence_from_current_states_list():
             )
 
     mcp = PresenceMCP()
-    ai = FakeAI([{
-        "message": {
-            "role": "assistant",
-            "tool_calls": [{
-                "function": {
-                    "name": "homebrain_filter_devices",
-                    "arguments": {
-                        "attribute": "presence",
-                        "operator": "exists",
-                    },
-                }
-            }],
-        }
-    }])
+    ai = FakeAI([
+        {
+            "message": {
+                "role": "assistant",
+                "tool_calls": [{
+                    "function": {
+                        "name": "homebrain_filter_devices",
+                        "arguments": {
+                            "attribute": "presence",
+                            "operator": "exists",
+                        },
+                    }
+                }],
+            }
+        },
+        {"message": {"role": "assistant", "content": "1 device matched presence exists: Muhsena Khan: presence=present."}},
+    ])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
     outcome = await agent.process_user_request_result("Who has presence data?")

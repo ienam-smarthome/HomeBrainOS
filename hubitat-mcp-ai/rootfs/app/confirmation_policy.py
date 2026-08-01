@@ -9,6 +9,7 @@ executes tools.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 from enum import Enum
 from typing import Any
 
@@ -126,6 +127,37 @@ class ConfirmationPolicy:
             "The queued Hubitat action was cancelled because its tool is no "
             f"longer available: {names}."
         )
+
+    @staticmethod
+    def approved_arguments(
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        tool_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Translate host approval into the upstream tool's confirm flag.
+
+        Hubitat management gateways carry sub-tool arguments inside ``args``.
+        Their destructive/sensitive handlers (including ``hub_set_rule``)
+        require ``confirm:true`` there even after HomeBrain's own UI gate has
+        approved the call. Direct tools receive the flag only when their
+        declared schema supports it.
+        """
+
+        approved = deepcopy(arguments)
+        if str(tool_name) == "hub_manage_rule_machine":
+            nested = approved.get("args")
+            if isinstance(nested, dict):
+                nested["confirm"] = True
+            return approved
+        properties = (
+            tool_schema.get("properties", {})
+            if isinstance(tool_schema, dict)
+            else {}
+        )
+        if isinstance(properties, dict) and "confirm" in properties:
+            approved["confirm"] = True
+        return approved
 
 
 __all__ = [

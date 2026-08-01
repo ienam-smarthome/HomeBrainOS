@@ -140,6 +140,11 @@ class ToolDiscoveryCatalog:
 
         return self._declared.get(name)
 
+    def available_tool(self, name: str) -> MCPTool | None:
+        """Return a known tool regardless of current model visibility."""
+
+        return self._available.get(name)
+
     def replace_declared(self, names: Iterable[str]) -> list[str]:
         """Replace visible tools and return unavailable requested names."""
 

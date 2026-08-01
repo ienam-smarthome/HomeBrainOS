@@ -121,6 +121,20 @@ def _operation_effect(operations: list[str]) -> ToolEffect | None:
     return None
 
 
+def _is_rule_schema_probe(tool_name: str, arguments: dict[str, Any]) -> bool:
+    """Recognise the upstream hub_set_rule no-confirm schema contract."""
+
+    if tool_name != "hub_manage_rule_machine":
+        return False
+    if _normalized_operation(arguments.get("tool")) != "hub_set_rule":
+        return False
+    nested = arguments.get("args")
+    if not isinstance(nested, dict):
+        return False
+    operation = _normalized_operation(nested.get("operation"))
+    return bool(operation) and nested.get("confirm") is not True
+
+
 def classify_tool_effect(
     tool: MCPTool | None,
     arguments: dict[str, Any] | None = None,
@@ -147,6 +161,9 @@ def classify_tool_effect(
     if name.startswith("homebrain_"):
         return ToolEffect.READ
     if name.startswith("hub_read_") or name in _READ_GATEWAYS:
+        return ToolEffect.READ
+
+    if _is_rule_schema_probe(name, arguments):
         return ToolEffect.READ
 
     operation_effect = _operation_effect(_structured_operations(arguments))
