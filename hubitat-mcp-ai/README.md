@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.289**.
+Current add-on version: **0.10.290**.
 
 ## Architecture
 
@@ -15,8 +15,9 @@ matches. Deterministic device resolution and history are always present in that
 registry; discovery cannot replace a local bounded adapter with the broader
 gateway that hosts its upstream operation. Ollama Online selects native calls,
 which run through `ToolExecutor` and `HubitatMCPClient`. Request-scoped evidence
-receipts are sanitised and isolated by `EvidenceRecorder`; `GroundingPolicy`
-allows at most one evidence or log retry before a deterministic refusal. No
+receipts are sanitised and isolated by `EvidenceRecorder`; the request-local
+`LiveEvidenceAuthority` combines those receipts with `GroundingPolicy` so one
+boundary owns accept, bounded retry, and deterministic refusal decisions. No
 regex router or prompt-keyword tool gate controls read-versus-write behaviour.
 
 `ConfirmationPolicy` makes bounded decisions from structured tool effects;
