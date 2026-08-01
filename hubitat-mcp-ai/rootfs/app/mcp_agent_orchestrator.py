@@ -986,6 +986,7 @@ class UnifiedMCPAgent:
     async def _resume_confirmation(self, pending: PendingConfirmation, tools: list[dict[str, Any]]) -> str:
         messages = [*pending.messages, pending.assistant_message]
         for tool_name, arguments in pending.actions:
+            self._mutation_call_seen.set(True)
             try:
                 started = time.monotonic()
                 result = await self.mcp.call_tool(tool_name, arguments)
@@ -995,6 +996,7 @@ class UnifiedMCPAgent:
                     success=self._tool_succeeded(result),
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     summary=self._result_summary(result),
+                    mutates=True,
                 )
                 content = self._result_payload(result)
             except Exception as exc:
@@ -1004,6 +1006,7 @@ class UnifiedMCPAgent:
                     success=False,
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                    mutates=True,
                 )
                 content = json.dumps({"error": str(exc)})
             messages.append({"role": "tool", "tool_name": tool_name, "content": content})

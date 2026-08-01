@@ -114,3 +114,11 @@ def test_legacy_text_classifier_no_longer_controls_response_gate():
     assert "mutation_requested = _requests_mutation(user_prompt)" not in source
     assert "if mutation_requested and successful_mutations == 0" not in source
     assert "self._mutation_call_seen.get()" in source
+
+
+def test_confirmed_pending_actions_remain_mutating_in_source():
+    source = (APP_DIR / "mcp_agent_orchestrator.py").read_text(encoding="utf-8")
+    confirmation = source[source.index("async def _resume_confirmation"):source.index("async def process_user_request_result")]
+
+    assert "self._mutation_call_seen.set(True)" in confirmation
+    assert confirmation.count("mutates=True") == 2
