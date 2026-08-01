@@ -279,11 +279,12 @@ async def test_weather_question_receives_authoritative_weather_snapshot():
     )
 
 
-def test_general_request_classification():
+def test_conversational_prompt_detection_does_not_classify_mutations():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
-    assert agent._classify_request("hello", "s") == "conversational"
-    assert agent._classify_request("What is the hub status?", "s") == "live-read"
-    assert agent._classify_request("turn off hallway lights", "s") == "write"
+    assert agent._is_conversational_prompt("hello") is True
+    assert agent._is_conversational_prompt("What is the hub status?") is False
+    assert agent._is_conversational_prompt("turn off hallway lights") is False
+    assert not hasattr(agent, "_classify_request")
 
 
 @pytest.mark.asyncio
@@ -1616,7 +1617,8 @@ async def test_control_request_cannot_claim_done_without_write_tool():
 
     answer = await agent.process_user_request("turn off hallway lights")
 
-    assert "did not execute a Hubitat control tool" in answer
+    assert answer == "I could not retrieve verified live Hubitat evidence, so I will not provide an inferred answer."
+    assert "did not execute a Hubitat control tool" not in answer
     assert len(ai.requests) == 2
 
 

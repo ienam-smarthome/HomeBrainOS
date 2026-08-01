@@ -156,6 +156,9 @@ class UnifiedMCPAgent:
         self._choices: ContextVar[list[str] | None] = ContextVar(
             "hubitat_choices", default=None
         )
+        self._mutation_call_seen: ContextVar[bool] = ContextVar(
+            "hubitat_mutation_call_seen", default=False
+        )
         self.ai_client = ai_client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -207,23 +210,14 @@ class UnifiedMCPAgent:
             fallback_error=result.text,
         )
 
-    def _classify_request(self, prompt: str, session_id: str) -> str:
+    @staticmethod
+    def _is_conversational_prompt(prompt: str) -> bool:
         normalized = " ".join(prompt.strip().lower().split())
-        if (
-            _requests_mutation(prompt)
-            or (
-                normalized in _CONFIRM_WORDS
-                and session_id in self._pending
-            )
-        ):
-            return "write"
         conversational = (
             r"(?:hi|hello|hey|thanks|thank you|good morning|good evening)[.!? ]*",
             r"(?:help|what can you do|who are you)[.!? ]*",
         )
-        if any(re.fullmatch(pattern, normalized) for pattern in conversational):
-            return "conversational"
-        return "live-read"
+        return any(re.fullmatch(pattern, normalized) for pattern in conversational)
 
     @staticmethod
     def _redact(value: Any) -> Any:
@@ -266,6 +260,7 @@ class UnifiedMCPAgent:
         summary: str,
         supports_live_claim: bool = True,
         evidence_kind: str = "tool_result",
+        mutates: bool = False,
     ) -> None:
         receipts = self._evidence.get()
         if receipts is None:
@@ -278,6 +273,7 @@ class UnifiedMCPAgent:
             "success": success,
             "supports_live_claim": supports_live_claim,
             "evidence_kind": evidence_kind,
+            "mutates": bool(mutates),
             "arguments": self._redact(arguments),
             "summary": summary,
         })
@@ -652,13 +648,18 @@ class UnifiedMCPAgent:
         )
         return (
             self._needs_device_manifest(prompt)
-            and self._request_class.get() == "write"
+            and _requests_mutation(prompt)
             and not routine_control
         )
 
     @classmethod
     def _call_is_mutation(cls, tool: MCPTool | None, arguments: dict[str, Any]) -> bool:
-        if not tool or (tool.annotations or {}).get("readOnlyHint") is True:
+        if not tool:
+            return False
+        annotations = tool.annotations or {}
+        if annotations.get("mutates") is not None:
+            return bool(annotations.get("mutates"))
+        if annotations.get("readOnlyHint") is True:
             return False
         name = tool.name.lower().replace("-", "_")
         tokens = set(re.findall(r"[a-z0-9]+", str(arguments).lower()))
@@ -985,6 +986,7 @@ class UnifiedMCPAgent:
     async def _resume_confirmation(self, pending: PendingConfirmation, tools: list[dict[str, Any]]) -> str:
         messages = [*pending.messages, pending.assistant_message]
         for tool_name, arguments in pending.actions:
+            self._mutation_call_seen.set(True)
             try:
                 started = time.monotonic()
                 result = await self.mcp.call_tool(tool_name, arguments)
@@ -994,6 +996,7 @@ class UnifiedMCPAgent:
                     success=self._tool_succeeded(result),
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     summary=self._result_summary(result),
+                    mutates=True,
                 )
                 content = self._result_payload(result)
             except Exception as exc:
@@ -1003,6 +1006,7 @@ class UnifiedMCPAgent:
                     success=False,
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                    mutates=True,
                 )
                 content = json.dumps({"error": str(exc)})
             messages.append({"role": "tool", "tool_name": tool_name, "content": content})
@@ -1016,24 +1020,32 @@ class UnifiedMCPAgent:
         *,
         session_id: str = "default",
     ) -> AgentOutcome:
-        request_class = self._classify_request(user_prompt, session_id)
         evidence_token = self._evidence.set([])
         choices_token = self._choices.set([])
-        class_token = self._request_class.set(request_class)
+        mutation_token = self._mutation_call_seen.set(False)
+        class_token = self._request_class.set("tool-driven")
         try:
             message = await self._process_user_request(
                 user_prompt,
                 conversation_history,
                 session_id=session_id,
             )
+            evidence = list(self._evidence.get() or [])
+            if self._mutation_call_seen.get():
+                request_class = "write"
+            elif self._is_conversational_prompt(user_prompt) and not evidence:
+                request_class = "conversational"
+            else:
+                request_class = "live-read"
             return AgentOutcome(
                 message=message,
                 request_class=request_class,
-                evidence=list(self._evidence.get() or []),
+                evidence=evidence,
                 choices=list(self._choices.get() or []),
             )
         finally:
             self._request_class.reset(class_token)
+            self._mutation_call_seen.reset(mutation_token)
             self._evidence.reset(evidence_token)
             self._choices.reset(choices_token)
 
@@ -1082,7 +1094,10 @@ class UnifiedMCPAgent:
             declared = [tool for tool in all_tools if tool.name in pending_names] or all_tools
         else:
             declared = self._select_tools(user_prompt, all_tools)
-            if self._request_class.get() == "live-read":
+            if (
+                not self._is_conversational_prompt(user_prompt)
+                and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)
+            ):
                 declared = [tool for tool in declared if tool.name != "hub_get_info"]
                 declared_names = {tool.name for tool in declared}
                 declared.extend(tool for tool in safe_read_tools if tool.name not in declared_names)
@@ -1126,13 +1141,9 @@ class UnifiedMCPAgent:
             {"role": "user", "content": str(user_prompt).strip()},
         ]
         completed_calls: set[str] = set()
-        mutation_requested = _requests_mutation(user_prompt)
         logs_requested = _matches(user_prompt, _LOG_TERMS)
         logs_checked = False
         log_retry_used = False
-        successful_mutations = 0
-        failed_mutation = ""
-        control_retry_used = False
         evidence_retry_used = False
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
@@ -1155,28 +1166,7 @@ class UnifiedMCPAgent:
                         ])
                         continue
                     return "I could not retrieve the actual Hubitat logs, so I will not provide an inferred log summary."
-                if mutation_requested and successful_mutations == 0:
-                    if not control_retry_used:
-                        control_retry_used = True
-                        messages.extend([
-                            assistant,
-                            {
-                                "role": "user",
-                                "content": (
-                                    "You have not executed the requested control. Call the declared "
-                                    "Hubitat management tool now using the exact manifest device ID. "
-                                    "Do not merely describe the action."
-                                ),
-                            },
-                        ])
-                        continue
-                    deterministic_control = await self._routine_control_fallback(user_prompt)
-                    if deterministic_control is not None:
-                        return deterministic_control
-                    if failed_mutation:
-                        return f"The Hubitat action failed: {failed_mutation}"
-                    return "I did not execute a Hubitat control tool, so no device state was changed. Please try again with the exact device name."
-                if self._request_class.get() == "live-read" and not self._has_live_evidence():
+                if not self._is_conversational_prompt(user_prompt) and not self._has_live_evidence():
                     if not evidence_retry_used:
                         evidence_retry_used = True
                         messages.extend([
@@ -1202,6 +1192,8 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
                 tool = by_name.get(name)
+                if self._call_is_mutation(tool, arguments):
+                    self._mutation_call_seen.set(True)
                 if tool and self.require_sensitive_confirmation and self._is_sensitive(tool, arguments):
                     sensitive.append((name, arguments))
             if sensitive:
@@ -1259,6 +1251,9 @@ class UnifiedMCPAgent:
                         else:
                             result = await self.mcp.call_tool(name, dict(arguments))
                         elapsed_ms = round((time.monotonic() - mcp_started) * 1000)
+                        mutates = self._call_is_mutation(tool, dict(arguments))
+                        if mutates:
+                            self._mutation_call_seen.set(True)
                         self._record_evidence(
                             name,
                             dict(arguments),
@@ -1267,6 +1262,7 @@ class UnifiedMCPAgent:
                             summary=self._result_summary(result),
                             supports_live_claim=name != "hub_search_tools",
                             evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
+                            mutates=mutates,
                         )
                         if self._is_live_log_call(name, dict(arguments)):
                             logs_checked = self._tool_succeeded(result)
@@ -1282,11 +1278,6 @@ class UnifiedMCPAgent:
                                 by_name.update({item.name: item for item in additions})
                                 tools = [self._tool_schema(item) for item in declared]
                                 logger.info("Tool search expanded registry with: %s", ", ".join(item.name for item in additions))
-                        if self._call_is_mutation(tool, dict(arguments)):
-                            if self._tool_succeeded(result):
-                                successful_mutations += 1
-                            else:
-                                failed_mutation = result.text or "MCP reported an error"
                         deterministic_message = present_tool_result(
                             name,
                             result.data,
@@ -1327,10 +1318,9 @@ class UnifiedMCPAgent:
                         elapsed_ms=round((time.monotonic() - mcp_started) * 1000) if "mcp_started" in locals() else 0,
                         summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                         supports_live_claim=name != "hub_search_tools",
+                        mutates=self._call_is_mutation(by_name.get(name), dict(arguments)),
                     )
                     content = json.dumps({"error": str(exc)})
-                    if self._call_is_mutation(by_name.get(name), dict(arguments)):
-                        failed_mutation = str(exc)
                 messages.append({"role": "tool", "tool_name": name, "content": content})
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         return await self._final_answer(messages)
