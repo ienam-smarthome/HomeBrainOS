@@ -1,12 +1,10 @@
 name: Apply tool-call gate refactor
 
 on:
-  push:
+  pull_request:
     branches:
-      - refactor/tool-call-driven-mutation-gate
-    paths:
-      - scripts/apply_tool_call_gate_refactor.py
-      - .github/workflows/apply-tool-call-gate-refactor.yml
+      - main
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
