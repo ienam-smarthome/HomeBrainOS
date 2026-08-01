@@ -29,6 +29,7 @@
 | `confirmation_store.py` | Stores short-lived sensitive actions by session, applies TTL expiry, consumes confirmations once, cancels on replacement questions, isolates queued snapshots, and bounds pending-session capacity. |
 | `evidence_recorder.py` | Owns request-scoped evidence receipt storage, timestamps, nested argument redaction, effect metadata, immutable output snapshots, and successful live-evidence detection. |
 | `grounding_policy.py` | Owns request-local log and live-evidence retry state, exact log-call observation, and deterministic retry/refusal decisions when the model returns no tool calls. |
+| `capability_grounding.py` | Detects assistant-generated capability denials, permits one host-driven discovery recovery, and blocks unsupported limitation claims after known gateways were exposed. |
 | `hub_info_service.py` | Discovers the unique Hub Information Driver device, issues refresh and update-check commands, performs bounded polling, reconciles cached identity with live state, preserves units, and returns authoritative firmware/resource snapshots. |
 | `tool_executor.py` | Dispatches one already-approved local or remote structured call, measures it, normalises success/failure, records its receipt, and prepares bounded model content. |
 | `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, deduplication, and request-local expansion. |
@@ -63,8 +64,9 @@
    deterministic local tools, `hub_search_tools`, and the diagnostic gateway
    when available. Prompt keywords do not select remote schemas. When another
    gateway is needed, the model calls `hub_search_tools`; only known gateways
-   explicitly named by `matches[].gateway` in a recognised structured result
-   envelope are added to the next model round.
+   explicitly named by upstream `results[].gateway` (or the compatibility
+   `matches[].gateway` form) in a recognised structured result envelope are
+   added to the next model round.
 7. `UnifiedMCPAgent` bounds the copied model context and hands it to
    `ChatTransport`. The transport sends either a streaming or non-streaming
    native Ollama request and returns one assembled assistant message without
@@ -120,8 +122,9 @@
   exposed only through structured `hub_search_tools` results, keeping the first
   request bounded and preventing keyword routing from becoming a second intent
   system.
-- `ToolDiscoveryCatalog` accepts expansion only from explicit
-  `matches[].gateway` fields and resolves every name against the server's
+- `ToolDiscoveryCatalog` accepts expansion only from explicit upstream
+  `results[].gateway` or compatibility `matches[].gateway` fields and resolves
+  every name against the server's
   bounded current catalogue. Descriptions, unrelated nested values, unknown
   names, search self-references, and failed search results cannot expose a
   schema. A confirmed action fails closed if its queued tool is no longer
@@ -223,6 +226,23 @@ registry only when a successful `hub_search_tools` result names them. Discovery
 receipts are auditable but do not themselves support a live-state claim. Once a
 gateway is discovered, its actual structured call is still subject to the
 tool-effect and confirmation contracts above.
+
+The discovery parser mirrors the upstream wire contract: `hub_search_tools`
+returns `query`, `resultsCount`, `totalToolsSearched`, and `results[]`; each
+callable hit names its sub-tool in `tool` and its declared category gateway in
+`gateway`. Only that explicit gateway field can expand visibility. Tool names,
+descriptions, `callAs` strings, and arbitrary nested text never can.
+
+Capability limitations are output-grounded as well. If the model proposes an
+answer claiming that HomeBrain cannot perform an operation, the host runs one
+bounded `hub_search_tools` recovery using the unchanged original user request.
+This avoids trusting a model-selected search such as `list apps` for an
+unrelated rule-authoring request. Newly exposed known gateways return to the
+native tool loop and remain subject to effect classification and confirmation.
+If the model repeats the limitation despite those gateways, HomeBrain returns a
+neutral structured-action failure instead of publishing a false capability
+claim. This policy never uses user-prompt keywords to classify read versus
+write behavior.
 
 ## Bounded model context
 

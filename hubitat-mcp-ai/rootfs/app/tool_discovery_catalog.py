@@ -83,16 +83,22 @@ class ToolDiscoveryCatalog:
 
         if not isinstance(data, dict):
             return []
-        candidates: Any = data.get("matches")
-        if candidates is None:
-            for envelope in ("result", "data", "output"):
-                nested = data.get(envelope)
-                if isinstance(nested, dict) and "matches" in nested:
-                    candidates = nested.get("matches")
-                    break
-        if not isinstance(candidates, list):
-            return []
-        return [item for item in candidates if isinstance(item, dict)]
+        containers = [data]
+        containers.extend(
+            nested
+            for envelope in ("result", "data", "output")
+            if isinstance((nested := data.get(envelope)), dict)
+        )
+        for container in containers:
+            # ``results`` is the upstream Hubitat MCP wire contract. ``matches``
+            # remains accepted for compatibility with older/proxied servers.
+            for field in ("results", "matches"):
+                candidates: Any = container.get(field)
+                if isinstance(candidates, list):
+                    return [
+                        item for item in candidates if isinstance(item, dict)
+                    ]
+        return []
 
     @classmethod
     def discovered_tools(
@@ -100,7 +106,7 @@ class ToolDiscoveryCatalog:
         result: MCPToolResult,
         available: dict[str, MCPTool],
     ) -> list[MCPTool]:
-        """Resolve explicit ``matches[].gateway`` names against known tools."""
+        """Resolve explicit search-hit gateway names against known tools."""
 
         if result.is_error:
             return []
