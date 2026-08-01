@@ -39,6 +39,12 @@ class _ProductionGroundingAuthority:
                 conversational=conversational,
             )
 
+    @staticmethod
+    def is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
+        """Preserve the established GroundingPolicy class-level contract."""
+
+        return BaseGroundingPolicy.is_live_log_call(name, arguments)
+
     @property
     def logs_checked(self) -> bool:
         return bool(self._delegate.logs_checked)
