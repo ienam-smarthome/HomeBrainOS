@@ -22,6 +22,7 @@ from device_query_service import DeviceQueryService
 from device_state_summary import device_attributes
 from device_target_resolver import normalized_name
 from evidence_recorder import EvidenceRecorder
+from grounding_policy import GroundingAction, GroundingPolicy
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from request_classification import (
     matches as _matches,
@@ -660,7 +661,7 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
-        return name == "hub_read_diagnostics" and str(arguments.get("tool") or "") == "hub_get_logs"
+        return GroundingPolicy.is_live_log_call(name, arguments)
 
     @staticmethod
     def _initial_tools(tools: list[MCPTool]) -> list[MCPTool]:
@@ -980,50 +981,25 @@ class UnifiedMCPAgent:
             {"role": "user", "content": str(user_prompt).strip()},
         ]
         completed_calls: set[str] = set()
-        logs_requested = _matches(user_prompt, _LOG_TERMS)
-        logs_checked = False
-        log_retry_used = False
-        evidence_retry_used = False
+        grounding = GroundingPolicy(
+            logs_requested=_matches(user_prompt, _LOG_TERMS),
+            conversational=self._is_conversational_prompt(user_prompt),
+        )
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
-                if logs_requested and not logs_checked:
-                    if not log_retry_used:
-                        log_retry_used = True
-                        messages.extend([
-                            assistant,
-                            {
-                                "role": "user",
-                                "content": (
-                                    "Do not answer yet. Fetch the actual logs now by "
-                                    "calling hub_read_diagnostics with "
-                                    "tool='hub_get_logs' and args={'since':'30m','limit':100}, "
-                                    "then summarize only that result."
-                                ),
-                            },
-                        ])
-                        continue
-                    return "I could not retrieve the actual Hubitat logs, so I will not provide an inferred log summary."
-                if (
-                    not self._is_conversational_prompt(user_prompt)
-                    and not self.evidence.has_live_evidence()
-                ):
-                    if not evidence_retry_used:
-                        evidence_retry_used = True
-                        messages.extend([
-                            assistant,
-                            {
-                                "role": "user",
-                                "content": (
-                                    "Do not answer from memory or inference. No successful live evidence "
-                                    "receipt exists yet. Call the most relevant declared Hubitat read tool "
-                                    "now, then answer only from its result. Tool discovery alone is not evidence."
-                                ),
-                            },
-                        ])
-                        continue
-                    return "I could not retrieve verified live Hubitat evidence, so I will not provide an inferred answer."
+                decision = grounding.decide_no_tool_calls(
+                    has_live_evidence=self.evidence.has_live_evidence()
+                )
+                if decision.action is GroundingAction.RETRY:
+                    messages.extend([
+                        assistant,
+                        {"role": "user", "content": str(decision.message)},
+                    ])
+                    continue
+                if decision.action is GroundingAction.REFUSE:
+                    return str(decision.message)
                 return str(assistant.get("content") or "Done.")
             sensitive: list[tuple[str, dict[str, Any]]] = []
             for call in calls:
@@ -1086,8 +1062,11 @@ class UnifiedMCPAgent:
                         self._mutation_call_seen.set(True)
                     content = execution.content
                     result = execution.result
-                    if self._is_live_log_call(name, dict(arguments)):
-                        logs_checked = execution.success
+                    grounding.record_tool_outcome(
+                        name,
+                        dict(arguments),
+                        success=execution.success,
+                    )
                     if result is not None:
                         if name == "hub_search_tools":
                             additions = catalog.expand(result)
