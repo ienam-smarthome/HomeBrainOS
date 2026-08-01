@@ -9,6 +9,10 @@ docs/ARCHITECTURE.md for how this fits into the request-handling pipeline.
 
 from __future__ import annotations
 
+import re
+from enum import Enum
+from typing import Any
+
 from mcp_client import MCPTool
 
 LOCAL_FILTER_TOOL = "homebrain_filter_devices"
@@ -32,6 +36,141 @@ EVIDENCE_KINDS = {
     LOCAL_HUB_INFO_TOOL: "authoritative_hub_info_snapshot",
     LOCAL_WEATHER_TOOL: "authoritative_weather_snapshot",
 }
+
+
+class ToolEffect(str, Enum):
+    """Authoritative effect classification for one structured tool call."""
+
+    READ = "read"
+    ROUTINE_WRITE = "routine_write"
+    SENSITIVE_WRITE = "sensitive_write"
+    DESTRUCTIVE_WRITE = "destructive_write"
+
+    @property
+    def mutates(self) -> bool:
+        return self is not ToolEffect.READ
+
+    @property
+    def requires_confirmation(self) -> bool:
+        return self in {
+            ToolEffect.SENSITIVE_WRITE,
+            ToolEffect.DESTRUCTIVE_WRITE,
+        }
+
+
+_READ_GATEWAYS = {
+    "hub_get_info",
+    "hub_search_tools",
+}
+_DESTRUCTIVE_GATEWAYS = {"hub_manage_destructive_ops"}
+_SENSITIVE_GATEWAYS = {"hub_update_firmware"}
+_ROUTINE_DEVICE_COMMANDS = {
+    "off", "on", "ping", "refresh", "set_color", "set_color_temperature",
+    "set_level", "toggle", "update_check",
+}
+_SENSITIVE_DEVICE_COMMANDS = {
+    "close", "lock", "open", "unlock",
+}
+_DESTRUCTIVE_ACTIONS = {
+    "delete", "factory_reset", "remove", "replace", "reset_database", "swap",
+}
+_READ_ACTION_PREFIXES = (
+    "check_", "find_", "get_", "list_", "read_", "search_", "status_",
+)
+_SENSITIVE_ACTION_PREFIXES = (
+    "create_", "disable_", "enable_", "pause_", "reboot_", "restart_",
+    "resume_", "set_", "shutdown_", "start_", "stop_", "update_",
+)
+
+
+def _normalized_operation(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").casefold()).strip("_")
+
+
+def _structured_operations(arguments: dict[str, Any]) -> list[str]:
+    operations: list[str] = []
+    for key in ("tool", "operation", "action", "command"):
+        value = _normalized_operation(arguments.get(key))
+        if value:
+            operations.append(value.removeprefix("hub_"))
+    nested = arguments.get("args")
+    if isinstance(nested, dict):
+        for key in ("tool", "operation", "action", "command"):
+            value = _normalized_operation(nested.get(key))
+            if value:
+                operations.append(value.removeprefix("hub_"))
+    return operations
+
+
+def _operation_effect(operations: list[str]) -> ToolEffect | None:
+    for operation in operations:
+        tokens = set(operation.split("_"))
+        if tokens & _DESTRUCTIVE_ACTIONS:
+            return ToolEffect.DESTRUCTIVE_WRITE
+    for operation in operations:
+        if operation in _SENSITIVE_DEVICE_COMMANDS:
+            return ToolEffect.SENSITIVE_WRITE
+        if operation in _ROUTINE_DEVICE_COMMANDS:
+            return ToolEffect.ROUTINE_WRITE
+    for operation in operations:
+        if operation.startswith(_SENSITIVE_ACTION_PREFIXES):
+            return ToolEffect.SENSITIVE_WRITE
+    for operation in operations:
+        if operation.startswith(_READ_ACTION_PREFIXES):
+            return ToolEffect.READ
+    return None
+
+
+def classify_tool_effect(
+    tool: MCPTool | None,
+    arguments: dict[str, Any] | None = None,
+) -> ToolEffect:
+    """Classify an actual structured call without inspecting the user prompt.
+
+    Unknown management calls fail closed as sensitive writes. This function is
+    initially consumed in shadow mode; confirmation behaviour remains on the
+    legacy gate until comparison coverage is complete.
+    """
+
+    if tool is None:
+        return ToolEffect.SENSITIVE_WRITE
+    arguments = arguments if isinstance(arguments, dict) else {}
+    annotations = tool.annotations or {}
+    name = _normalized_operation(tool.name)
+
+    if annotations.get("destructiveHint") is True or name in _DESTRUCTIVE_GATEWAYS:
+        return ToolEffect.DESTRUCTIVE_WRITE
+    if name in _SENSITIVE_GATEWAYS:
+        return ToolEffect.SENSITIVE_WRITE
+    if name == LOCAL_CONTROL_TOOL:
+        return ToolEffect.ROUTINE_WRITE
+    if name.startswith("homebrain_"):
+        return ToolEffect.READ
+    if name.startswith("hub_read_") or name in _READ_GATEWAYS:
+        return ToolEffect.READ
+
+    operation_effect = _operation_effect(_structured_operations(arguments))
+    if name.startswith("hub_manage_") and operation_effect is not None:
+        return operation_effect
+
+    explicit_effect = str(annotations.get("effect") or "").strip().casefold()
+    if explicit_effect in ToolEffect._value2member_map_:
+        return ToolEffect(explicit_effect)
+    danger = str(annotations.get("danger") or "").strip().casefold()
+    if danger == "destructive":
+        return ToolEffect.DESTRUCTIVE_WRITE
+    if danger == "sensitive":
+        return ToolEffect.SENSITIVE_WRITE
+    if danger == "routine":
+        return ToolEffect.ROUTINE_WRITE
+    if annotations.get("readOnlyHint") is True or annotations.get("mutates") is False:
+        return ToolEffect.READ
+    if annotations.get("mutates") is True:
+        return ToolEffect.SENSITIVE_WRITE
+    if name.startswith("hub_manage_"):
+        return ToolEffect.SENSITIVE_WRITE
+
+    return operation_effect or ToolEffect.SENSITIVE_WRITE
 
 
 def device_filter_tool() -> MCPTool:
@@ -64,7 +203,7 @@ def device_filter_tool() -> MCPTool:
             "required": ["attribute", "operator"],
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
 
 
@@ -108,7 +247,7 @@ def device_query_tool() -> MCPTool:
             "required": ["attribute", "operation"],
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
 
 
@@ -125,7 +264,7 @@ def weather_snapshot_tool() -> MCPTool:
             "properties": {},
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
 
 
@@ -142,7 +281,7 @@ def active_rooms_tool() -> MCPTool:
             "properties": {},
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
 
 
@@ -159,7 +298,7 @@ def active_lights_tool() -> MCPTool:
             "properties": {},
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
 
 
@@ -176,7 +315,7 @@ def active_switches_tool() -> MCPTool:
             "properties": {},
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
 
 
@@ -194,7 +333,7 @@ def home_snapshot_tool() -> MCPTool:
             "properties": {},
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
 
 
@@ -241,7 +380,13 @@ def control_devices_tool() -> MCPTool:
             ],
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": False, "destructiveHint": False, "mutates": True, "danger": "routine"},
+        annotations={
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "mutates": True,
+            "danger": "routine",
+            "effect": ToolEffect.ROUTINE_WRITE.value,
+        },
     )
 
 
@@ -269,5 +414,5 @@ def hub_info_tool() -> MCPTool:
             "required": ["scope"],
             "additionalProperties": False,
         },
-        annotations={"readOnlyHint": True},
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )

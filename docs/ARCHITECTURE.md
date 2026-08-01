@@ -56,7 +56,11 @@
 8. Routine device controls can execute without a second confirmation. Sensitive
    operations, including firmware installation and higher-risk mutations, are
    stored as `PendingConfirmation` and execute only after a valid confirmation.
-9. `/api/ask` returns the message, route, request class, choices, evidence,
+9. Every actual structured tool call is classified as `read`, `routine_write`,
+   `sensitive_write`, or `destructive_write`. During the shadow phase this
+   effect is attached to evidence and compared with the legacy mutation gate;
+   disagreements are logged but do not change execution or confirmation.
+10. `/api/ask` returns the message, route, request class, choices, evidence,
    optional `automation_items`, model, elapsed time, and add-on version. The
    WebUI renders structured automation rows directly when present.
 
@@ -69,6 +73,9 @@
 - Live claims require authoritative tool evidence.
 - Mutation success is reported only when the corresponding tool result confirms
   it.
+- Tool effects are derived from the declared tool and structured operation
+  arguments, never from keywords in the user's prompt. Unknown management
+  operations fail closed as `sensitive_write`.
 - Automation status precedence is deterministic: broken and disabled signals
   are resolved before paused, and `paused=false` alone never proves active.
 - Unknown or incomplete status data is labelled `unknown` rather than guessed.
@@ -105,4 +112,11 @@
 
 ## Tool-call-driven mutation safety
 
-No text-based intent classification may gate control-versus-read behaviour. Mutation gating is driven by metadata on the actual requested tool and is checked when the tool call is received. Read and diagnostic answers use gathered evidence even when their wording contains control verbs. Live-state claims still require successful evidence with `supports_live_claim=true`.
+No text-based intent classification may gate control-versus-read behaviour.
+Mutation gating is checked when the actual tool call is received. The structured
+tool-effect registry is currently observed in shadow mode while the existing
+tool-call gate remains authoritative; a later release may cut over only after
+the disagreement tests and live telemetry are reviewed. Read and diagnostic
+answers use gathered evidence even when their wording contains control verbs.
+Live-state claims still require successful evidence with
+`supports_live_claim=true`.
