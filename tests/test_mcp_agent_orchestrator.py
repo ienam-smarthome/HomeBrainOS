@@ -18,13 +18,20 @@ class FakeMCP:
         self.calls = []
 
     async def list_tools(self):
-        return [MCPTool("set_switch", "Set switch", {"type": "object"})]
+        return [
+            MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+            MCPTool("set_switch", "Set switch", {"type": "object"}),
+        ]
 
     async def get_cached_devices(self):
         return [{"id": "42", "label": "Couch Lamp", "room": "Lounge"}]
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
+        if name == "hub_search_tools":
+            return MCPToolResult(
+                name, arguments, {}, "", {"matches": [{"gateway": "set_switch"}]}
+            )
         return MCPToolResult(name, arguments, {}, "ok", {"switch": "on"})
 
 
@@ -97,6 +104,12 @@ async def test_ollama_native_multi_round_tool_execution():
     ai = FakeAI([
         {"message": {"role": "assistant", "content": "", "tool_calls": [{
             "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "set switch"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
                 "name": "set_switch",
                 "arguments": {"device_id": "42", "state": "on"},
             }
@@ -111,7 +124,8 @@ async def test_ollama_native_multi_round_tool_execution():
     answer = await agent.process_user_request("Turn on the couch lamp")
 
     assert answer == "The couch lamp is on."
-    assert mcp.calls == [("set_switch", {"device_id": "42", "state": "on"})]
+    assert mcp.calls[-1] == ("set_switch", {"device_id": "42", "state": "on"})
+    assert mcp.calls[0][0] == "hub_search_tools"
     assert ai.requests[0][0] == "https://ollama.com/api/chat"
     assert ai.requests[0][1]["headers"]["Authorization"] == "Bearer test-key"
     messages = ai.requests[1][1]["json"]["messages"]
@@ -184,27 +198,47 @@ async def test_non_device_prompt_omits_device_manifest():
     assert "Device manifest omitted or unavailable." in instruction
 
 
-def test_default_and_diagnostic_tool_sets_are_lean():
+def test_initial_tool_set_is_stable_lean_and_excludes_remote_writes():
     tools = [
-        MCPTool("hub_get_info", "info", {"type": "object"}),
         MCPTool("hub_search_tools", "search", {"type": "object"}),
         MCPTool("hub_read_diagnostics", "diagnostics", {"type": "object"}),
         MCPTool("hub_read_devices", "devices", {"type": "object"}),
         MCPTool("hub_update_firmware", "firmware", {"type": "object"}),
+        *[
+            MCPTool(name, name, {"type": "object"})
+            for name in (
+                "homebrain_filter_devices",
+                "homebrain_query_devices",
+                "homebrain_active_lights",
+                "homebrain_active_rooms",
+                "homebrain_active_switches",
+                "homebrain_home_snapshot",
+                "homebrain_hub_info_snapshot",
+                "homebrain_weather_snapshot",
+                "homebrain_control_devices",
+            )
+        ],
     ]
 
-    default = UnifiedMCPAgent._select_tools("help me inspect the hub", tools)
-    update = UnifiedMCPAgent._select_tools("software update available?", tools)
-    install = UnifiedMCPAgent._select_tools("install the firmware update", tools)
+    selected = UnifiedMCPAgent._initial_tools(tools)
 
-    assert [tool.name for tool in default] == ["hub_get_info", "hub_search_tools"]
-    assert [tool.name for tool in update] == [
-        "hub_get_info", "hub_search_tools", "hub_read_diagnostics",
+    assert [tool.name for tool in selected] == [
+        "hub_search_tools",
+        "hub_read_diagnostics",
+        "homebrain_filter_devices",
+        "homebrain_query_devices",
+        "homebrain_active_lights",
+        "homebrain_active_rooms",
+        "homebrain_active_switches",
+        "homebrain_home_snapshot",
+        "homebrain_hub_info_snapshot",
+        "homebrain_weather_snapshot",
+        "homebrain_control_devices",
     ]
-    assert [tool.name for tool in install] == [
-        "hub_get_info", "hub_search_tools", "hub_read_diagnostics",
-        "hub_update_firmware",
-    ]
+    assert "hub_read_devices" not in [tool.name for tool in selected]
+    assert "hub_update_firmware" not in [tool.name for tool in selected]
+    assert len(selected) == 11
+    assert not hasattr(UnifiedMCPAgent, "_select_tools")
 
 
 def test_read_state_question_is_not_misclassified_as_mutation():
@@ -310,10 +344,25 @@ async def test_successful_tool_call_returns_sanitized_evidence_receipt():
     class ReadMCP(FakeMCP):
         async def list_tools(self):
             return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
                 MCPTool("hub_read_devices", "Read devices", {"type": "object"})
             ]
 
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_search_tools":
+                return MCPToolResult(
+                    name, arguments, {}, "", {"matches": [{"gateway": "hub_read_devices"}]}
+                )
+            return MCPToolResult(name, arguments, {}, "", {"devices": []})
+
     ai = FakeAI([
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "read devices"},
+            }
+        }]}},
         {"message": {"role": "assistant", "content": "", "tool_calls": [{
                 "function": {
                     "name": "hub_read_devices",
@@ -327,13 +376,55 @@ async def test_successful_tool_call_returns_sanitized_evidence_receipt():
     outcome = await agent.process_user_request_result("Get location details")
 
     assert outcome.message == "The hub is healthy."
-    assert outcome.evidence[0]["tool"] == "hub_read_devices"
-    assert outcome.evidence[0]["supports_live_claim"] is True
-    assert outcome.evidence[0]["arguments"]["token"] == "[redacted]"
-    assert outcome.evidence[0]["timestamp"].endswith("+00:00")
+    receipt = next(
+        item for item in outcome.evidence if item["tool"] == "hub_read_devices"
+    )
+    assert receipt["supports_live_claim"] is True
+    assert receipt["arguments"]["token"] == "[redacted]"
+    assert receipt["timestamp"].endswith("+00:00")
+    first_names = {
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    }
+    second_names = {
+        item["function"]["name"]
+        for item in ai.requests[1][1]["json"]["tools"]
+    }
+    assert "hub_read_devices" not in first_names
+    assert "hub_read_devices" in second_names
 
 
-def test_read_queries_exclude_manage_gateways():
+@pytest.mark.asyncio
+async def test_initial_registry_payload_stays_bounded_with_many_remote_tools():
+    class LargeRegistryMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                *[
+                    MCPTool(
+                        f"hub_manage_large_{index}",
+                        "x" * 2000,
+                        {"type": "object", "description": "y" * 2000},
+                    )
+                    for index in range(50)
+                ],
+            ]
+
+    ai = FakeAI([{"message": {"role": "assistant", "content": "Hello."}}])
+    agent = UnifiedMCPAgent(LargeRegistryMCP(), "key", "model", ai_client=ai)
+
+    answer = await agent.process_user_request("hello")
+
+    declared = ai.requests[0][1]["json"]["tools"]
+    names = [item["function"]["name"] for item in declared]
+    assert answer == "Hello."
+    assert len(declared) == 10
+    assert names[0] == "hub_search_tools"
+    assert not any(name.startswith("hub_manage_large_") for name in names)
+    assert len(__import__("json").dumps(declared)) < 12_000
+
+
+def test_initial_registry_excludes_remote_read_and_manage_gateways():
     tools = [
         MCPTool("hub_read_devices", "read devices", {}),
         MCPTool("hub_manage_devices", "manage devices", {}),
@@ -342,15 +433,12 @@ def test_read_queries_exclude_manage_gateways():
         MCPTool("hub_search_tools", "search", {}),
         MCPTool("hub_get_info", "info", {}),
     ]
-    switches = UnifiedMCPAgent._select_tools("Which switches are on?", tools)
-    rooms = UnifiedMCPAgent._select_tools("List my Hubitat rooms", tools)
-    control = UnifiedMCPAgent._select_tools("turn off hallway lights", tools)
-    assert "hub_manage_devices" not in [tool.name for tool in switches]
-    assert [tool.name for tool in rooms] == [
-        "hub_read_rooms", "hub_search_tools",
-    ]
-    assert "hub_search_tools" not in [tool.name for tool in switches]
-    assert "hub_manage_devices" in [tool.name for tool in control]
+    selected = UnifiedMCPAgent._initial_tools(tools)
+    assert [tool.name for tool in selected] == ["hub_search_tools"]
+    assert "hub_read_devices" not in [tool.name for tool in selected]
+    assert "hub_manage_devices" not in [tool.name for tool in selected]
+    assert "hub_read_rooms" not in [tool.name for tool in selected]
+    assert "hub_manage_rooms" not in [tool.name for tool in selected]
 
 
 @pytest.mark.asyncio
@@ -422,7 +510,7 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
     assert outcome.evidence[-1]["supports_live_claim"] is True
     declared = ai.requests[0][1]["json"]["tools"]
     assert [item["function"]["name"] for item in declared] == [
-            "hub_read_devices",
+            "hub_search_tools",
             "homebrain_filter_devices",
             "homebrain_query_devices",
             "homebrain_active_lights",
@@ -431,6 +519,7 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
             "homebrain_home_snapshot",
             "homebrain_hub_info_snapshot",
             "homebrain_weather_snapshot",
+            "homebrain_control_devices",
         ]
 
 
@@ -1045,7 +1134,18 @@ async def test_generic_tv_write_uses_only_high_level_control_and_verifies():
         item["function"]["name"]
         for item in ai.requests[0][1]["json"]["tools"]
     ]
-    assert declared == ["homebrain_control_devices"]
+    assert declared == [
+        "hub_search_tools",
+        "homebrain_filter_devices",
+        "homebrain_query_devices",
+        "homebrain_active_lights",
+        "homebrain_active_rooms",
+        "homebrain_active_switches",
+        "homebrain_home_snapshot",
+        "homebrain_hub_info_snapshot",
+        "homebrain_weather_snapshot",
+        "homebrain_control_devices",
+    ]
     assert [name for name, _ in mcp.calls] == [
         "hub_read_devices",
         "hub_manage_devices",
@@ -1492,20 +1592,25 @@ async def test_low_battery_prompt_matches_dashboard_threshold():
     assert "Exclude every device above 20 percent" in instruction
 
 
-def test_device_health_query_gets_read_and_diagnostic_gateways():
+def test_device_health_gateways_require_structured_discovery():
     tools = [
         MCPTool("hub_read_devices", "devices", {}),
         MCPTool("hub_read_diagnostics", "diagnostics", {}),
         MCPTool("hub_manage_devices", "manage", {}),
         MCPTool("hub_search_tools", "search", {}),
     ]
-    selected = UnifiedMCPAgent._select_tools(
-        "List devices that are offline or stale", tools
-    )
+    selected = UnifiedMCPAgent._initial_tools(tools)
     assert [tool.name for tool in selected] == [
-        "hub_read_devices", "hub_read_diagnostics",
-        "hub_manage_devices",
+        "hub_search_tools", "hub_read_diagnostics",
     ]
+    result = MCPToolResult(
+        "hub_search_tools", {}, {}, "",
+        {"matches": [{"gateway": "hub_manage_devices"}]},
+    )
+    discovered = UnifiedMCPAgent._discovered_tools(
+        result, {tool.name: tool for tool in tools}
+    )
+    assert [tool.name for tool in discovered] == ["hub_manage_devices"]
 
 
 @pytest.mark.asyncio
@@ -1578,6 +1683,27 @@ def test_tool_search_discovers_declared_gateway():
     assert [tool.name for tool in discovered] == ["hub_read_files"]
 
 
+def test_tool_search_does_not_expand_from_description_mentions():
+    tools = {
+        "hub_search_tools": MCPTool("hub_search_tools", "search", {}),
+        "hub_manage_devices": MCPTool("hub_manage_devices", "manage", {}),
+    }
+    result = MCPToolResult(
+        "hub_search_tools",
+        {},
+        {},
+        "",
+        {
+            "matches": [{
+                "gateway": "hub_read_devices",
+                "description": "Related operations may mention hub_manage_devices.",
+            }]
+        },
+    )
+
+    assert UnifiedMCPAgent._discovered_tools(result, tools) == []
+
+
 @pytest.mark.asyncio
 async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
     repeated = {"message": {"role": "assistant", "content": "", "tool_calls": [{
@@ -1587,6 +1713,12 @@ async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
         }
     }]}}
     ai = FakeAI([
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "set switch"},
+            }
+        }]}},
         repeated,
         repeated,
         {"message": {"role": "assistant", "content": "The couch lamp is on."}},
@@ -1600,7 +1732,7 @@ async def test_repeated_tool_call_forces_final_answer_instead_of_round_error():
     answer = await agent.process_user_request("Turn on the couch lamp")
 
     assert answer == "The couch lamp is on."
-    assert len(mcp.calls) == 1
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools", "set_switch"]
     assert ai.requests[-1][1]["json"]["tools"] is None
 
 
@@ -1628,6 +1760,12 @@ async def test_control_request_retries_once_and_executes_tool():
         {"message": {"role": "assistant", "content": "I will do that."}},
         {"message": {"role": "assistant", "content": "", "tool_calls": [{
             "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "set switch"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
                 "name": "set_switch",
                 "arguments": {"device_id": "42", "state": "off"},
             }
@@ -1641,7 +1779,7 @@ async def test_control_request_retries_once_and_executes_tool():
     )
     answer = await agent.process_user_request("turn off the couch lamp")
     assert answer == "The couch lamp is off."
-    assert mcp.calls == [("set_switch", {"device_id": "42", "state": "off"})]
+    assert mcp.calls[-1] == ("set_switch", {"device_id": "42", "state": "off"})
 
 
 @pytest.mark.asyncio
@@ -1650,6 +1788,8 @@ async def test_control_prompt_documents_fast_routine_commands():
     instruction = await agent._system_prompt("turn off the couch lamp")
     assert "ROUTINE DEVICE CONTROL" in instruction
     assert "do not require confirmation" in instruction
+    assert "only when the user explicitly requests a state change" in instruction
+    assert "Never call it for status, history, 'why', or 'which' questions" in instruction
 
 
 @pytest.mark.asyncio
@@ -1691,7 +1831,7 @@ async def test_log_question_refuses_inferred_answer_after_retry():
     assert len(ai.requests) == 2
 
 
-def test_app_request_limits_visible_gateways():
+def test_app_gateways_are_added_only_from_search_results():
     tools = [
         MCPTool("hub_read_devices", "devices", {"type": "object"}),
         MCPTool("hub_read_apps_code", "apps", {"type": "object"}),
@@ -1700,10 +1840,17 @@ def test_app_request_limits_visible_gateways():
         ),
         MCPTool("hub_manage_logs", "logs", {"type": "object"}),
     ]
-    selected = UnifiedMCPAgent._select_tools("pause humidity app", tools)
-    assert [tool.name for tool in selected] == [
-        "hub_read_apps_code",
-        "hub_manage_native_rules_and_apps",
+    selected = UnifiedMCPAgent._initial_tools(tools)
+    assert selected == []
+    result = MCPToolResult(
+        "hub_search_tools", {}, {}, "",
+        {"matches": [{"gateway": "hub_manage_native_rules_and_apps"}]},
+    )
+    discovered = UnifiedMCPAgent._discovered_tools(
+        result, {tool.name: tool for tool in tools}
+    )
+    assert [tool.name for tool in discovered] == [
+        "hub_manage_native_rules_and_apps"
     ]
 
 
