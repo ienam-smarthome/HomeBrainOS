@@ -16,6 +16,7 @@ from agent_prompt_policy import (
     render_device_manifest,
 )
 from chat_transport import ChatTransport
+from confirmation_store import ConfirmationStore, PendingConfirmation
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
 from device_query_service import DeviceQueryService
@@ -53,7 +54,6 @@ from tool_registry import (
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
 
-_CONFIRM_WORDS = {"confirm", "confirmed", "proceed", "yes", "yes proceed", "do it"}
 _SENSITIVE_TERMS = {
     "backup", "delete", "disable", "enable", "factory_reset", "firmware",
     "garage", "lock", "reboot", "restart", "rule", "security", "shutdown", "unlock",
@@ -87,14 +87,6 @@ _INITIAL_TOOL_ORDER = (
     _LOCAL_WEATHER_TOOL,
     _LOCAL_CONTROL_TOOL,
 )
-
-
-@dataclass(slots=True)
-class PendingConfirmation:
-    expires_at: float
-    actions: list[tuple[str, dict[str, Any]]]
-    messages: list[dict[str, Any]]
-    assistant_message: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -140,7 +132,7 @@ class UnifiedMCPAgent:
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
         self.require_sensitive_confirmation = bool(require_sensitive_confirmation)
-        self.confirmation_ttl_seconds = max(10.0, float(confirmation_ttl_seconds))
+        self.confirmations = ConfirmationStore(confirmation_ttl_seconds)
         self.max_tool_result_chars = max(2000, int(max_tool_result_chars))
         self.max_history_messages = max(0, int(max_history_messages))
         self.max_history_chars = max(0, int(max_history_chars))
@@ -152,7 +144,6 @@ class UnifiedMCPAgent:
                 self.max_tool_context_chars // 2,
             ),
         )
-        self._pending: dict[str, PendingConfirmation] = {}
         self._app_manifest: list[dict[str, Any]] = []
         self._app_manifest_at = 0.0
         self._evidence: ContextVar[list[dict[str, Any]] | None] = ContextVar(
@@ -170,6 +161,14 @@ class UnifiedMCPAgent:
     @property
     def configured(self) -> bool:
         return self.transport.configured
+
+    @property
+    def confirmation_ttl_seconds(self) -> float:
+        return self.confirmations.ttl_seconds
+
+    @property
+    def _pending(self) -> dict[str, PendingConfirmation]:
+        return self.confirmations.pending
 
     @property
     def api_key(self) -> str:
@@ -942,17 +941,7 @@ class UnifiedMCPAgent:
         return str(response.get("content") or "The MCP request completed without a written answer.")
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
-        pending = self._pending.get(session_id)
-        if not pending:
-            return None
-        if pending.expires_at <= time.monotonic():
-            self._pending.pop(session_id, None)
-            return None
-        if " ".join(prompt.strip().lower().split()) not in _CONFIRM_WORDS:
-            self._pending.pop(session_id, None)
-            return None
-        self._pending.pop(session_id, None)
-        return pending
+        return self.confirmations.consume(session_id, prompt)
 
     async def _resume_confirmation(self, pending: PendingConfirmation, tools: list[dict[str, Any]]) -> str:
         messages = [*pending.messages, pending.assistant_message]
@@ -1166,14 +1155,14 @@ class UnifiedMCPAgent:
                 ):
                     sensitive.append((name, arguments))
             if sensitive:
-                if session_id == "default":
+                if not str(session_id).strip() or session_id == "default":
                     return "A unique session_id is required before I can queue a sensitive Hubitat action."
                 if len(sensitive) > 12:
                     return "This request proposed more than 12 sensitive actions. Please split it into smaller groups."
-                self._pending[session_id] = PendingConfirmation(
-                    time.monotonic() + self.confirmation_ttl_seconds,
-                    list(sensitive),
-                    list(messages),
+                self.confirmations.queue(
+                    session_id,
+                    sensitive,
+                    messages,
                     assistant,
                 )
                 names = sorted({name for name, _ in sensitive})

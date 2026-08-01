@@ -65,3 +65,6 @@ Do not claim CI or tests passed without actual results.
 - Keep provider HTTP and streaming mechanics in `chat_transport.py`. Transport
   code must not classify requests, execute Hubitat tools, or decide mutation
   confirmation policy.
+- Keep pending confirmation lifecycle in `confirmation_store.py`, but keep tool
+  effect classification, confirmation policy, user-facing prompts, and action
+  execution outside the store.
