@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.283**.
+Current add-on version: **0.10.284**.
 
 ## Architecture
 
@@ -30,6 +30,11 @@ Hub firmware and resource questions use `HubInfoService`, which refreshes the
 Hub Information Driver, polls a bounded number of times, reconciles its cached
 identity with live attributes, and returns one authoritative structured
 snapshot.
+
+Named-device history questions use `DeviceHistoryService`. It resolves one
+device through the shared fuzzy-safe resolver and reads a bounded, optional
+attribute-filtered event window from Hubitat. Reported transitions are treated
+as evidence of what changed, never as proof of who or what caused the change.
 
 ## Setup
 

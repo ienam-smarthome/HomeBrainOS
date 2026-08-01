@@ -48,7 +48,7 @@ async def test_read_phrasing_is_classified_from_actual_tool_activity(prompt, mon
     async def fake_process(*args, **kwargs):
         agent._record_evidence(
             "hub_read_devices",
-            {"tool": "hub_get_device_events"},
+            {"tool": "hub_list_device_events"},
             success=True,
             elapsed_ms=1,
             summary="verified read evidence",

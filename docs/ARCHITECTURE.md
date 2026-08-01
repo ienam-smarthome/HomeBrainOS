@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of twenty-three Python modules under
+- The maintained runtime is a flat set of twenty-four Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -35,6 +35,7 @@
 | `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, deduplication, and request-local expansion. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
 | `device_query_service.py` | Read-side queries over the cached device inventory, including filtering, comparison, aggregation, and room-aware reads. |
+| `device_history_service.py` | Resolves one named device and performs a bounded authoritative `hub_list_device_events` read, normalising newest-first history without inferring causation. |
 | `device_control_service.py` | Write-side device commands such as on, off, toggle, and level changes. |
 | `device_target_resolver.py` | Resolves natural-language room and device references to concrete candidates using normalisation and token scoring. |
 | `rule_authoring_service.py` | Compiles supported daily device schedules into validated atomic `hub_set_rule` calls, using targeted shared device resolution, advertised commands, duplicate checks, confirmation, and verified writes without model-authored Rule Machine JSON. |
@@ -62,12 +63,17 @@
    calls to the normal confirmation pipeline. Unsupported or more advanced Rule
    Machine requests remain in the native discovery loop; the service never
    guesses a target, command, recurrence, or payload field.
-5. Common home-state questions can use local deterministic tools and
+5. Named-device history questions use `DeviceHistoryService` to resolve one
+   device and request a bounded event window from the read-only Hubitat device
+   gateway. Optional attribute filtering is preserved, event rows remain
+   newest-first, and the presenter explicitly separates observed transitions
+   from unsupported causal conclusions.
+6. Common home-state questions can use local deterministic tools and
    `deterministic_tool_presenter.py`, avoiding an additional synthesis round
    where a fixed authoritative answer is sufficient. Firmware and hub-resource
    questions use `HubInfoService` to refresh and poll the Hub Information
    Driver before returning a structured snapshot.
-6. Remaining requests use the native Ollama tool-calling loop.
+7. Remaining requests use the native Ollama tool-calling loop.
    `ToolDiscoveryCatalog` starts every request with the same bounded registry:
    deterministic local tools, `hub_search_tools`, and the diagnostic gateway
    when available. Prompt keywords do not select remote schemas. When another
@@ -75,42 +81,42 @@
    explicitly named by upstream `results[].gateway` (or the compatibility
    `matches[].gateway` form) in a recognised structured result envelope are
    added to the next model round.
-7. `UnifiedMCPAgent` bounds the copied model context and hands it to
+8. `UnifiedMCPAgent` bounds the copied model context and hands it to
    `ChatTransport`. The transport sends either a streaming or non-streaming
    native Ollama request and returns one assembled assistant message without
    knowing about Hubitat tools, evidence, or confirmation policy.
-8. After the orchestrator approves a structured call, `ToolExecutor` dispatches
+9. After the orchestrator approves a structured call, `ToolExecutor` dispatches
    it to the matching deterministic local handler or `HubitatMCPClient`, times
    the call, normalises its success state, and bounds the result before it
    enters model context. The same path is used for resumed confirmed actions.
-9. Every executed result is handed to `EvidenceRecorder`. It sanitises nested
+10. Every executed result is handed to `EvidenceRecorder`. It sanitises nested
    arguments, attaches the structured tool effect and timestamp, and keeps
    receipts isolated to the active async request. The orchestrator still
    decides which results may set `supports_live_claim=True`.
-10. When the model returns no tool calls, `GroundingPolicy` applies the
+11. When the model returns no tool calls, `GroundingPolicy` applies the
     request-local grounding state machine. An explicit log request must have a
     successful `hub_read_diagnostics` / `hub_get_logs` outcome. Other
     non-conversational answers require successful evidence already marked
     `supports_live_claim=True` by the orchestrator. Each unmet requirement gets
     at most one targeted retry; the next empty response is refused rather than
     inferred.
-11. Routine device controls can execute without a second confirmation.
+12. Routine device controls can execute without a second confirmation.
    `ConfirmationPolicy` consumes the actual structured tool effect and validates
    sensitive action groups, including the unique-session requirement and
    12-action ceiling. Approved groups are queued in `ConfirmationStore` and
    execute only after a valid same-session confirmation. Invalid follow-up
    wording consumes and cancels the pending action; expired entries are purged
    without execution.
-12. Every actual structured tool call is classified as `read`, `routine_write`,
+13. Every actual structured tool call is classified as `read`, `routine_write`,
    `sensitive_write`, or `destructive_write`. This effect drives request-class
    reporting and whether the call must enter the confirmation queue, and is
    attached to evidence for auditability.
-13. Prior conversation is limited to the eight newest messages and 12,000
+14. Prior conversation is limited to the eight newest messages and 12,000
     characters. Across multi-round execution, retained tool-result content is
     capped at 48,000 characters; older results are compacted before newer ones.
     The system policy, current request, tool-call structure, and internal
     evidence receipts remain intact.
-14. `/api/ask` returns the message, route, request class, choices, evidence,
+15. `/api/ask` returns the message, route, request class, choices, evidence,
    optional `automation_items`, model, elapsed time, and add-on version. The
    WebUI renders structured automation rows directly when present.
 
@@ -121,6 +127,9 @@
 - Device identity manifests are for name resolution only and are not proof of
   current state.
 - Live claims require authoritative tool evidence.
+- Device-event history proves only that Hubitat reported a transition. It must
+  not be presented as proof that a specific person, rule, or automation caused
+  the transition unless separate authoritative evidence establishes that link.
 - Mutation success is reported only when the corresponding tool result confirms
   it.
 - Tool effects are derived from the declared tool and structured operation
@@ -196,6 +205,10 @@
   tighter context limit.
 - The browser receives the completed `/api/ask` response rather than streamed
   progress and answer deltas.
+- The upstream Hubitat MCP server exposes bounded request/response event
+  history but not real-time event callbacks. HomeBrain can reconstruct recent
+  device history on demand; proactive callback ingestion requires an upstream
+  webhook or subscription contract.
 - Cancellation is coordinated at the request-task level; lower-level Ollama and
   MCP cancellation should continue to be tested explicitly.
 - The repository-level `CHANGELOG.md` and add-on `0.10.x` release notes do not

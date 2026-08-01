@@ -9,6 +9,7 @@ _ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 _HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 _CONTROL_TOOL = "homebrain_control_devices"
 _HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
+_DEVICE_HISTORY_TOOL = "homebrain_device_history"
 
 _OPERATORS = {
     "eq": "equal to", "ne": "not equal to", "lt": "below",
@@ -199,6 +200,51 @@ def _present_control(data: dict[str, Any]) -> str:
     return f"{verb} {_joined(succeeded) or 'the selected devices'}."
 
 
+def _present_device_history(data: dict[str, Any]) -> str:
+    label = str(data.get("label") or data.get("requested") or "the device")
+    if data.get("success") is False:
+        alternatives = [str(item) for item in data.get("alternatives") or [] if str(item)]
+        if alternatives:
+            return (
+                f"I could not resolve **{label}** uniquely. Possible matches: "
+                f"{_joined(alternatives)}."
+            )
+        return _error(data, f"I could not read event history for {label}.")
+
+    try:
+        hours = int(data.get("hoursBack") or 24)
+    except (TypeError, ValueError):
+        hours = 24
+    attribute = str(data.get("attribute") or "").strip()
+    events = [item for item in data.get("events", []) if isinstance(item, dict)]
+    if not events:
+        event_kind = f"{attribute} events" if attribute else "events"
+        return (
+            f"No {event_kind} were reported for **{label}** in the last "
+            f"{hours} {'hour' if hours == 1 else 'hours'}."
+        )
+
+    lines: list[str] = []
+    for event in events:
+        name = str(event.get("name") or "event")
+        value = event.get("value")
+        unit = str(event.get("unit") or "")
+        value_text = "unknown" if value is None else f"{value}{unit}"
+        timestamp = str(event.get("date") or "time not reported")
+        description = str(event.get("description") or "").strip()
+        detail = f"{timestamp} — **{name}: {value_text}**"
+        if description and description.casefold() not in detail.casefold():
+            detail += f" — {description}"
+        lines.append(f"- {detail}")
+    noun = "event" if len(events) == 1 else "events"
+    return (
+        f"Recent history for **{label}** over the last {hours} "
+        f"{'hour' if hours == 1 else 'hours'} ({len(events)} {noun}, newest first):\n\n"
+        + "\n".join(lines)
+        + "\n\nThese events confirm reported changes, but do not by themselves identify what caused them."
+    )
+
+
 def _present_hub_info(data: dict[str, Any]) -> str:
     scope = str(data.get("scope") or "full")
     installed = data.get("installed_firmware")
@@ -238,10 +284,10 @@ def _present_hub_info(data: dict[str, Any]) -> str:
 
 
 def present_tool_result(tool_name: str, data: Any, *, failed: bool = False, fallback_error: str = "") -> str | None:
-    if tool_name not in {_FILTER_TOOL, _ACTIVE_LIGHTS_TOOL, _ACTIVE_ROOMS_TOOL, _ACTIVE_SWITCHES_TOOL, _HOME_SNAPSHOT_TOOL, _CONTROL_TOOL, _HUB_INFO_TOOL}:
+    if tool_name not in {_FILTER_TOOL, _ACTIVE_LIGHTS_TOOL, _ACTIVE_ROOMS_TOOL, _ACTIVE_SWITCHES_TOOL, _HOME_SNAPSHOT_TOOL, _CONTROL_TOOL, _HUB_INFO_TOOL, _DEVICE_HISTORY_TOOL}:
         return None
     payload = data if isinstance(data, dict) else {}
-    if failed and tool_name != _CONTROL_TOOL:
+    if failed and tool_name not in {_CONTROL_TOOL, _DEVICE_HISTORY_TOOL}:
         return _error(payload, fallback_error or "The live Hubitat query failed.")
     presenters = {
         _FILTER_TOOL: _present_filter,
@@ -250,6 +296,7 @@ def present_tool_result(tool_name: str, data: Any, *, failed: bool = False, fall
         _ACTIVE_SWITCHES_TOOL: _present_active_switches,
         _HOME_SNAPSHOT_TOOL: _present_home_snapshot,
         _HUB_INFO_TOOL: _present_hub_info,
+        _DEVICE_HISTORY_TOOL: _present_device_history,
     }
     return presenters.get(tool_name, _present_control)(payload)
 

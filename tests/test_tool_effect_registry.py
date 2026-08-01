@@ -235,7 +235,7 @@ class GatewayMCP:
     [
         (
             gateway("hub_read_devices"),
-            {"tool": "hub_get_device_events", "args": {"command": "off"}},
+            {"tool": "hub_list_device_events", "args": {"attribute": "switch"}},
             ToolEffect.READ,
         ),
         (
