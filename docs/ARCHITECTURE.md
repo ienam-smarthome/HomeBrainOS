@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of twenty-four Python modules under
+- The maintained runtime is a flat set of twenty-five Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -25,6 +25,7 @@
 | `mcp_client.py` | `HubitatMCPClient`, the single JSON-RPC client used for Hubitat MCP access. Defines `MCPError`, `MCPTool`, and `MCPToolResult`. |
 | `mcp_agent_orchestrator.py` | `UnifiedMCPAgent`, the native tool-calling coordinator. It prepares bounded context, supplies resolved facts to focused policies, coordinates approved calls, and produces final answers. |
 | `chat_transport.py` | Owns the Ollama HTTP client, provider configuration, request construction, streaming and non-streaming response assembly, idle-stall detection, and client shutdown. |
+| `model_context_policy.py` | Bounds copied conversation history and cumulative tool-result content before provider calls, compacting older tool results without mutating authoritative request state. |
 | `confirmation_policy.py` | Makes stateless confirmation decisions from structured tool effects and proposed action groups, enforces the action limit and unique-session requirement, and renders deterministic queue or cancellation wording. |
 | `confirmation_store.py` | Stores short-lived sensitive actions by session, applies TTL expiry, consumes confirmations once, cancels on replacement questions, isolates queued snapshots, and bounds pending-session capacity. |
 | `evidence_recorder.py` | Owns request-scoped evidence receipt storage, timestamps, nested argument redaction, effect metadata, immutable output snapshots, and successful live-evidence detection. |
@@ -81,10 +82,12 @@
    explicitly named by upstream `results[].gateway` (or the compatibility
    `matches[].gateway` form) in a recognised structured result envelope are
    added to the next model round.
-8. `UnifiedMCPAgent` bounds the copied model context and hands it to
-   `ChatTransport`. The transport sends either a streaming or non-streaming
-   native Ollama request and returns one assembled assistant message without
-   knowing about Hubitat tools, evidence, or confirmation policy.
+8. `UnifiedMCPAgent` hands copied messages to `ModelContextPolicy`, which
+   applies the recent-history and cumulative tool-result budgets without
+   touching the authoritative transcript. The bounded payload then goes to
+   `ChatTransport`, which sends either a streaming or non-streaming native
+   Ollama request and returns one assembled assistant message without knowing
+   about Hubitat tools, evidence, or confirmation policy.
 9. After the orchestrator approves a structured call, `ToolExecutor` dispatches
    it to the matching deterministic local handler or `HubitatMCPClient`, times
    the call, normalises its success state, and bounds the result before it
@@ -152,6 +155,10 @@
 - Provider transport has no mutation, evidence, routing, or confirmation
   authority. Those policies remain in `UnifiedMCPAgent`; `ChatTransport` only
   sends prepared messages and assembles the provider response.
+- `ModelContextPolicy` owns copied provider-payload budgeting only. It cannot
+  mutate authoritative conversation history, evidence receipts, confirmation
+  state, tool results, or request control flow; the orchestrator retains those
+  sources of truth.
 - `ConfirmationPolicy` owns stateless confirmation eligibility, unique-session
   and group-size validation, and deterministic confirmation/cancellation
   wording. It cannot inspect prompt text, store or consume pending actions,
@@ -195,7 +202,7 @@
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
   evidence-authority decisions, loop control, confirmed-action coordination,
-  context bounding, and final-answer handling. Transport, confirmation
+  and final-answer handling. Transport, model-context budgeting, confirmation
   decisions, pending-state storage, evidence receipt mechanics, grounding retry
   state, Hub Info refresh/reconciliation, approved-call execution, and discovery
   registry state are now separate; the remaining concerns should be extracted
@@ -319,10 +326,11 @@ cannot turn a probe, error, partial write, or unverified result into success.
 
 ## Bounded model context
 
-The browser and backend retain at most eight prior conversation messages, and
-the backend also applies a 12,000-character history budget. Tool results remain
-individually bounded and share a 48,000-character cumulative model-context
-budget. When that budget is exceeded, the oldest tool result is replaced by a
-labelled excerpt before newer results are considered. The original request
-transcript remains unchanged for control flow, confirmation state, evidence,
-and audit output; only the copied Ollama request payload is compacted.
+The browser and backend retain at most eight prior conversation messages.
+`ModelContextPolicy` also applies a 12,000-character history budget. Tool
+results remain individually bounded and share a 48,000-character cumulative
+model-context budget. When that budget is exceeded, the policy replaces the
+oldest tool result with a labelled excerpt before considering newer results.
+The original request transcript remains unchanged for control flow,
+confirmation state, evidence, and audit output; only the copied Ollama request
+payload is compacted.

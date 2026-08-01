@@ -25,6 +25,7 @@ from evidence_recorder import EvidenceRecorder
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
+from model_context_policy import ModelContextPolicy
 from request_classification import (
     matches as _matches,
     requests_mutation as _requests_mutation,
@@ -134,15 +135,19 @@ class UnifiedMCPAgent:
         )
         self.confirmations = ConfirmationStore(confirmation_ttl_seconds)
         self.max_tool_result_chars = max(2000, int(max_tool_result_chars))
-        self.max_history_messages = max(0, int(max_history_messages))
-        self.max_history_chars = max(0, int(max_history_chars))
-        self.max_tool_context_chars = max(4000, int(max_tool_context_chars))
-        self.compacted_tool_result_chars = max(
-            256,
-            min(
-                int(compacted_tool_result_chars),
-                self.max_tool_context_chars // 2,
-            ),
+        self.context_policy = ModelContextPolicy(
+            max_history_messages=max_history_messages,
+            max_history_chars=max_history_chars,
+            max_tool_context_chars=max_tool_context_chars,
+            compacted_tool_result_chars=compacted_tool_result_chars,
+        )
+        # Compatibility views for callers that inspect the established agent
+        # configuration surface. Context behavior lives in ModelContextPolicy.
+        self.max_history_messages = self.context_policy.max_history_messages
+        self.max_history_chars = self.context_policy.max_history_chars
+        self.max_tool_context_chars = self.context_policy.max_tool_context_chars
+        self.compacted_tool_result_chars = (
+            self.context_policy.compacted_tool_result_chars
         )
         self._app_manifest: list[dict[str, Any]] = []
         self._app_manifest_at = 0.0
@@ -481,97 +486,16 @@ class UnifiedMCPAgent:
         return ToolDiscoveryCatalog.tool_schema(tool)
 
     def _history(self, history: Any) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = []
-        for item in list(history or []):
-            if hasattr(item, "model_dump"):
-                item = item.model_dump()
-            if not isinstance(item, dict):
-                continue
-            role = "assistant" if item.get("role") in {"assistant", "model"} else "user"
-            content = item.get("content") or item.get("text")
-            if content:
-                messages.append({"role": role, "content": str(content)})
-        if not self.max_history_messages or not self.max_history_chars:
-            return []
-
-        bounded: list[dict[str, Any]] = []
-        remaining = self.max_history_chars
-        for message in reversed(messages[-self.max_history_messages:]):
-            content = str(message["content"])
-            if remaining <= 0:
-                break
-            if len(content) > remaining:
-                marker = "\n[earlier history truncated]"
-                if remaining <= len(marker):
-                    break
-                keep = max(0, remaining - len(marker))
-                content = content[:keep] + (marker if keep else "")
-            bounded.append({**message, "content": content})
-            remaining -= len(content)
-        return list(reversed(bounded))
+        return self.context_policy.history(history)
 
     @staticmethod
     def _compact_tool_content(content: str, max_chars: int) -> str:
-        if max_chars <= 0:
-            return ""
-        if max_chars < 160:
-            return "[older tool result compacted]"[:max_chars]
-        payload = {
-            "context_compacted": True,
-            "original_chars": len(content),
-            "result_excerpt": "",
-            "instruction": "Use the newer tool results for current detail.",
-        }
-        serialized = json.dumps(payload, ensure_ascii=False)
-        excerpt_chars = max(0, max_chars - len(serialized))
-        payload["result_excerpt"] = content[:excerpt_chars]
-        serialized = json.dumps(payload, ensure_ascii=False)
-        while len(serialized) > max_chars and payload["result_excerpt"]:
-            overflow = len(serialized) - max_chars
-            payload["result_excerpt"] = payload["result_excerpt"][:-overflow]
-            serialized = json.dumps(payload, ensure_ascii=False)
-        return serialized[:max_chars]
+        return ModelContextPolicy.compact_tool_content(content, max_chars)
 
     def _bounded_messages(
         self, messages: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        bounded = [dict(message) for message in messages]
-        tool_indices = [
-            index for index, message in enumerate(bounded)
-            if message.get("role") == "tool" and message.get("content") is not None
-        ]
-        total = sum(len(str(bounded[index]["content"])) for index in tool_indices)
-        original_total = total
-        for index in tool_indices:
-            if total <= self.max_tool_context_chars:
-                break
-            content = str(bounded[index]["content"])
-            excess = total - self.max_tool_context_chars
-            target = max(
-                self.compacted_tool_result_chars,
-                len(content) - excess,
-            )
-            if target >= len(content):
-                continue
-            replacement = self._compact_tool_content(content, target)
-            bounded[index]["content"] = replacement
-            total += len(replacement) - len(content)
-        for index in tool_indices:
-            if total <= self.max_tool_context_chars:
-                break
-            content = str(bounded[index]["content"])
-            excess = total - self.max_tool_context_chars
-            target = max(0, len(content) - excess)
-            replacement = self._compact_tool_content(content, target)
-            bounded[index]["content"] = replacement
-            total += len(replacement) - len(content)
-        if total < original_total:
-            logger.info(
-                "Compacted retained tool context from %d to %d chars",
-                original_total,
-                total,
-            )
-        return bounded
+        return self.context_policy.bounded_messages(messages)
 
     def _result_payload(self, result: MCPToolResult) -> str:
         return self.executor.result_payload(result)
