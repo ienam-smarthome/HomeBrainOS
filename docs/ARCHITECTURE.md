@@ -267,6 +267,21 @@ Rule authoring resolves the target with a label-filtered device lookup and
 targeted command discovery. It must not load the complete device inventory for
 a named target or infer driver commands from a similarly named app.
 
+Confirmation is a structured API state, never a phrase inferred by the browser.
+`AgentOutcome.confirmation_required` is true only while the same session has an
+immutable pending action group, and `confirmation_count` reports its size. The
+WebUI renders the confirmation control only from those fields. A model sentence
+containing “please confirm”, “ready to queue”, or “have queued” without a real
+tool-call group is returned to the model for correction and cannot create a
+button. A bare confirmation with no pending group is rejected before any model
+call.
+
+Named-device resolution uses `homebrain_resolve_device`. It performs at most
+three targeted label filters (space, hyphen, and distinctive numbered-token
+forms), then applies the shared deterministic candidate resolver. This handles
+labels such as `Block Tab-S9-FE` from user wording such as `tab s9` without a
+full device-manifest read.
+
 Confirmed Rule Machine completion is deterministic. HomeBrain requires a
 successful tool result, a returned `appId`/`ruleId`, no partial flag, and no
 failed health verdict before saying a rule was created. It reports each rule ID

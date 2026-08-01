@@ -73,6 +73,54 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
 
 
 @pytest.mark.asyncio
+async def test_outcome_exposes_only_real_pending_confirmation():
+    mcp = FakeMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {"name": "hub_restart", "arguments": {}}
+        }]}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Restart hub", session_id="real")
+
+    assert outcome.confirmation_required is True
+    assert outcome.confirmation_count == 1
+
+
+@pytest.mark.asyncio
+async def test_bare_confirm_without_pending_action_never_reaches_model():
+    ai = FakeAI([])
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("confirm", session_id="empty")
+
+    assert outcome.confirmation_required is False
+    assert "No Hubitat action is pending" in outcome.message
+    assert "Nothing was executed" in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_model_confirmation_words_without_tool_call_are_not_queued():
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "I am ready to queue it. Please confirm."}},
+        {"message": {"role": "assistant", "content": "I have queued the action."}},
+        {"message": {"role": "assistant", "content": "Please confirm."}},
+        {"message": {"role": "assistant", "content": "Ready to queue."}},
+        {"message": {"role": "assistant", "content": "Please confirm."}},
+        {"message": {"role": "assistant", "content": "I have queued it."}},
+    ])
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result("Create a rule", session_id="fake")
+
+    assert outcome.confirmation_required is False
+    assert "No Hubitat action was queued or executed" in outcome.message
+    assert "fake" not in agent.confirmations.pending
+
+
+@pytest.mark.asyncio
 async def test_confirmation_fails_closed_when_queued_tool_disappears():
     class ChangingMCP(FakeMCP):
         def __init__(self):

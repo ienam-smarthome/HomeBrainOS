@@ -93,6 +93,8 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "Update hub firmware" in response.text
     assert "suggestedAction==='firmware-update'" in response.text
     assert "JSON.stringify({query:text,history,session_id:sessionId})" in response.text
+    assert "data.confirmation_required===true" in response.text
+    assert "/please confirm/i.test(rawMessage)" not in response.text
     assert "hmcp_history_" in response.text
     assert "conversationHistory.slice(-8)" in response.text
     assert "ask.disabled=true" not in response.text

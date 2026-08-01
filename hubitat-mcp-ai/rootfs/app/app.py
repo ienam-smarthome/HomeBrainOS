@@ -423,6 +423,8 @@ async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
         "request_class": outcome.request_class,
         "message": outcome.message,
         "choices": getattr(outcome, "choices", []),
+        "confirmation_required": getattr(outcome, "confirmation_required", False),
+        "confirmation_count": getattr(outcome, "confirmation_count", 0),
         "automation_items": getattr(outcome, "automation_items", []),
         "evidence": outcome.evidence,
         "model": agent.model_name,

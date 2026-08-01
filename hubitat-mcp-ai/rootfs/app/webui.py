@@ -97,6 +97,10 @@ status();setInterval(status,30000);
         .replace("__SAFE_TITLE__", safe_title)
         .replace("__TITLE__", title_json)
         .replace("__VERSION__", version_json)
+        .replace(
+            "if(/please confirm/i.test(rawMessage))",
+            "if(data.confirmation_required===true)",
+        )
     )
 
 

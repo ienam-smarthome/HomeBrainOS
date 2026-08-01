@@ -13,6 +13,7 @@ from device_state_summary import (
     active_room_summary,
     device_attributes,
 )
+from device_target_resolver import resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
 
 
@@ -20,6 +21,7 @@ logger = logging.getLogger("HomeBrainOS.DeviceQuery")
 
 DEVICE_FILTER_TOOL = "homebrain_filter_devices"
 DEVICE_QUERY_TOOL = "homebrain_query_devices"
+DEVICE_RESOLVE_TOOL = "homebrain_resolve_device"
 ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
@@ -329,6 +331,91 @@ class DeviceQueryService:
         }
         return MCPToolResult(
             DEVICE_FILTER_TOOL, arguments, {}, json.dumps(data), data
+        )
+
+    @staticmethod
+    def _targeted_name_variants(value: str) -> list[str]:
+        tokens = re.findall(r"[a-z0-9]+", value.casefold())
+        variants: list[str] = []
+        for candidate in (
+            " ".join(tokens),
+            "-".join(tokens),
+            next((token for token in tokens if any(char.isdigit() for char in token)), ""),
+        ):
+            if candidate and candidate not in variants:
+                variants.append(candidate)
+        return variants[:3]
+
+    async def resolve_device(self, arguments: dict[str, Any]) -> MCPToolResult:
+        requested = str(arguments.get("name") or "").strip()
+        if not requested:
+            return MCPToolResult(
+                DEVICE_RESOLVE_TOOL,
+                arguments,
+                {},
+                "Device name required",
+                {"error": "name is required"},
+                is_error=True,
+            )
+        variants = self._targeted_name_variants(requested)
+        candidates: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        attempts: list[dict[str, Any]] = []
+        for variant in variants:
+            source_arguments = {
+                "tool": "hub_list_devices",
+                "args": {"filter": variant},
+            }
+            started = time.monotonic()
+            source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+            found = [
+                item
+                for item in (HubitatMCPClient._find_device_list(source.data) or [])
+                if isinstance(item, dict)
+            ]
+            self._record_evidence(
+                "hub_read_devices",
+                source_arguments,
+                success=self._tool_succeeded(source),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{len(found)} targeted device records for {variant!r}",
+                evidence_kind="targeted_device_lookup",
+            )
+            attempts.append({"filter": variant, "count": len(found)})
+            if not self._tool_succeeded(source):
+                continue
+            for item in found:
+                identity = str(item.get("id") or item.get("deviceId") or "")
+                dedupe_key = identity or str(item.get("label") or item.get("name") or "")
+                if dedupe_key and dedupe_key not in seen_ids:
+                    seen_ids.add(dedupe_key)
+                    candidates.append(item)
+            if candidates:
+                break
+        resolution = resolve_device_candidate(requested, candidates)
+        target = resolution.target
+        data = {
+            "requested": requested,
+            "matched": target is not None,
+            "target": target,
+            "deviceId": (
+                target.get("id") or target.get("deviceId")
+                if isinstance(target, dict)
+                else None
+            ),
+            "label": (
+                target.get("label") or target.get("name")
+                if isinstance(target, dict)
+                else None
+            ),
+            "confidence": resolution.confidence,
+            "reason": resolution.reason,
+            "alternatives": list(resolution.alternatives),
+            "attempts": attempts,
+            "complete": True,
+        }
+        return MCPToolResult(
+            DEVICE_RESOLVE_TOOL, arguments, {}, json.dumps(data), data
         )
 
     async def query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:

@@ -15,7 +15,7 @@ from agent_prompt_policy import (
 )
 from chat_transport import ChatTransport
 from confirmation_policy import ConfirmationAction, ConfirmationPolicy
-from confirmation_store import ConfirmationStore, PendingConfirmation
+from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirmation
 from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
@@ -41,6 +41,7 @@ from tool_registry import (
     LOCAL_HOME_SNAPSHOT_TOOL as _LOCAL_HOME_SNAPSHOT_TOOL,
     LOCAL_HUB_INFO_TOOL as _LOCAL_HUB_INFO_TOOL,
     LOCAL_QUERY_TOOL as _LOCAL_QUERY_TOOL,
+    LOCAL_RESOLVE_TOOL as _LOCAL_RESOLVE_TOOL,
     LOCAL_WEATHER_TOOL as _LOCAL_WEATHER_TOOL,
     active_lights_tool as _active_lights_tool,
     active_rooms_tool as _active_rooms_tool,
@@ -48,6 +49,7 @@ from tool_registry import (
     control_devices_tool as _control_devices_tool,
     device_filter_tool as _device_filter_tool,
     device_query_tool as _device_query_tool,
+    device_resolver_tool as _device_resolver_tool,
     home_snapshot_tool as _home_snapshot_tool,
     hub_info_tool as _hub_info_tool,
     weather_snapshot_tool as _weather_snapshot_tool,
@@ -84,6 +86,8 @@ class AgentOutcome:
     request_class: str
     evidence: list[dict[str, Any]]
     choices: list[str]
+    confirmation_required: bool = False
+    confirmation_count: int = 0
 
 
 class UnifiedMCPAgent:
@@ -145,6 +149,7 @@ class UnifiedMCPAgent:
             local_handlers={
                 _LOCAL_FILTER_TOOL: self._filter_devices,
                 _LOCAL_QUERY_TOOL: self._query_devices,
+                _LOCAL_RESOLVE_TOOL: self._resolve_device,
                 _LOCAL_WEATHER_TOOL: self._weather_snapshot,
                 _LOCAL_ACTIVE_LIGHTS_TOOL: self._active_lights,
                 _LOCAL_ACTIVE_ROOMS_TOOL: self._active_rooms,
@@ -339,6 +344,10 @@ class UnifiedMCPAgent:
     async def _query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.query_devices(arguments)
+
+    async def _resolve_device(self, arguments: dict[str, Any]) -> MCPToolResult:
+        service = DeviceQueryService(self.mcp, self.evidence.record)
+        return await service.resolve_device(arguments)
 
     async def _weather_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
@@ -734,11 +743,14 @@ class UnifiedMCPAgent:
                 request_class = "conversational"
             else:
                 request_class = "live-read"
+            pending = self.confirmations.pending.get(str(session_id))
             return AgentOutcome(
                 message=message,
                 request_class=request_class,
                 evidence=evidence,
                 choices=list(self._choices.get() or []),
+                confirmation_required=pending is not None,
+                confirmation_count=len(pending.actions) if pending is not None else 0,
             )
         finally:
             self._request_class.reset(class_token)
@@ -772,6 +784,7 @@ class UnifiedMCPAgent:
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
         local_filter = _device_filter_tool()
         local_query = _device_query_tool()
+        local_resolver = _device_resolver_tool()
         local_active_lights = _active_lights_tool()
         local_active_rooms = _active_rooms_tool()
         local_active_switches = _active_switches_tool()
@@ -780,7 +793,7 @@ class UnifiedMCPAgent:
         local_hub_info = _hub_info_tool()
         local_weather = _weather_snapshot_tool()
         safe_read_tools = [
-            local_filter, local_query, local_active_lights, local_active_rooms,
+            local_filter, local_query, local_resolver, local_active_lights, local_active_rooms,
             local_active_switches, local_home_snapshot, local_hub_info, local_weather,
         ]
         all_tools.extend([*safe_read_tools, local_control])
@@ -793,6 +806,13 @@ class UnifiedMCPAgent:
                 return self.confirmation_policy.unavailable_tools_message(missing)
         if pending:
             return await self._resume_confirmation(pending, catalog)
+        normalized_prompt = " ".join(str(user_prompt).strip().casefold().split())
+        if normalized_prompt in CONFIRM_WORDS:
+            return (
+                "No Hubitat action is pending confirmation in this browser session. "
+                "Nothing was executed. Submit the original request again and only "
+                "confirm when the response carries a verified pending action."
+            )
         capability_discovery = ""
         capability_additions: list[MCPTool] = []
         search_tool = catalog.declared_tool(SEARCH_TOOL)
@@ -864,11 +884,57 @@ class UnifiedMCPAgent:
         )
         capability_grounding = CapabilityGroundingPolicy()
         post_filter_discovery_used = False
+        ungrounded_confirmation_claim_seen = False
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
                 answer = str(assistant.get("content") or "")
+                resolver_used = any(
+                    json.loads(signature)[0] == _LOCAL_RESOLVE_TOOL
+                    for signature in completed_calls
+                )
+                if (
+                    re.search(
+                        r"\b(?:could not|couldn't|cannot|can't|still cannot|still can't)\s+find\b",
+                        answer,
+                        re.I,
+                    )
+                    and not resolver_used
+                ):
+                    messages.extend([
+                        assistant,
+                        {
+                            "role": "user",
+                            "content": (
+                                "HOST TARGET-RESOLUTION REQUIREMENT: Do not conclude "
+                                "that the named device is absent yet. Call "
+                                "homebrain_resolve_device with the user's device "
+                                "wording; it performs bounded punctuation-tolerant "
+                                "label searches without loading the full inventory."
+                            ),
+                        },
+                    ])
+                    continue
+                if re.search(
+                    r"\b(?:please confirm|ready to queue|have queued)\b",
+                    answer,
+                    re.I,
+                ):
+                    ungrounded_confirmation_claim_seen = True
+                    messages.extend([
+                        assistant,
+                        {
+                            "role": "user",
+                            "content": (
+                                "HOST CONFIRMATION ERROR: No structured sensitive "
+                                "tool call was submitted, so no action is queued and "
+                                "you must not ask for confirmation or claim it was "
+                                "queued. Submit the complete tool call group now."
+                            ),
+                        },
+                    ])
+                    continue
                 capability_decision = capability_grounding.decide(answer)
                 if capability_decision.action is CapabilityAction.DISCOVER:
                     if capability_discovery:
@@ -1072,6 +1138,12 @@ class UnifiedMCPAgent:
                             ),
                         })
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
+        if ungrounded_confirmation_claim_seen:
+            return (
+                "No Hubitat action was queued or executed because the model did not "
+                "submit a complete structured action group. Please retry the original "
+                "request."
+            )
         return await self._final_answer(messages)
 
 
