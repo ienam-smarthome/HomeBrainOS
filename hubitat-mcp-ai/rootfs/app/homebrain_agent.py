@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Any
 
 import mcp_agent_orchestrator as orchestrator
@@ -8,12 +11,20 @@ from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import GroundingPolicy as BaseGroundingPolicy
 from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
+from request_metrics import RequestMetrics
 
 
 _CURRENT_EVIDENCE_RECORDER: ContextVar[Any | None] = ContextVar(
     "homebrain_production_evidence_recorder",
     default=None,
 )
+
+
+@dataclass(slots=True)
+class ObservedAgentOutcome(AgentOutcome):
+    """Agent result with a privacy-safe, request-local metrics snapshot."""
+
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 class _ProductionGroundingAuthority:
@@ -76,14 +87,67 @@ orchestrator.GroundingPolicy = _ProductionGroundingAuthority
 
 
 class UnifiedMCPAgent(BaseUnifiedMCPAgent):
-    """Production agent with final synthesis and evidence authority delegated."""
+    """Production agent with delegated synthesis, grounding, and observability."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.final_answers = FinalAnswerCoordinator(self._chat)
+        self.request_metrics = RequestMetrics()
+
+    async def _chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        started = time.monotonic()
+        self.request_metrics.increment("model_rounds")
+        try:
+            return await super()._chat(messages, tools)
+        finally:
+            self.request_metrics.observe_ms(
+                "provider",
+                (time.monotonic() - started) * 1000,
+            )
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         return await self.final_answers.answer(messages)
+
+    async def process_user_request_result(
+        self,
+        user_prompt: str,
+        conversation_history: Any = None,
+        *,
+        session_id: str = "default",
+    ) -> ObservedAgentOutcome:
+        metrics_token = self.request_metrics.begin()
+        try:
+            outcome = await super().process_user_request_result(
+                user_prompt,
+                conversation_history,
+                session_id=session_id,
+            )
+            self.request_metrics.increment("tool_calls", len(outcome.evidence))
+            if outcome.confirmation_required:
+                self.request_metrics.increment("confirmation_queued")
+            metrics = self.request_metrics.finish("success")
+            return ObservedAgentOutcome(
+                message=outcome.message,
+                request_class=outcome.request_class,
+                evidence=outcome.evidence,
+                choices=outcome.choices,
+                confirmation_required=outcome.confirmation_required,
+                confirmation_count=outcome.confirmation_count,
+                metrics=metrics,
+            )
+        except asyncio.CancelledError:
+            self.request_metrics.increment("request_cancellations")
+            self.request_metrics.finish("cancelled")
+            raise
+        except Exception:
+            self.request_metrics.finish("failed")
+            raise
+        finally:
+            self.request_metrics.reset(metrics_token)
 
     async def _process_user_request(
         self,
@@ -103,4 +167,4 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             _CURRENT_EVIDENCE_RECORDER.reset(token)
 
 
-__all__ = ["AgentOutcome", "UnifiedMCPAgent"]
+__all__ = ["AgentOutcome", "ObservedAgentOutcome", "UnifiedMCPAgent"]

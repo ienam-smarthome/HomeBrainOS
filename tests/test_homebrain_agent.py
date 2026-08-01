@@ -12,9 +12,11 @@ import homebrain_agent  # noqa: E402
 from evidence_recorder import EvidenceRecorder  # noqa: E402
 from final_answer_coordinator import FinalAnswerCoordinator  # noqa: E402
 from grounding_policy import GroundingPolicy  # noqa: E402
-from homebrain_agent import UnifiedMCPAgent  # noqa: E402
+from homebrain_agent import ObservedAgentOutcome, UnifiedMCPAgent  # noqa: E402
 from live_evidence_authority import LiveEvidenceAuthority  # noqa: E402
+from mcp_agent_orchestrator import AgentOutcome  # noqa: E402
 from mcp_agent_orchestrator import UnifiedMCPAgent as BaseUnifiedMCPAgent  # noqa: E402
+from request_metrics import RequestMetrics  # noqa: E402
 
 
 class FakeMCP:
@@ -57,6 +59,7 @@ async def test_production_agent_delegates_final_answer_to_coordinator() -> None:
 
     assert isinstance(agent, BaseUnifiedMCPAgent)
     assert isinstance(agent.final_answers, FinalAnswerCoordinator)
+    assert isinstance(agent.request_metrics, RequestMetrics)
     assert answer == "Final grounded answer."
     payload = ai.requests[0]["json"]
     # ChatTransport serialises an empty declared-tool list as JSON null. This is
@@ -64,6 +67,52 @@ async def test_production_agent_delegates_final_answer_to_coordinator() -> None:
     assert payload["tools"] is None
     assert payload["messages"][-1]["role"] == "user"
     assert "using only the MCP results already provided" in payload["messages"][-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_chat_records_model_round_and_provider_timing() -> None:
+    ai = FakeAI("Measured answer.")
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+    token = agent.request_metrics.begin()
+    try:
+        response = await agent._chat([{"role": "user", "content": "hello"}], [])
+        metrics = agent.request_metrics.finish("success")
+    finally:
+        agent.request_metrics.reset(token)
+
+    assert response["content"] == "Measured answer."
+    assert metrics["counters"]["model_rounds"] == 1
+    assert metrics["timings_ms"]["provider"] >= 0
+    assert metrics["timings_ms"]["total"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_process_result_returns_privacy_safe_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_base_result(*_args: object, **_kwargs: object) -> AgentOutcome:
+        return AgentOutcome(
+            message="Done",
+            request_class="live-read",
+            evidence=[{"tool": "hub_read_devices"}],
+            choices=[],
+            confirmation_required=True,
+            confirmation_count=1,
+        )
+
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent,
+        "process_user_request_result",
+        fake_base_result,
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result("private device wording")
+
+    assert isinstance(outcome, ObservedAgentOutcome)
+    assert outcome.message == "Done"
+    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["counters"]["tool_calls"] == 1
+    assert outcome.metrics["counters"]["confirmation_queued"] == 1
+    assert "private device wording" not in repr(outcome.metrics)
 
 
 def test_production_context_selects_live_evidence_authority() -> None:
