@@ -18,6 +18,7 @@ from mcp_client import MCPTool
 LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 LOCAL_QUERY_TOOL = "homebrain_query_devices"
 LOCAL_RESOLVE_TOOL = "homebrain_resolve_device"
+LOCAL_DEVICE_HISTORY_TOOL = "homebrain_device_history"
 LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
@@ -30,6 +31,7 @@ EVIDENCE_KINDS = {
     LOCAL_FILTER_TOOL: "deterministic_attribute_filter",
     LOCAL_QUERY_TOOL: "deterministic_attribute_query",
     LOCAL_RESOLVE_TOOL: "deterministic_targeted_device_resolution",
+    LOCAL_DEVICE_HISTORY_TOOL: "deterministic_device_event_history",
     LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
     LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
     LOCAL_ACTIVE_SWITCHES_TOOL: "deterministic_active_switches",
@@ -488,6 +490,50 @@ def device_resolver_tool() -> MCPTool:
                     "type": "string",
                     "minLength": 1,
                     "description": "Device wording supplied by the user, such as tab s9 fe.",
+                },
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
+    )
+
+
+def device_history_tool() -> MCPTool:
+    return MCPTool(
+        LOCAL_DEVICE_HISTORY_TOOL,
+        (
+            "Read authoritative recent event history for one named Hubitat "
+            "device. The host resolves the name with targeted fuzzy-safe "
+            "lookups and calls hub_list_device_events with bounded arguments. "
+            "Use this for when, what changed, last on/off, repeated changes, "
+            "or why questions about a device. Events prove reported state "
+            "transitions but do not by themselves prove what caused them."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Natural device name supplied by the user.",
+                },
+                "hours_back": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 168,
+                    "default": 24,
+                    "description": "Relative history window in hours, up to seven days.",
+                },
+                "attribute": {
+                    "type": "string",
+                    "description": "Optional event attribute filter such as switch, motion, contact, or temperature.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 20,
                 },
             },
             "required": ["name"],

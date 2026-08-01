@@ -19,6 +19,7 @@ from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirma
 from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
+from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
 from grounding_policy import GroundingAction, GroundingPolicy
@@ -38,6 +39,7 @@ from tool_registry import (
     LOCAL_ACTIVE_ROOMS_TOOL as _LOCAL_ACTIVE_ROOMS_TOOL,
     LOCAL_ACTIVE_SWITCHES_TOOL as _LOCAL_ACTIVE_SWITCHES_TOOL,
     LOCAL_CONTROL_TOOL as _LOCAL_CONTROL_TOOL,
+    LOCAL_DEVICE_HISTORY_TOOL as _LOCAL_DEVICE_HISTORY_TOOL,
     LOCAL_FILTER_TOOL as _LOCAL_FILTER_TOOL,
     LOCAL_HOME_SNAPSHOT_TOOL as _LOCAL_HOME_SNAPSHOT_TOOL,
     LOCAL_HUB_INFO_TOOL as _LOCAL_HUB_INFO_TOOL,
@@ -48,6 +50,7 @@ from tool_registry import (
     active_rooms_tool as _active_rooms_tool,
     active_switches_tool as _active_switches_tool,
     control_devices_tool as _control_devices_tool,
+    device_history_tool as _device_history_tool,
     device_filter_tool as _device_filter_tool,
     device_query_tool as _device_query_tool,
     device_resolver_tool as _device_resolver_tool,
@@ -148,6 +151,10 @@ class UnifiedMCPAgent:
             self.mcp,
             self.evidence.record,
         )
+        self.device_history = DeviceHistoryService(
+            self.mcp,
+            self.evidence.record,
+        )
         self.executor = ToolExecutor(
             self.mcp,
             self.evidence,
@@ -155,6 +162,7 @@ class UnifiedMCPAgent:
                 _LOCAL_FILTER_TOOL: self._filter_devices,
                 _LOCAL_QUERY_TOOL: self._query_devices,
                 _LOCAL_RESOLVE_TOOL: self._resolve_device,
+                _LOCAL_DEVICE_HISTORY_TOOL: self.device_history.history,
                 _LOCAL_WEATHER_TOOL: self._weather_snapshot,
                 _LOCAL_ACTIVE_LIGHTS_TOOL: self._active_lights,
                 _LOCAL_ACTIVE_ROOMS_TOOL: self._active_rooms,
@@ -790,6 +798,7 @@ class UnifiedMCPAgent:
         local_filter = _device_filter_tool()
         local_query = _device_query_tool()
         local_resolver = _device_resolver_tool()
+        local_device_history = _device_history_tool()
         local_active_lights = _active_lights_tool()
         local_active_rooms = _active_rooms_tool()
         local_active_switches = _active_switches_tool()
@@ -798,7 +807,8 @@ class UnifiedMCPAgent:
         local_hub_info = _hub_info_tool()
         local_weather = _weather_snapshot_tool()
         safe_read_tools = [
-            local_filter, local_query, local_resolver, local_active_lights, local_active_rooms,
+            local_filter, local_query, local_resolver, local_device_history,
+            local_active_lights, local_active_rooms,
             local_active_switches, local_home_snapshot, local_hub_info, local_weather,
         ]
         all_tools.extend([*safe_read_tools, local_control])
