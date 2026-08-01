@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of eleven Python modules under
+- The maintained runtime is a flat set of thirteen Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -31,6 +31,8 @@
 | `device_state_summary.py` | Shared pure helpers for room names, light detection, active lights, active non-light switches, and active-room summaries. |
 | `deterministic_tool_presenter.py` | Formats selected tool results into fixed, non-AI-generated answers for common home-state questions. |
 | `agent_prompt_policy.py` | Builds the system prompt and renders the optional device and app identity manifests. |
+| `request_classification.py` | Provides non-authoritative prompt helpers for presentation and manifest decisions; these helpers never gate read-versus-write behaviour or tool visibility. |
+| `tool_registry.py` | Defines local tool schemas and classifies actual structured calls as read, routine, sensitive, or destructive. |
 | `webui.py` | Renders the Home Assistant ingress UI, status badges, structured automation rows, controls, speech, clipboard actions, and technical details. |
 
 ## Request flow
@@ -46,10 +48,12 @@
 5. Common home-state questions can use local deterministic tools and
    `deterministic_tool_presenter.py`, avoiding an additional synthesis round
    where a fixed authoritative answer is sufficient.
-6. Remaining requests use the native Ollama tool-calling loop. The agent builds
-   a query-scoped system prompt, exposes an approved tool set, executes selected
-   tools through the shared `HubitatMCPClient`, and records an evidence receipt
-   for every call.
+6. Remaining requests use the native Ollama tool-calling loop. Every request
+   starts with the same bounded registry: deterministic local tools,
+   `hub_search_tools`, and the diagnostic gateway when available. Prompt
+   keywords do not select remote schemas. When another gateway is needed, the
+   model calls `hub_search_tools`; only gateways named by that structured result
+   are added to the next model round.
 7. A live-read answer requires successful evidence marked
    `supports_live_claim=True`. If evidence cannot be obtained after the allowed
    retry, the agent refuses rather than making an ungrounded live claim.
@@ -76,6 +80,10 @@
 - Tool effects are derived from the declared tool and structured operation
   arguments, never from keywords in the user's prompt. Unknown management
   operations fail closed as `sensitive_write`.
+- Initial tool visibility is stable and prompt-independent. Remote gateways are
+  exposed only through structured `hub_search_tools` results, keeping the first
+  request bounded and preventing keyword routing from becoming a second intent
+  system.
 - Automation status precedence is deterministic: broken and disabled signals
   are resolved before paused, and `paused=false` alone never proves active.
 - Unknown or incomplete status data is labelled `unknown` rather than guessed.
@@ -85,9 +93,9 @@
 ## Known gaps
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
-  classification, tool selection, confirmation state, evidence policy, tool
-  execution, retries, and final-answer handling. These concerns should be
-  extracted incrementally with regression coverage.
+  dynamic discovery, confirmation state, evidence policy, tool execution,
+  retries, and final-answer handling. These concerns should be extracted
+  incrementally with regression coverage.
 - Conversation and tool-call messages can grow across long multi-round sessions;
   a bounded history policy is still needed.
 - The browser receives the completed `/api/ask` response rather than streamed
@@ -120,3 +128,13 @@ read and routine calls are not over-classified; unknown management operations
 fail closed as sensitive writes. Read and diagnostic answers use gathered
 evidence even when their wording contains control verbs. Live-state claims still
 require successful evidence with `supports_live_claim=true`.
+
+## Lean tool discovery
+
+No raw prompt keyword or regex matcher may decide which remote MCP schemas the
+model can see. The first tool registry is a small, fixed set of deterministic
+local tools plus discovery and diagnostics. Additional remote gateways enter the
+registry only when a successful `hub_search_tools` result names them. Discovery
+receipts are auditable but do not themselves support a live-state claim. Once a
+gateway is discovered, its actual structured call is still subject to the
+tool-effect and confirmation contracts above.

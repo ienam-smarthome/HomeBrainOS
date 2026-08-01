@@ -28,13 +28,24 @@ class GatewayMCP:
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     async def list_tools(self):
-        return [gateway("hub_manage_devices", destructiveHint=True)]
+        return [
+            gateway("hub_search_tools", readOnlyHint=True),
+            gateway("hub_manage_devices", destructiveHint=True),
+        ]
 
     async def get_cached_devices(self):
         return []
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
+        if name == "hub_search_tools":
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {"matches": [{"gateway": "hub_manage_devices"}]},
+            )
         return MCPToolResult(
             name,
             arguments,
@@ -135,6 +146,12 @@ async def test_manage_read_executes_without_confirmation_or_write_classification
     arguments = {"tool": "hub_list_devices", "args": {}}
     ai = FakeAI([
         {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "manage devices"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": [{
             "function": {"name": "hub_manage_devices", "arguments": arguments}
         }]}},
         {"message": {"role": "assistant", "content": "Inventory checked."}},
@@ -147,9 +164,12 @@ async def test_manage_read_executes_without_confirmation_or_write_classification
 
     assert outcome.message == "Inventory checked."
     assert outcome.request_class == "live-read"
-    assert mcp.calls == [("hub_manage_devices", arguments)]
-    assert outcome.evidence[0]["effect"] == ToolEffect.READ.value
-    assert outcome.evidence[0]["mutates"] is False
+    assert mcp.calls[-1] == ("hub_manage_devices", arguments)
+    receipt = next(
+        item for item in outcome.evidence if item["tool"] == "hub_manage_devices"
+    )
+    assert receipt["effect"] == ToolEffect.READ.value
+    assert receipt["mutates"] is False
 
 
 @pytest.mark.asyncio
@@ -160,6 +180,12 @@ async def test_routine_manage_write_executes_without_confirmation():
         "args": {"deviceId": "42", "command": "off"},
     }
     ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "manage devices"},
+            }
+        }]}},
         {"message": {"role": "assistant", "tool_calls": [{
             "function": {"name": "hub_manage_devices", "arguments": arguments}
         }]}},
@@ -173,8 +199,11 @@ async def test_routine_manage_write_executes_without_confirmation():
 
     assert outcome.message == "Switch turned off."
     assert outcome.request_class == "write"
-    assert mcp.calls == [("hub_manage_devices", arguments)]
-    assert outcome.evidence[0]["effect"] == ToolEffect.ROUTINE_WRITE.value
+    assert mcp.calls[-1] == ("hub_manage_devices", arguments)
+    receipt = next(
+        item for item in outcome.evidence if item["tool"] == "hub_manage_devices"
+    )
+    assert receipt["effect"] == ToolEffect.ROUTINE_WRITE.value
 
 
 @pytest.mark.asyncio
@@ -185,6 +214,12 @@ async def test_sensitive_manage_write_still_waits_for_confirmation():
         "args": {"deviceId": "42", "command": "unlock"},
     }
     ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "manage devices"},
+            }
+        }]}},
         {"message": {"role": "assistant", "tool_calls": [{
             "function": {"name": "hub_manage_devices", "arguments": arguments}
         }]}},
@@ -197,12 +232,12 @@ async def test_sensitive_manage_write_still_waits_for_confirmation():
     )
 
     assert "Please confirm" in prompt
-    assert not mcp.calls
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
 
     answer = await agent.process_user_request("confirm", session_id="sensitive")
 
     assert answer == "Lock opened."
-    assert mcp.calls == [("hub_manage_devices", arguments)]
+    assert mcp.calls[-1] == ("hub_manage_devices", arguments)
 
 
 def test_evidence_receipt_records_structured_effect():

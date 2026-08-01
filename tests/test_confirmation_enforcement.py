@@ -19,13 +19,29 @@ class FakeMCP:
         self.calls = []
 
     async def list_tools(self):
-        return [MCPTool("hub_restart", "Restart hub", {"type": "object"})]
+        return [
+            MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+            MCPTool("hub_restart", "Restart hub", {"type": "object"}),
+        ]
 
     async def get_cached_devices(self):
         return []
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
+        if name == "hub_search_tools":
+            gateway = (
+                "hub_update_firmware"
+                if "firmware" in str(arguments.get("query") or "").casefold()
+                else "hub_restart"
+            )
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {"matches": [{"gateway": gateway}]},
+            )
         return MCPToolResult(name, arguments, {}, "restarting", {"ok": True})
 
 
@@ -34,6 +50,12 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
     mcp = FakeMCP()
     ai = FakeAI([
         {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "restart hub"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": [{
             "function": {"name": "hub_restart", "arguments": {}}
         }]}},
         {"message": {"role": "assistant", "content": "Restart confirmed."}},
@@ -41,10 +63,10 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
     prompt = await agent.process_user_request("Restart hub", session_id="a")
     assert "Please confirm" in prompt
-    assert not mcp.calls
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
     answer = await agent.process_user_request("confirm", session_id="a")
     assert answer == "Restart confirmed."
-    assert mcp.calls == [("hub_restart", {})]
+    assert mcp.calls[-1] == ("hub_restart", {})
 
 
 @pytest.mark.asyncio
@@ -52,6 +74,7 @@ async def test_firmware_update_requires_confirmation_and_runs_once():
     class FirmwareMCP(FakeMCP):
         async def list_tools(self):
             return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
                 MCPTool(
                     "hub_update_firmware",
                     "Install available hub firmware",
@@ -64,6 +87,14 @@ async def test_firmware_update_requires_confirmation_and_runs_once():
 
     mcp = FirmwareMCP()
     ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {
+                    "query": "firmware update",
+                },
+            }
+        }]}},
         {"message": {"role": "assistant", "tool_calls": [{
             "function": {
                 "name": "hub_update_firmware",
@@ -79,11 +110,11 @@ async def test_firmware_update_requires_confirmation_and_runs_once():
     )
     assert "Please confirm" in prompt
     assert "may restart" in prompt
-    assert not mcp.calls
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
 
     answer = await agent.process_user_request("confirm", session_id="firmware")
     assert answer == "Firmware update started."
-    assert mcp.calls == [("hub_update_firmware", {"confirm": True})]
+    assert mcp.calls[-1] == ("hub_update_firmware", {"confirm": True})
 
 
 @pytest.mark.asyncio
@@ -94,6 +125,12 @@ async def test_multiple_sensitive_device_actions_share_one_confirmation():
         {"function": {"name": "hub_restart", "arguments": {"device": "2"}}},
     ]
     ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "restart"},
+            }
+        }]}},
         {"message": {"role": "assistant", "tool_calls": calls}},
         {"message": {"role": "assistant", "content": "Both actions completed."}},
     ])
@@ -101,11 +138,11 @@ async def test_multiple_sensitive_device_actions_share_one_confirmation():
 
     prompt = await agent.process_user_request("Restart both devices", session_id="group")
     assert "2 sensitive Hubitat actions" in prompt
-    assert not mcp.calls
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
 
     answer = await agent.process_user_request("confirm", session_id="group")
     assert answer == "Both actions completed."
-    assert mcp.calls == [
+    assert mcp.calls[-2:] == [
         ("hub_restart", {"device": "1"}),
         ("hub_restart", {"device": "2"}),
     ]
@@ -147,6 +184,12 @@ async def test_new_question_cancels_pending_confirmation():
     mcp = FakeMCP()
     ai = FakeAI([
         {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "restart hub"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": [{
             "function": {"name": "hub_restart", "arguments": {}}
         }]}},
         {"message": {"role": "assistant", "content": "The hub is online."}},
@@ -157,4 +200,4 @@ async def test_new_question_cancels_pending_confirmation():
     answer = await agent.process_user_request("What is the hub status?", session_id="replace")
     assert "could not retrieve verified live Hubitat evidence" in answer
     assert "replace" not in agent._pending
-    assert not mcp.calls
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]

@@ -55,3 +55,6 @@ Do not claim CI or tests passed without actual results.
 - Do not use query keywords or regex intent classes to gate read versus mutation behaviour; gate the actual requested tool call using tool metadata.
 - Classify tool effects from the declared tool and structured call arguments;
   never infer a tool effect from raw user-prompt wording.
+- Do not select remote MCP schemas from prompt keywords or regex categories.
+  Keep the initial registry bounded and use structured `hub_search_tools`
+  results to expand it.

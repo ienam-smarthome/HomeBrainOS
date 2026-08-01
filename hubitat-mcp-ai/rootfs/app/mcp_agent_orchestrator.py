@@ -63,27 +63,30 @@ _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
     "rule", "rules",
 }
-_SWITCH_TERMS = {
-    "switch", "switches", "which switches", "what switches",
-    "switches on", "switches are on",
-}
 _DEVICE_TERMS = {
     "battery", "batteries", "device", "devices", "door", "light", "lights",
     "fan", "humidity", "lamp", "lamps", "lock", "motion", "outlet", "plug",
     "presence", "sensor", "state", "switch", "temperature", "thermostat",
     "weather",
 }
-_DIAGNOSTIC_TERMS = {
-    "backup", "cpu", "diagnostic", "diagnostics", "firmware", "health", "log",
-    "logs", "matter", "memory", "radio", "software", "update", "updates",
-    "version", "zigbee", "zwave",
-}
-_DEVICE_HEALTH_TERMS = {"offline", "stale", "unavailable"}
 _LOG_TERMS = {"log", "logs"}
-_ROOM_TERMS = {"room", "rooms"}
 _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
+)
+
+_INITIAL_TOOL_ORDER = (
+    "hub_search_tools",
+    "hub_read_diagnostics",
+    _LOCAL_FILTER_TOOL,
+    _LOCAL_QUERY_TOOL,
+    _LOCAL_ACTIVE_LIGHTS_TOOL,
+    _LOCAL_ACTIVE_ROOMS_TOOL,
+    _LOCAL_ACTIVE_SWITCHES_TOOL,
+    _LOCAL_HOME_SNAPSHOT_TOOL,
+    _LOCAL_HUB_INFO_TOOL,
+    _LOCAL_WEATHER_TOOL,
+    _LOCAL_CONTROL_TOOL,
 )
 
 
@@ -676,38 +679,16 @@ class UnifiedMCPAgent:
     def _is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
         return name == "hub_read_diagnostics" and str(arguments.get("tool") or "") == "hub_get_logs"
 
-    @classmethod
-    def _select_tools(cls, prompt: str, tools: list[MCPTool]) -> list[MCPTool]:
-        names: set[str] | None = None
-        if _matches(prompt, _SWITCH_TERMS):
-            names = {"homebrain_active_switches", "hub_read_devices"}
-        elif _matches(prompt, _DEVICE_HEALTH_TERMS):
-            names = {"hub_read_devices", "hub_read_diagnostics", "hub_manage_devices"}
-        elif _matches(prompt, _APP_TERMS):
-            names = {"hub_read_apps_code", "hub_read_rules", "hub_search_tools"}
-            if _requests_mutation(prompt):
-                names.update({"hub_manage_native_rules_and_apps", "hub_manage_rule_machine"})
-        elif _matches(prompt, _DEVICE_TERMS):
-            names = {"hub_read_devices", "hub_get_info"}
-            if _requests_mutation(prompt):
-                names.add("hub_manage_devices")
-        elif _matches(prompt, _ROOM_TERMS):
-            names = {"hub_read_rooms", "hub_search_tools"}
-            if _requests_mutation(prompt):
-                names.add("hub_manage_rooms")
-        elif _matches(prompt, _DIAGNOSTIC_TERMS):
-            names = {"hub_get_info", "hub_read_diagnostics", "hub_search_tools"}
-            if _requests_mutation(prompt):
-                names.update({
-                    "hub_manage_diagnostics", "hub_manage_logs", "hub_manage_radio",
-                    "hub_manage_destructive_ops", "hub_update_firmware",
-                })
-        elif _requests_mutation(prompt) and not _matches(prompt, _SENSITIVE_TERMS):
-            names = {_LOCAL_CONTROL_TOOL}
-        else:
-            names = {"hub_get_info", "hub_search_tools"}
-        selected = [tool for tool in tools if tool.name in names]
-        return selected or tools
+    @staticmethod
+    def _initial_tools(tools: list[MCPTool]) -> list[MCPTool]:
+        """Return a stable lean registry without inspecting the user prompt."""
+
+        by_name = {tool.name: tool for tool in tools}
+        return [
+            by_name[name]
+            for name in _INITIAL_TOOL_ORDER
+            if name in by_name
+        ]
 
     async def _cached_app_manifest(self) -> list[dict[str, Any]]:
         now = time.monotonic()
@@ -809,10 +790,26 @@ class UnifiedMCPAgent:
     def _discovered_tools(result: MCPToolResult, available: dict[str, MCPTool]) -> list[MCPTool]:
         if result.is_error:
             return []
-        searchable = json.dumps(result.data, ensure_ascii=False, default=str)
+
+        named: set[str] = set()
+
+        def collect(value: Any) -> None:
+            if isinstance(value, str):
+                if value in available:
+                    named.add(value)
+                return
+            if isinstance(value, dict):
+                for item in value.values():
+                    collect(item)
+                return
+            if isinstance(value, list):
+                for item in value:
+                    collect(item)
+
+        collect(result.data)
         return [
             tool for name, tool in available.items()
-            if name != "hub_search_tools" and re.search(rf"\b{re.escape(name)}\b", searchable)
+            if name != "hub_search_tools" and name in named
         ]
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1062,19 +1059,7 @@ class UnifiedMCPAgent:
             pending_names = {name for name, _ in pending.actions}
             declared = [tool for tool in all_tools if tool.name in pending_names] or all_tools
         else:
-            declared = self._select_tools(user_prompt, all_tools)
-            if (
-                not self._is_conversational_prompt(user_prompt)
-                and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)
-            ):
-                declared = [tool for tool in declared if tool.name != "hub_get_info"]
-                declared_names = {tool.name for tool in declared}
-                declared.extend(tool for tool in safe_read_tools if tool.name not in declared_names)
-            if (
-                _requests_mutation(user_prompt)
-                and all(tool.name != _LOCAL_CONTROL_TOOL for tool in declared)
-            ):
-                declared.append(local_control)
+            declared = self._initial_tools(all_tools)
         by_name = {tool.name: tool for tool in declared}
         tools = [self._tool_schema(tool) for tool in declared]
         if pending:
