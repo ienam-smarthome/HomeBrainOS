@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Apply refactor
-        run: python scripts/apply_tool_call_gate_refactor.py
+        run: python scripts/apply_tool_call_gate_refactor_v2.py
       - name: Compile changed Python
         run: python -m py_compile hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py hubitat-mcp-ai/rootfs/app/tool_registry.py tests/test_tool_call_driven_gate.py
       - name: Commit generated refactor
