@@ -64,7 +64,12 @@
    `sensitive_write`, or `destructive_write`. This effect drives request-class
    reporting and whether the call must enter the confirmation queue, and is
    attached to evidence for auditability.
-10. `/api/ask` returns the message, route, request class, choices, evidence,
+10. Prior conversation is limited to the eight newest messages and 12,000
+    characters. Across multi-round execution, retained tool-result content is
+    capped at 48,000 characters; older results are compacted before newer ones.
+    The system policy, current request, tool-call structure, and internal
+    evidence receipts remain intact.
+11. `/api/ask` returns the message, route, request class, choices, evidence,
    optional `automation_items`, model, elapsed time, and add-on version. The
    WebUI renders structured automation rows directly when present.
 
@@ -84,6 +89,9 @@
   exposed only through structured `hub_search_tools` results, keeping the first
   request bounded and preventing keyword routing from becoming a second intent
   system.
+- Model payloads use bounded prior conversation and cumulative tool-result
+  content. Compaction operates on copied request messages and never mutates the
+  authoritative in-process transcript or evidence receipts.
 - Automation status precedence is deterministic: broken and disabled signals
   are resolved before paused, and `paused=false` alone never proves active.
 - Unknown or incomplete status data is labelled `unknown` rather than guessed.
@@ -96,8 +104,9 @@
   dynamic discovery, confirmation state, evidence policy, tool execution,
   retries, and final-answer handling. These concerns should be extracted
   incrementally with regression coverage.
-- Conversation and tool-call messages can grow across long multi-round sessions;
-  a bounded history policy is still needed.
+- The current bounds are character-based rather than model-token-aware. If
+  multiple model families are introduced, token-aware budgeting may provide a
+  tighter context limit.
 - The browser receives the completed `/api/ask` response rather than streamed
   progress and answer deltas.
 - Cancellation is coordinated at the request-task level; lower-level Ollama and
@@ -138,3 +147,13 @@ registry only when a successful `hub_search_tools` result names them. Discovery
 receipts are auditable but do not themselves support a live-state claim. Once a
 gateway is discovered, its actual structured call is still subject to the
 tool-effect and confirmation contracts above.
+
+## Bounded model context
+
+The browser and backend retain at most eight prior conversation messages, and
+the backend also applies a 12,000-character history budget. Tool results remain
+individually bounded and share a 48,000-character cumulative model-context
+budget. When that budget is exceeded, the oldest tool result is replaced by a
+labelled excerpt before newer results are considered. The original request
+transcript remains unchanged for control flow, confirmation state, evidence,
+and audit output; only the copied Ollama request payload is compacted.

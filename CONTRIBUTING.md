@@ -58,3 +58,7 @@ Do not claim CI or tests passed without actual results.
 - Do not select remote MCP schemas from prompt keywords or regex categories.
   Keep the initial registry bounded and use structured `hub_search_tools`
   results to expand it.
+- Preserve bounded conversation and cumulative tool-result budgets in both
+  streaming and non-streaming Ollama requests. Never compact the authoritative
+  evidence receipts or mutate the in-process transcript while preparing a
+  model payload.
