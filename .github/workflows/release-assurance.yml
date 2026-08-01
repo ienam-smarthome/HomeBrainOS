@@ -65,12 +65,8 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="$(python - <<'PY'
-          import yaml
-          with open('hubitat-mcp-ai/config.yaml', encoding='utf-8') as handle:
-              print(yaml.safe_load(handle)['version'])
-          PY
-          )"
+          version="$(sed -n 's/^version: "\([^"]*\)"/\1/p' hubitat-mcp-ai/config.yaml)"
+          test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Build add-on image
         run: |
@@ -82,6 +78,6 @@ jobs:
             hubitat-mcp-ai
       - name: Verify packaged runtime
         run: |
-          docker run --rm --entrypoint python3 \
+          docker run --rm --entrypoint /bin/sh \
             homebrain-release-smoke:${{ github.sha }} \
-            -c "from pathlib import Path; import app; expected='${{ steps.version.outputs.version }}'; actual=Path('/app/.homebrain-build-version').read_text().strip(); assert actual == expected, (actual, expected)"
+            -ec "python3 -m compileall -q /app; test \"\$(cat /app/.homebrain-build-version)\" = '${{ steps.version.outputs.version }}'; test -x /run.sh"
