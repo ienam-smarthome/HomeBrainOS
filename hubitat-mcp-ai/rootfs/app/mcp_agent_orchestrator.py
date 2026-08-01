@@ -28,6 +28,7 @@ from request_classification import (
     requests_mutation as _requests_mutation,
     routine_control_arguments as _routine_control_arguments,
 )
+from tool_executor import ToolExecutor
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
     LOCAL_ACTIVE_LIGHTS_TOOL as _LOCAL_ACTIVE_LIGHTS_TOOL,
@@ -147,6 +148,22 @@ class UnifiedMCPAgent:
         self._app_manifest: list[dict[str, Any]] = []
         self._app_manifest_at = 0.0
         self.evidence = EvidenceRecorder()
+        self.executor = ToolExecutor(
+            self.mcp,
+            self.evidence,
+            local_handlers={
+                _LOCAL_FILTER_TOOL: self._filter_devices,
+                _LOCAL_QUERY_TOOL: self._query_devices,
+                _LOCAL_WEATHER_TOOL: self._weather_snapshot,
+                _LOCAL_ACTIVE_LIGHTS_TOOL: self._active_lights,
+                _LOCAL_ACTIVE_ROOMS_TOOL: self._active_rooms,
+                _LOCAL_ACTIVE_SWITCHES_TOOL: self._active_switches,
+                _LOCAL_HOME_SNAPSHOT_TOOL: self._home_snapshot,
+                _LOCAL_CONTROL_TOOL: self._control_devices,
+                _LOCAL_HUB_INFO_TOOL: self._hub_info_snapshot,
+            },
+            max_tool_result_chars=self.max_tool_result_chars,
+        )
         self._request_class: ContextVar[str] = ContextVar(
             "hubitat_request_class", default="live-read"
         )
@@ -247,14 +264,7 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _result_summary(result: MCPToolResult) -> str:
-        data = result.data
-        if isinstance(data, dict):
-            keys = ", ".join(map(str, list(data)[:10]))
-            return f"object fields: {keys}" if keys else "empty object"
-        if isinstance(data, list):
-            return f"{len(data)} result items"
-        text = str(result.text or data or "").strip()
-        return (text[:157] + "...") if len(text) > 160 else (text or "empty result")
+        return ToolExecutor.result_summary(result)
 
     def _record_evidence(
         self,
@@ -660,19 +670,7 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:
-        if result.is_error:
-            return False
-        data = result.data
-        if isinstance(data, dict):
-            if data.get("success") is False or data.get("error"):
-                return False
-            for key in ("result", "data", "output"):
-                nested = data.get(key)
-                if isinstance(nested, dict) and (
-                    nested.get("success") is False or nested.get("error")
-                ):
-                    return False
-        return True
+        return ToolExecutor.succeeded(result)
 
     @staticmethod
     def _is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
@@ -846,23 +844,7 @@ class UnifiedMCPAgent:
         return bounded
 
     def _result_payload(self, result: MCPToolResult) -> str:
-        payload = (
-            {"error": result.text or "MCP tool failed"}
-            if result.is_error
-            else {"result": result.data if result.data is not None else result.text}
-        )
-        serialized = json.dumps(payload, ensure_ascii=False, default=str)
-        if len(serialized) <= self.max_tool_result_chars:
-            return serialized
-        return json.dumps(
-            {
-                "result_excerpt": serialized[: self.max_tool_result_chars],
-                "truncated": True,
-                "original_chars": len(serialized),
-                "instruction": "Use pagination or a narrower query for more detail.",
-            },
-            ensure_ascii=False,
-        )
+        return self.executor.result_payload(result)
 
     @staticmethod
     def _discovered_tools(result: MCPToolResult, available: dict[str, MCPTool]) -> list[MCPTool]:
@@ -914,34 +896,17 @@ class UnifiedMCPAgent:
         messages = [*pending.messages, pending.assistant_message]
         for tool_name, arguments in pending.actions:
             self._mutation_call_seen.set(True)
-            effect = classify_tool_effect(
-                MCPTool(tool_name, tool_name, {}), arguments
+            execution = await self.executor.execute(
+                tool_name,
+                arguments,
+                tool=MCPTool(tool_name, tool_name, {}),
+                mutates=True,
             )
-            try:
-                started = time.monotonic()
-                result = await self.mcp.call_tool(tool_name, arguments)
-                self.evidence.record(
-                    tool_name,
-                    arguments,
-                    success=self._tool_succeeded(result),
-                    elapsed_ms=round((time.monotonic() - started) * 1000),
-                    summary=self._result_summary(result),
-                    mutates=True,
-                    effect=effect,
-                )
-                content = self._result_payload(result)
-            except Exception as exc:
-                self.evidence.record(
-                    tool_name,
-                    arguments,
-                    success=False,
-                    elapsed_ms=round((time.monotonic() - started) * 1000),
-                    summary=f"{type(exc).__name__}: {str(exc)[:140]}",
-                    mutates=True,
-                    effect=effect,
-                )
-                content = json.dumps({"error": str(exc)})
-            messages.append({"role": "tool", "tool_name": tool_name, "content": content})
+            messages.append({
+                "role": "tool",
+                "tool_name": tool_name,
+                "content": execution.content,
+            })
         response = await self._chat(messages, tools)
         return str(response.get("content") or "Confirmed command completed.")
 
@@ -1152,51 +1117,24 @@ class UnifiedMCPAgent:
                 if signature in completed_calls:
                     return await self._final_answer(messages)
                 completed_calls.add(signature)
-                try:
-                    tool = by_name.get(name)
-                    if not tool:
-                        content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
-                    else:
-                        mcp_started = time.monotonic()
-                        if name == _LOCAL_FILTER_TOOL:
-                            result = await self._filter_devices(dict(arguments))
-                        elif name == _LOCAL_QUERY_TOOL:
-                            result = await self._query_devices(dict(arguments))
-                        elif name == _LOCAL_WEATHER_TOOL:
-                            result = await self._weather_snapshot(dict(arguments))
-                        elif name == _LOCAL_ACTIVE_LIGHTS_TOOL:
-                            result = await self._active_lights(dict(arguments))
-                        elif name == _LOCAL_ACTIVE_ROOMS_TOOL:
-                            result = await self._active_rooms(dict(arguments))
-                        elif name == _LOCAL_ACTIVE_SWITCHES_TOOL:
-                            result = await self._active_switches(dict(arguments))
-                        elif name == _LOCAL_HOME_SNAPSHOT_TOOL:
-                            result = await self._home_snapshot(dict(arguments))
-                        elif name == _LOCAL_CONTROL_TOOL:
-                            result = await self._control_devices(dict(arguments))
-                        elif name == _LOCAL_HUB_INFO_TOOL:
-                            result = await self._hub_info_snapshot(dict(arguments))
-                        else:
-                            result = await self.mcp.call_tool(name, dict(arguments))
-                        elapsed_ms = round((time.monotonic() - mcp_started) * 1000)
-                        effect = classify_tool_effect(tool, dict(arguments))
-                        if effect.mutates:
-                            self._mutation_call_seen.set(True)
-                        self.evidence.record(
-                            name,
-                            dict(arguments),
-                            success=self._tool_succeeded(result),
-                            elapsed_ms=elapsed_ms,
-                            summary=self._result_summary(result),
-                            supports_live_claim=name != "hub_search_tools",
-                            evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
-                            mutates=effect.mutates,
-                            effect=effect,
-                        )
-                        if self._is_live_log_call(name, dict(arguments)):
-                            logs_checked = self._tool_succeeded(result)
-                        logger.info("MCP tool %s completed in %.3fs", name, time.monotonic() - mcp_started)
-                        content = self._result_payload(result)
+                tool = by_name.get(name)
+                if not tool:
+                    content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
+                else:
+                    execution = await self.executor.execute(
+                        name,
+                        dict(arguments),
+                        tool=tool,
+                        supports_live_claim=name != "hub_search_tools",
+                        evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
+                    )
+                    if execution.effect.mutates:
+                        self._mutation_call_seen.set(True)
+                    content = execution.content
+                    result = execution.result
+                    if self._is_live_log_call(name, dict(arguments)):
+                        logs_checked = execution.success
+                    if result is not None:
                         if name == "hub_search_tools":
                             additions = [
                                 item for item in self._discovered_tools(result, all_by_name)
@@ -1238,20 +1176,6 @@ class UnifiedMCPAgent:
                             or not self._tool_succeeded(result)
                         ):
                             return deterministic_message
-                except Exception as exc:
-                    logger.exception("MCP tool %s failed", name)
-                    self.evidence.record(
-                        name,
-                        dict(arguments),
-                        success=False,
-                        elapsed_ms=round((time.monotonic() - mcp_started) * 1000) if "mcp_started" in locals() else 0,
-                        summary=f"{type(exc).__name__}: {str(exc)[:140]}",
-                        supports_live_claim=name != "hub_search_tools",
-                        effect=classify_tool_effect(
-                            by_name.get(name), dict(arguments)
-                        ),
-                    )
-                    content = json.dumps({"error": str(exc)})
                 messages.append({"role": "tool", "tool_name": name, "content": content})
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         return await self._final_answer(messages)

@@ -72,3 +72,7 @@ Do not claim CI or tests passed without actual results.
   request-context storage in `evidence_recorder.py`. Keep authority decisions
   outside it: callers must explicitly decide whether a result supports a live
   claim, and the orchestrator owns evidence retries and refusal policy.
+- Keep approved structured-call dispatch, timing, success normalisation,
+  receipt emission, and bounded model-result serialization in
+  `tool_executor.py`. Tool visibility, confirmation, live-claim authority,
+  retries, and user-facing presentation remain orchestrator policy.
