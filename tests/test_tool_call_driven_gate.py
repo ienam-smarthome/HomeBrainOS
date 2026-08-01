@@ -148,4 +148,5 @@ def test_confirmed_pending_actions_remain_mutating_in_source():
     confirmation = source[source.index("async def _resume_confirmation"):source.index("async def process_user_request_result")]
 
     assert "self._mutation_call_seen.set(True)" in confirmation
-    assert confirmation.count("mutates=True") == 2
+    assert "self.executor.execute(" in confirmation
+    assert confirmation.count("mutates=True") == 1
