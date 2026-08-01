@@ -15,6 +15,7 @@ required = [
     'hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py',
     'hubitat-mcp-ai/rootfs/app/evidence_recorder.py',
     'hubitat-mcp-ai/rootfs/app/tool_executor.py',
+    'hubitat-mcp-ai/rootfs/app/tool_discovery_catalog.py',
     'hubitat-mcp-ai/rootfs/app/mcp_client.py',
     'hubitat-mcp-ai/rootfs/app/webui.py',
     'hubitat-mcp-ai/rootfs/app/requirements.txt',

@@ -12,7 +12,7 @@
 - `hubitat-mcp-ai/` is the maintained Hubitat MCP assistant.
 - The legacy Maker API dashboard and assistant (`homebrainos/`) has been retired
   and removed from this repository.
-- The maintained runtime is a flat set of seventeen Python modules under
+- The maintained runtime is a flat set of eighteen Python modules under
   `hubitat-mcp-ai/rootfs/app/`. `app.py` owns FastAPI route registration
   directly; there is no `entrypoint.py`, request-layer registry, inheritance
   chain, or runtime route-bridge stack.
@@ -28,6 +28,7 @@
 | `confirmation_store.py` | Stores short-lived sensitive actions by session, applies TTL expiry, consumes confirmations once, cancels on replacement questions, isolates queued snapshots, and bounds pending-session capacity. |
 | `evidence_recorder.py` | Owns request-scoped evidence receipt storage, timestamps, nested argument redaction, effect metadata, immutable output snapshots, and successful live-evidence detection. |
 | `tool_executor.py` | Dispatches one already-approved local or remote structured call, measures it, normalises success/failure, records its receipt, and prepares bounded model content. |
+| `tool_discovery_catalog.py` | Owns the prompt-independent initial registry, declared/available tool state, native schemas, explicit structured gateway parsing, deduplication, and request-local expansion. |
 | `automation_status_service.py` | Deterministically reads Hubitat apps and Rule Machine rules, normalises each item to `active`, `disabled`, `paused`, `broken`, or `unknown`, and returns structured `automation_items`. |
 | `device_query_service.py` | Read-side queries over the cached device inventory, including filtering, comparison, aggregation, and room-aware reads. |
 | `device_control_service.py` | Write-side device commands such as on, off, toggle, and level changes. |
@@ -52,12 +53,13 @@
 5. Common home-state questions can use local deterministic tools and
    `deterministic_tool_presenter.py`, avoiding an additional synthesis round
    where a fixed authoritative answer is sufficient.
-6. Remaining requests use the native Ollama tool-calling loop. Every request
-   starts with the same bounded registry: deterministic local tools,
-   `hub_search_tools`, and the diagnostic gateway when available. Prompt
-   keywords do not select remote schemas. When another gateway is needed, the
-   model calls `hub_search_tools`; only gateways named by that structured result
-   are added to the next model round.
+6. Remaining requests use the native Ollama tool-calling loop.
+   `ToolDiscoveryCatalog` starts every request with the same bounded registry:
+   deterministic local tools, `hub_search_tools`, and the diagnostic gateway
+   when available. Prompt keywords do not select remote schemas. When another
+   gateway is needed, the model calls `hub_search_tools`; only known gateways
+   explicitly named by `matches[].gateway` in a recognised structured result
+   envelope are added to the next model round.
 7. `UnifiedMCPAgent` bounds the copied model context and hands it to
    `ChatTransport`. The transport sends either a streaming or non-streaming
    native Ollama request and returns one assembled assistant message without
@@ -107,6 +109,12 @@
   exposed only through structured `hub_search_tools` results, keeping the first
   request bounded and preventing keyword routing from becoming a second intent
   system.
+- `ToolDiscoveryCatalog` accepts expansion only from explicit
+  `matches[].gateway` fields and resolves every name against the server's
+  bounded current catalogue. Descriptions, unrelated nested values, unknown
+  names, search self-references, and failed search results cannot expose a
+  schema. A confirmed action fails closed if its queued tool is no longer
+  advertised.
 - Model payloads use bounded prior conversation and cumulative tool-result
   content. Compaction operates on copied request messages and never mutates the
   authoritative in-process transcript or evidence receipts.
@@ -126,6 +134,9 @@
   confirmation, decide live-claim authority, select retries, or present a
   user-facing result. Confirmed and ordinary calls share its success, failure,
   timing, evidence, and payload-bounding path.
+- `ToolDiscoveryCatalog` owns registry mechanics only. The orchestrator remains
+  authoritative for deciding when the model may search, whether a requested
+  call needs confirmation, and how an expanded conversation proceeds.
 - Automation status precedence is deterministic: broken and disabled signals
   are resolved before paused, and `paused=false` alone never proves active.
 - Unknown or incomplete status data is labelled `unknown` rather than guessed.
@@ -135,9 +146,9 @@
 ## Known gaps
 
 - `mcp_agent_orchestrator.py` remains the largest module and still combines
-  dynamic discovery, evidence policy, confirmation policy, retries, and
-  final-answer handling. Transport, pending-state storage, evidence receipt
-  mechanics, and approved-call execution are now separate; the remaining
+  evidence policy, confirmation policy, retries, and final-answer handling.
+  Transport, pending-state storage, evidence receipt mechanics, approved-call
+  execution, and discovery registry state are now separate; the remaining
   concerns should be extracted incrementally with regression coverage.
 - The current bounds are character-based rather than model-token-aware. If
   multiple model families are introduced, token-aware budgeting may provide a
