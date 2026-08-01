@@ -63,7 +63,10 @@ async def test_sensitive_tool_waits_for_same_session_confirmation():
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
     prompt = await agent.process_user_request("Restart hub", session_id="a")
     assert "Please confirm" in prompt
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+    ]
     answer = await agent.process_user_request("confirm", session_id="a")
     assert answer == "Restart confirmed."
     assert mcp.calls[-1] == ("hub_restart", {})
@@ -108,7 +111,10 @@ async def test_confirmation_fails_closed_when_queued_tool_disappears():
 
     assert "cancelled" in answer
     assert "hub_restart" in answer
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+    ]
 
 
 @pytest.mark.asyncio
@@ -131,7 +137,10 @@ async def test_sensitive_tool_rejects_empty_session_id():
 
     assert "unique session_id is required" in prompt
     assert agent._pending == {}
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+    ]
 
 
 @pytest.mark.asyncio
@@ -175,7 +184,10 @@ async def test_firmware_update_requires_confirmation_and_runs_once():
     )
     assert "Please confirm" in prompt
     assert "may restart" in prompt
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+    ]
 
     answer = await agent.process_user_request("confirm", session_id="firmware")
     assert answer == "Firmware update started."
@@ -203,7 +215,10 @@ async def test_multiple_sensitive_device_actions_share_one_confirmation():
 
     prompt = await agent.process_user_request("Restart both devices", session_id="group")
     assert "2 sensitive Hubitat actions" in prompt
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+    ]
 
     answer = await agent.process_user_request("confirm", session_id="group")
     assert answer == "Both actions completed."
@@ -265,4 +280,8 @@ async def test_new_question_cancels_pending_confirmation():
     answer = await agent.process_user_request("What is the hub status?", session_id="replace")
     assert "could not retrieve verified live Hubitat evidence" in answer
     assert "replace" not in agent._pending
-    assert [name for name, _ in mcp.calls] == ["hub_search_tools"]
+    assert [name for name, _ in mcp.calls] == [
+        "hub_search_tools",
+        "hub_search_tools",
+        "hub_search_tools",
+    ]
