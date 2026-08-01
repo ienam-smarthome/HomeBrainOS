@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -20,10 +19,9 @@ from confirmation_store import ConfirmationStore, PendingConfirmation
 from deterministic_tool_presenter import present_tool_result
 from device_control_service import DeviceControlService
 from device_query_service import DeviceQueryService
-from device_state_summary import device_attributes
-from device_target_resolver import normalized_name
 from evidence_recorder import EvidenceRecorder
 from grounding_policy import GroundingAction, GroundingPolicy
+from hub_info_service import HubInfoService
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from request_classification import (
     matches as _matches,
@@ -297,312 +295,41 @@ class UnifiedMCPAgent:
 
     @staticmethod
     def _device_attributes(device: dict[str, Any]) -> dict[str, Any]:
-        return device_attributes(device)
+        return HubInfoService.device_attributes(device)
 
     @staticmethod
     def _device_attribute_units(device: dict[str, Any]) -> dict[str, str]:
-        attributes = (
-            device.get("attributes")
-            or device.get("currentStates")
-            or device.get("states")
-            or {}
-        )
-        if not isinstance(attributes, list):
-            return {}
-        return {
-            str(item.get("name")): str(item.get("unit")).strip()
-            for item in attributes
-            if isinstance(item, dict)
-            and item.get("name")
-            and item.get("unit") not in {None, ""}
-        }
+        return HubInfoService.device_attribute_units(device)
 
     @staticmethod
     def _inferred_memory_unit(value: Any) -> str | None:
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return None
-        if number >= 100_000:
-            return "KB"
-        if number >= 16:
-            return "MB"
-        return "GB"
+        return HubInfoService.inferred_memory_unit(value)
 
     @staticmethod
     def _hub_info_device(
         devices: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
-        matches = []
-        for device in devices:
-            if not isinstance(device, dict):
-                continue
-            label = str(
-                device.get("label")
-                or device.get("displayName")
-                or device.get("name")
-                or ""
-            )
-            normalized = normalized_name(label)
-            if normalized.startswith("hubinfo"):
-                matches.append(device)
-        return matches[0] if len(matches) == 1 else None
+        return HubInfoService.hub_info_device(devices)
 
-    @classmethod
-    def _find_device_record(cls, value: Any) -> dict[str, Any] | None:
-        if not isinstance(value, dict):
-            return None
-        if (
-            value.get("id") is not None
-            or value.get("deviceId") is not None
-        ) and any(
-            key in value
-            for key in (
-                "attributes",
-                "currentStates",
-                "states",
-                "capabilities",
-                "commands",
-                "label",
-                "displayName",
-            )
-        ):
-            return value
-        for key in ("device", "result", "data", "output", "content"):
-            if key in value:
-                candidate = cls._find_device_record(value[key])
-                if candidate is not None:
-                    return candidate
-        return None
+    @staticmethod
+    def _find_device_record(value: Any) -> dict[str, Any] | None:
+        return HubInfoService.find_device_record(value)
 
-    @classmethod
+    @staticmethod
     def _merge_device_identity(
-        cls,
         live_devices: list[dict[str, Any]],
         identity_devices: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        identities = {
-            str(device.get("id") or device.get("deviceId")): device
-            for device in identity_devices
-            if isinstance(device, dict)
-            and (device.get("id") is not None or device.get("deviceId") is not None)
-        }
-        merged: list[dict[str, Any]] = []
-        for live in live_devices:
-            device_id = str(live.get("id") or live.get("deviceId") or "")
-            identity = identities.get(device_id, {})
-            identity_attributes = cls._device_attributes(identity)
-            live_attributes = cls._device_attributes(live)
-            device = {**identity, **live}
-            if identity_attributes or live_attributes:
-                device["attributes"] = {
-                    **identity_attributes,
-                    **live_attributes,
-                }
-            merged.append(device)
-        return merged
-
-    async def _hub_info_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
-        scope = str(arguments.get("scope") or "").strip().lower()
-        if scope not in {"firmware", "resources", "full"}:
-            return MCPToolResult(
-                _LOCAL_HUB_INFO_TOOL,
-                arguments,
-                {},
-                "Invalid Hub Info scope",
-                {"success": False, "error": "scope must be firmware, resources, or full"},
-                is_error=True,
-            )
-        try:
-            cached = await self.mcp.get_cached_devices()
-        except Exception as exc:
-            cached = []
-            logger.warning("Could not load Hub Info identity manifest: %s", exc)
-        hub_device = self._hub_info_device(list(cached or []))
-        if hub_device is None:
-            source = await self.mcp.call_tool(
-                "hub_read_devices",
-                {"tool": "hub_list_devices", "args": {"labelFilter": "Hub Info"}},
-            )
-            hub_device = self._hub_info_device(
-                [
-                    item
-                    for item in (HubitatMCPClient._find_device_list(source.data) or [])
-                    if isinstance(item, dict)
-                ]
-            )
-        if hub_device is None:
-            return MCPToolResult(
-                _LOCAL_HUB_INFO_TOOL,
-                arguments,
-                {},
-                "Hub Info device not found",
-                {
-                    "success": False,
-                    "error": (
-                        "A unique Hub Info device could not be found. Install or "
-                        "rename the Hub Information Driver device."
-                    ),
-                },
-                is_error=True,
-            )
-        device_id = str(hub_device.get("id") or hub_device.get("deviceId") or "")
-        label = str(
-            hub_device.get("label")
-            or hub_device.get("displayName")
-            or hub_device.get("name")
-            or "Hub Info"
+        return HubInfoService.merge_device_identity(
+            live_devices,
+            identity_devices,
         )
-        if not device_id:
-            return MCPToolResult(
-                _LOCAL_HUB_INFO_TOOL,
-                arguments,
-                {},
-                "Hub Info device has no device ID",
-                {"success": False, "error": "Hub Info device has no device ID"},
-                is_error=True,
-            )
-        cached_attributes = self._device_attributes(hub_device)
-        baseline_firmware = (
-            cached_attributes.get("hubUpdateStatus"),
-            cached_attributes.get("hubUpdateVersion"),
-        )
-        commands = []
-        if scope in {"resources", "full"}:
-            commands.append("refresh")
-        if scope in {"firmware", "full"}:
-            commands.append("updateCheck")
-        for command in commands:
-            result = await self.mcp.call_tool(
-                "hub_manage_devices",
-                {
-                    "tool": "hub_call_device_command",
-                    "args": {"deviceId": device_id, "command": command},
-                },
-            )
-            if not self._tool_succeeded(result):
-                return MCPToolResult(
-                    _LOCAL_HUB_INFO_TOOL,
-                    arguments,
-                    {},
-                    result.text,
-                    {
-                        "success": False,
-                        "error": (
-                            f"Hub Info command {command!r} failed: "
-                            f"{result.text or 'unknown error'}"
-                        ),
-                    },
-                    is_error=True,
-                )
-        live_device: dict[str, Any] | None = None
-        poll_attempts = 10 if scope in {"firmware", "full"} else 6
-        for attempt in range(poll_attempts):
-            source = await self.mcp.call_tool(
-                "hub_read_devices",
-                {
-                    "tool": "hub_get_device",
-                    "args": {"deviceId": device_id},
-                },
-            )
-            candidates = [
-                item
-                for item in (HubitatMCPClient._find_device_list(source.data) or [])
-                if isinstance(item, dict)
-            ]
-            if not candidates:
-                candidate = self._find_device_record(source.data)
-                if candidate is not None:
-                    candidates = [candidate]
-            live_device = self._hub_info_device(candidates)
-            if live_device is None and len(candidates) == 1:
-                live_device = candidates[0]
-            if live_device is not None:
-                live_device = self._merge_device_identity([live_device], [hub_device])[0]
-                attributes = self._device_attributes(live_device)
-                refreshed_firmware = (
-                    attributes.get("hubUpdateStatus"),
-                    attributes.get("hubUpdateVersion"),
-                )
-                firmware_settled = (
-                    refreshed_firmware != baseline_firmware
-                    or attempt == poll_attempts - 1
-                )
-                if (
-                    scope not in {"firmware", "full"}
-                    or (
-                        all(value is not None for value in refreshed_firmware)
-                        and firmware_settled
-                    )
-                ):
-                    break
-            if attempt < poll_attempts - 1:
-                await asyncio.sleep(0.5)
-        if live_device is None:
-            return MCPToolResult(
-                _LOCAL_HUB_INFO_TOOL,
-                arguments,
-                {},
-                "Hub Info attributes unavailable after refresh",
-                {"success": False, "error": "Hub Info attributes were unavailable after refresh"},
-                is_error=True,
-            )
-        values = {**live_device, **self._device_attributes(live_device)}
-        attribute_units = self._device_attribute_units(live_device)
 
-        def value(*names: str) -> Any:
-            return next(
-                (
-                    values.get(name)
-                    for name in names
-                    if values.get(name) is not None and values.get(name) != ""
-                ),
-                None,
-            )
-
-        installed = value("firmwareVersionString", "firmwareVersion")
-        available = value("hubUpdateVersion")
-        update_status = value("hubUpdateStatus")
-        update_available = (
-            "available" in str(update_status or "").casefold()
-            or (bool(installed) and bool(available) and str(installed) != str(available))
-        )
-        free_memory = value("freeMemory")
-        temperature = value("temperatureC", "temperature", "temperatureF")
-        data = {
-            "success": True,
-            "source": label,
-            "device_id": device_id,
-            "scope": scope,
-            "installed_firmware": installed,
-            "update_status": update_status,
-            "available_firmware": available,
-            "update_available": update_available,
-            "hub_model": value("hubModel"),
-            "cpu_5_min": value("cpu5Min"),
-            "cpu_percent": value("cpuPct"),
-            "cpu_15_min": value("cpu15Min"),
-            "cpu_15_percent": value("cpu15Pct"),
-            "free_memory": free_memory,
-            "free_memory_unit": attribute_units.get("freeMemory") or self._inferred_memory_unit(free_memory),
-            "free_memory_15_min": value("freeMem15"),
-            "jvm_free": value("jvmFree"),
-            "jvm_size": value("jvmSize"),
-            "java_direct": value("javaDirect"),
-            "temperature": temperature,
-            "temperature_unit": attribute_units.get("temperatureC") or attribute_units.get("temperature") or ("°C" if temperature is not None else None),
-            "uptime": value("formattedUptime", "uptime"),
-            "database_size": value("dbSize"),
-            "database_size_unit": attribute_units.get("dbSize") or "MB",
-            "ip_address": value("localIP", "ipAddress"),
-            "zigbee_healthy": value("zbHealthy"),
-            "zwave_healthy": value("zwHealthy"),
-            "hub_alerts": value("hubAlerts"),
-            "matter_status": value("matterStatus"),
-            "last_poll": value("lastPollTime"),
-        }
-        return MCPToolResult(_LOCAL_HUB_INFO_TOOL, arguments, {}, json.dumps(data), data)
-
+    async def _hub_info_snapshot(
+        self,
+        arguments: dict[str, Any],
+    ) -> MCPToolResult:
+        return await HubInfoService(self.mcp).snapshot(arguments)
     async def _filter_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.filter_devices(arguments)

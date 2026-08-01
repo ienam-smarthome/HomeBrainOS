@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.274**.
+Current add-on version: **0.10.275**.
 
 ## Architecture
 
@@ -19,6 +19,11 @@ regex router or prompt-keyword tool gate controls read-versus-write behaviour.
 sensitive MCP mutations require an explicit, session-scoped confirmation kept
 by `ConfirmationStore`. Read-only and routine gateway operations do not require
 confirmation.
+
+Hub firmware and resource questions use `HubInfoService`, which refreshes the
+Hub Information Driver, polls a bounded number of times, reconciles its cached
+identity with live attributes, and returns one authoritative structured
+snapshot.
 
 ## Setup
 

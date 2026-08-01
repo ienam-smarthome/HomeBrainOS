@@ -86,3 +86,7 @@ Do not claim CI or tests passed without actual results.
   and structured search-result expansion in `tool_discovery_catalog.py`.
   Expansion must accept only explicit known gateway fields; never scan prompt
   text, descriptions, or arbitrary result strings for tool names.
+- Keep Hub Information Driver discovery, refresh/update-check commands, bounded
+  polling, identity reconciliation, units, and snapshot shaping in
+  `hub_info_service.py`. Do not move tool visibility, evidence authority,
+  receipt emission, or user-facing presentation into that service.
