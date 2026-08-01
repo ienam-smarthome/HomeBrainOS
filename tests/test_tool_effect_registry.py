@@ -19,6 +19,25 @@ from tool_registry import (  # noqa: E402
 )
 
 
+def test_rule_machine_schema_probe_is_read_but_apply_is_sensitive():
+    tool = MCPTool("hub_manage_rule_machine", "Manage rules", {"type": "object"})
+    probe = {
+        "tool": "hub_set_rule",
+        "args": {"operation": "create", "args": {}},
+    }
+    apply = {
+        "tool": "hub_set_rule",
+        "args": {
+            "operation": "create",
+            "args": {"name": "Daily block"},
+            "confirm": True,
+        },
+    }
+
+    assert classify_tool_effect(tool, probe) is ToolEffect.READ
+    assert classify_tool_effect(tool, apply) is ToolEffect.SENSITIVE_WRITE
+
+
 def gateway(name: str, **annotations: object) -> MCPTool:
     return MCPTool(name, name, {"type": "object"}, annotations=annotations)
 

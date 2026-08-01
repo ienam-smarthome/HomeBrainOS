@@ -244,6 +244,22 @@ neutral structured-action failure instead of publishing a false capability
 claim. This policy never uses user-prompt keywords to classify read versus
 write behavior.
 
+## Confirmed Rule Machine writes
+
+HomeBrain confirmation and upstream Hubitat authorization are separate gates.
+The model proposes a Rule Machine mutation without upstream approval; the host
+stores an immutable copy and asks the user to confirm. Only after that approval
+does the confirmation policy add the nested `confirm:true` required by
+`hub_set_rule`. A no-confirm `hub_set_rule` operation envelope is classified as
+a read-only schema probe, so the model can inspect the current authoring shape
+before proposing a write.
+
+Confirmed Rule Machine completion is deterministic. HomeBrain requires a
+successful tool result, a returned `appId`/`ruleId`, no partial flag, and no
+failed health verdict before saying a rule was created. It reports each rule ID
+or each failure directly from structured MCP results; a post-write model answer
+cannot turn a probe, error, partial write, or unverified result into success.
+
 ## Bounded model context
 
 The browser and backend retain at most eight prior conversation messages, and
