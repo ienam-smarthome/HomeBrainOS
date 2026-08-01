@@ -59,6 +59,58 @@ def test_expansion_accepts_only_explicit_match_gateway_fields():
     assert catalog.declared_tool("hub_manage_devices") is None
 
 
+def test_expansion_accepts_upstream_search_results_wire_contract():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"),
+        tool("hub_manage_rule_machine"),
+        tool("hub_read_rules"),
+    ])
+    result = search_result({
+        "query": "create Rule Machine rule",
+        "resultsCount": 2,
+        "totalToolsSearched": 142,
+        "results": [
+            {
+                "tool": "hub_set_rule",
+                "gateway": "hub_manage_rule_machine",
+                "callAs": (
+                    "Call via hub_manage_rule_machine(tool=\"hub_set_rule\", "
+                    "args={...})"
+                ),
+            },
+            {
+                "tool": "hub_list_rules",
+                "gateway": "hub_read_rules",
+            },
+        ],
+    })
+
+    additions = catalog.expand(result)
+
+    assert [item.name for item in additions] == [
+        "hub_manage_rule_machine",
+        "hub_read_rules",
+    ]
+
+
+def test_upstream_results_do_not_expand_from_tool_or_description_text():
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"),
+        tool("hub_manage_rule_machine"),
+    ])
+    result = search_result({
+        "results": [
+            {
+                "tool": "hub_manage_rule_machine",
+                "description": "Use hub_manage_rule_machine to author rules",
+            }
+        ]
+    })
+
+    assert catalog.expand(result) == []
+    assert catalog.declared_names == ("hub_search_tools",)
+
+
 def test_expansion_supports_recognised_result_envelope_and_preserves_order():
     catalog = ToolDiscoveryCatalog([
         tool("hub_search_tools"),

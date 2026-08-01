@@ -63,8 +63,9 @@
    deterministic local tools, `hub_search_tools`, and the diagnostic gateway
    when available. Prompt keywords do not select remote schemas. When another
    gateway is needed, the model calls `hub_search_tools`; only known gateways
-   explicitly named by `matches[].gateway` in a recognised structured result
-   envelope are added to the next model round.
+   explicitly named by upstream `results[].gateway` (or the compatibility
+   `matches[].gateway` form) in a recognised structured result envelope are
+   added to the next model round.
 7. `UnifiedMCPAgent` bounds the copied model context and hands it to
    `ChatTransport`. The transport sends either a streaming or non-streaming
    native Ollama request and returns one assembled assistant message without
@@ -120,8 +121,9 @@
   exposed only through structured `hub_search_tools` results, keeping the first
   request bounded and preventing keyword routing from becoming a second intent
   system.
-- `ToolDiscoveryCatalog` accepts expansion only from explicit
-  `matches[].gateway` fields and resolves every name against the server's
+- `ToolDiscoveryCatalog` accepts expansion only from explicit upstream
+  `results[].gateway` or compatibility `matches[].gateway` fields and resolves
+  every name against the server's
   bounded current catalogue. Descriptions, unrelated nested values, unknown
   names, search self-references, and failed search results cannot expose a
   schema. A confirmed action fails closed if its queued tool is no longer
@@ -223,6 +225,12 @@ registry only when a successful `hub_search_tools` result names them. Discovery
 receipts are auditable but do not themselves support a live-state claim. Once a
 gateway is discovered, its actual structured call is still subject to the
 tool-effect and confirmation contracts above.
+
+The discovery parser mirrors the upstream wire contract: `hub_search_tools`
+returns `query`, `resultsCount`, `totalToolsSearched`, and `results[]`; each
+callable hit names its sub-tool in `tool` and its declared category gateway in
+`gateway`. Only that explicit gateway field can expand visibility. Tool names,
+descriptions, `callAs` strings, and arbitrary nested text never can.
 
 ## Bounded model context
 

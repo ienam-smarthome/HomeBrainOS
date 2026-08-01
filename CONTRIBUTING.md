@@ -84,8 +84,10 @@ Do not claim CI or tests passed without actual results.
   retries, and user-facing presentation remain orchestrator policy.
 - Keep initial registry ordering, declared/available state, schema rendering,
   and structured search-result expansion in `tool_discovery_catalog.py`.
-  Expansion must accept only explicit known gateway fields; never scan prompt
-  text, descriptions, or arbitrary result strings for tool names.
+  Mirror the upstream `hub_search_tools` contract (`results[].gateway`) and
+  retain `matches[].gateway` only as a compatibility form. Expansion must
+  accept only explicit known gateway fields; never scan prompt text,
+  descriptions, `tool`, `callAs`, or arbitrary result strings for tool names.
 - Keep Hub Information Driver discovery, refresh/update-check commands, bounded
   polling, identity reconciliation, units, and snapshot shaping in
   `hub_info_service.py`. Do not move tool visibility, evidence authority,

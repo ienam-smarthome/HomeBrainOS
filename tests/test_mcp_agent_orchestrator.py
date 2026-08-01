@@ -134,6 +134,132 @@ async def test_ollama_native_multi_round_tool_execution():
 
 
 @pytest.mark.asyncio
+async def test_rule_authoring_discovery_reaches_confirmation_not_false_denial():
+    class RuleAuthoringMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                MCPTool(
+                    "hub_manage_rule_machine",
+                    "Create and edit Rule Machine rules",
+                    {"type": "object"},
+                ),
+            ]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_search_tools":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {
+                        "query": arguments["query"],
+                        "resultsCount": 1,
+                        "totalToolsSearched": 142,
+                        "results": [{
+                            "tool": "hub_set_rule",
+                            "gateway": "hub_manage_rule_machine",
+                            "callAs": (
+                                "Call via hub_manage_rule_machine"
+                                "(tool=\"hub_set_rule\", args={...})"
+                            ),
+                        }],
+                    },
+                )
+            raise AssertionError("rule mutation must wait for confirmation")
+
+    mcp = RuleAuthoringMCP()
+    block_rule_arguments = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Tab S9 FE - Block (9am)",
+            "addTriggers": [{"type": "time", "time": "09:00"}],
+            "addActions": [{
+                "type": "deviceCommand",
+                "deviceId": "6916",
+                "command": "blockInternet",
+            }],
+        },
+    }
+    unblock_rule_arguments = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Tab S9 FE - Unblock (7pm)",
+            "addTriggers": [{"type": "time", "time": "19:00"}],
+            "addActions": [{
+                "type": "deviceCommand",
+                "deviceId": "6916",
+                "command": "allowInternet",
+            }],
+        },
+    }
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "create Rule Machine rule"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": [
+            {
+                "function": {
+                    "name": "hub_manage_rule_machine",
+                    "arguments": block_rule_arguments,
+                }
+            },
+            {
+                "function": {
+                    "name": "hub_manage_rule_machine",
+                    "arguments": unblock_rule_arguments,
+                }
+            },
+        ]}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "write a rule to block tab s9 from 9am to 7pm everyday",
+        session_id="rule-authoring",
+    )
+
+    assert outcome.request_class == "write"
+    assert outcome.message == (
+        "Please confirm before I run 2 sensitive Hubitat actions through "
+        "`hub_manage_rule_machine`."
+    )
+    assert mcp.calls == [
+        ("hub_search_tools", {"query": "create Rule Machine rule"})
+    ]
+    assert agent._pending["rule-authoring"].actions == [
+        ("hub_manage_rule_machine", block_rule_arguments),
+        ("hub_manage_rule_machine", unblock_rule_arguments),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rule_authoring_prompt_documents_supported_gateway_path():
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+
+    instruction = await agent._system_prompt(
+        "write a rule to block tab s9 from 9am to 7pm everyday"
+    )
+
+    assert "RULE AUTHORING" in instruction
+    assert "'find device commands'" in instruction
+    assert "never guess an ID or command" in instruction
+    assert "query 'create Rule Machine rule'" in instruction
+    assert "hub_manage_rule_machine" in instruction
+    assert "tool='hub_set_rule'" in instruction
+    assert "Rule creation is supported" in instruction
+    assert "complementary start and end actions" in instruction
+
+
+@pytest.mark.asyncio
 async def test_streaming_chat_assembles_content_and_tool_calls():
     ai = FakeStreamingAI([
         '{"message":{"role":"assistant","content":"Checking "}}',
