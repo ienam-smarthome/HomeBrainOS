@@ -7,7 +7,7 @@ A bug fix belongs in the existing live implementation. Do not create files named
 Before adding a new Python module under `hubitat-mcp-ai/rootfs/app`:
 
 1. Check `docs/ARCHITECTURE.md`.
-2. Run `python scripts/analyze_imports.py` and `python scripts/analyze_clusters.py`.
+2. Run `python scripts/analyze_imports.py`.
 3. Confirm that the capability does not already exist in a live module family.
 4. Prefer configuration, composition or a focused edit over another wrapper/subclass generation.
 5. Add regression coverage for the behaviour being changed.
@@ -46,9 +46,12 @@ For release or routing changes, also run `scripts/run_release_gate.py` when the 
 Keep the Hubitat MCP AI version aligned in:
 
 - `hubitat-mcp-ai/config.yaml`
-- `hubitat-mcp-ai/rootfs/app/release_version.py`
-- documentation that displays the current maintained version
+- `README.md`
+- `hubitat-mcp-ai/README.md`
+- `hubitat-mcp-ai/CHANGELOG-<version>.md`
 
 Do not claim CI or tests passed without actual results.
 
 - Do not use query keywords or regex intent classes to gate read versus mutation behaviour; gate the actual requested tool call using tool metadata.
+- Classify tool effects from the declared tool and structured call arguments;
+  never infer a tool effect from raw user-prompt wording.

@@ -48,6 +48,8 @@ from tool_registry import (
     home_snapshot_tool as _home_snapshot_tool,
     hub_info_tool as _hub_info_tool,
     weather_snapshot_tool as _weather_snapshot_tool,
+    ToolEffect,
+    classify_tool_effect,
 )
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
@@ -260,11 +262,21 @@ class UnifiedMCPAgent:
         summary: str,
         supports_live_claim: bool = True,
         evidence_kind: str = "tool_result",
-        mutates: bool = False,
+        mutates: bool | None = None,
+        effect: ToolEffect | str | None = None,
     ) -> None:
         receipts = self._evidence.get()
         if receipts is None:
             return
+        resolved_effect = (
+            effect
+            if isinstance(effect, ToolEffect)
+            else ToolEffect(effect)
+            if isinstance(effect, str) and effect in ToolEffect._value2member_map_
+            else classify_tool_effect(
+                MCPTool(gateway, gateway, {}), arguments
+            )
+        )
         receipts.append({
             "tool": gateway,
             "sub_tool": arguments.get("tool"),
@@ -273,7 +285,8 @@ class UnifiedMCPAgent:
             "success": success,
             "supports_live_claim": supports_live_claim,
             "evidence_kind": evidence_kind,
-            "mutates": bool(mutates),
+            "mutates": resolved_effect.mutates if mutates is None else bool(mutates),
+            "effect": resolved_effect.value,
             "arguments": self._redact(arguments),
             "summary": summary,
         })
@@ -671,6 +684,24 @@ class UnifiedMCPAgent:
             or "_manage_" in name
         )
 
+    @classmethod
+    def _shadow_tool_effect(
+        cls,
+        tool: MCPTool | None,
+        arguments: dict[str, Any],
+    ) -> ToolEffect:
+        effect = classify_tool_effect(tool, arguments)
+        legacy_mutates = cls._call_is_mutation(tool, arguments)
+        if effect.mutates != legacy_mutates:
+            logger.warning(
+                "Tool-effect shadow mismatch for %s/%s: effect=%s legacy_mutates=%s",
+                tool.name if tool else "undeclared",
+                arguments.get("tool") or arguments.get("operation") or arguments.get("action") or "",
+                effect.value,
+                legacy_mutates,
+            )
+        return effect
+
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:
         if result.is_error:
@@ -987,6 +1018,9 @@ class UnifiedMCPAgent:
         messages = [*pending.messages, pending.assistant_message]
         for tool_name, arguments in pending.actions:
             self._mutation_call_seen.set(True)
+            effect = classify_tool_effect(
+                MCPTool(tool_name, tool_name, {}), arguments
+            )
             try:
                 started = time.monotonic()
                 result = await self.mcp.call_tool(tool_name, arguments)
@@ -997,6 +1031,7 @@ class UnifiedMCPAgent:
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     summary=self._result_summary(result),
                     mutates=True,
+                    effect=effect,
                 )
                 content = self._result_payload(result)
             except Exception as exc:
@@ -1007,6 +1042,7 @@ class UnifiedMCPAgent:
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                     mutates=True,
+                    effect=effect,
                 )
                 content = json.dumps({"error": str(exc)})
             messages.append({"role": "tool", "tool_name": tool_name, "content": content})
@@ -1192,6 +1228,7 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
                 tool = by_name.get(name)
+                self._shadow_tool_effect(tool, arguments)
                 if self._call_is_mutation(tool, arguments):
                     self._mutation_call_seen.set(True)
                 if tool and self.require_sensitive_confirmation and self._is_sensitive(tool, arguments):
@@ -1252,6 +1289,7 @@ class UnifiedMCPAgent:
                             result = await self.mcp.call_tool(name, dict(arguments))
                         elapsed_ms = round((time.monotonic() - mcp_started) * 1000)
                         mutates = self._call_is_mutation(tool, dict(arguments))
+                        effect = classify_tool_effect(tool, dict(arguments))
                         if mutates:
                             self._mutation_call_seen.set(True)
                         self._record_evidence(
@@ -1263,6 +1301,7 @@ class UnifiedMCPAgent:
                             supports_live_claim=name != "hub_search_tools",
                             evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
                             mutates=mutates,
+                            effect=effect,
                         )
                         if self._is_live_log_call(name, dict(arguments)):
                             logs_checked = self._tool_succeeded(result)
@@ -1319,6 +1358,7 @@ class UnifiedMCPAgent:
                         summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                         supports_live_claim=name != "hub_search_tools",
                         mutates=self._call_is_mutation(by_name.get(name), dict(arguments)),
+                        effect=classify_tool_effect(by_name.get(name), dict(arguments)),
                     )
                     content = json.dumps({"error": str(exc)})
                 messages.append({"role": "tool", "tool_name": name, "content": content})
