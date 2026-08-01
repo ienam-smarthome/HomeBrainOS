@@ -16,10 +16,12 @@ from tool_registry import (
     LOCAL_ACTIVE_ROOMS_TOOL,
     LOCAL_ACTIVE_SWITCHES_TOOL,
     LOCAL_CONTROL_TOOL,
+    LOCAL_DEVICE_HISTORY_TOOL,
     LOCAL_FILTER_TOOL,
     LOCAL_HOME_SNAPSHOT_TOOL,
     LOCAL_HUB_INFO_TOOL,
     LOCAL_QUERY_TOOL,
+    LOCAL_RESOLVE_TOOL,
     LOCAL_WEATHER_TOOL,
 )
 
@@ -32,6 +34,8 @@ INITIAL_TOOL_ORDER = (
     "hub_read_diagnostics",
     LOCAL_FILTER_TOOL,
     LOCAL_QUERY_TOOL,
+    LOCAL_RESOLVE_TOOL,
+    LOCAL_DEVICE_HISTORY_TOOL,
     LOCAL_ACTIVE_LIGHTS_TOOL,
     LOCAL_ACTIVE_ROOMS_TOOL,
     LOCAL_ACTIVE_SWITCHES_TOOL,
@@ -40,6 +44,14 @@ INITIAL_TOOL_ORDER = (
     LOCAL_WEATHER_TOOL,
     LOCAL_CONTROL_TOOL,
 )
+
+# Structured upstream operations covered by stricter local adapters. Discovery
+# may return the broad gateway that hosts one of these operations, but exposing
+# that gateway would let the model bypass the adapter's resolution, bounds, and
+# evidence contract. Keep this mapping operation-based rather than prompt-based.
+LOCAL_OPERATION_WRAPPERS = {
+    "hub_list_device_events": LOCAL_DEVICE_HISTORY_TOOL,
+}
 
 
 class ToolDiscoveryCatalog:
@@ -114,6 +126,14 @@ class ToolDiscoveryCatalog:
         names: list[str] = []
         seen: set[str] = set()
         for item in cls._match_items(result.data):
+            operation = item.get("tool")
+            wrapper = (
+                LOCAL_OPERATION_WRAPPERS.get(operation)
+                if isinstance(operation, str)
+                else None
+            )
+            if wrapper is not None and wrapper in available:
+                continue
             gateway = item.get("gateway")
             if not isinstance(gateway, str):
                 continue
@@ -172,4 +192,9 @@ class ToolDiscoveryCatalog:
         return [self.tool_schema(tool) for tool in self._declared.values()]
 
 
-__all__ = ["INITIAL_TOOL_ORDER", "SEARCH_TOOL", "ToolDiscoveryCatalog"]
+__all__ = [
+    "INITIAL_TOOL_ORDER",
+    "LOCAL_OPERATION_WRAPPERS",
+    "SEARCH_TOOL",
+    "ToolDiscoveryCatalog",
+]

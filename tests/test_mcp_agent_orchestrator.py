@@ -699,10 +699,96 @@ async def test_initial_registry_payload_stays_bounded_with_many_remote_tools():
     declared = ai.requests[0][1]["json"]["tools"]
     names = [item["function"]["name"] for item in declared]
     assert answer == "Hello."
-    assert len(declared) == 10
+    assert len(declared) == 12
     assert names[0] == "hub_search_tools"
+    assert "homebrain_resolve_device" in names
+    assert "homebrain_device_history" in names
     assert not any(name.startswith("hub_manage_large_") for name in names)
     assert len(__import__("json").dumps(declared)) < 12_000
+
+
+@pytest.mark.asyncio
+async def test_history_uses_local_fuzzy_resolver_instead_of_raw_gateway():
+    class HistoryMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                MCPTool("hub_read_devices", "Read devices", {"type": "object"}),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_search_tools":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {"results": [{
+                        "tool": "hub_list_device_events",
+                        "gateway": "hub_read_devices",
+                    }]},
+                )
+            operation = arguments.get("tool")
+            if operation == "hub_list_devices":
+                selected = arguments.get("args", {}).get("filter")
+                devices = []
+                if selected == "tab-s9":
+                    devices = [{
+                        "id": "6916",
+                        "label": "Block Tab-S9-FE",
+                        "capabilities": ["Switch"],
+                        "commands": ["blockInternet", "allowInternet"],
+                    }]
+                return MCPToolResult(
+                    name, arguments, {}, "", {"devices": devices}
+                )
+            if operation == "hub_list_device_events":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {"events": [{
+                        "name": "switch",
+                        "value": "off",
+                        "date": "2026-08-01T14:55:00.000+0100",
+                        "isStateChange": True,
+                    }]},
+                )
+            raise AssertionError((name, arguments))
+
+    mcp = HistoryMCP()
+    ai = FakeAI([{"message": {
+        "role": "assistant",
+        "tool_calls": [{"function": {
+            "name": "homebrain_device_history",
+            "arguments": {"name": "tab s9"},
+        }}],
+    }}])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "When did tab s9 last change?"
+    )
+
+    assert outcome.request_class == "live-read"
+    assert "Block Tab-S9-FE" in outcome.message
+    assert "do not by themselves identify what caused" in outcome.message
+    declared = {
+        item["function"]["name"]
+        for item in ai.requests[0][1]["json"]["tools"]
+    }
+    assert "homebrain_resolve_device" in declared
+    assert "homebrain_device_history" in declared
+    assert "hub_read_devices" not in declared
+    assert mcp.calls[-1][1]["args"]["deviceId"] == "6916"
+    assert [item["tool"] for item in outcome.evidence] == [
+        "hub_read_devices",
+        "hub_read_devices",
+        "hub_read_devices",
+        "homebrain_device_history",
+    ]
 
 
 def test_initial_registry_excludes_remote_read_and_manage_gateways():
@@ -799,6 +885,8 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
             "hub_search_tools",
             "homebrain_filter_devices",
             "homebrain_query_devices",
+            "homebrain_resolve_device",
+            "homebrain_device_history",
             "homebrain_active_lights",
         "homebrain_active_rooms",
             "homebrain_active_switches",
@@ -1427,6 +1515,8 @@ async def test_generic_tv_write_uses_only_high_level_control_and_verifies():
         "hub_search_tools",
         "homebrain_filter_devices",
         "homebrain_query_devices",
+        "homebrain_resolve_device",
+        "homebrain_device_history",
         "homebrain_active_lights",
         "homebrain_active_rooms",
         "homebrain_active_switches",
