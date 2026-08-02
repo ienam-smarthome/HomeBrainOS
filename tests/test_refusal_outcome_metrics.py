@@ -55,6 +55,28 @@ async def test_grounding_refusal_finishes_with_refused_outcome(
 
 
 @pytest.mark.asyncio
+async def test_ambiguous_device_resolution_finishes_with_refused_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_base_result(agent, *_args, **_kwargs) -> AgentOutcome:
+        agent.request_metrics.increment("device_resolution_ambiguous")
+        return _outcome("The device could not be resolved uniquely.")
+
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent,
+        "process_user_request_result",
+        fake_base_result,
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI())
+
+    outcome = await agent.process_user_request_result("private ambiguous device")
+
+    assert outcome.metrics["outcome"] == "refused"
+    assert outcome.metrics["counters"]["device_resolution_ambiguous"] == 1
+    assert "private ambiguous device" not in repr(outcome.metrics)
+
+
+@pytest.mark.asyncio
 async def test_normal_return_still_finishes_with_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -72,11 +94,13 @@ async def test_normal_return_still_finishes_with_success(
 
     assert outcome.metrics["outcome"] == "success"
     assert "grounding_refusals" not in outcome.metrics["counters"]
+    assert "device_resolution_ambiguous" not in outcome.metrics["counters"]
 
 
 def test_completed_outcome_ignores_events_outside_request_context() -> None:
     metrics = RequestMetrics()
 
     metrics.increment("grounding_refusals")
+    metrics.increment("device_resolution_ambiguous")
 
     assert metrics.completed_outcome() == "success"
