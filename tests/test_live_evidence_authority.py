@@ -17,13 +17,19 @@ from grounding_policy import (  # noqa: E402
 from live_evidence_authority import LiveEvidenceAuthority  # noqa: E402
 
 
-def _authority(*, logs_requested: bool = False, conversational: bool = False):
+def _authority(
+    *,
+    logs_requested: bool = False,
+    conversational: bool = False,
+    record_metric=None,
+):
     recorder = EvidenceRecorder()
     token = recorder.begin()
     authority = LiveEvidenceAuthority(
         recorder,
         logs_requested=logs_requested,
         conversational=conversational,
+        record_metric=record_metric,
     )
     return recorder, token, authority
 
@@ -48,6 +54,31 @@ def test_discovery_receipt_does_not_authorize_live_answer() -> None:
         assert first.message == EVIDENCE_RETRY_INSTRUCTION
         assert second.action is GroundingAction.REFUSE
         assert second.message == EVIDENCE_REFUSAL
+    finally:
+        recorder.reset(token)
+
+
+def test_retry_and_refusal_are_recorded_at_the_decision_boundary() -> None:
+    metrics: list[str] = []
+    recorder, token, authority = _authority(record_metric=metrics.append)
+    try:
+        assert authority.decide_no_tool_calls().action is GroundingAction.RETRY
+        assert authority.decide_no_tool_calls().action is GroundingAction.REFUSE
+
+        assert metrics == ["evidence_retries", "grounding_refusals"]
+    finally:
+        recorder.reset(token)
+
+
+def test_accept_does_not_record_a_grounding_metric() -> None:
+    metrics: list[str] = []
+    recorder, token, authority = _authority(
+        conversational=True,
+        record_metric=metrics.append,
+    )
+    try:
+        assert authority.decide_no_tool_calls().action is GroundingAction.ACCEPT
+        assert metrics == []
     finally:
         recorder.reset(token)
 
