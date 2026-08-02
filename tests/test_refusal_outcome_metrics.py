@@ -23,13 +23,22 @@ class FakeAI:
         return None
 
 
+def _outcome(message: str) -> AgentOutcome:
+    return AgentOutcome(
+        message=message,
+        request_class="live-read",
+        evidence=[],
+        choices=[],
+    )
+
+
 @pytest.mark.asyncio
 async def test_grounding_refusal_finishes_with_refused_outcome(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_base_result(agent, *_args, **_kwargs) -> AgentOutcome:
         agent.request_metrics.increment("grounding_refusals")
-        return AgentOutcome(message="I cannot verify that live claim.")
+        return _outcome("I cannot verify that live claim.")
 
     monkeypatch.setattr(
         BaseUnifiedMCPAgent,
@@ -50,7 +59,7 @@ async def test_normal_return_still_finishes_with_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_base_result(*_args, **_kwargs) -> AgentOutcome:
-        return AgentOutcome(message="Grounded answer.")
+        return _outcome("Grounded answer.")
 
     monkeypatch.setattr(
         BaseUnifiedMCPAgent,
