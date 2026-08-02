@@ -28,6 +28,11 @@ vocabulary rejects dynamic labels so device names, prompts, credentials, and
 tool arguments cannot become metric dimensions. Metrics are returned on the
 production `ObservedAgentOutcome` without changing the original result fields.
 
+`api_response_builder.build_agent_response` is the stable serialization boundary
+for `/api/ask`. It preserves the existing response fields, deep-copies evidence
+and metrics, supports legacy outcomes without metrics, and never adds prompt,
+session, or request identifiers to the response payload.
+
 `ProviderTokenEstimator` supplies deterministic, dependency-free approximate
 token counts for known model families and a conservative default profile. It is
 an advisory budgeting input only: provider limits and existing character caps

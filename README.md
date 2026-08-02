@@ -24,7 +24,7 @@ Add this repository URL in the Home Assistant Add-on Store:
 https://github.com/ienam-smarthome/HomeBrainOS
 ```
 
-Then install **Hubitat MCP AI** from the add-on list. See
+Then install **Hubitat MCP AI** from the Add-on Store. See
 [`hubitat-mcp-ai/README.md`](hubitat-mcp-ai/README.md#setup) for the Hubitat MCP
 Rule Server setup and required configuration options.
 
