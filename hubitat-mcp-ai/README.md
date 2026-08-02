@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.301**.
+Current add-on version: **0.10.302**.
 
 ## Architecture
 
@@ -26,11 +26,12 @@ read-versus-write behaviour.
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
 cumulative discovery duration, cumulative remote MCP duration, grounding retries
-and refusals, confirmation queuing, cancellation, total duration, and the final
-request outcome. Local adapters are excluded from MCP timing. Its fixed metric
-vocabulary rejects dynamic labels so device names, prompts, credentials, and
-tool arguments cannot become metric dimensions. Metrics are returned on the
-production `ObservedAgentOutcome` without changing the original result fields.
+and refusals, confirmation queuing, confirmed Rule Machine verification duration,
+verification failures, cancellation, total duration, and the final request
+outcome. Local adapters are excluded from MCP timing. Its fixed metric vocabulary
+rejects dynamic labels so device names, prompts, credentials, and tool arguments
+cannot become metric dimensions. Metrics are returned on the production
+`ObservedAgentOutcome` without changing the original result fields.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence
@@ -58,8 +59,9 @@ confirmation.
 
 After a valid confirmation is consumed, `ConfirmedActionCoordinator`
 revalidates and executes the immutable action group. Rule Machine writes are
-sequential, fail closed on the first unverified result, and use deterministic
-ID-and-health reporting rather than model-generated success claims.
+sequential, fail closed on the first unverified result, record verification at
+that exact boundary, and use deterministic ID-and-health reporting rather than
+model-generated success claims.
 
 `ModelContextPolicy` applies the conversation-history and cumulative
 tool-result budgets to copied provider payloads. It never mutates the
