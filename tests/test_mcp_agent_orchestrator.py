@@ -15,5 +15,6 @@ _REPLACED = {
     "test_history_uses_local_fuzzy_resolver_instead_of_raw_gateway",
 }
 for _name, _value in vars(_suite).items():
-    if _name.startswith("test_") and _name not in _REPLACED:
-        globals()[_name] = _value
+    if _name.startswith("__") or _name in _REPLACED:
+        continue
+    globals()[_name] = _value
