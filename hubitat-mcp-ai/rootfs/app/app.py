@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
+from api_response_builder import build_agent_response
 from automation_status_service import AutomationStatusService
 from device_state_summary import (
     active_non_light_switches,
@@ -416,21 +417,12 @@ async def chat(request: ChatRequest, connection: Request) -> dict[str, Any]:
 async def ask(request: ChatRequest, connection: Request) -> dict[str, Any]:
     started = time.perf_counter()
     outcome = await _answer_result(request, connection)
-    return {
-        "success": True,
-        "route": getattr(outcome, "route", "unified-mcp-agent"),
-        "intent": "native-function-calling",
-        "request_class": outcome.request_class,
-        "message": outcome.message,
-        "choices": getattr(outcome, "choices", []),
-        "confirmation_required": getattr(outcome, "confirmation_required", False),
-        "confirmation_count": getattr(outcome, "confirmation_count", 0),
-        "automation_items": getattr(outcome, "automation_items", []),
-        "evidence": outcome.evidence,
-        "model": agent.model_name,
-        "elapsed_ms": round((time.perf_counter() - started) * 1000),
-        "version": VERSION,
-    }
+    return build_agent_response(
+        outcome,
+        model=agent.model_name,
+        elapsed_ms=round((time.perf_counter() - started) * 1000),
+        version=VERSION,
+    )
 
 
 if __name__ == "__main__":
