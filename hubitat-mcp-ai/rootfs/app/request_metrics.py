@@ -83,7 +83,10 @@ class RequestMetrics:
         """Classify a normally returned request without inspecting its message."""
 
         state = self._state.get()
-        if state is not None and state.counters.get("grounding_refusals", 0) > 0:
+        if state is not None and any(
+            state.counters.get(counter, 0) > 0
+            for counter in ("grounding_refusals", "device_resolution_ambiguous")
+        ):
             return "refused"
         return "success"
 
