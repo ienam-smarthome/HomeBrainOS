@@ -15,12 +15,20 @@ class RequestMetricState:
     outcome: str | None = None
 
 
-class RequestMetrics:
-    """Collect privacy-safe request counters and stage timings.
+@dataclass(frozen=True, slots=True)
+class RequestMetricToken:
+    state: Token
+    active: Token
 
-    Metric keys are fixed internal names. Device labels, prompts, tool arguments,
-    tokens, and other user data are never accepted as metric labels.
-    """
+
+_ACTIVE_REQUEST_METRICS: ContextVar[RequestMetrics | None] = ContextVar(
+    "homebrain_active_request_metrics",
+    default=None,
+)
+
+
+class RequestMetrics:
+    """Collect privacy-safe request counters and stage timings."""
 
     ALLOWED_COUNTERS = frozenset({
         "model_rounds",
@@ -54,11 +62,15 @@ class RequestMetrics:
             default=None,
         )
 
-    def begin(self) -> Token:
-        return self._state.set(RequestMetricState())
+    def begin(self) -> RequestMetricToken:
+        return RequestMetricToken(
+            state=self._state.set(RequestMetricState()),
+            active=_ACTIVE_REQUEST_METRICS.set(self),
+        )
 
-    def reset(self, token: Token) -> None:
-        self._state.reset(token)
+    def reset(self, token: RequestMetricToken) -> None:
+        _ACTIVE_REQUEST_METRICS.reset(token.active)
+        self._state.reset(token.state)
 
     def increment(self, name: str, amount: int = 1) -> None:
         if name not in self.ALLOWED_COUNTERS:
@@ -100,4 +112,22 @@ class RequestMetrics:
         })
 
 
-__all__ = ["RequestMetricState", "RequestMetrics"]
+def increment_active_metric(name: str, amount: int = 1) -> None:
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    if metrics is not None:
+        metrics.increment(name, amount)
+
+
+def observe_active_metric_ms(name: str, elapsed_ms: int | float) -> None:
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    if metrics is not None:
+        metrics.observe_ms(name, elapsed_ms)
+
+
+__all__ = [
+    "RequestMetricState",
+    "RequestMetricToken",
+    "RequestMetrics",
+    "increment_active_metric",
+    "observe_active_metric_ms",
+]
