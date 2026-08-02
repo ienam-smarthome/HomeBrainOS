@@ -35,6 +35,16 @@ The default matrix verifies:
 2. A device-history question returns bounded evidence rather than inferred causation.
 3. A log question is grounded in a real diagnostics receipt.
 4. A sensitive automation request stops at the confirmation boundary.
+5. Every `/api/ask` response exposes the nested `metrics` contract with a valid
+   outcome, counter map, and timing map.
+6. Every response exposes privacy-safe `metric_rows` using only the stable
+   `label` and `value` schema.
+7. Metrics and rows do not expose known sensitive key classes such as prompts,
+   session identifiers, tool arguments, or device names.
+
+The metrics checks validate the deployed serialization path, not just the Python
+presenter in isolation. A response that omits metrics, uses an unknown outcome,
+changes the row schema, or exposes a forbidden key fails the soak run.
 
 Each case uses a separate session ID to avoid confirmation or conversation state
 leaking between tests. The command exits with status `1` if any contract fails,
