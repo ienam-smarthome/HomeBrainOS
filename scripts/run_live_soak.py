@@ -42,7 +42,7 @@ DEFAULT_CASES = (
     ),
 )
 
-_ALLOWED_OUTCOMES = {"success", "refused", "cancelled", "failed"}
+_ALLOWED_OUTCOMES = {"success", "refused", "unresolved", "cancelled", "failed"}
 _FORBIDDEN_METRIC_KEYS = {
     "prompt",
     "user_prompt",

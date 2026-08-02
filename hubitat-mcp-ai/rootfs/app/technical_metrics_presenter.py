@@ -45,16 +45,10 @@ def _duration_text(milliseconds: float) -> str:
 
 
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
-    """Return stable, human-readable rows for a RequestMetrics snapshot.
-
-    Only the fixed nested ``counters`` and ``timings_ms`` vocabularies are read.
-    Unknown keys are ignored so prompts, device names, tool arguments, session
-    identifiers, or future dynamic labels cannot leak into the UI.
-    """
+    """Return stable, human-readable rows for a RequestMetrics snapshot."""
 
     if not isinstance(metrics, dict):
         return []
-
     counters = metrics.get("counters")
     timings = metrics.get("timings_ms")
     if not isinstance(counters, dict):
@@ -68,7 +62,6 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
         if number is None or number == 0:
             continue
         rows.append({"label": label, "value": str(int(number))})
-
     for key, label in _DURATION_LABELS:
         number = _non_negative_number(timings.get(key))
         if number is None:
@@ -77,13 +70,9 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
 
     outcome = metrics.get("outcome")
     if isinstance(outcome, str) and outcome in {
-        "success",
-        "refused",
-        "failed",
-        "cancelled",
+        "success", "refused", "unresolved", "failed", "cancelled",
     }:
         rows.append({"label": "Outcome", "value": outcome})
-
     return rows
 
 

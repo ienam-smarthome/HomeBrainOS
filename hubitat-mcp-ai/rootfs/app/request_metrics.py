@@ -39,7 +39,9 @@ class RequestMetrics:
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "verification", "total",
     })
-    ALLOWED_OUTCOMES = frozenset({"success", "refused", "cancelled", "failed"})
+    ALLOWED_OUTCOMES = frozenset({
+        "success", "refused", "unresolved", "cancelled", "failed",
+    })
 
     def __init__(self) -> None:
         self._state: ContextVar[RequestMetricState | None] = ContextVar(
@@ -83,8 +85,12 @@ class RequestMetrics:
         """Classify a normally returned request without inspecting its message."""
 
         state = self._state.get()
-        if state is not None and state.counters.get("grounding_refusals", 0) > 0:
+        if state is None:
+            return "success"
+        if state.counters.get("grounding_refusals", 0) > 0:
             return "refused"
+        if state.counters.get("device_resolution_ambiguous", 0) > 0:
+            return "unresolved"
         return "success"
 
     def finish(self, outcome: str) -> dict[str, Any]:
