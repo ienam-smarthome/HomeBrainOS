@@ -144,7 +144,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             self.request_metrics.increment("tool_calls", len(outcome.evidence))
             if outcome.confirmation_required:
                 self.request_metrics.increment("confirmation_queued")
-            metrics = self.request_metrics.finish("success")
+            metrics = self.request_metrics.finish(
+                self.request_metrics.completed_outcome()
+            )
             return ObservedAgentOutcome(
                 message=outcome.message,
                 request_class=outcome.request_class,
