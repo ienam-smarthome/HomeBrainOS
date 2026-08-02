@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.293**.
+Current add-on version: **0.10.294**.
 
 ## Architecture
 
@@ -27,6 +27,11 @@ cancellation, total duration, and the final request outcome. Its fixed metric
 vocabulary rejects dynamic labels so device names, prompts, credentials, and
 tool arguments cannot become metric dimensions. Metrics are returned on the
 production `ObservedAgentOutcome` without changing the original result fields.
+
+`ProviderTokenEstimator` supplies deterministic, dependency-free approximate
+token counts for known model families and a conservative default profile. It is
+an advisory budgeting input only: provider limits and existing character caps
+remain the hard fallback until production wiring is validated.
 
 `ConfirmationPolicy` makes bounded decisions from structured tool effects;
 sensitive MCP mutations require an explicit, session-scoped confirmation kept
