@@ -348,41 +348,11 @@ class DeviceQueryService:
                 {"error": "name is required"},
                 is_error=True,
             )
-        variants = self._targeted_name_variants(requested)
-        candidates: list[dict[str, Any]] = []
-        seen_ids: set[str] = set()
-        attempts: list[dict[str, Any]] = []
-        for variant in variants:
-            source_arguments = {
-                "tool": "hub_list_devices",
-                "args": {"filter": variant},
-            }
-            started = time.monotonic()
-            source = await self.mcp.call_tool("hub_read_devices", source_arguments)
-            found = [
-                item
-                for item in (HubitatMCPClient._find_device_list(source.data) or [])
-                if isinstance(item, dict)
-            ]
-            self._record_evidence(
-                "hub_read_devices",
-                source_arguments,
-                success=self._tool_succeeded(source),
-                elapsed_ms=round((time.monotonic() - started) * 1000),
-                summary=f"{len(found)} targeted device records for {variant!r}",
-                evidence_kind="targeted_device_lookup",
-            )
-            attempts.append({"filter": variant, "count": len(found)})
-            if not self._tool_succeeded(source):
-                continue
-            for item in found:
-                identity = str(item.get("id") or item.get("deviceId") or "")
-                dedupe_key = identity or str(item.get("label") or item.get("name") or "")
-                if dedupe_key and dedupe_key not in seen_ids:
-                    seen_ids.add(dedupe_key)
-                    candidates.append(item)
-            if candidates:
-                break
+
+        source, candidates = await self._live_devices(enrich_identity=True)
+        if not self._tool_succeeded(source):
+            return self._read_failure(DEVICE_RESOLVE_TOOL, arguments, source)
+
         resolution = resolve_device_candidate(requested, candidates)
         target = resolution.target
         data = {
@@ -402,7 +372,12 @@ class DeviceQueryService:
             "confidence": resolution.confidence,
             "reason": resolution.reason,
             "alternatives": list(resolution.alternatives),
-            "attempts": attempts,
+            "attempts": [
+                {
+                    "source": "complete_inventory",
+                    "count": len(candidates),
+                }
+            ],
             "complete": True,
         }
         return MCPToolResult(
