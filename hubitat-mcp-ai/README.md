@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.308**.
+Current add-on version: **0.10.309**.
 
 ## Architecture
 
@@ -29,13 +29,14 @@ cumulative discovery duration, cumulative remote MCP duration, grounding retries
 and refusals, confirmation queuing and expiry, confirmed Rule Machine verification
 duration, verification failures, ambiguous device resolutions, cancellation,
 total duration, and the final request outcome. A normally returned request with
-a grounding refusal is labelled `refused`, not `success`; this classification
-uses the fixed refusal counter and never inspects user or model text. Device
-ambiguity is recorded only at the deterministic resolver decision point, not by
-parsing response wording. Local adapters are excluded from MCP timing. Its fixed
-metric vocabulary rejects dynamic labels so device names, prompts, credentials,
-and tool arguments cannot become metric dimensions. Metrics are returned on the
-production `ObservedAgentOutcome` without changing the original result fields.
+a grounding refusal or fail-closed ambiguous device resolution is labelled
+`refused`, not `success`; this classification uses only fixed counters and never
+inspects user or model text. Device ambiguity is recorded only at the
+deterministic resolver decision point, not by parsing response wording. Local
+adapters are excluded from MCP timing. Its fixed metric vocabulary rejects
+dynamic labels so device names, prompts, credentials, and tool arguments cannot
+become metric dimensions. Metrics are returned on the production
+`ObservedAgentOutcome` without changing the original result fields.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence
@@ -65,7 +66,7 @@ confirmation.
 After a valid confirmation is consumed, `ConfirmedActionCoordinator`
 revalidates and executes the immutable action group. Rule Machine writes are
 sequential, fail closed on the first unverified result, record verification at
-that exact boundary, and use deterministic ID-and-health reporting rather than
+the exact boundary, and use deterministic ID-and-health reporting rather than
 model-generated success claims.
 
 `ModelContextPolicy` applies the conversation-history and cumulative
