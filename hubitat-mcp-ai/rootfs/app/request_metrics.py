@@ -15,66 +15,69 @@ class RequestMetricState:
     outcome: str | None = None
 
 
-class RequestMetrics:
-    """Collect privacy-safe request counters and stage timings.
+@dataclass(frozen=True, slots=True)
+class RequestMetricToken:
+    state: Token
+    active: Token
 
-    Metric keys are fixed internal names. Device labels, prompts, tool arguments,
-    tokens, and other user data are never accepted as metric labels.
-    """
+
+_ACTIVE_REQUEST_METRICS: ContextVar[RequestMetrics | None] = ContextVar(
+    "homebrain_active_request_metrics",
+    default=None,
+)
+
+
+class RequestMetrics:
+    """Collect privacy-safe request counters and stage timings."""
 
     ALLOWED_COUNTERS = frozenset({
-        "model_rounds",
-        "tool_calls",
-        "tool_discovery_calls",
-        "evidence_retries",
-        "grounding_refusals",
-        "confirmation_queued",
-        "confirmation_expired",
-        "mutation_verification_failures",
-        "request_cancellations",
-        "device_resolution_ambiguous",
+        "model_rounds", "tool_calls", "tool_discovery_calls",
+        "evidence_retries", "grounding_refusals", "confirmation_queued",
+        "confirmation_expired", "mutation_verification_failures",
+        "request_cancellations", "device_resolution_ambiguous",
     })
     ALLOWED_TIMINGS = frozenset({
-        "provider",
-        "tool_discovery",
-        "mcp",
-        "verification",
-        "total",
+        "provider", "tool_discovery", "mcp", "verification", "total",
     })
-    ALLOWED_OUTCOMES = frozenset({
-        "success",
-        "refused",
-        "cancelled",
-        "failed",
-    })
+    ALLOWED_OUTCOMES = frozenset({"success", "refused", "cancelled", "failed"})
 
     def __init__(self) -> None:
         self._state: ContextVar[RequestMetricState | None] = ContextVar(
-            "homebrain_request_metrics",
-            default=None,
+            "homebrain_request_metrics", default=None
         )
 
-    def begin(self) -> Token:
-        return self._state.set(RequestMetricState())
+    def begin(self) -> RequestMetricToken:
+        return RequestMetricToken(
+            state=self._state.set(RequestMetricState()),
+            active=_ACTIVE_REQUEST_METRICS.set(self),
+        )
 
-    def reset(self, token: Token) -> None:
-        self._state.reset(token)
+    def reset(self, token: RequestMetricToken) -> None:
+        _ACTIVE_REQUEST_METRICS.reset(token.active)
+        self._state.reset(token.state)
 
     def increment(self, name: str, amount: int = 1) -> None:
         if name not in self.ALLOWED_COUNTERS:
             raise ValueError(f"Unsupported metric counter: {name}")
         state = self._state.get()
-        if state is None:
-            return
-        state.counters[name] = state.counters.get(name, 0) + max(0, int(amount))
+        if state is not None:
+            state.counters[name] = state.counters.get(name, 0) + max(0, int(amount))
 
     def observe_ms(self, name: str, elapsed_ms: int | float) -> None:
         if name not in self.ALLOWED_TIMINGS:
             raise ValueError(f"Unsupported metric timing: {name}")
         state = self._state.get()
-        if state is None:
-            return
-        state.timings_ms[name] = max(0, round(float(elapsed_ms)))
+        if state is not None:
+            state.timings_ms[name] = max(0, round(float(elapsed_ms)))
+
+    def add_ms(self, name: str, elapsed_ms: int | float) -> None:
+        if name not in self.ALLOWED_TIMINGS:
+            raise ValueError(f"Unsupported metric timing: {name}")
+        state = self._state.get()
+        if state is not None:
+            state.timings_ms[name] = state.timings_ms.get(name, 0) + max(
+                0, round(float(elapsed_ms))
+            )
 
     def finish(self, outcome: str) -> dict[str, Any]:
         if outcome not in self.ALLOWED_OUTCOMES:
@@ -84,8 +87,7 @@ class RequestMetrics:
             return {"outcome": outcome, "counters": {}, "timings_ms": {}}
         state.outcome = outcome
         state.timings_ms.setdefault(
-            "total",
-            max(0, round((monotonic() - state.started_at) * 1000)),
+            "total", max(0, round((monotonic() - state.started_at) * 1000))
         )
         return self.snapshot()
 
@@ -100,4 +102,19 @@ class RequestMetrics:
         })
 
 
-__all__ = ["RequestMetricState", "RequestMetrics"]
+def increment_active_metric(name: str, amount: int = 1) -> None:
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    if metrics is not None:
+        metrics.increment(name, amount)
+
+
+def add_active_metric_ms(name: str, elapsed_ms: int | float) -> None:
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    if metrics is not None:
+        metrics.add_ms(name, elapsed_ms)
+
+
+__all__ = [
+    "RequestMetricState", "RequestMetricToken", "RequestMetrics",
+    "increment_active_metric", "add_active_metric_ms",
+]

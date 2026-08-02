@@ -1,10 +1,4 @@
-"""Structured tool execution mechanics for the Hubitat MCP agent.
-
-The executor dispatches one already-approved tool call, measures it, records
-its result, and prepares bounded model content. It does not decide which tools
-are visible, whether a call needs confirmation, whether evidence is required,
-or how a result should be presented to the user.
-"""
+"""Structured tool execution mechanics for the Hubitat MCP agent."""
 
 from __future__ import annotations
 
@@ -18,18 +12,17 @@ from typing import Any
 
 from evidence_recorder import EvidenceRecorder
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
+from request_metrics import add_active_metric_ms, increment_active_metric
 from tool_registry import ToolEffect, classify_tool_effect
 
 
 logger = logging.getLogger("HomeBrainOS.ToolExecutor")
-
 ToolHandler = Callable[[dict[str, Any]], Awaitable[MCPToolResult]]
+_SEARCH_TOOL = "hub_search_tools"
 
 
 @dataclass(slots=True)
 class ToolExecution:
-    """Normalised outcome from one attempted structured tool call."""
-
     name: str
     arguments: dict[str, Any]
     effect: ToolEffect
@@ -60,8 +53,6 @@ class ToolExecutor:
 
     @staticmethod
     def succeeded(result: MCPToolResult) -> bool:
-        """Recognise top-level and common nested MCP failure envelopes."""
-
         if result.is_error:
             return False
         data = result.data
@@ -78,8 +69,6 @@ class ToolExecutor:
 
     @staticmethod
     def result_summary(result: MCPToolResult) -> str:
-        """Return a short audit summary without copying the full result."""
-
         data = result.data
         if isinstance(data, dict):
             keys = ", ".join(map(str, list(data)[:10]))
@@ -90,8 +79,6 @@ class ToolExecutor:
         return (text[:157] + "...") if len(text) > 160 else (text or "empty result")
 
     def result_payload(self, result: MCPToolResult) -> str:
-        """Serialize and bound one result before it enters model context."""
-
         payload = (
             {"error": result.text or "MCP tool failed"}
             if result.is_error
@@ -100,15 +87,18 @@ class ToolExecutor:
         serialized = json.dumps(payload, ensure_ascii=False, default=str)
         if len(serialized) <= self.max_tool_result_chars:
             return serialized
-        return json.dumps(
-            {
-                "result_excerpt": serialized[: self.max_tool_result_chars],
-                "truncated": True,
-                "original_chars": len(serialized),
-                "instruction": "Use pagination or a narrower query for more detail.",
-            },
-            ensure_ascii=False,
-        )
+        return json.dumps({
+            "result_excerpt": serialized[: self.max_tool_result_chars],
+            "truncated": True,
+            "original_chars": len(serialized),
+            "instruction": "Use pagination or a narrower query for more detail.",
+        }, ensure_ascii=False)
+
+    @staticmethod
+    def _record_discovery_metrics(name: str, elapsed_ms: int) -> None:
+        if name == _SEARCH_TOOL:
+            increment_active_metric("tool_discovery_calls")
+            add_active_metric_ms("tool_discovery", elapsed_ms)
 
     async def execute(
         self,
@@ -121,8 +111,6 @@ class ToolExecutor:
         mutates: bool | None = None,
         record_evidence: bool = True,
     ) -> ToolExecution:
-        """Dispatch one structured call and optionally record its outcome."""
-
         safe_arguments = deepcopy(arguments)
         receipt_arguments = deepcopy(arguments)
         declared_tool = tool or MCPTool(name, name, {})
@@ -136,13 +124,11 @@ class ToolExecutor:
                 else await self.mcp.call_tool(name, safe_arguments)
             )
             elapsed_ms = round((self._clock() - started) * 1000)
+            self._record_discovery_metrics(name, elapsed_ms)
             success = self.succeeded(result)
             if record_evidence:
                 self.evidence.record(
-                    name,
-                    receipt_arguments,
-                    success=success,
-                    elapsed_ms=elapsed_ms,
+                    name, receipt_arguments, success=success, elapsed_ms=elapsed_ms,
                     summary=self.result_summary(result),
                     supports_live_claim=supports_live_claim,
                     evidence_kind=evidence_kind,
@@ -151,22 +137,16 @@ class ToolExecutor:
                 )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
             return ToolExecution(
-                name=name,
-                arguments=receipt_arguments,
-                effect=effect,
-                success=success,
-                elapsed_ms=elapsed_ms,
-                content=self.result_payload(result),
-                result=result,
+                name=name, arguments=receipt_arguments, effect=effect,
+                success=success, elapsed_ms=elapsed_ms,
+                content=self.result_payload(result), result=result,
             )
         except Exception as exc:
             elapsed_ms = round((self._clock() - started) * 1000)
+            self._record_discovery_metrics(name, elapsed_ms)
             if record_evidence:
                 self.evidence.record(
-                    name,
-                    receipt_arguments,
-                    success=False,
-                    elapsed_ms=elapsed_ms,
+                    name, receipt_arguments, success=False, elapsed_ms=elapsed_ms,
                     summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                     supports_live_claim=supports_live_claim,
                     evidence_kind=evidence_kind,
@@ -175,13 +155,9 @@ class ToolExecutor:
                 )
             logger.exception("Tool %s failed", name)
             return ToolExecution(
-                name=name,
-                arguments=receipt_arguments,
-                effect=effect,
-                success=False,
-                elapsed_ms=elapsed_ms,
-                content=json.dumps({"error": str(exc)[:1000]}),
-                error=exc,
+                name=name, arguments=receipt_arguments, effect=effect,
+                success=False, elapsed_ms=elapsed_ms,
+                content=json.dumps({"error": str(exc)[:1000]}), error=exc,
             )
 
 
