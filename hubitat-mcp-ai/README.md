@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.302**.
+Current add-on version: **0.10.303**.
 
 ## Architecture
 
@@ -26,11 +26,11 @@ read-versus-write behaviour.
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
 cumulative discovery duration, cumulative remote MCP duration, grounding retries
-and refusals, confirmation queuing, confirmed Rule Machine verification duration,
-verification failures, cancellation, total duration, and the final request
-outcome. Local adapters are excluded from MCP timing. Its fixed metric vocabulary
-rejects dynamic labels so device names, prompts, credentials, and tool arguments
-cannot become metric dimensions. Metrics are returned on the production
+and refusals, confirmation queuing and expiry, confirmed Rule Machine verification
+duration, verification failures, cancellation, total duration, and the final
+request outcome. Local adapters are excluded from MCP timing. Its fixed metric
+vocabulary rejects dynamic labels so device names, prompts, credentials, and tool
+arguments cannot become metric dimensions. Metrics are returned on the production
 `ObservedAgentOutcome` without changing the original result fields.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
@@ -54,7 +54,8 @@ caps and direct base-agent callers retain the original `ModelContextPolicy`.
 
 `ConfirmationPolicy` makes bounded decisions from structured tool effects;
 sensitive MCP mutations require an explicit, session-scoped confirmation kept
-by `ConfirmationStore`. Read-only and routine gateway operations do not require
+by `ConfirmationStore`. Expired pending confirmations are removed and counted at
+the store boundary; read-only and routine gateway operations do not require
 confirmation.
 
 After a valid confirmation is consumed, `ConfirmedActionCoordinator`
