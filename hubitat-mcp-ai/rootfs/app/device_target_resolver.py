@@ -130,13 +130,22 @@ def _specific_tokens(value: Any) -> set[str]:
 
 
 def _specific_tokens_compatible(requested: str, candidate: str) -> bool:
-    """Reject matches that agree only on a generic device-kind suffix."""
+    """Allow minor typos but reject matches based only on generic suffixes."""
 
     wanted = _specific_tokens(requested)
     actual = _specific_tokens(candidate)
     if not wanted:
         return True
-    return wanted.issubset(actual)
+    if not actual:
+        return False
+    return all(
+        any(
+            wanted_token == actual_token
+            or SequenceMatcher(None, wanted_token, actual_token).ratio() >= 0.80
+            for actual_token in actual
+        )
+        for wanted_token in wanted
+    )
 
 
 def _score(requested: str, candidate: str) -> float:
