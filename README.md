@@ -8,7 +8,7 @@ Short GitHub description: Local-first AI smart-home assistant for Hubitat + Home
 
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
-| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.293 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
+| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.294 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
 
 The legacy/alternate HomeBrain OS dashboard (Maker API-based, `homebrainos/`)
 has been retired and removed from this repository. All assistant development is
@@ -24,7 +24,7 @@ Add this repository URL in the Home Assistant Add-on Store:
 https://github.com/ienam-smarthome/HomeBrainOS
 ```
 
-Then install **Hubitat MCP AI** from the add-on list. See
+Then install **Hubitat MCP AI** from the Add-on Store. See
 [`hubitat-mcp-ai/README.md`](hubitat-mcp-ai/README.md#setup) for the Hubitat MCP
 Rule Server setup and required configuration options.
 
