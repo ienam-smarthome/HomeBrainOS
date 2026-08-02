@@ -1,0 +1,1 @@
+Preserve the original orchestrator test blob under a non-collected module and load all unchanged cases through a selective wrapper.
