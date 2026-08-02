@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
+from request_metrics import increment_active_metric
+
 
 _NUMBER_WORDS = {
     "zero": "0",
@@ -140,6 +142,16 @@ def _score(requested: str, candidate: str) -> float:
     return score
 
 
+def _ambiguous_resolution(
+    *,
+    confidence: float,
+    alternatives: tuple[str, ...],
+    reason: str,
+) -> CandidateResolution:
+    increment_active_metric("device_resolution_ambiguous")
+    return CandidateResolution(None, None, confidence, alternatives, reason)
+
+
 def resolve_device_candidate(
     requested: str,
     candidates: list[dict[str, Any]],
@@ -176,12 +188,10 @@ def resolve_device_candidate(
         )
     if len(exact_matches) > 1:
         exact_alternatives = tuple(name for name, _device in exact_matches[:3])
-        return CandidateResolution(
-            None,
-            None,
-            1.0,
-            exact_alternatives,
-            (
+        return _ambiguous_resolution(
+            confidence=1.0,
+            alternatives=exact_alternatives,
+            reason=(
                 f"{requested!r} matches multiple devices exactly; the candidates are "
                 f"{', '.join(exact_alternatives)}."
             ),
@@ -251,12 +261,10 @@ def resolve_device_candidate(
             alternatives,
             "high-confidence ranked candidate",
         )
-    return CandidateResolution(
-        None,
-        None,
-        top_score,
-        alternatives,
-        (
+    return _ambiguous_resolution(
+        confidence=top_score,
+        alternatives=alternatives,
+        reason=(
             f"{requested!r} is ambiguous; the closest candidates are "
             f"{', '.join(alternatives)}."
         ),
