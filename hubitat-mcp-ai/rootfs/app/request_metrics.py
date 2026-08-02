@@ -79,6 +79,14 @@ class RequestMetrics:
                 0, round(float(elapsed_ms))
             )
 
+    def completed_outcome(self) -> str:
+        """Classify a normally returned request without inspecting its message."""
+
+        state = self._state.get()
+        if state is not None and state.counters.get("grounding_refusals", 0) > 0:
+            return "refused"
+        return "success"
+
     def finish(self, outcome: str) -> dict[str, Any]:
         if outcome not in self.ALLOWED_OUTCOMES:
             raise ValueError(f"Unsupported request outcome: {outcome}")
