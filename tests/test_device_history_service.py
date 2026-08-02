@@ -29,6 +29,16 @@ class HistoryMCP:
         self.resolve = resolve
         self.calls: list[tuple[str, dict]] = []
 
+    async def get_cached_devices(self):
+        if not self.resolve:
+            return []
+        return [{
+            "id": "42",
+            "label": "Livingroom Light 1",
+            "capabilities": ["Switch"],
+            "commands": ["on", "off"],
+        }]
+
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
         operation = arguments.get("tool")
@@ -116,21 +126,25 @@ async def test_reads_bounded_authoritative_history_after_targeted_resolution():
 @pytest.mark.asyncio
 async def test_short_name_resolves_prefixed_hyphenated_device_before_history():
     class PrefixedHistoryMCP(HistoryMCP):
+        def __init__(self):
+            super().__init__()
+            self.devices = [{
+                "id": "6916",
+                "label": "Block Tab-S9-FE",
+                "capabilities": ["Switch"],
+                "commands": ["blockInternet", "allowInternet"],
+            }]
+
+        async def get_cached_devices(self):
+            return self.devices
+
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
             operation = arguments.get("tool")
             if operation == "hub_list_devices":
-                selected = arguments.get("args", {}).get("filter")
-                devices = []
-                if selected == "tab-s9":
-                    devices = [{
-                        "id": "6916",
-                        "label": "Block Tab-S9-FE",
-                        "capabilities": ["Switch"],
-                        "commands": ["blockInternet", "allowInternet"],
-                    }]
+                assert arguments.get("args") == {}
                 return MCPToolResult(
-                    name, arguments, {}, "ok", {"devices": devices}
+                    name, arguments, {}, "ok", {"devices": self.devices}
                 )
             if operation == EVENT_OPERATION:
                 return MCPToolResult(
@@ -157,11 +171,14 @@ async def test_short_name_resolves_prefixed_hyphenated_device_before_history():
     assert result.is_error is False
     assert result.data["deviceId"] == "6916"
     assert result.data["label"] == "Block Tab-S9-FE"
-    assert [
-        arguments["args"]["filter"]
-        for _, arguments in mcp.calls
+    inventory_calls = [
+        (name, arguments)
+        for name, arguments in mcp.calls
         if arguments.get("tool") == "hub_list_devices"
-    ] == ["tab s9", "tab-s9"]
+    ]
+    assert inventory_calls == [
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+    ]
     assert mcp.calls[-1][1]["args"]["deviceId"] == "6916"
 
 

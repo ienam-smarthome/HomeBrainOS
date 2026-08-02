@@ -22,6 +22,19 @@ _NUMBER_WORDS = {
     "ten": "10",
 }
 _NAME_FIELDS = ("label", "name", "displayName", "deviceLabel")
+_GENERIC_NAME_TOKENS = {
+    "bulb",
+    "device",
+    "lamp",
+    "light",
+    "meter",
+    "outlet",
+    "plug",
+    "sensor",
+    "socket",
+    "switch",
+    "thermostat",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +59,7 @@ def normalized_name(value: Any) -> str:
 
 
 def targeted_name_variants(value: Any, *, limit: int = 4) -> list[str]:
-    """Build bounded server-side filters using shared name normalization."""
+    """Build bounded legacy lookup variants using shared name normalization."""
 
     tokens = _plain_text(value).split()
     if not tokens:
@@ -112,6 +125,29 @@ def _device_names(device: dict[str, Any]) -> list[str]:
     return values
 
 
+def _specific_tokens(value: Any) -> set[str]:
+    return _tokens(value) - _GENERIC_NAME_TOKENS
+
+
+def _specific_tokens_compatible(requested: str, candidate: str) -> bool:
+    """Allow minor typos but reject matches based only on generic suffixes."""
+
+    wanted = _specific_tokens(requested)
+    actual = _specific_tokens(candidate)
+    if not wanted:
+        return True
+    if not actual:
+        return False
+    return all(
+        any(
+            wanted_token == actual_token
+            or SequenceMatcher(None, wanted_token, actual_token).ratio() >= 0.80
+            for actual_token in actual
+        )
+        for wanted_token in wanted
+    )
+
+
 def _score(requested: str, candidate: str) -> float:
     wanted = normalized_name(requested)
     actual = normalized_name(candidate)
@@ -124,21 +160,25 @@ def _score(requested: str, candidate: str) -> float:
         length_ratio >= 0.65
         and (actual.startswith(wanted) or wanted.startswith(actual))
     ):
-        return 0.94
-    sequence = SequenceMatcher(None, wanted, actual).ratio()
-    wanted_tokens = _tokens(requested)
-    actual_tokens = _tokens(candidate)
-    if not wanted_tokens or not actual_tokens:
-        return sequence
-    intersection = len(wanted_tokens & actual_tokens)
-    union = len(wanted_tokens | actual_tokens)
-    jaccard = intersection / union
-    containment = intersection / len(wanted_tokens)
-    score = max(sequence, (sequence + jaccard) / 2, containment * 0.9)
+        score = 0.94
+    else:
+        sequence = SequenceMatcher(None, wanted, actual).ratio()
+        wanted_tokens = _tokens(requested)
+        actual_tokens = _tokens(candidate)
+        if not wanted_tokens or not actual_tokens:
+            score = sequence
+        else:
+            intersection = len(wanted_tokens & actual_tokens)
+            union = len(wanted_tokens | actual_tokens)
+            jaccard = intersection / union
+            containment = intersection / len(wanted_tokens)
+            score = max(sequence, (sequence + jaccard) / 2, containment * 0.9)
     wanted_numbers = set(re.findall(r"\d+", wanted))
     actual_numbers = set(re.findall(r"\d+", actual))
     if wanted_numbers and actual_numbers and wanted_numbers != actual_numbers:
         score = max(0.0, score - 0.30)
+    if not _specific_tokens_compatible(requested, candidate):
+        score = min(score, 0.69)
     return score
 
 
@@ -243,7 +283,7 @@ def resolve_device_candidate(
                 top_name,
                 top_score,
                 alternatives,
-                "unique filtered candidate",
+                "unique inventory candidate",
             )
         return CandidateResolution(
             None,
