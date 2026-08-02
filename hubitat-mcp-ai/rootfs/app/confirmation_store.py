@@ -6,6 +6,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from request_metrics import increment_active_metric
+
 
 CONFIRM_WORDS = {
     "confirm",
@@ -98,3 +100,5 @@ class ConfirmationStore:
         ]
         for session_id in expired:
             self._pending.pop(session_id, None)
+        if expired:
+            increment_active_metric("confirmation_expired", len(expired))
