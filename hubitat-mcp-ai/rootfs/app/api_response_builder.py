@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from technical_metrics_presenter import present_request_metrics
+
 
 def build_agent_response(
     outcome: Any,
@@ -31,6 +33,7 @@ def build_agent_response(
         "automation_items": list(getattr(outcome, "automation_items", []) or []),
         "evidence": deepcopy(list(getattr(outcome, "evidence", []) or [])),
         "metrics": deepcopy(metrics),
+        "metric_rows": present_request_metrics(metrics),
         "model": str(model),
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
