@@ -95,7 +95,14 @@ class ToolExecutor:
         }, ensure_ascii=False)
 
     @staticmethod
-    def _record_discovery_metrics(name: str, elapsed_ms: int) -> None:
+    def _record_execution_metrics(
+        name: str,
+        elapsed_ms: int,
+        *,
+        remote: bool,
+    ) -> None:
+        if remote:
+            add_active_metric_ms("mcp", elapsed_ms)
         if name == _SEARCH_TOOL:
             increment_active_metric("tool_discovery_calls")
             add_active_metric_ms("tool_discovery", elapsed_ms)
@@ -115,16 +122,17 @@ class ToolExecutor:
         receipt_arguments = deepcopy(arguments)
         declared_tool = tool or MCPTool(name, name, {})
         effect = classify_tool_effect(declared_tool, receipt_arguments)
+        handler = self.local_handlers.get(name)
+        remote = handler is None
         started = self._clock()
         try:
-            handler = self.local_handlers.get(name)
             result = (
                 await handler(safe_arguments)
                 if handler is not None
                 else await self.mcp.call_tool(name, safe_arguments)
             )
             elapsed_ms = round((self._clock() - started) * 1000)
-            self._record_discovery_metrics(name, elapsed_ms)
+            self._record_execution_metrics(name, elapsed_ms, remote=remote)
             success = self.succeeded(result)
             if record_evidence:
                 self.evidence.record(
@@ -143,7 +151,7 @@ class ToolExecutor:
             )
         except Exception as exc:
             elapsed_ms = round((self._clock() - started) * 1000)
-            self._record_discovery_metrics(name, elapsed_ms)
+            self._record_execution_metrics(name, elapsed_ms, remote=remote)
             if record_evidence:
                 self.evidence.record(
                     name, receipt_arguments, success=False, elapsed_ms=elapsed_ms,
