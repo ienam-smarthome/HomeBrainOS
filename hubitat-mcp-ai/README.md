@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.298**.
+Current add-on version: **0.10.299**.
 
 ## Architecture
 
@@ -18,15 +18,18 @@ which run through `ToolExecutor` and `HubitatMCPClient`. Request-scoped evidence
 receipts are sanitised and isolated by `EvidenceRecorder`; the production agent
 installs a context-local `LiveEvidenceAuthority` at the established grounding
 boundary so it alone combines current receipts with bounded retry/refusal state.
-Direct base-agent callers retain the original `GroundingPolicy` contract. No
-regex router or prompt-keyword tool gate controls read-versus-write behaviour.
+Grounding retries and refusals are recorded at that decision boundary rather
+than inferred from final messages. Direct base-agent callers retain the original
+`GroundingPolicy` contract. No regex router or prompt-keyword tool gate controls
+read-versus-write behaviour.
 
-`RequestMetrics` now wraps the maintained production request path. It records
-model rounds, provider time, recorded tool calls, confirmation queuing,
-cancellation, total duration, and the final request outcome. Its fixed metric
-vocabulary rejects dynamic labels so device names, prompts, credentials, and
-tool arguments cannot become metric dimensions. Metrics are returned on the
-production `ObservedAgentOutcome` without changing the original result fields.
+`RequestMetrics` wraps the maintained production request path. It records model
+rounds, provider time, evidence-backed tool calls, grounding retries and
+refusals, confirmation queuing, cancellation, total duration, and the final
+request outcome. Its fixed metric vocabulary rejects dynamic labels so device
+names, prompts, credentials, and tool arguments cannot become metric dimensions.
+Metrics are returned on the production `ObservedAgentOutcome` without changing
+the original result fields.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence

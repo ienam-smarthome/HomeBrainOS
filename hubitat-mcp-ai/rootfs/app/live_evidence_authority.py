@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from evidence_recorder import EvidenceRecorder
-from grounding_policy import GroundingDecision, GroundingPolicy
+from grounding_policy import GroundingAction, GroundingDecision, GroundingPolicy
 
 
 class LiveEvidenceAuthority:
@@ -20,12 +21,14 @@ class LiveEvidenceAuthority:
         *,
         logs_requested: bool,
         conversational: bool,
+        record_metric: Callable[[str], None] | None = None,
     ) -> None:
         self.recorder = recorder
         self.policy = GroundingPolicy(
             logs_requested=logs_requested,
             conversational=conversational,
         )
+        self._record_metric = record_metric
 
     @property
     def has_live_evidence(self) -> bool:
@@ -45,9 +48,15 @@ class LiveEvidenceAuthority:
         self.policy.record_tool_outcome(name, arguments, success=success)
 
     def decide_no_tool_calls(self) -> GroundingDecision:
-        return self.policy.decide_no_tool_calls(
+        decision = self.policy.decide_no_tool_calls(
             has_live_evidence=self.has_live_evidence
         )
+        if self._record_metric is not None:
+            if decision.action is GroundingAction.RETRY:
+                self._record_metric("evidence_retries")
+            elif decision.action is GroundingAction.REFUSE:
+                self._record_metric("grounding_refusals")
+        return decision
 
 
 __all__ = ["LiveEvidenceAuthority"]
