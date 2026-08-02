@@ -12,6 +12,7 @@ from grounding_policy import GroundingPolicy as BaseGroundingPolicy
 from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
 from request_metrics import RequestMetrics
+from token_aware_context_policy import TokenAwareModelContextPolicy
 
 
 _CURRENT_EVIDENCE_RECORDER: ContextVar[Any | None] = ContextVar(
@@ -28,13 +29,7 @@ class ObservedAgentOutcome(AgentOutcome):
 
 
 class _ProductionGroundingAuthority:
-    """GroundingPolicy-compatible adapter for the maintained production agent.
-
-    The orchestrator still constructs its historical ``GroundingPolicy`` name.
-    This adapter selects ``LiveEvidenceAuthority`` only while a production-agent
-    request has installed its request-local recorder. Direct base-agent callers
-    and historical tests retain the original policy contract.
-    """
+    """GroundingPolicy-compatible adapter for the maintained production agent."""
 
     def __init__(self, *, logs_requested: bool, conversational: bool) -> None:
         recorder = _CURRENT_EVIDENCE_RECORDER.get()
@@ -52,8 +47,6 @@ class _ProductionGroundingAuthority:
 
     @staticmethod
     def is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
-        """Preserve the established GroundingPolicy class-level contract."""
-
         return BaseGroundingPolicy.is_live_log_call(name, arguments)
 
     @property
@@ -81,8 +74,6 @@ class _ProductionGroundingAuthority:
         )
 
 
-# Keep the large established tool loop intact while supplying a context-local
-# authority at its existing GroundingPolicy construction point.
 orchestrator.GroundingPolicy = _ProductionGroundingAuthority
 
 
@@ -91,6 +82,17 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.context_policy = TokenAwareModelContextPolicy(
+            model_name=self.model_name,
+            max_history_messages=self.context_policy.max_history_messages,
+            max_history_chars=self.context_policy.max_history_chars,
+            max_tool_context_chars=self.context_policy.max_tool_context_chars,
+            compacted_tool_result_chars=self.context_policy.compacted_tool_result_chars,
+        )
+        self.max_history_messages = self.context_policy.max_history_messages
+        self.max_history_chars = self.context_policy.max_history_chars
+        self.max_tool_context_chars = self.context_policy.max_tool_context_chars
+        self.compacted_tool_result_chars = self.context_policy.compacted_tool_result_chars
         self.final_answers = FinalAnswerCoordinator(self._chat)
         self.request_metrics = RequestMetrics()
 
