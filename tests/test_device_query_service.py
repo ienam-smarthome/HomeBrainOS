@@ -81,23 +81,28 @@ async def test_targeted_resolver_handles_spaces_hyphens_and_label_prefixes():
     class TargetedMCP:
         def __init__(self):
             self.calls = []
+            self.devices = [{
+                "id": "6916",
+                "label": "Block Tab-S9-FE",
+                "capabilities": ["Switch"],
+                "commands": ["blockInternet", "allowInternet", "addTime"],
+            }]
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
-            label_filter = arguments["args"]["filter"]
-            devices = []
-            if label_filter == "tab-s9":
-                devices = [{
-                    "id": "6916",
-                    "label": "Block Tab-S9-FE",
-                    "capabilities": ["Switch"],
-                    "commands": ["blockInternet", "allowInternet", "addTime"],
-                }]
-            return MCPToolResult(name, arguments, {}, "ok", {"devices": devices})
+            assert arguments == {"tool": "hub_list_devices", "args": {}}
+            return MCPToolResult(
+                name, arguments, {}, "ok", {"devices": self.devices}
+            )
+
+        async def get_cached_devices(self):
+            return self.devices
 
     mcp = TargetedMCP()
     receipts = []
-    service = DeviceQueryService(mcp, lambda *args, **kwargs: receipts.append((args, kwargs)))
+    service = DeviceQueryService(
+        mcp, lambda *args, **kwargs: receipts.append((args, kwargs))
+    )
 
     result = await service.resolve_device({"name": "tab s9"})
 
@@ -107,10 +112,11 @@ async def test_targeted_resolver_handles_spaces_hyphens_and_label_prefixes():
     assert result.data["target"]["commands"] == [
         "blockInternet", "allowInternet", "addTime"
     ]
-    assert [call[1]["args"]["filter"] for call in mcp.calls] == [
-        "tab s9", "tab-s9"
+    assert mcp.calls == [
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
     ]
-    assert len(receipts) == 2
+    assert len(receipts) == 1
+    assert receipts[0][1]["evidence_kind"] == "authoritative_state_snapshot"
 
 
 @pytest.mark.asyncio
