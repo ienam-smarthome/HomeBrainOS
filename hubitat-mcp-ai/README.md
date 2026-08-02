@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.303**.
+Current add-on version: **0.10.304**.
 
 ## Architecture
 
@@ -28,10 +28,13 @@ rounds, provider time, evidence-backed tool calls, exact tool-discovery calls an
 cumulative discovery duration, cumulative remote MCP duration, grounding retries
 and refusals, confirmation queuing and expiry, confirmed Rule Machine verification
 duration, verification failures, cancellation, total duration, and the final
-request outcome. Local adapters are excluded from MCP timing. Its fixed metric
-vocabulary rejects dynamic labels so device names, prompts, credentials, and tool
-arguments cannot become metric dimensions. Metrics are returned on the production
-`ObservedAgentOutcome` without changing the original result fields.
+request outcome. A normally returned request with a grounding refusal is labelled
+`refused`, not `success`; this classification uses the fixed refusal counter and
+never inspects user or model text. Local adapters are excluded from MCP timing.
+Its fixed metric vocabulary rejects dynamic labels so device names, prompts,
+credentials, and tool arguments cannot become metric dimensions. Metrics are
+returned on the production `ObservedAgentOutcome` without changing the original
+result fields.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence
