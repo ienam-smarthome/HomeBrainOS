@@ -35,6 +35,16 @@ _GENERIC_NAME_TOKENS = {
     "switch",
     "thermostat",
 }
+_STANDARD_ATTRIBUTE_UNITS = {
+    "battery": "%",
+    "batterylevel": "%",
+    "humidity": "%",
+    "power": "W",
+    "activepower": "W",
+    "powermeter": "W",
+    "temperature": "°C",
+    "temperaturec": "°C",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +135,82 @@ def _device_names(device: dict[str, Any]) -> list[str]:
     return values
 
 
+def _normalized_attribute_name(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+
+
+def _state_items(device: dict[str, Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for raw in (
+        device.get("attributes"),
+        device.get("states"),
+        device.get("currentStates"),
+    ):
+        if isinstance(raw, list):
+            items.extend(item for item in raw if isinstance(item, dict))
+    return items
+
+
+def _attribute_names(device: dict[str, Any]) -> set[str]:
+    names = {
+        _normalized_attribute_name(key)
+        for key, value in device.items()
+        if value is not None
+    }
+    for raw in (
+        device.get("attributes"),
+        device.get("states"),
+        device.get("currentStates"),
+    ):
+        if isinstance(raw, dict):
+            names.update(
+                _normalized_attribute_name(key)
+                for key, value in raw.items()
+                if value is not None
+            )
+    for item in _state_items(device):
+        name = item.get("name") or item.get("attribute")
+        value = item.get("currentValue", item.get("value"))
+        if name and value is not None:
+            names.add(_normalized_attribute_name(name))
+    return names
+
+
+def _measurement_units(device: dict[str, Any]) -> dict[str, str]:
+    units: dict[str, str] = {}
+    existing = device.get("attributeUnits") or device.get("attribute_units")
+    if isinstance(existing, dict):
+        units.update(
+            {
+                str(name): str(unit)
+                for name, unit in existing.items()
+                if str(name).strip() and str(unit).strip()
+            }
+        )
+    for item in _state_items(device):
+        name = item.get("name") or item.get("attribute")
+        unit = item.get("unit")
+        if name and unit not in {None, ""}:
+            units[str(name)] = str(unit)
+    present = _attribute_names(device)
+    for attribute, unit in _STANDARD_ATTRIBUTE_UNITS.items():
+        if attribute in present and not any(
+            _normalized_attribute_name(name) == attribute
+            for name in units
+        ):
+            units[attribute] = unit
+    return units
+
+
+def _with_measurement_units(device: dict[str, Any]) -> dict[str, Any]:
+    units = _measurement_units(device)
+    if not units:
+        return device
+    enriched = dict(device)
+    enriched["attributeUnits"] = units
+    return enriched
+
+
 def _specific_tokens(value: Any) -> set[str]:
     return _tokens(value) - _GENERIC_NAME_TOKENS
 
@@ -192,6 +278,22 @@ def _ambiguous_resolution(
     return CandidateResolution(None, None, confidence, alternatives, reason)
 
 
+def _resolved(
+    device: dict[str, Any],
+    matched_name: str,
+    confidence: float,
+    alternatives: tuple[str, ...],
+    reason: str,
+) -> CandidateResolution:
+    return CandidateResolution(
+        _with_measurement_units(device),
+        matched_name,
+        confidence,
+        alternatives,
+        reason,
+    )
+
+
 def resolve_device_candidate(
     requested: str,
     candidates: list[dict[str, Any]],
@@ -219,7 +321,7 @@ def resolve_device_candidate(
         ranked.append((_score(requested, best_name), best_name, device))
     if len(exact_matches) == 1:
         exact_name, exact_device = exact_matches[0]
-        return CandidateResolution(
+        return _resolved(
             exact_device,
             exact_name,
             1.0,
@@ -248,7 +350,7 @@ def resolve_device_candidate(
             contextual_matches.append((name, device))
     if len(contextual_matches) == 1:
         contextual_name, contextual_device = contextual_matches[0]
-        return CandidateResolution(
+        return _resolved(
             contextual_device,
             contextual_name,
             0.99,
@@ -262,7 +364,7 @@ def resolve_device_candidate(
     ]
     if len(semantic_matches) == 1:
         semantic_name, semantic_device = semantic_matches[0]
-        return CandidateResolution(
+        return _resolved(
             semantic_device,
             semantic_name,
             0.98,
@@ -278,7 +380,7 @@ def resolve_device_candidate(
     top_score, top_name, top_device = ranked[0]
     if len(ranked) == 1:
         if top_score >= unique_threshold:
-            return CandidateResolution(
+            return _resolved(
                 top_device,
                 top_name,
                 top_score,
@@ -294,7 +396,7 @@ def resolve_device_candidate(
         )
     second_score = ranked[1][0]
     if top_score >= ranked_threshold and top_score - second_score >= margin:
-        return CandidateResolution(
+        return _resolved(
             top_device,
             top_name,
             top_score,
