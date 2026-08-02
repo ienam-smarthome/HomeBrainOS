@@ -15,8 +15,8 @@ from request_metrics import RequestMetrics
 from token_aware_context_policy import TokenAwareModelContextPolicy
 
 
-_CURRENT_EVIDENCE_RECORDER: ContextVar[Any | None] = ContextVar(
-    "homebrain_production_evidence_recorder",
+_CURRENT_PRODUCTION_CONTEXT: ContextVar[tuple[Any, RequestMetrics] | None] = ContextVar(
+    "homebrain_production_grounding_context",
     default=None,
 )
 
@@ -32,17 +32,19 @@ class _ProductionGroundingAuthority:
     """GroundingPolicy-compatible adapter for the maintained production agent."""
 
     def __init__(self, *, logs_requested: bool, conversational: bool) -> None:
-        recorder = _CURRENT_EVIDENCE_RECORDER.get()
-        if recorder is None:
+        context = _CURRENT_PRODUCTION_CONTEXT.get()
+        if context is None:
             self._delegate: Any = BaseGroundingPolicy(
                 logs_requested=logs_requested,
                 conversational=conversational,
             )
         else:
+            recorder, metrics = context
             self._delegate = LiveEvidenceAuthority(
                 recorder,
                 logs_requested=logs_requested,
                 conversational=conversational,
+                record_metric=metrics.increment,
             )
 
     @staticmethod
@@ -158,7 +160,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         *,
         session_id: str = "default",
     ) -> str:
-        token = _CURRENT_EVIDENCE_RECORDER.set(self.evidence)
+        token = _CURRENT_PRODUCTION_CONTEXT.set((self.evidence, self.request_metrics))
         try:
             return await super()._process_user_request(
                 user_prompt,
@@ -166,7 +168,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 session_id=session_id,
             )
         finally:
-            _CURRENT_EVIDENCE_RECORDER.reset(token)
+            _CURRENT_PRODUCTION_CONTEXT.reset(token)
 
 
 __all__ = ["AgentOutcome", "ObservedAgentOutcome", "UnifiedMCPAgent"]
