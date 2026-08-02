@@ -24,16 +24,27 @@ class RuleMCP:
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
         if name == "hub_read_devices":
+            # The production resolver now reads the complete inventory once and
+            # performs deterministic name matching locally. Preserve optional
+            # status-filter behaviour for unrelated callers, but an empty args
+            # object must return every device.
             wanted = str(arguments.get("args", {}).get("filter") or "").casefold()
-            matches = [
-                device
-                for device in self.devices
-                if wanted in str(device.get("label") or "").casefold()
-            ]
+            matches = (
+                [
+                    device
+                    for device in self.devices
+                    if wanted in str(device.get("label") or "").casefold()
+                ]
+                if wanted
+                else list(self.devices)
+            )
             return MCPToolResult(name, arguments, {}, "", {"devices": matches})
         if name == "hub_read_rules":
             return MCPToolResult(name, arguments, {}, "", {"rules": self.rules})
         raise AssertionError((name, arguments))
+
+    async def get_cached_devices(self):
+        return list(self.devices)
 
 
 def recorder(*_args, **_kwargs):
@@ -51,26 +62,14 @@ def tab_device(label="Block Tab-S9-FE"):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("prompt", "expected_filters"),
+    "prompt",
     [
-        (
-            "write a rule to block tab s9 from 9am to 7pm everyday",
-            ["tab s9", "tab-s9"],
-        ),
-        (
-            "Create an automation to block Tab-S9-FE from 09:00 to 19:00 every day",
-            ["tab s9 fe", "tab-s9-fe"],
-        ),
-        (
-            "set up a schedule to disable internet for the tab s9 from 9 a.m. until 7 p.m. daily",
-            ["tab s9", "tab-s9"],
-        ),
+        "write a rule to block tab s9 from 9am to 7pm everyday",
+        "Create an automation to block Tab-S9-FE from 09:00 to 19:00 every day",
+        "set up a schedule to disable internet for the tab s9 from 9 a.m. until 7 p.m. daily",
     ],
 )
-async def test_compiles_daily_block_window_into_two_atomic_rules(
-    prompt,
-    expected_filters,
-):
+async def test_compiles_daily_block_window_into_two_atomic_rules(prompt):
     mcp = RuleMCP([tab_device()])
     service = RuleAuthoringService(mcp, recorder)
 
@@ -98,12 +97,12 @@ async def test_compiles_daily_block_window_into_two_atomic_rules(
         "command": "blockInternet",
     }
     assert second["args"]["addAction"]["command"] == "allowInternet"
-    filters = [
-        arguments["args"]["filter"]
+    inventory_calls = [
+        arguments
         for name, arguments in mcp.calls
         if name == "hub_read_devices"
     ]
-    assert filters[:2] == expected_filters
+    assert inventory_calls == [{"tool": "hub_list_devices", "args": {}}]
 
 
 @pytest.mark.asyncio
