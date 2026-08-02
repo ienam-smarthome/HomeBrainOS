@@ -1,1 +1,0 @@
-Temporary staging files will be removed by the atomic tree commit.
