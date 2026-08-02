@@ -17,6 +17,7 @@ class SoakCase:
     session_id: str
     expect_confirmation: bool | None = None
     require_evidence: bool = False
+    require_metrics: bool = True
 
 
 DEFAULT_CASES = (
@@ -40,6 +41,18 @@ DEFAULT_CASES = (
         expect_confirmation=True,
     ),
 )
+
+_ALLOWED_OUTCOMES = {"success", "refused", "cancelled", "failed"}
+_FORBIDDEN_METRIC_KEYS = {
+    "prompt",
+    "user_prompt",
+    "session",
+    "session_id",
+    "arguments",
+    "tool_arguments",
+    "device",
+    "device_name",
+}
 
 
 def request_json(
@@ -70,6 +83,56 @@ def request_json(
         raise RuntimeError(f"HTTP {exc.code}: {body}") from exc
 
 
+def _metric_key_errors(value: Any, *, path: str = "metrics") -> list[str]:
+    errors: list[str] = []
+    if isinstance(value, dict):
+        for raw_key, item in value.items():
+            key = str(raw_key).casefold()
+            if key in _FORBIDDEN_METRIC_KEYS:
+                errors.append(f"privacy-sensitive metric key exposed at {path}.{raw_key}")
+            errors.extend(_metric_key_errors(item, path=f"{path}.{raw_key}"))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            errors.extend(_metric_key_errors(item, path=f"{path}[{index}]"))
+    return errors
+
+
+def validate_metrics(result: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    metrics = result.get("metrics")
+    if not isinstance(metrics, dict):
+        return ["metrics object is missing"]
+
+    outcome = metrics.get("outcome")
+    if outcome not in _ALLOWED_OUTCOMES:
+        errors.append(f"metrics outcome is invalid: {outcome!r}")
+    if not isinstance(metrics.get("counters"), dict):
+        errors.append("metrics counters object is missing")
+    if not isinstance(metrics.get("timings_ms"), dict):
+        errors.append("metrics timings_ms object is missing")
+
+    rows = result.get("metric_rows")
+    if not isinstance(rows, list):
+        errors.append("metric_rows list is missing")
+    else:
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                errors.append(f"metric_rows[{index}] is not an object")
+                continue
+            if set(row) != {"label", "value"}:
+                errors.append(
+                    f"metric_rows[{index}] does not use the stable label/value schema"
+                )
+            if not str(row.get("label") or "").strip():
+                errors.append(f"metric_rows[{index}] label is empty")
+            if not str(row.get("value") or "").strip():
+                errors.append(f"metric_rows[{index}] value is empty")
+
+    errors.extend(_metric_key_errors(metrics))
+    errors.extend(_metric_key_errors(rows, path="metric_rows"))
+    return errors
+
+
 def validate_case(case: SoakCase, result: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not result.get("success"):
@@ -86,6 +149,8 @@ def validate_case(case: SoakCase, result: dict[str, Any]) -> list[str]:
             "confirmation_required did not match expected "
             f"{case.expect_confirmation}"
         )
+    if case.require_metrics:
+        errors.extend(validate_metrics(result))
     return errors
 
 
@@ -102,6 +167,7 @@ def run_case(base_url: str, token: str | None, case: SoakCase) -> bool:
     status = "PASS" if not errors else "FAIL"
     print(f"[{status}] {case.name} ({elapsed} ms)")
     print(f"  class={result.get('request_class')} route={result.get('route')}")
+    print(f"  outcome={(result.get('metrics') or {}).get('outcome')}")
     print(f"  message={str(result.get('message') or '')[:180]}")
     for error in errors:
         print(f"  error={error}")
