@@ -1,20 +1,22 @@
 """Execute consumed confirmation groups and verify sensitive outcomes.
 
 The confirmation store owns pending lifecycle and ConfirmationPolicy owns
-approval decisions.  This coordinator begins only after the host has consumed
-a valid same-session confirmation.  It revalidates queued Rule Machine
+approval decisions. This coordinator begins only after the host has consumed
+a valid same-session confirmation. It revalidates queued Rule Machine
 payloads, injects upstream approval, executes sequentially, fails closed after
 an unverified rule write, and renders deterministic rule completion reports.
 """
 
 from __future__ import annotations
 
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from confirmation_policy import ConfirmationPolicy
 from confirmation_store import PendingConfirmation
 from mcp_client import MCPTool
+from request_metrics import add_active_metric_ms, increment_active_metric
 from tool_discovery_catalog import ToolDiscoveryCatalog
 from tool_executor import ToolExecution, ToolExecutor
 from tool_registry import rule_machine_proposal_error
@@ -25,6 +27,7 @@ ChatCallback = Callable[
     Awaitable[dict[str, Any]],
 ]
 MutationObserver = Callable[[], None]
+Clock = Callable[[], float]
 
 
 class ConfirmedActionCoordinator:
@@ -38,11 +41,14 @@ class ConfirmedActionCoordinator:
         executor: ToolExecutor,
         chat: ChatCallback,
         mark_mutation: MutationObserver,
+        *,
+        clock: Clock = time.monotonic,
     ) -> None:
         self.confirmation_policy = confirmation_policy
         self.executor = executor
         self._chat = chat
         self._mark_mutation = mark_mutation
+        self._clock = clock
 
     @staticmethod
     def rule_result_data(execution: ToolExecution | Any) -> dict[str, Any]:
@@ -85,6 +91,14 @@ class ConfirmedActionCoordinator:
             and data.get("partial") is not True
             and health.get("ok") is True
         )
+
+    def _record_rule_verification(self, execution: ToolExecution | Any) -> bool:
+        started = self._clock()
+        verified = self.verified_rule_execution(execution)
+        add_active_metric_ms("verification", (self._clock() - started) * 1000)
+        if not verified:
+            increment_active_metric("mutation_verification_failures")
+        return verified
 
     @staticmethod
     def queued_rule_name(arguments: dict[str, Any]) -> str:
@@ -178,11 +192,10 @@ class ConfirmedActionCoordinator:
                 "tool_name": tool_name,
                 "content": execution.content,
             })
-            if (
-                tool_name == self.RULE_GATEWAY
-                and not self.verified_rule_execution(execution)
-            ):
-                break
+            if tool_name == self.RULE_GATEWAY:
+                verified = self._record_rule_verification(execution)
+                if not verified:
+                    break
         deterministic_report = self.confirmed_rule_report(
             outcomes,
             queued_count=len(pending.actions),
