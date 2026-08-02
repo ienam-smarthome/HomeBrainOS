@@ -13,6 +13,7 @@ from confirmation_policy import ConfirmationPolicy  # noqa: E402
 from confirmation_store import PendingConfirmation  # noqa: E402
 from confirmed_action_coordinator import ConfirmedActionCoordinator  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
+from request_metrics import RequestMetrics  # noqa: E402
 from tool_discovery_catalog import ToolDiscoveryCatalog  # noqa: E402
 from tool_executor import ToolExecution  # noqa: E402
 from tool_registry import ToolEffect  # noqa: E402
@@ -75,6 +76,11 @@ def _catalog(*names: str) -> ToolDiscoveryCatalog:
     return ToolDiscoveryCatalog([
         MCPTool(name, name, {"type": "object"}) for name in names
     ])
+
+
+def _clock(*values):
+    sequence = iter(values)
+    return lambda: next(sequence)
 
 
 @pytest.mark.asyncio
@@ -247,3 +253,73 @@ def test_nested_rule_result_verification_requires_id_and_healthy_result():
 
     assert ConfirmedActionCoordinator.verified_rule_execution(verified) is True
     assert ConfirmedActionCoordinator.verified_rule_execution(partial) is False
+
+
+@pytest.mark.asyncio
+async def test_verified_rule_records_verification_duration_without_failure():
+    gateway = "hub_manage_rule_machine"
+    arguments = _rule_arguments("Healthy rule")
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            arguments,
+            {"success": True, "appId": 77, "health": {"ok": True}},
+            success=True,
+        )
+    ])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("verified Rule Machine actions must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True),
+        executor,
+        unexpected_chat,
+        lambda: None,
+        clock=_clock(10.0, 10.012),
+    )
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        await coordinator.resume(_pending([(gateway, arguments)]), _catalog(gateway))
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert snapshot["timings_ms"]["verification"] == 12
+    assert "mutation_verification_failures" not in snapshot["counters"]
+
+
+@pytest.mark.asyncio
+async def test_unverified_rule_records_failure_and_verification_duration():
+    gateway = "hub_manage_rule_machine"
+    arguments = _rule_arguments("Unhealthy rule")
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            arguments,
+            {"success": True, "appId": 78, "health": {"ok": False}},
+            success=True,
+        )
+    ])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("failed Rule Machine actions must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True),
+        executor,
+        unexpected_chat,
+        lambda: None,
+        clock=_clock(20.0, 20.007),
+    )
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        await coordinator.resume(_pending([(gateway, arguments)]), _catalog(gateway))
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert snapshot["timings_ms"]["verification"] == 7
+    assert snapshot["counters"]["mutation_verification_failures"] == 1
