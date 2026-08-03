@@ -89,6 +89,8 @@ class RequestMetrics:
             return "success"
         if state.counters.get("grounding_refusals", 0) > 0:
             return "refused"
+        if state.counters.get("mutation_verification_failures", 0) > 0:
+            return "failed"
         if state.counters.get("device_resolution_ambiguous", 0) > 0:
             return "unresolved"
         return "success"
