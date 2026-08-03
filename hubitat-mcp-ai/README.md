@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.317**.
+Current add-on version: **0.10.318**.
 
 ## Architecture
 
@@ -55,6 +55,12 @@ tool arguments, and dynamic labels cannot become visible metric rows. The same
 module exposes a fixed outcome-presentation contract for the five supported
 request outcomes, giving WebUI rendering stable labels and tone tokens without
 duplicating outcome policy in JavaScript.
+
+The WebUI consumes only that fixed `outcome_presentation` object and renders a
+compact response badge for success, unresolved, refused, cancelled, and failed
+outcomes. Labels are inserted with DOM `textContent`, tone classes are restricted
+to the fixed positive, warning, neutral, and critical vocabulary, and legacy
+responses without outcome metadata continue to render normally.
 
 `ProviderTokenEstimator` supplies deterministic, dependency-free approximate
 token counts for known model families and a conservative default profile.
@@ -125,8 +131,8 @@ network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
 
 The WebUI includes live dashboard tiles, smart-home shortcuts, typed and spoken
-queries, optional read-aloud answers, response metadata, copy, and expandable
-technical details.
+queries, optional read-aloud answers, outcome badges, response metadata, copy,
+and expandable technical details.
 
 ## API
 
