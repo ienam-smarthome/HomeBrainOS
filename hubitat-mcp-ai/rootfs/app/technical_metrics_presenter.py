@@ -7,6 +7,7 @@ _COUNTER_LABELS = (
     ("model_rounds", "Model rounds"),
     ("tool_calls", "Tool calls"),
     ("tool_discovery_calls", "Tool discovery calls"),
+    ("mcp_retries", "MCP retries"),
     ("evidence_retries", "Evidence retries"),
     ("grounding_refusals", "Grounding refusals"),
     ("confirmation_queued", "Confirmations queued"),
