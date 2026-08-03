@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.311**.
+Current add-on version: **0.10.312**.
 
 ## Architecture
 
@@ -30,12 +30,13 @@ and refusals, confirmation queuing and expiry, confirmed Rule Machine verificati
 duration, verification failures, ambiguous device resolutions, cancellation,
 total duration, and the final request outcome. A normally returned request with
 a grounding refusal is labelled `refused`; a recorded mutation verification
-failure is labelled `failed`; deterministic device ambiguity is labelled
-`unresolved`. These classifications use only fixed counters and never inspect
-user or model text. Local adapters are excluded from MCP timing. Its fixed metric
-vocabulary rejects dynamic labels so device names, prompts, credentials, and tool
-arguments cannot become metric dimensions. Metrics are returned on the production
-`ObservedAgentOutcome` without changing the original result fields.
+failure is labelled `failed`; expired confirmations and deterministic device
+ambiguity are labelled `unresolved`. These classifications use only fixed
+counters and never inspect user or model text. Local adapters are excluded from
+MCP timing. Its fixed metric vocabulary rejects dynamic labels so device names,
+prompts, credentials, and tool arguments cannot become metric dimensions.
+Metrics are returned on the production `ObservedAgentOutcome` without changing
+the original result fields.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence
@@ -59,7 +60,8 @@ caps and direct base-agent callers retain the original `ModelContextPolicy`.
 `ConfirmationPolicy` makes bounded decisions from structured tool effects;
 sensitive MCP mutations require an explicit, session-scoped confirmation kept
 by `ConfirmationStore`. Expired pending confirmations are removed and counted at
-the store boundary; read-only and routine gateway operations do not require
+the store boundary; a normally returned expired confirmation is classified as
+`unresolved`, while read-only and routine gateway operations do not require
 confirmation.
 
 After a valid confirmation is consumed, `ConfirmedActionCoordinator`
