@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.316**.
+Current add-on version: **0.10.317**.
 
 ## Architecture
 
@@ -43,18 +43,18 @@ the original result fields.
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence
 and metrics, supports legacy outcomes without metrics, and never adds prompt,
-session, or request identifiers to the response payload. It also returns
-privacy-safe `metric_rows` generated from the real nested `RequestMetrics`
-snapshot for stable technical-details rendering.
+session, or request identifiers to the response payload. It returns privacy-safe
+`metric_rows` plus an optional fixed `outcome_presentation` object containing the
+normalised outcome value, human-readable label, and tone token for WebUI styling.
 
 `technical_metrics_presenter.present_request_metrics` converts only the fixed,
 privacy-safe request metric vocabulary into compact technical-detail rows. It
 reads the production `counters` and `timings_ms` maps, omits zero or unavailable
 values, and ignores unknown keys so prompts, device names, session identifiers,
 tool arguments, and dynamic labels cannot become visible metric rows. The same
-module now also exposes a fixed outcome-presentation contract for the five
-supported request outcomes, giving later WebUI rendering stable labels and
-severity tokens without duplicating outcome policy in JavaScript.
+module exposes a fixed outcome-presentation contract for the five supported
+request outcomes, giving WebUI rendering stable labels and tone tokens without
+duplicating outcome policy in JavaScript.
 
 `ProviderTokenEstimator` supplies deterministic, dependency-free approximate
 token counts for known model families and a conservative default profile.

@@ -3,7 +3,10 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from technical_metrics_presenter import present_request_metrics
+from technical_metrics_presenter import (
+    present_request_metrics,
+    present_request_outcome,
+)
 
 
 def build_agent_response(
@@ -18,6 +21,7 @@ def build_agent_response(
     metrics = getattr(outcome, "metrics", {})
     if not isinstance(metrics, dict):
         metrics = {}
+    outcome_presentation = present_request_outcome(metrics.get("outcome"))
 
     return {
         "success": True,
@@ -34,6 +38,7 @@ def build_agent_response(
         "evidence": deepcopy(list(getattr(outcome, "evidence", []) or [])),
         "metrics": deepcopy(metrics),
         "metric_rows": present_request_metrics(metrics),
+        "outcome_presentation": deepcopy(outcome_presentation),
         "model": str(model),
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
