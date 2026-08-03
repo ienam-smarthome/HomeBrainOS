@@ -47,6 +47,11 @@ def test_builder_preserves_contract_and_adds_metric_rows() -> None:
         {"label": "Total", "value": "1.5 s"},
         {"label": "Outcome", "value": "success"},
     ]
+    assert response["outcome_presentation"] == {
+        "value": "success",
+        "label": "Success",
+        "tone": "positive",
+    }
     assert response["elapsed_ms"] == 1532
 
 
@@ -55,6 +60,7 @@ def test_builder_copies_mutable_evidence_and_metrics() -> None:
     response = build_agent_response(outcome, model="model", elapsed_ms=1, version="dev")
     response["evidence"][0]["tool"] = "changed"
     response["metrics"]["counters"]["tool_calls"] = 99
+    response["outcome_presentation"]["label"] = "Changed"
     assert outcome.evidence[0]["tool"] == "hub_read_devices"
     assert outcome.metrics["counters"]["tool_calls"] == 1
 
@@ -71,9 +77,28 @@ def test_builder_handles_legacy_outcome_without_metrics() -> None:
     )
     assert response["metrics"] == {}
     assert response["metric_rows"] == []
+    assert response["outcome_presentation"] is None
     assert response["confirmation_required"] is False
     assert response["confirmation_count"] == 0
     assert response["elapsed_ms"] == 0
+
+
+def test_builder_exposes_each_supported_outcome_without_message_inspection() -> None:
+    expected = {
+        "unresolved": ("Unresolved", "warning"),
+        "refused": ("Refused", "warning"),
+        "cancelled": ("Cancelled", "neutral"),
+        "failed": ("Failed", "critical"),
+    }
+    for value, (label, tone) in expected.items():
+        outcome = FakeOutcome(message="Arbitrary text")
+        outcome.metrics["outcome"] = value
+        response = build_agent_response(outcome, model="model", elapsed_ms=2, version="dev")
+        assert response["outcome_presentation"] == {
+            "value": value,
+            "label": label,
+            "tone": tone,
+        }
 
 
 def test_builder_does_not_add_prompt_or_session_fields() -> None:
