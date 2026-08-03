@@ -91,6 +91,8 @@ class RequestMetrics:
             return "refused"
         if state.counters.get("mutation_verification_failures", 0) > 0:
             return "failed"
+        if state.counters.get("request_cancellations", 0) > 0:
+            return "cancelled"
         if state.counters.get("confirmation_expired", 0) > 0:
             return "unresolved"
         if state.counters.get("device_resolution_ambiguous", 0) > 0:
