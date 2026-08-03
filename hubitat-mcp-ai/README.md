@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.315**.
+Current add-on version: **0.10.316**.
 
 ## Architecture
 
@@ -51,7 +51,10 @@ snapshot for stable technical-details rendering.
 privacy-safe request metric vocabulary into compact technical-detail rows. It
 reads the production `counters` and `timings_ms` maps, omits zero or unavailable
 values, and ignores unknown keys so prompts, device names, session identifiers,
-tool arguments, and dynamic labels cannot become visible metric rows.
+tool arguments, and dynamic labels cannot become visible metric rows. The same
+module now also exposes a fixed outcome-presentation contract for the five
+supported request outcomes, giving later WebUI rendering stable labels and
+severity tokens without duplicating outcome policy in JavaScript.
 
 `ProviderTokenEstimator` supplies deterministic, dependency-free approximate
 token counts for known model families and a conservative default profile.
