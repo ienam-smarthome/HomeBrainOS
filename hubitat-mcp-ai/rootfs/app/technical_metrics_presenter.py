@@ -25,12 +25,12 @@ _DURATION_LABELS = (
     ("total", "Total"),
 )
 
-_OUTCOME_PRESENTATIONS = {
-    "success": {"label": "Success", "tone": "positive"},
-    "unresolved": {"label": "Unresolved", "tone": "warning"},
-    "refused": {"label": "Refused", "tone": "warning"},
-    "cancelled": {"label": "Cancelled", "tone": "neutral"},
-    "failed": {"label": "Failed", "tone": "critical"},
+_OUTCOME_PRESENTATION = {
+    "success": {"label": "Success", "severity": "positive"},
+    "unresolved": {"label": "Unresolved", "severity": "warning"},
+    "refused": {"label": "Refused", "severity": "warning"},
+    "cancelled": {"label": "Cancelled", "severity": "neutral"},
+    "failed": {"label": "Failed", "severity": "critical"},
 }
 
 
@@ -54,19 +54,15 @@ def _duration_text(milliseconds: float) -> str:
 
 
 def present_request_outcome(value: Any) -> dict[str, str] | None:
-    """Return a stable UI-facing label and severity token for one outcome."""
+    """Return stable, UI-safe presentation metadata for a fixed outcome value."""
 
     if not isinstance(value, str):
         return None
-    normalized = value.strip().lower()
-    presentation = _OUTCOME_PRESENTATIONS.get(normalized)
+    normalized = value.strip().casefold()
+    presentation = _OUTCOME_PRESENTATION.get(normalized)
     if presentation is None:
         return None
-    return {
-        "value": normalized,
-        "label": presentation["label"],
-        "tone": presentation["tone"],
-    }
+    return dict(presentation)
 
 
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
@@ -93,9 +89,9 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
             continue
         rows.append({"label": label, "value": _duration_text(number)})
 
-    outcome = present_request_outcome(metrics.get("outcome"))
-    if outcome is not None:
-        rows.append({"label": "Outcome", "value": outcome["value"]})
+    outcome = metrics.get("outcome")
+    if present_request_outcome(outcome) is not None:
+        rows.append({"label": "Outcome", "value": str(outcome).strip().casefold()})
     return rows
 
 
