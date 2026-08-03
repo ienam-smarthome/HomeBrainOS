@@ -31,7 +31,7 @@ class RequestMetrics:
     """Collect privacy-safe request counters and stage timings."""
 
     ALLOWED_COUNTERS = frozenset({
-        "model_rounds", "tool_calls", "tool_discovery_calls",
+        "model_rounds", "tool_calls", "tool_discovery_calls", "mcp_retries",
         "evidence_retries", "grounding_refusals", "confirmation_queued",
         "confirmation_expired", "mutation_verification_failures",
         "request_cancellations", "device_resolution_ambiguous",
