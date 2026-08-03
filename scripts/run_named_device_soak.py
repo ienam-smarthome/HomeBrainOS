@@ -9,12 +9,16 @@ from run_live_soak import request_json, validate_metrics
 
 RESOLVER_TOOL = "homebrain_resolve_device"
 INVENTORY_TOOL = "hub_read_devices"
+_ALLOWED_EXPECTED_OUTCOMES = {
+    "success", "refused", "unresolved", "cancelled", "failed",
+}
 
 
 def validate_named_device_result(
     result: dict[str, Any],
     *,
     device_name: str,
+    expected_outcome: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not result.get("success"):
@@ -59,6 +63,13 @@ def validate_named_device_result(
             errors.append("device name was forwarded through Hubitat's filter field")
 
     errors.extend(validate_metrics(result))
+    if expected_outcome is not None:
+        actual_outcome = (result.get("metrics") or {}).get("outcome")
+        if actual_outcome != expected_outcome:
+            errors.append(
+                f"metrics outcome {actual_outcome!r} did not match expected "
+                f"{expected_outcome!r}"
+            )
     return errors
 
 
@@ -73,6 +84,11 @@ def main() -> int:
         default="temperature",
         help="Attribute to ask for; defaults to temperature",
     )
+    parser.add_argument(
+        "--expect-outcome",
+        choices=sorted(_ALLOWED_EXPECTED_OUTCOMES),
+        help="Require the live metrics outcome to match this fixed value",
+    )
     parser.add_argument("--token", help="Optional bearer token for a protected proxy")
     args = parser.parse_args()
 
@@ -83,7 +99,11 @@ def main() -> int:
         payload={"prompt": prompt, "session_id": "soak-named-device"},
         token=args.token,
     )
-    errors = validate_named_device_result(result, device_name=args.device_name)
+    errors = validate_named_device_result(
+        result,
+        device_name=args.device_name,
+        expected_outcome=args.expect_outcome,
+    )
     status = "PASS" if not errors else "FAIL"
     print(f"[{status}] named-device resolution")
     print(f"  device={args.device_name}")
