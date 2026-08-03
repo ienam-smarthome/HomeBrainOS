@@ -25,6 +25,14 @@ _DURATION_LABELS = (
     ("total", "Total"),
 )
 
+_OUTCOME_PRESENTATIONS = {
+    "success": {"label": "Success", "tone": "positive"},
+    "unresolved": {"label": "Unresolved", "tone": "warning"},
+    "refused": {"label": "Refused", "tone": "warning"},
+    "cancelled": {"label": "Cancelled", "tone": "neutral"},
+    "failed": {"label": "Failed", "tone": "critical"},
+}
+
 
 def _non_negative_number(value: Any) -> float | None:
     if isinstance(value, bool):
@@ -43,6 +51,22 @@ def _duration_text(milliseconds: float) -> str:
         return f"{round(milliseconds):d} ms"
     seconds = milliseconds / 1000
     return f"{seconds:.1f} s"
+
+
+def present_request_outcome(value: Any) -> dict[str, str] | None:
+    """Return a stable UI-facing label and severity token for one outcome."""
+
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    presentation = _OUTCOME_PRESENTATIONS.get(normalized)
+    if presentation is None:
+        return None
+    return {
+        "value": normalized,
+        "label": presentation["label"],
+        "tone": presentation["tone"],
+    }
 
 
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
@@ -69,12 +93,10 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
             continue
         rows.append({"label": label, "value": _duration_text(number)})
 
-    outcome = metrics.get("outcome")
-    if isinstance(outcome, str) and outcome in {
-        "success", "refused", "unresolved", "failed", "cancelled",
-    }:
-        rows.append({"label": "Outcome", "value": outcome})
+    outcome = present_request_outcome(metrics.get("outcome"))
+    if outcome is not None:
+        rows.append({"label": "Outcome", "value": outcome["value"]})
     return rows
 
 
-__all__ = ["present_request_metrics"]
+__all__ = ["present_request_metrics", "present_request_outcome"]
