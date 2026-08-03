@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.318**.
+Current add-on version: **0.10.319**.
 
 ## Architecture
 
@@ -26,19 +26,25 @@ prompt-keyword tool gate controls read-versus-write behaviour.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
-cumulative discovery duration, cumulative remote MCP duration, grounding retries
-and refusals, confirmation queuing and expiry, confirmed Rule Machine verification
-duration, verification failures, ambiguous and missing device resolutions,
-cancellation, total duration, and the final request outcome. A normally returned
-request with a grounding refusal is labelled `refused`; a recorded mutation
-verification failure is labelled `failed`; a recorded cancellation is labelled
-`cancelled`; expired confirmations and deterministic ambiguous or missing device
-resolution are labelled `unresolved`. These classifications use only fixed
-counters and never inspect user or model text. Local adapters are excluded from
-MCP timing. Its fixed metric vocabulary rejects dynamic labels so device names,
-prompts, credentials, and tool arguments cannot become metric dimensions.
-Metrics are returned on the production `ObservedAgentOutcome` without changing
-the original result fields.
+cumulative discovery duration, cumulative remote MCP duration, actual MCP retry
+attempts, grounding retries and refusals, confirmation queuing and expiry,
+confirmed Rule Machine verification duration, verification failures, ambiguous
+and missing device resolutions, cancellation, total duration, and the final
+request outcome. A normally returned request with a grounding refusal is labelled
+`refused`; a recorded mutation verification failure is labelled `failed`; a
+recorded cancellation is labelled `cancelled`; expired confirmations and
+deterministic ambiguous or missing device resolution are labelled `unresolved`.
+These classifications use only fixed counters and never inspect user or model
+text. Local adapters are excluded from MCP timing. Its fixed metric vocabulary
+rejects dynamic labels so device names, prompts, credentials, and tool arguments
+cannot become metric dimensions. Metrics are returned on the production
+`ObservedAgentOutcome` without changing the original result fields.
+
+MCP retries are counted at the transport loop immediately before an actual retry
+POST begins. Transport failures and retryable HTTP 5xx responses share the same
+counter, while cancellation during backoff does not count a retry that never
+started. Retry eligibility remains governed by the existing read-safe transport
+policy.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence
