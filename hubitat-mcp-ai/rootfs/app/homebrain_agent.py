@@ -2,30 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import time
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
-import mcp_agent_orchestrator as orchestrator
 from final_answer_coordinator import FinalAnswerCoordinator
-from grounding_policy import GroundingPolicy as BaseGroundingPolicy
+from grounding_policy import (
+    reset_grounding_policy_factory,
+    set_grounding_policy_factory,
+)
 from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
 from request_metrics import RequestMetrics
 from token_aware_context_policy import TokenAwareModelContextPolicy
-
-
-# Retained as a compatibility seam for existing tests and callers that select
-# the production evidence authority directly. New production requests use the
-# combined context below so grounding decisions can also record metrics.
-_CURRENT_EVIDENCE_RECORDER: ContextVar[Any | None] = ContextVar(
-    "homebrain_production_evidence_recorder",
-    default=None,
-)
-_CURRENT_PRODUCTION_CONTEXT: ContextVar[tuple[Any, RequestMetrics] | None] = ContextVar(
-    "homebrain_production_grounding_context",
-    default=None,
-)
 
 
 @dataclass(slots=True)
@@ -33,61 +21,6 @@ class ObservedAgentOutcome(AgentOutcome):
     """Agent result with a privacy-safe, request-local metrics snapshot."""
 
     metrics: dict[str, Any] = field(default_factory=dict)
-
-
-class _ProductionGroundingAuthority:
-    """GroundingPolicy-compatible adapter for the maintained production agent."""
-
-    def __init__(self, *, logs_requested: bool, conversational: bool) -> None:
-        context = _CURRENT_PRODUCTION_CONTEXT.get()
-        recorder = _CURRENT_EVIDENCE_RECORDER.get()
-        metrics: RequestMetrics | None = None
-        if context is not None:
-            recorder, metrics = context
-
-        if recorder is None:
-            self._delegate: Any = BaseGroundingPolicy(
-                logs_requested=logs_requested,
-                conversational=conversational,
-            )
-        else:
-            self._delegate = LiveEvidenceAuthority(
-                recorder,
-                logs_requested=logs_requested,
-                conversational=conversational,
-                record_metric=metrics.increment if metrics is not None else None,
-            )
-
-    @staticmethod
-    def is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
-        return BaseGroundingPolicy.is_live_log_call(name, arguments)
-
-    @property
-    def logs_checked(self) -> bool:
-        return bool(self._delegate.logs_checked)
-
-    def record_tool_outcome(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        *,
-        success: bool,
-    ) -> None:
-        self._delegate.record_tool_outcome(name, arguments, success=success)
-
-    def decide_no_tool_calls(
-        self,
-        *,
-        has_live_evidence: bool | None = None,
-    ) -> Any:
-        if isinstance(self._delegate, LiveEvidenceAuthority):
-            return self._delegate.decide_no_tool_calls()
-        return self._delegate.decide_no_tool_calls(
-            has_live_evidence=bool(has_live_evidence)
-        )
-
-
-orchestrator.GroundingPolicy = _ProductionGroundingAuthority
 
 
 class UnifiedMCPAgent(BaseUnifiedMCPAgent):
@@ -126,6 +59,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         return await self.final_answers.answer(messages)
+
+    def _create_grounding_policy(
+        self,
+        *,
+        logs_requested: bool,
+        conversational: bool,
+    ) -> LiveEvidenceAuthority:
+        """Create the production request's evidence-aware grounding authority."""
+
+        return LiveEvidenceAuthority(
+            self.evidence,
+            logs_requested=logs_requested,
+            conversational=conversational,
+            record_metric=self.request_metrics.increment,
+        )
 
     async def process_user_request_result(
         self,
@@ -173,9 +121,8 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         *,
         session_id: str = "default",
     ) -> str:
-        recorder_token = _CURRENT_EVIDENCE_RECORDER.set(self.evidence)
-        context_token = _CURRENT_PRODUCTION_CONTEXT.set(
-            (self.evidence, self.request_metrics)
+        factory_token = set_grounding_policy_factory(
+            self._create_grounding_policy
         )
         try:
             return await super()._process_user_request(
@@ -184,8 +131,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 session_id=session_id,
             )
         finally:
-            _CURRENT_PRODUCTION_CONTEXT.reset(context_token)
-            _CURRENT_EVIDENCE_RECORDER.reset(recorder_token)
+            reset_grounding_policy_factory(factory_token)
 
 
 __all__ = ["AgentOutcome", "ObservedAgentOutcome", "UnifiedMCPAgent"]
