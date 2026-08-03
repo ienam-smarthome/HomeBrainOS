@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
 from typing import Any
 
 from final_answer_coordinator import FinalAnswerCoordinator
@@ -12,15 +11,12 @@ from grounding_policy import (
 )
 from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
+from observed_agent_outcome import (
+    ObservedAgentOutcome,
+    build_observed_agent_outcome,
+)
 from request_metrics import RequestMetrics
 from token_aware_context_policy import TokenAwareModelContextPolicy
-
-
-@dataclass(slots=True)
-class ObservedAgentOutcome(AgentOutcome):
-    """Agent result with a privacy-safe, request-local metrics snapshot."""
-
-    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 class UnifiedMCPAgent(BaseUnifiedMCPAgent):
@@ -95,15 +91,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             metrics = self.request_metrics.finish(
                 self.request_metrics.completed_outcome()
             )
-            return ObservedAgentOutcome(
-                message=outcome.message,
-                request_class=outcome.request_class,
-                evidence=outcome.evidence,
-                choices=outcome.choices,
-                confirmation_required=outcome.confirmation_required,
-                confirmation_count=outcome.confirmation_count,
-                metrics=metrics,
-            )
+            return build_observed_agent_outcome(outcome, metrics)
         except asyncio.CancelledError:
             self.request_metrics.increment("request_cancellations")
             self.request_metrics.finish("cancelled")
