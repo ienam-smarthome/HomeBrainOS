@@ -8,6 +8,8 @@ those already-resolved facts.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -49,8 +51,41 @@ class GroundingDecision:
     message: str | None = None
 
 
+GroundingPolicyFactory = Callable[..., Any]
+_ACTIVE_GROUNDING_POLICY_FACTORY: ContextVar[GroundingPolicyFactory | None] = (
+    ContextVar("homebrain_grounding_policy_factory", default=None)
+)
+
+
+def set_grounding_policy_factory(factory: GroundingPolicyFactory) -> Token:
+    """Install one request-local policy factory and return its reset token."""
+
+    return _ACTIVE_GROUNDING_POLICY_FACTORY.set(factory)
+
+
+def reset_grounding_policy_factory(token: Token) -> None:
+    """Restore the previous request-local policy factory."""
+
+    _ACTIVE_GROUNDING_POLICY_FACTORY.reset(token)
+
+
 class GroundingPolicy:
     """Track one request's bounded grounding retries and log evidence."""
+
+    def __new__(
+        cls,
+        *,
+        logs_requested: bool,
+        conversational: bool,
+    ) -> Any:
+        if cls is GroundingPolicy:
+            factory = _ACTIVE_GROUNDING_POLICY_FACTORY.get()
+            if factory is not None:
+                return factory(
+                    logs_requested=logs_requested,
+                    conversational=conversational,
+                )
+        return super().__new__(cls)
 
     def __init__(self, *, logs_requested: bool, conversational: bool) -> None:
         self.logs_requested = bool(logs_requested)
@@ -58,6 +93,24 @@ class GroundingPolicy:
         self.logs_checked = False
         self._log_retry_used = False
         self._evidence_retry_used = False
+
+    @classmethod
+    def default(
+        cls,
+        *,
+        logs_requested: bool,
+        conversational: bool,
+    ) -> "GroundingPolicy":
+        """Construct the built-in policy even when a request override is active."""
+
+        token = _ACTIVE_GROUNDING_POLICY_FACTORY.set(None)
+        try:
+            return cls(
+                logs_requested=logs_requested,
+                conversational=conversational,
+            )
+        finally:
+            _ACTIVE_GROUNDING_POLICY_FACTORY.reset(token)
 
     @staticmethod
     def is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
@@ -110,6 +163,9 @@ __all__ = [
     "GroundingAction",
     "GroundingDecision",
     "GroundingPolicy",
+    "GroundingPolicyFactory",
     "LOG_REFUSAL",
     "LOG_RETRY_INSTRUCTION",
+    "reset_grounding_policy_factory",
+    "set_grounding_policy_factory",
 ]

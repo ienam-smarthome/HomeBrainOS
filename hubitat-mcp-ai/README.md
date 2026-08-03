@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.313**.
+Current add-on version: **0.10.314**.
 
 ## Architecture
 
@@ -16,12 +16,13 @@ registry; discovery cannot replace a local bounded adapter with the broader
 gateway that hosts its upstream operation. Ollama Online selects native calls,
 which run through `ToolExecutor` and `HubitatMCPClient`. Request-scoped evidence
 receipts are sanitised and isolated by `EvidenceRecorder`; the production agent
-installs a context-local `LiveEvidenceAuthority` at the established grounding
-boundary so it alone combines current receipts with bounded retry/refusal state.
-Grounding retries and refusals are recorded at that decision boundary rather
-than inferred from final messages. Direct base-agent callers retain the original
-`GroundingPolicy` contract. No regex router or prompt-keyword tool gate controls
-read-versus-write behaviour.
+selects `LiveEvidenceAuthority` through a context-local grounding-policy factory.
+The base orchestrator keeps its normal `GroundingPolicy` constructor and direct
+base-agent callers retain the original contract. No global module monkey-patch is
+used, and concurrent production requests cannot leak recorders or metrics across
+request contexts. Grounding retries and refusals are recorded at the authority
+decision boundary rather than inferred from final messages. No regex router or
+prompt-keyword tool gate controls read-versus-write behaviour.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and

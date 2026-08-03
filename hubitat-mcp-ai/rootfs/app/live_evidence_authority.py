@@ -24,7 +24,7 @@ class LiveEvidenceAuthority:
         record_metric: Callable[[str], None] | None = None,
     ) -> None:
         self.recorder = recorder
-        self.policy = GroundingPolicy(
+        self.policy = GroundingPolicy.default(
             logs_requested=logs_requested,
             conversational=conversational,
         )
@@ -47,7 +47,14 @@ class LiveEvidenceAuthority:
     ) -> None:
         self.policy.record_tool_outcome(name, arguments, success=success)
 
-    def decide_no_tool_calls(self) -> GroundingDecision:
+    def decide_no_tool_calls(
+        self,
+        *,
+        has_live_evidence: bool | None = None,
+    ) -> GroundingDecision:
+        """Decide from the recorder, ignoring any stale external evidence flag."""
+
+        del has_live_evidence
         decision = self.policy.decide_no_tool_calls(
             has_live_evidence=self.has_live_evidence
         )
