@@ -26,11 +26,11 @@ _DURATION_LABELS = (
 )
 
 _OUTCOME_PRESENTATION = {
-    "success": {"label": "Success", "severity": "positive"},
-    "unresolved": {"label": "Unresolved", "severity": "warning"},
-    "refused": {"label": "Refused", "severity": "warning"},
-    "cancelled": {"label": "Cancelled", "severity": "neutral"},
-    "failed": {"label": "Failed", "severity": "critical"},
+    "success": {"label": "Success", "tone": "positive"},
+    "unresolved": {"label": "Unresolved", "tone": "warning"},
+    "refused": {"label": "Refused", "tone": "warning"},
+    "cancelled": {"label": "Cancelled", "tone": "neutral"},
+    "failed": {"label": "Failed", "tone": "critical"},
 }
 
 
@@ -62,7 +62,7 @@ def present_request_outcome(value: Any) -> dict[str, str] | None:
     presentation = _OUTCOME_PRESENTATION.get(normalized)
     if presentation is None:
         return None
-    return dict(presentation)
+    return {"value": normalized, **presentation}
 
 
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
@@ -89,9 +89,9 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
             continue
         rows.append({"label": label, "value": _duration_text(number)})
 
-    outcome = metrics.get("outcome")
-    if present_request_outcome(outcome) is not None:
-        rows.append({"label": "Outcome", "value": str(outcome).strip().casefold()})
+    outcome = present_request_outcome(metrics.get("outcome"))
+    if outcome is not None:
+        rows.append({"label": "Outcome", "value": outcome["value"]})
     return rows
 
 
