@@ -1,6 +1,6 @@
 # Architecture module-map update
 
-This companion note records the module-map correction identified during the 0.10.314 grounding-factory review. The maintained runtime contains thirty-four Python modules under `hubitat-mcp-ai/rootfs/app/`, not the twenty-six currently stated in `docs/ARCHITECTURE.md`.
+This companion note records the module-map correction identified during the 0.10.314 grounding-factory review. The maintained runtime contains thirty-five Python modules under `hubitat-mcp-ai/rootfs/app/`, not the twenty-six currently stated in `docs/ARCHITECTURE.md`.
 
 The following live modules must be represented in the canonical module table:
 
@@ -14,5 +14,6 @@ The following live modules must be represented in the canonical module table:
 | `request_metrics.py` | Collects privacy-safe request counters and timings and derives fixed outcomes without inspecting prompt or response text. |
 | `technical_metrics_presenter.py` | Converts allow-listed request metrics into stable WebUI technical-detail rows. |
 | `api_response_builder.py` | Builds the stable `/api/ask` response and includes privacy-safe presented metrics. |
+| `mcp_retry_metrics.py` | Records actual retry attempts at the MCP transport boundary through the active request metrics context without parsing logs or response text. |
 
-After PR #404 lands, fold these rows into `docs/ARCHITECTURE.md`, change the stated module count from twenty-six to thirty-four, and retain `scripts/analyze_imports.py` as the source-of-truth check for future additions/removals.
+Fold these rows into `docs/ARCHITECTURE.md`, change the stated module count from twenty-six to thirty-five, and retain the architecture coverage test as the source-of-truth check for future additions/removals.
