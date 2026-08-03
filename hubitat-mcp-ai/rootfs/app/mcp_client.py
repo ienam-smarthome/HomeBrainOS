@@ -11,6 +11,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from mcp_retry_metrics import record_mcp_retry_attempt
+
 logger = logging.getLogger(__name__)
 
 
@@ -370,6 +372,8 @@ class HubitatMCPClient:
         )
         response: httpx.Response | None = None
         for attempt in range(1, attempt_limit + 1):
+            if attempt > 1:
+                record_mcp_retry_attempt()
             try:
                 response = await self._http.post(
                     self.endpoint_url,
