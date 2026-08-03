@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -9,9 +10,14 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 import homebrain_agent  # noqa: E402
+import mcp_agent_orchestrator as orchestrator  # noqa: E402
 from evidence_recorder import EvidenceRecorder  # noqa: E402
 from final_answer_coordinator import FinalAnswerCoordinator  # noqa: E402
-from grounding_policy import GroundingPolicy  # noqa: E402
+from grounding_policy import (  # noqa: E402
+    GroundingPolicy,
+    reset_grounding_policy_factory,
+    set_grounding_policy_factory,
+)
 from homebrain_agent import ObservedAgentOutcome, UnifiedMCPAgent  # noqa: E402
 from live_evidence_authority import LiveEvidenceAuthority  # noqa: E402
 from mcp_agent_orchestrator import AgentOutcome  # noqa: E402
@@ -62,8 +68,6 @@ async def test_production_agent_delegates_final_answer_to_coordinator() -> None:
     assert isinstance(agent.request_metrics, RequestMetrics)
     assert answer == "Final grounded answer."
     payload = ai.requests[0]["json"]
-    # ChatTransport serialises an empty declared-tool list as JSON null. This is
-    # the established provider contract for a final round with no callable tools.
     assert payload["tools"] is None
     assert payload["messages"][-1]["role"] == "user"
     assert "using only the MCP results already provided" in payload["messages"][-1]["content"]
@@ -115,34 +119,34 @@ async def test_process_result_returns_privacy_safe_metrics(monkeypatch: pytest.M
     assert "private device wording" not in repr(outcome.metrics)
 
 
-def test_production_context_selects_live_evidence_authority() -> None:
-    recorder = EvidenceRecorder()
-    token = homebrain_agent._CURRENT_EVIDENCE_RECORDER.set(recorder)
+def test_production_factory_selects_live_evidence_authority() -> None:
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+    token = set_grounding_policy_factory(agent._create_grounding_policy)
     try:
-        adapter = homebrain_agent._ProductionGroundingAuthority(
+        policy = GroundingPolicy(
             logs_requested=False,
             conversational=False,
         )
     finally:
-        homebrain_agent._CURRENT_EVIDENCE_RECORDER.reset(token)
+        reset_grounding_policy_factory(token)
 
-    assert isinstance(adapter._delegate, LiveEvidenceAuthority)
-    assert adapter._delegate.recorder is recorder
+    assert isinstance(policy, LiveEvidenceAuthority)
+    assert policy.recorder is agent.evidence
 
 
 def test_base_agent_context_retains_original_grounding_policy() -> None:
-    adapter = homebrain_agent._ProductionGroundingAuthority(
+    policy = GroundingPolicy(
         logs_requested=False,
         conversational=False,
     )
 
-    assert isinstance(adapter._delegate, GroundingPolicy)
+    assert type(policy) is GroundingPolicy
+    assert orchestrator.GroundingPolicy is GroundingPolicy
 
 
-def test_authority_adapter_ignores_stale_external_evidence_flag() -> None:
+def test_live_authority_ignores_stale_external_evidence_flag() -> None:
     recorder = EvidenceRecorder()
     receipt_token = recorder.begin()
-    context_token = homebrain_agent._CURRENT_EVIDENCE_RECORDER.set(recorder)
     try:
         recorder.record(
             "hub_read_devices",
@@ -151,16 +155,44 @@ def test_authority_adapter_ignores_stale_external_evidence_flag() -> None:
             elapsed_ms=1,
             summary="live devices",
         )
-        adapter = homebrain_agent._ProductionGroundingAuthority(
+        authority = LiveEvidenceAuthority(
+            recorder,
             logs_requested=False,
             conversational=False,
         )
-        decision = adapter.decide_no_tool_calls(has_live_evidence=False)
+        decision = authority.decide_no_tool_calls(has_live_evidence=False)
     finally:
-        homebrain_agent._CURRENT_EVIDENCE_RECORDER.reset(context_token)
         recorder.reset(receipt_token)
 
     assert decision.action.value == "accept"
+
+
+@pytest.mark.asyncio
+async def test_grounding_factory_is_context_local_between_tasks() -> None:
+    first = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+    second = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+
+    async def select(agent: UnifiedMCPAgent) -> object:
+        token = set_grounding_policy_factory(agent._create_grounding_policy)
+        try:
+            await asyncio.sleep(0)
+            return GroundingPolicy(
+                logs_requested=False,
+                conversational=False,
+            )
+        finally:
+            reset_grounding_policy_factory(token)
+
+    first_policy, second_policy = await asyncio.gather(
+        select(first),
+        select(second),
+    )
+
+    assert isinstance(first_policy, LiveEvidenceAuthority)
+    assert isinstance(second_policy, LiveEvidenceAuthority)
+    assert first_policy.recorder is first.evidence
+    assert second_policy.recorder is second.evidence
+    assert orchestrator.GroundingPolicy is GroundingPolicy
 
 
 def test_runtime_app_imports_coordinated_agent() -> None:
