@@ -44,6 +44,27 @@ def test_named_device_soak_accepts_entity_first_resolution() -> None:
     ) == []
 
 
+def test_named_device_soak_accepts_expected_outcome() -> None:
+    assert validate_named_device_result(
+        valid_result(),
+        device_name="Bathroom Meter",
+        expected_outcome="success",
+    ) == []
+
+
+def test_named_device_soak_rejects_unexpected_outcome() -> None:
+    errors = validate_named_device_result(
+        valid_result(),
+        device_name="Bathroom Meter",
+        expected_outcome="unresolved",
+    )
+
+    assert (
+        "metrics outcome 'success' did not match expected 'unresolved'"
+        in errors
+    )
+
+
 def test_named_device_soak_rejects_name_as_hubitat_filter() -> None:
     result = valid_result()
     result["evidence"][0]["arguments"]["args"] = {
