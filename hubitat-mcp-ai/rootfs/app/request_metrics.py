@@ -35,6 +35,7 @@ class RequestMetrics:
         "evidence_retries", "grounding_refusals", "confirmation_queued",
         "confirmation_expired", "mutation_verification_failures",
         "request_cancellations", "device_resolution_ambiguous",
+        "device_resolution_missing",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "verification", "total",
@@ -96,6 +97,8 @@ class RequestMetrics:
         if state.counters.get("confirmation_expired", 0) > 0:
             return "unresolved"
         if state.counters.get("device_resolution_ambiguous", 0) > 0:
+            return "unresolved"
+        if state.counters.get("device_resolution_missing", 0) > 0:
             return "unresolved"
         return "success"
 

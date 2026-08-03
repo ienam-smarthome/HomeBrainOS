@@ -278,6 +278,18 @@ def _ambiguous_resolution(
     return CandidateResolution(None, None, confidence, alternatives, reason)
 
 
+def _missing_resolution(
+    *,
+    confidence: float,
+    alternatives: tuple[str, ...],
+    reason: str,
+) -> CandidateResolution:
+    """Record a deterministic no-acceptable-candidate outcome."""
+
+    increment_active_metric("device_resolution_missing")
+    return CandidateResolution(None, None, confidence, alternatives, reason)
+
+
 def _resolved(
     device: dict[str, Any],
     matched_name: str,
@@ -374,8 +386,10 @@ def resolve_device_candidate(
     ranked.sort(key=lambda item: (-item[0], item[1].casefold()))
     alternatives = tuple(item[1] for item in ranked[:3])
     if not ranked:
-        return CandidateResolution(
-            None, None, 0.0, (), f"No candidate matched {requested!r}."
+        return _missing_resolution(
+            confidence=0.0,
+            alternatives=(),
+            reason=f"No candidate matched {requested!r}.",
         )
     top_score, top_name, top_device = ranked[0]
     if len(ranked) == 1:
@@ -387,12 +401,10 @@ def resolve_device_candidate(
                 alternatives,
                 "unique inventory candidate",
             )
-        return CandidateResolution(
-            None,
-            None,
-            top_score,
-            alternatives,
-            f"The only candidate was not similar enough to {requested!r}.",
+        return _missing_resolution(
+            confidence=top_score,
+            alternatives=alternatives,
+            reason=f"The only candidate was not similar enough to {requested!r}.",
         )
     second_score = ranked[1][0]
     if top_score >= ranked_threshold and top_score - second_score >= margin:
