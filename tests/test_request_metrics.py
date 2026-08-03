@@ -63,3 +63,38 @@ def test_request_metrics_ignore_events_outside_request_context() -> None:
     metrics.observe_ms("mcp", 20)
 
     assert metrics.snapshot() == {"outcome": None, "counters": {}, "timings_ms": {}}
+
+
+def test_expired_confirmation_finishes_unresolved() -> None:
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        metrics.increment("confirmation_expired")
+        outcome = metrics.completed_outcome()
+        snapshot = metrics.finish(outcome)
+    finally:
+        metrics.reset(token)
+
+    assert outcome == "unresolved"
+    assert snapshot["outcome"] == "unresolved"
+    assert snapshot["counters"]["confirmation_expired"] == 1
+
+
+def test_refusal_and_verification_failure_precede_expired_confirmation() -> None:
+    metrics = RequestMetrics()
+
+    refused = metrics.begin()
+    try:
+        metrics.increment("confirmation_expired")
+        metrics.increment("grounding_refusals")
+        assert metrics.completed_outcome() == "refused"
+    finally:
+        metrics.reset(refused)
+
+    failed = metrics.begin()
+    try:
+        metrics.increment("confirmation_expired")
+        metrics.increment("mutation_verification_failures")
+        assert metrics.completed_outcome() == "failed"
+    finally:
+        metrics.reset(failed)
