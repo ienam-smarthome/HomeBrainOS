@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.312**.
+Current add-on version: **0.10.313**.
 
 ## Architecture
 
@@ -30,13 +30,13 @@ and refusals, confirmation queuing and expiry, confirmed Rule Machine verificati
 duration, verification failures, ambiguous device resolutions, cancellation,
 total duration, and the final request outcome. A normally returned request with
 a grounding refusal is labelled `refused`; a recorded mutation verification
-failure is labelled `failed`; expired confirmations and deterministic device
-ambiguity are labelled `unresolved`. These classifications use only fixed
-counters and never inspect user or model text. Local adapters are excluded from
-MCP timing. Its fixed metric vocabulary rejects dynamic labels so device names,
-prompts, credentials, and tool arguments cannot become metric dimensions.
-Metrics are returned on the production `ObservedAgentOutcome` without changing
-the original result fields.
+failure is labelled `failed`; a recorded cancellation is labelled `cancelled`;
+expired confirmations and deterministic device ambiguity are labelled
+`unresolved`. These classifications use only fixed counters and never inspect
+user or model text. Local adapters are excluded from MCP timing. Its fixed metric
+vocabulary rejects dynamic labels so device names, prompts, credentials, and tool
+arguments cannot become metric dimensions. Metrics are returned on the production
+`ObservedAgentOutcome` without changing the original result fields.
 
 `api_response_builder.build_agent_response` is the live serialization boundary
 for `/api/ask`. It preserves the existing response fields, deep-copies evidence

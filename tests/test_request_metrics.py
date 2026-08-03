@@ -98,3 +98,50 @@ def test_refusal_and_verification_failure_precede_expired_confirmation() -> None
         assert metrics.completed_outcome() == "failed"
     finally:
         metrics.reset(failed)
+
+
+def test_recorded_cancellation_finishes_cancelled() -> None:
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        metrics.increment("request_cancellations")
+        outcome = metrics.completed_outcome()
+        snapshot = metrics.finish(outcome)
+    finally:
+        metrics.reset(token)
+
+    assert outcome == "cancelled"
+    assert snapshot["outcome"] == "cancelled"
+    assert snapshot["counters"]["request_cancellations"] == 1
+
+
+def test_refusal_and_verification_failure_precede_cancellation() -> None:
+    metrics = RequestMetrics()
+
+    refused = metrics.begin()
+    try:
+        metrics.increment("request_cancellations")
+        metrics.increment("grounding_refusals")
+        assert metrics.completed_outcome() == "refused"
+    finally:
+        metrics.reset(refused)
+
+    failed = metrics.begin()
+    try:
+        metrics.increment("request_cancellations")
+        metrics.increment("mutation_verification_failures")
+        assert metrics.completed_outcome() == "failed"
+    finally:
+        metrics.reset(failed)
+
+
+def test_cancellation_precedes_unresolved_conditions() -> None:
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        metrics.increment("request_cancellations")
+        metrics.increment("confirmation_expired")
+        metrics.increment("device_resolution_ambiguous")
+        assert metrics.completed_outcome() == "cancelled"
+    finally:
+        metrics.reset(token)
