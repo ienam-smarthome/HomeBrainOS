@@ -14,6 +14,7 @@ _COUNTER_LABELS = (
     ("mutation_verification_failures", "Verification failures"),
     ("request_cancellations", "Cancellations"),
     ("device_resolution_ambiguous", "Ambiguous resolutions"),
+    ("device_resolution_missing", "Missing-device resolutions"),
 )
 
 _DURATION_LABELS = (
