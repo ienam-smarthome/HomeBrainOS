@@ -6,10 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
-MODULE_DOCS = (
-    ROOT / "docs" / "ARCHITECTURE.md",
-    ROOT / "docs" / "ARCHITECTURE-MODULE-MAP-UPDATE.md",
-)
+MODULE_DOC = ROOT / "docs" / "RUNTIME-MODULE-MAP.md"
 MODULE_ROW = re.compile(r"^\| `([^`]+\.py)` \|", re.MULTILINE)
 
 
@@ -22,13 +19,10 @@ def _runtime_modules() -> set[str]:
 
 
 def _documented_modules() -> set[str]:
-    documented: set[str] = set()
-    for path in MODULE_DOCS:
-        documented.update(MODULE_ROW.findall(path.read_text(encoding="utf-8")))
-    return documented
+    return set(MODULE_ROW.findall(MODULE_DOC.read_text(encoding="utf-8")))
 
 
-def test_runtime_modules_match_documented_module_maps() -> None:
+def test_runtime_modules_match_canonical_module_map() -> None:
     runtime = _runtime_modules()
     documented = _documented_modules()
 
@@ -36,10 +30,10 @@ def test_runtime_modules_match_documented_module_maps() -> None:
     stale = sorted(documented - runtime)
 
     assert not missing, (
-        "Live runtime modules missing from the architecture module maps: "
+        "Live runtime modules missing from docs/RUNTIME-MODULE-MAP.md: "
         + ", ".join(missing)
     )
     assert not stale, (
-        "Architecture module-map entries no longer present in rootfs/app: "
+        "Canonical runtime-module entries no longer present in rootfs/app: "
         + ", ".join(stale)
     )
