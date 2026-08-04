@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from contextual_read_fast_path import (
+    clean_choice_label,
+    parse_contextual_attribute,
+    parse_motion_activity,
+    present_attribute,
+    present_motion_activity,
+)
 from homebrain_agent import UnifiedMCPAgent
 
 
@@ -53,3 +60,33 @@ def test_choices_are_recovered_from_possible_matches_message() -> None:
         "I could not resolve the front door uniquely. Possible matches: "
         "Front Door, Weather Open-Meteo, or Fridge Door."
     ) == ["Front Door", "Weather Open-Meteo", "Fridge Door"]
+
+
+def test_contextual_attribute_follow_ups_use_current_state_parser() -> None:
+    assert parse_contextual_attribute("What is its humidity?") == "humidity"
+    assert parse_contextual_attribute("What's its battery?") == "battery"
+    assert parse_contextual_attribute("Show me its current power.") == "power"
+    assert parse_contextual_attribute("What is its temperature history?") is None
+    assert parse_contextual_attribute("When did its humidity change?") is None
+
+
+def test_motion_activity_requests_are_deterministic() -> None:
+    assert parse_motion_activity("Which motion sensors are active?") == ("active", False)
+    assert parse_motion_activity("How many motion sensors are inactive?") == ("inactive", True)
+    assert parse_motion_activity("Which lights are active?") is None
+
+
+def test_contextual_read_presenters_are_concise() -> None:
+    assert present_attribute("Bedroom 1 Meter", "humidity", 48, "%") == (
+        "Bedroom 1 Meter humidity is 48%."
+    )
+    assert present_motion_activity(
+        [{"label": "Kitchen Motion"}, {"label": "Hall Motion"}],
+        state="active",
+        count_only=False,
+    ) == "2 motion sensors are active: Kitchen Motion and Hall Motion."
+
+
+def test_choice_labels_drop_presentation_articles() -> None:
+    assert clean_choice_label("the Temperature Sensor") == "Temperature Sensor"
+    assert clean_choice_label("or the Bedroom Meter") == "Bedroom Meter"
