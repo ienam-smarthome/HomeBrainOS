@@ -113,7 +113,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             return []
         text = re.sub(r"[*_`]", "", match.group("choices"))
         parts = re.split(r",\s*|\s+or\s+", text)
-        return [part.strip(" .?!") for part in parts if part.strip(" .?!")]
+        choices: list[str] = []
+        for part in parts:
+            cleaned = re.sub(r"^or\s+", "", part.strip(" .?!"), flags=re.I)
+            if cleaned:
+                choices.append(cleaned)
+        return choices
 
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
         evidence_token = self.evidence.begin()
