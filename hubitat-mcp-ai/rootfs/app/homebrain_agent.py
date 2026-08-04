@@ -3,14 +3,24 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 
+from contact_history_queries import (
+    HistoryReference,
+    contact_events,
+    events_in_window,
+    find_before_reference,
+    parse_before_that,
+    parse_count_yesterday,
+    parse_list_yesterday,
+    present_count,
+    present_yesterday_events,
+    yesterday_bounds,
+)
 from deterministic_tool_presenter import present_tool_result
 from final_answer_coordinator import FinalAnswerCoordinator
-from grounding_policy import (
-    reset_grounding_policy_factory,
-    set_grounding_policy_factory,
-)
+from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
 from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
 from natural_datetime import format_natural_datetime
@@ -23,10 +33,7 @@ from token_aware_context_policy import TokenAwareModelContextPolicy
 class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     """Production agent with delegated synthesis, grounding, and observability."""
 
-    _FOLLOW_UP_PRONOUN = re.compile(
-        r"\b(?:it|its|that|this|which one|the one|one of them)\b",
-        re.I,
-    )
+    _FOLLOW_UP_PRONOUN = re.compile(r"\b(?:it|its|that|this|which one|the one|one of them)\b", re.I)
     _LAST_CONTACT = re.compile(
         r"^\s*when\s+did\s+(?P<name>.+?)\s+last\s+(?P<state>open|close|closed)\s*[?.!]*\s*$",
         re.I,
@@ -57,6 +64,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self.request_metrics = RequestMetrics()
         self.request_observation = RequestObservationCoordinator(self.request_metrics)
         self._clarification_choices: dict[str, list[str]] = {}
+        self._history_references: dict[str, HistoryReference] = {}
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         started = time.monotonic()
@@ -140,32 +148,40 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             self.evidence.reset(evidence_token)
             self._choices.reset(choices_token)
 
-    async def _contact_event_outcome(self, name: str, state: str, *, explain_cause: bool) -> AgentOutcome:
+    async def _read_contact_history(self, name: str, *, hours_back: int = 168) -> tuple[Any, dict[str, Any]]:
+        result = await self.device_history.history({
+            "name": name,
+            "hours_back": hours_back,
+            "attribute": "contact",
+            "limit": 100,
+        })
+        return result, result.data if isinstance(result.data, dict) else {}
+
+    async def _contact_event_outcome(
+        self,
+        name: str,
+        state: str,
+        *,
+        explain_cause: bool,
+        session_key: str,
+    ) -> AgentOutcome:
         async def operation() -> str:
-            result = await self.device_history.history({
-                "name": name,
-                "hours_back": 168,
-                "attribute": "contact",
-                "limit": 50,
-            })
-            data = result.data if isinstance(result.data, dict) else {}
+            result, data = await self._read_contact_history(name)
             if not self._tool_succeeded(result):
                 return present_tool_result(
-                    "homebrain_device_history",
-                    data,
-                    failed=True,
-                    fallback_error=result.text,
+                    "homebrain_device_history", data, failed=True, fallback_error=result.text
                 ) or "I could not read the device history."
-            events = [item for item in data.get("events", []) if isinstance(item, dict)]
-            matching = next((
-                item for item in events
-                if str(item.get("name") or "").casefold() == "contact"
-                and str(item.get("value") or "").casefold() == state
-            ), None)
+            events = contact_events([item for item in data.get("events", []) if isinstance(item, dict)])
+            matching = next(
+                (item for item in events if str(item.get("value") or "").casefold() == state),
+                None,
+            )
             label = str(data.get("label") or name)
             if matching is None:
                 return f"No {state} contact event was reported for {label} in the last 7 days."
-            timestamp = format_natural_datetime(matching.get("date"))
+            raw_timestamp = str(matching.get("date") or "")
+            self._history_references[session_key] = HistoryReference(label, state, raw_timestamp)
+            timestamp = format_natural_datetime(raw_timestamp)
             verb = "opened" if state == "open" else "closed"
             if explain_cause:
                 article = "an" if state == "open" else "a"
@@ -174,6 +190,61 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     "The device history does not identify which person or automation caused it."
                 )
             return f"{label} last {verb} at {timestamp}."
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
+    async def _before_that_outcome(self, name: str, state: str, session_key: str) -> AgentOutcome:
+        async def operation() -> str:
+            reference = self._history_references.get(session_key)
+            if reference is None:
+                return "I do not have a previous history event to use as the reference."
+            result, data = await self._read_contact_history(name)
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_device_history", data, failed=True, fallback_error=result.text
+                ) or "I could not read the device history."
+            events = [item for item in data.get("events", []) if isinstance(item, dict)]
+            matching = find_before_reference(
+                events,
+                state=state,
+                reference_timestamp=reference.timestamp,
+            )
+            label = str(data.get("label") or name)
+            if matching is None:
+                return f"No earlier {state} contact event was reported for {label}."
+            raw_timestamp = str(matching.get("date") or "")
+            self._history_references[session_key] = HistoryReference(label, state, raw_timestamp)
+            verb = "opened" if state == "open" else "closed"
+            return f"{label} {verb} before that at {format_natural_datetime(raw_timestamp)}."
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
+    async def _count_yesterday_outcome(self, name: str, state: str) -> AgentOutcome:
+        async def operation() -> str:
+            result, data = await self._read_contact_history(name, hours_back=48)
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_device_history", data, failed=True, fallback_error=result.text
+                ) or "I could not read the device history."
+            events = [item for item in data.get("events", []) if isinstance(item, dict)]
+            start, end = yesterday_bounds(datetime.now().astimezone())
+            selected = events_in_window(events, start, end)
+            count = sum(1 for item in selected if str(item.get("value") or "").casefold() == state)
+            return present_count(str(data.get("label") or name), state, count)
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
+    async def _list_yesterday_outcome(self, name: str) -> AgentOutcome:
+        async def operation() -> str:
+            result, data = await self._read_contact_history(name, hours_back=48)
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_device_history", data, failed=True, fallback_error=result.text
+                ) or "I could not read the device history."
+            events = [item for item in data.get("events", []) if isinstance(item, dict)]
+            start, end = yesterday_bounds(datetime.now().astimezone())
+            selected = events_in_window(events, start, end)
+            return present_yesterday_events(str(data.get("label") or name), selected)
 
         return await self._direct_outcome(operation, request_class="live-read")
 
@@ -228,13 +299,29 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 if explicit is not None:
                     self._clarification_choices.pop(session_key, None)
 
+            before_that = parse_before_that(user_prompt)
+            if before_that is not None:
+                return await self._before_that_outcome(*before_that, session_key)
+
+            count_yesterday = parse_count_yesterday(user_prompt)
+            if count_yesterday is not None:
+                return await self._count_yesterday_outcome(*count_yesterday)
+
+            list_yesterday = parse_list_yesterday(user_prompt)
+            if list_yesterday is not None:
+                return await self._list_yesterday_outcome(list_yesterday)
+
             last_contact = self._last_contact_request(user_prompt)
             if last_contact is not None:
-                return await self._contact_event_outcome(*last_contact, explain_cause=False)
+                return await self._contact_event_outcome(
+                    *last_contact, explain_cause=False, session_key=session_key
+                )
 
             why_contact = self._why_contact_request(user_prompt)
             if why_contact is not None:
-                return await self._contact_event_outcome(*why_contact, explain_cause=True)
+                return await self._contact_event_outcome(
+                    *why_contact, explain_cause=True, session_key=session_key
+                )
 
             control_arguments = self._routine_control_arguments(user_prompt)
             if control_arguments is not None:
@@ -260,9 +347,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         factory_token = set_grounding_policy_factory(self._create_grounding_policy)
         try:
             return await super()._process_user_request(
-                user_prompt,
-                conversation_history,
-                session_id=session_id,
+                user_prompt, conversation_history, session_id=session_id
             )
         finally:
             reset_grounding_policy_factory(factory_token)
