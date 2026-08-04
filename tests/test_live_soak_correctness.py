@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from contextual_read_fast_path import (
+    capability_choice_labels,
     clean_choice_label,
     parse_contextual_attribute,
+    parse_device_selection,
     parse_motion_activity,
     parse_named_attribute,
     present_attribute,
@@ -71,9 +73,10 @@ def test_contextual_attribute_follow_ups_use_current_state_parser() -> None:
     assert parse_contextual_attribute("When did its humidity change?") is None
 
 
-def test_named_attribute_reads_use_current_state_parser() -> None:
-    assert parse_named_attribute("What is the Bedroom 1 temperature?") == (
-        "Bedroom 1",
+def test_named_attribute_reads_require_explicit_device_labels() -> None:
+    assert parse_named_attribute("What is the Bedroom 1 temperature?") is None
+    assert parse_named_attribute("What is the Bedroom 1 Meter temperature?") == (
+        "Bedroom 1 Meter",
         "temperature",
     )
     assert parse_named_attribute("Show me Computer current power.") == (
@@ -82,6 +85,26 @@ def test_named_attribute_reads_use_current_state_parser() -> None:
     )
     assert parse_named_attribute("What is its humidity?") is None
     assert parse_named_attribute("When did Bedroom 1 humidity change?") is None
+
+
+def test_explicit_device_selection_commands_are_deterministic() -> None:
+    assert parse_device_selection("Select Bedroom 1 Meter") == "Bedroom 1 Meter"
+    assert parse_device_selection("Use the Bedroom 1 TRV") == "Bedroom 1 TRV"
+    assert parse_device_selection("I mean Bedroom 1 Meter") == "Bedroom 1 Meter"
+    assert parse_device_selection("Bedroom 1 Meter") is None
+
+
+def test_capability_choices_filter_room_name_collisions() -> None:
+    matches = [
+        {"label": "Bedroom1 (MQTT)", "value": None},
+        {"label": "Bedroom 1 Meter", "value": 28.5},
+        {"label": "Bedroom 1 TRV", "value": 28.2},
+        {"label": "Livingroom Meter", "value": 29.0},
+    ]
+    assert capability_choice_labels("Bedroom 1", matches) == [
+        "Bedroom 1 Meter",
+        "Bedroom 1 TRV",
+    ]
 
 
 def test_motion_activity_requests_are_deterministic() -> None:
