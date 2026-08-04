@@ -25,11 +25,12 @@ _LIST_YESTERDAY = re.compile(
     r"from\s+yesterday\s*[?.!]*\s*$",
     re.I,
 )
-_BEFORE_THAT = re.compile(
+_RELATIVE_THAT = re.compile(
     r"^\s*when\s+did\s+(?P<name>.+?)\s+(?P<state>open|close|closed)\s+"
-    r"before\s+that\s*[?.!]*\s*$",
+    r"(?P<direction>before|after)\s+that\s*[?.!]*\s*$",
     re.I,
 )
+_PRONOUN_TARGETS = {"it", "that", "this", "the door", "the device"}
 
 
 def literal_device_name(name: str) -> str:
@@ -54,11 +55,27 @@ def parse_list_yesterday(prompt: str) -> str | None:
     return literal_device_name(match.group("name"))
 
 
-def parse_before_that(prompt: str) -> tuple[str, str] | None:
-    match = _BEFORE_THAT.fullmatch(prompt)
+def parse_relative_that(prompt: str) -> tuple[str | None, str, str] | None:
+    match = _RELATIVE_THAT.fullmatch(prompt)
     if match is None:
         return None
-    return literal_device_name(match.group("name")), normalise_state(match.group("state"))
+    raw_name = match.group("name").strip()
+    name = None if raw_name.casefold() in _PRONOUN_TARGETS else literal_device_name(raw_name)
+    return name, normalise_state(match.group("state")), match.group("direction").casefold()
+
+
+def parse_before_that(prompt: str) -> tuple[str | None, str] | None:
+    parsed = parse_relative_that(prompt)
+    if parsed is None or parsed[2] != "before":
+        return None
+    return parsed[0], parsed[1]
+
+
+def parse_after_that(prompt: str) -> tuple[str | None, str] | None:
+    parsed = parse_relative_that(prompt)
+    if parsed is None or parsed[2] != "after":
+        return None
+    return parsed[0], parsed[1]
 
 
 def parse_event_datetime(value: Any) -> datetime | None:
@@ -99,11 +116,12 @@ def events_in_window(
     return selected
 
 
-def find_before_reference(
+def find_relative_to_reference(
     events: list[dict[str, Any]],
     *,
     state: str,
     reference_timestamp: str,
+    direction: str,
 ) -> dict[str, Any] | None:
     reference = parse_event_datetime(reference_timestamp)
     if reference is None:
@@ -113,9 +131,44 @@ def find_before_reference(
         if str(item.get("value") or "").casefold() != state:
             continue
         parsed = parse_event_datetime(item.get("date"))
-        if parsed is not None and parsed < reference:
+        if parsed is None:
+            continue
+        if direction == "before" and parsed < reference:
             candidates.append((parsed, item))
-    return max(candidates, key=lambda pair: pair[0])[1] if candidates else None
+        elif direction == "after" and parsed > reference:
+            candidates.append((parsed, item))
+    if not candidates:
+        return None
+    selector = max if direction == "before" else min
+    return selector(candidates, key=lambda pair: pair[0])[1]
+
+
+def find_before_reference(
+    events: list[dict[str, Any]],
+    *,
+    state: str,
+    reference_timestamp: str,
+) -> dict[str, Any] | None:
+    return find_relative_to_reference(
+        events,
+        state=state,
+        reference_timestamp=reference_timestamp,
+        direction="before",
+    )
+
+
+def find_after_reference(
+    events: list[dict[str, Any]],
+    *,
+    state: str,
+    reference_timestamp: str,
+) -> dict[str, Any] | None:
+    return find_relative_to_reference(
+        events,
+        state=state,
+        reference_timestamp=reference_timestamp,
+        direction="after",
+    )
 
 
 def present_count(label: str, state: str, count: int) -> str:
@@ -139,10 +192,14 @@ __all__ = [
     "HistoryReference",
     "contact_events",
     "events_in_window",
+    "find_after_reference",
     "find_before_reference",
+    "find_relative_to_reference",
+    "parse_after_that",
     "parse_before_that",
     "parse_count_yesterday",
     "parse_list_yesterday",
+    "parse_relative_that",
     "present_count",
     "present_yesterday_events",
     "yesterday_bounds",

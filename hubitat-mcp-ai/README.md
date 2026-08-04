@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.325**.
+Current add-on version: **0.10.326**.
 
 ## Architecture
 
@@ -32,11 +32,13 @@ resolution, and “why did ... open/close” answers select the relevant contact
 while explicitly stating that event history does not identify causation. Contact
 event timestamps are rendered as natural local date and time text while preserving
 the authoritative timestamp value and offset. Browser-session history references
-support deterministic “before that” follow-ups, while calendar-day filters count
-or list yesterday's contact events without model arithmetic or generic event dumps.
-Ambiguous device choices are retained per browser session, including choices
-recovered from deterministic unresolved messages, so a pronoun-only follow-up
-stays `unresolved` and repeats the choices before any provider call.
+support deterministic “before that” and “after that” follow-ups, including
+pronoun-only forms such as “When did it open before that?”. Calendar-day filters
+count or list yesterday's contact events without model arithmetic or generic event
+dumps, and those aggregate/list queries do not replace the last single-event
+reference. Ambiguous device choices are retained per browser session, including
+choices recovered from deterministic unresolved messages, so a pronoun-only
+clarification stays `unresolved` and repeats the choices before any provider call.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
