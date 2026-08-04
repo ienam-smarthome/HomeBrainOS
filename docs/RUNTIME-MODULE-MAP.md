@@ -31,6 +31,7 @@ The repository drift test compares this table directly with the live directory. 
 | `mcp_client.py` | Implements Hubitat MCP JSON-RPC transport and tool access. |
 | `mcp_retry_metrics.py` | Records actual retry attempts begun at the MCP transport boundary. |
 | `model_context_policy.py` | Bounds copied provider conversation and tool-result context. |
+| `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `provider_token_estimator.py` | Estimates provider token usage conservatively. |
 | `request_classification.py` | Provides non-authoritative presentation and manifest hints. |
