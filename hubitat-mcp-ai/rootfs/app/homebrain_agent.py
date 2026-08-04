@@ -20,7 +20,15 @@ from contact_history_queries import (
     present_yesterday_events,
     yesterday_bounds,
 )
+from contextual_read_fast_path import (
+    clean_choice_label,
+    parse_contextual_attribute,
+    parse_motion_activity,
+    present_attribute,
+    present_motion_activity,
+)
 from deterministic_tool_presenter import present_tool_result
+from device_query_service import DeviceQueryService
 from direct_outcome_context import DirectOutcomeContext
 from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
@@ -73,6 +81,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             self._request_class,
         )
         self._clarification_choices: dict[str, list[str]] = {}
+        self._selected_devices: dict[str, str] = {}
         self._history_references: dict[str, HistoryReference] = {}
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
@@ -134,7 +143,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         choices: list[str] = []
         seen: set[str] = set()
         for part in parts:
-            cleaned = re.sub(r"^(?:or|and)\s+", "", part.strip(" .?!"), flags=re.I)
+            cleaned = clean_choice_label(
+                re.sub(r"^(?:or|and)\s+", "", part.strip(" .?!"), flags=re.I)
+            )
             key = cleaned.casefold()
             if cleaned and key not in seen:
                 choices.append(cleaned)
@@ -143,6 +154,59 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
         return await self.direct_outcomes.run(operation, request_class=request_class)
+
+    async def _contextual_attribute_outcome(self, name: str, attribute: str) -> AgentOutcome:
+        async def operation() -> str:
+            result = await self._resolve_device({"name": name})
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_resolve_device", data, failed=True, fallback_error=result.text
+                ) or "I could not read the current device state."
+            target = data.get("target") if isinstance(data.get("target"), dict) else None
+            label = str(data.get("label") or name)
+            if target is None:
+                alternatives = [
+                    clean_choice_label(str(item))
+                    for item in data.get("alternatives") or []
+                    if str(item).strip()
+                ]
+                if alternatives:
+                    self._choices.set(alternatives)
+                    self.request_metrics.increment("device_resolution_ambiguous")
+                    return self._choice_message(alternatives)
+                self.request_metrics.increment("device_resolution_missing")
+                return f'I could not find a device named "{name}".'
+            _, value = DeviceQueryService._attribute_value(target, attribute)
+            if value is None:
+                return f"{label} does not report a current {attribute} value."
+            return present_attribute(
+                label,
+                attribute,
+                value,
+                DeviceQueryService._unit_for(attribute),
+            )
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
+    async def _motion_activity_outcome(self, state: str, *, count_only: bool) -> AgentOutcome:
+        async def operation() -> str:
+            result = await self._filter_devices({
+                "attribute": "motion",
+                "operator": "eq",
+                "value": state,
+            })
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_filter_devices", data, failed=True, fallback_error=result.text
+                ) or "I could not read the current motion sensor states."
+            matches = [
+                item for item in data.get("matches") or [] if isinstance(item, dict)
+            ]
+            return present_motion_activity(matches, state=state, count_only=count_only)
+
+        return await self._direct_outcome(operation, request_class="live-read")
 
     async def _read_contact_history(self, name: str, *, hours_back: int = 168) -> tuple[Any, dict[str, Any]]:
         result = await self.device_history.history({
@@ -315,6 +379,22 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     )
                 if explicit is not None:
                     self._clarification_choices.pop(session_key, None)
+                    self._selected_devices[session_key] = explicit
+
+            contextual_attribute = parse_contextual_attribute(user_prompt)
+            selected_device = self._selected_devices.get(session_key)
+            if contextual_attribute is not None and selected_device:
+                return await self._contextual_attribute_outcome(
+                    selected_device,
+                    contextual_attribute,
+                )
+
+            motion_activity = parse_motion_activity(user_prompt)
+            if motion_activity is not None:
+                return await self._motion_activity_outcome(
+                    motion_activity[0],
+                    count_only=motion_activity[1],
+                )
 
             count_yesterday = parse_count_yesterday(user_prompt)
             if count_yesterday is not None:
@@ -354,6 +434,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         outcome = await self.request_observation.run(operation)
         choices = list(outcome.choices or []) or self._choices_from_message(outcome.message)
         if choices:
+            choices = [clean_choice_label(choice) for choice in choices]
             outcome.choices = choices
             self._clarification_choices[session_key] = choices
         return outcome
