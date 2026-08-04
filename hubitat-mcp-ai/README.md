@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.326**.
+Current add-on version: **0.10.327**.
 
 ## Architecture
 
@@ -46,14 +46,15 @@ cumulative discovery duration, cumulative remote MCP duration, actual MCP retry
 attempts, grounding retries and refusals, confirmation queuing and expiry,
 confirmed Rule Machine verification duration, verification failures, ambiguous
 and missing device resolutions, cancellation, total duration, and the final
-request outcome. A normally returned request with a grounding refusal is labelled
-`refused`; a recorded mutation verification failure is labelled `failed`; a
-recorded cancellation is labelled `cancelled`; expired confirmations and
-deterministic ambiguous or missing device resolution are labelled `unresolved`.
-These classifications use only fixed counters and never inspect user or model
-text. Local adapters are excluded from MCP timing. Its fixed metric vocabulary
-rejects dynamic labels so device names, prompts, credentials, and tool arguments
-cannot become metric dimensions. Metrics are returned on the production
+request outcome. Completed-request classification is delegated to the pure
+`request_outcome_policy` module, which applies an explicit fixed precedence to
+privacy-safe counters only. A grounding refusal is labelled `refused`; a mutation
+verification failure is labelled `failed`; a recorded cancellation is labelled
+`cancelled`; expired confirmations and deterministic ambiguous or missing device
+resolution are labelled `unresolved`. The policy never inspects user or model text.
+Local adapters are excluded from MCP timing. Its fixed metric vocabulary rejects
+dynamic labels so device names, prompts, credentials, and tool arguments cannot
+become metric dimensions. Metrics are returned on the production
 `ObservedAgentOutcome` without changing the original result fields.
 
 MCP retries are counted at the transport loop immediately before an actual retry
