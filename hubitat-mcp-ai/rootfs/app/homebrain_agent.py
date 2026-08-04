@@ -30,6 +30,14 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         r"^\s*when\s+did\s+(?P<name>.+?)\s+last\s+(?P<state>open|close|closed)\s*[?.!]*\s*$",
         re.I,
     )
+    _WHY_CONTACT = re.compile(
+        r"^\s*why\s+did\s+(?P<name>.+?)\s+(?P<state>open|close|closed)(?:\s+.+?)?\s*[?.!]*\s*$",
+        re.I,
+    )
+    _CHOICE_LIST = re.compile(
+        r"(?:which device.*?:|possible matches:)\s*(?P<choices>.+?)[?.!]*$",
+        re.I | re.S,
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -49,32 +57,18 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self.request_observation = RequestObservationCoordinator(self.request_metrics)
         self._clarification_choices: dict[str, list[str]] = {}
 
-    async def _chat(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-    ) -> dict[str, Any]:
+    async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         started = time.monotonic()
         self.request_metrics.increment("model_rounds")
         try:
             return await super()._chat(messages, tools)
         finally:
-            self.request_metrics.observe_ms(
-                "provider",
-                (time.monotonic() - started) * 1000,
-            )
+            self.request_metrics.observe_ms("provider", (time.monotonic() - started) * 1000)
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         return await self.final_answers.answer(messages)
 
-    def _create_grounding_policy(
-        self,
-        *,
-        logs_requested: bool,
-        conversational: bool,
-    ) -> LiveEvidenceAuthority:
-        """Create the production request's evidence-aware grounding authority."""
-
+    def _create_grounding_policy(self, *, logs_requested: bool, conversational: bool) -> LiveEvidenceAuthority:
         return LiveEvidenceAuthority(
             self.evidence,
             logs_requested=logs_requested,
@@ -82,13 +76,25 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             record_metric=self.request_metrics.increment,
         )
 
+    @staticmethod
+    def _literal_device_name(name: str) -> str:
+        return re.sub(r"^(?:the|a|an)\s+", "", name.strip(), flags=re.I)
+
     @classmethod
     def _last_contact_request(cls, prompt: str) -> tuple[str, str] | None:
         match = cls._LAST_CONTACT.fullmatch(prompt)
         if match is None:
             return None
         state = match.group("state").casefold()
-        return match.group("name").strip(), "closed" if state.startswith("clos") else "open"
+        return cls._literal_device_name(match.group("name")), "closed" if state.startswith("clos") else "open"
+
+    @classmethod
+    def _why_contact_request(cls, prompt: str) -> tuple[str, str] | None:
+        match = cls._WHY_CONTACT.fullmatch(prompt)
+        if match is None:
+            return None
+        state = match.group("state").casefold()
+        return cls._literal_device_name(match.group("name")), "closed" if state.startswith("clos") else "open"
 
     @classmethod
     def _is_choice_follow_up(cls, prompt: str) -> bool:
@@ -100,12 +106,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             return f"Do you mean {choices[0]}?"
         return "Which device do you mean: " + ", ".join(choices[:-1]) + f", or {choices[-1]}?"
 
-    async def _direct_outcome(
-        self,
-        operation: Callable[[], Awaitable[str]],
-        *,
-        request_class: str,
-    ) -> AgentOutcome:
+    @classmethod
+    def _choices_from_message(cls, message: str) -> list[str]:
+        match = cls._CHOICE_LIST.search(message.strip())
+        if match is None:
+            return []
+        text = re.sub(r"[*_`]", "", match.group("choices"))
+        parts = re.split(r",\s*|\s+or\s+", text)
+        choices: list[str] = []
+        for part in parts:
+            cleaned = re.sub(r"^or\s+", "", part.strip(" .?!"), flags=re.I)
+            if cleaned:
+                choices.append(cleaned)
+        return choices
+
+    async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
         evidence_token = self.evidence.begin()
         choices_token = self._choices.set([])
         mutation_token = self._mutation_call_seen.set(request_class == "write")
@@ -124,7 +139,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             self.evidence.reset(evidence_token)
             self._choices.reset(choices_token)
 
-    async def _last_contact_outcome(self, name: str, state: str) -> AgentOutcome:
+    async def _contact_event_outcome(self, name: str, state: str, *, explain_cause: bool) -> AgentOutcome:
         async def operation() -> str:
             result = await self.device_history.history({
                 "name": name,
@@ -141,19 +156,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     fallback_error=result.text,
                 ) or "I could not read the device history."
             events = [item for item in data.get("events", []) if isinstance(item, dict)]
-            matching = next(
-                (
-                    item for item in events
-                    if str(item.get("name") or "").casefold() == "contact"
-                    and str(item.get("value") or "").casefold() == state
-                ),
-                None,
-            )
+            matching = next((
+                item for item in events
+                if str(item.get("name") or "").casefold() == "contact"
+                and str(item.get("value") or "").casefold() == state
+            ), None)
             label = str(data.get("label") or name)
             if matching is None:
                 return f"No {state} contact event was reported for {label} in the last 7 days."
             timestamp = str(matching.get("date") or "an unreported time")
             verb = "opened" if state == "open" else "closed"
+            if explain_cause:
+                return (
+                    f"{label} reported a {state} contact event at {timestamp}. "
+                    "The device history does not identify which person or automation caused it."
+                )
             return f"{label} last {verb} at {timestamp}."
 
         return await self._direct_outcome(operation, request_class="live-read")
@@ -171,11 +188,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 evidence_kind="deterministic_device_control",
             )
             data = result.data if isinstance(result.data, dict) else {}
-            choices = [
-                str(choice)
-                for choice in data.get("choices") or []
-                if str(choice).strip()
-            ]
+            choices = [str(choice) for choice in data.get("choices") or [] if str(choice).strip()]
             if choices:
                 self._choices.set(choices)
                 self.request_metrics.increment("device_resolution_ambiguous")
@@ -201,10 +214,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             prior_choices = list(self._clarification_choices.get(session_key) or [])
             if prior_choices:
                 normalized = user_prompt.casefold()
-                explicit = next(
-                    (choice for choice in prior_choices if choice.casefold() in normalized),
-                    None,
-                )
+                explicit = next((choice for choice in prior_choices if choice.casefold() in normalized), None)
                 if explicit is None and self._is_choice_follow_up(user_prompt):
                     self.request_metrics.increment("device_resolution_ambiguous")
                     return AgentOutcome(
@@ -218,22 +228,24 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
             last_contact = self._last_contact_request(user_prompt)
             if last_contact is not None:
-                return await self._last_contact_outcome(*last_contact)
+                return await self._contact_event_outcome(*last_contact, explain_cause=False)
+
+            why_contact = self._why_contact_request(user_prompt)
+            if why_contact is not None:
+                return await self._contact_event_outcome(*why_contact, explain_cause=True)
 
             control_arguments = self._routine_control_arguments(user_prompt)
             if control_arguments is not None:
                 return await self._routine_control_outcome(control_arguments)
 
             base_process = super(UnifiedMCPAgent, self).process_user_request_result
-            return await base_process(
-                user_prompt,
-                conversation_history,
-                session_id=session_id,
-            )
+            return await base_process(user_prompt, conversation_history, session_id=session_id)
 
         outcome = await self.request_observation.run(operation)
-        if outcome.choices:
-            self._clarification_choices[session_key] = list(outcome.choices)
+        choices = list(outcome.choices or []) or self._choices_from_message(outcome.message)
+        if choices:
+            outcome.choices = choices
+            self._clarification_choices[session_key] = choices
         return outcome
 
     async def _process_user_request(
@@ -243,9 +255,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         *,
         session_id: str = "default",
     ) -> str:
-        factory_token = set_grounding_policy_factory(
-            self._create_grounding_policy
-        )
+        factory_token = set_grounding_policy_factory(self._create_grounding_policy)
         try:
             return await super()._process_user_request(
                 user_prompt,
