@@ -21,8 +21,10 @@ from contact_history_queries import (
     yesterday_bounds,
 )
 from contextual_read_fast_path import (
+    capability_choice_labels,
     clean_choice_label,
     parse_contextual_attribute,
+    parse_device_selection,
     parse_motion_activity,
     parse_named_attribute,
     present_attribute,
@@ -83,7 +85,6 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         )
         self._clarification_choices: dict[str, list[str]] = {}
         self._selected_devices: dict[str, str] = {}
-        self._selected_targets: dict[str, tuple[str, dict[str, Any]]] = {}
         self._history_references: dict[str, HistoryReference] = {}
 
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
@@ -157,6 +158,34 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
         return await self.direct_outcomes.run(operation, request_class=request_class)
 
+    async def _selection_outcome(self, name: str, *, session_key: str) -> AgentOutcome:
+        async def operation() -> str:
+            result = await self._resolve_device({"name": name})
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_resolve_device", data, failed=True, fallback_error=result.text
+                ) or "I could not select that device."
+            target = data.get("target") if isinstance(data.get("target"), dict) else None
+            label = str(data.get("label") or name)
+            if target is None:
+                alternatives = [
+                    clean_choice_label(str(item))
+                    for item in data.get("alternatives") or []
+                    if str(item).strip()
+                ]
+                if alternatives:
+                    self._choices.set(alternatives)
+                    self.request_metrics.increment("device_resolution_ambiguous")
+                    return self._choice_message(alternatives)
+                self.request_metrics.increment("device_resolution_missing")
+                return f'I could not find a device named "{name}".'
+            self._selected_devices[session_key] = label
+            self._clarification_choices.pop(session_key, None)
+            return f"Selected {label}."
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
     async def _contextual_attribute_outcome(
         self,
         name: str,
@@ -165,42 +194,73 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         session_key: str,
     ) -> AgentOutcome:
         async def operation() -> str:
-            cached = self._selected_targets.get(session_key)
-            if cached is not None and cached[0].casefold() == name.casefold():
-                label, target = cached
-            else:
-                result = await self._resolve_device({"name": name})
-                data = result.data if isinstance(result.data, dict) else {}
-                if not self._tool_succeeded(result):
-                    return present_tool_result(
-                        "homebrain_resolve_device", data, failed=True, fallback_error=result.text
-                    ) or "I could not read the current device state."
-                target = data.get("target") if isinstance(data.get("target"), dict) else None
-                label = str(data.get("label") or name)
-                if target is None:
-                    alternatives = [
-                        clean_choice_label(str(item))
-                        for item in data.get("alternatives") or []
-                        if str(item).strip()
-                    ]
-                    if alternatives:
-                        self._choices.set(alternatives)
-                        self.request_metrics.increment("device_resolution_ambiguous")
-                        return self._choice_message(alternatives)
-                    self.request_metrics.increment("device_resolution_missing")
-                    return f'I could not find a device named "{name}".'
-                self._selected_devices[session_key] = label
-                self._selected_targets[session_key] = (label, target)
+            result = await self._resolve_device({"name": name})
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_resolve_device", data, failed=True, fallback_error=result.text
+                ) or "I could not read the current device state."
+            target = data.get("target") if isinstance(data.get("target"), dict) else None
+            label = str(data.get("label") or name)
+            if target is not None:
+                _, value = DeviceQueryService._attribute_value(target, attribute)
+                if value is not None:
+                    self._selected_devices[session_key] = label
+                    return present_attribute(
+                        label,
+                        attribute,
+                        value,
+                        DeviceQueryService._unit_for(attribute),
+                    )
 
-            _, value = DeviceQueryService._attribute_value(target, attribute)
-            if value is None:
+            filtered = await self._filter_devices({
+                "attribute": attribute,
+                "operator": "exists",
+            })
+            filtered_data = filtered.data if isinstance(filtered.data, dict) else {}
+            if not self._tool_succeeded(filtered):
+                return present_tool_result(
+                    "homebrain_filter_devices",
+                    filtered_data,
+                    failed=True,
+                    fallback_error=filtered.text,
+                ) or "I could not read the current device state."
+            matches = [
+                item for item in filtered_data.get("matches") or [] if isinstance(item, dict)
+            ]
+            alternatives = capability_choice_labels(name, matches)
+            if len(alternatives) > 1:
+                self._choices.set(alternatives)
+                self.request_metrics.increment("device_resolution_ambiguous")
+                return self._choice_message(alternatives)
+            if len(alternatives) == 1:
+                selected_label = alternatives[0]
+                selected = next(
+                    (item for item in matches if str(item.get("label") or "").casefold() == selected_label.casefold()),
+                    None,
+                )
+                if selected is not None:
+                    self._selected_devices[session_key] = selected_label
+                    return present_attribute(
+                        selected_label,
+                        attribute,
+                        selected.get("value"),
+                        DeviceQueryService._unit_for(attribute),
+                    )
+            if target is not None:
+                self._selected_devices[session_key] = label
                 return f"{label} does not report a current {attribute} value."
-            return present_attribute(
-                label,
-                attribute,
-                value,
-                DeviceQueryService._unit_for(attribute),
-            )
+            alternatives = [
+                clean_choice_label(str(item))
+                for item in data.get("alternatives") or []
+                if str(item).strip()
+            ]
+            if alternatives:
+                self._choices.set(alternatives)
+                self.request_metrics.increment("device_resolution_ambiguous")
+                return self._choice_message(alternatives)
+            self.request_metrics.increment("device_resolution_missing")
+            return f'I could not find a device named "{name}".'
 
         return await self._direct_outcome(operation, request_class="live-read")
 
@@ -216,9 +276,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 return present_tool_result(
                     "homebrain_filter_devices", data, failed=True, fallback_error=result.text
                 ) or "I could not read the current motion sensor states."
-            matches = [
-                item for item in data.get("matches") or [] if isinstance(item, dict)
-            ]
+            matches = [item for item in data.get("matches") or [] if isinstance(item, dict)]
             return present_motion_activity(matches, state=state, count_only=count_only)
 
         return await self._direct_outcome(operation, request_class="live-read")
@@ -288,11 +346,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 ) or "I could not read the device history."
             events = [item for item in data.get("events", []) if isinstance(item, dict)]
             finder = find_before_reference if direction == "before" else find_after_reference
-            matching = finder(
-                events,
-                state=state,
-                reference_timestamp=reference.timestamp,
-            )
+            matching = finder(events, state=state, reference_timestamp=reference.timestamp)
             label = str(data.get("label") or target_name)
             if matching is None:
                 return f"No {direction} {state} contact event was reported for {label}."
@@ -370,15 +424,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         async def operation() -> AgentOutcome:
             before_that = parse_before_that(user_prompt)
             if before_that is not None:
-                return await self._relative_that_outcome(
-                    before_that[0], before_that[1], "before", session_key
-                )
+                return await self._relative_that_outcome(before_that[0], before_that[1], "before", session_key)
 
             after_that = parse_after_that(user_prompt)
             if after_that is not None:
-                return await self._relative_that_outcome(
-                    after_that[0], after_that[1], "after", session_key
-                )
+                return await self._relative_that_outcome(after_that[0], after_that[1], "after", session_key)
+
+            selection = parse_device_selection(user_prompt)
+            if selection is not None:
+                return await self._selection_outcome(selection, session_key=session_key)
 
             prior_choices = list(self._clarification_choices.get(session_key) or [])
             if prior_choices:
@@ -395,7 +449,6 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 if explicit is not None:
                     self._clarification_choices.pop(session_key, None)
                     self._selected_devices[session_key] = explicit
-                    self._selected_targets.pop(session_key, None)
 
             contextual_attribute = parse_contextual_attribute(user_prompt)
             selected_device = self._selected_devices.get(session_key)
@@ -408,7 +461,6 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
             named_attribute = parse_named_attribute(user_prompt)
             if named_attribute is not None:
-                self._selected_targets.pop(session_key, None)
                 return await self._contextual_attribute_outcome(
                     named_attribute[0],
                     named_attribute[1],
@@ -417,16 +469,11 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
             motion_activity = parse_motion_activity(user_prompt)
             if motion_activity is not None:
-                return await self._motion_activity_outcome(
-                    motion_activity[0],
-                    count_only=motion_activity[1],
-                )
+                return await self._motion_activity_outcome(motion_activity[0], count_only=motion_activity[1])
 
             count_yesterday = parse_count_yesterday(user_prompt)
             if count_yesterday is not None:
-                return await self._count_yesterday_outcome(
-                    count_yesterday[0], count_yesterday[1]
-                )
+                return await self._count_yesterday_outcome(count_yesterday[0], count_yesterday[1])
 
             list_yesterday = parse_list_yesterday(user_prompt)
             if list_yesterday is not None:
@@ -474,9 +521,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     ) -> str:
         factory_token = set_grounding_policy_factory(self._create_grounding_policy)
         try:
-            return await super()._process_user_request(
-                user_prompt, conversation_history, session_id=session_id
-            )
+            return await super()._process_user_request(user_prompt, conversation_history, session_id=session_id)
         finally:
             reset_grounding_policy_factory(factory_token)
 
