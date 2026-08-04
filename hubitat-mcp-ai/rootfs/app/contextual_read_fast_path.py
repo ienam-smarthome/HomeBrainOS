@@ -7,7 +7,7 @@ from typing import Any
 _CONTEXTUAL_ATTRIBUTE = re.compile(
     r"^\s*(?:what(?:'s|\s+is)|show|tell\s+me)\s+(?:me\s+)?(?:the\s+)?"
     r"(?:current\s+)?(?:value\s+of\s+)?(?:its|it'?s|that(?:\s+device)?'?s)\s+"
-    r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
+    r"(?:current\s+)?(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
     re.I,
 )
 _MOTION_ACTIVITY = re.compile(
