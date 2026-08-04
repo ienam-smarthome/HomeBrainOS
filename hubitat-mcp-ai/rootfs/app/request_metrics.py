@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any
 
+from request_outcome_policy import classify_completed_request
+
 
 @dataclass(slots=True)
 class RequestMetricState:
@@ -86,21 +88,7 @@ class RequestMetrics:
         """Classify a normally returned request without inspecting its message."""
 
         state = self._state.get()
-        if state is None:
-            return "success"
-        if state.counters.get("grounding_refusals", 0) > 0:
-            return "refused"
-        if state.counters.get("mutation_verification_failures", 0) > 0:
-            return "failed"
-        if state.counters.get("request_cancellations", 0) > 0:
-            return "cancelled"
-        if state.counters.get("confirmation_expired", 0) > 0:
-            return "unresolved"
-        if state.counters.get("device_resolution_ambiguous", 0) > 0:
-            return "unresolved"
-        if state.counters.get("device_resolution_missing", 0) > 0:
-            return "unresolved"
-        return "success"
+        return classify_completed_request(state.counters if state is not None else None)
 
     def finish(self, outcome: str) -> dict[str, Any]:
         if outcome not in self.ALLOWED_OUTCOMES:
