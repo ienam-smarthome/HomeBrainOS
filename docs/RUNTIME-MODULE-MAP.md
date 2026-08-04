@@ -36,8 +36,9 @@ The repository drift test compares this table directly with the live directory. 
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `provider_token_estimator.py` | Estimates provider token usage conservatively. |
 | `request_classification.py` | Provides non-authoritative presentation and manifest hints. |
-| `request_metrics.py` | Collects fixed privacy-safe counters, timings, and outcomes. |
+| `request_metrics.py` | Collects fixed privacy-safe counters and timings. |
 | `request_observation.py` | Owns request metrics lifecycle, cancellation/failure classification, and observed-outcome construction. |
+| `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
 | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
 | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
