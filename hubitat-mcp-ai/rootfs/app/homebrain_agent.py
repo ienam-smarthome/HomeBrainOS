@@ -21,6 +21,7 @@ from contact_history_queries import (
     yesterday_bounds,
 )
 from deterministic_tool_presenter import present_tool_result
+from direct_outcome_context import DirectOutcomeContext
 from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
 from live_evidence_authority import LiveEvidenceAuthority
@@ -65,6 +66,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self.final_answers = FinalAnswerCoordinator(self._chat)
         self.request_metrics = RequestMetrics()
         self.request_observation = RequestObservationCoordinator(self.request_metrics)
+        self.direct_outcomes = DirectOutcomeContext(
+            self.evidence,
+            self._choices,
+            self._mutation_call_seen,
+            self._request_class,
+        )
         self._clarification_choices: dict[str, list[str]] = {}
         self._history_references: dict[str, HistoryReference] = {}
 
@@ -135,23 +142,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         return choices
 
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
-        evidence_token = self.evidence.begin()
-        choices_token = self._choices.set([])
-        mutation_token = self._mutation_call_seen.set(request_class == "write")
-        class_token = self._request_class.set(request_class)
-        try:
-            message = await operation()
-            return AgentOutcome(
-                message=message,
-                request_class=request_class,
-                evidence=self.evidence.receipts(),
-                choices=list(self._choices.get() or []),
-            )
-        finally:
-            self._request_class.reset(class_token)
-            self._mutation_call_seen.reset(mutation_token)
-            self.evidence.reset(evidence_token)
-            self._choices.reset(choices_token)
+        return await self.direct_outcomes.run(operation, request_class=request_class)
 
     async def _read_contact_history(self, name: str, *, hours_back: int = 168) -> tuple[Any, dict[str, Any]]:
         result = await self.device_history.history({
