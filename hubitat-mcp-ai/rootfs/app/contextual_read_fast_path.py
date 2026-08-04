@@ -32,10 +32,6 @@ _HISTORY_TERMS = re.compile(
 )
 _PRONOUN_NAMES = {"it", "its", "it's", "that", "that device", "this", "this device"}
 _SELECTION_PREFIX = re.compile(r"^\s*(?:select|use|choose|i\s+mean)\b", re.I)
-_DEVICE_KIND_TERMS = re.compile(
-    r"\b(?:meter|sensor|thermostat|trv|switch|socket|plug|outlet|light|lamp|door|computer|tv|fan)\b",
-    re.I,
-)
 
 
 def clean_choice_label(value: str) -> str:
@@ -54,11 +50,12 @@ def parse_contextual_attribute(prompt: str) -> str | None:
 
 
 def parse_named_attribute(prompt: str) -> tuple[str, str] | None:
-    """Return an explicit current-state device target and attribute.
+    """Return an explicit current-state target and attribute.
 
-    Bare room labels such as ``Bedroom 1`` are deliberately left to the
-    capability-aware ambiguity path. Explicit device labels such as
-    ``Bedroom 1 Meter`` remain deterministic fast-path targets.
+    Room labels such as ``Bedroom 1`` intentionally remain on this deterministic
+    path. Capability filtering in the production agent then decides whether one
+    source can answer or whether multiple valid sources must be offered as
+    clarification choices. Only historical and pronoun-only wording is excluded.
     """
 
     if _HISTORY_TERMS.search(prompt):
@@ -68,8 +65,6 @@ def parse_named_attribute(prompt: str) -> tuple[str, str] | None:
         return None
     name = clean_choice_label(match.group("name")).strip()
     if not name or name.casefold() in _PRONOUN_NAMES:
-        return None
-    if re.search(r"\d\s*$", name) and _DEVICE_KIND_TERMS.search(name) is None:
         return None
     return name, match.group("attribute").casefold()
 
