@@ -73,8 +73,15 @@ def test_contextual_attribute_follow_ups_use_current_state_parser() -> None:
     assert parse_contextual_attribute("When did its humidity change?") is None
 
 
-def test_named_attribute_reads_require_explicit_device_labels() -> None:
-    assert parse_named_attribute("What is the Bedroom 1 temperature?") is None
+def test_named_and_room_attribute_reads_use_current_state_parser() -> None:
+    assert parse_named_attribute("What is the Bedroom 1 temperature?") == (
+        "Bedroom 1",
+        "temperature",
+    )
+    assert parse_named_attribute("What is the Bedroom 1 humidity?") == (
+        "Bedroom 1",
+        "humidity",
+    )
     assert parse_named_attribute("What is the Bedroom 1 Meter temperature?") == (
         "Bedroom 1 Meter",
         "temperature",
