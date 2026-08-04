@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.323**.
+Current add-on version: **0.10.324**.
 
 ## Architecture
 
@@ -29,10 +29,12 @@ routine light/switch commands are sent through the bounded local control adapter
 before the model can expand a generic noun into one particular device. Exact
 contact-history requests remove presentation-only leading articles before target
 resolution, and “why did ... open/close” answers select the relevant contact event
-while explicitly stating that event history does not identify causation.
-Ambiguous device choices are retained per browser session, including choices
-recovered from deterministic unresolved messages, so a pronoun-only follow-up
-stays `unresolved` and repeats the choices before any provider call.
+while explicitly stating that event history does not identify causation. Contact
+event timestamps are rendered as natural local date and time text while preserving
+the authoritative timestamp value and offset. Ambiguous device choices are
+retained per browser session, including choices recovered from deterministic
+unresolved messages, so a pronoun-only follow-up stays `unresolved` and repeats
+the choices before any provider call.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
