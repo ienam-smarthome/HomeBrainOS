@@ -301,11 +301,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
             before_that = parse_before_that(user_prompt)
             if before_that is not None:
-                return await self._before_that_outcome(*before_that, session_key)
+                return await self._before_that_outcome(
+                    before_that[0], before_that[1], session_key
+                )
 
             count_yesterday = parse_count_yesterday(user_prompt)
             if count_yesterday is not None:
-                return await self._count_yesterday_outcome(*count_yesterday)
+                return await self._count_yesterday_outcome(
+                    count_yesterday[0], count_yesterday[1]
+                )
 
             list_yesterday = parse_list_yesterday(user_prompt)
             if list_yesterday is not None:
@@ -314,13 +318,19 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             last_contact = self._last_contact_request(user_prompt)
             if last_contact is not None:
                 return await self._contact_event_outcome(
-                    *last_contact, explain_cause=False, session_key=session_key
+                    last_contact[0],
+                    last_contact[1],
+                    explain_cause=False,
+                    session_key=session_key,
                 )
 
             why_contact = self._why_contact_request(user_prompt)
             if why_contact is not None:
                 return await self._contact_event_outcome(
-                    *why_contact, explain_cause=True, session_key=session_key
+                    why_contact[0],
+                    why_contact[1],
+                    explain_cause=True,
+                    session_key=session_key,
                 )
 
             control_arguments = self._routine_control_arguments(user_prompt)
