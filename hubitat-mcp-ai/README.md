@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.329**.
+Current add-on version: **0.10.330**.
 
 ## Architecture
 
@@ -42,6 +42,12 @@ clarification stays `unresolved` and repeats the choices before any provider cal
 Deterministic read and routine-control outcomes use `DirectOutcomeContext` to own
 request-local evidence, choices, request class, and mutation state, restoring every
 context token on both normal completion and failure.
+
+Contextual current-state follow-ups for temperature, humidity, battery, and power
+use the explicitly selected clarification device and bypass provider synthesis.
+Active and inactive motion-sensor list/count questions use deterministic live
+device filtering, keeping these bounded reads at Hubitat latency with zero model
+rounds and zero tool-discovery calls.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
