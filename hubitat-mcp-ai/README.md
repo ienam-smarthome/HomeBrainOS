@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.327**.
+Current add-on version: **0.10.328**.
 
 ## Architecture
 
@@ -39,6 +39,9 @@ dumps, and those aggregate/list queries do not replace the last single-event
 reference. Ambiguous device choices are retained per browser session, including
 choices recovered from deterministic unresolved messages, so a pronoun-only
 clarification stays `unresolved` and repeats the choices before any provider call.
+Deterministic read and routine-control outcomes use `DirectOutcomeContext` to own
+request-local evidence, choices, request class, and mutation state, restoring every
+context token on both normal completion and failure.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
