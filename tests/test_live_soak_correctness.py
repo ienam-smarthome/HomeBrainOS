@@ -4,6 +4,7 @@ from contextual_read_fast_path import (
     clean_choice_label,
     parse_contextual_attribute,
     parse_motion_activity,
+    parse_named_attribute,
     present_attribute,
     present_motion_activity,
 )
@@ -68,6 +69,19 @@ def test_contextual_attribute_follow_ups_use_current_state_parser() -> None:
     assert parse_contextual_attribute("Show me its current power.") == "power"
     assert parse_contextual_attribute("What is its temperature history?") is None
     assert parse_contextual_attribute("When did its humidity change?") is None
+
+
+def test_named_attribute_reads_use_current_state_parser() -> None:
+    assert parse_named_attribute("What is the Bedroom 1 temperature?") == (
+        "Bedroom 1",
+        "temperature",
+    )
+    assert parse_named_attribute("Show me Computer current power.") == (
+        "Computer",
+        "power",
+    )
+    assert parse_named_attribute("What is its humidity?") is None
+    assert parse_named_attribute("When did Bedroom 1 humidity change?") is None
 
 
 def test_motion_activity_requests_are_deterministic() -> None:
