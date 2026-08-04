@@ -10,7 +10,9 @@ from contact_history_queries import (
     HistoryReference,
     contact_events,
     events_in_window,
+    find_after_reference,
     find_before_reference,
+    parse_after_that,
     parse_before_that,
     parse_count_yesterday,
     parse_list_yesterday,
@@ -123,10 +125,13 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         text = re.sub(r"[*_`]", "", match.group("choices"))
         parts = re.split(r",\s*|\s+or\s+", text)
         choices: list[str] = []
+        seen: set[str] = set()
         for part in parts:
-            cleaned = re.sub(r"^or\s+", "", part.strip(" .?!"), flags=re.I)
-            if cleaned:
+            cleaned = re.sub(r"^(?:or|and)\s+", "", part.strip(" .?!"), flags=re.I)
+            key = cleaned.casefold()
+            if cleaned and key not in seen:
                 choices.append(cleaned)
+                seen.add(key)
         return choices
 
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
@@ -193,29 +198,38 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         return await self._direct_outcome(operation, request_class="live-read")
 
-    async def _before_that_outcome(self, name: str, state: str, session_key: str) -> AgentOutcome:
+    async def _relative_that_outcome(
+        self,
+        name: str | None,
+        state: str,
+        direction: str,
+        session_key: str,
+    ) -> AgentOutcome:
         async def operation() -> str:
             reference = self._history_references.get(session_key)
             if reference is None:
+                self.request_metrics.increment("device_resolution_missing")
                 return "I do not have a previous history event to use as the reference."
-            result, data = await self._read_contact_history(name)
+            target_name = name or reference.label
+            result, data = await self._read_contact_history(target_name)
             if not self._tool_succeeded(result):
                 return present_tool_result(
                     "homebrain_device_history", data, failed=True, fallback_error=result.text
                 ) or "I could not read the device history."
             events = [item for item in data.get("events", []) if isinstance(item, dict)]
-            matching = find_before_reference(
+            finder = find_before_reference if direction == "before" else find_after_reference
+            matching = finder(
                 events,
                 state=state,
                 reference_timestamp=reference.timestamp,
             )
-            label = str(data.get("label") or name)
+            label = str(data.get("label") or target_name)
             if matching is None:
-                return f"No earlier {state} contact event was reported for {label}."
+                return f"No {direction} {state} contact event was reported for {label}."
             raw_timestamp = str(matching.get("date") or "")
             self._history_references[session_key] = HistoryReference(label, state, raw_timestamp)
             verb = "opened" if state == "open" else "closed"
-            return f"{label} {verb} before that at {format_natural_datetime(raw_timestamp)}."
+            return f"{label} {verb} {direction} that at {format_natural_datetime(raw_timestamp)}."
 
         return await self._direct_outcome(operation, request_class="live-read")
 
@@ -284,6 +298,18 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         session_key = str(session_id)
 
         async def operation() -> AgentOutcome:
+            before_that = parse_before_that(user_prompt)
+            if before_that is not None:
+                return await self._relative_that_outcome(
+                    before_that[0], before_that[1], "before", session_key
+                )
+
+            after_that = parse_after_that(user_prompt)
+            if after_that is not None:
+                return await self._relative_that_outcome(
+                    after_that[0], after_that[1], "after", session_key
+                )
+
             prior_choices = list(self._clarification_choices.get(session_key) or [])
             if prior_choices:
                 normalized = user_prompt.casefold()
@@ -298,12 +324,6 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     )
                 if explicit is not None:
                     self._clarification_choices.pop(session_key, None)
-
-            before_that = parse_before_that(user_prompt)
-            if before_that is not None:
-                return await self._before_that_outcome(
-                    before_that[0], before_that[1], session_key
-                )
 
             count_yesterday = parse_count_yesterday(user_prompt)
             if count_yesterday is not None:
