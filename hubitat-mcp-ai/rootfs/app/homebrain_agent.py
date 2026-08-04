@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
@@ -11,11 +10,9 @@ from grounding_policy import (
 )
 from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
-from observed_agent_outcome import (
-    ObservedAgentOutcome,
-    build_observed_agent_outcome,
-)
+from observed_agent_outcome import ObservedAgentOutcome
 from request_metrics import RequestMetrics
+from request_observation import RequestObservationCoordinator
 from token_aware_context_policy import TokenAwareModelContextPolicy
 
 
@@ -37,6 +34,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self.compacted_tool_result_chars = self.context_policy.compacted_tool_result_chars
         self.final_answers = FinalAnswerCoordinator(self._chat)
         self.request_metrics = RequestMetrics()
+        self.request_observation = RequestObservationCoordinator(self.request_metrics)
 
     async def _chat(
         self,
@@ -78,29 +76,14 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         *,
         session_id: str = "default",
     ) -> ObservedAgentOutcome:
-        metrics_token = self.request_metrics.begin()
-        try:
-            outcome = await super().process_user_request_result(
+        base_process = super().process_user_request_result
+        return await self.request_observation.run(
+            lambda: base_process(
                 user_prompt,
                 conversation_history,
                 session_id=session_id,
             )
-            self.request_metrics.increment("tool_calls", len(outcome.evidence))
-            if outcome.confirmation_required:
-                self.request_metrics.increment("confirmation_queued")
-            metrics = self.request_metrics.finish(
-                self.request_metrics.completed_outcome()
-            )
-            return build_observed_agent_outcome(outcome, metrics)
-        except asyncio.CancelledError:
-            self.request_metrics.increment("request_cancellations")
-            self.request_metrics.finish("cancelled")
-            raise
-        except Exception:
-            self.request_metrics.finish("failed")
-            raise
-        finally:
-            self.request_metrics.reset(metrics_token)
+        )
 
     async def _process_user_request(
         self,
