@@ -13,6 +13,7 @@ from grounding_policy import (
 )
 from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
+from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
@@ -164,11 +165,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             label = str(data.get("label") or name)
             if matching is None:
                 return f"No {state} contact event was reported for {label} in the last 7 days."
-            timestamp = str(matching.get("date") or "an unreported time")
+            timestamp = format_natural_datetime(matching.get("date"))
             verb = "opened" if state == "open" else "closed"
             if explain_cause:
+                article = "an" if state == "open" else "a"
                 return (
-                    f"{label} reported a {state} contact event at {timestamp}. "
+                    f"{label} reported {article} {state} contact event at {timestamp}. "
                     "The device history does not identify which person or automation caused it."
                 )
             return f"{label} last {verb} at {timestamp}."
