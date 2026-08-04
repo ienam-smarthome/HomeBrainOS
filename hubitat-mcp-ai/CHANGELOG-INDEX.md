@@ -8,7 +8,7 @@ CHANGELOG-<version>.md
 
 ## Current release
 
-- [0.10.325](CHANGELOG-0.10.325.md)
+- [0.10.326](CHANGELOG-0.10.326.md)
 
 When `config.yaml` changes version, the same pull request must:
 
