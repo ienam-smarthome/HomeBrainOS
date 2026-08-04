@@ -15,6 +15,7 @@ The repository drift test compares this table directly with the live directory. 
 | `confirmation_policy.py` | Decides whether structured actions require confirmation. |
 | `confirmation_store.py` | Stores, expires, consumes, and cancels pending confirmations. |
 | `confirmed_action_coordinator.py` | Revalidates and executes confirmed action groups. |
+| `contact_history_queries.py` | Parses and presents bounded contact-history follow-ups and calendar-day aggregations. |
 | `deterministic_tool_presenter.py` | Formats fixed answers for supported deterministic reads. |
 | `device_control_service.py` | Executes bounded device-control operations. |
 | `device_history_service.py` | Resolves one device and reads bounded event history. |
