@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.334**.
+Current add-on version: **0.10.335**.
 
 ## Architecture
 
@@ -86,6 +86,8 @@ and metrics, supports legacy outcomes without metrics, and never adds prompt,
 session, or request identifiers to the response payload. It returns privacy-safe
 `metric_rows` plus an optional fixed `outcome_presentation` object containing the
 normalised outcome value, human-readable label, and tone token for WebUI styling.
+The response includes model metadata only when request metrics confirm at least
+one model round, so deterministic responses no longer imply that Gemma participated.
 
 `technical_metrics_presenter.present_request_metrics` converts only the fixed,
 privacy-safe request metric vocabulary into compact technical-detail rows. It
