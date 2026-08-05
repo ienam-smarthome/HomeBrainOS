@@ -40,6 +40,7 @@ def test_builder_preserves_contract_and_adds_metric_rows() -> None:
     assert response["request_class"] == "live-read"
     assert response["message"] == "Two lights are on."
     assert response["metrics"]["counters"]["model_rounds"] == 2
+    assert response["model"] == "gemma4:31b"
     assert response["metric_rows"] == [
         {"label": "Model rounds", "value": "2"},
         {"label": "Tool calls", "value": "1"},
@@ -53,6 +54,22 @@ def test_builder_preserves_contract_and_adds_metric_rows() -> None:
         "tone": "positive",
     }
     assert response["elapsed_ms"] == 1532
+
+
+def test_builder_omits_model_when_no_model_round_participated() -> None:
+    outcome = FakeOutcome()
+    outcome.metrics = {
+        "outcome": "success",
+        "counters": {"tool_calls": 1},
+        "timings_ms": {"total": 900},
+    }
+
+    response = build_agent_response(
+        outcome, model="gemma4:31b", elapsed_ms=900, version="dev"
+    )
+
+    assert response["model"] is None
+    assert all(row["label"] != "Model rounds" for row in response["metric_rows"])
 
 
 def test_builder_copies_mutable_evidence_and_metrics() -> None:
@@ -81,6 +98,7 @@ def test_builder_handles_legacy_outcome_without_metrics() -> None:
     assert response["confirmation_required"] is False
     assert response["confirmation_count"] == 0
     assert response["elapsed_ms"] == 0
+    assert response["model"] == "model"
 
 
 def test_builder_exposes_each_supported_outcome_without_message_inspection() -> None:

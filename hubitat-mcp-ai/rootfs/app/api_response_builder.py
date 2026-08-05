@@ -9,6 +9,17 @@ from technical_metrics_presenter import (
 )
 
 
+def _participating_model(metrics: dict[str, Any], model: str) -> str | None:
+    counters = metrics.get("counters")
+    if not isinstance(counters, dict):
+        return str(model)
+    try:
+        model_rounds = int(counters.get("model_rounds") or 0)
+    except (TypeError, ValueError):
+        model_rounds = 0
+    return str(model) if model_rounds > 0 else None
+
+
 def build_agent_response(
     outcome: Any,
     *,
@@ -39,7 +50,7 @@ def build_agent_response(
         "metrics": deepcopy(metrics),
         "metric_rows": present_request_metrics(metrics),
         "outcome_presentation": deepcopy(outcome_presentation),
-        "model": str(model),
+        "model": _participating_model(metrics, model),
         "elapsed_ms": max(0, int(elapsed_ms)),
         "version": str(version),
     }
