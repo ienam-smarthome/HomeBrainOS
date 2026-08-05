@@ -42,6 +42,7 @@ The repository drift test compares this table directly with the live directory. 
 | `request_observation.py` | Owns request metrics lifecycle, cancellation/failure classification, and observed-outcome construction. |
 | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
 | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
+| `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
 | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
 | `tool_discovery_catalog.py` | Owns prompt-independent tool visibility and expansion. |
