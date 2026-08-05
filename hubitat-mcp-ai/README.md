@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.333**.
+Current add-on version: **0.10.334**.
 
 ## Architecture
 
@@ -45,16 +45,17 @@ context token on both normal completion and failure.
 
 Contextual current-state follow-ups for temperature, humidity, battery, and power
 use the explicitly selected clarification device and bypass provider synthesis.
-Explicit named and room-level current-attribute questions use the same deterministic
-path. Room-level attribute requests do not let a closer non-capable label outrank
-actual attribute-reporting devices: capable candidates are filtered first and
-multiple valid sources remain unresolved choices. Explicit `select`, `use`,
-`choose`, and `I mean` commands replace the browser-session device selection
-without a model round. The selection stores device identity only; current values
-are refreshed from an authoritative live device snapshot before every answer.
 Active and inactive motion-sensor list/count questions use deterministic live
 device filtering, keeping these bounded reads at Hubitat latency with zero model
-rounds and zero tool-discovery calls.
+rounds and zero tool-discovery calls. Room-level attribute reads are intercepted
+before the provider loop and filter candidate devices by the requested capability.
+Multiple valid sources return deterministic clarification choices, while a single
+capable source returns a direct current-state answer. Explicit selection phrases
+replace the browser-session target without model involvement, and live values are
+refreshed from authoritative Hubitat state before each current-state response.
+The WebUI preserves the original requested attribute when a clarification button
+is tapped, so selecting a device resubmits a deterministic named-attribute request
+instead of a bare label that would enter the model loop.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
