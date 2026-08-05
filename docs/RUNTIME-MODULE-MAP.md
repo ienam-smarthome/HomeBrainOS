@@ -38,7 +38,6 @@ The repository drift test compares this table directly with the live directory. 
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `provider_token_estimator.py` | Estimates provider token usage conservatively. |
 | `request_classification.py` | Provides non-authoritative presentation and manifest hints. |
-| `request_lifecycle_context.py` | Owns request-scoped lifecycle state, cleanup, and ContextVar isolation boundaries. |
 | `request_metrics.py` | Collects fixed privacy-safe counters and timings. |
 | `request_observation.py` | Owns request metrics lifecycle, cancellation/failure classification, and observed-outcome construction. |
 | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
@@ -46,6 +45,7 @@ The repository drift test compares this table directly with the live directory. 
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
 | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
 | `tool_discovery_catalog.py` | Owns prompt-independent tool visibility and expansion. |
+| `tool_catalog_assembly.py` | Combines a request's already-fetched remote tools with the fixed local tool set into a ready `ToolDiscoveryCatalog`. |
 | `tool_executor.py` | Dispatches approved calls and records normalised results. |
 | `tool_registry.py` | Defines local schemas and structured tool effects. |
 | `webui.py` | Renders the Home Assistant ingress interface. |

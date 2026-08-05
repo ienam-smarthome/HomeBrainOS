@@ -35,6 +35,7 @@ from request_classification import (
 from rule_authoring_service import RuleAuthoringService
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
+from tool_catalog_assembly import build_request_tool_catalog
 from tool_registry import (
     EVIDENCE_KINDS as _EVIDENCE_KINDS,
     LOCAL_ACTIVE_LIGHTS_TOOL as _LOCAL_ACTIVE_LIGHTS_TOOL,
@@ -48,17 +49,6 @@ from tool_registry import (
     LOCAL_QUERY_TOOL as _LOCAL_QUERY_TOOL,
     LOCAL_RESOLVE_TOOL as _LOCAL_RESOLVE_TOOL,
     LOCAL_WEATHER_TOOL as _LOCAL_WEATHER_TOOL,
-    active_lights_tool as _active_lights_tool,
-    active_rooms_tool as _active_rooms_tool,
-    active_switches_tool as _active_switches_tool,
-    control_devices_tool as _control_devices_tool,
-    device_history_tool as _device_history_tool,
-    device_filter_tool as _device_filter_tool,
-    device_query_tool as _device_query_tool,
-    device_resolver_tool as _device_resolver_tool,
-    home_snapshot_tool as _home_snapshot_tool,
-    hub_info_tool as _hub_info_tool,
-    weather_snapshot_tool as _weather_snapshot_tool,
     ToolEffect,
     classify_tool_effect,
     rule_machine_proposal_error,
@@ -620,24 +610,7 @@ class UnifiedMCPAgent:
     ) -> str:
         request_started = time.monotonic()
         all_tools = (await self.mcp.list_tools())[: self.tool_limit]
-        local_filter = _device_filter_tool()
-        local_query = _device_query_tool()
-        local_resolver = _device_resolver_tool()
-        local_device_history = _device_history_tool()
-        local_active_lights = _active_lights_tool()
-        local_active_rooms = _active_rooms_tool()
-        local_active_switches = _active_switches_tool()
-        local_home_snapshot = _home_snapshot_tool()
-        local_control = _control_devices_tool()
-        local_hub_info = _hub_info_tool()
-        local_weather = _weather_snapshot_tool()
-        safe_read_tools = [
-            local_filter, local_query, local_resolver, local_device_history,
-            local_active_lights, local_active_rooms,
-            local_active_switches, local_home_snapshot, local_hub_info, local_weather,
-        ]
-        all_tools.extend([*safe_read_tools, local_control])
-        catalog = ToolDiscoveryCatalog(all_tools)
+        catalog = build_request_tool_catalog(all_tools)
         pending = self._take_confirmation(session_id, user_prompt)
         if pending:
             pending_names = list(dict.fromkeys(name for name, _ in pending.actions))
