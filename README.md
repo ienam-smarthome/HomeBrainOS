@@ -8,7 +8,7 @@ Short GitHub description: Local-first AI smart-home assistant for Hubitat + Home
 
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
-| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.336 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
+| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.337 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
 
 The legacy/alternate HomeBrain OS dashboard (Maker API-based, `homebrainos/`)
 has been retired and removed from this repository. All assistant development is
@@ -27,21 +27,3 @@ https://github.com/ienam-smarthome/HomeBrainOS
 Then install **Hubitat MCP AI** from the Add-on Store. See
 [`hubitat-mcp-ai/README.md`](hubitat-mcp-ai/README.md#setup) for the Hubitat MCP
 Rule Server setup and required configuration options.
-
-The assistant WebUI and control API are exposed through authenticated Home
-Assistant ingress. Direct host-port access is disabled by default.
-
-## Security
-
-Never commit Hubitat MCP tokens, Ollama API keys, local IP credentials, `.env`
-files, or database/cache files containing personal home data.
-
-## Repository layout
-
-- `hubitat-mcp-ai/` — the add-on (see
-  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the request-handling
-  architecture and consolidation history)
-- `backend/`, `frontend/` — early scaffolding, not part of the shipped add-on
-- `android-wrapper/` — Android wrapper app build
-- `tests/`, `scripts/` — repository-wide validation and test tooling
-- `docs/` — architecture, contributing, and workflow reference

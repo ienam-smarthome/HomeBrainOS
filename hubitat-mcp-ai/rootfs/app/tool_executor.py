@@ -107,6 +107,11 @@ class ToolExecutor:
             increment_active_metric("tool_discovery_calls")
             add_active_metric_ms("tool_discovery", elapsed_ms)
 
+    def _invalidate_live_device_snapshot(self) -> None:
+        invalidator = getattr(self.mcp, "invalidate_live_device_snapshot", None)
+        if callable(invalidator):
+            invalidator()
+
     async def execute(
         self,
         name: str,
@@ -124,6 +129,8 @@ class ToolExecutor:
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)
         remote = handler is None
+        if effect.mutates:
+            self._invalidate_live_device_snapshot()
         started = self._clock()
         try:
             result = (
@@ -144,6 +151,8 @@ class ToolExecutor:
                     effect=effect,
                 )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
+            if effect.mutates:
+                self._invalidate_live_device_snapshot()
             return ToolExecution(
                 name=name, arguments=receipt_arguments, effect=effect,
                 success=success, elapsed_ms=elapsed_ms,
@@ -162,6 +171,8 @@ class ToolExecutor:
                     effect=effect,
                 )
             logger.exception("Tool %s failed", name)
+            if effect.mutates:
+                self._invalidate_live_device_snapshot()
             return ToolExecution(
                 name=name, arguments=receipt_arguments, effect=effect,
                 success=False, elapsed_ms=elapsed_ms,
