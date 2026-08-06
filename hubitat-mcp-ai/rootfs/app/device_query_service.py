@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Any
 
 from device_state_summary import (
@@ -15,6 +16,7 @@ from device_state_summary import (
 )
 from device_target_resolver import resolve_device_candidate, targeted_name_variants
 from mcp_client import HubitatMCPClient, MCPToolResult
+from request_metrics import active_request_identity
 
 
 logger = logging.getLogger("HomeBrainOS.DeviceQuery")
@@ -27,6 +29,10 @@ ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 WEATHER_SNAPSHOT_TOOL = "homebrain_weather_snapshot"
+
+_REQUEST_DEVICE_SNAPSHOT: ContextVar[
+    tuple[object, MCPToolResult, list[dict[str, Any]]] | None
+] = ContextVar("homebrain_request_device_snapshot", default=None)
 
 
 class DeviceQueryService:
@@ -102,10 +108,7 @@ class DeviceQueryService:
         wanted_names = cls._ATTRIBUTE_ALIASES.get(
             cls._normalized_attribute(attribute), (attribute,)
         )
-        wanted = {
-            cls._normalized_attribute(name)
-            for name in wanted_names
-        }
+        wanted = {cls._normalized_attribute(name) for name in wanted_names}
         combined = {**device, **cls._device_attributes(device)}
         for key, value in combined.items():
             if cls._normalized_attribute(str(key)) in wanted and value is not None:
@@ -161,22 +164,15 @@ class DeviceQueryService:
 
         if attribute.casefold() not in {"temperature", "humidity"}:
             return True
-        room = str(
-            device.get("room") or device.get("roomName") or ""
-        ).strip().casefold()
-        label = str(
-            device.get("label") or device.get("name") or ""
-        ).strip().casefold()
+        room = str(device.get("room") or device.get("roomName") or "").strip().casefold()
+        label = str(device.get("label") or device.get("name") or "").strip().casefold()
         if room in {
             "appliances", "bridge", "energy", "internet", "multimedia", "sockets",
         }:
             return False
         return not (
             label.startswith("hub info")
-            or any(
-                word in label
-                for word in ("fridge", "freezer", "refrigerator")
-            )
+            or any(word in label for word in ("fridge", "freezer", "refrigerator"))
         )
 
     @staticmethod
@@ -221,14 +217,37 @@ class DeviceQueryService:
         *,
         enrich_identity: bool,
     ) -> tuple[MCPToolResult, list[dict[str, Any]]]:
+        request_identity = active_request_identity()
+        cached = _REQUEST_DEVICE_SNAPSHOT.get()
+        if (
+            request_identity is not None
+            and cached is not None
+            and cached[0] is request_identity
+        ):
+            source = cached[1]
+            devices = [dict(item) for item in cached[2]]
+            if enrich_identity:
+                try:
+                    identities = list(await self.mcp.get_cached_devices() or [])
+                except Exception as exc:
+                    logger.warning("Could not enrich live device states with identity: %s", exc)
+                    identities = []
+                devices = self._merge_device_identity(devices, identities)
+            return source, devices
+
         source_arguments = {"tool": "hub_list_devices", "args": {}}
         started = time.monotonic()
         source = await self.mcp.call_tool("hub_read_devices", source_arguments)
-        devices = [
+        raw_devices = [
             item
             for item in (HubitatMCPClient._find_device_list(source.data) or [])
             if isinstance(item, dict)
         ]
+        if request_identity is not None:
+            _REQUEST_DEVICE_SNAPSHOT.set(
+                (request_identity, source, [dict(item) for item in raw_devices])
+            )
+        devices = [dict(item) for item in raw_devices]
         if enrich_identity:
             try:
                 identities = list(await self.mcp.get_cached_devices() or [])
@@ -329,9 +348,7 @@ class DeviceQueryService:
             "comparison_errors": comparison_errors,
             "complete": True,
         }
-        return MCPToolResult(
-            DEVICE_FILTER_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(DEVICE_FILTER_TOOL, arguments, {}, json.dumps(data), data)
 
     @staticmethod
     def _targeted_name_variants(value: str) -> list[str]:
@@ -372,17 +389,10 @@ class DeviceQueryService:
             "confidence": resolution.confidence,
             "reason": resolution.reason,
             "alternatives": list(resolution.alternatives),
-            "attempts": [
-                {
-                    "source": "complete_inventory",
-                    "count": len(candidates),
-                }
-            ],
+            "attempts": [{"source": "complete_inventory", "count": len(candidates)}],
             "complete": True,
         }
-        return MCPToolResult(
-            DEVICE_RESOLVE_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(DEVICE_RESOLVE_TOOL, arguments, {}, json.dumps(data), data)
 
     async def query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         """Compute aggregates over live device attributes before LLM synthesis."""
@@ -418,10 +428,7 @@ class DeviceQueryService:
         for device in devices:
             if not self._matches_device_kind(device, device_kind):
                 continue
-            if (
-                group_by == "room"
-                and not self._is_ambient_room_reading(device, attribute)
-            ):
+            if group_by == "room" and not self._is_ambient_room_reading(device, attribute):
                 continue
             source_attribute, raw_value = self._attribute_value(device, attribute)
             if raw_value is None:
@@ -456,10 +463,7 @@ class DeviceQueryService:
                 room = str(row.get("room") or "Unassigned")
                 if room not in by_room:
                     by_room[room] = row
-            grouped = [
-                {"room": room, **row}
-                for room, row in by_room.items()
-            ]
+            grouped = [{"room": room, **row} for room, row in by_room.items()]
             grouped.sort(key=lambda row: float(row["value"]), reverse=reverse)
 
         if operation in {"maximum", "minimum"}:
@@ -480,9 +484,7 @@ class DeviceQueryService:
             "conversion_errors": conversion_errors,
             "complete": True,
         }
-        return MCPToolResult(
-            DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
         source, devices = await self._live_devices(enrich_identity=True)
@@ -496,9 +498,7 @@ class DeviceQueryService:
             "total_scanned": len(devices),
             "complete": True,
         }
-        return MCPToolResult(
-            ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data)
 
     async def weather_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         """Return current attributes from the hub's weather device."""
@@ -509,12 +509,8 @@ class DeviceQueryService:
 
         candidates: list[dict[str, Any]] = []
         for device in devices:
-            label = str(
-                device.get("label") or device.get("name") or ""
-            ).strip()
-            room = str(
-                device.get("room") or device.get("roomName") or ""
-            ).strip()
+            label = str(device.get("label") or device.get("name") or "").strip()
+            room = str(device.get("room") or device.get("roomName") or "").strip()
             capabilities = self._capability_names(device)
             if not (
                 "weather" in label.casefold()
@@ -542,9 +538,7 @@ class DeviceQueryService:
             "total_scanned": len(devices),
             "complete": True,
         }
-        return MCPToolResult(
-            WEATHER_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(WEATHER_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
         source, devices = await self._live_devices(enrich_identity=True)
@@ -558,9 +552,7 @@ class DeviceQueryService:
             "total_scanned": len(devices),
             "complete": True,
         }
-        return MCPToolResult(
-            ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_switches(self, arguments: dict[str, Any]) -> MCPToolResult:
         source, devices = await self._live_devices(enrich_identity=True)
@@ -574,9 +566,7 @@ class DeviceQueryService:
             "total_scanned": len(devices),
             "complete": True,
         }
-        return MCPToolResult(
-            ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data)
 
     async def home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
         """Return one complete, internally consistent whole-home snapshot."""
@@ -606,9 +596,7 @@ class DeviceQueryService:
             if (
                 presence_value in {"present", "home", "arrived", "true", "active"}
                 and "switch" not in capabilities
-                and not bool(
-                    capabilities & {"actuator", "outlet"}
-                )
+                and not bool(capabilities & {"actuator", "outlet"})
             ):
                 presence.append({**identity, "presence": attrs.get("presence")})
             if str(attrs.get("motion") or "").casefold() == "active":
@@ -625,9 +613,7 @@ class DeviceQueryService:
                 battery_number = None
             if battery_number is not None and battery_number <= 20:
                 rendered_battery: int | float = (
-                    int(battery_number)
-                    if battery_number.is_integer()
-                    else battery_number
+                    int(battery_number) if battery_number.is_integer() else battery_number
                 )
                 low_batteries.append({**identity, "battery": rendered_battery})
 
@@ -671,6 +657,4 @@ class DeviceQueryService:
             "total_scanned": len(devices),
             "complete": True,
         }
-        return MCPToolResult(
-            HOME_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data
-        )
+        return MCPToolResult(HOME_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data)

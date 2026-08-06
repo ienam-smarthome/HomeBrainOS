@@ -112,6 +112,18 @@ class RequestMetrics:
             "timings_ms": state.timings_ms,
         })
 
+    def active_request_identity(self) -> object | None:
+        """Return the current request state object for request-local coordination."""
+
+        return self._state.get()
+
+
+def active_request_identity() -> object | None:
+    """Return an opaque identity unique to the active observed request."""
+
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    return metrics.active_request_identity() if metrics is not None else None
+
 
 def increment_active_metric(name: str, amount: int = 1) -> None:
     metrics = _ACTIVE_REQUEST_METRICS.get()
@@ -127,5 +139,5 @@ def add_active_metric_ms(name: str, elapsed_ms: int | float) -> None:
 
 __all__ = [
     "RequestMetricState", "RequestMetricToken", "RequestMetrics",
-    "increment_active_metric", "add_active_metric_ms",
+    "active_request_identity", "increment_active_metric", "add_active_metric_ms",
 ]
