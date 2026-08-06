@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -7,6 +8,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from automation_status_service import AutomationStatusService  # noqa: E402
+from mcp_client import MCPToolResult  # noqa: E402
 
 
 # --- matches_request / is_advisory_request -------------------------------
@@ -74,7 +76,7 @@ def test_advisory_message_is_honest_about_not_inventing_new_ideas():
 
     message = AutomationStatusService._advisory_message(items)
 
-    assert "not new automation ideas" in message
+    assert "brand-new automation ideas" in message
     assert "nothing obviously broken or disabled to fix" in message
 
 
@@ -92,3 +94,115 @@ def test_advisory_message_truncates_long_disabled_lists():
 def test_advisory_message_handles_empty_inventory():
     message = AutomationStatusService._advisory_message([])
     assert "nothing to review yet" in message
+
+
+# --- safety-device gap analysis --------------------------------------------
+#
+# Added after the user compared the plain advisory output against a
+# reference example that did real gap analysis (e.g. "no water leak
+# alerting -- these sensors have WaterSensor capability but nothing
+# monitors them"). This cross-references real device capabilities against
+# real automation names -- a name-match heuristic, not certainty, but
+# fully grounded in retrieved data with nothing invented.
+
+WATER_SENSOR_DEVICE = {
+    "id": "5387", "label": "Linptech Kitchen lux",
+    "capabilities": ["RelativeHumidityMeasurement", "MotionSensor", "ContactSensor",
+                      "WaterSensor", "SmokeDetector", "CarbonMonoxideDetector", "Sensor"],
+}
+NON_SAFETY_DEVICE = {
+    "id": "3957", "label": "Fridge", "capabilities": ["Actuator", "Switch", "Sensor"],
+}
+
+
+def test_uncovered_safety_devices_flags_devices_with_no_matching_automation():
+    uncovered = AutomationStatusService._uncovered_safety_devices(
+        [WATER_SENSOR_DEVICE, NON_SAFETY_DEVICE],
+        [{"name": "Unrelated Rule", "display_name": "Unrelated Rule", "status": "active"}],
+    )
+
+    labels = [label for label, _caps in uncovered]
+    assert "Linptech Kitchen lux" in labels
+    assert "Fridge" not in labels  # no safety capability at all
+
+
+def test_uncovered_safety_devices_excludes_devices_named_by_an_automation():
+    uncovered = AutomationStatusService._uncovered_safety_devices(
+        [WATER_SENSOR_DEVICE],
+        [{"name": "Linptech Kitchen lux leak alert", "display_name": "Linptech Kitchen lux leak alert", "status": "active"}],
+    )
+
+    assert uncovered == []
+
+
+def test_advisory_message_includes_gap_analysis_when_devices_are_passed():
+    items = [{"name": "Unrelated Rule", "display_name": "Unrelated Rule", "type": "app", "status": "active"}]
+
+    message = AutomationStatusService._advisory_message(items, [WATER_SENSOR_DEVICE])
+
+    assert "Real gap" in message
+    assert "Linptech Kitchen lux" in message
+    assert "WaterSensor" in message
+
+
+def test_advisory_message_omits_gap_section_when_no_devices_passed():
+    items = [{"name": "Unrelated Rule", "display_name": "Unrelated Rule", "type": "app", "status": "active"}]
+
+    message = AutomationStatusService._advisory_message(items)
+
+    assert "Real gap" not in message
+
+
+# --- snapshot() integration ------------------------------------------------
+#
+# snapshot() itself had zero test coverage before this change (only its
+# pure helper methods were tested). The advisory=True path now makes an
+# extra hub_read_devices call that wasn't there before -- worth covering
+# directly rather than relying only on the pure-function tests above.
+
+class FakeAutomationMCP:
+    def __init__(self, apps, rules, devices):
+        self.apps = apps
+        self.rules = rules
+        self.devices = devices
+        self.calls = []
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        if name == "hub_read_apps_code":
+            return MCPToolResult(name, arguments, {}, "", {"apps": self.apps})
+        if name == "hub_read_rules":
+            return MCPToolResult(name, arguments, {}, "", {"rules": self.rules})
+        if name == "hub_read_devices":
+            return MCPToolResult(name, arguments, {}, "", {"devices": self.devices})
+        raise AssertionError(("unexpected tool call", name, arguments))
+
+
+def test_snapshot_advisory_fetches_devices_and_includes_gap_analysis():
+    mcp = FakeAutomationMCP(
+        apps=[{"id": "1", "name": "Unrelated Rule", "label": "Unrelated Rule", "disabled": False}],
+        rules=[],
+        devices=[WATER_SENSOR_DEVICE],
+    )
+    service = AutomationStatusService(mcp)
+
+    outcome = asyncio.run(service.snapshot(advisory=True))
+
+    assert "Real gap" in outcome.message
+    assert "Linptech Kitchen lux" in outcome.message
+    assert ("hub_read_devices", {"tool": "hub_list_devices", "args": {}}) in mcp.calls
+
+
+def test_snapshot_literal_does_not_fetch_devices():
+    mcp = FakeAutomationMCP(
+        apps=[{"id": "1", "name": "Unrelated Rule", "label": "Unrelated Rule", "disabled": False}],
+        rules=[],
+        devices=[WATER_SENSOR_DEVICE],
+    )
+    service = AutomationStatusService(mcp)
+
+    outcome = asyncio.run(service.snapshot(advisory=False))
+
+    assert "Real gap" not in outcome.message
+    device_calls = [call for call in mcp.calls if call[0] == "hub_read_devices"]
+    assert device_calls == []

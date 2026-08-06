@@ -16,6 +16,9 @@ _ADVISORY_WORDS = (
     "suggest", "suggestion", "suggestions",
     "advice", "improve", "review", "clean up", "cleanup", "audit",
 )
+# Capabilities where an unmonitored device is a meaningful safety gap --
+# deliberately narrow and high-signal, not every capability a device has.
+_SAFETY_CAPABILITIES = ("WaterSensor", "SmokeDetector", "CarbonMonoxideDetector")
 
 
 @dataclass(slots=True)
@@ -234,8 +237,61 @@ class AutomationStatusService:
             "summary": f"normalised live automation status from {tool}",
         }
 
+    @staticmethod
+    def _capability_names(device: dict[str, Any]) -> set[str]:
+        values = device.get("capabilities") or []
+        if isinstance(values, dict):
+            values = list(values)
+        names = set()
+        for item in values if isinstance(values, (list, tuple, set)) else []:
+            if isinstance(item, dict):
+                item = item.get("name") or item.get("capability")
+            if item:
+                names.add(str(item))
+        return names
+
     @classmethod
-    def _advisory_message(cls, items: list[dict[str, Any]]) -> str:
+    def _uncovered_safety_devices(
+        cls,
+        devices: list[dict[str, Any]],
+        automation_items: list[dict[str, Any]],
+    ) -> list[tuple[str, list[str]]]:
+        """Devices with a safety-relevant capability but no automation whose
+        name references the device's label.
+
+        This is a name-match heuristic against the same automation names
+        already retrieved for the status listing -- not a certainty (an
+        automation could reference a device without naming it, or name-match
+        something unrelated), but a genuinely useful, fully grounded
+        starting point: every device and every automation name involved is
+        real, retrieved data, nothing is invented.
+        """
+
+        automation_text = " | ".join(
+            str(item.get("display_name") or item.get("name") or "").casefold()
+            for item in automation_items
+        )
+        uncovered: list[tuple[str, list[str]]] = []
+        seen_labels: set[str] = set()
+        for device in devices:
+            matched = cls._capability_names(device) & set(_SAFETY_CAPABILITIES)
+            if not matched:
+                continue
+            label = str(device.get("label") or device.get("name") or "").strip()
+            if not label or label.casefold() in seen_labels:
+                continue
+            if label.casefold() in automation_text:
+                continue
+            seen_labels.add(label.casefold())
+            uncovered.append((label, sorted(matched)))
+        return sorted(uncovered, key=lambda item: item[0].casefold())
+
+    @classmethod
+    def _advisory_message(
+        cls,
+        items: list[dict[str, Any]],
+        devices: list[dict[str, Any]] | None = None,
+    ) -> str:
         if not items:
             return (
                 "No automation apps or Rule Machine rules were returned by "
@@ -274,10 +330,24 @@ class AutomationStatusService:
                 "\nEverything currently configured is active -- nothing "
                 "obviously broken or disabled to fix."
             )
+        if devices:
+            uncovered = cls._uncovered_safety_devices(devices, items)
+            if uncovered:
+                lines.append(
+                    "\nReal gap: these devices report a safety-relevant "
+                    "capability but no automation name references them, so "
+                    "they don't appear to be monitored by anything:\n"
+                    + "\n".join(
+                        f"- {label} ({', '.join(caps)})"
+                        for label, caps in uncovered
+                    )
+                )
         lines.append(
-            "\nThis reflects what's already configured on your hub, not "
-            "new automation ideas -- I don't yet have a way to suggest "
-            "brand-new automations from your device inventory."
+            "\nThis is a name-match against your existing automations, not "
+            "certainty -- an automation could cover a device without "
+            "naming it. And beyond safety-sensor coverage gaps, I don't yet "
+            "have a way to suggest brand-new automation ideas from general "
+            "device inventory."
         )
         return "\n".join(lines)
 
@@ -331,8 +401,27 @@ class AutomationStatusService:
             key=lambda item: (_STATUSES.index(item["status"]), item["name"].casefold()),
         )
         counts = self.status_counts(ordered)
+        devices: list[dict[str, Any]] = []
+        if advisory:
+            device_arguments = {"tool": "hub_list_devices", "args": {}}
+            started = time.monotonic()
+            device_result = await self.mcp.call_tool("hub_read_devices", device_arguments)
+            evidence.append(
+                self._evidence(
+                    "hub_read_devices",
+                    device_arguments,
+                    device_result,
+                    round((time.monotonic() - started) * 1000),
+                )
+            )
+            if not getattr(device_result, "is_error", False):
+                devices = [
+                    item
+                    for item in (HubitatMCPClient._find_device_list(device_result.data) or [])
+                    if isinstance(item, dict)
+                ]
         message = (
-            self._advisory_message(ordered) if advisory else self._message(ordered)
+            self._advisory_message(ordered, devices) if advisory else self._message(ordered)
         )
         return AutomationStatusOutcome(
             message=message,
