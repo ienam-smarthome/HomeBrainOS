@@ -37,11 +37,11 @@ class RuleAuthoringDecision:
 class _ScheduleIntent:
     target: str
     start_time: str
-    end_time: str
     start_command: str
-    end_command: str
     start_label: str
-    end_label: str
+    end_time: str | None = None
+    end_command: str | None = None
+    end_label: str | None = None
 
 
 class RuleAuthoringService:
@@ -61,6 +61,10 @@ class RuleAuthoringService:
     _DAILY = re.compile(r"\b(?:daily|every\s*day|everyday)\b", re.I)
     _PREFIX = re.compile(
         r"^.*?\b(?:automation|rule|schedule)\b\s+(?:that\s+|to\s+)?",
+        re.I,
+    )
+    _AT_TIME = re.compile(
+        r"\bat\s+(?P<time>\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
         re.I,
     )
 
@@ -90,19 +94,39 @@ class RuleAuthoringService:
         return f"{hour:02d}:{minute:02d}"
 
     @classmethod
+    def _clean_goal(cls, text: str, cut: int) -> str:
+        """Strip the authoring prefix and the daily marker from a goal slice.
+
+        The daily marker ("daily" / "every day" / "everyday") can precede
+        or follow the time clause in natural phrasing -- "block internet
+        every day from 10pm to 6am" is at least as common as "...from 10pm
+        to 6am every day". Whichever side it lands on within this slice,
+        it must not survive into the goal text or the verb-pattern
+        fullmatch below will spuriously fail.
+        """
+
+        goal = cls._PREFIX.sub("", text[:cut])
+        goal = cls._DAILY.sub("", goal)
+        return " ".join(goal.split()).strip(" ,.-")
+
+    @classmethod
     def _intent(cls, prompt: str) -> _ScheduleIntent | None:
         text = " ".join(str(prompt).strip().split())
         if not cls._AUTHORING.search(text) or not cls._DAILY.search(text):
             return None
         window = cls._WINDOW.search(text)
-        if window is None:
-            return None
+        if window is not None:
+            return cls._window_intent(text, window)
+        return cls._single_intent(text)
+
+    @classmethod
+    def _window_intent(cls, text: str, window: re.Match[str]) -> _ScheduleIntent | None:
         start = cls._clock(window.group("start"))
         end = cls._clock(window.group("end"))
         if start is None or end is None or start == end:
             return None
 
-        goal = cls._PREFIX.sub("", text[: window.start()]).strip(" ,.-")
+        goal = cls._clean_goal(text, window.start())
         patterns = (
             (re.compile(r"^(?:block|disable)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I),
              "blockInternet", "allowInternet", "Block", "Unblock"),
@@ -123,11 +147,67 @@ class RuleAuthoringService:
                 return _ScheduleIntent(
                     target=target,
                     start_time=start,
-                    end_time=end,
                     start_command=start_command,
-                    end_command=end_command,
                     start_label=start_label,
+                    end_time=end,
+                    end_command=end_command,
                     end_label=end_label,
+                )
+        return None
+
+    _SINGLE_PATTERNS = (
+        (re.compile(r"^turn\s+on\s+(?P<target>.+)$", re.I), "on", "Turn on"),
+        (re.compile(r"^turn\s+(?P<target>.+?)\s+on$", re.I), "on", "Turn on"),
+        (re.compile(r"^switch\s+on\s+(?P<target>.+)$", re.I), "on", "Turn on"),
+        (re.compile(r"^switch\s+(?P<target>.+?)\s+on$", re.I), "on", "Turn on"),
+        (re.compile(r"^turn\s+off\s+(?P<target>.+)$", re.I), "off", "Turn off"),
+        (re.compile(r"^turn\s+(?P<target>.+?)\s+off$", re.I), "off", "Turn off"),
+        (re.compile(r"^switch\s+off\s+(?P<target>.+)$", re.I), "off", "Turn off"),
+        (re.compile(r"^switch\s+(?P<target>.+?)\s+off$", re.I), "off", "Turn off"),
+        (re.compile(r"^lock\s+(?P<target>.+)$", re.I), "lock", "Lock"),
+        (re.compile(r"^unlock\s+(?P<target>.+)$", re.I), "unlock", "Unlock"),
+        (re.compile(r"^(?:close|shut)\s+(?P<target>.+)$", re.I), "close", "Close"),
+        (re.compile(r"^open\s+(?P<target>.+)$", re.I), "open", "Open"),
+        (re.compile(
+            r"^(?:block|disable)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I,
+        ), "blockInternet", "Block"),
+        (re.compile(
+            r"^(?:allow|enable)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I,
+        ), "allowInternet", "Unblock"),
+    )
+
+    @classmethod
+    def _single_intent(cls, text: str) -> _ScheduleIntent | None:
+        """Recognise a single daily trigger with no auto-revert window.
+
+        Deliberately narrower than the window grammar: exactly one
+        advertised command is required and verified, exactly one atomic
+        rule is emitted. "Turn on X every day at 7am" is the intended
+        shape; it must not be confused with the window grammar's
+        auto-reverting "turn X off from A to B" pattern, so this path only
+        runs when `_window_intent` found no window clause at all.
+        """
+
+        at_match = cls._AT_TIME.search(text)
+        if at_match is None:
+            return None
+        at_time = cls._clock(at_match.group("time"))
+        if at_time is None:
+            return None
+
+        goal = cls._clean_goal(text, at_match.start())
+        for pattern, command, label in cls._SINGLE_PATTERNS:
+            match = pattern.fullmatch(goal)
+            if match is None:
+                continue
+            target = match.group("target").strip(" ,.-")
+            target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
+            if target:
+                return _ScheduleIntent(
+                    target=target,
+                    start_time=at_time,
+                    start_command=command,
+                    start_label=label,
                 )
         return None
 
@@ -282,7 +362,9 @@ class RuleAuthoringService:
                 target=target,
             )
         supported = self._commands(target)
-        required = {intent.start_command.casefold(), intent.end_command.casefold()}
+        required = {intent.start_command.casefold()}
+        if intent.end_command is not None:
+            required.add(intent.end_command.casefold())
         if not required.issubset(supported):
             missing = sorted(required - supported)
             return RuleAuthoringDecision(
@@ -290,6 +372,35 @@ class RuleAuthoringService:
                 f"**{target_label}** does not advertise the required command"
                 f"{'s' if len(missing) != 1 else ''}: {', '.join(missing)}. "
                 "Nothing was queued.",
+                target=target,
+            )
+
+        capability_filter = self._capability_filter(target)
+
+        if intent.end_time is None:
+            single_name = self._rule_name(intent.start_label, target_label, "Daily")
+            existing = await self._existing_names() if can_read_rules else set()
+            if single_name.casefold() in existing:
+                return RuleAuthoringDecision(
+                    True,
+                    "No duplicate rule was queued because this Rule Machine rule "
+                    f"already exists: **{single_name}**.",
+                    rule_names=(single_name,),
+                    target=target,
+                )
+            actions = (
+                self._action(
+                    name=single_name,
+                    at_time=intent.start_time,
+                    device_id=device_id,
+                    capability_filter=capability_filter,
+                    command=intent.start_command,
+                ),
+            )
+            return RuleAuthoringDecision(
+                True,
+                actions=actions,
+                rule_names=(single_name,),
                 target=target,
             )
 
@@ -306,7 +417,6 @@ class RuleAuthoringService:
                 target=target,
             )
 
-        capability_filter = self._capability_filter(target)
         actions = (
             self._action(
                 name=start_name,
