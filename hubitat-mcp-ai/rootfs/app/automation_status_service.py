@@ -11,6 +11,11 @@ from mcp_client import HubitatMCPClient, MCPToolResult
 _STATUSES = ("active", "disabled", "paused", "broken", "unknown")
 _ATTENTION_STATUSES = ("broken", "paused", "unknown")
 _STATUS_PRECEDENCE = ("broken", "paused", "disabled", "active")
+_ADVISORY_WORDS = (
+    "recommend", "recommendation", "recommendations",
+    "suggest", "suggestion", "suggestions",
+    "advice", "improve", "review", "clean up", "cleanup", "audit",
+)
 
 
 @dataclass(slots=True)
@@ -39,7 +44,21 @@ class AutomationStatusService:
             return False
         subject = any(word in value for word in ("automation", "automations", "rule", "rules", "apps"))
         read = any(word in value for word in ("list", "show", "which", "status", "active", "disabled", "paused", "broken"))
-        return subject and read
+        advisory = any(word in value for word in _ADVISORY_WORDS)
+        return subject and (read or advisory)
+
+    @staticmethod
+    def is_advisory_request(prompt: str) -> bool:
+        """True when the request wants feedback on existing automations
+        ("recommend", "review", "clean up", ...) rather than a literal
+        status listing. Only meaningful when matches_request() is already
+        True; a request can match on `read` words alone with no advisory
+        words present, in which case this is False and the literal listing
+        applies as before.
+        """
+
+        value = " ".join(str(prompt).casefold().split())
+        return any(word in value for word in _ADVISORY_WORDS)
 
     @staticmethod
     def _bool(value: Any) -> bool | None:
@@ -216,6 +235,53 @@ class AutomationStatusService:
         }
 
     @classmethod
+    def _advisory_message(cls, items: list[dict[str, Any]]) -> str:
+        if not items:
+            return (
+                "No automation apps or Rule Machine rules were returned by "
+                "Hubitat, so there's nothing to review yet."
+            )
+        counts = cls.status_counts(items)
+        broken = [item for item in items if item["status"] == "broken"]
+        disabled = [item for item in items if item["status"] == "disabled"]
+        lines = [
+            f"You have {len(items)} automation apps and Rule Machine rules: "
+            f"{counts['active']} active, {len(disabled)} disabled, "
+            f"{len(broken)} broken."
+        ]
+        if broken:
+            lines.append(
+                "\nWorth fixing first (broken):\n"
+                + "\n".join(
+                    f"- {item.get('display_name') or item['name']}"
+                    for item in broken
+                )
+            )
+        if disabled:
+            shown = disabled[:10]
+            remainder = len(disabled) - len(shown)
+            lines.append(
+                "\nCurrently disabled -- worth a look if any are still "
+                "relevant:\n"
+                + "\n".join(
+                    f"- {item.get('display_name') or item['name']}"
+                    for item in shown
+                )
+                + (f"\n...and {remainder} more disabled." if remainder else "")
+            )
+        if not broken and not disabled:
+            lines.append(
+                "\nEverything currently configured is active -- nothing "
+                "obviously broken or disabled to fix."
+            )
+        lines.append(
+            "\nThis reflects what's already configured on your hub, not "
+            "new automation ideas -- I don't yet have a way to suggest "
+            "brand-new automations from your device inventory."
+        )
+        return "\n".join(lines)
+
+    @classmethod
     def _message(cls, items: list[dict[str, Any]]) -> str:
         if not items:
             return "No automation apps or Rule Machine rules were returned by Hubitat."
@@ -239,7 +305,7 @@ class AutomationStatusService:
                 )
         return "\n".join(lines)
 
-    async def snapshot(self) -> AutomationStatusOutcome:
+    async def snapshot(self, *, advisory: bool = False) -> AutomationStatusOutcome:
         calls = (
             ("hub_read_apps_code", {"tool": "hub_list_apps", "args": {"scope": "instances"}}, "app"),
             ("hub_read_rules", {}, "rule"),
@@ -265,8 +331,11 @@ class AutomationStatusService:
             key=lambda item: (_STATUSES.index(item["status"]), item["name"].casefold()),
         )
         counts = self.status_counts(ordered)
+        message = (
+            self._advisory_message(ordered) if advisory else self._message(ordered)
+        )
         return AutomationStatusOutcome(
-            message=self._message(ordered),
+            message=message,
             evidence=evidence,
             automation_items=ordered,
             automation_counts=counts,
