@@ -35,6 +35,10 @@ on:
       - "scripts/run_release_gate.py"
       - ".github/workflows/hubitat-mcp-ai-tests.yml"
 
+concurrency:
+  group: hubitat-mcp-ai-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
