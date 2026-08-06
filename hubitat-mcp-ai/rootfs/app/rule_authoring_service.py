@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
 from mcp_client import HubitatMCPClient
+from time_expressions import AT_TIME as _SHARED_AT_TIME, parse_clock as _shared_parse_clock
 from tool_registry import rule_machine_proposal_error
 
 
@@ -63,10 +64,7 @@ class RuleAuthoringService:
         r"^.*?\b(?:automation|rule|schedule)\b\s+(?:that\s+|to\s+)?",
         re.I,
     )
-    _AT_TIME = re.compile(
-        r"\bat\s+(?P<time>\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
-        re.I,
-    )
+    _AT_TIME = _SHARED_AT_TIME
 
     def __init__(
         self,
@@ -78,20 +76,7 @@ class RuleAuthoringService:
 
     @staticmethod
     def _clock(value: str) -> str | None:
-        compact = re.sub(r"[.\s]", "", value.casefold())
-        match = re.fullmatch(r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<ampm>am|pm)?", compact)
-        if match is None:
-            return None
-        hour = int(match.group("hour"))
-        minute = int(match.group("minute") or 0)
-        ampm = match.group("ampm")
-        if minute > 59 or (ampm and not 1 <= hour <= 12) or (not ampm and hour > 23):
-            return None
-        if ampm:
-            hour %= 12
-            if ampm == "pm":
-                hour += 12
-        return f"{hour:02d}:{minute:02d}"
+        return _shared_parse_clock(value)
 
     @classmethod
     def _clean_goal(cls, text: str, cut: int) -> str:

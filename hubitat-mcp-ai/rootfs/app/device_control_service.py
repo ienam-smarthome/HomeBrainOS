@@ -10,6 +10,7 @@ from typing import Any
 from device_state_summary import is_light_device, room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
+from time_expressions import strip_trailing_time
 
 
 logger = logging.getLogger("HomeBrainOS.DeviceControl")
@@ -80,6 +81,44 @@ class DeviceControlService:
                         "Provide exactly one of room or device_names, plus a valid "
                         "device_kind and command."
                     ),
+                },
+                is_error=True,
+            )
+
+        # A time expression can arrive smuggled into `room` or a
+        # `device_names` entry (e.g. "hallway lights at 11:11pm") when the
+        # model has no dedicated time parameter to put it in. Executing
+        # immediately would silently do something the person didn't ask
+        # for -- turn the device on *now* instead of at the time they
+        # specified -- and leaving the raw time text in the name corrupts
+        # device resolution instead of failing honestly. Detect and refuse
+        # with a clear explanation rather than either.
+        time_source = room if room else " ".join(str(item) for item in names)
+        _, requested_time = strip_trailing_time(time_source)
+        if requested_time is not None:
+            cleaned_room = strip_trailing_time(room)[0] if room else ""
+            cleaned_names = [strip_trailing_time(str(item))[0] for item in names]
+            target_description = cleaned_room or ", ".join(
+                item for item in cleaned_names if item
+            )
+            return MCPToolResult(
+                DEVICE_CONTROL_TOOL,
+                arguments,
+                {},
+                "One-time scheduled action requested; not executed immediately",
+                {
+                    "success": False,
+                    "error": (
+                        f"This reads as a one-time request for {requested_time} "
+                        "rather than right now. I can turn "
+                        f"{target_description or 'this'} {command} immediately, or "
+                        "set up a recurring daily rule for that time -- but I "
+                        "can't schedule a single one-off action for a specific "
+                        "time yet."
+                    ),
+                    "requested_time": requested_time,
+                    "device_names": cleaned_names or None,
+                    "room": cleaned_room or None,
                 },
                 is_error=True,
             )
