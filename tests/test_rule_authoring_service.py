@@ -181,3 +181,126 @@ async def test_unmatched_or_unsupported_schedule_stays_in_general_agent_path():
     assert read.handled is False
     assert weekly.handled is False
     assert service.mcp.calls == []
+
+
+# --- Single daily trigger (no auto-revert window) -------------------------
+#
+# Found via live testing against a real 84-device house: the compiler had
+# no path at all for "turn on X every day at 7am" -- only auto-reverting
+# window schedules ("turn X off from A to B") were recognised. Real device
+# shapes below are pulled from hub_get_device against the live hub.
+
+def real_bedroom_light():
+    return {
+        "id": "7057",
+        "label": "Bedroom 1 Light",
+        "roomName": "Bedroom 1",
+        "commands": ["off", "on", "refresh", "setLevel"],
+        "capabilities": ["Actuator", "Refresh", "ChangeLevel", "SwitchLevel", "Light", "Switch"],
+    }
+
+
+def real_front_door():
+    # A genuine contact sensor with no lock/unlock commands at all --
+    # used to prove command verification rejects a mismatched device
+    # rather than guessing.
+    return {
+        "id": "7399",
+        "label": "Front Door",
+        "roomName": "Hallway",
+        "commands": [],
+        "capabilities": ["ContactSensor", "Sensor", "Battery"],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "prompt,expected_command,expected_time",
+    [
+        ("create a rule to turn on Bedroom 1 Light every day at 7am", "on", "07:00"),
+        ("create a rule to turn on Bedroom 1 Light at 7am every day", "on", "07:00"),
+        ("set up an automation to turn off Bedroom 1 Light every day at 11pm", "off", "23:00"),
+    ],
+)
+async def test_compiles_single_daily_trigger_into_one_atomic_rule(
+    prompt, expected_command, expected_time
+):
+    service = RuleAuthoringService(RuleMCP([real_bedroom_light()]), recorder)
+
+    decision = await service.propose(
+        prompt,
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert len(decision.actions) == 1
+    assert len(decision.rule_names) == 1
+    action = decision.actions[0]
+    assert action["tool"] == "hub_set_rule"
+    assert action["args"]["addTrigger"]["atTime"] == expected_time
+    assert action["args"]["addAction"] == {
+        "capability": "runCommand",
+        "deviceIds": ["7057"],
+        "capabilityFilter": "Switch",
+        "command": expected_command,
+    }
+
+
+@pytest.mark.asyncio
+async def test_single_trigger_rejects_device_missing_the_command():
+    service = RuleAuthoringService(RuleMCP([real_front_door()]), recorder)
+
+    decision = await service.propose(
+        "make a rule to lock Front Door every day at 10pm",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.actions == ()
+    assert "does not advertise" in str(decision.message)
+    assert "lock" in str(decision.message)
+
+
+@pytest.mark.asyncio
+async def test_single_trigger_duplicate_rule_is_not_requeued():
+    rules = [{"id": "1", "name": "Turn on Bedroom 1 Light (Daily)"}]
+    service = RuleAuthoringService(RuleMCP([real_bedroom_light()], rules), recorder)
+
+    decision = await service.propose(
+        "create a rule to turn on Bedroom 1 Light every day at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY, "hub_read_rules"},
+        can_read_rules=True,
+    )
+
+    assert decision.handled is True
+    assert decision.actions == ()
+    assert "already exists" in str(decision.message)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        # daily marker AFTER the window (already worked before this fix)
+        "create a rule to turn Bedroom 1 Light off from 11pm to 6am every day",
+        # daily marker BEFORE the window -- equally natural phrasing that
+        # silently failed before this fix, since the goal slice included
+        # the trailing "every day" and broke the verb-pattern fullmatch
+        "create a rule to turn Bedroom 1 Light off every day from 11pm to 6am",
+    ],
+)
+async def test_window_schedule_is_order_independent_for_the_daily_marker(prompt):
+    service = RuleAuthoringService(RuleMCP([real_bedroom_light()]), recorder)
+
+    decision = await service.propose(
+        prompt,
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert len(decision.actions) == 2
+    assert [
+        action["args"]["addTrigger"]["atTime"] for action in decision.actions
+    ] == ["23:00", "06:00"]
