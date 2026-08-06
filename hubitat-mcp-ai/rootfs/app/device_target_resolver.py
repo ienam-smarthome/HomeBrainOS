@@ -313,6 +313,7 @@ def resolve_device_candidate(
     unique_threshold: float = 0.72,
     ranked_threshold: float = 0.86,
     margin: float = 0.12,
+    missing_floor: float = 0.70,
 ) -> CandidateResolution:
     """Resolve a speech-derived name without blindly choosing the closest."""
 
@@ -414,6 +415,16 @@ def resolve_device_candidate(
             top_score,
             alternatives,
             "high-confidence ranked candidate",
+        )
+    if top_score < missing_floor:
+        return _missing_resolution(
+            confidence=top_score,
+            alternatives=alternatives,
+            reason=(
+                f"No candidate was similar enough to {requested!r}; the "
+                f"closest inventory names ({', '.join(alternatives)}) fell "
+                "below the confidence floor."
+            ),
         )
     return _ambiguous_resolution(
         confidence=top_score,
