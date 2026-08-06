@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.336**.
+Current add-on version: **0.10.337**.
 
 ## Architecture
 
@@ -58,7 +58,10 @@ is tapped, so selecting a device resubmits a deterministic named-attribute reque
 instead of a bare label that would enter the model loop. Deterministic operations
 within one observed request reuse a single request-local live-device snapshot, so
 capability filtering and target resolution do not repeat the same Hubitat inventory
-read; a new request always receives a new snapshot.
+read. Very closely spaced read-only requests may reuse the exact unfiltered live
+inventory for at most two seconds; every mutating tool attempt invalidates that
+shared snapshot before and after execution, and historical event reads are never
+served from it.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
