@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -88,6 +89,9 @@ class HubitatMCPClient:
         self.server_info: dict[str, Any] = {}
         self._cached_devices: list[dict[str, Any]] = []
         self._devices_cached_at = 0.0
+        self._live_device_snapshot_ttl_seconds = 2.0
+        self._live_device_snapshot: tuple[float, int, MCPToolResult] | None = None
+        self._live_device_snapshot_generation = 0
 
     @staticmethod
     def _with_token(url: str, token: str) -> str:
@@ -160,7 +164,6 @@ class HubitatMCPClient:
             try:
                 await self._post(notification, allow_empty=True)
             except Exception:
-                # Some Hubitat implementations are stateless and do not require the notification.
                 pass
 
     async def list_tools(self, refresh: bool = False) -> list[MCPTool]:
@@ -310,6 +313,31 @@ class HubitatMCPClient:
             return desired
         return {key: value for key, value in desired.items() if key in properties}
 
+    @staticmethod
+    def _is_live_device_snapshot_request(name: str, arguments: dict[str, Any]) -> bool:
+        return (
+            name == "hub_read_devices"
+            and arguments.get("tool") == "hub_list_devices"
+            and arguments.get("args") == {}
+        )
+
+    @staticmethod
+    def _copy_tool_result(result: MCPToolResult) -> MCPToolResult:
+        return MCPToolResult(
+            name=result.name,
+            arguments=deepcopy(result.arguments),
+            raw=deepcopy(result.raw),
+            text=result.text,
+            data=deepcopy(result.data),
+            is_error=result.is_error,
+        )
+
+    def invalidate_live_device_snapshot(self) -> None:
+        """Invalidate the very short shared state snapshot after any write attempt."""
+
+        self._live_device_snapshot_generation += 1
+        self._live_device_snapshot = None
+
     async def call_tool(
         self,
         name: str,
@@ -317,8 +345,25 @@ class HubitatMCPClient:
     ) -> MCPToolResult:
         await self.initialize()
         arguments = arguments if isinstance(arguments, dict) else {}
+        cacheable = self._is_live_device_snapshot_request(name, arguments)
+        generation = self._live_device_snapshot_generation
+        if cacheable and self._live_device_snapshot is not None:
+            cached_at, cached_generation, cached_result = self._live_device_snapshot
+            if (
+                cached_generation == generation
+                and self._clock() - cached_at < self._live_device_snapshot_ttl_seconds
+            ):
+                return self._copy_tool_result(cached_result)
 
         async with self._lock:
+            if cacheable and self._live_device_snapshot is not None:
+                cached_at, cached_generation, cached_result = self._live_device_snapshot
+                if (
+                    cached_generation == self._live_device_snapshot_generation
+                    and self._clock() - cached_at < self._live_device_snapshot_ttl_seconds
+                ):
+                    return self._copy_tool_result(cached_result)
+            generation = self._live_device_snapshot_generation
             payload = {
                 "jsonrpc": "2.0",
                 "id": self._next_id(),
@@ -349,7 +394,7 @@ class HubitatMCPClient:
         text = "\n".join(part for part in text_parts if part).strip()
         data = structured if structured is not None else self._decode_tool_text(text)
         is_error = bool(result.get("isError"))
-        return MCPToolResult(
+        tool_result = MCPToolResult(
             name=name,
             arguments=arguments,
             raw=result,
@@ -357,6 +402,17 @@ class HubitatMCPClient:
             data=data,
             is_error=is_error,
         )
+        if (
+            cacheable
+            and not is_error
+            and generation == self._live_device_snapshot_generation
+        ):
+            self._live_device_snapshot = (
+                self._clock(),
+                generation,
+                self._copy_tool_result(tool_result),
+            )
+        return tool_result
 
     async def _post(
         self,
@@ -385,8 +441,7 @@ class HubitatMCPClient:
                     raise
                 delay = self.retry_backoff_seconds * (2 ** (attempt - 1))
                 logger.warning(
-                    "Transient MCP transport failure; retrying attempt %d/%d "
-                    "in %.2fs",
+                    "Transient MCP transport failure; retrying attempt %d/%d in %.2fs",
                     attempt + 1,
                     attempt_limit,
                     delay,
