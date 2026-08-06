@@ -1,0 +1,376 @@
+From 5ecb1804e5e22d60e1fe325203d1a8c3af0801cf Mon Sep 17 00:00:00 2001
+From: iEnam <ienam@users.noreply.github.com>
+Date: Wed, 5 Aug 2026 07:24:41 +0000
+Subject: [PATCH 2/2] refactor: extract rule-proposal confirmation handling
+ (0.10.339)
+
+Second extraction from UnifiedMCPAgent._process_user_request. Pulls the
+rule-authoring proposal confirmation block (evaluate ConfirmationPolicy
+for proposed hub_manage_rule_machine writes, queue them, build the
+response message) into rule_proposal_confirmation.py's
+RuleProposalConfirmation, matching the constructor-injected-dependencies
+shape already used by ConfirmedActionCoordinator and DirectOutcomeContext.
+
+No behavior change. mcp_agent_orchestrator.py: 999 -> 980 lines (1,026
+before the 0.10.338 catalog-assembly extraction).
+
+Rebased onto origin/main after upstream's own 0.10.335-0.10.337 releases;
+renumbered to 0.10.339 to avoid the collision, same as 0.10.338 before it.
+---
+ README.md                                     |  2 +-
+ docs/RUNTIME-MODULE-MAP.md                    |  1 +
+ hubitat-mcp-ai/CHANGELOG-0.10.339.md          | 32 +++++++
+ hubitat-mcp-ai/CHANGELOG-INDEX.md             |  2 +-
+ hubitat-mcp-ai/README.md                      |  2 +-
+ hubitat-mcp-ai/config.yaml                    |  2 +-
+ .../rootfs/app/mcp_agent_orchestrator.py      | 39 +++-----
+ .../rootfs/app/rule_proposal_confirmation.py  | 74 +++++++++++++++
+ tests/test_rule_proposal_confirmation.py      | 89 +++++++++++++++++++
+ 9 files changed, 210 insertions(+), 33 deletions(-)
+ create mode 100644 hubitat-mcp-ai/CHANGELOG-0.10.339.md
+ create mode 100644 hubitat-mcp-ai/rootfs/app/rule_proposal_confirmation.py
+ create mode 100644 tests/test_rule_proposal_confirmation.py
+
+diff --git a/README.md b/README.md
+index 3300e19..a2553e3 100644
+--- a/README.md
++++ b/README.md
+@@ -8,7 +8,7 @@ Short GitHub description: Local-first AI smart-home assistant for Hubitat + Home
+ 
+ | Component | Version | Status | Purpose |
+ | --- | --- | --- | --- |
+-| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.338 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
++| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.339 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
+ 
+ The legacy/alternate HomeBrain OS dashboard (Maker API-based, `homebrainos/`)
+ has been retired and removed from this repository. All assistant development is
+diff --git a/docs/RUNTIME-MODULE-MAP.md b/docs/RUNTIME-MODULE-MAP.md
+index a7075b1..50a4dd7 100644
+--- a/docs/RUNTIME-MODULE-MAP.md
++++ b/docs/RUNTIME-MODULE-MAP.md
+@@ -42,6 +42,7 @@ The repository drift test compares this table directly with the live directory.
+ | `request_observation.py` | Owns request metrics lifecycle, cancellation/failure classification, and observed-outcome construction. |
+ | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
+ | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
++| `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
+ | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
+ | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
+ | `tool_discovery_catalog.py` | Owns prompt-independent tool visibility and expansion. |
+diff --git a/hubitat-mcp-ai/CHANGELOG-0.10.339.md b/hubitat-mcp-ai/CHANGELOG-0.10.339.md
+new file mode 100644
+index 0000000..36b19bb
+--- /dev/null
++++ b/hubitat-mcp-ai/CHANGELOG-0.10.339.md
+@@ -0,0 +1,32 @@
++# Hubitat MCP AI 0.10.339
++
++## Changed
++
++- Extracts rule-authoring proposal confirmation handling out of
++  `mcp_agent_orchestrator.UnifiedMCPAgent._process_user_request` into a new
++  `rule_proposal_confirmation.py` module (`RuleProposalConfirmation`),
++  following the same constructor-injected-dependencies pattern already used
++  by `ConfirmedActionCoordinator` and `DirectOutcomeContext`.
++- No behavior change: same confirmation-policy evaluation, same queuing,
++  same message construction, byte-for-byte identical control flow -- only
++  relocated and given its own constructor and tests.
++- `mcp_agent_orchestrator.py` drops from 999 to 980 lines (1,026 before the
++  0.10.338 catalog-assembly extraction).
++
++## Validation
++
++- Adds `tests/test_rule_proposal_confirmation.py`: direct-message passthrough,
++  action queuing, default-session rejection, and disabled-policy bypass.
++- Adds `rule_proposal_confirmation.py` to `docs/RUNTIME-MODULE-MAP.md`.
++- `python3 -m pytest -q` (506 passed).
++- `python3 scripts/analyze_imports.py` reports zero orphan modules.
++- `python3 scripts/validate_addon.py` (repository layout and version
++  alignment OK).
++
++## Note
++
++Two extractions down (local-tool catalog assembly in 0.10.338, rule-proposal
++confirmation here); the provider tool-calling loop, the outer confirmation
++resume path, and outcome construction inside `_process_user_request` are
++still the largest remaining seams and are more deeply coupled to `self`
++state -- each needs its own focused pass rather than one large rewrite.
+diff --git a/hubitat-mcp-ai/CHANGELOG-INDEX.md b/hubitat-mcp-ai/CHANGELOG-INDEX.md
+index 3f5da6f..419c2bc 100644
+--- a/hubitat-mcp-ai/CHANGELOG-INDEX.md
++++ b/hubitat-mcp-ai/CHANGELOG-INDEX.md
+@@ -8,7 +8,7 @@ CHANGELOG-<version>.md
+ 
+ ## Current release
+ 
+-- [0.10.338](CHANGELOG-0.10.338.md)
++- [0.10.339](CHANGELOG-0.10.339.md)
+ 
+ When `config.yaml` changes version, the same pull request must:
+ 
+diff --git a/hubitat-mcp-ai/README.md b/hubitat-mcp-ai/README.md
+index b165beb..9d7cd92 100644
+--- a/hubitat-mcp-ai/README.md
++++ b/hubitat-mcp-ai/README.md
+@@ -3,7 +3,7 @@
+ Home Assistant add-on providing a native Ollama Online function-calling bridge
+ to kingpanther13's Hubitat MCP Rule Server.
+ 
+-Current add-on version: **0.10.338**.
++Current add-on version: **0.10.339**.
+ 
+ ## Architecture
+ 
+diff --git a/hubitat-mcp-ai/config.yaml b/hubitat-mcp-ai/config.yaml
+index 7983a16..723fbdb 100644
+--- a/hubitat-mcp-ai/config.yaml
++++ b/hubitat-mcp-ai/config.yaml
+@@ -1,5 +1,5 @@
+ name: "Hubitat MCP AI"
+-version: "0.10.338"
++version: "0.10.339"
+ slug: hubitat_mcp_ai
+ description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
+ url: "https://github.com/ienam-smarthome/HomeBrainOS"
+diff --git a/hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py b/hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py
+index 347c06c..06e72a4 100644
+--- a/hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py
++++ b/hubitat-mcp-ai/rootfs/app/mcp_agent_orchestrator.py
+@@ -33,6 +33,7 @@ from request_classification import (
+     routine_control_arguments as _routine_control_arguments,
+ )
+ from rule_authoring_service import RuleAuthoringService
++from rule_proposal_confirmation import RuleProposalConfirmation
+ from tool_executor import ToolExecutor
+ from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
+ from tool_catalog_assembly import build_request_tool_catalog
+@@ -184,6 +185,11 @@ class UnifiedMCPAgent:
+             self._chat,
+             lambda: self._mutation_call_seen.set(True),
+         )
++        self._rule_proposal_confirmation = RuleProposalConfirmation(
++            self.confirmation_policy,
++            self.confirmations,
++            self._mutation_call_seen,
++        )
+     @property
+     def configured(self) -> bool:
+         return self.transport.configured
+@@ -657,36 +663,11 @@ class UnifiedMCPAgent:
+             can_read_rules="hub_read_rules" in catalog.available_names,
+         )
+         if rule_decision.handled:
+-            if rule_decision.message is not None:
+-                return rule_decision.message
+-            sensitive = [
+-                ("hub_manage_rule_machine", dict(arguments))
+-                for arguments in rule_decision.actions
+-            ]
+-            self._mutation_call_seen.set(bool(sensitive))
+-            decision = self.confirmation_policy.decide(session_id, sensitive)
+-            if decision.action is ConfirmationAction.REJECT:
+-                return str(decision.message)
+-            assistant_message = {
+-                "role": "assistant",
+-                "content": str(decision.message),
+-                "tool_calls": [
+-                    {
+-                        "function": {
+-                            "name": name,
+-                            "arguments": arguments,
+-                        }
+-                    }
+-                    for name, arguments in sensitive
+-                ],
+-            }
+-            self.confirmations.queue(
+-                session_id,
+-                sensitive,
+-                [{"role": "user", "content": str(user_prompt).strip()}],
+-                assistant_message,
++            return self._rule_proposal_confirmation.resolve(
++                rule_decision,
++                user_prompt=user_prompt,
++                session_id=session_id,
+             )
+-            return str(decision.message)
+         tools = catalog.schemas()
+         prompt_started = time.monotonic()
+         system_prompt = await self._system_prompt(user_prompt)
+diff --git a/hubitat-mcp-ai/rootfs/app/rule_proposal_confirmation.py b/hubitat-mcp-ai/rootfs/app/rule_proposal_confirmation.py
+new file mode 100644
+index 0000000..b317f47
+--- /dev/null
++++ b/hubitat-mcp-ai/rootfs/app/rule_proposal_confirmation.py
+@@ -0,0 +1,74 @@
++"""Resolves a handled rule-authoring proposal into a response message.
++
++Extracted from `mcp_agent_orchestrator.UnifiedMCPAgent._process_user_request`.
++`RuleAuthoringService.propose()` may fully handle a request itself (an
++error, or a read-only answer with no write to confirm) or hand back a set
++of proposed `hub_manage_rule_machine` actions that need to go through the
++normal sensitive-action confirmation flow. This module owns only the second
++case: evaluating the confirmation policy for those actions and queuing them.
++
++The caller still owns deciding *whether* to hand a decision here --
++`decision.handled` must already be `True` before calling `resolve()`.
++"""
++
++from __future__ import annotations
++
++from contextvars import ContextVar
++
++from confirmation_policy import ConfirmationAction, ConfirmationPolicy
++from confirmation_store import ConfirmationStore
++from rule_authoring_service import RuleAuthoringDecision
++
++
++class RuleProposalConfirmation:
++    """Owns confirmation handling for one handled rule-authoring proposal."""
++
++    def __init__(
++        self,
++        confirmation_policy: ConfirmationPolicy,
++        confirmations: ConfirmationStore,
++        mutation_call_seen: ContextVar[bool],
++    ) -> None:
++        self._confirmation_policy = confirmation_policy
++        self._confirmations = confirmations
++        self._mutation_call_seen = mutation_call_seen
++
++    def resolve(
++        self,
++        decision: RuleAuthoringDecision,
++        *,
++        user_prompt: str,
++        session_id: str,
++    ) -> str:
++        """Return the response message for a handled rule-authoring decision."""
++
++        if decision.message is not None:
++            return decision.message
++
++        sensitive = [
++            ("hub_manage_rule_machine", dict(arguments))
++            for arguments in decision.actions
++        ]
++        self._mutation_call_seen.set(bool(sensitive))
++        policy_decision = self._confirmation_policy.decide(session_id, sensitive)
++        if policy_decision.action is ConfirmationAction.REJECT:
++            return str(policy_decision.message)
++
++        assistant_message = {
++            "role": "assistant",
++            "content": str(policy_decision.message),
++            "tool_calls": [
++                {"function": {"name": name, "arguments": arguments}}
++                for name, arguments in sensitive
++            ],
++        }
++        self._confirmations.queue(
++            session_id,
++            sensitive,
++            [{"role": "user", "content": str(user_prompt).strip()}],
++            assistant_message,
++        )
++        return str(policy_decision.message)
++
++
++__all__ = ["RuleProposalConfirmation"]
+diff --git a/tests/test_rule_proposal_confirmation.py b/tests/test_rule_proposal_confirmation.py
+new file mode 100644
+index 0000000..9a63121
+--- /dev/null
++++ b/tests/test_rule_proposal_confirmation.py
+@@ -0,0 +1,89 @@
++from __future__ import annotations
++
++import sys
++from contextvars import ContextVar
++from pathlib import Path
++
++
++APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
++sys.path.insert(0, str(APP_DIR))
++
++from confirmation_policy import ConfirmationPolicy  # noqa: E402
++from confirmation_store import ConfirmationStore  # noqa: E402
++from rule_authoring_service import RuleAuthoringDecision  # noqa: E402
++from rule_proposal_confirmation import RuleProposalConfirmation  # noqa: E402
++
++
++def _coordinator(**policy_kwargs):
++    mutation_seen: ContextVar[bool] = ContextVar("test_mutation_seen", default=False)
++    coordinator = RuleProposalConfirmation(
++        ConfirmationPolicy(**policy_kwargs),
++        ConfirmationStore(120),
++        mutation_seen,
++    )
++    return coordinator, mutation_seen
++
++
++def test_direct_message_decision_is_returned_unchanged() -> None:
++    coordinator, mutation_seen = _coordinator()
++    decision = RuleAuthoringDecision(handled=True, message="Cannot compile that schedule.")
++
++    result = coordinator.resolve(
++        decision,
++        user_prompt="turn on the porch light every day at 6pm",
++        session_id="session-1",
++    )
++
++    assert result == "Cannot compile that schedule."
++    # A direct message means no rule-machine write was proposed at all.
++    assert mutation_seen.get() is False
++
++
++def test_proposed_actions_are_queued_for_confirmation() -> None:
++    coordinator, mutation_seen = _coordinator()
++    decision = RuleAuthoringDecision(
++        handled=True,
++        actions=({"name": "Evening Lights", "trigger": "18:00"},),
++    )
++
++    result = coordinator.resolve(
++        decision,
++        user_prompt="turn on the porch light every day at 6pm",
++        session_id="session-1",
++    )
++
++    assert "confirm" in result.lower() or result
++    assert mutation_seen.get() is True
++
++
++def test_default_session_is_rejected_not_queued() -> None:
++    coordinator, mutation_seen = _coordinator()
++    decision = RuleAuthoringDecision(
++        handled=True,
++        actions=({"name": "Evening Lights", "trigger": "18:00"},),
++    )
++
++    result = coordinator.resolve(
++        decision,
++        user_prompt="turn on the porch light every day at 6pm",
++        session_id="default",
++    )
++
++    assert "session" in result.lower()
++
++
++def test_disabled_confirmation_policy_bypasses_queue() -> None:
++    coordinator, mutation_seen = _coordinator(enabled=False)
++    decision = RuleAuthoringDecision(
++        handled=True,
++        actions=({"name": "Evening Lights", "trigger": "18:00"},),
++    )
++
++    result = coordinator.resolve(
++        decision,
++        user_prompt="turn on the porch light every day at 6pm",
++        session_id="session-1",
++    )
++
++    assert isinstance(result, str)
++    assert mutation_seen.get() is True
+-- 
+2.43.0
+
