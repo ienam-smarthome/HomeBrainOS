@@ -51,8 +51,8 @@ def load_options() -> dict[str, Any]:
         "ollama_direct_cloud_enabled": True,
         "ollama_direct_cloud_base_url": "https://ollama.com",
         "ollama_direct_cloud_api_key": "",
-        "ollama_direct_cloud_model": "qwen3-coder:480b-cloud",
-        "ollama_cloud_model": "qwen3-coder:480b-cloud",
+        "ollama_direct_cloud_model": "gemma4:31b-cloud",
+        "ollama_cloud_model": "gemma4:31b-cloud",
         "ollama_agent_timeout_seconds": 60,
         "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
@@ -97,7 +97,7 @@ agent = UnifiedMCPAgent(
     model_name=str(
         OPTIONS.get("ollama_direct_cloud_model")
         or OPTIONS.get("ollama_cloud_model")
-        or "qwen3-coder:480b-cloud"
+        or "gemma4:31b-cloud"
     ),
     base_url=str(OPTIONS.get("ollama_direct_cloud_base_url") or "https://ollama.com"),
     timeout_seconds=float(OPTIONS.get("ollama_agent_timeout_seconds") or 60),

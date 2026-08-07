@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.352**.
+Current add-on version: **0.10.353**.
 
 ## Architecture
 
@@ -167,7 +167,7 @@ explicit evidence rather than model inference.
    ollama_direct_cloud_enabled: true
    ollama_direct_cloud_base_url: https://ollama.com
    ollama_direct_cloud_api_key: YOUR_OLLAMA_API_KEY
-   ollama_direct_cloud_model: qwen3-coder:480b-cloud
+   ollama_direct_cloud_model: gemma4:31b-cloud
    require_sensitive_confirmation: true
    ```
 
