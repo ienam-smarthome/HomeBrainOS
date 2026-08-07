@@ -234,12 +234,14 @@ def test_dominant_margin_does_not_paper_over_genuine_ambiguity():
     assert "Hallway Light 2" in resolution.alternatives
 
 
-def test_leading_article_does_not_block_an_otherwise_exact_match():
-    # "the fridge" normalizes to "thefridge", which is not literally equal
-    # to "fridge" -- before the fix, "the" was scored as a required
-    # "specific" token that had to match something in the candidate label,
-    # capping this exact match down into ambiguous/missing territory
-    # alongside unrelated candidates like "Freezer (MQTT)".
+def test_leading_article_is_stripped_before_scoring_for_a_clean_exact_match():
+    # "the fridge" must resolve as a genuine exact match ("Fridge"), not
+    # merely squeak past the confidence floor. An earlier, narrower fix
+    # only stopped "the" from being scored as a required specific token,
+    # which was enough for a long label like "Fridge" but still left the
+    # article diluting the underlying similarity score for short labels
+    # (see the "the tv" case below) -- the article must be stripped before
+    # scoring even starts, not just excluded from the compatibility gate.
     resolution = resolve_device_candidate(
         "the fridge",
         [
@@ -251,6 +253,31 @@ def test_leading_article_does_not_block_an_otherwise_exact_match():
 
     assert resolution.target is not None
     assert resolution.target["id"] == "3957"
+    assert resolution.confidence == 1.0
+    assert resolution.reason == "exact normalized name"
+
+
+def test_leading_article_on_a_short_label_does_not_sink_below_the_floor():
+    # Regression test for a real live failure found immediately after the
+    # first article fix shipped: "turn off the TV" still failed, because a
+    # short label like "TV" (2 characters) is dominated by the 3 extra
+    # characters of "the" in the raw similarity score, dragging it to 0.57
+    # -- well below the confidence floor -- even though "the fridge" (a
+    # longer label) had scored high enough to pass. Stripping the article
+    # before scoring fixes both cases uniformly instead of depending on
+    # how long the label happens to be.
+    resolution = resolve_device_candidate(
+        "the tv",
+        [
+            {"id": "4221", "label": "TV"},
+            {"id": "5000", "label": "Block Google-TV-Streamer"},
+            {"id": "6000", "label": "Tuya Remote (bedroom 3)"},
+        ],
+    )
+
+    assert resolution.target is not None
+    assert resolution.target["id"] == "4221"
+    assert resolution.confidence == 1.0
 
 
 def test_articles_a_and_an_do_not_block_exact_matches_either():

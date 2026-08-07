@@ -68,12 +68,28 @@ class CandidateResolution:
     reason: str
 
 
+_LEADING_ARTICLES = ("the", "a", "an")
+
+
 def _plain_text(value: Any) -> str:
     text = str(value or "").casefold()
     text = re.sub(r"[\(\[\{].*?[\)\]\}]", " ", text)
     for word, digit in _NUMBER_WORDS.items():
         text = re.sub(rf"\b{word}\b", digit, text)
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+    text = re.sub(r"[^a-z0-9]+", " ", text).strip()
+    # Strip a leading English article ("the fridge" -> "fridge"). This has
+    # to happen before scoring, not just before the specific-token
+    # compatibility check -- a leading "the"/"a"/"an" still dilutes the
+    # underlying SequenceMatcher ratio used for ordinary fuzzy scoring,
+    # which is fatal for short labels ("the tv" vs "TV" scores only 0.57,
+    # well below the confidence floor, even though it's an exact match
+    # once the article is removed). Only strips a genuinely leading
+    # article with at least one more word after it, so this never touches
+    # a label that is itself just "The" or similar.
+    words = text.split(" ")
+    if len(words) > 1 and words[0] in _LEADING_ARTICLES:
+        text = " ".join(words[1:])
+    return text
 
 
 def normalized_name(value: Any) -> str:
