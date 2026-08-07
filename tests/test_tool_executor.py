@@ -209,3 +209,58 @@ async def test_mutating_effect_is_preserved_even_when_execution_fails():
     assert receipt["mutates"] is True
     assert receipt["effect"] == ToolEffect.SENSITIVE_WRITE.value
     assert receipt["supports_live_claim"] is False
+
+
+@pytest.mark.asyncio
+async def test_execute_redacts_precise_location_before_building_provider_content():
+    """Regression test: GPS/address/journey data must never reach execution.content.
+
+    execution.content is what gets appended verbatim as the "tool" role
+    message in the provider conversation (see mcp_agent_orchestrator.py),
+    including to a cloud provider when ollama_direct_cloud_enabled is set.
+    Presence state must still survive so presence questions keep working.
+    """
+
+    result = MCPToolResult(
+        "hub_read_devices",
+        {},
+        {},
+        "",
+        {
+            "devices": [
+                {
+                    "label": "Household Member",
+                    "attributes": [
+                        {"name": "latitude", "value": "51.4670704"},
+                        {"name": "longitude", "value": "-0.0179751"},
+                        {"name": "address1", "value": "Home"},
+                        {"name": "presence", "value": "present"},
+                        {"name": "battery", "value": 37},
+                    ],
+                }
+            ]
+        },
+    )
+    mcp = FakeMCP(result=result)
+    evidence = EvidenceRecorder()
+    executor = ToolExecutor(mcp, evidence, clock=clock(10.0, 10.05))
+    token = evidence.begin()
+    try:
+        execution = await executor.execute(
+            "hub_read_devices",
+            {"tool": "hub_list_devices", "args": {}},
+            tool=MCPTool(
+                "hub_read_devices", "Read devices", {},
+                annotations={"effect": ToolEffect.READ.value},
+            ),
+        )
+    finally:
+        evidence.reset(token)
+
+    assert "51.4670704" not in execution.content
+    assert "-0.0179751" not in execution.content
+    payload = json.loads(execution.content)
+    attrs = {a["name"]: a["value"] for a in payload["result"]["devices"][0]["attributes"]}
+    assert attrs["presence"] == "present"
+    assert attrs["battery"] == 37
+    assert attrs["latitude"] != "51.4670704"
