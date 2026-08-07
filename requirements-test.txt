@@ -1,5 +1,17 @@
 -r hubitat-mcp-ai/rootfs/app/requirements.txt
 
+# Not used by the maintained hubitat-mcp-ai app -- needed only because
+# tests/test_hubitat_maker.py, tests/test_device_model.py, and
+# tests/test_normalizer.py still exercise the retired backend/ package
+# (backend/integrations/hubitat_maker.py imports requests directly). The
+# root requirements.txt used to supply this transitively before it was
+# dropped above; omitting it collects clean on a machine that happens to
+# already have requests installed globally (e.g. most dev sandboxes) and
+# only fails on a clean CI runner: ModuleNotFoundError: No module named
+# 'requests' during test collection. Pin matches requirements.txt's
+# existing version so both retired-backend consumers agree.
+requests==2.32.3
+
 pytest>=8,<9
 pytest-asyncio>=0.24,<2
 hypothesis>=6,<7
