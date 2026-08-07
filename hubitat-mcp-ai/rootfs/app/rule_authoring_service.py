@@ -215,6 +215,33 @@ class RuleAuthoringService:
         ), "allowInternet", "Unblock"),
     )
 
+    # Catches "turn on X on", "turn off X off", "switch on X on", "switch
+    # off X off" -- a redundant trailing state word that duplicates the
+    # leading verb. Live testing found "turn on livingroom light 1 on at
+    # 12.05" resolved a device literally named "livingroom light 1 on":
+    # `_SINGLE_PATTERNS`' first (greedy) alternative for "turn on" swallows
+    # everything after it, including an accidental repeated "on" right
+    # before the time clause -- a natural typo when the phrasing habit
+    # "turn on X" gets combined with "X on at TIME". Only collapses when
+    # the trailing word exactly matches the leading verb's state, so a
+    # device genuinely named to end in "...on"/"...off" is not touched
+    # unless someone also says the state word twice.
+    _REDUNDANT_TRAILING_STATE = re.compile(
+        r"^(?P<lead>turn\s+on|turn\s+off|switch\s+on|switch\s+off)\s+"
+        r"(?P<target>.+?)\s+(?P<trail>on|off)$",
+        re.I,
+    )
+
+    @classmethod
+    def _drop_redundant_trailing_state(cls, goal: str) -> str:
+        match = cls._REDUNDANT_TRAILING_STATE.fullmatch(goal)
+        if match is None:
+            return goal
+        lead_state = match.group("lead").split()[-1].casefold()
+        if lead_state != match.group("trail").casefold():
+            return goal
+        return f"{match.group('lead')} {match.group('target')}"
+
     def _single_intent(self, text: str, *, daily: bool) -> _ScheduleIntent | None:
         """Recognise a single trigger with no auto-revert window.
 
@@ -239,6 +266,7 @@ class RuleAuthoringService:
             return None
 
         goal = self._clean_goal(text, at_match.start())
+        goal = self._drop_redundant_trailing_state(goal)
         for pattern, command, label in self._SINGLE_PATTERNS:
             match = pattern.fullmatch(goal)
             if match is None:

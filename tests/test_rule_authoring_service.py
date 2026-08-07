@@ -365,6 +365,76 @@ async def test_plain_one_time_control_phrasing_creates_a_dated_single_shot_rule(
 
 
 @pytest.mark.asyncio
+async def test_redundant_trailing_state_word_is_not_folded_into_device_name():
+    """Regression test for a live production failure: "turn on livingroom
+    light 1 on at 12.05" declined as ambiguous, offering "Livingroom Light
+    1", "Livingroom TRV", and "Livingroom Soft Sensor" as choices -- because
+    the first (greedy) `_SINGLE_PATTERNS` alternative for "turn on X"
+    swallowed the accidental repeated "on" right before the time clause
+    into the device name itself ("livingroom light 1 on"), which then
+    matched no real device and fell back to weak fuzzy alternatives. This
+    is a natural typo -- "turn on X" phrasing combined with "X on at TIME"
+    habit -- not malformed input that should be declined.
+    """
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    on_decision = await service.propose(
+        "turn on bedroom 1 lamp on at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+    off_decision = await service.propose(
+        "turn off bedroom 1 lamp off at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert on_decision.handled is True
+    assert on_decision.message is None
+    assert on_decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07)",)
+    assert off_decision.handled is True
+    assert off_decision.message is None
+    assert off_decision.rule_names == ("Turn off Bedroom 1 Lamp (One-time 2026-08-07)",)
+
+
+@pytest.mark.asyncio
+async def test_mismatched_trailing_state_word_is_left_untouched():
+    """"turn on X off" is nonsensical/self-contradictory phrasing, not the
+    "state word said twice" typo the redundant-trailing-state fix targets
+    -- it must not be silently reinterpreted as either "turn on X" or "turn
+    off X". Left alone, it fails device resolution honestly (no real
+    device is named "... off") rather than guessing the user's intent.
+    """
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp off at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    # Must not silently succeed as either state -- whatever device
+    # resolution makes of "bedroom 1 lamp off" as a literal target name,
+    # it must not produce a real queued rule.
+    assert decision.actions == ()
+    assert decision.rule_names == ()
+
+
+@pytest.mark.asyncio
 async def test_one_time_proposal_queues_a_self_pause_followup_action():
     """A one-time rule proposal must queue exactly two actions: the create,
     and a follow-up edit that pauses the rule via Hubitat's native
