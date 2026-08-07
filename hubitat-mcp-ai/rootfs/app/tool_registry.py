@@ -216,8 +216,20 @@ def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
                 )
             if mode == "A specific time":
                 at_time = str(trigger.get("atTime") or "")
-                if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", at_time):
-                    return f"trigger {index} requires atTime in HH:mm form"
+                # Bare 'HH:mm' recurs daily; a full ISO datetime with a real
+                # calendar date fires exactly once and does not recur. Both
+                # are valid -- which one is used depends on whether the
+                # request was a daily/recurring schedule or a one-time
+                # scheduled action (see rule_authoring_service.py).
+                is_daily_form = re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", at_time)
+                is_one_time_form = re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d", at_time
+                )
+                if not is_daily_form and not is_one_time_form:
+                    return (
+                        f"trigger {index} requires atTime as 'HH:mm' (daily) or "
+                        "'YYYY-MM-DDTHH:MM:SS' (one-time)"
+                    )
 
     for index, action in enumerate(actions, 1):
         capability = str(action.get("capability") or "").strip()

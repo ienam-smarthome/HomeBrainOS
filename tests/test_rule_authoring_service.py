@@ -8,6 +8,8 @@ import pytest
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
+from datetime import datetime  # noqa: E402
+
 from mcp_client import MCPToolResult  # noqa: E402
 from rule_authoring_service import (  # noqa: E402
     RULE_MACHINE_GATEWAY,
@@ -304,3 +306,107 @@ async def test_window_schedule_is_order_independent_for_the_daily_marker(prompt)
     assert [
         action["args"]["addTrigger"]["atTime"] for action in decision.actions
     ] == ["23:00", "06:00"]
+
+
+
+@pytest.mark.asyncio
+async def test_plain_daily_control_phrasing_works_without_the_word_rule():
+    """"turn on X every day at 7am" must work on its own -- requiring the
+    user to additionally say "create a rule" is not how anyone actually
+    asks for this."""
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp every day at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (Daily)",)
+    action = decision.actions[0]
+    assert action["args"]["addTrigger"]["atTime"] == "07:00"
+
+
+@pytest.mark.asyncio
+async def test_plain_one_time_control_phrasing_creates_a_dated_single_shot_rule():
+    """"turn on X at 7am" with no "daily"/"every day" marker and no
+    "rule"/"schedule" wording must resolve to a genuine one-time Hubitat
+    trigger (a full calendar-date atTime, not a bare 'HH:MM' that Hubitat
+    would otherwise interpret as recurring daily)."""
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07)",)
+    action = decision.actions[0]
+    assert action["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
+
+
+@pytest.mark.asyncio
+async def test_one_time_request_for_a_time_already_passed_today_rolls_to_tomorrow():
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 9, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    action = decision.actions[0]
+    assert action["args"]["addTrigger"]["atTime"] == "2026-08-08T07:00:00"
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-08)",)
+
+
+@pytest.mark.asyncio
+async def test_one_time_and_daily_requests_for_the_same_device_are_named_distinctly():
+    """A one-time and a recurring rule for the same device/command must not
+    collide in the duplicate-name check, and must not collide with each
+    other in Rule Machine's own listing."""
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    daily = await service.propose(
+        "turn on bedroom 1 lamp every day at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+    one_time = await service.propose(
+        "turn on bedroom 1 lamp at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert daily.rule_names != one_time.rule_names

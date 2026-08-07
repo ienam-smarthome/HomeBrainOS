@@ -101,6 +101,14 @@ class DeviceControlService:
             target_description = cleaned_room or ", ".join(
                 item for item in cleaned_names if item
             )
+            # RuleAuthoringService (see rule_authoring_service.py) is the
+            # primary handler for "<action> at <time>" requests and runs
+            # earlier in the pipeline, before the model can reach this local
+            # tool at all -- this branch is now a last-resort guard for the
+            # narrower case where the model itself calls this tool directly
+            # with a time smuggled into device_names/room (e.g. phrasing
+            # RuleAuthoringService's stricter grammar didn't match). It must
+            # still refuse rather than silently execute now or drop the time.
             return MCPToolResult(
                 DEVICE_CONTROL_TOOL,
                 arguments,
@@ -109,12 +117,14 @@ class DeviceControlService:
                 {
                     "success": False,
                     "error": (
-                        f"This reads as a one-time request for {requested_time} "
-                        "rather than right now. I can turn "
-                        f"{target_description or 'this'} {command} immediately, or "
-                        "set up a recurring daily rule for that time -- but I "
-                        "can't schedule a single one-off action for a specific "
-                        "time yet."
+                        f"This reads as a scheduled request for {requested_time} "
+                        "rather than right now, but I could not turn it into a "
+                        "rule automatically. Try rephrasing as "
+                        f"'turn {target_description or 'this'} {command} at "
+                        f"{requested_time}' for a one-time action, or add "
+                        "'every day' for a recurring one -- or I can turn "
+                        f"{target_description or 'this'} {command} immediately "
+                        "instead."
                     ),
                     "requested_time": requested_time,
                     "device_names": cleaned_names or None,
