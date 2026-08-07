@@ -7,6 +7,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+import re
+
 from device_state_summary import is_light_device, room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
@@ -15,6 +17,48 @@ from time_expressions import strip_trailing_time
 
 logger = logging.getLogger("HomeBrainOS.DeviceControl")
 DEVICE_CONTROL_TOOL = "homebrain_control_devices"
+
+# A second, unrelated action can arrive smuggled onto the end of a
+# device_names entry the same way a time expression can (see
+# strip_trailing_time above and its call site below) -- e.g. "toilet light
+# and restart the hub" reaching this tool as a single device_names entry
+# instead of two separate tool calls, because the model folded the whole
+# sentence into one call. Executing the routine part on the *whole*
+# uncleaned string corrupts device resolution (nothing named "toilet light
+# and restart the hub" exists); silently dropping the trailing clause and
+# saying nothing would hide that a second action was requested and never
+# happened. Detect and strip only a short, closed list of recognisably
+# distinct actions -- restart/reboot the hub, lock/unlock a door, arm/
+# disarm the alarm -- so the routine action still runs correctly, and the
+# result carries a clear note that the second action needs its own request.
+# This never executes the second action itself: doing that from a regex
+# match on raw text, rather than a model-selected tool call, would be
+# exactly the kind of prompt-text-gated mutation this codebase's own rules
+# forbid (see CONTRIBUTING.md / CLAUDE.md: gate on structured tool calls,
+# never on prompt wording).
+_TRAILING_UNRELATED_ACTION = re.compile(
+    r"^(?P<target>.*?\S)\s+and\s+"
+    r"(?P<action>(?:restart|reboot)\s+the\s+hub"
+    r"|(?:lock|unlock)\s+the\s+(?:front\s+|back\s+|garage\s+)?door"
+    r"|(?:arm|disarm)\s+the\s+alarm)"
+    r"\s*$",
+    re.I,
+)
+
+
+def strip_trailing_unrelated_action(text: str) -> tuple[str, str | None]:
+    """Split off a recognisably distinct second action, if present.
+
+    Returns the cleaned target text and a human-readable description of the
+    stripped action (or ``None`` if nothing matched). Only ever called on
+    text already destined for device-name resolution -- never used to
+    decide whether to execute anything.
+    """
+
+    match = _TRAILING_UNRELATED_ACTION.match(str(text).strip())
+    if match is None:
+        return str(text).strip(), None
+    return match.group("target").strip(" ,."), match.group("action").strip()
 
 
 class DeviceControlService:
@@ -84,6 +128,30 @@ class DeviceControlService:
                 },
                 is_error=True,
             )
+
+        # A second, unrelated action (restart the hub, lock/unlock a door,
+        # arm/disarm the alarm) can arrive smuggled onto the end of `room`
+        # or a `device_names` entry when the model folds a whole compound
+        # sentence into one tool call instead of issuing two. Strip it
+        # before resolution so the routine action still runs correctly
+        # against a clean device name, and remember what was stripped so
+        # the result can tell the user it needs its own separate request --
+        # never execute the stripped action itself; see
+        # strip_trailing_unrelated_action's docstring for why.
+        stripped_action_note: str | None = None
+        if room:
+            cleaned, detected = strip_trailing_unrelated_action(room)
+            if detected is not None:
+                room = cleaned
+                stripped_action_note = detected
+        else:
+            cleaned_entries: list[str] = []
+            for item in names:
+                cleaned, detected = strip_trailing_unrelated_action(str(item))
+                cleaned_entries.append(cleaned)
+                if detected is not None and stripped_action_note is None:
+                    stripped_action_note = detected
+            names = cleaned_entries
 
         # A time expression can arrive smuggled into `room` or a
         # `device_names` entry (e.g. "hallway lights at 11:11pm") when the
@@ -554,6 +622,11 @@ class DeviceControlService:
             "failed": failed,
             "complete": True,
         }
+        if stripped_action_note is not None:
+            data["note"] = (
+                f"This request also mentioned \"{stripped_action_note}\", which "
+                "was not part of this device action -- ask for it separately."
+            )
         return MCPToolResult(
             DEVICE_CONTROL_TOOL, arguments, {}, json.dumps(data), data
         )

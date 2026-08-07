@@ -197,7 +197,11 @@ def _present_control(data: dict[str, Any]) -> str:
             return " ".join(parts)
         return _error(data, "The Hubitat device command failed.")
     verb = {"on": "Turned on", "off": "Turned off", "toggle": "Toggled"}.get(str(data.get("command")), "Controlled")
-    return f"{verb} {_joined(succeeded) or 'the selected devices'}."
+    message = f"{verb} {_joined(succeeded) or 'the selected devices'}."
+    note = data.get("note")
+    if note:
+        message = f"{message} {note}"
+    return message
 
 
 def _present_device_history(data: dict[str, Any]) -> str:
