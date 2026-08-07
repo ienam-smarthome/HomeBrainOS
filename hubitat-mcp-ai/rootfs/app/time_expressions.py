@@ -14,7 +14,11 @@ from __future__ import annotations
 import re
 
 AT_TIME = re.compile(
-    r"\bat\s+(?P<time>\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
+    # Accept either a colon or a period between hour and minute -- "at
+    # 11.25" is at least as common as "at 11:25" for anyone typing quickly
+    # or using UK-style time notation, and it must not be silently
+    # truncated to "11" (see parse_clock's normalisation below).
+    r"\bat\s+(?P<time>\d{1,2}(?:[:.]\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
     re.I,
 )
 
@@ -26,7 +30,15 @@ def parse_clock(value: str) -> str | None:
     24-hour clock time -- never a best-effort guess.
     """
 
-    compact = re.sub(r"[.\s]", "", value.casefold())
+    casefolded = value.strip().casefold()
+    # A period directly between an hour and a two-digit minute ("11.25") is
+    # a genuine HH:MM separator, not an am/pm abbreviation dot -- normalise
+    # it to a colon before the blanket period strip below, which exists
+    # only to drop the dots out of "a.m."/"p.m." spellings. Without this
+    # step "11.25" collapsed to "1125", which never matches the strict
+    # HH(:MM)? grammar below and silently lost the minutes it captured.
+    normalized = re.sub(r"(?<=\d)\.(?=\d{2})", ":", casefolded)
+    compact = re.sub(r"[.\s]", "", normalized)
     match = re.fullmatch(r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<ampm>am|pm)?", compact)
     if match is None:
         return None
