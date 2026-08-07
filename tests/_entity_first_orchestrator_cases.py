@@ -2631,6 +2631,27 @@ async def test_control_prompt_documents_fast_routine_commands():
 
 
 @pytest.mark.asyncio
+async def test_control_prompt_forbids_folding_a_second_action_into_device_names():
+    """Regression test for a live production failure: "turn off toilet light
+    and restart the hub" was sent to homebrain_control_devices as a single
+    call with device_names=["toilet light and restart the hub"] -- the model
+    folded the unrelated hub-restart instruction into the device name list
+    instead of issuing a second, separate tool call. The deterministic
+    resolver correctly refused to guess (fail-closed, nothing wrong actually
+    executed), but the request should have succeeded as two actions instead
+    of failing as one malformed one. The prompt must say explicitly that a
+    second distinct action in the same sentence needs its own tool call."""
+
+    agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
+    instruction = await agent._system_prompt("turn off the couch lamp")
+    assert (
+        "device_names must contain ONLY actual device name fragments"
+        in instruction
+    )
+    assert "two separate tool calls in the same round" in instruction
+
+
+@pytest.mark.asyncio
 async def test_log_prompt_requires_actual_hub_get_logs_call():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     instruction = await agent._system_prompt("check hub logs")
