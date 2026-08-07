@@ -80,11 +80,26 @@ class RuleAuthoringService:
         r"(?P<end>\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
         re.I,
     )
-    _DAILY = re.compile(r"\b(?:daily|every\s*day|everyday)\b", re.I)
+    # "every single day" is at least as natural as "every day" and must not
+    # be left to fall through to the daily-vs-one-time branch undetected --
+    # see _clean_goal, which strips whichever of these actually matched.
+    _DAILY = re.compile(
+        r"\b(?:daily|every\s+single\s+day|every\s*day|everyday)\b", re.I
+    )
     _PREFIX = re.compile(
         r"^.*?\b(?:automation|rule|schedule)\b\s+(?:that\s+|to\s+)?",
         re.I,
     )
+    # request_classification.routine_control_arguments() -- the deterministic
+    # matcher for *immediate* (non-scheduled) control commands -- already
+    # accepts a leading "please" in its own patterns. This grammar's device-
+    # name extraction patterns (_SINGLE_PATTERNS / _window_intent's patterns)
+    # never accounted for it, so "please turn on X at 7am" silently fell
+    # through to the generic model loop instead of being recognised, even
+    # though _CONTROL_LEAD above was already written to allow "please" at
+    # the gate. Stripped in _clean_goal so both the single-trigger and
+    # window grammars benefit uniformly.
+    _LEADING_PLEASE = re.compile(r"^please\s+", re.I)
     _AT_TIME = _SHARED_AT_TIME
 
     def __init__(
@@ -135,14 +150,22 @@ class RuleAuthoringService:
 
         goal = cls._PREFIX.sub("", text[:cut])
         goal = cls._DAILY.sub("", goal)
-        return " ".join(goal.split()).strip(" ,.-")
+        goal = " ".join(goal.split()).strip(" ,.-")
+        goal = cls._LEADING_PLEASE.sub("", goal)
+        return goal.strip(" ,.-")
 
     def _intent(self, prompt: str) -> _ScheduleIntent | None:
         text = " ".join(str(prompt).strip().split())
         authored = self._AUTHORING.search(text) is not None
-        plain_control = (
-            self._CONTROL_LEAD.match(text) is not None
-            and self._AT_TIME.search(text) is not None
+        # Plain control phrasing is recognised via either an "at <time>"
+        # clause ("turn on X at 7am") or a "from X to Y" window clause
+        # ("block internet for X from 10pm to 6am") -- the window form has
+        # no "at" clause at all, so gating on _AT_TIME alone silently
+        # rejected every window-style command before it ever reached the
+        # window-intent branch below.
+        plain_control = self._CONTROL_LEAD.match(text) is not None and (
+            self._AT_TIME.search(text) is not None
+            or self._WINDOW.search(text) is not None
         )
         if not authored and not plain_control:
             return None

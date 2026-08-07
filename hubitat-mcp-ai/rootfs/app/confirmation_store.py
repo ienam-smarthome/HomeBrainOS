@@ -22,13 +22,19 @@ CONFIRM_WORDS = {
 @dataclass(slots=True)
 class PendingConfirmation:
     expires_at: float
+    # Every tool call from the originating round, in the model's original
+    # order -- not just the sensitive ones. A round is only queued here at
+    # all if it contained at least one sensitive call, but any routine calls
+    # riding along in the same round must replay too once confirmed, or they
+    # are silently dropped and their tool_call_id is left unanswered in the
+    # replayed message history.
     actions: list[tuple[str, dict[str, Any]]]
     messages: list[dict[str, Any]]
     assistant_message: dict[str, Any]
 
 
 class ConfirmationStore:
-    """Keep short-lived sensitive actions isolated by session."""
+    """Keep a short-lived, full tool-calling round isolated by session."""
 
     def __init__(
         self,

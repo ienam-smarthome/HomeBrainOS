@@ -17,10 +17,14 @@ AT_TIME = re.compile(
     # Accept either a colon or a period between hour and minute -- "at
     # 11.25" is at least as common as "at 11:25" for anyone typing quickly
     # or using UK-style time notation, and it must not be silently
-    # truncated to "11" (see parse_clock's normalisation below).
-    r"\bat\s+(?P<time>\d{1,2}(?:[:.]\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
+    # truncated to "11" (see parse_clock's normalisation below). "noon" and
+    # "midnight" are at least as natural as a numeric time and are handled
+    # as fixed special cases in parse_clock rather than guessed at.
+    r"\bat\s+(?P<time>noon|midnight|\d{1,2}(?:[:.]\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
     re.I,
 )
+
+_FIXED_CLOCK_WORDS = {"noon": "12:00", "midnight": "00:00"}
 
 
 def parse_clock(value: str) -> str | None:
@@ -31,6 +35,9 @@ def parse_clock(value: str) -> str | None:
     """
 
     casefolded = value.strip().casefold()
+    fixed = _FIXED_CLOCK_WORDS.get(casefolded)
+    if fixed is not None:
+        return fixed
     # A period directly between an hour and a two-digit minute ("11.25") is
     # a genuine HH:MM separator, not an am/pm abbreviation dot -- normalise
     # it to a colon before the blanket period strip below, which exists

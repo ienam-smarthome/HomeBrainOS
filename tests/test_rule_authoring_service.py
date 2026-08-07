@@ -543,3 +543,127 @@ async def test_one_time_and_daily_requests_for_the_same_device_are_named_distinc
     )
 
     assert daily.rule_names != one_time.rule_names
+
+
+@pytest.mark.asyncio
+async def test_plain_window_control_phrasing_works_without_the_word_rule():
+    """"block internet for X from 10pm to 6am every day" has no "at" clause
+    at all -- it is pure window phrasing with no "rule"/"schedule" wording.
+    The plain-control entry gate previously required an "at <time>" match
+    for ANY unauthored phrasing, which silently rejected every window-style
+    command before it ever reached the window-intent branch. Regression
+    test for that gate bug."""
+
+    service = RuleAuthoringService(RuleMCP([tab_device()]), recorder)
+
+    decision = await service.propose(
+        "block internet for tab-s9-fe from 10pm to 6am every day",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert len(decision.actions) == 2
+    assert [
+        action["args"]["addTrigger"]["atTime"] for action in decision.actions
+    ] == ["22:00", "06:00"]
+
+
+@pytest.mark.asyncio
+async def test_plain_window_control_without_daily_marker_is_not_handled():
+    """The window grammar only supports a recurring daily pair -- without a
+    daily marker present anywhere in the phrase it must fall through to the
+    general agent path rather than being silently mishandled."""
+
+    service = RuleAuthoringService(RuleMCP([tab_device()]), recorder)
+
+    decision = await service.propose(
+        "block internet for tab-s9-fe from 10pm to 6am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is False
+
+
+@pytest.mark.asyncio
+async def test_leading_please_does_not_block_device_name_resolution():
+    """"please turn on X at 7am" must resolve exactly like the same phrase
+    without "please" -- the courtesy prefix was previously left in the goal
+    slice and broke the device-name verb-pattern match."""
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    decision = await service.propose(
+        "please turn on bedroom 1 lamp at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07)",)
+
+
+@pytest.mark.asyncio
+async def test_every_single_day_is_recognised_as_a_daily_marker():
+    """"every single day" is at least as natural as "every day" and must
+    resolve to the same recurring daily rule, not a one-time rule."""
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp every single day at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (Daily)",)
+    action = decision.actions[0]
+    assert action["args"]["addTrigger"]["atTime"] == "07:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("phrase", "expected_clock", "expected_iso_time"),
+    [
+        ("at noon", "12:00", "2026-08-07T12:00:00"),
+        ("at midnight", "00:00", "2026-08-08T00:00:00"),
+    ],
+)
+async def test_noon_and_midnight_are_recognised_clock_words(
+    phrase, expected_clock, expected_iso_time
+):
+    """"noon"/"midnight" are ordinary clock words in everyday speech and
+    must resolve to fixed times without requiring a numeric equivalent."""
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    decision = await service.propose(
+        f"turn on bedroom 1 lamp {phrase}",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    action = decision.actions[0]
+    assert action["args"]["addTrigger"]["atTime"] == expected_iso_time

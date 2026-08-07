@@ -808,6 +808,16 @@ class UnifiedMCPAgent:
                     return str(decision.message)
                 return str(assistant.get("content") or "Done.")
             sensitive: list[tuple[str, dict[str, Any]]] = []
+            # Every call in this tool-calling round, sensitive or not, in the
+            # model's original order. If the round contains any sensitive
+            # call, the *whole* round is queued for confirmation (see below)
+            # rather than just the sensitive subset -- a mixed round like
+            # "turn off kitchen lights and lock the front door" must not
+            # silently drop the routine light call while the lock waits on
+            # confirmation. Replaying the full round on confirm also
+            # guarantees every tool_call_id in the stored assistant message
+            # gets a matching tool-role reply once resumed.
+            round_actions: list[tuple[str, dict[str, Any]]] = []
             proposal_errors: list[tuple[str, str]] = []
             for call in calls:
                 function = call.get("function") or {}
@@ -816,6 +826,7 @@ class UnifiedMCPAgent:
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
+                round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
                 proposal_error = rule_machine_proposal_error(name, arguments)
@@ -849,12 +860,17 @@ class UnifiedMCPAgent:
                     })
                 continue
             if sensitive:
+                # Confirmation wording and the max-actions bound are judged
+                # against the sensitive subset only -- a routine call along
+                # for the ride should not count against that limit or be
+                # described as "sensitive" in the prompt. Replay on confirm
+                # covers the whole round; see round_actions above.
                 decision = self.confirmation_policy.decide(session_id, sensitive)
                 if decision.action is ConfirmationAction.REJECT:
                     return str(decision.message)
                 self.confirmations.queue(
                     session_id,
-                    sensitive,
+                    round_actions,
                     messages,
                     assistant,
                 )
