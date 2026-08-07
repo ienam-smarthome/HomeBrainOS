@@ -271,6 +271,131 @@ async def test_rule_authoring_uses_deterministic_compiler_before_model():
 
 
 @pytest.mark.asyncio
+async def test_rule_authoring_reachable_when_search_discovery_misses_gateway():
+    """Regression test for a live production bug: control-language schedule
+    requests like "turn off livingroom light 1 every day at 10:40am" were
+    silently falling through to the generic model tool loop -- which then
+    fabricated a "I have scheduled a daily rule" success message without
+    ever calling hub_set_rule, and no Rule Machine rule was actually
+    created. Root cause: the deterministic RuleAuthoringService.propose()
+    call was gated on `catalog.declared_names` (the small subset of tools
+    exposed to the model this turn), which only grows to include
+    `hub_manage_rule_machine` if the upfront `hub_search_tools` discovery
+    call -- run with the raw, control-language prompt as its query --
+    happens to surface that gateway. In production, a BM25 search over a
+    phrase like "turn off livingroom light 1 every day at 10:40am" does
+    not surface the Rule Machine gateway (it surfaces device-control and
+    unrelated gateways instead), so the deterministic path bailed out even
+    though the schedule grammar matched perfectly. The fix uses
+    `catalog.available_names` (every tool the connected MCP server actually
+    has) instead, since `propose()` never asks the model to call the
+    gateway itself -- it calls the MCP server directly and queues a
+    confirmation. This test's fake `hub_search_tools` deliberately returns
+    no match for `hub_manage_rule_machine`, mirroring the real search
+    engine's behavior, to prove the deterministic path is still reached.
+    """
+
+    class MissedDiscoveryMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                MCPTool(
+                    "hub_manage_rule_machine",
+                    "Create and edit Rule Machine rules",
+                    {"type": "object"},
+                ),
+                MCPTool("hub_read_devices", "Read devices", {"type": "object"}),
+                MCPTool("hub_read_rules", "Read rules", {"type": "object"}),
+            ]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {
+                        "devices": [
+                            {
+                                "id": "101",
+                                "label": "Livingroom Light 1",
+                                "commands": ["on", "off"],
+                                "capabilities": ["Switch"],
+                            }
+                        ]
+                    },
+                )
+            if name == "hub_read_rules":
+                return MCPToolResult(name, arguments, {}, "", {"rules": []})
+            if name == "hub_search_tools":
+                # Deliberately does NOT include hub_manage_rule_machine --
+                # this is what the real BM25 search returns for
+                # control-language scheduling phrasing in production.
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {
+                        "query": arguments["query"],
+                        "resultsCount": 1,
+                        "totalToolsSearched": 111,
+                        "results": [{
+                            "tool": "hub_call_device_command",
+                            "gateway": "hub_manage_devices",
+                        }],
+                    },
+                )
+            raise AssertionError((name, arguments))
+
+    mcp = MissedDiscoveryMCP()
+    ai = FakeAI([])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "turn off livingroom light 1 every day at 10:40am",
+        session_id="rule-authoring-missed-discovery",
+    )
+
+    assert outcome.request_class == "write"
+    assert outcome.message == (
+        "Please confirm before I run the sensitive Hubitat action "
+        "`hub_manage_rule_machine`."
+    )
+    # No model round happened at all -- the deterministic compiler resolved
+    # this fully before ever building a system prompt or calling the model,
+    # so nothing was fabricated.
+    assert ai.requests == []
+    assert agent._pending["rule-authoring-missed-discovery"].actions == [
+        (
+            "hub_manage_rule_machine",
+            {
+                "tool": "hub_set_rule",
+                "args": {
+                    "name": "Turn off Livingroom Light 1 (Daily)",
+                    "addTrigger": {
+                        "capability": "Certain Time (and optional date)",
+                        "time": "A specific time",
+                        "atTime": "10:40",
+                    },
+                    "addAction": {
+                        "capability": "runCommand",
+                        "deviceIds": ["101"],
+                        "capabilityFilter": "Switch",
+                        "command": "off",
+                    },
+                },
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_verified_ids():
     class ConfirmedRuleMCP(FakeMCP):
         async def list_tools(self):

@@ -618,7 +618,23 @@ class UnifiedMCPAgent:
                 )
         rule_decision = await self.rule_authoring.propose(
             user_prompt,
-            available_gateways=set(catalog.declared_names),
+            # The deterministic rule-authoring path never asks the model to
+            # call hub_manage_rule_machine itself -- it calls the MCP server
+            # directly and queues a confirmation (see
+            # rule_proposal_confirmation.py). Gating this on
+            # `catalog.declared_names` (the subset of tools currently
+            # exposed to the model this turn, driven by an incidental
+            # capability-discovery search over the raw prompt) was wrong:
+            # control-language scheduling prompts like "turn off X every day
+            # at 7am" don't semantically match a search for Rule Machine, so
+            # the gateway was never declared and this deterministic path
+            # silently bailed out every time, even though the schedule
+            # grammar matched. That pushed every schedule request into the
+            # generic model tool loop, where the model could -- and did --
+            # narrate a fabricated "I have scheduled a rule" success message
+            # without ever calling hub_set_rule. Use the full set of tools
+            # known to exist on the connected MCP server instead.
+            available_gateways=set(catalog.available_names),
             can_read_rules="hub_read_rules" in catalog.available_names,
         )
         if rule_decision.handled:
