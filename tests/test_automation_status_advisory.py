@@ -206,3 +206,103 @@ def test_snapshot_literal_does_not_fetch_devices():
     assert "Real gap" not in outcome.message
     device_calls = [call for call in mcp.calls if call[0] == "hub_read_devices"]
     assert device_calls == []
+
+
+# --- broadened common-automation gap analysis ------------------------------
+#
+# Live test: "Recommend useful automations for my home" on a real hub with
+# 91 devices and 179 existing apps/rules produced only the plain broken/
+# disabled status dump plus the honest "can't invent new ideas" caveat --
+# because the gap analysis was scoped to three safety capabilities only,
+# and none of them happened to be uncovered on this particular hub. The
+# user's actual complaint was "wrong kind of answer": they wanted genuine
+# new-automation ideas, not an audit of existing ones. This broadens the
+# same grounded, name-match gap analysis to a few more common device kinds
+# (motion, contact, lock, presence) so a real suggestion is possible far
+# more often, and reorders the message to lead with it.
+
+HALLWAY_MOTION_DEVICE = {
+    "id": "10", "label": "Hallway Motion", "capabilities": ["MotionSensor"],
+}
+FRONT_DOOR_LOCK_DEVICE = {
+    "id": "11", "label": "Front Door Lock", "capabilities": ["Lock"],
+}
+
+
+def test_uncovered_common_automation_devices_covers_motion_and_lock():
+    uncovered = AutomationStatusService._uncovered_common_automation_devices(
+        [HALLWAY_MOTION_DEVICE, FRONT_DOOR_LOCK_DEVICE, NON_SAFETY_DEVICE],
+        [{"name": "Unrelated Rule", "display_name": "Unrelated Rule", "status": "active"}],
+    )
+
+    labels = [label for label, _caps in uncovered]
+    assert "Hallway Motion" in labels
+    assert "Front Door Lock" in labels
+    assert "Fridge" not in labels
+
+
+def test_uncovered_common_automation_devices_excludes_named_device():
+    uncovered = AutomationStatusService._uncovered_common_automation_devices(
+        [HALLWAY_MOTION_DEVICE],
+        [{"name": "Hallway Motion light automation", "display_name": "Hallway Motion light automation", "status": "active"}],
+    )
+
+    assert uncovered == []
+
+
+def test_advisory_message_gives_concrete_suggestions_when_no_safety_gap_exists():
+    """Regression test for the exact live failure: no safety-capability
+    device is uncovered (so the old narrow gap analysis found nothing), but
+    a motion sensor and a lock with no matching automation should still
+    produce genuine, concrete suggestions rather than falling back to "I
+    can't invent new ideas".
+    """
+
+    items = [
+        {"name": "Unrelated Rule", "display_name": "Unrelated Rule", "type": "app", "status": "active"},
+    ]
+
+    message = AutomationStatusService._advisory_message(
+        items, [HALLWAY_MOTION_DEVICE, FRONT_DOOR_LOCK_DEVICE]
+    )
+
+    assert "Real gap" in message
+    assert "Hallway Motion" in message
+    assert "motion-activated light" in message
+    assert "Front Door Lock" in message
+    assert "auto-lock" in message
+    # The old blanket "I don't yet have a way to suggest brand-new
+    # automation ideas" caveat must not appear when real suggestions were
+    # actually found -- it would contradict the suggestions right above it.
+    assert "I don't yet have a way to suggest" not in message
+
+
+def test_advisory_message_suggestions_appear_before_the_broken_list():
+    """The direct answer to "recommend automations" must lead the message,
+    not be buried after an unrelated diagnostic dump of existing app
+    health."""
+
+    items = [
+        {"name": "Broken Rule", "display_name": "Broken Rule", "type": "app", "status": "broken"},
+    ]
+
+    message = AutomationStatusService._advisory_message(items, [HALLWAY_MOTION_DEVICE])
+
+    assert message.index("Real gap") < message.index("Worth fixing first")
+
+
+def test_advisory_message_still_admits_no_new_ideas_when_no_gap_found():
+    """When devices are passed but nothing is uncovered even under the
+    broadened capability set, the honest "can't invent new ideas" caveat
+    must still appear -- this must not silently disappear just because
+    devices happened to be supplied.
+    """
+
+    items = [
+        {"name": "Fridge automation", "display_name": "Fridge automation", "type": "app", "status": "active"},
+    ]
+
+    message = AutomationStatusService._advisory_message(items, [NON_SAFETY_DEVICE])
+
+    assert "Real gap" not in message
+    assert "I don't yet have a way to suggest" in message

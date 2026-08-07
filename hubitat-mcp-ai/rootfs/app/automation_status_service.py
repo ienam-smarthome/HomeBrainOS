@@ -20,6 +20,30 @@ _ADVISORY_WORDS = (
 # deliberately narrow and high-signal, not every capability a device has.
 _SAFETY_CAPABILITIES = ("WaterSensor", "SmokeDetector", "CarbonMonoxideDetector")
 
+# A broader, still-bounded set of capabilities where an automation is
+# commonly worth having -- not just safety-critical. Live test: "recommend
+# useful automations for my home" only ever found something to say when a
+# safety-capability device happened to be uncovered; when it wasn't (as on
+# this hub), the response fell back to a plain broken/disabled status dump
+# with an honest "I can't invent new ideas" caveat -- which is truthful but
+# not actually useful in response to "recommend automations". This mapping
+# extends the same grounded, name-match gap analysis (never invents a
+# device or automation, only cross-references real retrieved data) to a
+# few more device kinds where a specific, well-understood automation is
+# genuinely common, so a real, concrete suggestion is possible far more
+# often -- while still declining to invent creative ideas that aren't
+# reducible to "this device has capability X and nothing named for it
+# uses it".
+_COMMON_AUTOMATION_SUGGESTIONS: dict[str, str] = {
+    "WaterSensor": "a water leak alert",
+    "SmokeDetector": "a smoke alert",
+    "CarbonMonoxideDetector": "a carbon monoxide alert",
+    "MotionSensor": "a motion-activated light",
+    "ContactSensor": "a door/window-left-open alert",
+    "Lock": "an auto-lock after being left unlocked",
+    "PresenceSensor": "an arrival/departure automation",
+}
+
 
 @dataclass(slots=True)
 class AutomationStatusOutcome:
@@ -251,30 +275,34 @@ class AutomationStatusService:
         return names
 
     @classmethod
-    def _uncovered_safety_devices(
+    def _uncovered_capability_devices(
         cls,
         devices: list[dict[str, Any]],
         automation_items: list[dict[str, Any]],
+        capabilities: "Iterable[str]",
     ) -> list[tuple[str, list[str]]]:
-        """Devices with a safety-relevant capability but no automation whose
-        name references the device's label.
+        """Devices with one of `capabilities` but no automation whose name
+        references the device's label.
 
         This is a name-match heuristic against the same automation names
         already retrieved for the status listing -- not a certainty (an
         automation could reference a device without naming it, or name-match
         something unrelated), but a genuinely useful, fully grounded
         starting point: every device and every automation name involved is
-        real, retrieved data, nothing is invented.
+        real, retrieved data, nothing is invented. Shared by both the
+        narrow safety-only view and the broader common-automation view
+        below -- only the capability set differs.
         """
 
         automation_text = " | ".join(
             str(item.get("display_name") or item.get("name") or "").casefold()
             for item in automation_items
         )
+        capability_set = set(capabilities)
         uncovered: list[tuple[str, list[str]]] = []
         seen_labels: set[str] = set()
         for device in devices:
-            matched = cls._capability_names(device) & set(_SAFETY_CAPABILITIES)
+            matched = cls._capability_names(device) & capability_set
             if not matched:
                 continue
             label = str(device.get("label") or device.get("name") or "").strip()
@@ -285,6 +313,26 @@ class AutomationStatusService:
             seen_labels.add(label.casefold())
             uncovered.append((label, sorted(matched)))
         return sorted(uncovered, key=lambda item: item[0].casefold())
+
+    @classmethod
+    def _uncovered_safety_devices(
+        cls,
+        devices: list[dict[str, Any]],
+        automation_items: list[dict[str, Any]],
+    ) -> list[tuple[str, list[str]]]:
+        return cls._uncovered_capability_devices(
+            devices, automation_items, _SAFETY_CAPABILITIES
+        )
+
+    @classmethod
+    def _uncovered_common_automation_devices(
+        cls,
+        devices: list[dict[str, Any]],
+        automation_items: list[dict[str, Any]],
+    ) -> list[tuple[str, list[str]]]:
+        return cls._uncovered_capability_devices(
+            devices, automation_items, _COMMON_AUTOMATION_SUGGESTIONS.keys()
+        )
 
     @classmethod
     def _advisory_message(
@@ -305,6 +353,33 @@ class AutomationStatusService:
             f"{counts['active']} active, {len(disabled)} disabled, "
             f"{len(broken)} broken."
         ]
+        # Genuine new-automation suggestions lead the response -- this is
+        # the direct answer to "recommend automations", so it must not be
+        # buried after a diagnostic dump of existing app/rule health that
+        # wasn't actually what was asked for.
+        found_suggestions = False
+        if devices:
+            uncovered = cls._uncovered_common_automation_devices(devices, items)
+            if uncovered:
+                found_suggestions = True
+                suggestion_lines = []
+                for label, caps in uncovered:
+                    suggestion = " / ".join(
+                        _COMMON_AUTOMATION_SUGGESTIONS[cap]
+                        for cap in caps
+                        if cap in _COMMON_AUTOMATION_SUGGESTIONS
+                    )
+                    suggestion_lines.append(
+                        f"- **{label}** ({', '.join(caps)}): consider "
+                        f"{suggestion}"
+                    )
+                lines.append(
+                    "\nReal gap: these devices report a capability that "
+                    "commonly gets its own automation, but no automation "
+                    "name references them, so they don't appear to be "
+                    "covered by anything yet:\n"
+                    + "\n".join(suggestion_lines)
+                )
         if broken:
             lines.append(
                 "\nWorth fixing first (broken):\n"
@@ -330,25 +405,23 @@ class AutomationStatusService:
                 "\nEverything currently configured is active -- nothing "
                 "obviously broken or disabled to fix."
             )
-        if devices:
-            uncovered = cls._uncovered_safety_devices(devices, items)
-            if uncovered:
-                lines.append(
-                    "\nReal gap: these devices report a safety-relevant "
-                    "capability but no automation name references them, so "
-                    "they don't appear to be monitored by anything:\n"
-                    + "\n".join(
-                        f"- {label} ({', '.join(caps)})"
-                        for label, caps in uncovered
-                    )
-                )
-        lines.append(
-            "\nThis is a name-match against your existing automations, not "
-            "certainty -- an automation could cover a device without "
-            "naming it. And beyond safety-sensor coverage gaps, I don't yet "
-            "have a way to suggest brand-new automation ideas from general "
-            "device inventory."
-        )
+        if found_suggestions:
+            lines.append(
+                "\nThese suggestions are grounded in matching your real "
+                "device capabilities against your real automation names -- "
+                "not certainty an existing automation doesn't already cover "
+                "a device without naming it. Beyond capability gaps like "
+                "these, I can't invent creative new automation ideas from "
+                "scratch."
+            )
+        else:
+            lines.append(
+                "\nThis is a name-match against your existing automations, "
+                "not certainty -- an automation could cover a device "
+                "without naming it. And beyond capability coverage gaps, I "
+                "don't yet have a way to suggest brand-new automation ideas "
+                "from general device inventory."
+            )
         return "\n".join(lines)
 
     @classmethod
