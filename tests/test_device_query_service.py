@@ -238,3 +238,39 @@ def test_target_resolution_uses_room_metadata_for_spoken_device_name():
     assert result.target["id"] == "2"
     assert result.matched_name == "Big lamp"
     assert result.reason == "exact semantic room and device name"
+
+
+@pytest.mark.asyncio
+async def test_home_snapshot_tracked_presence_includes_away_people_too():
+    """Regression test for a real live failure: "is Tahmid home" answered
+    "I don't see anyone named Tahmid" even though he's a real, live Life360
+    member -- just not currently present. The `presence` field only ever
+    lists people who ARE home, so a specific-person question about someone
+    away had zero evidence to work with. `tracked_presence` must list every
+    presence-capable device regardless of status, so an away person is
+    still identifiable with home=False rather than looking non-existent.
+    """
+
+    service = DeviceQueryService(
+        QueryMCP([
+            device(
+                "Enamul Khan", "Life360", ["PresenceSensor", "Battery"],
+                presence="present",
+            ),
+            device(
+                "Tahmid Khan", "Life360", ["PresenceSensor", "Battery"],
+                presence="not present",
+            ),
+        ]),
+        lambda *_a, **_k: None,
+    )
+
+    result = await service.home_snapshot({})
+
+    present_labels = {item["label"] for item in result.data["presence"]}
+    assert present_labels == {"Enamul Khan"}
+
+    tracked = {item["label"]: item for item in result.data["tracked_presence"]}
+    assert tracked["Enamul Khan"]["home"] is True
+    assert tracked["Tahmid Khan"]["home"] is False
+    assert tracked["Tahmid Khan"]["presence"] == "not present"

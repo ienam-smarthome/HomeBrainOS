@@ -36,3 +36,47 @@ def test_later_live_state_overrides_older_attribute_value():
     }
 
     assert device_attributes(device)["switch"] == "on"
+
+
+def test_null_value_backfills_from_valuestr_when_numeric():
+    """Regression test for a real live failure: Octopus Energy sensors
+    (and other Home-Assistant-bridged devices) report a reading only as a
+    human-formatted valueStr ("231 W") with value always null, so a power
+    query silently had no numeric reading to work with despite the data
+    being right there.
+    """
+
+    device = {
+        "attributes": [
+            {"name": "value", "dataType": "NUMBER", "value": None},
+            {"name": "valueStr", "dataType": "STRING", "value": "231 W"},
+            {"name": "unit", "dataType": "STRING", "value": "none"},
+        ],
+    }
+
+    attrs = device_attributes(device)
+
+    assert attrs["value"] == 231.0
+    assert attrs["valueStr"] == "231 W"
+
+
+def test_null_value_with_non_numeric_valuestr_is_left_null():
+    device = {
+        "attributes": [
+            {"name": "value", "value": None},
+            {"name": "valueStr", "value": "no data yet"},
+        ],
+    }
+
+    assert device_attributes(device)["value"] is None
+
+
+def test_real_numeric_value_is_never_overwritten_by_valuestr():
+    device = {
+        "attributes": [
+            {"name": "value", "value": 42},
+            {"name": "valueStr", "value": "999 W"},
+        ],
+    }
+
+    assert device_attributes(device)["value"] == 42

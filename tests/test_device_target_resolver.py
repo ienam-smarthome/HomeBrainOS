@@ -232,3 +232,36 @@ def test_dominant_margin_does_not_paper_over_genuine_ambiguity():
     assert resolution.target is None
     assert "Hallway Light 1" in resolution.alternatives
     assert "Hallway Light 2" in resolution.alternatives
+
+
+def test_leading_article_does_not_block_an_otherwise_exact_match():
+    # "the fridge" normalizes to "thefridge", which is not literally equal
+    # to "fridge" -- before the fix, "the" was scored as a required
+    # "specific" token that had to match something in the candidate label,
+    # capping this exact match down into ambiguous/missing territory
+    # alongside unrelated candidates like "Freezer (MQTT)".
+    resolution = resolve_device_candidate(
+        "the fridge",
+        [
+            {"id": "3957", "label": "Fridge"},
+            {"id": "7105", "label": "Freezer (MQTT)"},
+            {"id": "5382", "label": "Bridge#5381 Device#01"},
+        ],
+    )
+
+    assert resolution.target is not None
+    assert resolution.target["id"] == "3957"
+
+
+def test_articles_a_and_an_do_not_block_exact_matches_either():
+    resolution_a = resolve_device_candidate(
+        "a fan",
+        [{"id": "1", "label": "Fan"}, {"id": "2", "label": "Standing Fan"}],
+    )
+    resolution_an = resolve_device_candidate(
+        "an oven",
+        [{"id": "3", "label": "Oven"}],
+    )
+
+    assert resolution_an.target is not None
+    assert resolution_an.target["id"] == "3"

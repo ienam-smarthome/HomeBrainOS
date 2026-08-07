@@ -1,10 +1,36 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
+_LEADING_NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?")
+
+
+def _numeric_prefix(text: str) -> float | None:
+    match = _LEADING_NUMBER.match(text.strip())
+    if match is None:
+        return None
+    try:
+        return float(match.group())
+    except ValueError:
+        return None
+
+
 def device_attributes(device: dict[str, Any]) -> dict[str, Any]:
-    """Merge every Hubitat state container into one canonical attribute map."""
+    """Merge every Hubitat state container into one canonical attribute map.
+
+    Some community/bridge drivers (seen live on Home-Assistant-imported
+    sensors, e.g. Octopus Energy) report a reading as a `value`/`valueStr`
+    pair where `value` is always null and the real, human-formatted number
+    lives only in `valueStr` (e.g. "231 W"). Nothing downstream -- contextual
+    reads, ranking/aggregation, the compact device manifest -- looks at
+    `valueStr`, so these devices silently read as having no value at all
+    even though the reading is right there. When `value` comes back null
+    and a sibling `valueStr` has a parseable leading number, backfill
+    `value` with that number so every existing numeric-attribute consumer
+    picks it up for free; `valueStr` is left untouched alongside it.
+    """
 
     attributes: dict[str, Any] = {}
     for raw in (
@@ -25,6 +51,12 @@ def device_attributes(device: dict[str, Any]) -> dict[str, Any]:
                 attributes[str(name)] = item.get(
                     "currentValue", item.get("value")
                 )
+    if attributes.get("value") is None:
+        value_str = attributes.get("valueStr")
+        if isinstance(value_str, str) and value_str.strip():
+            numeric = _numeric_prefix(value_str)
+            if numeric is not None:
+                attributes["value"] = numeric
     return attributes
 
 

@@ -3,13 +3,21 @@ from __future__ import annotations
 from typing import Any
 
 
-def render_device_manifest(devices: list[dict[str, Any]]) -> str:
+def render_device_manifest(
+    devices: list[dict[str, Any]], *, include_state: bool = True
+) -> str:
     rows: list[str] = []
     common = {
         "battery", "condition", "contact", "humidity", "level",
         "healthstatus", "lock", "motion", "networkstatus", "presence",
         "pressure", "rtt", "status", "switch", "temperature", "wind",
         "windspeed",
+        # Some community/bridge drivers (e.g. Home-Assistant-imported
+        # sensors like Octopus Energy) report their reading only as a
+        # human-formatted "valueStr" (e.g. "231 W") with "value" always
+        # null. Without this, such a device's actual live reading never
+        # appears in the manifest at all -- it silently looks state-less.
+        "value", "valuestr",
     }
     for device in devices:
         label = device.get("label") or device.get("name") or "Unknown device"
@@ -29,18 +37,19 @@ def render_device_manifest(devices: list[dict[str, Any]]) -> str:
             }
         if not isinstance(attributes, dict):
             attributes = {}
-        is_weather = "weather" in str(label).lower()
         states: list[str] = []
-        for key, value in attributes.items():
-            normalized = str(key).lower().replace("_", "")
-            if normalized not in common and not (is_weather and len(states) < 16):
-                continue
-            rendered = str(value)
-            if len(rendered) > 80:
-                rendered = rendered[:77] + "..."
-            states.append(f"{key}={rendered}")
-            if len(states) >= (16 if is_weather else 10):
-                break
+        if include_state:
+            is_weather = "weather" in str(label).lower()
+            for key, value in attributes.items():
+                normalized = str(key).lower().replace("_", "")
+                if normalized not in common and not (is_weather and len(states) < 16):
+                    continue
+                rendered = str(value)
+                if len(rendered) > 80:
+                    rendered = rendered[:77] + "..."
+                states.append(f"{key}={rendered}")
+                if len(states) >= (16 if is_weather else 10):
+                    break
         rows.append(
             f"- {label!r} | ID: {device_id} | Room: {room} | "
             f"Capabilities: {', '.join(map(str, capabilities)) or 'unknown'}"
@@ -105,7 +114,14 @@ def build_system_prompt(
         "homebrain_active_switches, or homebrain_home_snapshot tool exactly once. "
         "The whole-home snapshot covers presence, active motion, open doors/windows, "
         "locks, batteries, and alerts. Do not say the home is quiet when anyone is "
-        "present or another active condition exists.\n"
+        "present or another active condition exists. For a question about one named "
+        "person's presence (e.g. 'is X home'), check tracked_presence, not presence "
+        "-- presence only lists people who ARE currently home, so a person who is "
+        "tracked but away will not appear there at all. Never treat someone's "
+        "absence from presence as evidence they are not a real tracked person; look "
+        "them up in tracked_presence and report their actual home:true/false "
+        "status. Only say a name is not tracked at all if it is missing from "
+        "tracked_presence too.\n"
         "- A low battery is a numeric battery level at or below 20 percent. "
         "Exclude every device above 20 percent.\n"
         "- For hub firmware and resources, call homebrain_hub_info_snapshot with "

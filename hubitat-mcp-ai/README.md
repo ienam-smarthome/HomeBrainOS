@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.361**.
+Current add-on version: **0.10.364**.
 
 ## Architecture
 
@@ -172,6 +172,48 @@ explicit evidence rather than model inference.
    ```
 
 5. Start the add-on and open its Home Assistant sidebar panel.
+
+### Optional: local Ollama first, cloud as fallback
+
+If you run `ollama serve` on a machine on your own network, you can have
+the add-on try it first and only fall back to Ollama Online when the local
+instance is off or unreachable -- useful for cutting response latency when
+local hardware is available, without losing the reliability of the cloud
+path when it is not.
+
+```yaml
+ollama_local_enabled: true
+ollama_local_base_url: http://192.168.1.50:11434
+ollama_local_model: gemma3:12b
+ollama_local_connect_timeout_seconds: 3
+ollama_local_timeout_seconds: 12
+ollama_local_keep_alive_seconds: 120
+```
+
+This is opt-in and off by default. When enabled, every model round trip
+tries the local instance first. The timeout is deliberately split in two
+rather than one flat number:
+
+- `ollama_local_connect_timeout_seconds` (default 3s) bounds how long it
+  waits to reach the local instance at all -- if it's off or unreachable,
+  this fails fast and falls back to the cloud path quickly.
+- `ollama_local_timeout_seconds` (default 12s) bounds how long it waits for
+  a response *after* connecting -- generous, because Ollama loads a model
+  into memory on first use after being idle, and that cold load alone can
+  take several seconds. A single flat timeout would either be too long for
+  "nothing is listening" or too short for "just woke up and is loading."
+
+There is no persistent "local is down" state -- if the local instance comes
+back online, the very next request uses it again automatically.
+
+`ollama_local_keep_alive_seconds` (default 120s) is sent as Ollama's own
+`keep_alive` option on local requests, so the local model unloads from
+memory after that many idle seconds instead of relying on Ollama's own
+default (5 minutes). Set it lower to free memory sooner, or higher to keep
+it warm longer across bursts of use. It's never sent to the cloud endpoint.
+
+`GET /api/status` reports `ollama.local_configured` and `ollama.local_model`
+so you can confirm it is wired up correctly.
 
 The add-on uses authenticated Home Assistant ingress. Its direct host-port
 mapping is disabled by default so the control API is not exposed to the local

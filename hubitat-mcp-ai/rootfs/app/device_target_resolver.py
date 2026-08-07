@@ -34,6 +34,18 @@ _GENERIC_NAME_TOKENS = {
     "socket",
     "switch",
     "thermostat",
+    # English articles/determiners. A user saying "the fridge" or "turn off
+    # a socket" contributes "the"/"a"/"an" as an ordinary token, and unlike
+    # a real identifying word, that token can never appear in a device's
+    # own label -- so before this fix it was scored as a "specific" token
+    # that had to match something, capping an otherwise exact match (e.g.
+    # "the fridge" against a device literally labelled "Fridge") down into
+    # ambiguous/missing territory. These carry no identifying information
+    # about which device is meant, so they belong here alongside the
+    # generic device-kind words.
+    "the",
+    "a",
+    "an",
 }
 _STANDARD_ATTRIBUTE_UNITS = {
     "battery": "%",

@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.10.361"
+version: "0.10.364"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -28,6 +28,12 @@ options:
   ollama_direct_cloud_api_key: ""
   ollama_direct_cloud_model: "gemma4:31b-cloud"
   ollama_cloud_model: "gemma4:31b-cloud"
+  ollama_local_enabled: false
+  ollama_local_base_url: "http://localhost:11434"
+  ollama_local_model: ""
+  ollama_local_timeout_seconds: 12
+  ollama_local_connect_timeout_seconds: 3
+  ollama_local_keep_alive_seconds: 120
   ollama_agent_timeout_seconds: 60
   stream_idle_timeout_seconds: 20
   mcp_timeout_seconds: 25
@@ -51,6 +57,12 @@ schema:
   ollama_direct_cloud_api_key: password
   ollama_direct_cloud_model: str
   ollama_cloud_model: str
+  ollama_local_enabled: bool
+  ollama_local_base_url: str
+  ollama_local_model: str
+  ollama_local_timeout_seconds: int
+  ollama_local_connect_timeout_seconds: int
+  ollama_local_keep_alive_seconds: int
   ollama_agent_timeout_seconds: int
   stream_idle_timeout_seconds: int
   mcp_timeout_seconds: int

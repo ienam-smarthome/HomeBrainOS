@@ -227,6 +227,33 @@ class DeviceControlService:
                 )
             )
         ]
+        # A single device_names entry can be a room name rather than a
+        # device name -- the model has no dedicated slot to distinguish
+        # "turn off Bedroom 1" (a room-wide action) from "turn off Bedroom1
+        # Light" (one device), and resolve_device_candidate's ordinary
+        # fuzzy matching has no room-awareness at all. This is a real,
+        # observed bug: a smart plug literally labelled "Bedroom1 (MQTT)"
+        # normalizes to the exact same string as the room "Bedroom 1"
+        # (parenthetical qualifiers are stripped before comparison), so
+        # per-name resolution silently picked that one unrelated device
+        # instead of acting on the room -- the opposite of what "turn off
+        # Bedroom 1" overwhelmingly means in natural speech. When a bare
+        # device_names entry exactly matches a real room name, prefer the
+        # room-wide interpretation deterministically (grounded in real
+        # inventory data, not a guess): even in the rare case a device
+        # happens to share that exact normalized name, it is very unlikely
+        # to be what "turn off <room name>" was asking for.
+        if not room and len(names) == 1:
+            candidate_room = str(names[0]).strip()
+            wanted_candidate = normalized_name(candidate_room)
+            room_names_present = {
+                normalized_name(room_name(device))
+                for device in identity_manifest
+                if room_name(device)
+            }
+            if wanted_candidate and wanted_candidate in room_names_present:
+                room = candidate_room
+                names = []
         fast_targets: list[dict[str, Any]] = []
         if room:
             wanted_room = normalized_name(room)

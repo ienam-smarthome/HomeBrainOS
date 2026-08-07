@@ -576,6 +576,16 @@ class DeviceQueryService:
             return self._read_failure(HOME_SNAPSHOT_TOOL, arguments, source)
 
         presence: list[dict[str, Any]] = []
+        # Every presence-capable device (person or otherwise), regardless of
+        # current status -- not just who's currently home. `presence` above
+        # only ever lists people who ARE present, so a question about one
+        # specific named person who is away has no evidence in it at all;
+        # before this field existed, that silence was indistinguishable
+        # from "this person isn't tracked" and produced a real, observed
+        # wrong answer ("I don't see anyone named X") for someone who is a
+        # perfectly real, currently-away Life360 member. This field lets a
+        # specific-person question be answered correctly either way.
+        tracked_presence: list[dict[str, Any]] = []
         motion: list[dict[str, Any]] = []
         contacts: list[dict[str, Any]] = []
         locks: list[dict[str, Any]] = []
@@ -593,12 +603,19 @@ class DeviceQueryService:
 
             presence_value = str(attrs.get("presence") or "").casefold()
             capabilities = self._capability_names(device)
+            is_home = presence_value in {"present", "home", "arrived", "true", "active"}
             if (
-                presence_value in {"present", "home", "arrived", "true", "active"}
+                is_home
                 and "switch" not in capabilities
                 and not bool(capabilities & {"actuator", "outlet"})
             ):
                 presence.append({**identity, "presence": attrs.get("presence")})
+            if "presencesensor" in capabilities or attrs.get("presence") is not None:
+                tracked_presence.append({
+                    **identity,
+                    "presence": attrs.get("presence") or "unknown",
+                    "home": is_home,
+                })
             if str(attrs.get("motion") or "").casefold() == "active":
                 motion.append({**identity, "motion": "active"})
             if str(attrs.get("contact") or "").casefold() == "open":
@@ -635,6 +652,7 @@ class DeviceQueryService:
         sort_key = lambda item: str(item.get("label") or "").casefold()
         data = {
             "presence": sorted(presence, key=sort_key),
+            "tracked_presence": sorted(tracked_presence, key=sort_key),
             "active_motion": sorted(motion, key=sort_key),
             "lights_on": lights,
             "switches_on": switches,

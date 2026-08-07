@@ -196,3 +196,48 @@ async def test_ordinary_device_name_with_no_second_action_is_unaffected():
 
     assert result.data["success"] is True
     assert "note" not in result.data
+
+
+BEDROOM1_LIGHT = {
+    "id": "7057", "label": "Bedroom 1 Light", "roomName": "Bedroom 1",
+    "capabilities": ["Actuator", "Refresh", "ChangeLevel", "SwitchLevel", "Light", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+BEDROOM1_FLOOR_LAMP = {
+    "id": "7028", "label": "My Floor Lamp", "roomName": "Bedroom 1",
+    "capabilities": ["Actuator", "Refresh", "ChangeLevel", "SwitchLevel", "Light", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+# Real device pulled live from the actual hub: a smart plug whose label
+# normalizes to exactly the same string as the room "Bedroom 1" once its
+# "(MQTT)" qualifier is stripped, but which lives in a different room
+# ("Sockets"), not "Bedroom 1" at all.
+BEDROOM1_MQTT_SOCKET = {
+    "id": "7101", "label": "Bedroom1 (MQTT)", "roomName": "Sockets",
+    "capabilities": ["Actuator", "Refresh", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+
+
+@pytest.mark.asyncio
+async def test_room_name_in_device_names_acts_on_the_room_not_a_lookalike_device():
+    """Regression test for a real live failure: "turn off Bedroom 1" (a
+    real room containing two lights) resolved to a single, unrelated smart
+    plug labelled "Bedroom1 (MQTT)" living in a different room, because
+    that label happens to normalize to the exact same string as the room
+    name and ordinary per-name fuzzy resolution has no room awareness.
+    """
+
+    mcp = ControlMCP([BEDROOM1_LIGHT, BEDROOM1_FLOOR_LAMP, BEDROOM1_MQTT_SOCKET])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Bedroom 1"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"7057", "7028"}
+    assert "7101" not in succeeded_ids
