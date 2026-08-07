@@ -103,7 +103,11 @@ class DeviceQueryService:
 
     @classmethod
     def _attribute_value(
-        cls, device: dict[str, Any], attribute: str
+        cls,
+        device: dict[str, Any],
+        attribute: str,
+        *,
+        allow_generic_value_fallback: bool = False,
     ) -> tuple[str | None, Any]:
         wanted_names = cls._ATTRIBUTE_ALIASES.get(
             cls._normalized_attribute(attribute), (attribute,)
@@ -113,6 +117,27 @@ class DeviceQueryService:
         for key, value in combined.items():
             if cls._normalized_attribute(str(key)) in wanted and value is not None:
                 return str(key), value
+        # Some community/bridge drivers (e.g. Home-Assistant-imported
+        # sensors) report their one reading only as `value`/`valueStr`,
+        # with no attribute named after what it actually measures --
+        # "Octopus Meter Current Power" has no "power" attribute at all,
+        # only value/valueStr, so a query for its power reading found
+        # nothing and wrongly answered "does not report a current power
+        # value" despite the reading being right there. This fallback is
+        # deliberately opt-in and only used for a single, already-
+        # identified device (see the caller in homebrain_agent.py) -- it
+        # is never applied to the cross-device ranking/aggregation path in
+        # query_devices() below, because a bare "value" attribute is not
+        # reliably about *this* requested attribute (power, humidity,
+        # etc.) when scanning many different devices at once, and could
+        # wrongly sweep in an unrelated device's own differently-meaning
+        # generic reading.
+        if allow_generic_value_fallback:
+            value_str = combined.get("valueStr")
+            if isinstance(value_str, str) and value_str.strip():
+                return "valueStr", value_str
+            if combined.get("value") is not None:
+                return "value", combined["value"]
         return None, None
 
     @staticmethod

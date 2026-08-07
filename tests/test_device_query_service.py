@@ -274,3 +274,39 @@ async def test_home_snapshot_tracked_presence_includes_away_people_too():
     assert tracked["Enamul Khan"]["home"] is True
     assert tracked["Tahmid Khan"]["home"] is False
     assert tracked["Tahmid Khan"]["presence"] == "not present"
+
+
+def test_attribute_value_generic_fallback_is_opt_in_only():
+    """Regression test for a real live failure: "show current power" on
+    "Octopus Meter Current Power" answered "does not report a current
+    power value" even though the reading ("231 W") is right there under
+    valueStr -- this device has no attribute literally named power/
+    activePower/powerMeter, only value/valueStr. The fallback must be
+    opt-in (never applied to the cross-device ranking path in
+    query_devices, which could wrongly sweep in an unrelated device's own
+    differently-meaning generic value attribute).
+    """
+
+    octopus_meter = device(
+        "Octopus Meter Current Power", "Octopus Energy", ["Refresh", "HealthCheck"],
+        value=231.0, valueStr="231 W", unit="none",
+    )
+
+    without_fallback = DeviceQueryService._attribute_value(octopus_meter, "power")
+    assert without_fallback == (None, None)
+
+    with_fallback = DeviceQueryService._attribute_value(
+        octopus_meter, "power", allow_generic_value_fallback=True
+    )
+    assert with_fallback == ("valueStr", "231 W")
+
+
+def test_attribute_value_named_alias_still_wins_over_generic_fallback():
+    plug = device(
+        "Freezer (MQTT)", "Appliances", ["Switch"], power=74, valueStr="ignored",
+    )
+
+    result = DeviceQueryService._attribute_value(
+        plug, "power", allow_generic_value_fallback=True
+    )
+    assert result == ("power", 74)

@@ -204,15 +204,20 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             target = data.get("target") if isinstance(data.get("target"), dict) else None
             label = str(data.get("label") or name)
             if target is not None:
-                _, value = DeviceQueryService._attribute_value(target, attribute)
+                source_attribute, value = DeviceQueryService._attribute_value(
+                    target, attribute, allow_generic_value_fallback=True
+                )
                 if value is not None:
                     self._selected_devices[session_key] = label
-                    return present_attribute(
-                        label,
-                        attribute,
-                        value,
-                        DeviceQueryService._unit_for(attribute),
+                    # valueStr is already a human-formatted reading with its
+                    # own unit baked in ("231 W") -- appending _unit_for's
+                    # unit on top would double it up ("231 WW").
+                    unit = (
+                        None
+                        if source_attribute == "valueStr"
+                        else DeviceQueryService._unit_for(attribute)
                     )
+                    return present_attribute(label, attribute, value, unit)
 
             filtered = await self._filter_devices({
                 "attribute": attribute,
