@@ -16,6 +16,23 @@ _ADVISORY_WORDS = (
     "suggest", "suggestion", "suggestions",
     "advice", "improve", "review", "clean up", "cleanup", "audit",
 )
+# Distinguishes "recommend/suggest which of my EXISTING automations need
+# attention" (this service's own deterministic gap-analysis capability)
+# from "recommend/suggest NEW automation ideas for my home" (a genuinely
+# creative request that needs a model to synthesize across the whole
+# device inventory -- see automation_ideas_service.py). Both share the
+# same advisory vocabulary above, so a second, narrower signal is needed
+# to route the latter to the model instead of the plain gap-analysis
+# message.
+_NEW_IDEA_SIGNAL = (
+    "for my home", "for my house", "should i", "could i",
+    "new automation", "new automations", "automation ideas",
+    "set up", "set it up", "what automations", "which automations",
+)
+_EXISTING_AUTOMATION_WORDS = (
+    "broken", "existing", "current", "my automations", "my rules",
+    "review", "clean up", "cleanup", "audit", "fix",
+)
 # Capabilities where an unmonitored device is a meaningful safety gap --
 # deliberately narrow and high-signal, not every capability a device has.
 _SAFETY_CAPABILITIES = ("WaterSensor", "SmokeDetector", "CarbonMonoxideDetector")
@@ -56,6 +73,11 @@ class AutomationStatusOutcome:
     attention_count: int = 0
     conflict_count: int = 0
     route: str = "automation-status"
+    # Populated only when advisory=True (same gate as the extra
+    # hub_read_devices call below) -- exposed so a caller can reuse this
+    # already-fetched, live device data for a creative-suggestion follow-up
+    # without an extra hub round-trip.
+    devices: list[dict[str, Any]] = field(default_factory=list)
 
 
 class AutomationStatusService:
@@ -86,6 +108,27 @@ class AutomationStatusService:
 
         value = " ".join(str(prompt).casefold().split())
         return any(word in value for word in _ADVISORY_WORDS)
+
+    @staticmethod
+    def wants_new_automation_ideas(prompt: str) -> bool:
+        """True for a genuinely creative "suggest new automations" request
+        rather than a request to review what already exists.
+
+        Only meaningful when `is_advisory_request()` is already True.
+        Deliberately conservative: requires an explicit new-idea signal
+        ("for my home", "should I", "new automation", ...) AND the absence
+        of any existing-automation signal ("broken", "review", "my
+        automations", ...), so ambiguous phrasing falls back to the safe,
+        deterministic gap-analysis message rather than always trying the
+        model.
+        """
+
+        value = " ".join(str(prompt).casefold().split())
+        wants_new = any(signal in value for signal in _NEW_IDEA_SIGNAL)
+        mentions_existing = any(
+            word in value for word in _EXISTING_AUTOMATION_WORDS
+        )
+        return wants_new and not mentions_existing
 
     @staticmethod
     def _bool(value: Any) -> bool | None:
@@ -503,6 +546,7 @@ class AutomationStatusService:
             automation_counts=counts,
             attention_count=sum(counts[status] for status in _ATTENTION_STATUSES),
             conflict_count=sum(bool(item.get("status_conflict")) for item in ordered),
+            devices=devices,
         )
 
 

@@ -236,3 +236,99 @@ def test_dashboard_reads_hub_info_device(monkeypatch, tmp_path):
     assert hub["cpu_load"] == 1.28
     assert hub["cpu_percent"] == 32.0
     assert hub["free_memory"] == 770.3
+
+
+def test_new_automation_idea_request_is_routed_to_the_model_and_falls_back_gracefully(
+    monkeypatch, tmp_path
+):
+    """"Recommend useful automations for my home" must route to the
+    creative-suggestion path (model call grounded in real device data),
+    not the plain audit/status dump -- and if the model call fails, the
+    deterministic gap-analysis message must still come through unchanged
+    rather than erroring out.
+    """
+
+    module = load_app(monkeypatch, tmp_path)
+
+    from automation_status_service import AutomationStatusOutcome
+
+    async def fake_snapshot(*, advisory):
+        assert advisory is True
+        return AutomationStatusOutcome(
+            message="Fallback deterministic message.",
+            automation_items=[{"name": "Unrelated Rule", "display_name": "Unrelated Rule"}],
+            devices=[{"id": "1", "label": "Hallway Motion", "capabilities": ["MotionSensor"]}],
+        )
+
+    monkeypatch.setattr(module.automation_status, "snapshot", fake_snapshot)
+
+    async def fake_chat(messages, tools):
+        assert tools == []
+        return {"role": "assistant", "content": "Idea: motion-activated hallway light."}
+
+    monkeypatch.setattr(module.agent.transport, "chat", fake_chat)
+
+    with TestClient(module.app) as client:
+        response = client.post(
+            "/api/ask",
+            json={"query": "Recommend useful automations for my home", "session_id": "web"},
+        )
+
+    body = response.json()
+    assert body["route"] == "automation-status"
+    assert "Idea: motion-activated hallway light." in body["message"]
+    assert "Fallback deterministic message." in body["message"]
+
+    # Now simulate the model call failing entirely -- the deterministic
+    # message must still be returned, unchanged, with no error surfaced.
+    async def failing_chat(messages, tools):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(module.agent.transport, "chat", failing_chat)
+
+    with TestClient(module.app) as client:
+        response = client.post(
+            "/api/ask",
+            json={"query": "Recommend useful automations for my home", "session_id": "web"},
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["message"] == "Fallback deterministic message."
+
+
+def test_review_existing_automations_request_still_uses_plain_status_route(
+    monkeypatch, tmp_path
+):
+    """A request to review EXISTING automations (not brainstorm new ones)
+    must still go through the plain deterministic snapshot -- the new
+    creative-suggestion path must not be called for this phrasing.
+    """
+
+    module = load_app(monkeypatch, tmp_path)
+
+    calls = {"snapshot_advisory": None, "chat_called": False}
+
+    from automation_status_service import AutomationStatusOutcome
+
+    async def fake_snapshot(*, advisory):
+        calls["snapshot_advisory"] = advisory
+        return AutomationStatusOutcome(message="Review message.")
+
+    async def fake_chat(messages, tools):
+        calls["chat_called"] = True
+        return {"role": "assistant", "content": "should not be called"}
+
+    monkeypatch.setattr(module.automation_status, "snapshot", fake_snapshot)
+    monkeypatch.setattr(module.agent.transport, "chat", fake_chat)
+
+    with TestClient(module.app) as client:
+        response = client.post(
+            "/api/ask",
+            json={"query": "recommend which of my automations need fixing", "session_id": "web"},
+        )
+
+    body = response.json()
+    assert body["message"] == "Review message."
+    assert calls["snapshot_advisory"] is True
+    assert calls["chat_called"] is False

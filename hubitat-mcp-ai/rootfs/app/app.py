@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
 from api_response_builder import build_agent_response
+from automation_ideas_service import suggest_new_automations
 from automation_status_service import AutomationStatusService
 from device_state_summary import (
     active_non_light_switches,
@@ -218,13 +219,44 @@ class ChatRequest(BaseModel):
         return self.session_id
 
 
+async def _creative_automation_recommendation() -> Any:
+    """Advisory automations request that specifically wants NEW ideas.
+
+    Runs the same deterministic gap-analysis snapshot first (so the
+    grounded fallback is always available), then asks the model to
+    synthesize creative, themed suggestions from that same real data. If
+    the model call fails or produces nothing, the deterministic message is
+    returned completely unchanged -- this can only ever add to the
+    response, never break it.
+    """
+
+    outcome = await automation_status.snapshot(advisory=True)
+    suggestion = await suggest_new_automations(
+        agent.transport.chat,
+        outcome.automation_items,
+        outcome.devices,
+    )
+    if suggestion:
+        outcome.message = (
+            suggestion
+            + "\n\n---\nGrounded detail from your existing automations:\n"
+            + outcome.message
+        )
+    return outcome
+
+
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
     try:
         operation: Awaitable[Any]
         if automation_status.matches_request(request.message):
-            operation = automation_status.snapshot(
-                advisory=automation_status.is_advisory_request(request.message)
-            )
+            if automation_status.is_advisory_request(
+                request.message
+            ) and automation_status.wants_new_automation_ideas(request.message):
+                operation = _creative_automation_recommendation()
+            else:
+                operation = automation_status.snapshot(
+                    advisory=automation_status.is_advisory_request(request.message)
+                )
         else:
             if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
                 raise HTTPException(status_code=503, detail="Ollama Online is disabled")

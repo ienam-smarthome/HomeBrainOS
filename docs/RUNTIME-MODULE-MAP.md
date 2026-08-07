@@ -9,6 +9,7 @@ The repository drift test compares this table directly with the live directory. 
 | `agent_prompt_policy.py` | Builds the system prompt and optional identity manifests. |
 | `api_response_builder.py` | Builds the stable API response and presented metrics. |
 | `app.py` | Owns FastAPI routes, configuration, shared services, and request coordination. |
+| `automation_ideas_service.py` | Asks the model for grounded, creative new-automation suggestions (never factual claims). |
 | `automation_status_service.py` | Reads and normalises Hubitat automation status. |
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
