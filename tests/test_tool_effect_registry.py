@@ -135,6 +135,59 @@ def test_rule_time_window_requires_two_atomic_valid_rules():
     ) is None
 
 
+def test_rule_one_time_iso_datetime_atTime_is_accepted():
+    """A full calendar-date ISO datetime is the one-time-trigger form (as
+    opposed to bare 'HH:mm', which Hubitat treats as recurring daily) --
+    rule_authoring_service.py emits this shape for "turn on X at 7am"
+    requests with no daily/recurring marker."""
+
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Bedroom 1 Lamp (One-time 2026-08-08)",
+            "addTrigger": {
+                "capability": "Certain Time (and optional date)",
+                "time": "A specific time",
+                "atTime": "2026-08-08T07:00:00",
+            },
+            "addAction": {
+                "capability": "runCommand",
+                "command": "on",
+                "deviceIds": ["42"],
+                "capabilityFilter": "Switch",
+            },
+        },
+    }
+
+    assert rule_machine_proposal_error("hub_manage_rule_machine", proposal) is None
+
+
+def test_rule_atTime_rejects_malformed_forms():
+    def proposal(at_time: str) -> dict[str, object]:
+        return {
+            "tool": "hub_set_rule",
+            "args": {
+                "name": "Bedroom 1 Lamp (One-time)",
+                "addTrigger": {
+                    "capability": "Certain Time (and optional date)",
+                    "time": "A specific time",
+                    "atTime": at_time,
+                },
+                "addAction": {
+                    "capability": "runCommand",
+                    "command": "on",
+                    "deviceIds": ["42"],
+                    "capabilityFilter": "Switch",
+                },
+            },
+        }
+
+    for bad in ("7am", "2026-08-08", "2026-08-08 07:00:00", "07:00:00", ""):
+        error = rule_machine_proposal_error("hub_manage_rule_machine", proposal(bad))
+        assert error is not None, f"expected {bad!r} to be rejected"
+        assert "atTime" in error
+
+
 def test_multiple_times_and_actions_in_one_rule_are_rejected():
     proposal = {
         "tool": "hub_set_rule",

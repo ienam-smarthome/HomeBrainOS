@@ -41,6 +41,7 @@ from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
+from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
 
 
@@ -497,8 +498,17 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     session_key=session_key,
                 )
 
+            # A prompt carrying an "at <time>" clause (e.g. "turn on X at
+            # 10am", "turn on X every day at 10am") must reach
+            # RuleAuthoringService via base_process() below, not this
+            # instant fast path -- routine_control_arguments() has no
+            # concept of scheduling and would otherwise silently execute
+            # the command right now (a "daily"/"every day" request) or hand
+            # a mangled device name into DeviceControlService's own
+            # smuggled-time refusal (a one-time request), preempting the
+            # rule-authoring grammar that can actually honour either one.
             control_arguments = self._routine_control_arguments(user_prompt)
-            if control_arguments is not None:
+            if control_arguments is not None and AT_TIME.search(user_prompt) is None:
                 return await self._routine_control_outcome(control_arguments)
 
             base_process = super(UnifiedMCPAgent, self).process_user_request_result

@@ -20,6 +20,7 @@ from grounding_policy import (  # noqa: E402
 )
 from homebrain_agent import ObservedAgentOutcome, UnifiedMCPAgent  # noqa: E402
 from live_evidence_authority import LiveEvidenceAuthority  # noqa: E402
+from mcp_client import MCPToolResult  # noqa: E402
 from mcp_agent_orchestrator import AgentOutcome  # noqa: E402
 from mcp_agent_orchestrator import UnifiedMCPAgent as BaseUnifiedMCPAgent  # noqa: E402
 from request_metrics import RequestMetrics  # noqa: E402
@@ -117,6 +118,83 @@ async def test_process_result_returns_privacy_safe_metrics(monkeypatch: pytest.M
     assert outcome.metrics["counters"]["tool_calls"] == 1
     assert outcome.metrics["counters"]["confirmation_queued"] == 1
     assert "private device wording" not in repr(outcome.metrics)
+
+
+@pytest.mark.asyncio
+async def test_scheduled_control_request_skips_instant_fast_path_and_reaches_base_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for the dispatch-order bug: a prompt carrying an "at
+    <time>" clause must not be executed immediately by the instant routine-
+    control fast path. It has to reach base_process() so RuleAuthoringService
+    gets a chance to turn it into a real (recurring or one-time) Rule
+    Machine proposal instead of either running the command right now or
+    handing DeviceControlService a mangled device name.
+    """
+
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]):
+        control_calls.append(arguments)
+        raise AssertionError("instant control fast path must not run for a scheduled request")
+
+    base_calls: list[str] = []
+
+    async def fake_base_result(_self: object, prompt: str, *_args: object, **_kwargs: object) -> AgentOutcome:
+        base_calls.append(prompt)
+        return AgentOutcome(message="handed to base agent", request_class="write", evidence=[], choices=[])
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent,
+        "process_user_request_result",
+        fake_base_result,
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result("turn on livingroom light 1 at 10:05am")
+
+    assert control_calls == []
+    assert base_calls == ["turn on livingroom light 1 at 10:05am"]
+    assert outcome.message == "handed to base agent"
+
+
+@pytest.mark.asyncio
+async def test_immediate_control_request_still_uses_instant_fast_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bare control command with no time clause is unaffected by the
+    dispatch-order fix and keeps using the instant path -- this pins that
+    down so a future change to the AT_TIME gate can't silently slow down
+    or reroute ordinary immediate commands.
+    """
+
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices", arguments, {}, "", {"success": True}
+        )
+
+    base_calls: list[str] = []
+
+    async def fake_base_result(_self: object, prompt: str, *_args: object, **_kwargs: object) -> AgentOutcome:
+        base_calls.append(prompt)
+        return AgentOutcome(message="should not be reached", request_class="write", evidence=[], choices=[])
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent,
+        "process_user_request_result",
+        fake_base_result,
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+
+    await agent.process_user_request_result("turn on livingroom light 1")
+
+    assert len(control_calls) == 1
+    assert base_calls == []
 
 
 def test_production_factory_selects_live_evidence_authority() -> None:

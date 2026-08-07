@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
@@ -43,14 +44,26 @@ class _ScheduleIntent:
     end_time: str | None = None
     end_command: str | None = None
     end_label: str | None = None
+    recurring: bool = True
 
 
 class RuleAuthoringService:
-    """Compile supported daily device schedules without model-authored JSON."""
+    """Compile supported daily and one-time device schedules without model-authored JSON."""
 
     _AUTHORING = re.compile(
         r"\b(?:add|build|create|make|schedule|set up|setup|write)\b"
         r"[\s\S]{0,40}\b(?:automation|rule|schedule)\b",
+        re.I,
+    )
+    # Plain routine-control phrasing ("turn on X at 7am", "turn on X every day
+    # at 7am") is a legitimate rule-authoring request on its own -- it should
+    # not require the user to additionally say the word "rule". This mirrors
+    # the verb set request_classification.requests_mutation() already treats
+    # as control language, so a phrase recognised as a control command
+    # elsewhere in the codebase is recognised consistently here too.
+    _CONTROL_LEAD = re.compile(
+        r"^(?:please\s+)?(?:turn|switch|lock|unlock|close|shut|open|block|"
+        r"disable|allow|enable)\b",
         re.I,
     )
     _WINDOW = re.compile(
@@ -70,13 +83,35 @@ class RuleAuthoringService:
         self,
         mcp_client: HubitatMCPClient,
         record_evidence: Callable[..., None],
+        *,
+        now: Callable[[], datetime] = datetime.now,
     ) -> None:
         self.mcp = mcp_client
         self._record_evidence = record_evidence
+        self._now = now
 
     @staticmethod
     def _clock(value: str) -> str | None:
         return _shared_parse_clock(value)
+
+    @staticmethod
+    def _next_occurrence_iso(clock_value: str, now: datetime) -> str:
+        """Resolve a bare 'HH:MM' clock time to the next real occurrence.
+
+        Hubitat's "Certain Time (and optional date)" trigger fires once and
+        does not recur when ``atTime`` carries a specific calendar date
+        (unlike the bare 'HH:MM' form used for daily rules, which recurs
+        every day). If the time has already passed today, the next
+        occurrence is tomorrow rather than today; this is a real clock read
+        from the host, not a model guess, so it is deterministic and
+        testable via the injected ``now`` callable.
+        """
+
+        hour, minute = (int(part) for part in clock_value.split(":"))
+        candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate.strftime("%Y-%m-%dT%H:%M:%S")
 
     @classmethod
     def _clean_goal(cls, text: str, cut: int) -> str:
@@ -94,15 +129,26 @@ class RuleAuthoringService:
         goal = cls._DAILY.sub("", goal)
         return " ".join(goal.split()).strip(" ,.-")
 
-    @classmethod
-    def _intent(cls, prompt: str) -> _ScheduleIntent | None:
+    def _intent(self, prompt: str) -> _ScheduleIntent | None:
         text = " ".join(str(prompt).strip().split())
-        if not cls._AUTHORING.search(text) or not cls._DAILY.search(text):
+        authored = self._AUTHORING.search(text) is not None
+        plain_control = (
+            self._CONTROL_LEAD.match(text) is not None
+            and self._AT_TIME.search(text) is not None
+        )
+        if not authored and not plain_control:
             return None
-        window = cls._WINDOW.search(text)
+        daily = self._DAILY.search(text) is not None
+        window = self._WINDOW.search(text)
         if window is not None:
-            return cls._window_intent(text, window)
-        return cls._single_intent(text)
+            # The auto-revert window grammar ("...from 10pm to 6am") only
+            # makes sense as a recurring daily pair -- a one-shot version
+            # would need its own end-date handling this grammar does not
+            # attempt. Require the daily marker here, same as before.
+            if not daily:
+                return None
+            return self._window_intent(text, window)
+        return self._single_intent(text, daily=daily)
 
     @classmethod
     def _window_intent(cls, text: str, window: re.Match[str]) -> _ScheduleIntent | None:
@@ -161,38 +207,46 @@ class RuleAuthoringService:
         ), "allowInternet", "Unblock"),
     )
 
-    @classmethod
-    def _single_intent(cls, text: str) -> _ScheduleIntent | None:
-        """Recognise a single daily trigger with no auto-revert window.
+    def _single_intent(self, text: str, *, daily: bool) -> _ScheduleIntent | None:
+        """Recognise a single trigger with no auto-revert window.
 
-        Deliberately narrower than the window grammar: exactly one
-        advertised command is required and verified, exactly one atomic
-        rule is emitted. "Turn on X every day at 7am" is the intended
-        shape; it must not be confused with the window grammar's
-        auto-reverting "turn X off from A to B" pattern, so this path only
-        runs when `_window_intent` found no window clause at all.
+        Deliberately narrow: exactly one advertised command is required and
+        verified, exactly one atomic rule is emitted. "Turn on X every day
+        at 7am" (recurring) and "turn on X at 7am" (one-time) are the
+        intended shapes; neither is confused with the window grammar's
+        auto-reverting "turn X off from A to B" pattern, since this path
+        only runs when `_window_intent` found no window clause at all.
+
+        ``daily`` selects the trigger shape: a bare 'HH:MM' recurs every
+        day on Hubitat; a full calendar-date ISO datetime fires exactly
+        once. The clock time itself is parsed identically either way --
+        only what gets sent as ``atTime`` differs.
         """
 
-        at_match = cls._AT_TIME.search(text)
+        at_match = self._AT_TIME.search(text)
         if at_match is None:
             return None
-        at_time = cls._clock(at_match.group("time"))
+        at_time = self._clock(at_match.group("time"))
         if at_time is None:
             return None
 
-        goal = cls._clean_goal(text, at_match.start())
-        for pattern, command, label in cls._SINGLE_PATTERNS:
+        goal = self._clean_goal(text, at_match.start())
+        for pattern, command, label in self._SINGLE_PATTERNS:
             match = pattern.fullmatch(goal)
             if match is None:
                 continue
             target = match.group("target").strip(" ,.-")
             target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
             if target:
+                trigger_time = (
+                    at_time if daily else self._next_occurrence_iso(at_time, self._now())
+                )
                 return _ScheduleIntent(
                     target=target,
-                    start_time=at_time,
+                    start_time=trigger_time,
                     start_command=command,
                     start_label=label,
+                    recurring=daily,
                 )
         return None
 
@@ -363,7 +417,15 @@ class RuleAuthoringService:
         capability_filter = self._capability_filter(target)
 
         if intent.end_time is None:
-            single_name = self._rule_name(intent.start_label, target_label, "Daily")
+            if intent.recurring:
+                suffix = "Daily"
+            else:
+                # intent.start_time is a full ISO datetime for a one-time
+                # trigger (see _next_occurrence_iso); surface the resolved
+                # calendar date in the rule name so it is visible in Rule
+                # Machine's own listing, not just in this chat response.
+                suffix = f"One-time {intent.start_time.split('T', 1)[0]}"
+            single_name = self._rule_name(intent.start_label, target_label, suffix)
             existing = await self._existing_names() if can_read_rules else set()
             if single_name.casefold() in existing:
                 return RuleAuthoringDecision(

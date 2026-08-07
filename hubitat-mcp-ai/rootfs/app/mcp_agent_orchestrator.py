@@ -57,10 +57,6 @@ from tool_registry import (
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
 
-_SENSITIVE_TERMS = {
-    "backup", "delete", "disable", "enable", "factory_reset", "firmware",
-    "garage", "lock", "reboot", "restart", "rule", "security", "shutdown", "unlock",
-}
 _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
     "rule", "rules",
@@ -232,43 +228,6 @@ class UnifiedMCPAgent:
 
     async def close(self) -> None:
         await self.transport.close()
-
-    async def _routine_control_fallback(
-        self,
-        prompt: str,
-    ) -> str | None:
-        arguments = _routine_control_arguments(prompt)
-        if arguments is None or _matches(prompt, _SENSITIVE_TERMS):
-            return None
-        started = time.monotonic()
-        result = await self._control_devices(arguments)
-        self.evidence.record(
-            _LOCAL_CONTROL_TOOL,
-            arguments,
-            success=self._tool_succeeded(result),
-            elapsed_ms=round((time.monotonic() - started) * 1000),
-            summary=self._result_summary(result),
-            evidence_kind=_EVIDENCE_KINDS[_LOCAL_CONTROL_TOOL],
-        )
-        if isinstance(result.data, dict) and isinstance(
-            result.data.get("choices"), list
-        ):
-            self._choices.set([
-                str(choice)
-                for choice in result.data["choices"]
-                if str(choice).strip()
-            ])
-        if (
-            not self._tool_succeeded(result)
-            and not self._choices.get()
-        ):
-            return None
-        return present_tool_result(
-            _LOCAL_CONTROL_TOOL,
-            result.data,
-            failed=not self._tool_succeeded(result),
-            fallback_error=result.text,
-        )
 
     @staticmethod
     def _is_conversational_prompt(prompt: str) -> bool:
