@@ -10,6 +10,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from device_control_service import DeviceControlService  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
+from request_metrics import RequestMetrics  # noqa: E402
 
 
 # Real hallway devices pulled live from the actual Hubitat hub via
@@ -241,3 +242,69 @@ async def test_room_name_in_device_names_acts_on_the_room_not_a_lookalike_device
     succeeded_ids = {item["id"] for item in result.data["succeeded"]}
     assert succeeded_ids == {"7057", "7028"}
     assert "7101" not in succeeded_ids
+
+
+class FailingControlMCP(ControlMCP):
+    """Same as ControlMCP, but every hub_call_device_command dispatch
+    fails outright -- reproducing what was observed live for "living room
+    light": both Livingroom Light 1 and Livingroom Light 2 landed in the
+    "Failed:" bucket (command_sent False), not the "unverified" bucket."""
+
+    async def call_tool(self, gateway, arguments):
+        if arguments.get("tool") == "hub_call_device_command":
+            self.calls.append((gateway, arguments))
+            return MCPToolResult(
+                "hub_manage_devices", arguments, {}, "error",
+                {"success": False, "error": "Hubitat rejected the command."},
+                is_error=True,
+            )
+        return await super().call_tool(gateway, arguments)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_failure_records_device_control_failures_metric():
+    """Regression test for a live-observed bug: a routine light/switch
+    command that failed at the Hubitat dispatch layer touched none of the
+    fixed outcome counters, so classify_completed_request() fell through
+    to its default "success" -- the WebUI showed a green Success badge
+    next to a message that literally read "Failed: <device>.". This
+    asserts the new device_control_failures counter closes that gap.
+    """
+
+    mcp = FailingControlMCP([HALLWAY_LIGHT_1, HALLWAY_LIGHT_2])
+    service = DeviceControlService(mcp, recorder)
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        result = await service.execute({
+            "device_names": ["Hallway Light 1", "Hallway Light 2"],
+            "device_kind": "auto",
+            "command": "on",
+        })
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert result.data["success"] is False
+    assert len(result.data["failed"]) == 2
+    assert snapshot["counters"]["device_control_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_successful_dispatch_does_not_record_device_control_failures_metric():
+    mcp = ControlMCP([HALLWAY_LIGHT_1, HALLWAY_LIGHT_2])
+    service = DeviceControlService(mcp, recorder)
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        result = await service.execute({
+            "device_names": ["Hallway Light 1", "Hallway Light 2"],
+            "device_kind": "auto",
+            "command": "on",
+        })
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert result.data["success"] is True
+    assert "device_control_failures" not in snapshot["counters"]

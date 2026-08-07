@@ -6,6 +6,7 @@ from collections.abc import Mapping
 _OUTCOME_COUNTER_PRECEDENCE: tuple[tuple[str, str], ...] = (
     ("grounding_refusals", "refused"),
     ("mutation_verification_failures", "failed"),
+    ("device_control_failures", "failed"),
     ("request_cancellations", "cancelled"),
     ("confirmation_expired", "unresolved"),
     ("device_resolution_ambiguous", "unresolved"),
