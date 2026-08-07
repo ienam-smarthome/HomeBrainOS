@@ -14,7 +14,11 @@ from device_state_summary import (
     active_room_summary,
     device_attributes,
 )
-from device_target_resolver import resolve_device_candidate, targeted_name_variants
+from device_target_resolver import (
+    CandidateResolution,
+    resolve_device_candidate,
+    targeted_name_variants,
+)
 from mcp_client import HubitatMCPClient, MCPToolResult
 from request_metrics import active_request_identity
 
@@ -176,6 +180,11 @@ class DeviceQueryService:
             return is_socket
         if kind == "switch":
             return "switch" in capabilities and not is_light
+        if kind == "motion":
+            return (
+                bool(capabilities & {"motionsensor"})
+                or "motion" in label
+            )
         if kind == "sensor":
             return not bool(capabilities & {"switch", "outlet"}) and not is_light
         return True
@@ -379,6 +388,45 @@ class DeviceQueryService:
     def _targeted_name_variants(value: str) -> list[str]:
         return targeted_name_variants(value)
 
+    _KIND_HINT_WORDS = {
+        "light": (" light", "lamp", "bulb"),
+        "switch": (" switch",),
+        "socket": ("socket", "plug", "outlet"),
+        "motion": ("motion",),
+    }
+
+    @classmethod
+    def _infer_kind_hint(cls, requested: str) -> str:
+        """Detect a device-kind word in a spoken name so resolution can be
+        scoped to devices that could plausibly be that kind.
+
+        This mirrors the same keyword-to-capability mapping
+        ``DeviceControlService`` already applies before calling
+        ``resolve_device_candidate`` for on/off commands. Without it, a
+        query like "hallway light" is scored purely on text similarity
+        against the *entire* device inventory -- observed live, that
+        surfaces "Hallway TRV" and "Bathroom meter" as disambiguation
+        options alongside the real lights, because a thermostat valve
+        labelled with the same room name scores just as well as an actual
+        light by string similarity alone. Filtering is applied only when
+        it leaves at least one candidate, so an unrecognised or
+        unconventional label can never be filtered out entirely.
+        """
+
+        text = f" {requested.strip().casefold()} "
+        for kind, words in cls._KIND_HINT_WORDS.items():
+            if any(word in text for word in words):
+                return kind
+        return ""
+
+    @staticmethod
+    def _strip_leading_article(value: str) -> str:
+        text = value.strip().casefold()
+        for article in ("the ", "a ", "an "):
+            if text.startswith(article):
+                return text[len(article):]
+        return text
+
     async def resolve_device(self, arguments: dict[str, Any]) -> MCPToolResult:
         requested = str(arguments.get("name") or "").strip()
         if not requested:
@@ -395,7 +443,60 @@ class DeviceQueryService:
         if not self._tool_succeeded(source):
             return self._read_failure(DEVICE_RESOLVE_TOOL, arguments, source)
 
-        resolution = resolve_device_candidate(requested, candidates)
+        kind_hint = self._infer_kind_hint(requested)
+        scoped_candidates = candidates
+        if kind_hint:
+            kind_filtered = [
+                device
+                for device in candidates
+                if self._matches_device_kind(device, kind_hint)
+            ]
+            if kind_filtered:
+                scoped_candidates = kind_filtered
+
+        resolution = resolve_device_candidate(requested, scoped_candidates)
+
+        # A bare attribute word ("temperature", "humidity", "battery",
+        # "power") can still score a single winner above the ranked
+        # threshold on name-string similarity alone, even when several
+        # other devices in the house independently report that exact
+        # attribute. Observed live against a real inventory: "temperature"
+        # silently resolved to one sensor while six others were reporting
+        # materially different readings at the same moment. That is a
+        # confident-wrong-answer risk, not a missing-device risk, so widen
+        # it into a disambiguation instead of trusting the ranked score --
+        # but only for non-exact matches; a device whose actual name/label
+        # is literally "Thermostat" should still resolve to itself.
+        attribute_key = self._normalized_attribute(
+            self._strip_leading_article(requested)
+        )
+        if (
+            resolution.target is not None
+            and resolution.reason == "high-confidence ranked candidate"
+            and attribute_key in self._ATTRIBUTE_ALIASES
+        ):
+            reporters = [
+                device
+                for device in scoped_candidates
+                if self._attribute_value(device, attribute_key)[0] is not None
+            ]
+            if len(reporters) > 1:
+                alternative_labels = tuple(
+                    str(device.get("label") or device.get("name") or "").strip()
+                    for device in reporters[:3]
+                )
+                resolution = CandidateResolution(
+                    target=None,
+                    matched_name=None,
+                    confidence=resolution.confidence,
+                    alternatives=alternative_labels,
+                    reason=(
+                        f"{requested!r} is a bare attribute reported by "
+                        f"{len(reporters)} devices; the candidates include "
+                        f"{', '.join(alternative_labels)}."
+                    ),
+                )
+
         target = resolution.target
         data = {
             "requested": requested,
