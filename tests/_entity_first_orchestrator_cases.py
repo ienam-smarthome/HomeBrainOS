@@ -578,6 +578,101 @@ async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_ve
 
 
 @pytest.mark.asyncio
+async def test_one_time_rule_end_to_end_creates_then_self_pauses():
+    """Full round trip for a one-time schedule request: propose -> confirm
+    -> the coordinator resolves the create action's real appId and injects
+    it into the queued self-pause follow-up before executing it. Regression
+    coverage for the auto-pause feature at the level the user actually
+    interacts with it (a plain prompt, then "confirm"), not just the
+    coordinator's substitution mechanics in isolation.
+    """
+
+    class OneTimeRuleMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                MCPTool(
+                    "hub_manage_rule_machine",
+                    "Create and edit Rule Machine rules",
+                    {"type": "object"},
+                ),
+                MCPTool("hub_read_devices", "Read devices", {"type": "object"}),
+                MCPTool("hub_read_rules", "Read rules", {"type": "object"}),
+            ]
+
+        async def get_cached_devices(self):
+            return [
+                {
+                    "id": "7027",
+                    "label": "Livingroom Light 1",
+                    "commands": ["off", "on"],
+                    "capabilities": ["Switch"],
+                }
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                return MCPToolResult(
+                    name, arguments, {}, "",
+                    {
+                        "devices": [
+                            {
+                                "id": "7027",
+                                "label": "Livingroom Light 1",
+                                "currentStates": {"switch": "off"},
+                            }
+                        ]
+                    },
+                )
+            if name == "hub_read_rules":
+                return MCPToolResult(name, arguments, {}, "", {"rules": []})
+            if name == "hub_search_tools":
+                return MCPToolResult(
+                    name, arguments, {}, "",
+                    {"query": arguments["query"], "resultsCount": 0, "results": []},
+                )
+            if name == "hub_manage_rule_machine":
+                assert arguments["args"]["confirm"] is True
+                is_pause = (
+                    arguments["args"].get("addAction", {}).get("capability")
+                    == "pauseRule"
+                )
+                if is_pause:
+                    # The real fix under test: the placeholder must already
+                    # be gone by the time this reaches the fake "hub".
+                    assert arguments["args"]["appId"] == "9001"
+                    assert arguments["args"]["addAction"]["ruleIds"] == ["9001"]
+                    return MCPToolResult(
+                        name, arguments, {}, "",
+                        {"success": True, "appId": 9001, "health": {"ok": True}},
+                    )
+                return MCPToolResult(
+                    name, arguments, {}, "",
+                    {"success": True, "appId": 9001, "health": {"ok": True}},
+                )
+            raise AssertionError((name, arguments))
+
+    mcp = OneTimeRuleMCP()
+    ai = FakeAI([])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    propose_outcome = await agent.process_user_request_result(
+        "turn on livingroom light 1 at 11:23",
+        session_id="one-time-e2e",
+    )
+    assert propose_outcome.confirmation_required is True
+    assert propose_outcome.confirmation_count == 2
+
+    outcome = await agent.process_user_request_result("confirm", session_id="one-time-e2e")
+
+    assert "Created **Turn on Livingroom Light 1" in outcome.message
+    assert "appId: 9001" in outcome.message
+    assert "was paused immediately after its one-time trigger" in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
 async def test_confirmed_rule_authoring_never_claims_success_without_verified_rule_id():
     class FailedRuleMCP(FakeMCP):
         async def list_tools(self):
