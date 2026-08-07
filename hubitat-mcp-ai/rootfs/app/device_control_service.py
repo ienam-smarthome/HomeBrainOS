@@ -12,6 +12,7 @@ import re
 from device_state_summary import is_light_device, room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
+from request_metrics import increment_active_metric
 from time_expressions import strip_trailing_time
 
 
@@ -639,6 +640,22 @@ class DeviceControlService:
         results = await asyncio.gather(*(execute(target) for target in unique_targets))
         succeeded = [item for item in results if item["success"]]
         failed = [item for item in results if not item["success"]]
+        if failed:
+            # A routine light/switch command that didn't fully succeed --
+            # either Hubitat rejected the command outright (command_sent
+            # False, presented to the user as "Failed: <device>.") or
+            # accepted it but the device never converged to the expected
+            # switch state within the wait window (command_sent True,
+            # verified False, presented as "Command sent but state
+            # verification failed"). Neither case previously touched any
+            # fixed outcome counter, so classify_completed_request() fell
+            # through to its "success" default -- observed live, the WebUI
+            # showed a green "Success" badge next to a message that
+            # literally read "Failed: Livingroom Light 2 and Livingroom
+            # Light 1." This counter closes that gap the same way
+            # ConfirmedActionCoordinator already does for the sensitive-
+            # mutation path via mutation_verification_failures.
+            increment_active_metric("device_control_failures")
         data = {
             "success": not failed and bool(succeeded),
             "command": command,

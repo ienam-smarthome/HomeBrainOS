@@ -10,6 +10,7 @@ def test_each_coverage_counter_maps_to_expected_outcome() -> None:
     cases = {
         "grounding_refusals": "refused",
         "mutation_verification_failures": "failed",
+        "device_control_failures": "failed",
         "request_cancellations": "cancelled",
         "confirmation_expired": "unresolved",
         "device_resolution_ambiguous": "unresolved",
@@ -18,6 +19,16 @@ def test_each_coverage_counter_maps_to_expected_outcome() -> None:
 
     for counter, expected in cases.items():
         assert classify_completed_request({counter: 1}) == expected
+
+
+def test_device_control_failure_is_not_masked_as_success() -> None:
+    """Regression test for a live-observed bug: a routine light/switch
+    dispatch failure ("Failed: Livingroom Light 2 and Livingroom Light
+    1.") touched no fixed counter at all, so this classifier fell through
+    to its "success" default and the WebUI showed a green Success badge
+    next to a message that said the command failed."""
+
+    assert classify_completed_request({"device_control_failures": 1}) == "failed"
 
 
 def test_outcome_precedence_is_stable_when_multiple_counters_exist() -> None:

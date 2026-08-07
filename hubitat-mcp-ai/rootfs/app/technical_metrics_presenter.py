@@ -13,6 +13,7 @@ _COUNTER_LABELS = (
     ("confirmation_queued", "Confirmations queued"),
     ("confirmation_expired", "Confirmations expired"),
     ("mutation_verification_failures", "Verification failures"),
+    ("device_control_failures", "Device control failures"),
     ("request_cancellations", "Cancellations"),
     ("device_resolution_ambiguous", "Ambiguous resolutions"),
     ("device_resolution_missing", "Missing-device resolutions"),
