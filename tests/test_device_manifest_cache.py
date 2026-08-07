@@ -109,7 +109,7 @@ async def test_device_manifest_uses_consolidated_read_gateway(monkeypatch):
                 "detailed": True,
                 "fields": [
                     "id", "name", "label", "room",
-                    "capabilities", "attributes",
+                    "capabilities", "attributes", "commands",
                 ],
                 "limit": 50,
                 "offset": 0,
