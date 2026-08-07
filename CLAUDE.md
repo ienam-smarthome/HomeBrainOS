@@ -79,17 +79,17 @@ working from a stale local checkout, `git fetch origin main` first.
 ## CI
 
 Three workflows run on every push/PR to `main`: `Validate HomeBrain OS`,
-`Release assurance`, `Hubitat MCP AI tests`. As of this writing, only
-`Release assurance` and `dependency-audit.yml` have
-`concurrency: cancel-in-progress` groups; `validate.yml` and
-`hubitat-mcp-ai-tests.yml` do not, which caused a runner-starvation incident
-(stale queued runs from superseded commits starved newer runs, including an
-unrelated job, of runners for 15 minutes before cancellation). A fix exists
-on branch `ci/queue-starvation-concurrency-groups` — check whether it's
-merged before assuming this is fixed; if not, and you see a job fail with
-zero steps run and no runner assigned (`runner_id: 0` in the Actions API),
-that's this same issue recurring, not a code regression in whatever was just
-merged.
+`Release assurance`, `Hubitat MCP AI tests`. All four workflow files
+(`validate.yml`, `hubitat-mcp-ai-tests.yml`, `release-assurance.yml`, and
+`dependency-audit.yml`) now carry matching `concurrency: cancel-in-progress`
+groups — the `ci/queue-starvation-concurrency-groups` fix referenced in
+earlier revisions of this note has been merged. The runner-starvation
+incident it fixed (stale queued runs from superseded commits starving newer
+runs, including an unrelated job, of runners for 15 minutes before
+cancellation) should not recur under normal operation. If you still see a
+job fail with zero steps run and no runner assigned (`runner_id: 0` in the
+Actions API), treat it as a new incident to investigate, not a known,
+already-diagnosed one — don't assume this note excuses it.
 
 ## Test suite shape
 
