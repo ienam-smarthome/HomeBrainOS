@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from evidence_recorder import EvidenceRecorder
+from location_privacy import redact_precise_location
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from request_metrics import add_active_metric_ms, increment_active_metric
 from tool_registry import ToolEffect, classify_tool_effect
@@ -79,10 +80,18 @@ class ToolExecutor:
         return (text[:157] + "...") if len(text) > 160 else (text or "empty result")
 
     def result_payload(self, result: MCPToolResult) -> str:
+        # Precise-location attributes (GPS coordinates, street addresses, map
+        # tiles, journey logs) are stripped here -- the single point every
+        # provider-bound tool message passes through -- before anything is
+        # serialised into the conversation sent to the model. See
+        # location_privacy.py for what is redacted and why.
+        safe_data = (
+            redact_precise_location(result.data) if result.data is not None else None
+        )
         payload = (
             {"error": result.text or "MCP tool failed"}
             if result.is_error
-            else {"result": result.data if result.data is not None else result.text}
+            else {"result": safe_data if safe_data is not None else result.text}
         )
         serialized = json.dumps(payload, ensure_ascii=False, default=str)
         if len(serialized) <= self.max_tool_result_chars:
