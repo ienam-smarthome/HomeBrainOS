@@ -18,7 +18,7 @@ class ChatTransport:
     def __init__(
         self,
         api_key: str,
-        model_name: str = "qwen3-coder:480b-cloud",
+        model_name: str = "gemma4:31b-cloud",
         *,
         base_url: str = "https://ollama.com",
         timeout_seconds: float = 60,
