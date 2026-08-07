@@ -310,3 +310,90 @@ def test_attribute_value_named_alias_still_wins_over_generic_fallback():
         plug, "power", allow_generic_value_fallback=True
     )
     assert result == ("power", 74)
+
+
+class _TargetedMCP:
+    """Minimal MCP fake returning a fixed device list, mirroring the
+    TargetedMCP used inline in the earlier resolve_device test above."""
+
+    def __init__(self, devices):
+        self.devices = devices
+
+    async def call_tool(self, name, arguments):
+        return MCPToolResult(name, arguments, {}, "ok", {"devices": self.devices})
+
+    async def get_cached_devices(self):
+        return self.devices
+
+
+@pytest.mark.asyncio
+async def test_resolve_device_light_query_excludes_non_light_same_room():
+    """Regression test for a live-observed bug: "hallway light" scored a
+    thermostat valve (no switch/light capability, just a shared room name)
+    as an equally valid disambiguation candidate alongside the two real
+    hallway lights, because resolve_device_candidate has no capability
+    awareness and was fed the complete, unfiltered inventory."""
+
+    devices = [
+        device("Hallway Light 1", "Hallway", ["Switch", "SwitchLevel"], switch="on"),
+        device("Hallway Light 2", "Hallway", ["Switch", "SwitchLevel"], switch="off"),
+        device("Hallway TRV", "Hallway", ["ThermostatHeatingSetpoint"], temperature=27.2),
+    ]
+    service = DeviceQueryService(_TargetedMCP(devices), lambda *args, **kwargs: None)
+
+    result = await service.resolve_device({"name": "hallway light"})
+
+    assert result.data["matched"] is False
+    assert "Hallway TRV" not in result.data["alternatives"]
+    assert set(result.data["alternatives"]) <= {"Hallway Light 1", "Hallway Light 2"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_device_bare_attribute_with_multiple_reporters_is_unresolved():
+    """Regression test for a live-observed bug: a bare "temperature" query
+    silently resolved to one specific sensor by name-string similarity
+    alone, even though several other devices in the same house
+    independently report a temperature reading with a materially
+    different value at the same moment. That is a confident-wrong-answer
+    risk and should be surfaced as a disambiguation, not a silent pick."""
+
+    devices = [
+        device(
+            "Livingroom temp & humidity", "Living Room",
+            ["TemperatureMeasurement"], temperature=27.8,
+        ),
+        device(
+            "Bedroom 1 Meter", "Bedroom 1",
+            ["TemperatureMeasurement"], temperature=27.1,
+        ),
+        device(
+            "Fridge Meter", "Appliances",
+            ["TemperatureMeasurement"], temperature=6.2,
+        ),
+    ]
+    service = DeviceQueryService(_TargetedMCP(devices), lambda *args, **kwargs: None)
+
+    result = await service.resolve_device({"name": "temperature"})
+
+    assert result.data["matched"] is False
+    assert result.data["deviceId"] is None
+    assert len(result.data["alternatives"]) >= 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_device_exact_label_match_bypasses_bare_attribute_guard():
+    """A device whose real label literally *is* the attribute word (e.g.
+    a driver labelled "Temperature") must still resolve deterministically
+    -- the new bare-attribute disambiguation only applies to non-exact,
+    ranked-similarity matches, never to an exact normalized-name hit."""
+
+    devices = [
+        device("Temperature", "Climate", ["TemperatureMeasurement"], temperature=21.0),
+        device("Hallway Meter", "Hallway", ["TemperatureMeasurement"], temperature=27.2),
+    ]
+    service = DeviceQueryService(_TargetedMCP(devices), lambda *args, **kwargs: None)
+
+    result = await service.resolve_device({"name": "temperature"})
+
+    assert result.data["matched"] is True
+    assert result.data["label"] == "Temperature"
