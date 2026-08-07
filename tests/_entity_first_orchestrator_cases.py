@@ -396,6 +396,125 @@ async def test_rule_authoring_reachable_when_search_discovery_misses_gateway():
 
 
 @pytest.mark.asyncio
+async def test_rule_authoring_sees_commands_from_identity_enrichment_not_bare_device_list():
+    """Regression test for a second, previously-masked bug found while
+    live-testing the 0.10.347 discovery-gate fix: with that fix in place,
+    every schedule request reached RuleAuthoringService's device-command
+    check and *always* failed with "does not advertise the required
+    command", even for a device that plainly supports it (verified live:
+    Livingroom Light 1's `hub_get_device` detail lists "on"/"off" in
+    `commands`).
+
+    Root cause: `DeviceQueryService._live_devices()`'s primary
+    `hub_read_devices` call passes no `detailed` flag at all, so Hubitat's
+    own `hub_list_devices` only returns bare `currentStates` -- no
+    `commands`, no `capabilities`. The identity-enrichment call
+    (`HubitatMCPClient.get_cached_devices()`) does pass `detailed: True`,
+    but paired it with an explicit `fields` projection that omitted
+    `"commands"` (verified live: adding it back to the fields list restores
+    the field). The merge in `_merge_device_identity()` prefers the primary
+    device dict's keys, but since that dict never had a `commands` key at
+    all, the identity dict's value should have survived -- except it never
+    carried one either. The result: `RuleAuthoringService._commands()`
+    always got an empty set, so `required.issubset(supported)` was always
+    False, for every device, every time.
+
+    This fake models the real split precisely: `call_tool("hub_read_devices"
+    ...)` (the primary source) returns bare devices with no `commands`/
+    `capabilities`, while `get_cached_devices()` (the identity-enrichment
+    source) returns them WITH `commands`/`capabilities` -- proving the merge
+    now surfaces the command list from the identity source.
+    """
+
+    class SplitFieldsMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                MCPTool(
+                    "hub_manage_rule_machine",
+                    "Create and edit Rule Machine rules",
+                    {"type": "object"},
+                ),
+                MCPTool("hub_read_devices", "Read devices", {"type": "object"}),
+                MCPTool("hub_read_rules", "Read rules", {"type": "object"}),
+            ]
+
+        async def get_cached_devices(self):
+            return [
+                {
+                    "id": "7027",
+                    "label": "Livingroom Light 1",
+                    "commands": [
+                        "off", "on", "refresh", "setLevel",
+                        "startLevelChange", "stopLevelChange",
+                    ],
+                    "capabilities": [
+                        "Actuator", "Refresh", "ChangeLevel",
+                        "SwitchLevel", "Light", "Switch",
+                    ],
+                }
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_read_devices":
+                # Mirrors the real (non-detailed) hub_list_devices shape:
+                # only currentStates, no commands/capabilities at all.
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {
+                        "devices": [
+                            {
+                                "id": "7027",
+                                "label": "Livingroom Light 1",
+                                "currentStates": {"switch": "off", "level": 80},
+                            }
+                        ]
+                    },
+                )
+            if name == "hub_read_rules":
+                return MCPToolResult(name, arguments, {}, "", {"rules": []})
+            if name == "hub_search_tools":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {
+                        "query": arguments["query"],
+                        "resultsCount": 1,
+                        "totalToolsSearched": 111,
+                        "results": [{
+                            "tool": "hub_call_device_command",
+                            "gateway": "hub_manage_devices",
+                        }],
+                    },
+                )
+            raise AssertionError((name, arguments))
+
+    mcp = SplitFieldsMCP()
+    ai = FakeAI([])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "turn on livingroom light 1 every day at 11:05",
+        session_id="rule-authoring-commands-merge",
+    )
+
+    assert outcome.message == (
+        "Please confirm before I run the sensitive Hubitat action "
+        "`hub_manage_rule_machine`."
+    )
+    assert "does not advertise the required command" not in outcome.message
+    assert agent._pending["rule-authoring-commands-merge"].actions[0][1]["args"][
+        "addAction"
+    ]["command"] == "on"
+
+
+@pytest.mark.asyncio
 async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_verified_ids():
     class ConfirmedRuleMCP(FakeMCP):
         async def list_tools(self):
