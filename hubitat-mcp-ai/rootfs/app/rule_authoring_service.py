@@ -523,9 +523,17 @@ class RuleAuthoringService:
             else:
                 # intent.start_time is a full ISO datetime for a one-time
                 # trigger (see _next_occurrence_iso); surface the resolved
-                # calendar date in the rule name so it is visible in Rule
-                # Machine's own listing, not just in this chat response.
-                suffix = f"One-time {intent.start_time.split('T', 1)[0]}"
+                # calendar date AND time in the rule name so it is visible
+                # in Rule Machine's own listing, not just in this chat
+                # response. The date alone is not enough to disambiguate --
+                # two distinct one-time requests for the same device and
+                # command on the same day (e.g. "at 7am" and later "at
+                # noon") produced identical date-only names and the second
+                # request was wrongly treated as a duplicate of the first
+                # and silently skipped, even though they are genuinely
+                # different rules.
+                date_part, _, time_part = intent.start_time.partition("T")
+                suffix = f"One-time {date_part} {time_part[:5]}"
             single_name = self._rule_name(intent.start_label, target_label, suffix)
             existing = await self._existing_names() if can_read_rules else set()
             if single_name.casefold() in existing:

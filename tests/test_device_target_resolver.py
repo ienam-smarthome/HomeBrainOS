@@ -188,3 +188,47 @@ def test_exact_and_semantic_matches_still_resolve_in_mixed_inventory():
     front_door = resolve_device_candidate("Front Door", MIXED_INVENTORY)
     assert front_door.target is not None
     assert front_door.target["label"] == "Front Door"
+
+
+def test_hyphenated_device_code_typed_without_hyphens_still_resolves():
+    """Regression test for a real live production failure: "block internet
+    for tab s9fe" against a device labelled "Block Tab-S9-FE" was declined
+    as ambiguous alongside two completely unrelated devices ("Contact
+    Sensor", "Tasmota MQTT - Freezer"). The device's own label hyphenates
+    the compound code into separate tokens ("tab", "s9", "fe") once
+    punctuation is normalised, but nobody types the hyphen when speaking or
+    typing the same code ("s9fe" as one token) -- so neither "s9" nor "fe"
+    alone was similar enough to "s9fe" for the ordinary per-token typo
+    tolerance, capping the score into ambiguous territory even though
+    nothing else was a remotely plausible match.
+    """
+
+    candidates = [
+        {"id": "1", "label": "Block Tab-S9-FE"},
+        {"id": "2", "label": "Contact Sensor"},
+        {"id": "3", "label": "Tasmota MQTT - Freezer"},
+    ]
+
+    resolution = resolve_device_candidate("tab s9fe", candidates)
+
+    assert resolution.target is not None
+    assert resolution.target["id"] == "1"
+    assert resolution.matched_name == "Block Tab-S9-FE"
+
+
+def test_dominant_margin_does_not_paper_over_genuine_ambiguity():
+    """The new moderate-score/dominant-margin acceptance tier must not
+    swallow real ambiguity between two similarly-named candidates -- only
+    a truly dominant top score should resolve automatically.
+    """
+
+    candidates = [
+        {"id": "1", "label": "Hallway Light 1"},
+        {"id": "2", "label": "Hallway Light 2"},
+    ]
+
+    resolution = resolve_device_candidate("hallway light", candidates)
+
+    assert resolution.target is None
+    assert "Hallway Light 1" in resolution.alternatives
+    assert "Hallway Light 2" in resolution.alternatives

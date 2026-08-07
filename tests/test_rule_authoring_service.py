@@ -359,7 +359,7 @@ async def test_plain_one_time_control_phrasing_creates_a_dated_single_shot_rule(
 
     assert decision.handled is True
     assert decision.message is None
-    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07)",)
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
     action = decision.actions[0]
     assert action["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
 
@@ -397,10 +397,49 @@ async def test_redundant_trailing_state_word_is_not_folded_into_device_name():
 
     assert on_decision.handled is True
     assert on_decision.message is None
-    assert on_decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07)",)
+    assert on_decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
     assert off_decision.handled is True
     assert off_decision.message is None
-    assert off_decision.rule_names == ("Turn off Bedroom 1 Lamp (One-time 2026-08-07)",)
+    assert off_decision.rule_names == ("Turn off Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
+
+
+@pytest.mark.asyncio
+async def test_two_one_time_requests_for_different_times_the_same_day_are_not_duplicates():
+    """Regression test for a real live production failure: "turn on X at
+    noon" was created and confirmed, then a later "turn on X at 7am" was
+    declined as a duplicate of the noon rule -- because the one-time rule
+    name only encoded the calendar date, not the time, so any two one-time
+    requests for the same device/command on the same day collided in the
+    duplicate-name check even though they are genuinely different rules.
+    """
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    # Simulate the noon rule already existing on the hub, named using the
+    # same date-and-time suffix format propose() now generates.
+    existing_rules = [
+        {"id": "4173", "name": "Turn on Bedroom 1 Lamp (One-time 2026-08-07 12:00)"},
+    ]
+    service = RuleAuthoringService(
+        RuleMCP([lamp], existing_rules), recorder, now=lambda: fixed_now
+    )
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY, "hub_read_rules"},
+        can_read_rules=True,
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
+    assert len(decision.actions) == 2
+    assert decision.actions[0]["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
 
 
 @pytest.mark.asyncio
@@ -515,7 +554,7 @@ async def test_one_time_request_for_a_time_already_passed_today_rolls_to_tomorro
     assert decision.handled is True
     action = decision.actions[0]
     assert action["args"]["addTrigger"]["atTime"] == "2026-08-08T07:00:00"
-    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-08)",)
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-08 07:00)",)
 
 
 @pytest.mark.asyncio
@@ -607,7 +646,7 @@ async def test_leading_please_does_not_block_device_name_resolution():
 
     assert decision.handled is True
     assert decision.message is None
-    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07)",)
+    assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
 
 
 @pytest.mark.asyncio

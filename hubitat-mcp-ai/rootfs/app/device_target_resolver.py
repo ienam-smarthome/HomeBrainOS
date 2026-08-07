@@ -215,8 +215,30 @@ def _specific_tokens(value: Any) -> set[str]:
     return _tokens(value) - _GENERIC_NAME_TOKENS
 
 
+def _specific_tokens_ordered(value: Any) -> list[str]:
+    return [
+        token for token in _plain_text(value).split()
+        if token not in _GENERIC_NAME_TOKENS
+    ]
+
+
 def _specific_tokens_compatible(requested: str, candidate: str) -> bool:
-    """Allow minor typos but reject matches based only on generic suffixes."""
+    """Allow minor typos but reject matches based only on generic suffixes.
+
+    A device's own label often hyphenates a compound alphanumeric code
+    ("Tab-S9-FE") into separate tokens once punctuation is normalised to
+    spaces ("tab", "s9", "fe"), but a person typing or speaking the same
+    code naturally runs it together as one token ("s9fe") since they never
+    think to reproduce the internal hyphen. Neither "s9" nor "fe" alone is
+    similar enough to "s9fe" for the ordinary per-token typo tolerance
+    below, which wrongly treated an exact code match as barely-compatible
+    and capped its score into "ambiguous" territory instead of resolving
+    it outright. Also accept a wanted token that appears as a contiguous
+    run inside the candidate's concatenated specific tokens (in their
+    original order) -- this only fires for the exact code-splitting shape
+    above, not for generic fuzzy substring matching, and the length-3
+    floor keeps short/coincidental substrings from qualifying.
+    """
 
     wanted = _specific_tokens(requested)
     actual = _specific_tokens(candidate)
@@ -224,14 +246,18 @@ def _specific_tokens_compatible(requested: str, candidate: str) -> bool:
         return True
     if not actual:
         return False
-    return all(
-        any(
+    actual_joined = "".join(_specific_tokens_ordered(candidate))
+
+    def _token_ok(wanted_token: str) -> bool:
+        if any(
             wanted_token == actual_token
             or SequenceMatcher(None, wanted_token, actual_token).ratio() >= 0.80
             for actual_token in actual
-        )
-        for wanted_token in wanted
-    )
+        ):
+            return True
+        return len(wanted_token) >= 3 and wanted_token in actual_joined
+
+    return all(_token_ok(wanted_token) for wanted_token in wanted)
 
 
 def _score(requested: str, candidate: str) -> float:
@@ -415,6 +441,24 @@ def resolve_device_candidate(
             top_score,
             alternatives,
             "high-confidence ranked candidate",
+        )
+    # A moderate absolute score (below ranked_threshold but still above the
+    # missing floor) can still be the unambiguous right answer if nothing
+    # else is remotely close -- e.g. a hyphenated device code typed without
+    # its hyphens scores lower on raw sequence similarity than an ordinary
+    # typo would, even though no other candidate is a plausible match at
+    # all. Require a much wider margin than the high-confidence tier above
+    # (dominant_margin) to compensate for the lower absolute score before
+    # trusting it, so this only fires when the runner-up is clearly not a
+    # real contender rather than merely somewhat behind.
+    dominant_margin = 0.25
+    if top_score >= missing_floor and top_score - second_score >= dominant_margin:
+        return _resolved(
+            top_device,
+            top_name,
+            top_score,
+            alternatives,
+            "dominant ranked candidate despite moderate absolute score",
         )
     if top_score < missing_floor:
         return _missing_resolution(
