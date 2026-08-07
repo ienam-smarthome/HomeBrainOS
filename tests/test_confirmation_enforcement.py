@@ -22,6 +22,7 @@ class FakeMCP:
         return [
             MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
             MCPTool("hub_restart", "Restart hub", {"type": "object"}),
+            MCPTool("hub_manage_devices", "Manage devices", {"type": "object"}),
         ]
 
     async def get_cached_devices(self):
@@ -30,18 +31,22 @@ class FakeMCP:
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
         if name == "hub_search_tools":
-            gateway = (
-                "hub_update_firmware"
-                if "firmware" in str(arguments.get("query") or "").casefold()
-                else "hub_restart"
-            )
+            query = str(arguments.get("query") or "").casefold()
+            if "firmware" in query:
+                gateways = ["hub_update_firmware"]
+            elif "both" in query:
+                gateways = ["hub_restart", "hub_manage_devices"]
+            else:
+                gateways = ["hub_restart"]
             return MCPToolResult(
                 name,
                 arguments,
                 {},
                 "",
-                {"matches": [{"gateway": gateway}]},
+                {"matches": [{"gateway": gateway} for gateway in gateways]},
             )
+        if name == "hub_manage_devices":
+            return MCPToolResult(name, arguments, {}, "", {"ok": True})
         return MCPToolResult(name, arguments, {}, "restarting", {"ok": True})
 
 
@@ -273,6 +278,57 @@ async def test_multiple_sensitive_device_actions_share_one_confirmation():
     assert mcp.calls[-2:] == [
         ("hub_restart", {"device": "1"}),
         ("hub_restart", {"device": "2"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mixed_round_replays_the_routine_action_after_confirmation():
+    """Regression test for a real bug: a tool-calling round that bundles a
+    routine action (turn off a light) with a sensitive one (restart the hub)
+    in the same assistant message used to silently drop the routine action.
+    The whole round deferred to confirmation, but resume() only replayed the
+    sensitive actions list -- the routine call was never executed, never
+    re-queued, and produced no error. The full round must now replay on
+    confirm, in original order."""
+
+    mcp = FakeMCP()
+    calls = [
+        {"function": {
+            "name": "hub_manage_devices",
+            "arguments": {"operation": "off", "deviceId": "9"},
+        }},
+        {"function": {"name": "hub_restart", "arguments": {}}},
+    ]
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_search_tools",
+                "arguments": {"query": "restart both devices"},
+            }
+        }]}},
+        {"message": {"role": "assistant", "tool_calls": calls}},
+        {"message": {"role": "assistant", "content": "Light off and hub restarted."}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
+
+    prompt = await agent.process_user_request(
+        "turn off the light and restart the hub", session_id="mixed"
+    )
+    # Only the sensitive action is described as needing confirmation --
+    # the routine one riding along must not inflate this count or wording.
+    assert "Please confirm before I run the sensitive Hubitat action `hub_restart`." == prompt
+    assert "hub_manage_devices" not in prompt
+    # Nothing executed yet: only discovery calls happened so far (matches
+    # the existing single-sensitive-action test's discovery call count).
+    assert [name for name, _ in mcp.calls] == ["hub_search_tools", "hub_search_tools"]
+
+    answer = await agent.process_user_request("confirm", session_id="mixed")
+    assert answer == "Light off and hub restarted."
+    # Both the routine and the sensitive action must have actually run,
+    # in their original order, once confirmed.
+    assert mcp.calls[-2:] == [
+        ("hub_manage_devices", {"operation": "off", "deviceId": "9"}),
+        ("hub_restart", {}),
     ]
 
 
