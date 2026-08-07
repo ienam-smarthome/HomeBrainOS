@@ -23,6 +23,14 @@ from tool_registry import rule_machine_proposal_error
 
 RULE_MACHINE_GATEWAY = "hub_manage_rule_machine"
 
+# Placeholder substituted by ConfirmedActionCoordinator with the appId the
+# hub assigns to a just-created rule, once that create action has been
+# executed and verified. Lets a one-time rule's follow-up self-pause action
+# be built and validated at proposal time -- before the real id exists --
+# without teaching the coordinator anything about rule-authoring semantics
+# beyond "replace this token with the previous rule write's appId."
+NEW_RULE_ID_TOKEN = "__NEW_RULE_ID__"
+
 
 @dataclass(frozen=True, slots=True)
 class RuleAuthoringDecision:
@@ -319,6 +327,48 @@ class RuleAuthoringService:
         return action
 
     @staticmethod
+    def _self_pause_action() -> dict[str, Any]:
+        """Build the follow-up edit that pauses a just-created one-time rule.
+
+        Hubitat's "Certain Time (and optional date)" trigger is documented
+        to fire once and not recur when ``atTime`` carries a full calendar
+        date, but a live scheduler job inspected during development still
+        carried a `"recurring": true` label internally despite the dated
+        trigger -- an unconfirmed ambiguity in Hubitat's own scheduler
+        bookkeeping, not this app's behaviour. Rather than rely on that
+        label being cosmetic, a one-time rule's action list ends with a
+        native `pauseRule` action that pauses the rule itself, so even if
+        the underlying job did try to fire again, the rule can never
+        re-execute its actions.
+
+        `pauseRule` requires an existing rule id for both the edit target
+        (``appId``) and the action's own ``ruleIds`` -- neither of which
+        exists yet at proposal time, since the rule this pauses hasn't been
+        created. Both are filled with ``NEW_RULE_ID_TOKEN``, a placeholder
+        `ConfirmedActionCoordinator` substitutes with the real appId
+        returned by the immediately preceding create action, after
+        verifying that write succeeded. `rule_machine_proposal_error` only
+        checks that ``appId`` is non-empty, not that it looks numeric, so
+        this validates cleanly with the token still in place.
+        """
+
+        action = {
+            "tool": "hub_set_rule",
+            "args": {
+                "appId": NEW_RULE_ID_TOKEN,
+                "addAction": {
+                    "capability": "pauseRule",
+                    "action": "pause",
+                    "ruleIds": [NEW_RULE_ID_TOKEN],
+                },
+            },
+        }
+        error = rule_machine_proposal_error(RULE_MACHINE_GATEWAY, action)
+        if error is not None:
+            raise ValueError(error)
+        return action
+
+    @staticmethod
     def _rule_rows(value: Any) -> list[dict[str, Any]]:
         if isinstance(value, dict):
             for key in ("rules", "items", "apps", "data", "result", "output"):
@@ -435,14 +485,17 @@ class RuleAuthoringService:
                     rule_names=(single_name,),
                     target=target,
                 )
+            create_action = self._action(
+                name=single_name,
+                at_time=intent.start_time,
+                device_id=device_id,
+                capability_filter=capability_filter,
+                command=intent.start_command,
+            )
             actions = (
-                self._action(
-                    name=single_name,
-                    at_time=intent.start_time,
-                    device_id=device_id,
-                    capability_filter=capability_filter,
-                    command=intent.start_command,
-                ),
+                (create_action, self._self_pause_action())
+                if not intent.recurring
+                else (create_action,)
             )
             return RuleAuthoringDecision(
                 True,

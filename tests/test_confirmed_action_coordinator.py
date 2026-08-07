@@ -12,6 +12,7 @@ sys.path.insert(0, str(APP_DIR))
 from confirmation_policy import ConfirmationPolicy  # noqa: E402
 from confirmation_store import PendingConfirmation  # noqa: E402
 from confirmed_action_coordinator import ConfirmedActionCoordinator  # noqa: E402
+from rule_authoring_service import NEW_RULE_ID_TOKEN  # noqa: E402
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from request_metrics import RequestMetrics  # noqa: E402
 from tool_discovery_catalog import ToolDiscoveryCatalog  # noqa: E402
@@ -323,3 +324,131 @@ async def test_unverified_rule_records_failure_and_verification_duration():
 
     assert snapshot["timings_ms"]["verification"] == 7
     assert snapshot["counters"]["mutation_verification_failures"] == 1
+
+
+
+def _self_pause_arguments() -> dict:
+    return {
+        "tool": "hub_set_rule",
+        "args": {
+            "appId": NEW_RULE_ID_TOKEN,
+            "addAction": {
+                "capability": "pauseRule",
+                "action": "pause",
+                "ruleIds": [NEW_RULE_ID_TOKEN],
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_one_time_rule_pause_followup_resolves_placeholder_to_real_appid():
+    """Regression coverage for the one-time-rule auto-pause feature:
+    RuleAuthoringService queues a create action followed by a self-pause
+    edit that references the not-yet-created rule via NEW_RULE_ID_TOKEN
+    (see rule_authoring_service._self_pause_action). This proves the
+    coordinator substitutes that placeholder with the real appId the hub
+    assigns to the create action -- in both the edit target (`args.appId`)
+    and the action's own `ruleIds` -- before executing the follow-up, and
+    renders a distinct, non-misleading report line for it (not "Created
+    **Rule Machine rule**", which would be wrong since nothing new was
+    created by the second action).
+    """
+
+    gateway = "hub_manage_rule_machine"
+    create = _rule_arguments("Turn on Bedroom 1 Lamp (One-time 2026-08-07)")
+    pause = _self_pause_arguments()
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            create,
+            {"success": True, "appId": 4171, "health": {"ok": True}},
+            success=True,
+        ),
+        _execution(
+            gateway,
+            pause,
+            {"success": True, "appId": 4171, "health": {"ok": True}},
+            success=True,
+        ),
+    ])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("verified Rule Machine groups must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True),
+        executor,
+        unexpected_chat,
+        lambda: None,
+    )
+
+    report = await coordinator.resume(
+        _pending([(gateway, create), (gateway, pause)]),
+        _catalog(gateway),
+    )
+
+    # The placeholder must never reach the hub -- both occurrences in the
+    # second call's actual arguments have to be the real appId.
+    second_call_arguments = executor.calls[1][1]
+    assert second_call_arguments["args"]["appId"] == "4171"
+    assert second_call_arguments["args"]["addAction"]["ruleIds"] == ["4171"]
+    assert NEW_RULE_ID_TOKEN not in str(second_call_arguments)
+
+    assert "Created **Turn on Bedroom 1 Lamp (One-time 2026-08-07)** (appId: 4171)" in report
+    assert (
+        "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was paused "
+        "immediately after its one-time trigger so it cannot fire again."
+    ) in report
+    # The pause line must reuse the rule's real name, not the generic
+    # "Rule Machine rule" fallback queued_rule_name() would otherwise
+    # produce for an action with no `name` field of its own.
+    assert "Created **Rule Machine rule**" not in report
+
+
+@pytest.mark.asyncio
+async def test_one_time_rule_pause_followup_failure_is_reported_distinctly():
+    """If the create succeeds but the follow-up pause edit fails
+    verification, the rule still exists (created successfully) -- the
+    report must say so clearly rather than implying the whole write failed,
+    while still warning that the safety pause did not take effect.
+    """
+
+    gateway = "hub_manage_rule_machine"
+    create = _rule_arguments("Turn on Bedroom 1 Lamp (One-time 2026-08-07)")
+    pause = _self_pause_arguments()
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            create,
+            {"success": True, "appId": 4171, "health": {"ok": True}},
+            success=True,
+        ),
+        _execution(
+            gateway,
+            pause,
+            {"success": False, "error": "Rule 4171 not found"},
+            success=False,
+        ),
+    ])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("failed Rule Machine actions must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True),
+        executor,
+        unexpected_chat,
+        lambda: None,
+    )
+
+    report = await coordinator.resume(
+        _pending([(gateway, create), (gateway, pause)]),
+        _catalog(gateway),
+    )
+
+    assert "Created **Turn on Bedroom 1 Lamp (One-time 2026-08-07)** (appId: 4171)" in report
+    assert (
+        "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was created but "
+        "could not be confirmed paused afterward: Rule 4171 not found."
+    ) in report

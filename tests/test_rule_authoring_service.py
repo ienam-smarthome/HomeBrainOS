@@ -12,6 +12,7 @@ from datetime import datetime  # noqa: E402
 
 from mcp_client import MCPToolResult  # noqa: E402
 from rule_authoring_service import (  # noqa: E402
+    NEW_RULE_ID_TOKEN,
     RULE_MACHINE_GATEWAY,
     RuleAuthoringService,
 )
@@ -361,6 +362,68 @@ async def test_plain_one_time_control_phrasing_creates_a_dated_single_shot_rule(
     assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07)",)
     action = decision.actions[0]
     assert action["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
+
+
+@pytest.mark.asyncio
+async def test_one_time_proposal_queues_a_self_pause_followup_action():
+    """A one-time rule proposal must queue exactly two actions: the create,
+    and a follow-up edit that pauses the rule via Hubitat's native
+    pauseRule capability -- a safety net in case the "Certain Time (and
+    optional date)" trigger's underlying scheduler job (observed live to
+    carry a "recurring": true label despite the dated trigger) ever does
+    fire again. The follow-up can't know the real appId yet (the rule
+    doesn't exist until the first action runs), so both its edit target and
+    its own pause target use NEW_RULE_ID_TOKEN, resolved later by
+    ConfirmedActionCoordinator.
+    """
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert len(decision.actions) == 2
+    create, pause = decision.actions
+    assert create["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
+    assert pause["args"]["appId"] == NEW_RULE_ID_TOKEN
+    assert pause["args"]["addAction"] == {
+        "capability": "pauseRule",
+        "action": "pause",
+        "ruleIds": [NEW_RULE_ID_TOKEN],
+    }
+
+
+@pytest.mark.asyncio
+async def test_daily_proposal_does_not_queue_a_self_pause_followup_action():
+    """A recurring (daily) rule must fire every day -- pausing it after the
+    first fire would be a functional bug, not a safety net. Only one-time
+    proposals get the follow-up action.
+    """
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch", "Light"],
+    }
+    fixed_now = datetime(2026, 8, 7, 6, 0, 0)
+    service = RuleAuthoringService(RuleMCP([lamp]), recorder, now=lambda: fixed_now)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp every day at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert len(decision.actions) == 1
 
 
 @pytest.mark.asyncio
