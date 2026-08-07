@@ -54,6 +54,12 @@ def load_options() -> dict[str, Any]:
         "ollama_direct_cloud_api_key": "",
         "ollama_direct_cloud_model": "gemma4:31b-cloud",
         "ollama_cloud_model": "gemma4:31b-cloud",
+        "ollama_local_enabled": False,
+        "ollama_local_base_url": "http://localhost:11434",
+        "ollama_local_model": "",
+        "ollama_local_timeout_seconds": 12,
+        "ollama_local_connect_timeout_seconds": 3,
+        "ollama_local_keep_alive_seconds": 120,
         "ollama_agent_timeout_seconds": 60,
         "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
@@ -62,6 +68,7 @@ def load_options() -> dict[str, Any]:
         "mcp_retry_backoff_seconds": 0.25,
         "confirmation_ttl_seconds": 120,
         "unified_mcp_tool_limit": 48,
+        "unified_mcp_max_tool_rounds": 9,
         "max_tool_result_chars": 24000,
         "require_sensitive_confirmation": True,
         "web_title": "Hubitat MCP AI",
@@ -101,11 +108,29 @@ agent = UnifiedMCPAgent(
         or "gemma4:31b-cloud"
     ),
     base_url=str(OPTIONS.get("ollama_direct_cloud_base_url") or "https://ollama.com"),
+    local_base_url=(
+        str(OPTIONS.get("ollama_local_base_url") or "")
+        if _bool(OPTIONS.get("ollama_local_enabled"), False)
+        else ""
+    ),
+    local_model_name=(
+        str(OPTIONS.get("ollama_local_model") or "")
+        if _bool(OPTIONS.get("ollama_local_enabled"), False)
+        else ""
+    ),
+    local_timeout_seconds=float(OPTIONS.get("ollama_local_timeout_seconds") or 12),
+    local_connect_timeout_seconds=float(
+        OPTIONS.get("ollama_local_connect_timeout_seconds") or 3
+    ),
+    local_keep_alive_seconds=float(
+        OPTIONS.get("ollama_local_keep_alive_seconds") or 120
+    ),
     timeout_seconds=float(OPTIONS.get("ollama_agent_timeout_seconds") or 60),
     stream_idle_timeout_seconds=float(
         OPTIONS.get("stream_idle_timeout_seconds") or 20
     ),
     tool_limit=int(OPTIONS.get("unified_mcp_tool_limit") or 48),
+    max_tool_rounds=int(OPTIONS.get("unified_mcp_max_tool_rounds") or 9),
     max_tool_result_chars=int(OPTIONS.get("max_tool_result_chars") or 24000),
     require_sensitive_confirmation=_bool(
         OPTIONS.get("require_sensitive_confirmation"), True
@@ -302,6 +327,9 @@ async def health() -> dict[str, Any]:
             "online": agent.configured,
             "provider": "Ollama Online",
             "model": agent.model_name,
+            "local_enabled": _bool(OPTIONS.get("ollama_local_enabled"), False),
+            "local_configured": agent.local_configured,
+            "local_model": agent.local_model_name or None,
         },
     }
 

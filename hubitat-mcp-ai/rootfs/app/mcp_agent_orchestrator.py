@@ -95,8 +95,13 @@ class UnifiedMCPAgent:
         base_url: str = "https://ollama.com",
         timeout_seconds: float = 60,
         stream_idle_timeout_seconds: float = 20,
+        local_base_url: str = "",
+        local_model_name: str = "",
+        local_timeout_seconds: float = 12,
+        local_connect_timeout_seconds: float = 3,
+        local_keep_alive_seconds: float = 120,
         tool_limit: int = 48,
-        max_tool_rounds: int = 6,
+        max_tool_rounds: int = 9,
         require_sensitive_confirmation: bool = True,
         confirmation_ttl_seconds: float = 120,
         max_tool_result_chars: int = 24000,
@@ -114,6 +119,11 @@ class UnifiedMCPAgent:
             timeout_seconds=timeout_seconds,
             stream_idle_timeout_seconds=stream_idle_timeout_seconds,
             client=ai_client,
+            local_base_url=local_base_url,
+            local_model_name=local_model_name,
+            local_timeout_seconds=local_timeout_seconds,
+            local_connect_timeout_seconds=local_connect_timeout_seconds,
+            local_keep_alive_seconds=local_keep_alive_seconds,
         )
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
@@ -205,6 +215,14 @@ class UnifiedMCPAgent:
     @property
     def model_name(self) -> str:
         return self.transport.model_name
+
+    @property
+    def local_configured(self) -> bool:
+        return self.transport.local_configured
+
+    @property
+    def local_model_name(self) -> str:
+        return self.transport.local_model_name
 
     @property
     def base_url(self) -> str:

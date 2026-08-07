@@ -21,6 +21,24 @@ logger = logging.getLogger("HomeBrainOS.ToolExecutor")
 ToolHandler = Callable[[dict[str, Any]], Awaitable[MCPToolResult]]
 _SEARCH_TOOL = "hub_search_tools"
 
+# Some Home-Assistant-bridged / community-driver devices (observed on every
+# "Octopus Energy" sensor on the user's real hub) never populate a named
+# attribute like "power" -- they only report a bare "value" (frequently
+# null at the moment it's read) alongside a human-formatted "valueStr"
+# (e.g. "231 W"). When the model calls the raw hub-gateway
+# hub_get_device_attribute sub-tool for attribute="value" and gets back
+# null, it has no code-level nudge to also check "valueStr" -- unlike the
+# local homebrain_* fast path, which already has this fallback baked into
+# DeviceQueryService._attribute_value(). Relying on prompt prose alone for
+# the raw gateway path proved unreliable in live testing (the model
+# sometimes reported "returning a null value" instead of retrying).
+# To make this deterministic rather than probabilistic, transparently
+# retry with attribute="valueStr" on the same device and merge the result
+# in, so the model never has to guess or spend an extra slow round trip.
+_DEVICE_ATTRIBUTE_SUB_TOOL = "hub_get_device_attribute"
+_GENERIC_VALUE_ATTRIBUTE = "value"
+_GENERIC_VALUE_FALLBACK_ATTRIBUTE = "valueStr"
+
 
 @dataclass(slots=True)
 class ToolExecution:
@@ -121,6 +139,62 @@ class ToolExecutor:
         if callable(invalidator):
             invalidator()
 
+    @staticmethod
+    def _wants_generic_value_backfill(
+        arguments: dict[str, Any], result: MCPToolResult
+    ) -> bool:
+        """True when a raw hub_get_device_attribute(attribute='value') call
+        came back null and hasn't already been enriched with valueStr."""
+
+        if result.is_error or arguments.get("tool") != _DEVICE_ATTRIBUTE_SUB_TOOL:
+            return False
+        inner_args = arguments.get("args")
+        if not isinstance(inner_args, dict):
+            return False
+        if inner_args.get("attribute") != _GENERIC_VALUE_ATTRIBUTE:
+            return False
+        data = result.data
+        if not isinstance(data, dict):
+            return False
+        if data.get(_GENERIC_VALUE_ATTRIBUTE) is not None:
+            return False
+        return not data.get(_GENERIC_VALUE_FALLBACK_ATTRIBUTE)
+
+    async def _backfill_null_generic_value(
+        self, name: str, arguments: dict[str, Any], result: MCPToolResult
+    ) -> MCPToolResult:
+        """Transparently retry a null 'value' attribute read with 'valueStr'
+        on the same device and merge the reading in. See module docstring
+        above for why this must be deterministic, not prompt-only."""
+
+        inner_args = dict(arguments.get("args") or {})
+        inner_args["attribute"] = _GENERIC_VALUE_FALLBACK_ATTRIBUTE
+        followup_arguments = {**arguments, "args": inner_args}
+        try:
+            followup = await self.mcp.call_tool(name, followup_arguments)
+        except Exception:
+            logger.exception("valueStr backfill call failed for %s", name)
+            return result
+        if followup.is_error or not isinstance(followup.data, dict):
+            return result
+        value_str = followup.data.get(_GENERIC_VALUE_FALLBACK_ATTRIBUTE)
+        if not value_str:
+            return result
+        merged_data = dict(result.data)
+        merged_data[_GENERIC_VALUE_FALLBACK_ATTRIBUTE] = value_str
+        merged_data["value_backfill_note"] = (
+            "The 'value' attribute was null at read time; 'valueStr' was "
+            "fetched automatically and is the reading to report."
+        )
+        return MCPToolResult(
+            name=result.name,
+            arguments=result.arguments,
+            raw=result.raw,
+            text=result.text,
+            data=merged_data,
+            is_error=result.is_error,
+        )
+
     async def execute(
         self,
         name: str,
@@ -147,6 +221,12 @@ class ToolExecutor:
                 if handler is not None
                 else await self.mcp.call_tool(name, safe_arguments)
             )
+            if remote and self._wants_generic_value_backfill(
+                safe_arguments, result
+            ):
+                result = await self._backfill_null_generic_value(
+                    name, safe_arguments, result
+                )
             elapsed_ms = round((self._clock() - started) * 1000)
             self._record_execution_metrics(name, elapsed_ms, remote=remote)
             success = self.succeeded(result)

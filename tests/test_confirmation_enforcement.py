@@ -108,12 +108,19 @@ async def test_bare_confirm_without_pending_action_never_reaches_model():
 
 @pytest.mark.asyncio
 async def test_model_confirmation_words_without_tool_call_are_not_queued():
+    # UnifiedMCPAgent defaults to 9 tool-calling rounds (raised from 6 in
+    # 0.10.368 -- see CHANGELOG-0.10.368.md), so this needs one canned
+    # confirmation-claim response per round to exhaust the budget the same
+    # way the previous 6-response version did against the old default.
     ai = FakeAI([
         {"message": {"role": "assistant", "content": "I am ready to queue it. Please confirm."}},
         {"message": {"role": "assistant", "content": "I have queued the action."}},
         {"message": {"role": "assistant", "content": "Please confirm."}},
         {"message": {"role": "assistant", "content": "Ready to queue."}},
         {"message": {"role": "assistant", "content": "Please confirm."}},
+        {"message": {"role": "assistant", "content": "I have queued it."}},
+        {"message": {"role": "assistant", "content": "Please confirm."}},
+        {"message": {"role": "assistant", "content": "Ready to queue."}},
         {"message": {"role": "assistant", "content": "I have queued it."}},
     ])
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=ai)

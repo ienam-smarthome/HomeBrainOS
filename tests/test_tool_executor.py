@@ -264,3 +264,191 @@ async def test_execute_redacts_precise_location_before_building_provider_content
     assert attrs["presence"] == "present"
     assert attrs["battery"] == 37
     assert attrs["latitude"] != "51.4670704"
+
+
+
+class SequencedMCP:
+    """Fake MCP client that returns a different canned result per
+    (name, sub_tool, attribute) combination -- needed to exercise the
+    automatic valueStr backfill, which issues a second real call_tool()
+    after the first one comes back with a null 'value'."""
+
+    def __init__(self, responses: dict[tuple[str, str], MCPToolResult]):
+        self.responses = responses
+        self.calls = []
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        sub_tool = arguments.get("tool", "")
+        attribute = (arguments.get("args") or {}).get("attribute", "")
+        key = (sub_tool, attribute)
+        if key not in self.responses:
+            raise AssertionError(f"unexpected call_tool key: {key}")
+        return self.responses[key]
+
+
+@pytest.mark.asyncio
+async def test_null_generic_value_is_backfilled_from_valuestr_automatically():
+    # Real shape observed on the user's hub for device 7434, "Octopus Meter
+    # Current Power": hub_get_device_attribute(attribute='value') returns
+    # value=None even though the device has a live reading, which only
+    # shows up under valueStr ("231 W"). The model should never have to
+    # spend an extra slow round trip guessing this -- the executor should
+    # transparently retry and merge it in.
+    null_value_result = MCPToolResult(
+        "hub_read_devices",
+        {"tool": "hub_get_device_attribute", "args": {"deviceId": "7434", "attribute": "value"}},
+        {},
+        "",
+        {"device": "Octopus Meter Current Power", "attribute": "value", "value": None},
+    )
+    value_str_result = MCPToolResult(
+        "hub_read_devices",
+        {"tool": "hub_get_device_attribute", "args": {"deviceId": "7434", "attribute": "valueStr"}},
+        {},
+        "",
+        {"device": "Octopus Meter Current Power", "attribute": "valueStr", "valueStr": "231 W"},
+    )
+    mcp = SequencedMCP({
+        ("hub_get_device_attribute", "value"): null_value_result,
+        ("hub_get_device_attribute", "valueStr"): value_str_result,
+    })
+    evidence = EvidenceRecorder()
+    executor = ToolExecutor(mcp, evidence, clock=clock(10.0, 10.05, 10.05, 10.1))
+    token = evidence.begin()
+    try:
+        execution = await executor.execute(
+            "hub_read_devices",
+            {"tool": "hub_get_device_attribute", "args": {"deviceId": "7434", "attribute": "value"}},
+            tool=MCPTool(
+                "hub_read_devices", "Read devices", {},
+                annotations={"effect": ToolEffect.READ.value},
+            ),
+        )
+    finally:
+        evidence.reset(token)
+
+    assert execution.success is True
+    payload = json.loads(execution.content)
+    assert payload["result"]["value"] is None
+    assert payload["result"]["valueStr"] == "231 W"
+    assert "value_backfill_note" in payload["result"]
+    # Exactly one automatic follow-up call, no more.
+    assert len(mcp.calls) == 2
+    assert mcp.calls[1][1]["args"]["attribute"] == "valueStr"
+
+
+@pytest.mark.asyncio
+async def test_generic_value_backfill_is_skipped_when_value_already_present():
+    # A device that DOES report a real numeric 'value' must never trigger
+    # the extra valueStr round trip -- only genuinely null readings should.
+    result = MCPToolResult(
+        "hub_read_devices",
+        {"tool": "hub_get_device_attribute", "args": {"deviceId": "9001", "attribute": "value"}},
+        {},
+        "",
+        {"device": "Some Other Sensor", "attribute": "value", "value": 42},
+    )
+    mcp = FakeMCP(result=result)
+    evidence = EvidenceRecorder()
+    executor = ToolExecutor(mcp, evidence, clock=clock(10.0, 10.05))
+    token = evidence.begin()
+    try:
+        execution = await executor.execute(
+            "hub_read_devices",
+            {"tool": "hub_get_device_attribute", "args": {"deviceId": "9001", "attribute": "value"}},
+            tool=MCPTool(
+                "hub_read_devices", "Read devices", {},
+                annotations={"effect": ToolEffect.READ.value},
+            ),
+        )
+    finally:
+        evidence.reset(token)
+
+    assert execution.success is True
+    payload = json.loads(execution.content)
+    assert payload["result"]["value"] == 42
+    assert "valueStr" not in payload["result"]
+    assert mcp.calls == [
+        (
+            "hub_read_devices",
+            {"tool": "hub_get_device_attribute", "args": {"deviceId": "9001", "attribute": "value"}},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_generic_value_backfill_is_skipped_for_non_value_attribute_reads():
+    # Only the specific attribute='value' shape should trigger a backfill --
+    # unrelated attribute reads (e.g. 'switch') must be left untouched.
+    result = MCPToolResult(
+        "hub_read_devices",
+        {"tool": "hub_get_device_attribute", "args": {"deviceId": "42", "attribute": "switch"}},
+        {},
+        "",
+        {"device": "Some Switch", "attribute": "switch", "value": None},
+    )
+    mcp = FakeMCP(result=result)
+    evidence = EvidenceRecorder()
+    executor = ToolExecutor(mcp, evidence, clock=clock(10.0, 10.05))
+    token = evidence.begin()
+    try:
+        execution = await executor.execute(
+            "hub_read_devices",
+            {"tool": "hub_get_device_attribute", "args": {"deviceId": "42", "attribute": "switch"}},
+            tool=MCPTool(
+                "hub_read_devices", "Read devices", {},
+                annotations={"effect": ToolEffect.READ.value},
+            ),
+        )
+    finally:
+        evidence.reset(token)
+
+    payload = json.loads(execution.content)
+    assert payload["result"]["value"] is None
+    assert "valueStr" not in payload["result"]
+    assert len(mcp.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_generic_value_backfill_swallows_followup_failure_gracefully():
+    # If the automatic valueStr follow-up itself errors, the original
+    # (null-value) result must still be returned rather than raising.
+    null_value_result = MCPToolResult(
+        "hub_read_devices",
+        {"tool": "hub_get_device_attribute", "args": {"deviceId": "7434", "attribute": "value"}},
+        {},
+        "",
+        {"device": "Octopus Meter Current Power", "attribute": "value", "value": None},
+    )
+    error_result = MCPToolResult(
+        "hub_read_devices",
+        {"tool": "hub_get_device_attribute", "args": {"deviceId": "7434", "attribute": "valueStr"}},
+        {},
+        "boom",
+        None,
+        is_error=True,
+    )
+    mcp = SequencedMCP({
+        ("hub_get_device_attribute", "value"): null_value_result,
+        ("hub_get_device_attribute", "valueStr"): error_result,
+    })
+    evidence = EvidenceRecorder()
+    executor = ToolExecutor(mcp, evidence, clock=clock(10.0, 10.05, 10.05, 10.1))
+    token = evidence.begin()
+    try:
+        execution = await executor.execute(
+            "hub_read_devices",
+            {"tool": "hub_get_device_attribute", "args": {"deviceId": "7434", "attribute": "value"}},
+            tool=MCPTool(
+                "hub_read_devices", "Read devices", {},
+                annotations={"effect": ToolEffect.READ.value},
+            ),
+        )
+    finally:
+        evidence.reset(token)
+
+    assert execution.success is True
+    payload = json.loads(execution.content)
+    assert payload["result"]["value"] is None
+    assert "valueStr" not in payload["result"]
