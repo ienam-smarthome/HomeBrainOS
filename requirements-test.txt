@@ -1,4 +1,4 @@
--r requirements.txt
+-r hubitat-mcp-ai/rootfs/app/requirements.txt
 
 pytest>=8,<9
 pytest-asyncio>=0.24,<2
