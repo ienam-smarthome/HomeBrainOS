@@ -227,3 +227,73 @@ def test_control_presenter_distinguishes_unverified_from_unsent():
     assert message == (
         "Command sent but state verification failed: TV. Failed: Socket."
     )
+
+
+def test_control_presenter_separates_changed_from_already_in_state():
+    """Regression test for a live report: "turn off the lights" hit every
+    real light in the house and reported all of them as "Turned off", even
+    ones that were already off -- reading as if the assistant had no idea
+    which lights were actually on. Devices device_control_service.py marks
+    with changed=False (its cached/live pre-state already matched the
+    requested command) must be split out into their own clause instead of
+    being named alongside the ones that actually flipped state.
+    """
+
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": True,
+            "command": "off",
+            "succeeded": [
+                {"label": "Kitchen Light", "changed": True},
+                {"label": "Bedroom 1 Light", "changed": True},
+                {"label": "Toilet Light", "changed": False},
+                {"label": "Hallway Light 1", "changed": False},
+            ],
+            "failed": [],
+        },
+    )
+
+    assert message == (
+        "Turned off Kitchen Light and Bedroom 1 Light. "
+        "2 were already off: Toilet Light and Hallway Light 1."
+    )
+
+
+def test_control_presenter_reports_nothing_to_do_when_everything_already_matched():
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": True,
+            "command": "off",
+            "succeeded": [
+                {"label": "Toilet Light", "changed": False},
+            ],
+            "failed": [],
+        },
+    )
+
+    assert message == "Nothing to do -- every matched device was already off."
+
+
+def test_control_presenter_without_changed_flags_keeps_prior_wording():
+    """A result with no "changed" key at all (an older caller, or a device
+    whose prior state genuinely could not be determined) must fall back to
+    naming every succeeded device exactly as before this change -- silence
+    on the flag must never be read as "already in state".
+    """
+
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": True,
+            "command": "off",
+            "succeeded": [
+                {"label": "Hallway Light 1"},
+                {"label": "Hallway Light 2"},
+            ],
+            "failed": [],
+        },
+    )
+
+    assert message == "Turned off Hallway Light 1 and Hallway Light 2."

@@ -176,7 +176,8 @@ def _present_home_snapshot(data: dict[str, Any]) -> str:
 
 
 def _present_control(data: dict[str, Any]) -> str:
-    succeeded = [str(x.get("label")) for x in data.get("succeeded", []) if isinstance(x, dict) and x.get("label")]
+    succeeded_items = [x for x in data.get("succeeded", []) if isinstance(x, dict) and x.get("label")]
+    succeeded = [str(x["label"]) for x in succeeded_items]
     unverified = [
         str(x.get("label")) for x in data.get("failed", [])
         if isinstance(x, dict) and x.get("label") and x.get("command_sent") is True and x.get("verified") is False
@@ -197,7 +198,36 @@ def _present_control(data: dict[str, Any]) -> str:
             return " ".join(parts)
         return _error(data, "The Hubitat device command failed.")
     verb = {"on": "Turned on", "off": "Turned off", "toggle": "Toggled"}.get(str(data.get("command")), "Controlled")
-    message = f"{verb} {_joined(succeeded) or 'the selected devices'}."
+    # A command dispatched to several devices at once (a room, or "the
+    # lights") is sent to every match regardless of its current state --
+    # that's deliberate, see device_control_service.py's already_in_state
+    # comment -- but naming every one of them as "Turned off" reads as if
+    # nothing distinguishes a light that was actually on from one that was
+    # already off. Devices carrying an explicit "changed" flag (every
+    # device this deterministic path itself executed) are split into
+    # "actually changed state" vs "already in the requested state"; devices
+    # with no such flag (e.g. a hand-built result in an older test or a
+    # different caller) default to the prior behaviour of being named
+    # alongside the rest.
+    changed = [str(x["label"]) for x in succeeded_items if x.get("changed", True)]
+    already_in_state = [
+        str(x["label"]) for x in succeeded_items
+        if "changed" in x and not x.get("changed", True)
+    ]
+    if changed:
+        message = f"{verb} {_joined(changed)}."
+    elif already_in_state:
+        state_word = str(data.get("command") or "").casefold() or "in that state"
+        message = f"Nothing to do -- every matched device was already {state_word}."
+    else:
+        message = f"{verb} {_joined(succeeded) or 'the selected devices'}."
+    if already_in_state and changed:
+        was_were = "was" if len(already_in_state) == 1 else "were"
+        state_word = str(data.get("command") or "").casefold() or "in that state"
+        message = (
+            f"{message} {len(already_in_state)} {was_were} already {state_word}: "
+            f"{_joined(already_in_state)}."
+        )
     note = data.get("note")
     if note:
         message = f"{message} {note}"
