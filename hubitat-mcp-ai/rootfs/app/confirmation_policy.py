@@ -13,7 +13,7 @@ from copy import deepcopy
 from enum import Enum
 from typing import Any
 
-from tool_registry import ToolEffect
+from tool_registry import HUB_UPDATE_FIRMWARE_TOOL, ToolEffect
 
 
 DEFAULT_MAX_CONFIRMATION_ACTIONS = 12
@@ -103,7 +103,7 @@ class ConfirmationPolicy:
 
         names = sorted({str(name) for name, _ in actions if str(name)})
         if len(actions) == 1:
-            if names == ["hub_update_firmware"]:
+            if names == [HUB_UPDATE_FIRMWARE_TOOL]:
                 return (
                     "Please confirm before I install the available Hubitat firmware "
                     "update. The hub may restart and be temporarily unavailable."

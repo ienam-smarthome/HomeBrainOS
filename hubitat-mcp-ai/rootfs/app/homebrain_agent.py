@@ -49,7 +49,7 @@ from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
 from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
-from tool_registry import EVIDENCE_KINDS, LOCAL_HUB_INFO_TOOL
+from tool_registry import EVIDENCE_KINDS, HUB_UPDATE_FIRMWARE_TOOL, LOCAL_HUB_INFO_TOOL
 
 
 class UnifiedMCPAgent(BaseUnifiedMCPAgent):
@@ -484,7 +484,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     f"Hub firmware {installed} is already the latest version. "
                     "No update is available to install."
                 )
-            actions: list[tuple[str, dict[str, Any]]] = [("hub_update_firmware", {})]
+            actions: list[tuple[str, dict[str, Any]]] = [(HUB_UPDATE_FIRMWARE_TOOL, {})]
             decision = self.confirmation_policy.decide(session_key, actions)
             if decision.action is ConfirmationAction.REJECT:
                 return str(decision.message)
@@ -498,7 +498,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [{
-                    "function": {"name": "hub_update_firmware", "arguments": {}},
+                    "function": {"name": HUB_UPDATE_FIRMWARE_TOOL, "arguments": {}},
                 }],
             }
             self.confirmations.queue(

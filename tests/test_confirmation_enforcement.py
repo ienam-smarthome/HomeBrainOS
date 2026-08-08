@@ -235,6 +235,10 @@ async def test_firmware_update_requires_confirmation_and_runs_once():
                 "arguments": {"confirm": True},
             }
         }]}},
+        # Never reached: confirmed_firmware_report() now answers the
+        # confirm step deterministically and short-circuits before this
+        # third canned response would be used. Left in place so this fake
+        # would still behave sensibly if that changed.
         {"message": {"role": "assistant", "content": "Firmware update started."}},
     ])
     agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
@@ -250,7 +254,12 @@ async def test_firmware_update_requires_confirmation_and_runs_once():
     ]
 
     answer = await agent.process_user_request("confirm", session_id="firmware")
-    assert answer == "Firmware update started."
+    # confirmed_firmware_report now answers deterministically for this
+    # sensitive gateway (same treatment ConfirmedActionCoordinator already
+    # gave Rule Machine writes) instead of falling through to the model's
+    # third canned response above, which this no longer reaches.
+    assert answer.startswith("Firmware update initiated.")
+    assert "download, install, and reboot" in answer
     assert mcp.calls[-1] == ("hub_update_firmware", {"confirm": True})
 
 

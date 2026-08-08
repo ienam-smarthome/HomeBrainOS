@@ -5,6 +5,13 @@ approval decisions. This coordinator begins only after the host has consumed
 a valid same-session confirmation. It revalidates queued Rule Machine
 payloads, injects upstream approval, executes sequentially, fails closed after
 an unverified rule write, and renders deterministic rule completion reports.
+
+`hub_update_firmware` gets the same deterministic-report treatment as Rule
+Machine writes (see `confirmed_firmware_report`), rather than falling
+through to model narration like every other confirmed action does -- a
+sensitive write is exactly the case where trusting the model to correctly
+carry a `success`/`warning` field into its own free-form summary is the
+wrong tradeoff, the same reasoning that already applied to Rule Machine.
 """
 
 from __future__ import annotations
@@ -20,7 +27,7 @@ from request_metrics import add_active_metric_ms, increment_active_metric
 from rule_authoring_service import NEW_RULE_ID_TOKEN
 from tool_discovery_catalog import ToolDiscoveryCatalog
 from tool_executor import ToolExecution, ToolExecutor
-from tool_registry import rule_machine_proposal_error
+from tool_registry import HUB_UPDATE_FIRMWARE_TOOL, rule_machine_proposal_error
 
 
 ChatCallback = Callable[
@@ -196,6 +203,110 @@ class ConfirmedActionCoordinator:
         )
         return heading + "\n\n" + "\n".join(lines)
 
+    @classmethod
+    def confirmed_firmware_report(
+        cls,
+        outcomes: list[tuple[str, dict[str, Any], ToolExecution | Any]],
+    ) -> str | None:
+        """Deterministic report for a confirmed `hub_update_firmware` call.
+
+        Live testing found the confirm step otherwise always falls through
+        to model narration (see `resume` below) even for this sensitive
+        write -- there was no code-level guarantee a `success: false` or a
+        `warning` field in the tool result would actually make it into the
+        user-facing message; it depended entirely on the model reading and
+        correctly reporting it, which this whole release cycle found
+        unreliable for exactly this kind of decision. This mirrors
+        `confirmed_rule_report`'s treatment of the other sensitive gateway
+        (Rule Machine writes) so the same guarantee applies here too.
+        """
+
+        if not outcomes or any(
+            name != HUB_UPDATE_FIRMWARE_TOOL for name, _, _ in outcomes
+        ):
+            return None
+        _, _, execution = outcomes[0]
+        data = cls.rule_result_data(execution)
+        warning = str(data.get("warning") or "").strip()
+        message = str(data.get("message") or "").strip()
+        succeeded = (
+            bool(getattr(execution, "success", False))
+            and data.get("success") is not False
+        )
+        if not succeeded:
+            error = getattr(execution, "error", None)
+            detail = (
+                message
+                or warning
+                or (str(error) if error is not None else "the hub did not report success")
+            )
+            return f"The firmware update request did not succeed: {detail}."
+        lines = [
+            message
+            or "Firmware update initiated. The hub will download, install, "
+            "and reboot -- expect it to be briefly unreachable."
+        ]
+        if warning:
+            lines.append(f"Note from the hub: {warning}")
+        lines.append(
+            "Ask me for the update status to check progress -- Hubitat "
+            "doesn't expose a live download percentage through this "
+            "integration, only whether the versions have converged yet."
+        )
+        return " ".join(lines)
+
+    @classmethod
+    def confirmed_failure_report(
+        cls,
+        outcomes: list[tuple[str, dict[str, Any], ToolExecution | Any]],
+    ) -> str | None:
+        """Generic safety net for any confirmed action neither
+        `confirmed_rule_report` nor `confirmed_firmware_report` claims --
+        most notably the `hub_manage_destructive_ops` gateway (permanent
+        device deletion, radio/network resets, hub reboot/shutdown), which
+        has no tool-specific deterministic report here because this
+        coordinator has no live example payloads to build one safely
+        against (unlike firmware, verified against the real hub this
+        release).
+
+        This coordinator cannot let a genuinely failed destructive write
+        get narrated as a success by the model -- that is a strictly worse
+        outcome than an unnecessarily terse failure message, and it is the
+        one thing `execution.success` (computed by `ToolExecutor.succeeded`
+        from the raw result, independent of any tool-specific schema) can
+        already tell deterministically for any gateway. Only intervenes
+        when something in the group actually failed; a fully successful
+        group still gets the richer model-narrated summary as before, since
+        that direction of error (an over-cautious success message) is not
+        the one this needs to guard against.
+        """
+
+        failures = [
+            (name, execution)
+            for name, _, execution in outcomes
+            if not bool(getattr(execution, "success", False))
+        ]
+        if not failures:
+            return None
+        lines: list[str] = []
+        for name, execution in failures:
+            data = cls.rule_result_data(execution)
+            error = getattr(execution, "error", None)
+            detail = (
+                data.get("error")
+                or data.get("message")
+                or data.get("warning")
+                or data.get("note")
+                or (str(error) if error is not None else "the hub did not report success")
+            )
+            lines.append(f"- **{name}** did not succeed: {detail}.")
+        heading = (
+            "One confirmed action did not succeed:"
+            if len(failures) == 1
+            else f"{len(failures)} confirmed actions did not succeed:"
+        )
+        return heading + "\n\n" + "\n".join(lines)
+
     @staticmethod
     def _substitute_new_rule_id(value: Any, new_rule_id: str) -> Any:
         """Recursively replace `NEW_RULE_ID_TOKEN` with a real appId.
@@ -286,6 +397,10 @@ class ConfirmedActionCoordinator:
             outcomes,
             queued_count=len(pending.actions),
         )
+        if deterministic_report is None:
+            deterministic_report = self.confirmed_firmware_report(outcomes)
+        if deterministic_report is None:
+            deterministic_report = self.confirmed_failure_report(outcomes)
         if deterministic_report is not None:
             return deterministic_report
         response = await self._chat(messages, catalog.schemas())
