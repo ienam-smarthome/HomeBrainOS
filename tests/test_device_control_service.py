@@ -411,6 +411,131 @@ async def test_unknown_prior_state_defaults_to_changed():
     assert result.data["succeeded"][0]["already_in_state"] is False
 
 
+class LabelFilterControlMCP(ControlMCP):
+    """Same as ControlMCP, except get_cached_devices() and a labelFilter
+    hub_list_devices lookup are genuinely distinct -- get_cached_devices
+    always returns the full inventory (simulating a stale/empty identity
+    cache forcing the live fallback path), while a labelFilter lookup
+    returns only devices whose label contains it (simulating the real
+    Hubitat gateway's own filtering). The plain ControlMCP above ignores
+    labelFilter entirely and returns everything regardless, which can't
+    reproduce the live "narrow lookup vs. broad manifest" bug this class
+    exists to test.
+    """
+
+    async def get_cached_devices(self):
+        return []
+
+    async def call_tool(self, gateway, arguments):
+        self.calls.append((gateway, arguments))
+        if arguments.get("tool") == "hub_call_device_command":
+            command = arguments["args"]["command"]
+            return MCPToolResult(
+                "hub_manage_devices", arguments, {}, "ok",
+                {"success": True, "waitFor": {"converged": True, "value": command}},
+            )
+        if arguments.get("tool") == "hub_list_devices":
+            label_filter = (arguments.get("args") or {}).get("labelFilter")
+            if label_filter:
+                matched = [
+                    d for d in self.devices
+                    if label_filter.casefold() in str(d.get("label", "")).casefold()
+                ]
+                return MCPToolResult(
+                    "hub_read_devices", arguments, {}, "ok", {"devices": matched}
+                )
+            return MCPToolResult(
+                "hub_read_devices", arguments, {}, "ok", {"devices": self.devices}
+            )
+        raise AssertionError(("unexpected tool call", gateway, arguments))
+
+    async def full_manifest(self):
+        return list(self.devices)
+
+
+LIVINGROOM_LIGHT_1 = {
+    "id": "1", "label": "Livingroom Light 1", "roomName": "Living Room",
+    "capabilities": ["Light", "Switch"],
+}
+LIVINGROOM_LIGHT_2 = {
+    "id": "2", "label": "Livingroom Light 2", "roomName": "Living Room",
+    "capabilities": ["Light", "Switch"],
+}
+LIVINGROOM_TRV = {
+    "id": "4718", "label": "Livingroom TRV", "roomName": "Living Room",
+    "capabilities": ["Switch", "ThermostatHeatingSetpoint", "Actuator"],
+}
+
+
+@pytest.mark.asyncio
+async def test_auto_kind_live_fallback_includes_lights_not_just_switches():
+    """Regression test for a live bug: with device_kind="auto" (what every
+    plain "turn on/off <name>" request actually carries), the live-lookup
+    fallback paths used to filter candidates with a two-way rule (light,
+    or switch-and-not-light) that silently excluded every real light
+    whenever resolution had to fall back to a live hub_read_devices call
+    instead of the identity cache -- leaving only non-light switches (like
+    a thermostat radiator valve) to fuzzy-match against. A single
+    unambiguous light target must still resolve to the light, not get
+    filtered out of contention.
+    """
+
+    other_switch = {
+        "id": "99", "label": "Hallway Socket", "roomName": "Hallway",
+        "capabilities": ["Switch"],
+    }
+    mcp = LabelFilterControlMCP([LIVINGROOM_LIGHT_1, LIVINGROOM_TRV, other_switch])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Livingroom Light 1"],
+        "device_kind": "auto",
+        "command": "on",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"1"}
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_narrow_match_is_not_overridden_by_broader_manifest_retry():
+    """Regression test for the exact live failure: "turn on livingroom
+    light" resolved against the two real, similarly-named lights should
+    come back ambiguous with both offered as choices -- it must not widen
+    the search to the full house-wide manifest and let an unrelated
+    device (here, a thermostat radiator valve that also happens to share
+    "Livingroom" in its name) win as a false "unique" match once the
+    kind-filtering bug is fixed and the narrow lookup already produced a
+    legitimate judgement call.
+    """
+
+    distractors = [
+        {"id": str(i), "label": f"Other Device {i}", "roomName": "Elsewhere", "capabilities": ["Switch"]}
+        for i in range(3, 33)
+    ]
+    mcp = LabelFilterControlMCP(
+        [LIVINGROOM_LIGHT_1, LIVINGROOM_LIGHT_2, LIVINGROOM_TRV, *distractors]
+    )
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["livingroom light"],
+        "device_kind": "auto",
+        "command": "on",
+    })
+
+    assert result.data["success"] is False
+    assert result.data["choices"] == ["Livingroom Light 1", "Livingroom Light 2"]
+    dispatched_ids = {
+        arguments["args"]["deviceId"]
+        for _gateway, arguments in mcp.calls
+        if arguments.get("tool") == "hub_call_device_command"
+    }
+    assert dispatched_ids == set()
+    assert "4718" not in dispatched_ids
+
+
 BEDROOM1_LIGHT_2 = {
     "id": "7057", "label": "Bedroom 1 Light", "roomName": "Bedroom 1",
     "capabilities": ["Actuator", "Refresh", "Light", "Switch"],
