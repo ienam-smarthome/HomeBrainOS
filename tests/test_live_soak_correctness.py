@@ -12,7 +12,10 @@ from contextual_read_fast_path import (
     present_motion_activity,
 )
 from homebrain_agent import UnifiedMCPAgent
-from request_classification import parse_firmware_install_intent
+from request_classification import (
+    parse_firmware_install_intent,
+    parse_firmware_status_intent,
+)
 
 
 def test_last_contact_request_extracts_literal_device_and_state() -> None:
@@ -162,6 +165,34 @@ def test_firmware_install_intent_matches_only_genuine_install_directives() -> No
     assert not parse_firmware_install_intent("Hub firmware 2.5.1.145 is installed")
     assert not parse_firmware_install_intent("update the living room light")
     assert not parse_firmware_install_intent("")
+
+
+def test_firmware_status_intent_matches_only_progress_questions() -> None:
+    """Must catch the exact phrasing the confirm-step message suggests
+    ("ask me for the update status") and reasonable variants, but never a
+    generic firmware question that the ordinary snapshot flow already
+    answers fine, and never an install directive (that stays on
+    parse_firmware_install_intent).
+    """
+
+    assert parse_firmware_status_intent("update status")
+    assert parse_firmware_status_intent("firmware update status")
+    assert parse_firmware_status_intent("check the firmware update status")
+    assert parse_firmware_status_intent("update progress")
+    assert parse_firmware_status_intent("check firmware update progress")
+    assert parse_firmware_status_intent("How's the update going?")
+    assert parse_firmware_status_intent("How is the firmware update going?")
+    assert parse_firmware_status_intent("Is the update done?")
+    assert parse_firmware_status_intent("Is the firmware update finished?")
+    assert parse_firmware_status_intent("Has the firmware update completed?")
+
+    assert not parse_firmware_status_intent("check firmware")
+    assert not parse_firmware_status_intent("what firmware is installed")
+    assert not parse_firmware_status_intent("is there a firmware update")
+    assert not parse_firmware_status_intent("install firmware")
+    assert not parse_firmware_status_intent("Install the available Hubitat firmware update")
+    assert not parse_firmware_status_intent("update hub firmware")
+    assert not parse_firmware_status_intent("")
 
 
 def test_explicit_device_selection_commands_are_deterministic() -> None:

@@ -86,6 +86,49 @@ def parse_firmware_install_intent(prompt: str) -> bool:
     return _FIRMWARE_INSTALL.fullmatch(str(prompt).strip()) is not None
 
 
+_FIRMWARE_STATUS = re.compile(
+    r"^\s*(?:please\s+)?(?:check\s+)?(?:the\s+)?(?:firmware\s+|hub\s+)?"
+    r"update\s+(?:status|progress)\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?(?:check\s+)?(?:the\s+)?firmware\s+update\s+"
+    r"(?:status|progress)\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?how(?:'s|\s+is)\s+the\s+(?:firmware\s+)?update\s+"
+    r"(?:going|coming\s+along|progressing)\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?is\s+the\s+(?:firmware\s+)?update\s+"
+    r"(?:done|finished|complete|over)\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?(?:is|has)\s+the\s+firmware\s+(?:update\s+)?"
+    r"(?:finished|done|completed|installed)\s*[?.!]*\s*$",
+    re.I,
+)
+
+
+def parse_firmware_status_intent(prompt: str) -> bool:
+    """True for a question asking how a firmware update is progressing.
+
+    This is the read-only counterpart to `parse_firmware_install_intent`,
+    kept in this module rather than `contextual_read_fast_path.py` because
+    it is firmware-domain-specific rather than a device-attribute read, and
+    belongs next to the write-intent parser it mirrors. Deliberately a
+    narrow `fullmatch` for the same reason as its write counterpart: a
+    generic firmware question like "check firmware" or "what firmware is
+    installed" (answered fine by the ordinary snapshot flow, see
+    `homebrain_hub_info_snapshot`) must not match here, only phrasing that
+    specifically asks about update status/progress/completion.
+
+    Added after live testing surfaced a real limitation: Hubitat's Hub Info
+    driver does not expose a live download percentage through its
+    `hubUpdateStatus` attribute (confirmed live -- it read "Update
+    Available" throughout an active download, never a percentage or a
+    "Downloading"/"Installing" state), unlike the hub's own native
+    Settings > Check for Updates page. The best a status check here can
+    honestly report is whether `installed_firmware` has caught up with
+    `available_firmware` yet -- "still in progress" vs "complete" -- not a
+    percentage, and the outcome message says so rather than implying more
+    precision than the data supports.
+    """
+
+    return _FIRMWARE_STATUS.fullmatch(str(prompt).strip()) is not None
+
+
 def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
     """Parse generic on/off/toggle control grammar without device-name encoding."""
 
