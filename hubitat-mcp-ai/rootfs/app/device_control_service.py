@@ -83,6 +83,110 @@ def is_all_lights_target(name: str) -> bool:
     return str(name).strip().casefold() in _ALL_LIGHTS_TARGET_NAMES
 
 
+# "turn off all lights except bedroom 2 and bedroom 3" carries a base
+# all-lights phrase plus an exclusion clause neither is_all_lights_target
+# nor ordinary per-name resolution has any concept of -- live-observed
+# gap: without this, the whole string ("all lights except bedroom 2 and
+# bedroom 3") reaches per-name fuzzy resolution as one literal device
+# name, matches nothing, and fails exactly like the bare "the lights" bug
+# this same file fixed in 0.10.382. This is deliberately narrow: it only
+# recognises "except"/"excluding"/"but not"/"other than" directly after
+# the base phrase, and the caller (execute(), below) only acts on the
+# split when the base phrase itself is a genuine is_all_lights_target
+# match -- "turn off Bedroom 1 except the lamp" does not go through this
+# path at all, it keeps using ordinary room resolution untouched.
+_EXCLUSION_CLAUSE = re.compile(
+    r"^(?P<base>.+?)\s+(?:except(?:\s+for)?|excluding|but\s+not|other\s+than)\s+"
+    r"(?P<excluded>.+)$",
+    re.I,
+)
+_LEADING_ARTICLE = re.compile(r"^(?:the|a|an)\s+", re.I)
+
+
+def split_all_lights_exclusion(name: str) -> tuple[str, list[str]]:
+    """Split "all lights except X[, Y and Z]" into (base phrase, excluded terms).
+
+    Returns the original text unchanged with an empty exclusion list when
+    no "except"/"excluding"/"but not"/"other than" clause is present.
+    """
+
+    match = _EXCLUSION_CLAUSE.match(str(name).strip())
+    if match is None:
+        return str(name).strip(), []
+    base = match.group("base").strip()
+    excluded_text = match.group("excluded").strip()
+    # A comma-separated list's last item is very often prefixed with "and"/
+    # "or" too ("A, B, and C" / "A, B and C") -- splitting on comma and on
+    # " and "/" or " as fully independent alternatives leaves that last
+    # item as "and C" instead of "C" whenever a comma directly precedes it,
+    # since the comma-match already consumes the separating whitespace.
+    # Allowing an optional trailing "and "/"or " right after the comma
+    # match handles both the Oxford-comma and plain-comma forms the same
+    # way as a bare " and "/" or " between exactly two items.
+    parts = re.split(
+        r"\s*,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+", excluded_text, flags=re.I
+    )
+    excluded = [part.strip(" .") for part in parts if part.strip(" .")]
+    return base, excluded
+
+
+def _human_join(items: list[str]) -> str:
+    values = [str(item) for item in items if str(item).strip()]
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return ", ".join(values[:-1]) + f", and {values[-1]}"
+
+
+def resolve_all_lights_exclusions(
+    excluded_terms: list[str],
+    identity_manifest: list[dict[str, Any]],
+) -> tuple[set[str], list[str]]:
+    """Resolve each excluded term to real device IDs via room or device match.
+
+    A term matching a real room name (e.g. "bedroom 2") excludes every
+    device in that room; otherwise it is resolved like an ordinary device
+    name (e.g. "the toilet light"). Returns ``(excluded_device_ids,
+    unresolved_terms)`` -- an unresolved term is reported back to the
+    caller rather than silently dropped, because silently including a
+    device the user explicitly asked to exclude would be worse than
+    refusing the whole command outright.
+    """
+
+    excluded_ids: set[str] = set()
+    unresolved: list[str] = []
+    room_index: dict[str, list[dict[str, Any]]] = {}
+    for device in identity_manifest:
+        room = room_name(device)
+        if room:
+            room_index.setdefault(normalized_name(room), []).append(device)
+    for raw_term in excluded_terms:
+        term = _LEADING_ARTICLE.sub("", raw_term.strip()).strip()
+        normalized_term = normalized_name(term)
+        matched = False
+        if normalized_term and normalized_term in room_index:
+            for device in room_index[normalized_term]:
+                device_id = str(device.get("id") or device.get("deviceId") or "")
+                if device_id:
+                    excluded_ids.add(device_id)
+            matched = True
+        elif term:
+            resolution = resolve_device_candidate(term, identity_manifest)
+            if resolution.target is not None:
+                device_id = str(
+                    resolution.target.get("id") or resolution.target.get("deviceId") or ""
+                )
+                if device_id:
+                    excluded_ids.add(device_id)
+                matched = True
+        if not matched:
+            unresolved.append(raw_term.strip())
+    return excluded_ids, unresolved
+
+
 class DeviceControlService:
     """Resolve and execute routine light/switch controls deterministically."""
 
@@ -266,6 +370,7 @@ class DeviceControlService:
         # happens to share that exact normalized name, it is very unlikely
         # to be what "turn off <room name>" was asking for.
         all_lights_requested = False
+        excluded_ids: set[str] = set()
         if not room and len(names) == 1:
             candidate_room = str(names[0]).strip()
             wanted_candidate = normalized_name(candidate_room)
@@ -277,8 +382,30 @@ class DeviceControlService:
             if wanted_candidate and wanted_candidate in room_names_present:
                 room = candidate_room
                 names = []
-            elif is_all_lights_target(candidate_room):
-                all_lights_requested = True
+            else:
+                base_phrase, excluded_terms = split_all_lights_exclusion(candidate_room)
+                if is_all_lights_target(base_phrase):
+                    all_lights_requested = True
+                    if excluded_terms:
+                        excluded_ids, unresolved = resolve_all_lights_exclusions(
+                            excluded_terms, identity_manifest
+                        )
+                        if unresolved:
+                            error_message = (
+                                f"I could not find {_human_join(unresolved)} to "
+                                "exclude, so nothing was changed. Check the room "
+                                "or device name and try again."
+                            )
+                            data = {
+                                "success": False,
+                                "error": error_message,
+                                "matched": [],
+                                "executed": 0,
+                            }
+                            return MCPToolResult(
+                                DEVICE_CONTROL_TOOL, arguments, {}, error_message, data,
+                                is_error=True,
+                            )
         fast_targets: list[dict[str, Any]] = []
         if room:
             wanted_room = normalized_name(room)
@@ -291,7 +418,9 @@ class DeviceControlService:
         elif all_lights_requested:
             fast_targets = [
                 device for device in identity_manifest
-                if isinstance(device, dict) and is_light_device(device)
+                if isinstance(device, dict)
+                and is_light_device(device)
+                and str(device.get("id") or device.get("deviceId") or "") not in excluded_ids
             ]
             fast_resolution_complete = bool(fast_targets)
         else:
@@ -407,6 +536,10 @@ class DeviceControlService:
                 if kind == "light" or all_lights_requested
                 else self._is_switch_device(device) and not is_light_device(device)
             )
+            and (
+                not all_lights_requested
+                or str(device.get("id") or device.get("deviceId") or "") not in excluded_ids
+            )
         ]
         targets: list[dict[str, Any]] = list(fast_targets)
         resolution_errors: list[str] = []
@@ -436,7 +569,9 @@ class DeviceControlService:
                     light_candidates = [
                         device
                         for device in (manifest or [])
-                        if isinstance(device, dict) and is_light_device(device)
+                        if isinstance(device, dict)
+                        and is_light_device(device)
+                        and str(device.get("id") or device.get("deviceId") or "") not in excluded_ids
                     ]
                     self._record_evidence(
                         "hub_read_devices",
@@ -812,4 +947,11 @@ class DeviceControlService:
         )
 
 
-__all__ = ["DEVICE_CONTROL_TOOL", "DeviceControlService"]
+__all__ = [
+    "DEVICE_CONTROL_TOOL",
+    "DeviceControlService",
+    "is_all_lights_target",
+    "resolve_all_lights_exclusions",
+    "split_all_lights_exclusion",
+    "strip_trailing_unrelated_action",
+]

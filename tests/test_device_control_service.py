@@ -411,6 +411,107 @@ async def test_unknown_prior_state_defaults_to_changed():
     assert result.data["succeeded"][0]["already_in_state"] is False
 
 
+BEDROOM1_LIGHT_2 = {
+    "id": "7057", "label": "Bedroom 1 Light", "roomName": "Bedroom 1",
+    "capabilities": ["Actuator", "Refresh", "Light", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+BEDROOM2_LIGHT = {
+    "id": "7058", "label": "Bedroom 2 Light", "roomName": "Bedroom 2",
+    "capabilities": ["Actuator", "Refresh", "Light", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+BEDROOM3_LIGHT = {
+    "id": "7059", "label": "Bedroom 3 Light", "roomName": "Bedroom 3",
+    "capabilities": ["Actuator", "Refresh", "Light", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+
+
+@pytest.mark.asyncio
+async def test_all_lights_except_rooms_excludes_every_device_in_those_rooms():
+    """Live-requested follow-up to the "all lights" aggregate: "turn off
+    all lights except bedroom 2 and bedroom 3" must turn off every light
+    except the ones in those two rooms, not fail the way a bare "the
+    lights" once did or (worse) ignore the exclusion and hit everything.
+    """
+
+    mcp = ControlMCP([BEDROOM1_LIGHT_2, BEDROOM2_LIGHT, BEDROOM3_LIGHT, KITCHEN_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["all lights except bedroom 2 and bedroom 3"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"7057", "8001"}
+    dispatched_ids = {
+        arguments["args"]["deviceId"]
+        for _gateway, arguments in mcp.calls
+        if arguments.get("tool") == "hub_call_device_command"
+    }
+    assert "7058" not in dispatched_ids
+    assert "7059" not in dispatched_ids
+
+
+@pytest.mark.asyncio
+async def test_all_lights_except_a_single_named_device():
+    mcp = ControlMCP([BEDROOM1_LIGHT_2, KITCHEN_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["all lights except the kitchen light"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"7057"}
+
+
+@pytest.mark.asyncio
+async def test_unresolvable_exclusion_refuses_rather_than_silently_including_it():
+    """If the excluded room/device can't be found, this must refuse the
+    whole command rather than silently acting on everything -- including
+    whatever the user explicitly wanted left alone would be worse than
+    asking them to check the name and retry.
+    """
+
+    mcp = ControlMCP([BEDROOM1_LIGHT_2, KITCHEN_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["all lights except the nonexistent room"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.is_error is True
+    assert "nonexistent room" in result.data["error"]
+    assert mcp.calls == []
+
+
+@pytest.mark.asyncio
+async def test_all_lights_except_with_oxford_comma_list():
+    devices = [BEDROOM1_LIGHT_2, BEDROOM2_LIGHT, BEDROOM3_LIGHT, KITCHEN_LIGHT]
+    mcp = ControlMCP(devices)
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["all lights except bedroom 1, bedroom 2, and bedroom 3"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"8001"}
+
+
 class FailingControlMCP(ControlMCP):
     """Same as ControlMCP, but every hub_call_device_command dispatch
     fails outright -- reproducing what was observed live for "living room
