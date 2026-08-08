@@ -19,6 +19,24 @@ from time_expressions import strip_trailing_time
 logger = logging.getLogger("HomeBrainOS.DeviceControl")
 DEVICE_CONTROL_TOOL = "homebrain_control_devices"
 
+# hub_list_devices (via the hub_read_devices gateway) only reliably returns
+# capability data -- what _is_switch_device()/is_light_device() key off of
+# to tell a light apart from a thermostat radiator valve that also happens
+# to advertise "Switch" -- when a field list is explicitly requested. The
+# short-lived-cache path in mcp_client.py's get_cached_devices() already
+# asks for this; the room-wide and labelFilter-scoped lookups below did
+# not, and on a real Hubitat/Matter-bridge deployment that meant those
+# lookups came back without a "capabilities" field at all. That silently
+# emptied the kind-filtered `eligible`/`candidates` lists for every light
+# resolved through this path (device_kind="auto" -- see _matches_kind()),
+# defeating the "trust a narrow, real ambiguous result" fix in 0.10.385:
+# the narrow lookup still reported finding the right devices, but they all
+# failed the (capabilities-blind) kind check, so the guard's `not eligible`
+# was true anyway and the broad, noisy full-manifest retry fired regardless.
+_DEVICE_LOOKUP_FIELDS = [
+    "id", "name", "label", "room", "capabilities", "attributes", "commands",
+]
+
 # A second, unrelated action can arrive smuggled onto the end of a
 # device_names entry the same way a time expression can (see
 # strip_trailing_time above and its call site below) -- e.g. "toilet light
@@ -473,12 +491,20 @@ class DeviceControlService:
             []
             if fast_resolution_complete
             else (
-                [{"tool": "hub_list_devices", "args": {}}]
+                [
+                    {
+                        "tool": "hub_list_devices",
+                        "args": {"fields": list(_DEVICE_LOOKUP_FIELDS)},
+                    }
+                ]
                 if room or all_lights_requested
                 else [
                     {
                         "tool": "hub_list_devices",
-                        "args": {"labelFilter": str(requested)},
+                        "args": {
+                            "labelFilter": str(requested),
+                            "fields": list(_DEVICE_LOOKUP_FIELDS),
+                        },
                     }
                     for requested in names
                 ]

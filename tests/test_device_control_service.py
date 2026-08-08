@@ -453,6 +453,50 @@ class LabelFilterControlMCP(ControlMCP):
         return list(self.devices)
 
 
+class FieldDefaultingControlMCP(LabelFilterControlMCP):
+    """Same as LabelFilterControlMCP, except it also reproduces a second,
+    real-Hubitat-gateway behaviour that the plain mocks above never
+    modelled: hub_list_devices only includes "capabilities" (and other
+    detail fields) when the caller explicitly asks for them via a
+    "fields" argument -- call it without one and real device payloads
+    come back missing "capabilities" entirely. The labelFilter-scoped and
+    room-wide/all-lights lookups in device_control_service.py didn't ask
+    for "fields" before 0.10.386, so on a real deployment those lookups
+    silently produced capability-less devices; every kind check
+    (_is_switch_device / is_light_device, both keyed on "capabilities")
+    then failed for otherwise-correct candidates, emptying `eligible` and
+    firing the broad full-manifest retry regardless of how good the narrow
+    match was.
+    """
+
+    async def call_tool(self, gateway, arguments):
+        self.calls.append((gateway, arguments))
+        if arguments.get("tool") == "hub_call_device_command":
+            command = arguments["args"]["command"]
+            return MCPToolResult(
+                "hub_manage_devices", arguments, {}, "ok",
+                {"success": True, "waitFor": {"converged": True, "value": command}},
+            )
+        if arguments.get("tool") == "hub_list_devices":
+            args = arguments.get("args") or {}
+            label_filter = args.get("labelFilter")
+            devices = self.devices
+            if label_filter:
+                devices = [
+                    d for d in devices
+                    if label_filter.casefold() in str(d.get("label", "")).casefold()
+                ]
+            if not args.get("fields"):
+                devices = [
+                    {k: v for k, v in d.items() if k != "capabilities"}
+                    for d in devices
+                ]
+            return MCPToolResult(
+                "hub_read_devices", arguments, {}, "ok", {"devices": devices}
+            )
+        raise AssertionError(("unexpected tool call", gateway, arguments))
+
+
 LIVINGROOM_LIGHT_1 = {
     "id": "1", "label": "Livingroom Light 1", "roomName": "Living Room",
     "capabilities": ["Light", "Switch"],
@@ -534,6 +578,54 @@ async def test_ambiguous_narrow_match_is_not_overridden_by_broader_manifest_retr
     }
     assert dispatched_ids == set()
     assert "4718" not in dispatched_ids
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_narrow_match_survives_a_capabilities_dropping_gateway():
+    """Regression test for the live gap left after 0.10.385 shipped: the
+    user re-tested "turn on livingroom light" against 0.10.385 and it
+    still surfaced Livingroom TRV as a disambiguation choice and still
+    triggered the full-manifest fallback retry, even though the narrow
+    labelFilter lookup reported finding "2 target candidates" first. Root
+    cause was that the labelFilter-scoped hub_list_devices call never
+    asked for a "fields" list including "capabilities", and a real
+    Hubitat gateway call without one omits capability data entirely --
+    emptying `eligible` for both real lights and defeating the 0.10.385
+    "trust a genuinely narrow ambiguous result" guard. This must resolve
+    exactly like the plain LabelFilterControlMCP version above even when
+    the mock drops "capabilities" from any hub_list_devices response that
+    didn't explicitly request it.
+    """
+
+    distractors = [
+        {"id": str(i), "label": f"Other Device {i}", "roomName": "Elsewhere", "capabilities": ["Switch"]}
+        for i in range(3, 33)
+    ]
+    mcp = FieldDefaultingControlMCP(
+        [LIVINGROOM_LIGHT_1, LIVINGROOM_LIGHT_2, LIVINGROOM_TRV, *distractors]
+    )
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["livingroom light"],
+        "device_kind": "auto",
+        "command": "on",
+    })
+
+    assert result.data["success"] is False
+    assert result.data["choices"] == ["Livingroom Light 1", "Livingroom Light 2"]
+    dispatched_ids = {
+        arguments["args"]["deviceId"]
+        for _gateway, arguments in mcp.calls
+        if arguments.get("tool") == "hub_call_device_command"
+    }
+    assert dispatched_ids == set()
+    fallback_manifest_calls = [
+        arguments for _gateway, arguments in mcp.calls
+        if arguments.get("tool") == "hub_list_devices"
+        and not (arguments.get("args") or {}).get("labelFilter")
+    ]
+    assert fallback_manifest_calls == []
 
 
 BEDROOM1_LIGHT_2 = {
