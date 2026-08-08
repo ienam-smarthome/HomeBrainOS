@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextual_read_fast_path import (
     capability_choice_labels,
     clean_choice_label,
+    parse_bare_attribute,
     parse_contextual_attribute,
     parse_device_selection,
     parse_motion_activity,
@@ -92,6 +93,49 @@ def test_named_and_room_attribute_reads_use_current_state_parser() -> None:
     )
     assert parse_named_attribute("What is its humidity?") is None
     assert parse_named_attribute("When did Bedroom 1 humidity change?") is None
+
+
+def test_named_attribute_does_not_treat_a_bare_article_as_a_device_name() -> None:
+    """Regression test for a real bug this session's bare-attribute fast
+    path exposed: the regex's optional "(?:the\\s+)?" lead-in and its
+    required-nonempty name group can't both be satisfied by "the
+    temperature" without giving "the" to one or the other, and it used to
+    give it to name -- so "What's the temperature?" resolved a device
+    literally named "the" instead of falling through to
+    parse_bare_attribute. Articles must be excluded the same way pronouns
+    already are.
+    """
+
+    assert parse_named_attribute("What's the temperature?") is None
+    assert parse_named_attribute("What is a humidity?") is None
+    assert parse_named_attribute("Show me an power.") is None
+    assert parse_named_attribute("What is the Bedroom 1 temperature?") == (
+        "Bedroom 1",
+        "temperature",
+    )
+
+
+def test_bare_attribute_words_are_deterministic() -> None:
+    """Regression test for a real live failure: a bare "temperature" query
+    (no device name, no question wording) used to fall through to the
+    model's tool-selection loop entirely, where it could -- and did --
+    answer from the outdoor weather device instead of resolving as an
+    indoor reading. This parser must catch the plain word on its own as
+    well as its minimal question forms, but must not swallow a named
+    request (that stays on parse_named_attribute) or a history request.
+    """
+
+    assert parse_bare_attribute("temperature") == "temperature"
+    assert parse_bare_attribute("Temperature?") == "temperature"
+    assert parse_bare_attribute("humidity") == "humidity"
+    assert parse_bare_attribute("What's the temperature?") == "temperature"
+    assert parse_bare_attribute("What is the current battery") == "battery"
+    assert parse_bare_attribute("Show me the power.") == "power"
+    assert parse_bare_attribute("What is the Bedroom 1 temperature?") is None
+    assert parse_bare_attribute("Bedroom 1 temperature") is None
+    assert parse_bare_attribute("What was the temperature yesterday?") is None
+    assert parse_bare_attribute("temperature history") is None
+    assert parse_bare_attribute("what's the weather outside") is None
 
 
 def test_explicit_device_selection_commands_are_deterministic() -> None:
