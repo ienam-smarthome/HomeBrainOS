@@ -227,6 +227,33 @@ class DeviceControlService:
         ).casefold()
         return "switch" in capability_text
 
+    def _matches_kind(self, kind: str, device: dict[str, Any]) -> bool:
+        """True when ``device`` belongs to the requested ``device_kind``.
+
+        ``"light"`` and ``"switch"`` are each a precise, single capability
+        check, but ``"auto"`` -- the device_kind every plain "turn on/off
+        <name>" request actually carries, see routine_control_arguments()
+        -- means "either one", not "only a non-light switch". This must
+        stay the single source of truth for that three-way rule: an
+        earlier version of this file had two copies of a two-way version
+        (light vs. switch-and-not-light) scattered across the live-lookup
+        fallback paths below, silently dropping every light-capable device
+        whenever kind was "auto" and resolution had to fall back to a live
+        hub_read_devices call instead of the identity cache. Live-observed
+        regression: "turn on livingroom light" (ambiguous between two real
+        lights, forcing exactly that fallback) ended up dispatching to
+        "Livingroom TRV" -- a thermostat radiator valve that happens to
+        also advertise Switch, the nearest fuzzy match once every real
+        light had already been filtered out of the candidate pool it was
+        matched against.
+        """
+
+        if kind == "light":
+            return is_light_device(device)
+        if kind == "switch":
+            return self._is_switch_device(device) and not is_light_device(device)
+        return self._is_switch_device(device) or is_light_device(device)
+
     async def execute(
         self, arguments: dict[str, Any]
     ) -> MCPToolResult:
@@ -341,17 +368,7 @@ class DeviceControlService:
         except Exception as exc:
             logger.warning("Fast control identity lookup unavailable: %s", exc)
         identity_candidates = [
-            device
-            for device in identity_manifest
-            if (
-                is_light_device(device)
-                if kind == "light"
-                else (
-                    self._is_switch_device(device) and not is_light_device(device)
-                    if kind == "switch"
-                    else self._is_switch_device(device) or is_light_device(device)
-                )
-            )
+            device for device in identity_manifest if self._matches_kind(kind, device)
         ]
         # A single device_names entry can be a room name rather than a
         # device name -- the model has no dedicated slot to distinguish
@@ -533,8 +550,8 @@ class DeviceControlService:
             device for device in devices
             if (
                 is_light_device(device)
-                if kind == "light" or all_lights_requested
-                else self._is_switch_device(device) and not is_light_device(device)
+                if all_lights_requested
+                else self._matches_kind(kind, device)
             )
             and (
                 not all_lights_requested
@@ -621,14 +638,7 @@ class DeviceControlService:
                         for device in (manifest or [])
                         if isinstance(device, dict)
                         and normalized_name(room_name(device)) == wanted_room
-                        and (
-                            is_light_device(device)
-                            if kind == "light"
-                            else (
-                                self._is_switch_device(device)
-                                and not is_light_device(device)
-                            )
-                        )
+                        and self._matches_kind(kind, device)
                     ]
                     self._record_evidence(
                         "hub_read_devices",
@@ -659,19 +669,31 @@ class DeviceControlService:
             ):
                 eligible = [
                     device for device in source_devices
-                    if (
-                        is_light_device(device)
-                        if kind == "light"
-                        else (
-                            self._is_switch_device(device)
-                            and not is_light_device(device)
-                        )
-                    )
+                    if self._matches_kind(kind, device)
                 ]
                 resolution = resolve_device_candidate(
                     str(requested), eligible
                 )
-                if resolution.target is None:
+                # Only widen the search to the full house-wide manifest
+                # when the targeted, labelFilter-scoped lookup found
+                # nothing at all to judge (eligible empty) -- its own
+                # search may simply have missed the device on a phrasing
+                # or synonym quirk, and a broader look is worth trying.
+                # When eligible is non-empty, resolve_device_candidate has
+                # already made a real judgement call against a precise,
+                # relevant candidate set (either "these two are equally
+                # plausible" or "none of these few are close enough"), and
+                # that judgement must not be silently overridden by a
+                # second, noisier attempt against every device in the
+                # house. Live-observed regression: "turn on livingroom
+                # light" correctly came back ambiguous between two real
+                # lights against the narrow set, but this used to retry
+                # against the full ~30-device manifest anyway and picked
+                # "Livingroom TRV" as the nearest fuzzy match once real
+                # lights were excluded by the kind-filtering bug fixed
+                # alongside this -- discarding a legitimate ambiguous
+                # result in favour of a wrong single "winner".
+                if resolution.target is None and not eligible:
                     if fallback_candidates is None:
                         started = time.monotonic()
                         try:
@@ -697,14 +719,7 @@ class DeviceControlService:
                                 device
                                 for device in (manifest or [])
                                 if isinstance(device, dict)
-                                and (
-                                    is_light_device(device)
-                                    if kind == "light"
-                                    else (
-                                        self._is_switch_device(device)
-                                        and not is_light_device(device)
-                                    )
-                                )
+                                and self._matches_kind(kind, device)
                             ]
                             self._record_evidence(
                                 "hub_read_devices",
