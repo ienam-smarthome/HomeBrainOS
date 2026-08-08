@@ -264,6 +264,18 @@ def test_immediate_internet_access_intent_matches_only_unscheduled_block_allow()
     assert parse_immediate_internet_access_intent("is the tv blocked") is None
     assert parse_immediate_internet_access_intent("") is None
 
+    # Regression test for a real live failure found immediately after
+    # 0.10.377 shipped: "block the tv in 30 mins" has no AT_TIME or window
+    # clause (both only recognise a clock time), so it was falling through
+    # to this parser and swallowing "tv in 30 mins" whole as the device
+    # name -- producing a confusing "no candidate is similar enough"
+    # resolution failure instead of a clean outcome. Nothing in the
+    # codebase implements a relative-delay schedule, so this must fall
+    # through to the model instead of being mishandled here.
+    assert parse_immediate_internet_access_intent("block the tv in 30 mins") is None
+    assert parse_immediate_internet_access_intent("allow the tv in an hour") is None
+    assert parse_immediate_internet_access_intent("block the tv in 2 hrs") is None
+
 
 def test_explicit_device_selection_commands_are_deterministic() -> None:
     assert parse_device_selection("Select Bedroom 1 Meter") == "Bedroom 1 Meter"

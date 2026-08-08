@@ -164,6 +164,9 @@ _INTERNET_ACCESS_WINDOW = re.compile(
     re.I,
 )
 _RULE_AUTHORING_WORDS = re.compile(r"\b(?:automation|rule|schedule)\b", re.I)
+_RELATIVE_DELAY = re.compile(
+    r"\bin\s+(?:\d+|a|an)\s*(?:min(?:ute)?s?|hours?|hrs?)\b", re.I,
+)
 _BLOCK_INTERNET = re.compile(
     r"^(?:please\s+)?(?:block|disable)\s+"
     r"(?:internet\s+(?:access\s+)?(?:for\s+)?|access\s+for\s+)?"
@@ -203,6 +206,18 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
     uses explicit rule-authoring language ("create an automation to
     block..."), so this only ever catches the immediate case that
     previously had no deterministic handling at all.
+
+    Also excludes a relative-delay clause ("in 30 mins", "in an hour"):
+    live regression found immediately after 0.10.377 shipped -- neither
+    `AT_TIME` nor the window pattern recognise that phrasing (both only
+    match a clock time), so "block the tv in 30 mins" was falling through
+    to this parser and having the entire "tv in 30 mins" swallowed as the
+    device name, producing a confusing "no candidate is similar enough"
+    resolution failure instead of a clean result. Nothing in the codebase
+    implements a relative-delay schedule today, so excluding it here just
+    restores the pre-0.10.377 behaviour of falling through to the model
+    for this specific, currently-unsupported phrasing rather than
+    mishandling it deterministically.
     """
 
     text = " ".join(str(prompt).strip().split())
@@ -212,6 +227,7 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
         AT_TIME.search(text) is not None
         or _INTERNET_ACCESS_WINDOW.search(text) is not None
         or _RULE_AUTHORING_WORDS.search(text) is not None
+        or _RELATIVE_DELAY.search(text) is not None
     ):
         return None
     for pattern, command in ((_BLOCK_INTERNET, "blockInternet"), (_ALLOW_INTERNET, "allowInternet")):

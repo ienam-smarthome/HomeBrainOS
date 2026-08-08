@@ -16,6 +16,7 @@ from device_state_summary import (
 )
 from device_target_resolver import (
     CandidateResolution,
+    device_commands,
     resolve_device_candidate,
     targeted_name_variants,
 )
@@ -453,6 +454,26 @@ class DeviceQueryService:
             ]
             if kind_filtered:
                 scoped_candidates = kind_filtered
+
+        # Scope to devices that actually advertise a specifically-required
+        # command *before* name resolution, mirroring the kind_hint
+        # filtering above. Without this, a name match that happens to be
+        # exact (e.g. a plain "TV" switch) always outranks a better-suited
+        # but non-exact match (e.g. "Block Google-TV-Streamer") even when
+        # only the latter can actually perform the requested command --
+        # confirmed live for scheduled "block the tv at <time>" requests,
+        # which used to be flatly rejected with "does not advertise the
+        # required command" instead of finding the capable device that was
+        # right there in the same candidate list.
+        required_command = str(arguments.get("required_command") or "").strip()
+        if required_command:
+            capable = [
+                device
+                for device in scoped_candidates
+                if required_command.casefold() in device_commands(device)
+            ]
+            if capable:
+                scoped_candidates = capable
 
         resolution = resolve_device_candidate(requested, scoped_candidates)
 
