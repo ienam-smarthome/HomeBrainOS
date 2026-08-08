@@ -574,6 +574,114 @@ async def test_firmware_confirm_surfaces_a_hub_warning_alongside_success() -> No
 
 
 @pytest.mark.asyncio
+async def test_unrelated_fast_path_turn_cancels_a_stale_pending_confirmation() -> None:
+    """Live-debugging regression: every deterministic fast path returns
+    straight from operation() without ever reaching the base
+    orchestrator's ConfirmationStore.consume() -- so a fast path firing on
+    an unrelated turn (e.g. a device-control command) used to leave an
+    earlier, still-pending confirmation completely untouched instead of
+    cancelling it. That meant a LATER, unrelated affirmative reply like
+    "yes" could silently resume a stale action the user had long since
+    moved on from and may not even remember asking for.
+
+    _resolve_pending_confirmation must give the pending confirmation first
+    refusal on every turn: an unrelated fast-path prompt must consume (and
+    thereby cancel) it as a side effect, and a later bare "yes" must find
+    nothing pending rather than resuming the stale firmware install.
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
+    ai = FakeAI("unused -- must never be reached")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    propose = await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="stale-confirm-test"
+    )
+    assert propose.confirmation_required is True
+    assert agent.confirmations.pending.get("stale-confirm-test") is not None
+
+    # An unrelated fast-path turn in between -- doesn't matter that this
+    # particular device can't be resolved against FirmwareMCP's fixture;
+    # what matters is that *some* fast path fires on this turn.
+    unrelated = await agent.process_user_request_result(
+        "turn off the nonexistent lamp", session_id="stale-confirm-test"
+    )
+    assert unrelated.confirmation_required is False
+    assert agent.confirmations.pending.get("stale-confirm-test") is None
+
+    late_yes = await agent.process_user_request_result(
+        "yes", session_id="stale-confirm-test"
+    )
+
+    assert "No Hubitat action is pending confirmation" in late_yes.message
+    assert ("hub_update_firmware", {"confirm": True}) not in mcp.calls
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_new_confirmation_does_not_silently_clobber_an_older_pending_one() -> None:
+    """Companion regression to the stale-confirmation bug: a fast path
+    that queues its OWN confirmation (e.g. _firmware_install_outcome) used
+    to be able to silently overwrite a still-pending confirmation from an
+    earlier, different request with no notice to the user, because it
+    never ran the new consume-or-cancel gate first. Now that gate always
+    runs before any fast path, so by the time a second queue() happens,
+    the first pending entry has already been explicitly resolved
+    (cancelled, in this case, since the intervening prompt wasn't a
+    confirm word) rather than being clobbered out from under the user
+    without any acknowledgement.
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    first_propose = await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="clobber-test"
+    )
+    assert first_propose.confirmation_required is True
+    first_pending = agent.confirmations.pending.get("clobber-test")
+    assert first_pending is not None
+
+    second_propose = await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="clobber-test"
+    )
+
+    assert second_propose.confirmation_required is True
+    second_pending = agent.confirmations.pending.get("clobber-test")
+    assert second_pending is not None
+    # The second propose's pending entry replaced the first through the
+    # normal queue() path (same request, re-asked) -- confirming it now
+    # resumes exactly one firmware install, not two stacked ones.
+    confirm = await agent.process_user_request_result("confirm", session_id="clobber-test")
+    assert confirm.message.startswith("Firmware update initiated.")
+    assert mcp.calls.count(("hub_update_firmware", {"confirm": True})) == 1
+
+
+@pytest.mark.asyncio
+async def test_confirm_word_collision_with_device_clarification_still_reprompts() -> None:
+    """"do it" is a recognised CONFIRM_WORD, but it also contains the
+    standalone word "it", which the unresolved-choice follow-up detector
+    treats as a pronoun reference. When there is a live device
+    clarification pending but NO sensitive action is actually queued for
+    confirmation, "do it" must still fall through to the ordinary
+    choice-follow-up re-prompt instead of being intercepted by the new
+    pending-confirmation gate and answered with a confusing "No Hubitat
+    action is pending confirmation" message that ignores the clarification
+    the user was actually replying to.
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent._clarification_choices["clarify-test"] = ["Bedroom 1 Meter", "Bedroom 1 TRV"]
+
+    outcome = await agent.process_user_request_result("do it", session_id="clarify-test")
+
+    assert "No Hubitat action is pending confirmation" not in outcome.message
+    assert "Which device do you mean" in outcome.message
+
+
+@pytest.mark.asyncio
 async def test_firmware_install_intent_reports_up_to_date_without_queuing() -> None:
     """When no update is actually available, the same explicit install
     request must answer deterministically from the snapshot instead of

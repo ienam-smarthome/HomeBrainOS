@@ -308,3 +308,137 @@ async def test_successful_dispatch_does_not_record_device_control_failures_metri
 
     assert result.data["success"] is True
     assert "device_control_failures" not in snapshot["counters"]
+
+
+class ToggleControlMCP:
+    """Fake MCP supporting the pre-toggle switch-state read plus the
+    subsequent hub_call_device_command dispatch, so toggle's new
+    waitFor-based verification (mirroring on/off) can be exercised.
+    `converged` controls whether the hub reports the post-toggle state
+    actually settled; `initial_switch` controls what the pre-read reports
+    the device was doing before the toggle.
+    """
+
+    def __init__(self, devices, *, initial_switch: str = "off", converged: bool = True):
+        self.devices = devices
+        self.initial_switch = initial_switch
+        self.converged = converged
+        self.calls = []
+
+    async def get_cached_devices(self):
+        return list(self.devices)
+
+    async def call_tool(self, gateway, arguments):
+        self.calls.append((gateway, arguments))
+        tool = arguments.get("tool")
+        if tool == "hub_get_device_attribute":
+            return MCPToolResult(
+                "hub_read_devices", arguments, {}, "ok",
+                {"attribute": "switch", "value": self.initial_switch},
+            )
+        if tool == "hub_call_device_command":
+            wait_for = (arguments.get("args") or {}).get("waitFor")
+            expected = wait_for.get("expectedValue") if isinstance(wait_for, dict) else None
+            return MCPToolResult(
+                "hub_manage_devices", arguments, {}, "ok",
+                {
+                    "success": True,
+                    "waitFor": {"converged": self.converged, "value": expected},
+                },
+            )
+        if tool == "hub_list_devices":
+            return MCPToolResult(
+                "hub_read_devices", arguments, {}, "ok", {"devices": self.devices}
+            )
+        raise AssertionError(("unexpected tool call", gateway, arguments))
+
+
+TOGGLE_LAMP = {
+    "id": "8001", "label": "Toggle Lamp", "roomName": "Office",
+    "capabilities": ["Actuator", "Refresh", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "off"}],
+}
+
+
+@pytest.mark.asyncio
+async def test_toggle_verifies_convergence_against_the_computed_opposite_state():
+    """Regression test: toggle previously had no verification path at
+    all -- device_control_service.py only attached a waitFor block and
+    computed `verified` for "on"/"off", so a toggle whose HTTP dispatch
+    succeeded but whose physical device never actually changed state was
+    reported as success with no way to know it hadn't. Toggle now reads
+    the device's current switch state first, computes the expected
+    post-toggle value, and gets the exact same waitFor verification on/off
+    already had.
+    """
+
+    mcp = ToggleControlMCP([TOGGLE_LAMP], initial_switch="off", converged=True)
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Toggle Lamp"],
+        "device_kind": "auto",
+        "command": "toggle",
+    })
+
+    assert result.data["success"] is True
+    dispatch_calls = [
+        args for name, args in mcp.calls if args.get("tool") == "hub_call_device_command"
+    ]
+    assert len(dispatch_calls) == 1
+    assert dispatch_calls[0]["args"]["waitFor"]["expectedValue"] == "on"
+
+
+@pytest.mark.asyncio
+async def test_toggle_reports_failure_when_the_hub_reports_no_convergence():
+    """The other half of the same fix: if the hub's own waitFor reports
+    the switch attribute never actually reached the expected post-toggle
+    value, that must surface as a failure -- not a silent success -- for
+    toggle exactly as it already does for on/off.
+    """
+
+    mcp = ToggleControlMCP([TOGGLE_LAMP], initial_switch="off", converged=False)
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Toggle Lamp"],
+        "device_kind": "auto",
+        "command": "toggle",
+    })
+
+    assert result.data["success"] is False
+    assert len(result.data["failed"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_toggle_falls_back_to_unverified_when_the_pre_read_is_unavailable():
+    """If the pre-toggle state read fails or the attribute isn't reported,
+    toggle must fall back to the previous unverified-but-not-crashing
+    behaviour rather than guessing a wrong expected value or raising.
+    """
+
+    class NoAttributeReadMCP(ToggleControlMCP):
+        async def call_tool(self, gateway, arguments):
+            if arguments.get("tool") == "hub_get_device_attribute":
+                self.calls.append((gateway, arguments))
+                return MCPToolResult(
+                    "hub_read_devices", arguments, {}, "error",
+                    {"success": False, "error": "attribute unavailable"},
+                    is_error=True,
+                )
+            return await super().call_tool(gateway, arguments)
+
+    mcp = NoAttributeReadMCP([TOGGLE_LAMP])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Toggle Lamp"],
+        "device_kind": "auto",
+        "command": "toggle",
+    })
+
+    assert result.data["success"] is True
+    dispatch_calls = [
+        args for name, args in mcp.calls if args.get("tool") == "hub_call_device_command"
+    ]
+    assert "waitFor" not in dispatch_calls[0]["args"]

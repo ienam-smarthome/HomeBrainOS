@@ -32,6 +32,7 @@ from contextual_read_fast_path import (
     present_motion_activity,
 )
 from confirmation_policy import ConfirmationAction
+from confirmation_store import CONFIRM_WORDS
 from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
 from direct_outcome_context import DirectOutcomeContext
@@ -49,6 +50,7 @@ from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
 from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
+from tool_catalog_assembly import build_request_tool_catalog
 from tool_registry import EVIDENCE_KINDS, HUB_UPDATE_FIRMWARE_TOOL, LOCAL_HUB_INFO_TOOL
 
 
@@ -545,6 +547,78 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         return await self._direct_outcome(operation, request_class="write")
 
+    async def _resolve_pending_confirmation(
+        self, user_prompt: str, *, session_key: str
+    ) -> AgentOutcome | None:
+        """Give any pending sensitive-action confirmation first refusal on
+        every turn, before any deterministic fast path runs.
+
+        Live debugging found a real gap: every fast path below (including
+        the ones this session added -- firmware install/status, bare
+        attribute, etc.) returns straight from `operation()` without ever
+        reaching the base orchestrator's `_take_confirmation` /
+        `ConfirmationStore.consume()`, which is where a pending
+        confirmation actually gets consumed or cancelled. That meant: (1)
+        a fast path could fire on an unrelated turn (e.g. "turn off the
+        kitchen light") while a sensitive action was still pending,
+        leaving it untouched instead of cancelled, so a *later* unrelated
+        affirmative reply ("yes") could silently resume a stale action the
+        user had long since moved on from; and (2) a fast path that queues
+        its own confirmation (e.g. `_firmware_install_outcome`) could
+        silently clobber a still-pending confirmation from an earlier,
+        different request with no notice to the user.
+
+        Mirrors `ConfirmationStore.consume()`'s own semantics exactly: any
+        message consumes (and, if it isn't a recognised confirm word,
+        thereby cancels) whatever is pending for this session, matching
+        `mcp_agent_orchestrator.py`'s `_process_user_request` ordering.
+        Only actually resumes the sensitive action, or reports "nothing
+        pending" for a bare confirm word, when there is a real pending
+        confirmation (or the prompt is unambiguously a confirm word with
+        no live device-clarification also in flight -- see
+        `test_homebrain_agent.py` for the "do it" collision this guards
+        against) -- otherwise returns None so the normal fast-path chain
+        proceeds untouched, exactly as it did before this method existed.
+        """
+
+        pending_now = self.confirmations.pending.get(session_key)
+        if pending_now is not None:
+            resolved = self.confirmations.consume(session_key, user_prompt)
+            if resolved is None:
+                # Not a confirm word -- already cancelled as a side effect
+                # of consume(). Let this turn's fast path / model handle
+                # the actual prompt normally.
+                return None
+            all_tools = (await self.mcp.list_tools())[: self.tool_limit]
+            catalog = build_request_tool_catalog(all_tools)
+            pending_names = list(dict.fromkeys(name for name, _ in resolved.actions))
+            missing = catalog.replace_declared(pending_names)
+            if missing:
+                message = self.confirmation_policy.unavailable_tools_message(missing)
+            else:
+                message = await self._resume_confirmation(resolved, catalog)
+            return AgentOutcome(
+                message=message, request_class="write", evidence=[], choices=[]
+            )
+
+        normalized_prompt = " ".join(str(user_prompt).strip().casefold().split())
+        if (
+            normalized_prompt in CONFIRM_WORDS
+            and not self._clarification_choices.get(session_key)
+        ):
+            return AgentOutcome(
+                message=(
+                    "No Hubitat action is pending confirmation in this browser "
+                    "session. Nothing was executed. Submit the original request "
+                    "again and only confirm when the response carries a "
+                    "verified pending action."
+                ),
+                request_class="live-read",
+                evidence=[],
+                choices=[],
+            )
+        return None
+
     async def process_user_request_result(
         self,
         user_prompt: str,
@@ -555,6 +629,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         session_key = str(session_id)
 
         async def operation() -> AgentOutcome:
+            pending_confirmation = await self._resolve_pending_confirmation(
+                user_prompt, session_key=session_key
+            )
+            if pending_confirmation is not None:
+                return pending_confirmation
+
             before_that = parse_before_that(user_prompt)
             if before_that is not None:
                 return await self._relative_that_outcome(before_that[0], before_that[1], "before", session_key)

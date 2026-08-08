@@ -142,6 +142,39 @@ def test_bare_attribute_words_are_deterministic() -> None:
     assert parse_bare_attribute("what's the weather outside") is None
 
 
+def test_bare_attribute_matches_apostrophe_free_and_article_only_phrasing() -> None:
+    """Two false-negative gaps found in a further debugging pass: real
+    users often type "whats" without the apostrophe (mobile
+    autocorrect-off is common), and a terse "the temperature" follow-up
+    has no question word at all. Both used to fall through to the model's
+    tool-selection loop -- the exact outdoor-weather-misrouting risk this
+    parser exists to close -- rather than resolving deterministically.
+    """
+
+    assert parse_bare_attribute("whats the temperature") == "temperature"
+    assert parse_bare_attribute("Whats the humidity?") == "humidity"
+    assert parse_bare_attribute("whats battery") == "battery"
+    assert parse_bare_attribute("the temperature") == "temperature"
+    assert parse_bare_attribute("The temperature?") == "temperature"
+    assert parse_bare_attribute("the current power") == "power"
+    # Still correctly rejected: a real device name after "the" must keep
+    # falling through to parse_named_attribute, not resolve here.
+    assert parse_bare_attribute("the Bedroom 1 temperature") is None
+    assert parse_bare_attribute("whatsoever") is None
+
+
+def test_named_and_contextual_attribute_also_accept_apostrophe_free_whats() -> None:
+    """Same "whats" (no apostrophe) gap applies to the other two attribute
+    parsers, which share the same what(?:'s|\\s+is) prefix pattern.
+    """
+
+    assert parse_named_attribute("whats the Bedroom 1 temperature") == (
+        "Bedroom 1",
+        "temperature",
+    )
+    assert parse_contextual_attribute("whats its humidity") == "humidity"
+
+
 def test_firmware_install_intent_matches_only_genuine_install_directives() -> None:
     """Must catch the WebUI's own "Update hub firmware" button text
     (which submits "Install the available Hubitat firmware update") and
