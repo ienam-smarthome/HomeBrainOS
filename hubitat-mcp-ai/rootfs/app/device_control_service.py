@@ -62,6 +62,27 @@ def strip_trailing_unrelated_action(text: str) -> tuple[str, str | None]:
     return match.group("target").strip(" ,."), match.group("action").strip()
 
 
+# A bare, room-less "turn off the lights" carries no specific device or room
+# name at all -- it means every light in the house. Live-observed regression:
+# this fell straight into ordinary per-name fuzzy resolution (the same path
+# that handles "turn off Bedroom1 Light"), which has nothing labelled "the
+# lights" to match, so it reported "Unresolved" with an unrelated
+# disambiguation offer instead of doing the obviously intended thing. This is
+# deliberately a closed set of unqualified aggregate phrasings, not a loose
+# keyword match -- "turn off the office lights" or "turn off Kitchen Light"
+# must keep going through ordinary room/name resolution untouched.
+_ALL_LIGHTS_TARGET_NAMES = {
+    "the lights", "the light", "all lights", "all the lights",
+    "all of the lights", "every light", "all my lights",
+}
+
+
+def is_all_lights_target(name: str) -> bool:
+    """True when ``name`` is an unqualified "every light in the house" phrase."""
+
+    return str(name).strip().casefold() in _ALL_LIGHTS_TARGET_NAMES
+
+
 class DeviceControlService:
     """Resolve and execute routine light/switch controls deterministically."""
 
@@ -244,6 +265,7 @@ class DeviceControlService:
         # inventory data, not a guess): even in the rare case a device
         # happens to share that exact normalized name, it is very unlikely
         # to be what "turn off <room name>" was asking for.
+        all_lights_requested = False
         if not room and len(names) == 1:
             candidate_room = str(names[0]).strip()
             wanted_candidate = normalized_name(candidate_room)
@@ -255,6 +277,8 @@ class DeviceControlService:
             if wanted_candidate and wanted_candidate in room_names_present:
                 room = candidate_room
                 names = []
+            elif is_all_lights_target(candidate_room):
+                all_lights_requested = True
         fast_targets: list[dict[str, Any]] = []
         if room:
             wanted_room = normalized_name(room)
@@ -262,6 +286,12 @@ class DeviceControlService:
                 device
                 for device in identity_candidates
                 if normalized_name(room_name(device)) == wanted_room
+            ]
+            fast_resolution_complete = bool(fast_targets)
+        elif all_lights_requested:
+            fast_targets = [
+                device for device in identity_manifest
+                if isinstance(device, dict) and is_light_device(device)
             ]
             fast_resolution_complete = bool(fast_targets)
         else:
@@ -298,7 +328,7 @@ class DeviceControlService:
             if fast_resolution_complete
             else (
                 [{"tool": "hub_list_devices", "args": {}}]
-                if room
+                if room or all_lights_requested
                 else [
                     {
                         "tool": "hub_list_devices",
@@ -374,14 +404,58 @@ class DeviceControlService:
             device for device in devices
             if (
                 is_light_device(device)
-                if kind == "light"
+                if kind == "light" or all_lights_requested
                 else self._is_switch_device(device) and not is_light_device(device)
             )
         ]
         targets: list[dict[str, Any]] = list(fast_targets)
         resolution_errors: list[str] = []
         resolution_choices: set[str] = set()
-        if not targets and room:
+        if not targets and all_lights_requested:
+            targets = list(candidates)
+            if not targets:
+                started = time.monotonic()
+                try:
+                    manifest = await self.mcp.get_cached_devices()
+                except Exception as exc:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        {
+                            "tool": "hub_list_devices",
+                            "source": "short_ttl_cache",
+                        },
+                        success=False,
+                        elapsed_ms=round(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        summary=f"All-lights identity manifest unavailable: {exc}",
+                        supports_live_claim=False,
+                        evidence_kind="control_target_resolution",
+                    )
+                else:
+                    light_candidates = [
+                        device
+                        for device in (manifest or [])
+                        if isinstance(device, dict) and is_light_device(device)
+                    ]
+                    self._record_evidence(
+                        "hub_read_devices",
+                        {
+                            "tool": "hub_list_devices",
+                            "source": "short_ttl_cache",
+                        },
+                        success=True,
+                        elapsed_ms=round(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        summary=f"{len(light_candidates)} light candidates house-wide",
+                        supports_live_claim=False,
+                        evidence_kind="control_target_resolution",
+                    )
+                    targets = light_candidates
+                if not targets:
+                    resolution_errors.append("No lights were found in this house.")
+        elif not targets and room:
             wanted_room = normalized_name(room)
             targets = [
                 device for device in candidates
