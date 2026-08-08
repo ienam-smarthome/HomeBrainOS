@@ -35,6 +35,7 @@ from confirmation_policy import ConfirmationAction
 from confirmation_store import CONFIRM_WORDS
 from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
+from device_target_resolver import resolve_capable_device_candidate
 from direct_outcome_context import DirectOutcomeContext
 from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
@@ -45,13 +46,19 @@ from observed_agent_outcome import ObservedAgentOutcome
 from request_classification import (
     parse_firmware_install_intent,
     parse_firmware_status_intent,
+    parse_immediate_internet_access_intent,
 )
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
 from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
 from tool_catalog_assembly import build_request_tool_catalog
-from tool_registry import EVIDENCE_KINDS, HUB_UPDATE_FIRMWARE_TOOL, LOCAL_HUB_INFO_TOOL
+from tool_registry import (
+    EVIDENCE_KINDS,
+    HUB_UPDATE_FIRMWARE_TOOL,
+    LOCAL_HUB_INFO_TOOL,
+    LOCAL_RESOLVE_TOOL,
+)
 
 
 class UnifiedMCPAgent(BaseUnifiedMCPAgent):
@@ -547,6 +554,107 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         return await self._direct_outcome(operation, request_class="write")
 
+    async def _internet_access_outcome(
+        self, target_name: str, command: str, *, session_key: str
+    ) -> AgentOutcome:
+        """Deterministically execute an immediate (non-scheduled)
+        block/allow-internet request against a device that actually
+        advertises the command (see parse_immediate_internet_access_intent's
+        docstring for the live failure this closes).
+
+        `command` is always "blockInternet" or "allowInternet". Resolution
+        is scoped to devices that advertise the command first
+        (resolve_capable_device_candidate), then executed directly via
+        hub_call_device_command with waitFor-based verification against
+        the internetAccess attribute -- the same pattern already used for
+        on/off/toggle device control, just with the attribute name real
+        network-integration devices actually report instead of "switch".
+        """
+
+        async def operation() -> str:
+            started = time.monotonic()
+            try:
+                candidates = await self.mcp.get_cached_devices()
+            except Exception as exc:
+                return f"I could not read the device list: {exc}"
+            resolution = resolve_capable_device_candidate(
+                target_name, list(candidates or []), required_command=command
+            )
+            self.evidence.record(
+                LOCAL_RESOLVE_TOOL,
+                {"name": target_name, "required_command": command},
+                success=resolution.target is not None,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=resolution.reason,
+                evidence_kind=EVIDENCE_KINDS[LOCAL_RESOLVE_TOOL],
+            )
+            verb = "block" if command == "blockInternet" else "allow"
+            if resolution.target is None:
+                if resolution.alternatives:
+                    alternatives = list(resolution.alternatives)
+                    self._choices.set(alternatives)
+                    self.request_metrics.increment("device_resolution_ambiguous")
+                    return self._choice_message(alternatives)
+                return (
+                    f'I could not find a device that supports {verb}ing '
+                    f'internet access matching "{target_name}".'
+                )
+            device = resolution.target
+            device_id = str(device.get("id") or device.get("deviceId") or "")
+            label = str(device.get("label") or device.get("name") or target_name)
+            if not device_id:
+                return f"The resolved device **{label}** has no stable Hubitat ID."
+            expected_value = "blocked" if command == "blockInternet" else "allowed"
+            call_started = time.monotonic()
+            result = await self.mcp.call_tool(
+                "hub_manage_devices",
+                {
+                    "tool": "hub_call_device_command",
+                    "args": {
+                        "deviceId": device_id,
+                        "command": command,
+                        "waitFor": {
+                            "attribute": "internetAccess",
+                            "expectedValue": expected_value,
+                            "timeoutMs": 5000,
+                        },
+                    },
+                },
+            )
+            command_success = self._tool_succeeded(result)
+            wait_for = (
+                result.data.get("waitFor") if isinstance(result.data, dict) else None
+            )
+            verified = bool(wait_for.get("converged")) if isinstance(wait_for, dict) else False
+            self.evidence.record(
+                "hub_manage_devices",
+                {
+                    "tool": "hub_call_device_command",
+                    "args": {"deviceId": device_id, "command": command},
+                },
+                success=command_success and verified,
+                elapsed_ms=round((time.monotonic() - call_started) * 1000),
+                summary=(
+                    f"{command} {label}: "
+                    f"{'verified' if verified else 'sent' if command_success else 'failed'}"
+                ),
+                evidence_kind="device_command_result",
+            )
+            if command_success and verified:
+                verb_past = "blocked" if command == "blockInternet" else "unblocked"
+                return f"{label} internet access {verb_past}."
+            if command_success:
+                return (
+                    f"Sent the {command} command to {label}, but could not verify "
+                    "internet access actually changed within 5 seconds."
+                )
+            return (
+                f"Could not {verb} internet access for {label}: "
+                f"{result.text or 'unknown error'}"
+            )
+
+        return await self._direct_outcome(operation, request_class="write")
+
     async def _resolve_pending_confirmation(
         self, user_prompt: str, *, session_key: str
     ) -> AgentOutcome | None:
@@ -735,6 +843,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
             if parse_firmware_install_intent(user_prompt):
                 return await self._firmware_install_outcome(session_key=session_key)
+
+            internet_access = parse_immediate_internet_access_intent(user_prompt)
+            if internet_access is not None:
+                return await self._internet_access_outcome(
+                    internet_access[0], internet_access[1], session_key=session_key
+                )
 
             # A prompt carrying an "at <time>" clause (e.g. "turn on X at
             # 10am", "turn on X every day at 10am") must reach

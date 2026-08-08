@@ -795,3 +795,160 @@ async def test_firmware_status_query_does_not_match_install_intent(
 
     assert outcome.confirmation_required is False
     assert outcome.confirmation_count == 0
+
+
+# Real device shapes pulled live from the hub this bug was found against:
+# two devices both plausibly named "tv" -- a plain power-switch labelled
+# exactly "TV", and a separate network-integration device labelled "Block
+# Google-TV-Streamer" that is the only one of the two that actually
+# advertises blockInternet/allowInternet.
+TV_SWITCH_DEVICE = {
+    "id": "4221", "label": "TV", "name": "Innr SP 242 Power Metering SmartPlug",
+    "roomName": "Multimedia",
+    "commands": [
+        "childLock", "initialize", "ledMode", "off", "on", "ping", "refresh",
+        "resetEnergy", "setEnergy", "setEnergyPrice", "setPowerOnState", "setSwitchType",
+    ],
+}
+TV_STREAMER_BLOCK_DEVICE = {
+    "id": "6923", "label": "Block Google-TV-Streamer", "name": "Cudy Device-192.168.1.108",
+    "roomName": "Multimedia",
+    "commands": [
+        "addTime", "allowInternet", "blockInternet", "off", "on", "refresh",
+        "resetUsage", "setDeviceIP", "setDeviceMAC",
+    ],
+}
+
+
+class InternetAccessMCP:
+    """Fake MCP exposing exactly the two real device shapes above, plus
+    hub_call_device_command handling for block/allowInternet.
+    """
+
+    def __init__(self, *, converged: bool = True) -> None:
+        self.devices = [TV_SWITCH_DEVICE, TV_STREAMER_BLOCK_DEVICE]
+        self.converged = converged
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def get_cached_devices(self) -> list[dict[str, object]]:
+        return list(self.devices)
+
+    async def call_tool(self, gateway: str, arguments: dict[str, object]) -> MCPToolResult:
+        self.calls.append((gateway, arguments))
+        if arguments.get("tool") == "hub_call_device_command":
+            wait_for = (arguments.get("args") or {}).get("waitFor")
+            expected = wait_for.get("expectedValue") if isinstance(wait_for, dict) else None
+            return MCPToolResult(
+                gateway, arguments, {}, "ok",
+                {"success": True, "waitFor": {"converged": self.converged, "value": expected}},
+            )
+        raise AssertionError(("unexpected tool call", gateway, arguments))
+
+
+@pytest.mark.asyncio
+async def test_immediate_block_request_finds_the_capable_device_not_the_switch() -> None:
+    """Regression test for a real live failure: "block the tv" was
+    resolved and executed as "turn off TV" -- the plain power-switch
+    device won ordinary name resolution (exact label match), and there was
+    no deterministic immediate path for blockInternet at all, so the
+    request reached the model, which interpreted "block" as "turn off".
+
+    This must now resolve to the device that actually advertises
+    blockInternet (id 6923, not the switch at 4221), dispatch the real
+    command, and never touch the model at all.
+    """
+
+    mcp = InternetAccessMCP(converged=True)
+    ai = FakeAI("unused -- must never be reached")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "block the tv", session_id="block-tv-test"
+    )
+
+    assert outcome.message == "Block Google-TV-Streamer internet access blocked."
+    dispatch_calls = [
+        args for _, args in mcp.calls if args.get("tool") == "hub_call_device_command"
+    ]
+    assert len(dispatch_calls) == 1
+    assert dispatch_calls[0]["args"]["deviceId"] == "6923"
+    assert dispatch_calls[0]["args"]["command"] == "blockInternet"
+    assert dispatch_calls[0]["args"]["waitFor"]["expectedValue"] == "blocked"
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_immediate_allow_request_targets_the_same_capable_device() -> None:
+    mcp = InternetAccessMCP(converged=True)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "allow internet for the tv", session_id="allow-tv-test"
+    )
+
+    assert outcome.message == "Block Google-TV-Streamer internet access unblocked."
+    dispatch_calls = [
+        args for _, args in mcp.calls if args.get("tool") == "hub_call_device_command"
+    ]
+    assert dispatch_calls[0]["args"]["deviceId"] == "6923"
+    assert dispatch_calls[0]["args"]["command"] == "allowInternet"
+    assert dispatch_calls[0]["args"]["waitFor"]["expectedValue"] == "allowed"
+
+
+@pytest.mark.asyncio
+async def test_unconverged_block_reports_uncertainty_not_silent_success() -> None:
+    mcp = InternetAccessMCP(converged=False)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "block the tv", session_id="block-tv-unconverged-test"
+    )
+
+    assert "could not verify" in outcome.message
+    assert "blocked." not in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_scheduled_block_request_is_left_to_rule_authoring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """"block the tv at 10pm" carries an AT_TIME clause, so it must be left
+    completely alone by the new immediate path and reach RuleAuthoringService
+    via base_process -- exactly as it did before this fix, unchanged.
+    """
+
+    async def fake_base_result(_self: object, prompt: str, *_args: object, **_kwargs: object) -> AgentOutcome:
+        return AgentOutcome(
+            message="handed to base agent", request_class="write", evidence=[], choices=[]
+        )
+
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent, "process_user_request_result", fake_base_result
+    )
+    mcp = InternetAccessMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "block the tv at 10pm", session_id="block-tv-scheduled-test"
+    )
+
+    assert outcome.message == "handed to base agent"
+    assert mcp.calls == []
+
+
+@pytest.mark.asyncio
+async def test_no_capable_device_reports_a_clear_error_not_a_wrong_device() -> None:
+    class NoBlockCapableMCP(InternetAccessMCP):
+        def __init__(self) -> None:
+            super().__init__()
+            self.devices = [TV_SWITCH_DEVICE]
+
+    mcp = NoBlockCapableMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "block the tv", session_id="block-tv-no-capable-test"
+    )
+
+    assert "could not find a device that supports blocking internet access" in outcome.message
+    assert mcp.calls == []
