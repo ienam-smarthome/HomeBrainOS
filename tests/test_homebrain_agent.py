@@ -539,3 +539,73 @@ async def test_read_only_firmware_check_does_not_trigger_install_intent(
 
     assert outcome.message == "handed to base agent"
     assert outcome.confirmation_required is False
+
+
+@pytest.mark.asyncio
+async def test_firmware_status_query_reports_in_progress_without_the_model() -> None:
+    """"How's the update going?" while installed still trails available must
+    answer deterministically -- no model round, no confirmation queued --
+    and must not overclaim a download percentage Hubitat doesn't expose.
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "How's the firmware update going?", session_id="firmware-status-test"
+    )
+
+    assert outcome.message.startswith("Still in progress")
+    assert "2.5.1.145" in outcome.message
+    assert "2.5.1.147" in outcome.message
+    assert "%" not in outcome.message
+    assert outcome.confirmation_required is False
+    assert ai.requests == []
+    assert ("hub_update_firmware", {}) not in mcp.calls
+
+
+@pytest.mark.asyncio
+async def test_firmware_status_query_reports_up_to_date_when_versions_converge() -> None:
+    """Once installed_firmware catches up with available_firmware,
+    hub_info_service reports update_available=False -- the same status
+    question must then report "up to date" instead of "still in progress"
+    (the snapshot data can't distinguish "just finished" from "was never
+    pending", so this covers both).
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.147", available="2.5.1.147")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "update status", session_id="firmware-status-test-2"
+    )
+
+    assert outcome.message == (
+        "Firmware is up to date -- the hub is running 2.5.1.147. "
+        "No update is pending."
+    )
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_firmware_status_query_does_not_match_install_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A status question must never be mistaken for an install directive
+    and trigger a confirmation queue -- it is read-only.
+    """
+
+    agent = UnifiedMCPAgent(
+        FirmwareMCP(installed="2.5.1.145", available="2.5.1.147"),
+        "key",
+        ai_client=FakeAI("unused"),
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Is the firmware update done?", session_id="firmware-status-test-3"
+    )
+
+    assert outcome.confirmation_required is False
+    assert outcome.confirmation_count == 0

@@ -41,7 +41,10 @@ from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
 from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
-from request_classification import parse_firmware_install_intent
+from request_classification import (
+    parse_firmware_install_intent,
+    parse_firmware_status_intent,
+)
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
 from time_expressions import AT_TIME
@@ -396,6 +399,58 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         return await self._direct_outcome(operation, request_class="live-read")
 
+    async def _firmware_status_outcome(self, *, session_key: str) -> AgentOutcome:
+        """Deterministically answer "how's the firmware update going" style
+        questions from the same firmware snapshot the install/propose flow
+        uses, without a model round.
+
+        Hubitat's Hub Info driver does not expose a live download
+        percentage (see parse_firmware_status_intent's docstring for the
+        live evidence), so this reports the only thing the data actually
+        supports: whether the installed version has caught up with the
+        available one yet.
+        """
+
+        async def operation() -> str:
+            started = time.monotonic()
+            result = await self._hub_info_snapshot({"scope": "firmware"})
+            self.evidence.record(
+                LOCAL_HUB_INFO_TOOL,
+                {"scope": "firmware"},
+                success=self._tool_succeeded(result),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=self._result_summary(result),
+                evidence_kind=EVIDENCE_KINDS[LOCAL_HUB_INFO_TOOL],
+            )
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    LOCAL_HUB_INFO_TOOL, data, failed=True, fallback_error=result.text
+                ) or "I could not read the hub firmware status."
+            installed = data.get("installed_firmware")
+            available = data.get("available_firmware")
+            if not data.get("update_available"):
+                # hub_info_service computes update_available from whether
+                # installed still trails available, so this branch covers
+                # both "nothing was ever pending" and "an update just
+                # finished and the versions caught up" -- the snapshot data
+                # can't distinguish the two, and the phrasing below reads
+                # correctly either way.
+                return (
+                    f"Firmware is up to date -- the hub is running "
+                    f"{installed or 'its current version'}. No update is pending."
+                )
+            return (
+                f"Still in progress: the hub is on {installed or 'its current version'}, "
+                f"and {available or 'the newer version'} is still shown as available. "
+                "Hubitat doesn't expose a live download percentage through this "
+                "reading, only whether the versions have converged -- if it's been "
+                "more than 10-15 minutes, check Settings > Check for Updates on the "
+                "hub directly, since a stalled update usually needs a manual retry."
+            )
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
     async def _firmware_install_outcome(self, *, session_key: str) -> AgentOutcome:
         """Deterministically propose the sensitive `hub_update_firmware`
         write once an explicit install directive is recognised, instead of
@@ -594,6 +649,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     explain_cause=True,
                     session_key=session_key,
                 )
+
+            if parse_firmware_status_intent(user_prompt):
+                return await self._firmware_status_outcome(session_key=session_key)
 
             if parse_firmware_install_intent(user_prompt):
                 return await self._firmware_install_outcome(session_key=session_key)
