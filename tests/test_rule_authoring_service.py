@@ -150,6 +150,74 @@ async def test_rejects_unverified_commands_instead_of_guessing():
 
 
 @pytest.mark.asyncio
+async def test_scheduled_block_finds_the_capable_device_not_the_exact_name_match():
+    """Regression test for a real live failure: a house has both a plain
+    power-switch labelled exactly "TV" and a separate network-integration
+    device labelled "Block Google-TV-Streamer" -- only the latter actually
+    supports blockInternet/allowInternet. Ordinary name resolution always
+    preferred the exact-label switch (confidence 1.0, no contest) and then
+    rejected it with "does not advertise the required command" instead of
+    trying the streamer device sitting right there in the same inventory.
+    A scheduled "block the tv at <time>" request must resolve the capable
+    device, exactly like the immediate (non-scheduled) case already does.
+    """
+
+    tv_switch = {"id": "4221", "label": "TV", "commands": ["on", "off"]}
+    tv_streamer = {
+        "id": "6923",
+        "label": "Block Google-TV-Streamer",
+        "commands": ["on", "off", "blockInternet", "allowInternet"],
+        "capabilities": ["Switch"],
+    }
+    service = RuleAuthoringService(RuleMCP([tv_switch, tv_streamer]), recorder)
+
+    decision = await service.propose(
+        "block the tv at 10pm",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert decision.target["id"] == "6923"
+    create_action = decision.actions[0]
+    assert create_action["args"]["addAction"]["command"] == "blockInternet"
+    assert create_action["args"]["addAction"]["deviceIds"] == ["6923"]
+
+
+@pytest.mark.asyncio
+async def test_scheduled_on_off_resolution_is_unaffected_by_capability_scoping():
+    """The capability-aware resolution scoping only applies to
+    blockInternet/allowInternet -- an ordinary scheduled on/off rule must
+    resolve exactly as before, by name alone, even when the exact-label
+    match's command list doesn't happen to literally include "on"/"off"
+    as a bare string (e.g. a light exposing them via a different casing
+    or a synonym) -- this asserts no `required_command` scoping is ever
+    applied for the on/off grammar.
+    """
+
+    lamp = {
+        "id": "42",
+        "label": "Bedroom 1 Lamp",
+        "commands": ["on", "off", "refresh"],
+        "capabilities": ["Switch", "Light"],
+    }
+    mcp = RuleMCP([lamp])
+    service = RuleAuthoringService(mcp, recorder)
+
+    decision = await service.propose(
+        "turn on bedroom 1 lamp at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.target["id"] == "42"
+    resolve_calls = [
+        arguments for name, arguments in mcp.calls if name == "hub_read_devices"
+    ]
+    assert resolve_calls == [{"tool": "hub_list_devices", "args": {}}]
+
+
+@pytest.mark.asyncio
 async def test_existing_rules_prevent_duplicate_creation():
     rules = [
         {"id": "4165", "name": "Block Tab S9 FE (Start)"},

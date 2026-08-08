@@ -474,7 +474,20 @@ class RuleAuthoringService:
             return RuleAuthoringDecision(False)
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
-        result = await resolver.resolve_device({"name": intent.target})
+        resolve_arguments: dict[str, Any] = {"name": intent.target}
+        # Scope resolution to devices that actually support blockInternet/
+        # allowInternet before matching by name. Live regression: a house
+        # can have both a plain power-switch and a separate network-
+        # integration device sharing a name like "tv" -- ordinary name
+        # resolution always prefers an exact label match, so a scheduled
+        # "block the tv at 10pm" request used to resolve the switch and
+        # then get flatly rejected with "does not advertise the required
+        # command" instead of finding the capable device sitting right
+        # there in the same candidate list. Deliberately scoped to just
+        # these two commands -- on/off scheduled rules are unaffected.
+        if intent.start_command.casefold() in {"blockinternet", "allowinternet"}:
+            resolve_arguments["required_command"] = intent.start_command
+        result = await resolver.resolve_device(resolve_arguments)
         data = result.data if isinstance(result.data, dict) else {}
         target = data.get("target") if isinstance(data.get("target"), dict) else None
         if target is None:
