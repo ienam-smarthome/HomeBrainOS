@@ -73,3 +73,24 @@ def test_system_prompt_scopes_weather_snapshot_to_outdoor_qualified_questions():
     assert "'weather', 'forecast', 'outside', or 'outdoor'" in prompt
     assert "homebrain_resolve_device" in prompt
     assert "bare, unqualified reading question" in prompt
+
+
+def test_system_prompt_directs_internet_block_requests_away_from_power_off():
+    """Regression test for the root cause behind the live "block the tv"
+    bug: for any phrasing the deterministic
+    parse_immediate_internet_access_intent parser does not happen to
+    recognise, the request falls through to the model's own tool-selection
+    loop -- and the model has no way to reliably avoid the same mistake
+    (treating "block" as "turn off") unless it is told explicitly and given
+    a way to resolve the correct, capability-verified device. This only
+    asserts the guidance text and the required_command hand-off are present
+    in the prompt, not that the model always obeys it -- the deterministic
+    parser is still the primary defense for the phrasings it covers."""
+
+    prompt = build_system_prompt(device_manifest="", app_manifest_section="")
+
+    assert "INTERNET ACCESS CONTROL" in prompt
+    assert "NEVER" in prompt and "power on/off request" in prompt
+    assert "homebrain_control_devices" in prompt
+    assert "required_command" in prompt
+    assert "blockInternet" in prompt and "allowInternet" in prompt

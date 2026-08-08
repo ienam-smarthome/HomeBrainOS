@@ -494,7 +494,19 @@ def device_resolver_tool() -> MCPTool:
             "Resolve one user-supplied Hubitat device name using bounded targeted "
             "label-filtered lookups. Returns the authoritative device ID, label, "
             "capabilities, and commands without loading the full device inventory. "
-            "Use this before authoring any rule for a named device."
+            "Use this before authoring any rule for a named device. "
+            "IMPORTANT: if the request implies the device must be able to perform "
+            "a specific command -- e.g. 'block'/'disable'/'restrict' internet "
+            "access implies blockInternet, 'allow'/'unblock'/'restore' internet "
+            "access implies allowInternet, 'lock' implies lock -- always pass "
+            "required_command with that exact command name. A house can contain "
+            "two different devices with overlapping or identical names where only "
+            "one actually supports the requested command (e.g. a plain power "
+            "switch labelled 'TV' next to a separate network-integration device "
+            "that is the only one supporting blockInternet/allowInternet); "
+            "name-only resolution will confidently return the wrong one. Passing "
+            "required_command scopes matching to devices that actually advertise "
+            "it, finding the correct device instead."
         ),
         {
             "type": "object",
@@ -503,6 +515,17 @@ def device_resolver_tool() -> MCPTool:
                     "type": "string",
                     "minLength": 1,
                     "description": "Device wording supplied by the user, such as tab s9 fe.",
+                },
+                "required_command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": (
+                        "Optional. The exact device command this request requires "
+                        "(e.g. blockInternet, allowInternet, lock, unlock). When "
+                        "set, resolution is scoped to only the devices that "
+                        "actually advertise this command before matching by name, "
+                        "so a same-named but incapable device is never returned."
+                    ),
                 },
             },
             "required": ["name"],
