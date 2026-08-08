@@ -20,7 +20,7 @@ from grounding_policy import (  # noqa: E402
 )
 from homebrain_agent import ObservedAgentOutcome, UnifiedMCPAgent  # noqa: E402
 from live_evidence_authority import LiveEvidenceAuthority  # noqa: E402
-from mcp_client import MCPToolResult  # noqa: E402
+from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 from mcp_agent_orchestrator import AgentOutcome  # noqa: E402
 from mcp_agent_orchestrator import UnifiedMCPAgent as BaseUnifiedMCPAgent  # noqa: E402
 from request_metrics import RequestMetrics  # noqa: E402
@@ -393,3 +393,149 @@ async def test_bare_attribute_query_resolves_single_exact_label_match(
     outcome = await agent.process_user_request_result("What's the temperature?")
 
     assert outcome.message == "Temperature temperature is 21.5°C."
+
+
+class FirmwareMCP:
+    """Fake MCP exposing the Hub Info device the firmware scope reads, plus
+    the hub_update_firmware tool the confirmed resume path executes.
+    Mirrors the shape used by test_hub_info_service.py and
+    test_confirmation_enforcement.py's own firmware fakes.
+    """
+
+    def __init__(self, *, installed: str = "2.5.1.145", available: str = "2.5.1.147") -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.installed = installed
+        self.available = available
+
+    async def list_tools(self) -> list[MCPTool]:
+        return [
+            MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+            MCPTool(
+                "hub_update_firmware",
+                "Install available hub firmware",
+                {"type": "object", "properties": {"confirm": {"type": "boolean"}}},
+            ),
+        ]
+
+    async def get_cached_devices(self) -> list[dict[str, object]]:
+        return [{"id": "1089", "label": "Hub Info (C8 Pro)"}]
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        if name == "hub_manage_devices":
+            return MCPToolResult(name, arguments, {}, "ok", {"success": True})
+        if name == "hub_update_firmware":
+            return MCPToolResult(name, arguments, {}, "ok", {"success": True})
+        if name == "hub_search_tools":
+            return MCPToolResult(name, arguments, {}, "", {"matches": []})
+        return MCPToolResult(
+            name,
+            arguments,
+            {},
+            "",
+            {
+                "devices": [{
+                    "id": "1089",
+                    "label": "Hub Info (C8 Pro)",
+                    "attributes": {
+                        "firmwareVersionString": self.installed,
+                        "hubUpdateStatus": (
+                            "current" if self.installed == self.available
+                            else "available"
+                        ),
+                        "hubUpdateVersion": self.available,
+                    },
+                }]
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_firmware_install_intent_queues_confirmation_and_resumes_to_a_real_call() -> None:
+    """Regression test for a real live failure: even the explicit request
+    "Install the available Hubitat firmware update" only ever called the
+    read-only firmware snapshot and narrated a summary -- the system prompt
+    trusted the model to chain a second tool call to hub_update_firmware
+    after seeing update_available=true, and it never did, so the
+    confirmation gate (which only engages once that tool call is actually
+    attempted) never fired. The WebUI's "Update hub firmware" button just
+    resubmits the same text, so this looped forever.
+
+    parse_firmware_install_intent must route this deterministically to a
+    queued confirmation without ever calling the model for the propose
+    step (proven by ai.requests staying empty), and "confirm" afterward
+    must resume through the *existing* ConfirmedActionCoordinator machinery
+    to a real hub_update_firmware call -- proving the synthetic
+    assistant_message/actions this fast path builds are structurally
+    compatible with the model-driven confirmation path, not just superficially
+    similar.
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
+    ai = FakeAI("Firmware update started.")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    propose = await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="firmware-test"
+    )
+
+    assert propose.confirmation_required is True
+    assert propose.confirmation_count == 1
+    assert "confirm" in propose.message.casefold()
+    assert "restart" in propose.message.casefold()
+    assert ai.requests == []
+    assert ("hub_update_firmware", {}) not in mcp.calls
+
+    confirm = await agent.process_user_request_result(
+        "confirm", session_id="firmware-test"
+    )
+
+    assert confirm.message == "Firmware update started."
+    assert mcp.calls[-1] == ("hub_update_firmware", {"confirm": True})
+    assert len(ai.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_firmware_install_intent_reports_up_to_date_without_queuing() -> None:
+    """When no update is actually available, the same explicit install
+    request must answer deterministically from the snapshot instead of
+    queuing a confirmation for nothing.
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.147", available="2.5.1.147")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="firmware-test-2"
+    )
+
+    assert outcome.confirmation_required is False
+    assert "already the latest version" in outcome.message
+    assert ai.requests == []
+    assert ("hub_update_firmware", {}) not in mcp.calls
+
+
+@pytest.mark.asyncio
+async def test_read_only_firmware_check_does_not_trigger_install_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """"check firmware" must keep going through the ordinary model loop --
+    it must never be mistaken for an install directive just because it
+    mentions firmware.
+    """
+
+    async def fake_base_result(_self: object, prompt: str, *_args: object, **_kwargs: object) -> AgentOutcome:
+        return AgentOutcome(
+            message="handed to base agent", request_class="live-read", evidence=[], choices=[]
+        )
+
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent, "process_user_request_result", fake_base_result
+    )
+    agent = UnifiedMCPAgent(FirmwareMCP(), "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result("check firmware")
+
+    assert outcome.message == "handed to base agent"
+    assert outcome.confirmation_required is False

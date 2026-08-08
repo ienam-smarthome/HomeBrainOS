@@ -50,6 +50,42 @@ def requests_mutation(prompt: str) -> bool:
     return False
 
 
+_FIRMWARE_INSTALL = re.compile(
+    r"^\s*(?:please\s+)?(?:install|apply|do|run|start)\s+(?:the\s+)?"
+    r"(?:available\s+)?(?:hub(?:itat)?\s+)?firmware(?:\s+update)?\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?update\s+(?:the\s+)?hub(?:itat)?\s+firmware\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?upgrade\s+(?:the\s+)?(?:hub(?:itat)?\s+)?firmware\s*[?.!]*\s*$",
+    re.I,
+)
+
+
+def parse_firmware_install_intent(prompt: str) -> bool:
+    """True for an explicit directive to install/update/upgrade hub firmware.
+
+    Deliberately a narrow ``fullmatch`` over known imperative phrasings
+    (mirrors the WebUI's own "Update hub firmware" button text and its
+    yes/proceed normalization, plus the natural variants a user might type
+    directly), not a loose keyword search -- a read-only question like
+    "check firmware" or "is there a firmware update" must never match this.
+
+    Live-tested regression: the system prompt used to instruct the model to
+    "only call hub_update_firmware after the snapshot reports
+    update_available=true", trusting it to chain a second tool call across
+    tool-selection rounds. It didn't reliably do that -- even the explicit
+    request "Install the available Hubitat firmware update" only ever
+    called the read-only snapshot and narrated a summary, so the
+    confirmation gate (which only fires once the model actually attempts
+    the sensitive tool call) never engaged. The WebUI's own "Update hub
+    firmware" button just resubmits that same text, so the loop repeated
+    indefinitely. This intent match lets the host propose the sensitive
+    action deterministically instead -- it does not bypass confirmation;
+    the actual `hub_update_firmware` call still only runs once the user
+    replies "confirm".
+    """
+
+    return _FIRMWARE_INSTALL.fullmatch(str(prompt).strip()) is not None
+
+
 def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
     """Parse generic on/off/toggle control grammar without device-name encoding."""
 
