@@ -508,9 +508,71 @@ def resolve_device_candidate(
     )
 
 
+def device_commands(device: dict[str, Any]) -> set[str]:
+    """Every command name a device advertises, casefolded.
+
+    Mirrors the command-name extraction `RuleAuthoringService._commands()`
+    already does privately for its own post-resolution capability check --
+    exposed here as a public, reusable helper so other capability-aware
+    resolution paths don't have to duplicate the list-vs-dict and
+    command-vs-name shape handling.
+    """
+
+    values = device.get("commands") or device.get("supportedCommands") or []
+    if isinstance(values, dict):
+        values = list(values)
+    commands: set[str] = set()
+    for item in values if isinstance(values, (list, tuple, set)) else []:
+        if isinstance(item, dict):
+            item = item.get("name") or item.get("command")
+        if item:
+            commands.add(str(item).casefold())
+    return commands
+
+
+def resolve_capable_device_candidate(
+    requested: str,
+    candidates: list[dict[str, Any]],
+    *,
+    required_command: str,
+    **kwargs: Any,
+) -> CandidateResolution:
+    """`resolve_device_candidate`, scoped to devices that actually advertise
+    `required_command`.
+
+    Plain name resolution alone can pick an exact-label match that lacks
+    the capability entirely over a less exact match that has it. Live
+    evidence: a real hub has two devices both plausibly named "tv" -- a
+    plain power-switch labelled exactly "TV", and a network-integration
+    device labelled "Block Google-TV-Streamer" that is the only one of the
+    two that actually advertises `blockInternet`/`allowInternet`. Ordinary
+    name resolution picks the exact-label switch every time (confidence
+    1.0, no contest), even though it can't do what was asked at all.
+    Filtering to capable devices FIRST, then resolving by name only among
+    those, finds the streamer instead. If literally no device advertises
+    the required command, that's reported as a normal "no match" outcome
+    so callers get the standard alternatives/error handling rather than a
+    device being silently substituted or the command running elsewhere.
+    """
+
+    capable = [
+        device for device in candidates
+        if required_command.casefold() in device_commands(device)
+    ]
+    if not capable:
+        return _missing_resolution(
+            confidence=0.0,
+            alternatives=(),
+            reason=f"no device advertises {required_command!r}",
+        )
+    return resolve_device_candidate(requested, capable, **kwargs)
+
+
 __all__ = [
     "CandidateResolution",
+    "device_commands",
     "normalized_name",
+    "resolve_capable_device_candidate",
     "resolve_device_candidate",
     "targeted_name_variants",
 ]

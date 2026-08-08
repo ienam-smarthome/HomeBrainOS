@@ -7,7 +7,9 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from device_target_resolver import (  # noqa: E402
+    device_commands,
     normalized_name,
+    resolve_capable_device_candidate,
     resolve_device_candidate,
     targeted_name_variants,
 )
@@ -292,3 +294,46 @@ def test_articles_a_and_an_do_not_block_exact_matches_either():
 
     assert resolution_an.target is not None
     assert resolution_an.target["id"] == "3"
+
+
+def test_device_commands_extracts_names_from_list_or_dict_shapes():
+    assert device_commands({"commands": ["on", "off", "blockInternet"]}) == {
+        "on", "off", "blockinternet",
+    }
+    assert device_commands({"commands": [{"name": "blockInternet"}]}) == {"blockinternet"}
+    assert device_commands({"supportedCommands": ["setLevel"]}) == {"setlevel"}
+    assert device_commands({}) == set()
+
+
+def test_resolve_capable_device_candidate_prefers_the_capable_device_over_an_exact_name_match():
+    """Regression test for a real live failure: a plain power-switch
+    labelled exactly "TV" wins ordinary name resolution against "tv"
+    every time (exact match, confidence 1.0), even though a second device
+    -- "Block Google-TV-Streamer" -- is the only one that actually
+    supports blockInternet. Scoping to capable devices before resolving by
+    name must find the streamer instead.
+    """
+
+    tv_switch = {"id": "4221", "label": "TV", "commands": ["on", "off"]}
+    tv_streamer = {
+        "id": "6923", "label": "Block Google-TV-Streamer",
+        "commands": ["on", "off", "blockInternet", "allowInternet"],
+    }
+
+    resolution = resolve_capable_device_candidate(
+        "tv", [tv_switch, tv_streamer], required_command="blockInternet"
+    )
+
+    assert resolution.target is not None
+    assert resolution.target["id"] == "6923"
+
+
+def test_resolve_capable_device_candidate_reports_missing_not_a_wrong_device():
+    tv_switch = {"id": "4221", "label": "TV", "commands": ["on", "off"]}
+
+    resolution = resolve_capable_device_candidate(
+        "tv", [tv_switch], required_command="blockInternet"
+    )
+
+    assert resolution.target is None
+    assert resolution.alternatives == ()

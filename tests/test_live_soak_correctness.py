@@ -15,6 +15,7 @@ from homebrain_agent import UnifiedMCPAgent
 from request_classification import (
     parse_firmware_install_intent,
     parse_firmware_status_intent,
+    parse_immediate_internet_access_intent,
 )
 
 
@@ -142,6 +143,39 @@ def test_bare_attribute_words_are_deterministic() -> None:
     assert parse_bare_attribute("what's the weather outside") is None
 
 
+def test_bare_attribute_matches_apostrophe_free_and_article_only_phrasing() -> None:
+    """Two false-negative gaps found in a further debugging pass: real
+    users often type "whats" without the apostrophe (mobile
+    autocorrect-off is common), and a terse "the temperature" follow-up
+    has no question word at all. Both used to fall through to the model's
+    tool-selection loop -- the exact outdoor-weather-misrouting risk this
+    parser exists to close -- rather than resolving deterministically.
+    """
+
+    assert parse_bare_attribute("whats the temperature") == "temperature"
+    assert parse_bare_attribute("Whats the humidity?") == "humidity"
+    assert parse_bare_attribute("whats battery") == "battery"
+    assert parse_bare_attribute("the temperature") == "temperature"
+    assert parse_bare_attribute("The temperature?") == "temperature"
+    assert parse_bare_attribute("the current power") == "power"
+    # Still correctly rejected: a real device name after "the" must keep
+    # falling through to parse_named_attribute, not resolve here.
+    assert parse_bare_attribute("the Bedroom 1 temperature") is None
+    assert parse_bare_attribute("whatsoever") is None
+
+
+def test_named_and_contextual_attribute_also_accept_apostrophe_free_whats() -> None:
+    """Same "whats" (no apostrophe) gap applies to the other two attribute
+    parsers, which share the same what(?:'s|\\s+is) prefix pattern.
+    """
+
+    assert parse_named_attribute("whats the Bedroom 1 temperature") == (
+        "Bedroom 1",
+        "temperature",
+    )
+    assert parse_contextual_attribute("whats its humidity") == "humidity"
+
+
 def test_firmware_install_intent_matches_only_genuine_install_directives() -> None:
     """Must catch the WebUI's own "Update hub firmware" button text
     (which submits "Install the available Hubitat firmware update") and
@@ -193,6 +227,42 @@ def test_firmware_status_intent_matches_only_progress_questions() -> None:
     assert not parse_firmware_status_intent("Install the available Hubitat firmware update")
     assert not parse_firmware_status_intent("update hub firmware")
     assert not parse_firmware_status_intent("")
+
+
+def test_immediate_internet_access_intent_matches_only_unscheduled_block_allow() -> None:
+    """Regression test for a real live failure: "block the tv" (no time
+    clause at all) had no deterministic handling anywhere in the codebase
+    -- RuleAuthoringService's own block/allow grammar only ever engages
+    for a scheduled request (an "at <time>" clause or a "from X to Y"
+    window) -- so it fell through to the model, which interpreted "block"
+    as "turn off" and powered the device down instead. Must catch the
+    bare, immediate form, but must never intercept a scheduled request
+    (those still belong to RuleAuthoringService, unchanged) or explicit
+    rule-authoring language.
+    """
+
+    assert parse_immediate_internet_access_intent("block the tv") == ("tv", "blockInternet")
+    assert parse_immediate_internet_access_intent("Block the TV.") == ("TV", "blockInternet")
+    assert parse_immediate_internet_access_intent("disable internet for the tv") == (
+        "tv", "blockInternet",
+    )
+    assert parse_immediate_internet_access_intent("allow the tv") == ("tv", "allowInternet")
+    assert parse_immediate_internet_access_intent("enable internet access for the tv") == (
+        "tv", "allowInternet",
+    )
+    assert parse_immediate_internet_access_intent("please block the xbox") == (
+        "xbox", "blockInternet",
+    )
+
+    assert parse_immediate_internet_access_intent("block the tv at 10pm") is None
+    assert parse_immediate_internet_access_intent(
+        "block internet for the tv from 10pm to 6am"
+    ) is None
+    assert parse_immediate_internet_access_intent(
+        "create an automation to block the tv"
+    ) is None
+    assert parse_immediate_internet_access_intent("is the tv blocked") is None
+    assert parse_immediate_internet_access_intent("") is None
 
 
 def test_explicit_device_selection_commands_are_deterministic() -> None:

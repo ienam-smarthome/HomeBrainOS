@@ -5,20 +5,20 @@ from typing import Any
 
 
 _CONTEXTUAL_ATTRIBUTE = re.compile(
-    r"^\s*(?:what(?:'s|\s+is)|show|tell\s+me)\s+(?:me\s+)?(?:the\s+)?"
+    r"^\s*(?:what(?:'s|s|\s+is)|show|tell\s+me)\s+(?:me\s+)?(?:the\s+)?"
     r"(?:current\s+)?(?:value\s+of\s+)?(?:its|it'?s|that(?:\s+device)?'?s)\s+"
     r"(?:current\s+)?(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
     re.I,
 )
 _NAMED_ATTRIBUTE = re.compile(
-    r"^\s*(?:what(?:'s|\s+is)|show(?:\s+me)?|tell\s+me)\s+(?:the\s+)?"
+    r"^\s*(?:what(?:'s|s|\s+is)|show(?:\s+me)?|tell\s+me)\s+(?:the\s+)?"
     r"(?P<name>.+?)\s+(?:current\s+)?"
     r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
     re.I,
 )
 _BARE_ATTRIBUTE = re.compile(
-    r"^\s*(?:(?:what(?:'s|\s+is)|show(?:\s+me)?|tell\s+me)\s+(?:me\s+)?"
-    r"(?:the\s+)?)?(?:current\s+)?"
+    r"^\s*(?:(?:what(?:'s|s|\s+is)|show(?:\s+me)?|tell\s+me)\s+(?:me\s+)?)?"
+    r"(?:the\s+)?(?:current\s+)?"
     r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
     re.I,
 )

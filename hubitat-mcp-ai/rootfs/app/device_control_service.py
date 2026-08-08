@@ -559,6 +559,39 @@ class DeviceControlService:
                 or target.get("name")
                 or device_id
             )
+            expected_value: str | None = command if command in {"on", "off"} else None
+            if command == "toggle":
+                # "on"/"off" have a known target state up front, so they can
+                # ask the hub to waitFor convergence on it directly. "toggle"
+                # doesn't -- without this, it never got a waitFor at all
+                # (device_control_service.py had no verification path for
+                # it, unlike on/off), so a toggle whose HTTP call succeeded
+                # but whose physical device never actually changed state
+                # (asleep repeater, brief RF collision, etc.) was reported
+                # as success with no way to know it didn't happen. Reading
+                # the current state first lets toggle get the exact same
+                # waitFor-based verification on/off already have. If this
+                # read fails or the attribute is missing, fall back to the
+                # previous unverified behaviour rather than guessing.
+                try:
+                    async with semaphore:
+                        state_result = await self.mcp.call_tool(
+                            "hub_read_devices",
+                            {
+                                "tool": "hub_get_device_attribute",
+                                "args": {"deviceId": device_id, "attribute": "switch"},
+                            },
+                        )
+                    current_state = (
+                        state_result.data.get("value")
+                        if self._tool_succeeded(state_result)
+                        and isinstance(state_result.data, dict)
+                        else None
+                    )
+                except Exception:
+                    current_state = None
+                if isinstance(current_state, str) and current_state.casefold() in {"on", "off"}:
+                    expected_value = "off" if current_state.casefold() == "on" else "on"
             call_arguments = {
                 "tool": "hub_call_device_command",
                 "args": {
@@ -568,11 +601,11 @@ class DeviceControlService:
                         {
                             "waitFor": {
                                 "attribute": "switch",
-                                "expectedValue": command,
+                                "expectedValue": expected_value,
                                 "timeoutMs": 5000,
                             }
                         }
-                        if command in {"on", "off"}
+                        if expected_value is not None
                         else {}
                     ),
                 },
@@ -588,7 +621,7 @@ class DeviceControlService:
                     )
                 command_success = self._tool_succeeded(result)
                 message = result.text
-                if command in {"on", "off"}:
+                if expected_value is not None:
                     wait_for = (
                         result.data.get("waitFor")
                         if isinstance(result.data, dict)

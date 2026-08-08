@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from time_expressions import AT_TIME
+
 _STRONG_CONTROL_VERBS = {
     "create", "delete", "disable", "enable", "install", "pause", "reboot", "remove",
     "restart", "resume", "set", "shutdown", "start", "stop", "toggle",
@@ -152,4 +154,72 @@ def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
                 "device_kind": "auto",
                 "command": str(match.group("command")).casefold(),
             }
+    return None
+
+
+_INTERNET_ACCESS_WINDOW = re.compile(
+    r"\bfrom\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?"
+    r"\s+(?:to|until|through|-)\s+"
+    r"\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?\b",
+    re.I,
+)
+_RULE_AUTHORING_WORDS = re.compile(r"\b(?:automation|rule|schedule)\b", re.I)
+_BLOCK_INTERNET = re.compile(
+    r"^(?:please\s+)?(?:block|disable)\s+"
+    r"(?:internet\s+(?:access\s+)?(?:for\s+)?|access\s+for\s+)?"
+    r"(?P<target>.+?)\s*[.!?]*$",
+    re.I,
+)
+_ALLOW_INTERNET = re.compile(
+    r"^(?:please\s+)?(?:allow|enable)\s+"
+    r"(?:internet\s+(?:access\s+)?(?:for\s+)?|access\s+for\s+)?"
+    r"(?P<target>.+?)\s*[.!?]*$",
+    re.I,
+)
+
+
+def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | None:
+    """Parse an unscheduled "block X" / "allow X" request into
+    (target_name, command), where command is "blockInternet" or
+    "allowInternet".
+
+    Live-tested regression: `RuleAuthoringService` already recognises
+    "block X"/"allow X" as valid Rule Machine action verbs, but only ever
+    inside a scheduled context -- its own `_intent()` gate requires either
+    an "at <time>" clause or a "from X to Y" window before it will even
+    look at the prompt. A bare, immediate "block the tv" (no time at all)
+    matches neither, so it fell straight through every deterministic path
+    in the codebase to the model's own tool-selection loop -- which, with
+    no "block internet" tool call available to reach for and only an
+    ordinary switch device to work with, interpreted "block" as "turn
+    off" and dispatched a plain power-off command instead. That is
+    actively wrong for a parental-control-style feature, not just
+    imprecise: turning a device's power off is trivially reversed and is
+    not equivalent to blocking its network access.
+
+    Deliberately narrow and mutually exclusive with the scheduled grammar:
+    returns None whenever an `AT_TIME`/window clause is present (those
+    must keep going to `RuleAuthoringService`, unchanged) or the prompt
+    uses explicit rule-authoring language ("create an automation to
+    block..."), so this only ever catches the immediate case that
+    previously had no deterministic handling at all.
+    """
+
+    text = " ".join(str(prompt).strip().split())
+    if not text:
+        return None
+    if (
+        AT_TIME.search(text) is not None
+        or _INTERNET_ACCESS_WINDOW.search(text) is not None
+        or _RULE_AUTHORING_WORDS.search(text) is not None
+    ):
+        return None
+    for pattern, command in ((_BLOCK_INTERNET, "blockInternet"), (_ALLOW_INTERNET, "allowInternet")):
+        match = pattern.fullmatch(text)
+        if match is None:
+            continue
+        target = str(match.group("target") or "").strip(" ,.-")
+        target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
+        if target:
+            return target, command
     return None
