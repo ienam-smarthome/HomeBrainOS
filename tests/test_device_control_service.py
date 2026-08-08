@@ -244,6 +244,105 @@ async def test_room_name_in_device_names_acts_on_the_room_not_a_lookalike_device
     assert "7101" not in succeeded_ids
 
 
+KITCHEN_LIGHT = {
+    "id": "8001", "label": "Kitchen Light", "roomName": "Kitchen",
+    "capabilities": ["Actuator", "Refresh", "Light", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+# A real non-light switch/plug -- "turn off the lights" must never touch
+# this even though it shares the generic switch capability every light also
+# has.
+TV_PLUG = {
+    "id": "4221", "label": "TV", "roomName": "Living Room",
+    "capabilities": ["Actuator", "Refresh", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
+
+
+@pytest.mark.asyncio
+async def test_bare_the_lights_target_acts_on_every_light_house_wide():
+    """Regression test for a real live failure: "turn off the lights"
+    (no room, no device name -- an unqualified whole-house request) fell
+    into ordinary per-name fuzzy resolution, which has nothing literally
+    named "the lights" to match, and reported "Unresolved" with an
+    unrelated disambiguation offer (Livingroom TRV / Block Tab-S9-FE /
+    Fridge) instead of doing the obviously intended thing: turn off every
+    light in the house. A non-light switch/plug (the TV) must not be
+    touched by this even though it shares the generic switch capability.
+    """
+
+    mcp = ControlMCP([BEDROOM1_LIGHT, KITCHEN_LIGHT, TV_PLUG])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["the lights"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"7057", "8001"}
+    assert "4221" not in succeeded_ids
+
+
+@pytest.mark.asyncio
+async def test_all_lights_phrasing_variants_all_resolve_house_wide():
+    mcp = ControlMCP([BEDROOM1_LIGHT, KITCHEN_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    for phrase in ("all lights", "all the lights", "every light", "the light"):
+        result = await service.execute({
+            "device_names": [phrase],
+            "device_kind": "auto",
+            "command": "on",
+        })
+        succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+        assert succeeded_ids == {"7057", "8001"}, phrase
+
+
+@pytest.mark.asyncio
+async def test_no_lights_in_the_house_reports_a_clear_error():
+    mcp = ControlMCP([TV_PLUG])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["the lights"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.is_error is True
+    assert "No lights were found" in result.data["error"]
+    # A live lookup is allowed to confirm no lights exist, but no command
+    # dispatch must ever be attempted.
+    assert all(
+        arguments.get("tool") != "hub_call_device_command"
+        for _gateway, arguments in mcp.calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_named_light_is_unaffected_by_the_all_lights_target():
+    """A specific named light must keep going through ordinary per-name
+    resolution -- only the closed set of unqualified aggregate phrasings
+    ("the lights", "all lights", etc.) triggers the house-wide path.
+    """
+
+    mcp = ControlMCP([KITCHEN_LIGHT, BEDROOM1_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Kitchen Light"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"8001"}
+
+
 class FailingControlMCP(ControlMCP):
     """Same as ControlMCP, but every hub_call_device_command dispatch
     fails outright -- reproducing what was observed live for "living room
