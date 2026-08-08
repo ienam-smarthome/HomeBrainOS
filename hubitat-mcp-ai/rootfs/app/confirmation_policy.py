@@ -16,6 +16,50 @@ from typing import Any
 from tool_registry import HUB_UPDATE_FIRMWARE_TOOL, ToolEffect
 
 
+# Nested gateway operation names (the "tool" value inside a hub_manage_*
+# call's own {"tool": ..., "args": {...}} envelope) confirmed, by directly
+# inspecting each gateway's live MCP schema, to declare their OWN
+# confirm/confirm=true parameter. This is deliberately an explicit allowlist
+# rather than "any nested args object" -- some operations that share a
+# gateway with confirm-bearing ones do NOT have a confirm field at all and
+# instead verify success their own way (hub_call_device_command uses
+# waitFor-based state verification; hub_set_rule_paused/hub_call_rule/
+# hub_set_rule_private_boolean are routine RM runtime control, not
+# destructive; hub_update_custom_rule's schema has no confirm field at all).
+# Sending an unrequested "confirm" key to one of those could be silently
+# ignored or could trip an unexpected-parameter rejection upstream -- since
+# that can't be verified without live-testing every single operation, the
+# safe default is to only inject where the schema is already known to
+# expect it, and extend this set as new confirm-bearing operations are
+# discovered rather than guessing broadly.
+_NESTED_CONFIRM_OPERATIONS = frozenset({
+    # hub_manage_rule_machine
+    "hub_set_rule",
+    # hub_manage_backup
+    "hub_restore_backup", "hub_delete_backup",
+    # hub_manage_radio
+    "hub_set_zwave", "hub_set_zigbee", "hub_call_zwave", "hub_call_matter",
+    # hub_manage_variables
+    "hub_create_variable", "hub_delete_variable",
+    "hub_create_connector", "hub_delete_connector",
+    # hub_manage_code
+    "hub_create_app", "hub_create_driver", "hub_update_app", "hub_update_driver",
+    "hub_delete_item", "hub_create_library", "hub_update_library",
+    "hub_install_bundle", "hub_delete_bundle",
+    # hub_manage_native_rules_and_apps
+    "hub_set_native_app", "hub_delete_native_app",
+    # hub_manage_destructive_ops
+    "hub_reboot", "hub_shutdown", "hub_delete_device", "hub_call_destructive_ops",
+    # hub_manage_dashboards
+    "hub_delete_dashboard",
+    # hub_manage_rooms
+    "hub_create_room", "hub_delete_room", "hub_update_room",
+    # hub_manage_mcp
+    "hub_update_mcp_settings",
+    # hub_manage_devices
+    "hub_call_device_swap", "hub_call_device_replace", "hub_create_device",
+})
+
 DEFAULT_MAX_CONFIRMATION_ACTIONS = 12
 SESSION_REQUIRED = (
     "A unique session_id is required before I can queue a sensitive Hubitat "
@@ -137,17 +181,43 @@ class ConfirmationPolicy:
     ) -> dict[str, Any]:
         """Translate host approval into the upstream tool's confirm flag.
 
-        Hubitat management gateways carry sub-tool arguments inside ``args``.
-        Their destructive/sensitive handlers (including ``hub_set_rule``)
-        require ``confirm:true`` there even after HomeBrain's own UI gate has
-        approved the call. Direct tools receive the flag only when their
-        declared schema supports it.
+        Every Hubitat management gateway (``hub_manage_*``) carries its real
+        sub-tool call inside a nested ``args`` object -- ``{"tool": ...,
+        "args": {...}}`` -- and it is that nested operation's own
+        destructive/sensitive handler that requires ``confirm:true``, not the
+        gateway call itself. This used to be special-cased to
+        ``hub_manage_rule_machine`` only, which meant every other gateway --
+        ``hub_manage_backup``, ``hub_manage_radio``, ``hub_manage_variables``,
+        ``hub_manage_code``, ``hub_manage_native_rules_and_apps``,
+        ``hub_manage_rooms``, ``hub_manage_dashboards``,
+        ``hub_manage_destructive_ops``, ``hub_manage_mcp`` -- never actually
+        received the approval flag after HomeBrain's own confirmation gate
+        approved the call. The user's "yes" would queue and dispatch, but
+        Hubitat's own confirm gate would then reject the upstream write for
+        lacking ``confirm:true``, silently breaking the confirmation flow for
+        a hub-DB restore, a Zwave/Zigbee radio change, a variable delete
+        another rule depends on, and app/driver code edits.
+
+        Not every nested operation accepts a confirm field, though -- a
+        gateway can mix confirm-bearing and routine operations (e.g.
+        ``hub_manage_devices`` has ``hub_call_device_swap``/
+        ``hub_create_device`` with their own confirm, but
+        ``hub_call_device_command`` has no confirm field at all and instead
+        verifies success via ``waitFor``). Injecting confirm into an
+        operation that never declared it risks sending an unexpected
+        parameter with unverifiable upstream behaviour, so the nested
+        operation name is checked against ``_NESTED_CONFIRM_OPERATIONS``, an
+        explicit allowlist built by inspecting each gateway's live schema,
+        rather than assumed for every nested ``args`` object. Direct
+        (non-gateway) tools without a nested ``args`` object still only
+        receive the flag when their own declared schema supports it.
         """
 
         approved = deepcopy(arguments)
-        if str(tool_name) == "hub_manage_rule_machine":
-            nested = approved.get("args")
-            if isinstance(nested, dict):
+        nested = approved.get("args")
+        if isinstance(nested, dict):
+            nested_operation = str(nested.get("tool") or approved.get("tool") or "")
+            if nested_operation in _NESTED_CONFIRM_OPERATIONS:
                 nested["confirm"] = True
             return approved
         properties = (
