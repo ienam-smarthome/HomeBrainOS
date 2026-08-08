@@ -12,6 +12,7 @@ from contextual_read_fast_path import (
     present_motion_activity,
 )
 from homebrain_agent import UnifiedMCPAgent
+from request_classification import parse_firmware_install_intent
 
 
 def test_last_contact_request_extracts_literal_device_and_state() -> None:
@@ -136,6 +137,31 @@ def test_bare_attribute_words_are_deterministic() -> None:
     assert parse_bare_attribute("What was the temperature yesterday?") is None
     assert parse_bare_attribute("temperature history") is None
     assert parse_bare_attribute("what's the weather outside") is None
+
+
+def test_firmware_install_intent_matches_only_genuine_install_directives() -> None:
+    """Must catch the WebUI's own "Update hub firmware" button text
+    (which submits "Install the available Hubitat firmware update") and
+    reasonable variants, but never a read-only firmware question -- this
+    is a sensitive-write trigger, not a read fast path, so false positives
+    matter more here than elsewhere in this module.
+    """
+
+    assert parse_firmware_install_intent("Install the available Hubitat firmware update")
+    assert parse_firmware_install_intent("install firmware")
+    assert parse_firmware_install_intent("Please install the firmware update.")
+    assert parse_firmware_install_intent("update hub firmware")
+    assert parse_firmware_install_intent("Update the Hubitat firmware")
+    assert parse_firmware_install_intent("upgrade firmware")
+    assert parse_firmware_install_intent("Upgrade the hub firmware")
+
+    assert not parse_firmware_install_intent("check firmware")
+    assert not parse_firmware_install_intent("what firmware is installed")
+    assert not parse_firmware_install_intent("is there a firmware update")
+    assert not parse_firmware_install_intent("firmware status")
+    assert not parse_firmware_install_intent("Hub firmware 2.5.1.145 is installed")
+    assert not parse_firmware_install_intent("update the living room light")
+    assert not parse_firmware_install_intent("")
 
 
 def test_explicit_device_selection_commands_are_deterministic() -> None:

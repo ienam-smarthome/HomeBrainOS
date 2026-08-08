@@ -31,6 +31,7 @@ from contextual_read_fast_path import (
     present_attribute,
     present_motion_activity,
 )
+from confirmation_policy import ConfirmationAction
 from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
 from direct_outcome_context import DirectOutcomeContext
@@ -40,10 +41,12 @@ from live_evidence_authority import LiveEvidenceAuthority
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
 from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
+from request_classification import parse_firmware_install_intent
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
 from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
+from tool_registry import EVIDENCE_KINDS, LOCAL_HUB_INFO_TOOL
 
 
 class UnifiedMCPAgent(BaseUnifiedMCPAgent):
@@ -393,6 +396,74 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         return await self._direct_outcome(operation, request_class="live-read")
 
+    async def _firmware_install_outcome(self, *, session_key: str) -> AgentOutcome:
+        """Deterministically propose the sensitive `hub_update_firmware`
+        write once an explicit install directive is recognised, instead of
+        trusting the model to chain a second tool call after reading the
+        firmware snapshot (see parse_firmware_install_intent's docstring
+        for the live failure this fixes). This only ever queues the
+        existing confirmation gate -- the actual firmware write still does
+        not run until the user replies "confirm", exactly as it would if
+        the model had proposed it itself.
+        """
+
+        async def operation() -> str:
+            started = time.monotonic()
+            result = await self._hub_info_snapshot({"scope": "firmware"})
+            self.evidence.record(
+                LOCAL_HUB_INFO_TOOL,
+                {"scope": "firmware"},
+                success=self._tool_succeeded(result),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=self._result_summary(result),
+                evidence_kind=EVIDENCE_KINDS[LOCAL_HUB_INFO_TOOL],
+            )
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    LOCAL_HUB_INFO_TOOL, data, failed=True, fallback_error=result.text
+                ) or "I could not read the hub firmware status."
+            installed = data.get("installed_firmware") or "the installed version"
+            if not data.get("update_available"):
+                return (
+                    f"Hub firmware {installed} is already the latest version. "
+                    "No update is available to install."
+                )
+            actions: list[tuple[str, dict[str, Any]]] = [("hub_update_firmware", {})]
+            decision = self.confirmation_policy.decide(session_key, actions)
+            if decision.action is ConfirmationAction.REJECT:
+                return str(decision.message)
+            # queue() stores this alongside the confirmed-action replay path
+            # (ConfirmedActionCoordinator.resume) -- it executes every entry
+            # in `actions` directly rather than re-parsing tool_calls back
+            # out of assistant_message, so this synthetic message only needs
+            # to read sensibly as chat history for the post-confirm
+            # narration round, not carry any binding structure of its own.
+            assistant_message = {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "function": {"name": "hub_update_firmware", "arguments": {}},
+                }],
+            }
+            self.confirmations.queue(
+                session_key,
+                actions,
+                [{
+                    "role": "user",
+                    "content": "Install the available Hubitat firmware update.",
+                }],
+                assistant_message,
+            )
+            return str(decision.message)
+
+        outcome = await self._direct_outcome(operation, request_class="write")
+        pending = self.confirmations.pending.get(str(session_key))
+        if pending is not None:
+            outcome.confirmation_required = True
+            outcome.confirmation_count = len(pending.actions)
+        return outcome
+
     async def _routine_control_outcome(self, arguments: dict[str, Any]) -> AgentOutcome:
         async def operation() -> str:
             started = time.monotonic()
@@ -523,6 +594,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     explain_cause=True,
                     session_key=session_key,
                 )
+
+            if parse_firmware_install_intent(user_prompt):
+                return await self._firmware_install_outcome(session_key=session_key)
 
             # A prompt carrying an "at <time>" clause (e.g. "turn on X at
             # 10am", "turn on X every day at 10am") must reach
