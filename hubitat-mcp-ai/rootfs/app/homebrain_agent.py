@@ -23,6 +23,7 @@ from contact_history_queries import (
 from contextual_read_fast_path import (
     capability_choice_labels,
     clean_choice_label,
+    is_pronoun_reference,
     parse_bare_attribute,
     parse_contextual_attribute,
     parse_device_selection,
@@ -528,7 +529,43 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             outcome.confirmation_count = len(pending.actions)
         return outcome
 
-    async def _routine_control_outcome(self, arguments: dict[str, Any]) -> AgentOutcome:
+    def _resolve_pronoun_control_target(
+        self, arguments: dict[str, Any], *, session_key: str
+    ) -> dict[str, Any]:
+        """Substitute a bare pronoun target with the session's last device.
+
+        Live-observed regression: "turn on Livingroom Light 2" immediately
+        followed by "turn it off" returned "Unresolved" -- routine_control_
+        arguments() parses "it" as a literal device_names entry, and
+        DeviceControlService's fuzzy name resolver has no idea "it" means
+        anything, so it fell through to a failed/ambiguous name lookup
+        instead of the just-controlled device. The read-side follow-up path
+        ("what's its temperature") already solves this by remembering the
+        last resolved device in _selected_devices; _routine_control_outcome
+        now writes to that same session slot on every single-device control
+        success, so this only has to read it back for the pronoun case.
+        When nothing has been controlled/selected yet this session, the
+        arguments are returned unchanged and resolution fails exactly as
+        before -- there is nothing honest to substitute.
+        """
+
+        names = arguments.get("device_names")
+        if (
+            not isinstance(names, list)
+            or len(names) != 1
+            or not is_pronoun_reference(str(names[0]))
+        ):
+            return arguments
+        last_device = self._selected_devices.get(session_key)
+        if not last_device:
+            return arguments
+        substituted = dict(arguments)
+        substituted["device_names"] = [last_device]
+        return substituted
+
+    async def _routine_control_outcome(
+        self, arguments: dict[str, Any], *, session_key: str
+    ) -> AgentOutcome:
         async def operation() -> str:
             started = time.monotonic()
             result = await self._control_devices(arguments)
@@ -545,6 +582,19 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             if choices:
                 self._choices.set(choices)
                 self.request_metrics.increment("device_resolution_ambiguous")
+            # Remember exactly which device this command actually landed on
+            # so an immediate pronoun follow-up ("turn it off") can resolve
+            # against it, the same way _selected_devices already lets a
+            # follow-up reading ("what's its temperature") resolve after a
+            # named read. Only recorded when the command resolved to a
+            # single device -- a room-wide or multi-device command has no
+            # single "it" to remember, and remembering the wrong one would
+            # be worse than making the follow-up ask again.
+            succeeded = data.get("succeeded") or []
+            if isinstance(succeeded, list) and len(succeeded) == 1:
+                label = str(succeeded[0].get("label") or "").strip()
+                if label:
+                    self._selected_devices[session_key] = label
             return present_tool_result(
                 "homebrain_control_devices",
                 data,
@@ -861,7 +911,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             # rule-authoring grammar that can actually honour either one.
             control_arguments = self._routine_control_arguments(user_prompt)
             if control_arguments is not None and AT_TIME.search(user_prompt) is None:
-                return await self._routine_control_outcome(control_arguments)
+                control_arguments = self._resolve_pronoun_control_target(
+                    control_arguments, session_key=session_key
+                )
+                return await self._routine_control_outcome(
+                    control_arguments, session_key=session_key
+                )
 
             base_process = super(UnifiedMCPAgent, self).process_user_request_result
             return await base_process(user_prompt, conversation_history, session_id=session_id)
