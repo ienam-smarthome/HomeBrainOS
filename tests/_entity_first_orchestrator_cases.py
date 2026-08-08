@@ -1783,7 +1783,7 @@ async def test_high_level_control_fails_closed_when_device_name_is_unmatched():
             "hub_read_devices",
             {
                 "tool": "hub_list_devices",
-                "args": {"labelFilter": "Unknown Light"},
+                "args": {"labelFilter": "Unknown Light", "fields": ["id", "name", "label", "room", "capabilities", "attributes", "commands"]},
             },
         )
     ]
@@ -1869,7 +1869,7 @@ async def test_generic_tv_write_uses_only_high_level_control_and_verifies():
         "hub_read_devices",
         "hub_manage_devices",
     ]
-    assert mcp.calls[1][1]["args"] == {"labelFilter": "TV"}
+    assert mcp.calls[1][1]["args"] == {"labelFilter": "TV", "fields": ["id", "name", "label", "room", "capabilities", "attributes", "commands"]}
     assert mcp.calls[-1][1] == {
         "tool": "hub_call_device_command",
         "args": {
@@ -1933,7 +1933,7 @@ async def test_high_level_control_accepts_unique_decorated_speech_match():
         "hub_read_devices",
         {
             "tool": "hub_list_devices",
-            "args": {"labelFilter": "living room light two"},
+            "args": {"labelFilter": "living room light two", "fields": ["id", "name", "label", "room", "capabilities", "attributes", "commands"]},
         },
     )
     assert mcp.calls[1][1]["args"] == {
