@@ -53,6 +53,32 @@ LOCAL_OPERATION_WRAPPERS = {
     "hub_list_device_events": LOCAL_DEVICE_HISTORY_TOOL,
 }
 
+# The orchestrator seeds discovery with the raw, unfiltered original-request
+# text (e.g. "living room light"), and the upstream hub_search_tools search is
+# a fuzzy match over tool names/descriptions on the live Hubitat MCP server --
+# not something this app controls. A word like "room" can legitimately rank a
+# handful of unrelated multi-op gateways (hub_read_rooms, hub_manage_rooms)
+# alongside the one the request actually needs, since upstream returns
+# already-ranked, most-relevant-first hits. Previously every ranked gateway
+# hit expanded the declared registry unconditionally.
+#
+# Live evidence: two successful same-session requests each got exactly one
+# discovery addition (hub_manage_rule_machine -- apparently a broad, mostly
+# harmless top hit regardless of query) for a total of 15 declared tools, and
+# both completed normally. A third, near-identical "living room light"
+# request additionally matched hub_read_rooms and hub_manage_rooms -- two
+# unrelated room-admin gateways -- pushing the same request to 17 declared
+# tools, and the model answered across two rounds without calling any tool at
+# all (a live "Refused" grounding failure, zero evidence gathered).
+#
+# A cap of 1 would fully reproduce the known-good shape for that specific
+# case, but a genuine multi-gateway need exists too (e.g. "create a Rule
+# Machine rule" legitimately wants both hub_manage_rule_machine and
+# hub_read_rules declared together). Capping at 2 keeps that documented case
+# intact while still dropping the long incidental tail beyond upstream's top
+# two ranked hits, bounding what was previously unbounded growth.
+MAX_DISCOVERED_GATEWAYS = 2
+
 
 class ToolDiscoveryCatalog:
     """Track the bounded tool registry visible to one agent request."""
@@ -142,6 +168,8 @@ class ToolDiscoveryCatalog:
                 continue
             seen.add(name)
             names.append(name)
+            if len(names) >= MAX_DISCOVERED_GATEWAYS:
+                break
         return [available[name] for name in names]
 
     @property

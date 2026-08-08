@@ -175,6 +175,41 @@ def test_expansion_supports_recognised_result_envelope_and_preserves_order():
     assert catalog.expand(result) == []
 
 
+def test_expansion_caps_gateway_hits_to_the_top_ranked_matches():
+    """Regression test for a real live failure: the orchestrator seeds
+    discovery with the raw original-request text ("living room light"), and
+    the upstream hub_search_tools fuzzy match on "room" ranked two unrelated
+    room-admin gateways (hub_read_rooms, hub_manage_rooms) behind its usual
+    top hit. Declaring all of them ballooned a routine 15-tool request to 17
+    declared tools, which correlated with the model answering across two
+    rounds without calling any tool at all (a live "Refused" outcome). Only
+    upstream's top two ranked hits should expand the registry; the long tail
+    beyond that should be dropped.
+    """
+
+    catalog = ToolDiscoveryCatalog([
+        tool("hub_search_tools"),
+        tool("hub_manage_rule_machine"),
+        tool("hub_read_rooms"),
+        tool("hub_manage_rooms"),
+    ])
+    result = search_result({
+        "results": [
+            {"tool": "hub_set_rule", "gateway": "hub_manage_rule_machine"},
+            {"tool": "hub_list_rooms", "gateway": "hub_read_rooms"},
+            {"tool": "hub_edit_room", "gateway": "hub_manage_rooms"},
+        ]
+    })
+
+    additions = catalog.expand(result)
+
+    assert [item.name for item in additions] == [
+        "hub_manage_rule_machine",
+        "hub_read_rooms",
+    ]
+    assert catalog.declared_tool("hub_manage_rooms") is None
+
+
 def test_failed_unknown_and_self_discovery_results_do_not_expand():
     catalog = ToolDiscoveryCatalog([
         tool("hub_search_tools"),
