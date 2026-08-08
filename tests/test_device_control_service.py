@@ -343,6 +343,74 @@ async def test_named_light_is_unaffected_by_the_all_lights_target():
     assert succeeded_ids == {"8001"}
 
 
+ALREADY_OFF_TOILET_LIGHT = {
+    "id": "9002", "label": "Toilet Light", "roomName": "Toilet",
+    "capabilities": ["Actuator", "Refresh", "Light", "Switch"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "off"}],
+}
+
+
+@pytest.mark.asyncio
+async def test_already_in_state_devices_are_flagged_but_still_commanded():
+    """A device whose cached state already matches the requested command
+    must still receive the command -- the cache can be stale, and skipping
+    a device because it looked "already off" risks silently leaving a
+    genuinely-on light untouched. It must, however, come back flagged
+    (changed=False) so the presenter can report it separately instead of
+    claiming the assistant "turned off" a light that was never on.
+    """
+
+    mcp = ControlMCP([BEDROOM1_LIGHT, ALREADY_OFF_TOILET_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["the lights"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    by_id = {item["id"]: item for item in result.data["succeeded"]}
+    assert by_id["7057"]["changed"] is True
+    assert by_id["7057"]["already_in_state"] is False
+    assert by_id["9002"]["changed"] is False
+    assert by_id["9002"]["already_in_state"] is True
+    # The command must still have been dispatched to the already-off light,
+    # not silently skipped.
+    dispatched_ids = {
+        arguments["args"]["deviceId"]
+        for _gateway, arguments in mcp.calls
+        if arguments.get("tool") == "hub_call_device_command"
+    }
+    assert dispatched_ids == {"7057", "9002"}
+
+
+@pytest.mark.asyncio
+async def test_unknown_prior_state_defaults_to_changed():
+    """A device with no cached switch attribute at all (identity read
+    failed, or a driver that doesn't report it) must default to being
+    reported as changed -- silence on prior state must never be
+    misread as "already in the requested state" and dropped from the
+    summary.
+    """
+
+    device_with_unknown_state = {
+        "id": "9003", "label": "Mystery Light", "roomName": "Toilet",
+        "capabilities": ["Actuator", "Refresh", "Light", "Switch"],
+    }
+    mcp = ControlMCP([device_with_unknown_state])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Mystery Light"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["succeeded"][0]["changed"] is True
+    assert result.data["succeeded"][0]["already_in_state"] is False
+
+
 class FailingControlMCP(ControlMCP):
     """Same as ControlMCP, but every hub_call_device_command dispatch
     fails outright -- reproducing what was observed live for "living room

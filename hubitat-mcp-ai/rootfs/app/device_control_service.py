@@ -9,7 +9,7 @@ from typing import Any
 
 import re
 
-from device_state_summary import is_light_device, room_name
+from device_state_summary import device_attributes, is_light_device, room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
 from request_metrics import increment_active_metric
@@ -633,6 +633,22 @@ class DeviceControlService:
                 or target.get("name")
                 or device_id
             )
+            # Whatever cached "switch" reading came back with this target --
+            # from the identity cache for the fast path, or from the live
+            # hub_read_devices lookup for the fallback path -- lets the
+            # result say whether this device actually changed state or was
+            # already where the command wanted it, without any extra
+            # round-trip. This is reporting-only: the command is still sent
+            # to every matched device regardless of what the cache says, on
+            # purpose -- the cache can be stale, and skipping a device
+            # because a stale reading claimed it was "already off" would
+            # silently fail to comply with an explicit "turn off the
+            # lights" for a light that was actually still on. Live-observed
+            # feedback: a bare "turn off the lights" command hit every real
+            # light in the house and reported all of them as "Turned off",
+            # even the ones that were already off, which reads as if the
+            # assistant has no idea which lights were actually on.
+            pre_switch = str(device_attributes(target).get("switch") or "").casefold()
             expected_value: str | None = command if command in {"on", "off"} else None
             if command == "toggle":
                 # "on"/"off" have a known target state up front, so they can
@@ -666,6 +682,9 @@ class DeviceControlService:
                     current_state = None
                 if isinstance(current_state, str) and current_state.casefold() in {"on", "off"}:
                     expected_value = "off" if current_state.casefold() == "on" else "on"
+                    # This live read is strictly more trustworthy than the
+                    # cached reading above -- toggle already pays for it.
+                    pre_switch = current_state.casefold()
             call_arguments = {
                 "tool": "hub_call_device_command",
                 "args": {
@@ -733,6 +752,14 @@ class DeviceControlService:
                 evidence_kind="device_command_result",
             )
             success = command_success and verified is not False
+            # already_in_state is only ever asserted True from a known prior
+            # reading that matches the target command -- an unknown/missing
+            # prior reading defaults to "changed" (already_in_state False),
+            # so a device with no cached state still gets reported as acted
+            # upon rather than silently dropped from the summary.
+            already_in_state = (
+                expected_value is not None and pre_switch == expected_value
+            )
             return {
                 "id": device_id,
                 "label": label,
@@ -742,6 +769,8 @@ class DeviceControlService:
                 "verified": verified,
                 "message": message,
                 "verification_message": verification_message,
+                "already_in_state": already_in_state,
+                "changed": success and not already_in_state,
             }
 
         results = await asyncio.gather(*(execute(target) for target in unique_targets))
