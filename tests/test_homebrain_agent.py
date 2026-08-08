@@ -278,3 +278,118 @@ def test_runtime_app_imports_coordinated_agent() -> None:
 
     assert "from homebrain_agent import UnifiedMCPAgent" in source
     assert "from mcp_agent_orchestrator import UnifiedMCPAgent" not in source
+
+
+class DeviceMCP:
+    """Minimal MCP fake exposing the hub_list_devices read path used by
+    DeviceQueryService, matching the QueryMCP/TargetedMCP fakes already
+    used against device_query_service.py directly.
+    """
+
+    def __init__(self, devices: list[dict[str, object]]) -> None:
+        self.devices = devices
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        return MCPToolResult(name, arguments, {}, "ok", {"devices": self.devices})
+
+    async def get_cached_devices(self) -> list[dict[str, object]]:
+        return self.devices
+
+
+@pytest.mark.asyncio
+async def test_bare_attribute_query_never_reaches_model_tool_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for a real live failure: a bare "temperature" query
+    used to fall through to the model's tool-selection loop, which could --
+    and did -- answer from the outdoor weather device instead of an indoor
+    reading, even after 0.10.370's prompt-only steering fix. The
+    parse_bare_attribute fast path added afterward must resolve this
+    deterministically and never hand the request to the model loop at all.
+    Three indoor devices report temperature here, so this also proves the
+    request reaches DeviceQueryService.resolve_device's existing
+    bare-attribute disambiguation guard (0.10.369) rather than silently
+    picking one.
+    """
+
+    async def fail_if_reached(_self: object, *_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError(
+            "bare attribute query reached the model tool-selection loop"
+        )
+
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent, "process_user_request_result", fail_if_reached
+    )
+
+    mcp = DeviceMCP([
+        {
+            "id": "1",
+            "label": "Bedroom Meter",
+            "room": "Bedroom",
+            "capabilities": ["TemperatureMeasurement"],
+            "attributes": {"temperature": 24.0},
+        },
+        {
+            "id": "2",
+            "label": "Hallway Meter",
+            "room": "Hallway",
+            "capabilities": ["TemperatureMeasurement"],
+            "attributes": {"temperature": 28.5},
+        },
+        {
+            "id": "3",
+            "label": "Weather Open-Meteo",
+            "room": "Climate",
+            "capabilities": ["TemperatureMeasurement"],
+            "attributes": {"temperature": 20.0},
+        },
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result("temperature")
+
+    assert "Bedroom Meter" in outcome.message
+    assert "Hallway Meter" in outcome.message
+    assert "Weather Open-Meteo" in outcome.message
+    assert mcp.calls == [
+        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_bare_attribute_query_resolves_single_exact_label_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A device literally labelled "Temperature" must still resolve to
+    itself deterministically rather than triggering the multi-reporter
+    disambiguation guard -- mirrors
+    test_resolve_device_exact_label_match_bypasses_bare_attribute_guard in
+    test_device_query_service.py, exercised through the fast path this
+    time.
+    """
+
+    async def fail_if_reached(_self: object, *_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError(
+            "bare attribute query reached the model tool-selection loop"
+        )
+
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent, "process_user_request_result", fail_if_reached
+    )
+
+    mcp = DeviceMCP([
+        {
+            "id": "1",
+            "label": "Temperature",
+            "room": "Office",
+            "capabilities": ["TemperatureMeasurement"],
+            "attributes": {"temperature": 21.5},
+        },
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result("What's the temperature?")
+
+    assert outcome.message == "Temperature temperature is 21.5°C."

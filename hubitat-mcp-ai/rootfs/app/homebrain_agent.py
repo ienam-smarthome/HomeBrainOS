@@ -23,6 +23,7 @@ from contact_history_queries import (
 from contextual_read_fast_path import (
     capability_choice_labels,
     clean_choice_label,
+    parse_bare_attribute,
     parse_contextual_attribute,
     parse_device_selection,
     parse_motion_activity,
@@ -470,6 +471,26 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 return await self._contextual_attribute_outcome(
                     named_attribute[0],
                     named_attribute[1],
+                    session_key=session_key,
+                )
+
+            # A bare, unqualified reading word ("temperature", "humidity",
+            # "what's the battery") carries no device name at all, so it
+            # can't go through parse_named_attribute above. Resolving it
+            # with the attribute word standing in for both the requested
+            # name and the attribute reaches DeviceQueryService.resolve_device
+            # unchanged -- its existing bare-attribute guard (0.10.369) is
+            # what actually disambiguates across multiple indoor reporters
+            # or resolves a device literally labelled e.g. "Temperature".
+            # This bypasses the model's tool-selection loop entirely for
+            # this case, so it can no longer choose
+            # homebrain_weather_snapshot for an indoor reading no matter how
+            # the prompt is worded that day.
+            bare_attribute = parse_bare_attribute(user_prompt)
+            if bare_attribute is not None:
+                return await self._contextual_attribute_outcome(
+                    bare_attribute,
+                    bare_attribute,
                     session_key=session_key,
                 )
 

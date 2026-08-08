@@ -16,6 +16,12 @@ _NAMED_ATTRIBUTE = re.compile(
     r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
     re.I,
 )
+_BARE_ATTRIBUTE = re.compile(
+    r"^\s*(?:(?:what(?:'s|\s+is)|show(?:\s+me)?|tell\s+me)\s+(?:me\s+)?"
+    r"(?:the\s+)?)?(?:current\s+)?"
+    r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
+    re.I,
+)
 _DEVICE_SELECTION = re.compile(
     r"^\s*(?:(?:select|use|choose)\s+|i\s+mean\s+)?(?:the\s+)?"
     r"(?P<name>.+?)\s*[?.!]*\s*$",
@@ -30,7 +36,20 @@ _HISTORY_TERMS = re.compile(
     r"\b(?:history|historical|when|last|ago|before|after|changed?|over\s+the\s+last|yesterday|today)\b",
     re.I,
 )
-_PRONOUN_NAMES = {"it", "its", "it's", "that", "that device", "this", "this device"}
+# parse_named_attribute's own regex backtracks "What's the temperature?"
+# into name="the", attribute="temperature" when there is no real device name
+# at all -- its optional "(?:the\s+)?" lead-in and the required-nonempty
+# name group can't both be satisfied by "the temperature" without giving
+# "the" to one or the other, and the engine gives it to name. That used to
+# route a bare "what's the X" reading straight into device-name resolution
+# for the literal word "the", which only produced a correct answer by
+# accident when a device happened to be labelled after the attribute itself.
+# Bare articles belong with the pronoun-only exclusions below, not treated
+# as a real device name.
+_PRONOUN_NAMES = {
+    "it", "its", "it's", "that", "that device", "this", "this device",
+    "the", "a", "an",
+}
 _SELECTION_PREFIX = re.compile(r"^\s*(?:select|use|choose|i\s+mean)\b", re.I)
 
 
@@ -67,6 +86,35 @@ def parse_named_attribute(prompt: str) -> tuple[str, str] | None:
     if not name or name.casefold() in _PRONOUN_NAMES:
         return None
     return name, match.group("attribute").casefold()
+
+
+def parse_bare_attribute(prompt: str) -> str | None:
+    """Return a current-state attribute for a bare, unqualified reading word.
+
+    Handles the plain single-word form ("temperature", "humidity") and its
+    minimal question forms ("what's the temperature") that carry no device
+    name at all -- deliberately narrower than ``parse_named_attribute``,
+    which requires a name between the question prefix and the attribute.
+
+    Live-tested regression: this exact bare wording used to fall all the way
+    through to the model's tool-selection loop, where the 0.10.370
+    weather-routing prompt change only steered it away from
+    ``homebrain_weather_snapshot`` probabilistically rather than guaranteeing
+    it -- a real live run answered "temperature" from the outdoor forecast
+    device while every indoor sensor read something else entirely. Routing
+    this deterministically, ahead of the model, removes that risk for the
+    bare-word case outright. Prompts mentioning "weather", "outside",
+    "outdoor", or "forecast" never reach this parser in practice -- the
+    orchestrator's own separate keyword trigger already owns those before
+    the model loop runs, and none of that wording matches this pattern
+    anyway (only the attribute word itself is permitted before the
+    optional trailing punctuation).
+    """
+
+    if _HISTORY_TERMS.search(prompt):
+        return None
+    match = _BARE_ATTRIBUTE.fullmatch(prompt)
+    return match.group("attribute").casefold() if match is not None else None
 
 
 def parse_device_selection(prompt: str) -> str | None:
@@ -154,6 +202,7 @@ def present_motion_activity(
 __all__ = [
     "capability_choice_labels",
     "clean_choice_label",
+    "parse_bare_attribute",
     "parse_contextual_attribute",
     "parse_device_selection",
     "parse_motion_activity",
