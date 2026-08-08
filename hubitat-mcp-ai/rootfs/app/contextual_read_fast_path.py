@@ -53,6 +53,19 @@ _PRONOUN_NAMES = {
 _SELECTION_PREFIX = re.compile(r"^\s*(?:select|use|choose|i\s+mean)\b", re.I)
 
 
+def is_pronoun_reference(name: str) -> bool:
+    """True when ``name`` is a bare pronoun/article rather than a real device name.
+
+    Shared by the read-side contextual-attribute parsers below and by the
+    control-side "turn it off" follow-up handling in ``homebrain_agent.py``,
+    so both sides of a session's "last device" context agree on exactly
+    which literal words mean "the thing we were just talking about" rather
+    than a real device name to resolve.
+    """
+
+    return str(name).strip().casefold() in _PRONOUN_NAMES
+
+
 def clean_choice_label(value: str) -> str:
     """Remove presentation-only conjunctions and articles from a choice label."""
 
@@ -83,7 +96,7 @@ def parse_named_attribute(prompt: str) -> tuple[str, str] | None:
     if match is None:
         return None
     name = clean_choice_label(match.group("name")).strip()
-    if not name or name.casefold() in _PRONOUN_NAMES:
+    if not name or is_pronoun_reference(name):
         return None
     return name, match.group("attribute").casefold()
 
@@ -202,6 +215,7 @@ def present_motion_activity(
 __all__ = [
     "capability_choice_labels",
     "clean_choice_label",
+    "is_pronoun_reference",
     "parse_bare_attribute",
     "parse_contextual_attribute",
     "parse_device_selection",

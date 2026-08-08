@@ -197,6 +197,137 @@ async def test_immediate_control_request_still_uses_instant_fast_path(
     assert base_calls == []
 
 
+@pytest.mark.asyncio
+async def test_pronoun_follow_up_reuses_the_just_controlled_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for a live bug report: "turn on Livingroom Light 2"
+    succeeded, and the immediate follow-up "turn it off" returned
+    "Unresolved" instead of turning off the same device -- routine_control_
+    arguments() parses "it" as a literal device_names entry, and nothing
+    remembered which device the prior command actually landed on. This pins
+    down the fix: a successful single-device control command now records
+    its label in the same per-session slot the read-side "what's its
+    temperature" follow-up already uses, and a pronoun-only control target
+    is substituted from that slot before DeviceControlService ever sees it.
+    """
+
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "",
+            {
+                "success": True,
+                "command": arguments.get("command"),
+                "matched": 1,
+                "executed": 1,
+                "succeeded": [{"id": "42", "label": "Livingroom Light 2", "success": True}],
+                "failed": [],
+                "complete": True,
+            },
+        )
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+
+    await agent.process_user_request_result(
+        "turn on livingroom light 2", session_id="pronoun-follow-up"
+    )
+    await agent.process_user_request_result(
+        "turn it off", session_id="pronoun-follow-up"
+    )
+
+    assert control_calls[0]["device_names"] == ["livingroom light 2"]
+    assert control_calls[1]["device_names"] == ["Livingroom Light 2"]
+    assert control_calls[1]["command"] == "off"
+
+
+@pytest.mark.asyncio
+async def test_pronoun_follow_up_is_scoped_per_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pronoun follow-up in a session that never controlled a device must
+    not borrow another session's last-controlled device -- it should fail
+    to resolve exactly as it did before this fix, not silently act on
+    someone else's device.
+    """
+
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "",
+            {
+                "success": True,
+                "command": arguments.get("command"),
+                "matched": 1,
+                "executed": 1,
+                "succeeded": [{"id": "42", "label": "Livingroom Light 2", "success": True}],
+                "failed": [],
+                "complete": True,
+            },
+        )
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+
+    await agent.process_user_request_result(
+        "turn on livingroom light 2", session_id="session-a"
+    )
+    await agent.process_user_request_result("turn it off", session_id="session-b")
+
+    assert control_calls[1]["device_names"] == ["it"]
+
+
+@pytest.mark.asyncio
+async def test_multi_device_control_does_not_seed_a_pronoun_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A command that controlled more than one device has no single "it" to
+    remember -- guessing which one the user meant next would be worse than
+    making the follow-up ask again, so this must leave any prior single-
+    device context untouched rather than clobbering it with ambiguity.
+    """
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "",
+            {
+                "success": True,
+                "command": arguments.get("command"),
+                "matched": 2,
+                "executed": 2,
+                "succeeded": [
+                    {"id": "1", "label": "Hallway Light", "success": True},
+                    {"id": "2", "label": "Kitchen Light", "success": True},
+                ],
+                "failed": [],
+                "complete": True,
+            },
+        )
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
+
+    await agent.process_user_request_result(
+        "turn on hallway light and kitchen light", session_id="multi-device"
+    )
+
+    assert agent._selected_devices.get("multi-device") is None
+
+
 def test_production_factory_selects_live_evidence_authority() -> None:
     agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=FakeAI("unused"))
     token = set_grounding_policy_factory(agent._create_grounding_policy)
