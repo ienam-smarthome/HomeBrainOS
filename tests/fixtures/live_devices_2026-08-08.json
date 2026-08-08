@@ -1,0 +1,14 @@
+{
+  "_source": "hub_list_devices detailed snapshot pulled live 2026-08-08 for 0.10.379 hardening pass",
+  "devices": [
+    {"id": "6916", "label": "Block Tab-S9-FE", "name": "Cudy Enamul-s-Tab-S9-FE", "room": "Multimedia", "commands": ["addTime", "allowInternet", "blockInternet", "off", "on", "refresh", "resetUsage", "setDeviceIP", "setDeviceMAC"]},
+    {"id": "6917", "label": "Block PC-NucBox-M6Ultra", "name": "Cudy NucBox_M6Ultra", "room": "Internet", "commands": ["addTime", "allowInternet", "blockInternet", "off", "on", "refresh", "resetUsage", "setDeviceIP", "setDeviceMAC"]},
+    {"id": "6923", "label": "Block Google-TV-Streamer", "name": "Cudy Device-192.168.1.108", "room": "Multimedia", "commands": ["addTime", "allowInternet", "blockInternet", "off", "on", "refresh", "resetUsage", "setDeviceIP", "setDeviceMAC"]},
+    {"id": "6985", "label": "Block CAM-Camera-G100-42EA", "name": "Cudy Camera-G100-42EA", "room": "Internet", "commands": ["addTime", "allowInternet", "blockInternet", "off", "on", "refresh", "resetUsage", "setDeviceIP", "setDeviceMAC"]},
+    {"id": "6988", "label": "Block CAM-Camera-G100-7B37", "name": "Cudy Camera-G100-7B37", "room": "Internet", "commands": ["addTime", "allowInternet", "blockInternet", "off", "on", "refresh", "resetUsage", "setDeviceIP", "setDeviceMAC"]},
+    {"id": "4221", "label": "TV", "name": "Innr SP 242 Power Metering SmartPlug", "room": "Multimedia", "commands": ["childLock", "initialize", "ledMode", "off", "on", "ping", "refresh", "resetEnergy", "setEnergy", "setEnergyPrice", "setPowerOnState", "setSwitchType"]},
+    {"id": "4536", "label": "Computer", "name": "💻 Computer", "room": "Multimedia", "commands": ["childLock", "initialize", "ledMode", "off", "on", "ping", "refresh", "resetEnergy", "setEnergy", "setEnergyPrice", "setPowerOnState", "setSwitchType"]},
+    {"id": "7104", "label": "Bedroom3 PC (MQTT)", "name": "Tasmota MQTT - Bedroom3_PC", "room": "Sockets", "commands": ["configure", "initialize", "off", "on", "ping", "refresh", "setPowerDelta", "setTelePeriod"]},
+    {"id": "7109", "label": "HallwayCAM (MQTT)", "name": "Tasmota MQTT - HallwayCAM_socket", "room": "Sockets", "commands": ["configure", "initialize", "off", "on", "ping", "refresh", "setPowerDelta", "setTelePeriod"]}
+  ]
+}

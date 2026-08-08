@@ -190,7 +190,7 @@ class RuleAuthoringService:
 
         goal = cls._clean_goal(text, window.start())
         patterns = (
-            (re.compile(r"^(?:block|disable)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I),
+            (re.compile(r"^(?:block|disable|restrict)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I),
              "blockInternet", "allowInternet", "Block", "Unblock"),
             (re.compile(r"^(?:turn|switch)\s+(?P<target>.+?)\s+off$", re.I),
              "off", "on", "Turn off", "Turn on"),
@@ -231,10 +231,18 @@ class RuleAuthoringService:
         (re.compile(r"^(?:close|shut)\s+(?P<target>.+)$", re.I), "close", "Close"),
         (re.compile(r"^open\s+(?P<target>.+)$", re.I), "open", "Open"),
         (re.compile(
-            r"^(?:block|disable)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I,
+            r"^(?:block|disable|restrict)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I,
         ), "blockInternet", "Block"),
         (re.compile(
             r"^(?:allow|enable)\s+(?:internet\s+(?:for\s+)?)?(?P<target>.+)$", re.I,
+        ), "allowInternet", "Unblock"),
+        # "unblock"/"restore" are only safe to treat as internet-access verbs
+        # when "internet"/"access" is stated explicitly -- see the matching
+        # note in request_classification.py's _ALLOW_INTERNET_EXPLICIT; both
+        # words are heavily overloaded elsewhere ("restore the backup").
+        (re.compile(
+            r"^(?:unblock|restore)\s+(?:internet\s+(?:access\s+)?(?:for\s+)?|access\s+for\s+)"
+            r"(?P<target>.+)$", re.I,
         ), "allowInternet", "Unblock"),
     )
 
