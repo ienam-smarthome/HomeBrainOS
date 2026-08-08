@@ -26,6 +26,7 @@ LOCAL_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 LOCAL_CONTROL_TOOL = "homebrain_control_devices"
 LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 LOCAL_WEATHER_TOOL = "homebrain_weather_snapshot"
+HUB_UPDATE_FIRMWARE_TOOL = "hub_update_firmware"
 
 EVIDENCE_KINDS = {
     LOCAL_FILTER_TOOL: "deterministic_attribute_filter",
@@ -67,7 +68,7 @@ _READ_GATEWAYS = {
     "hub_search_tools",
 }
 _DESTRUCTIVE_GATEWAYS = {"hub_manage_destructive_ops"}
-_SENSITIVE_GATEWAYS = {"hub_update_firmware"}
+_SENSITIVE_GATEWAYS = {HUB_UPDATE_FIRMWARE_TOOL}
 _ROUTINE_DEVICE_COMMANDS = {
     "off", "on", "ping", "refresh", "set_color", "set_color_temperature",
     "set_level", "toggle", "update_check",

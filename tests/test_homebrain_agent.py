@@ -402,10 +402,17 @@ class FirmwareMCP:
     test_confirmation_enforcement.py's own firmware fakes.
     """
 
-    def __init__(self, *, installed: str = "2.5.1.145", available: str = "2.5.1.147") -> None:
+    def __init__(
+        self,
+        *,
+        installed: str = "2.5.1.145",
+        available: str = "2.5.1.147",
+        firmware_result: dict[str, object] | None = None,
+    ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.installed = installed
         self.available = available
+        self.firmware_result = firmware_result if firmware_result is not None else {"success": True}
 
     async def list_tools(self) -> list[MCPTool]:
         return [
@@ -425,7 +432,14 @@ class FirmwareMCP:
         if name == "hub_manage_devices":
             return MCPToolResult(name, arguments, {}, "ok", {"success": True})
         if name == "hub_update_firmware":
-            return MCPToolResult(name, arguments, {}, "ok", {"success": True})
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                self.firmware_result,
+                is_error=self.firmware_result.get("success") is False,
+            )
         if name == "hub_search_tools":
             return MCPToolResult(name, arguments, {}, "", {"matches": []})
         return MCPToolResult(
@@ -469,10 +483,14 @@ async def test_firmware_install_intent_queues_confirmation_and_resumes_to_a_real
     assistant_message/actions this fast path builds are structurally
     compatible with the model-driven confirmation path, not just superficially
     similar.
+
+    Follow-up regression: the confirm step itself must also answer
+    deterministically now (confirmed_firmware_report), not fall through to
+    model narration -- ai.requests must stay empty across *both* steps.
     """
 
     mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
-    ai = FakeAI("Firmware update started.")
+    ai = FakeAI("unused -- deterministic report must not need this")
     agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
 
     propose = await agent.process_user_request_result(
@@ -490,9 +508,69 @@ async def test_firmware_install_intent_queues_confirmation_and_resumes_to_a_real
         "confirm", session_id="firmware-test"
     )
 
-    assert confirm.message == "Firmware update started."
+    assert confirm.message.startswith("Firmware update initiated.")
     assert mcp.calls[-1] == ("hub_update_firmware", {"confirm": True})
-    assert len(ai.requests) == 1
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_firmware_confirm_deterministically_reports_a_hub_side_failure() -> None:
+    """If the hub reports success=False or a warning on the actual install
+    call, that must reach the user verbatim and deterministically -- not
+    depend on the model correctly carrying it into a narrated summary,
+    which live testing found unreliable for exactly this kind of decision.
+    """
+
+    mcp = FirmwareMCP(
+        installed="2.5.1.145",
+        available="2.5.1.147",
+        firmware_result={
+            "success": False,
+            "message": "Update rejected: a backup is required first.",
+        },
+    )
+    ai = FakeAI("unused -- deterministic report must not need this")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="firmware-fail-test"
+    )
+    confirm = await agent.process_user_request_result(
+        "confirm", session_id="firmware-fail-test"
+    )
+
+    assert "did not succeed" in confirm.message
+    assert "backup is required first" in confirm.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_firmware_confirm_surfaces_a_hub_warning_alongside_success() -> None:
+    """A `warning` field on an otherwise successful install result must be
+    surfaced too, not silently dropped.
+    """
+
+    mcp = FirmwareMCP(
+        installed="2.5.1.145",
+        available="2.5.1.147",
+        firmware_result={
+            "success": True,
+            "warning": "A previous backup could not be verified.",
+        },
+    )
+    ai = FakeAI("unused -- deterministic report must not need this")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="firmware-warn-test"
+    )
+    confirm = await agent.process_user_request_result(
+        "confirm", session_id="firmware-warn-test"
+    )
+
+    assert confirm.message.startswith("Firmware update initiated.")
+    assert "A previous backup could not be verified." in confirm.message
+    assert ai.requests == []
 
 
 @pytest.mark.asyncio

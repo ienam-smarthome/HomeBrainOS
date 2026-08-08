@@ -223,6 +223,54 @@ async def test_non_rule_confirmation_uses_bounded_post_execution_synthesis():
     assert seen["messages"][-1]["tool_name"] == gateway
 
 
+@pytest.mark.asyncio
+async def test_failed_destructive_op_is_reported_deterministically_not_by_model():
+    """`hub_manage_destructive_ops` (permanent device deletion, radio/
+    network resets, hub reboot/shutdown) has no tool-specific deterministic
+    report -- unlike Rule Machine and firmware, there are no live example
+    payloads to build one safely against. But a genuinely failed
+    destructive write must never reach the user narrated as a success by
+    the model: confirmed_failure_report is the generic safety net for
+    exactly this, and it must pre-empt the chat callback entirely so a
+    model that (as this whole release cycle found repeatedly) can't be
+    trusted with this kind of decision never gets the chance to soften or
+    misreport a failure on an irreversible action.
+    """
+
+    gateway = "hub_manage_destructive_ops"
+    arguments = {"tool": "hub_delete_device", "args": {"deviceId": "42", "confirm": True}}
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            arguments,
+            {"success": False, "error": "Device is still referenced by 2 rules."},
+            success=False,
+        ),
+    ])
+    chat_called = False
+
+    async def chat(messages, tools):
+        nonlocal chat_called
+        chat_called = True
+        return {"content": "Device deleted successfully."}
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True),
+        executor,
+        chat,
+        lambda: None,
+    )
+
+    report = await coordinator.resume(
+        _pending([(gateway, arguments)]),
+        _catalog(gateway),
+    )
+
+    assert "did not succeed" in report
+    assert "still referenced by 2 rules" in report
+    assert chat_called is False
+
+
 def test_nested_rule_result_verification_requires_id_and_healthy_result():
     arguments = _rule_arguments("Nested")
     verified = _execution(
