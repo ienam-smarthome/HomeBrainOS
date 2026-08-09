@@ -237,6 +237,83 @@ async def test_existing_rules_prevent_duplicate_creation():
 
 
 @pytest.mark.asyncio
+async def test_capability_filter_matches_the_scheduled_command_not_fixed_priority():
+    """Regression test: _capability_filter used to pick "Switch" whenever a
+    device advertised it, regardless of what command was actually being
+    scheduled. A garage door opener that also exposes a virtual "Switch"
+    capability alongside "GarageDoorControl" would get capabilityFilter
+    "Switch" for a scheduled close/open rule even though Switch cannot
+    perform close/open -- Hubitat's runCommand action requires the
+    capabilityFilter to be a capability that actually exposes the
+    command. The capability that matches the scheduled command must now
+    win over fixed priority.
+    """
+
+    garage_door = {
+        "id": "7301",
+        "label": "Garage Door",
+        "commands": ["on", "off", "open", "close"],
+        "capabilities": ["Switch", "GarageDoorControl"],
+    }
+    service = RuleAuthoringService(RuleMCP([garage_door]), recorder)
+
+    decision = await service.propose(
+        "close garage door from 10pm to 6am every day",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    for action in decision.actions:
+        assert action["args"]["addAction"]["capabilityFilter"] == "GarageDoorControl"
+
+
+@pytest.mark.asyncio
+async def test_capability_filter_prefers_lock_for_lock_commands_over_switch():
+    lock_device = {
+        "id": "7302",
+        "label": "Front Door Lock",
+        "commands": ["on", "off", "lock", "unlock"],
+        "capabilities": ["Switch", "Lock"],
+    }
+    service = RuleAuthoringService(RuleMCP([lock_device]), recorder)
+
+    decision = await service.propose(
+        "lock front door lock at 11pm",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert (
+        decision.actions[0]["args"]["addAction"]["capabilityFilter"] == "Lock"
+    )
+
+
+@pytest.mark.asyncio
+async def test_capability_filter_falls_back_to_fixed_priority_for_unmapped_commands():
+    """blockInternet/allowInternet aren't part of any standard capability's
+    documented command set, so no capability can be matched by command --
+    this must still fall back to the original fixed-priority selection
+    (unchanged behaviour for the internet-access grammar)."""
+
+    device = tab_device()
+    device["capabilities"] = ["Switch", "Actuator"]
+    service = RuleAuthoringService(RuleMCP([device]), recorder)
+
+    decision = await service.propose(
+        "write a rule to block tab s9 from 9am to 7pm everyday",
+        available_gateways={RULE_MACHINE_GATEWAY},
+    )
+
+    assert decision.handled is True
+    assert decision.message is None
+    assert (
+        decision.actions[0]["args"]["addAction"]["capabilityFilter"] == "Switch"
+    )
+
+
+@pytest.mark.asyncio
 async def test_unmatched_or_unsupported_schedule_stays_in_general_agent_path():
     service = RuleAuthoringService(RuleMCP([tab_device()]), recorder)
 

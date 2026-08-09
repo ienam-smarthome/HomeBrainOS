@@ -330,8 +330,28 @@ class RuleAuthoringService:
                 commands.add(str(item).casefold())
         return commands
 
-    @staticmethod
-    def _capability_filter(device: dict[str, Any]) -> str:
+    # Standard Hubitat capabilities and the commands they're documented to
+    # expose. Used to prefer whichever capability actually backs the
+    # command(s) this rule schedules, rather than picking by fixed
+    # priority regardless of what's being scheduled -- a device
+    # advertising both "Switch" and "GarageDoorControl" (e.g. a garage
+    # door opener that also exposes a virtual switch) previously always
+    # got "Switch" as its capabilityFilter because Switch sits first in
+    # the priority list, even for a scheduled "close"/"open" rule that
+    # "Switch" cannot perform -- Hubitat's runCommand action requires the
+    # capabilityFilter to be a capability that actually exposes the
+    # command, so this silently produced a rule that could never fire the
+    # intended action.
+    _CAPABILITY_COMMANDS: dict[str, frozenset[str]] = {
+        "Switch": frozenset({"on", "off"}),
+        "Lock": frozenset({"lock", "unlock"}),
+        "DoorControl": frozenset({"open", "close"}),
+        "GarageDoorControl": frozenset({"open", "close"}),
+        "Valve": frozenset({"open", "close"}),
+    }
+
+    @classmethod
+    def _capability_filter(cls, device: dict[str, Any], commands: set[str]) -> str:
         values = device.get("capabilities") or []
         if isinstance(values, dict):
             values = list(values)
@@ -341,6 +361,25 @@ class RuleAuthoringService:
                 item = item.get("name") or item.get("capability")
             if item:
                 names.append(str(item))
+        # Prefer, in the device's own reported capability order, whichever
+        # capability's standard commands cover every command this rule
+        # schedules (start and, for a window, end).
+        wanted = {str(command).casefold() for command in commands}
+        for name in names:
+            canonical = next(
+                (
+                    cap for cap in cls._CAPABILITY_COMMANDS
+                    if cap.casefold() == name.casefold()
+                ),
+                None,
+            )
+            if canonical and wanted and wanted.issubset(cls._CAPABILITY_COMMANDS[canonical]):
+                return canonical
+        # No capability's known standard commands cover what's being
+        # scheduled -- this is expected for driver-specific commands like
+        # blockInternet/allowInternet, which aren't part of any standard
+        # capability's documented command set. Fall back to the original
+        # fixed-priority selection among the device's own capabilities.
         for preferred in ("Switch", "Lock", "DoorControl", "GarageDoorControl"):
             if any(name.casefold() == preferred.casefold() for name in names):
                 return preferred
@@ -536,7 +575,7 @@ class RuleAuthoringService:
                 target=target,
             )
 
-        capability_filter = self._capability_filter(target)
+        capability_filter = self._capability_filter(target, required)
 
         if intent.end_time is None:
             if intent.recurring:
