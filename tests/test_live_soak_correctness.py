@@ -15,6 +15,7 @@ from homebrain_agent import UnifiedMCPAgent
 from request_classification import (
     parse_firmware_install_intent,
     parse_firmware_status_intent,
+    parse_hub_health_intent,
     parse_immediate_internet_access_intent,
 )
 
@@ -227,6 +228,31 @@ def test_firmware_status_intent_matches_only_progress_questions() -> None:
     assert not parse_firmware_status_intent("Install the available Hubitat firmware update")
     assert not parse_firmware_status_intent("update hub firmware")
     assert not parse_firmware_status_intent("")
+
+
+def test_hub_health_intent_matches_the_webui_button_text_and_close_variants() -> None:
+    """Must catch the WebUI's own "Check the hub health status" quick-action
+    button text plus natural variants, but never a broader question that
+    merely mentions the hub (which stays on the ordinary model loop /
+    other fast paths, e.g. firmware questions).
+    """
+
+    assert parse_hub_health_intent("Check the hub health status")
+    assert parse_hub_health_intent("check hub health status")
+    assert parse_hub_health_intent("check hub health")
+    assert parse_hub_health_intent("hub health")
+    assert parse_hub_health_intent("hub health status")
+    assert parse_hub_health_intent("What's the hub health status?")
+    assert parse_hub_health_intent("How's the hub health?")
+    assert parse_hub_health_intent("Is the hub healthy?")
+    assert parse_hub_health_intent("How is the hub doing?")
+
+    assert not parse_hub_health_intent("check firmware")
+    assert not parse_hub_health_intent("what firmware is installed")
+    assert not parse_hub_health_intent("How's the update going?")
+    assert not parse_hub_health_intent("is there a firmware update")
+    assert not parse_hub_health_intent("turn off the hub")
+    assert not parse_hub_health_intent("")
 
 
 def test_immediate_internet_access_intent_matches_only_unscheduled_block_allow() -> None:
