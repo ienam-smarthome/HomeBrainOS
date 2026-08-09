@@ -234,7 +234,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     unit = (
                         None
                         if source_attribute == "valueStr"
-                        else DeviceQueryService._unit_for(attribute)
+                        else DeviceQueryService._unit_for(target, attribute, source_attribute)
                     )
                     return present_attribute(label, attribute, value, unit)
 
@@ -270,7 +270,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                         selected_label,
                         attribute,
                         selected.get("value"),
-                        DeviceQueryService._unit_for(attribute),
+                        DeviceQueryService._unit_for(selected, attribute),
                     )
             if target is not None:
                 self._selected_devices[session_key] = label

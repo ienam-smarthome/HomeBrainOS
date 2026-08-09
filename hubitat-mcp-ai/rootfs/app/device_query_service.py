@@ -216,7 +216,46 @@ class DeviceQueryService:
         return float(cleaned)
 
     @staticmethod
-    def _unit_for(attribute: str) -> str | None:
+    def _unit_for(
+        device: dict[str, Any], attribute: str, source_attribute: str | None = None
+    ) -> str | None:
+        """Prefer the unit the device itself actually reported over a
+        fixed table keyed only on attribute name.
+
+        This previously always returned the hardcoded table's value
+        regardless of what the device's own live state said -- a
+        Fahrenheit-configured hub's "92.1 °F" temperature reading would be
+        mislabelled "°C" in ranking/aggregation queries ("what's the
+        hottest room"). device_target_resolver.py's own
+        `_measurement_units()` already prefers a device's own reported
+        unit for exactly this reason; this mirrors that same preference
+        order directly against the raw state list rather than importing
+        it, since that helper's returned dict mixes raw and normalised
+        attribute-name keys in a way that doesn't line up cleanly with
+        `source_attribute` here. Falls back to the fixed table only when
+        the device's own state carries no unit metadata for this
+        attribute at all.
+        """
+
+        wanted_names = {
+            str(name).casefold()
+            for name in (source_attribute, attribute)
+            if name
+        }
+        for raw in (
+            device.get("attributes"), device.get("states"), device.get("currentStates"),
+        ):
+            if not isinstance(raw, list):
+                continue
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name") or item.get("attribute")
+                if name is None or str(name).casefold() not in wanted_names:
+                    continue
+                unit = item.get("unit")
+                if unit not in (None, ""):
+                    return str(unit)
         return {
             "battery": "%",
             "humidity": "%",
@@ -592,7 +631,7 @@ class DeviceQueryService:
                 "attribute": attribute,
                 "source_attribute": source_attribute,
                 "value": int(numeric) if numeric.is_integer() else numeric,
-                "unit": self._unit_for(attribute),
+                "unit": self._unit_for(device, attribute, source_attribute),
             })
 
         reverse = operation != "minimum"

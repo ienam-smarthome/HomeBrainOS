@@ -19,6 +19,24 @@ _STRONG_CONTROL_VERBS = {
     "unlock", "update", "write",
 }
 
+_TRAILING_PLEASE = re.compile(r"\s+please\s*$", re.I)
+
+
+def _strip_trailing_please(text: str) -> str:
+    """Strip a trailing "please" a real user commonly appends to a command
+    ("turn on the tv please", "block the tv please").
+
+    Every device/target capturing regex in this module only ever strips a
+    LEADING "(?:please\\s+)?" -- a trailing one falls straight into the
+    captured target/device name, where it pollutes fuzzy name resolution
+    (already fragile for short labels, see device_target_resolver.py's own
+    comments) and can push what would otherwise be a confident match below
+    the resolution threshold. Applied once, post-capture, here, rather
+    than duplicated into every capturing regex's tail.
+    """
+
+    return _TRAILING_PLEASE.sub("", text).strip()
+
 
 def matches(prompt: str, terms: set[str]) -> bool:
     """True if any term (optionally pluralized with s/es) appears as a word in prompt."""
@@ -185,7 +203,7 @@ def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
         match = re.match(pattern, value, flags=re.IGNORECASE)
         if not match:
             continue
-        target = str(match.group("target") or "").strip()
+        target = _strip_trailing_please(str(match.group("target") or "").strip())
         if target:
             return {
                 "device_names": [target],
@@ -291,6 +309,7 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
             continue
         target = str(match.group("target") or "").strip(" ,.-")
         target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
+        target = _strip_trailing_please(target)
         if target:
             return target, command
     return None
