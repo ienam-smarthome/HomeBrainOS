@@ -182,6 +182,34 @@ def test_same_kind_ambiguity_is_unaffected_by_the_missing_floor():
     assert "Hallway TRV" in trvs.alternatives
 
 
+def test_ambiguous_choices_never_pad_with_an_implausible_third_candidate():
+    """Regression test for a real live failure: "turn off the lamp" against
+    a house with two real lamps ("Big lamp", "My Floor Lamp", both scoring
+    0.9) surfaced "HallwayCAM (MQTT)" -- a camera device with no relation
+    to lamps, scoring only 0.43 -- as a third disambiguation choice, purely
+    because it happened to score third highest across the whole inventory.
+    Every alternative offered to the user for an ambiguous request must
+    itself clear the same confidence floor used to reject a genuinely
+    absent device category outright.
+    """
+
+    inventory = [
+        {"id": "1", "label": "Big lamp"},
+        {"id": "2", "label": "My Floor Lamp"},
+        {"id": "3", "label": "HallwayCAM (MQTT)"},
+        {"id": "4", "label": "Bedroom 1 TRV"},
+        {"id": "5", "label": "Front Door"},
+    ]
+
+    resolution = resolve_device_candidate("the lamp", inventory)
+
+    assert resolution.target is None
+    assert resolution.alternatives == ("Big lamp", "My Floor Lamp")
+    assert "HallwayCAM (MQTT)" not in resolution.alternatives
+    assert "ambiguous" in resolution.reason
+    assert "HallwayCAM" not in resolution.reason
+
+
 def test_exact_and_semantic_matches_still_resolve_in_mixed_inventory():
     exact = resolve_device_candidate("Fridge", MIXED_INVENTORY)
     assert exact.target is not None
