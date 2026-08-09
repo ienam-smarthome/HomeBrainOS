@@ -57,6 +57,47 @@ async def test_query_devices_finds_hottest_room():
 
 
 @pytest.mark.asyncio
+async def test_query_devices_prefers_the_devices_own_reported_unit_over_the_hardcoded_table():
+    """Regression test: _unit_for used to answer from a hardcoded
+    {"temperature": "°C", ...} table unconditionally, mislabeling any
+    Fahrenheit-configured device's own reading as Celsius. A real
+    Hubitat device reports its actual unit per-attribute in its
+    attributes/states/currentStates list (e.g. {"name": "temperature",
+    "value": 71, "unit": "°F"}); that reported unit must win over the
+    hardcoded fallback whenever it is present.
+    """
+
+    fahrenheit_sensor = {
+        "id": "fdev-1",
+        "label": "Patio Sensor",
+        "room": "Patio",
+        "capabilities": ["TemperatureMeasurement"],
+        "attributes": [
+            {"name": "temperature", "value": 71, "unit": "°F"},
+        ],
+    }
+    celsius_sensor = device(
+        "Kitchen Meter", "Kitchen", ["TemperatureMeasurement"], temperature=20,
+    )
+
+    service = DeviceQueryService(
+        QueryMCP([fahrenheit_sensor, celsius_sensor]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.query_devices({
+        "attribute": "temperature",
+        "operation": "top",
+        "limit": 10,
+    })
+
+    rows_by_label = {row["label"]: row for row in result.data["results"]}
+    assert rows_by_label["Patio Sensor"]["unit"] == "°F"
+    # A device with no reported unit still falls back to the hardcoded table.
+    assert rows_by_label["Kitchen Meter"]["unit"] == "°C"
+
+
+@pytest.mark.asyncio
 async def test_query_devices_finds_highest_humidity():
     service = DeviceQueryService(
         QueryMCP([

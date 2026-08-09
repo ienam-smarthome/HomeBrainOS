@@ -17,6 +17,7 @@ from request_classification import (
     parse_firmware_status_intent,
     parse_hub_health_intent,
     parse_immediate_internet_access_intent,
+    routine_control_arguments,
 )
 
 
@@ -119,6 +120,28 @@ def test_named_attribute_does_not_treat_a_bare_article_as_a_device_name() -> Non
         "Bedroom 1",
         "temperature",
     )
+
+
+def test_named_attribute_excludes_current_as_a_qualifier_not_a_device_name() -> None:
+    """Regression test for the identical backtracking bug as the "the"/"a"/
+    "an" one immediately above, but for the word "current": "What is the
+    current temperature?" has no real device name at all, just the
+    qualifier word "current" directly before the attribute -- confirmed
+    live returning ("current", "temperature") instead of falling through
+    to parse_bare_attribute (which already handles "current" as an
+    optional qualifier correctly). A real device name that happens to
+    precede "current temperature" (e.g. "the toilet current temperature")
+    must still resolve normally.
+    """
+
+    assert parse_named_attribute("What is the current temperature?") is None
+    assert parse_named_attribute("What is the current battery") is None
+    assert parse_named_attribute("How's the current humidity?") is None
+    assert parse_named_attribute("What is the toilet current temperature") == (
+        "toilet",
+        "temperature",
+    )
+    assert parse_bare_attribute("What is the current temperature?") == "temperature"
 
 
 def test_bare_attribute_words_are_deterministic() -> None:
@@ -301,6 +324,47 @@ def test_immediate_internet_access_intent_matches_only_unscheduled_block_allow()
     assert parse_immediate_internet_access_intent("block the tv in 30 mins") is None
     assert parse_immediate_internet_access_intent("allow the tv in an hour") is None
     assert parse_immediate_internet_access_intent("block the tv in 2 hrs") is None
+
+
+def test_trailing_please_does_not_pollute_the_captured_device_or_target_name() -> None:
+    """Regression test: "please" was only ever stripped as an optional
+    LEADING word in every capturing regex in request_classification.py --
+    a trailing "please" ("turn on the tv please", "block the tv please")
+    fell straight into the captured device/target name, where it pollutes
+    fuzzy name resolution (already fragile for short labels) and can push
+    an otherwise-confident match below the resolution threshold.
+    """
+
+    assert routine_control_arguments("turn on the tv please") == {
+        "device_names": ["the tv"],
+        "device_kind": "auto",
+        "command": "on",
+    }
+    assert routine_control_arguments("turn off the lamp please.") == {
+        "device_names": ["the lamp"],
+        "device_kind": "auto",
+        "command": "off",
+    }
+    assert routine_control_arguments("toggle the fan please") == {
+        "device_names": ["the fan"],
+        "device_kind": "auto",
+        "command": "toggle",
+    }
+    # A real device legitimately containing "please" in its own label must
+    # be untouched -- only a trailing, whitespace-separated "please" is
+    # stripped.
+    assert routine_control_arguments("turn on Please Do Not Disturb Light") == {
+        "device_names": ["Please Do Not Disturb Light"],
+        "device_kind": "auto",
+        "command": "on",
+    }
+
+    assert parse_immediate_internet_access_intent("block the tv please") == (
+        "tv", "blockInternet",
+    )
+    assert parse_immediate_internet_access_intent("allow the tv please") == (
+        "tv", "allowInternet",
+    )
 
 
 def test_explicit_device_selection_commands_are_deterministic() -> None:

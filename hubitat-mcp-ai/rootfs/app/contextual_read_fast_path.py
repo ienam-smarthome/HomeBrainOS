@@ -46,9 +46,20 @@ _HISTORY_TERMS = re.compile(
 # accident when a device happened to be labelled after the attribute itself.
 # Bare articles belong with the pronoun-only exclusions below, not treated
 # as a real device name.
+#
+# The identical backtracking bug hits the word "current" too: "What is the
+# current temperature?" has no real device name at all, just the qualifier
+# word "current" directly before the attribute -- _NAMED_ATTRIBUTE's
+# "(?:current\s+)?" group exists to swallow that qualifier, but with
+# nothing else in the string to give the required-nonempty name group,
+# the engine has no choice but to assign "current" to name instead,
+# producing name="current" rather than falling through to
+# parse_bare_attribute (which already handles "current" as an optional
+# qualifier correctly). Confirmed live: parse_named_attribute("What is
+# the current battery") returned ("current", "battery") instead of None.
 _PRONOUN_NAMES = {
     "it", "its", "it's", "that", "that device", "this", "this device",
-    "the", "a", "an",
+    "the", "a", "an", "current",
 }
 _SELECTION_PREFIX = re.compile(r"^\s*(?:select|use|choose|i\s+mean)\b", re.I)
 
