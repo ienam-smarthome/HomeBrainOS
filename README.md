@@ -8,7 +8,7 @@ Short GitHub description: Local-first AI smart-home assistant for Hubitat + Home
 
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
-| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.386 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
+| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.10.387 | Maintained | MCP-backed assistant, verified reads, deterministic controls, bounded device-event history, and optional AI synthesis |
 
 The legacy/alternate HomeBrain OS dashboard (Maker API-based, `homebrainos/`)
 has been retired and removed from this repository. All assistant development is

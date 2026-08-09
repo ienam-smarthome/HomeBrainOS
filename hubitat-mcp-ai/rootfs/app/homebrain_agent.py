@@ -47,6 +47,7 @@ from observed_agent_outcome import ObservedAgentOutcome
 from request_classification import (
     parse_firmware_install_intent,
     parse_firmware_status_intent,
+    parse_hub_health_intent,
     parse_immediate_internet_access_intent,
 )
 from request_metrics import RequestMetrics
@@ -406,6 +407,80 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             start, end = yesterday_bounds(datetime.now().astimezone())
             selected = events_in_window(events, start, end)
             return present_yesterday_events(str(data.get("label") or name), selected)
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
+    async def _hub_health_outcome(self, *, session_key: str) -> AgentOutcome:
+        """Deterministically answer "check the hub health status" style
+        questions from the Hub Info snapshot, without a model round.
+
+        Live-observed bug: this used to reach the model unfiltered, which
+        chose a raw `hub_read_diagnostics`/`hub_get_metrics` tool call and
+        then wrote free-text prose from the result. The underlying data was
+        correct (the hub's own Hub Info page confirmed "DB Size: 126 MB"),
+        but the model's own summary mislabelled it "126 KB" -- and also
+        added a "Cloud Backup: Successful" line with no corresponding field
+        in the tool result at all, i.e. an outright fabrication. Routing
+        this through `homebrain_hub_info_snapshot` and formatting its
+        already-unit-tagged fields directly (see `hub_info_service.py`'s
+        `database_size_unit`, `free_memory_unit`, `temperature_unit`)
+        removes the model from the unit-labelling and fact-selection
+        decision entirely -- every line below traces to a real field in the
+        snapshot, and nothing is reported that the snapshot didn't return.
+        """
+
+        async def operation() -> str:
+            started = time.monotonic()
+            result = await self._hub_info_snapshot({"scope": "resources"})
+            self.evidence.record(
+                LOCAL_HUB_INFO_TOOL,
+                {"scope": "resources"},
+                success=self._tool_succeeded(result),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=self._result_summary(result),
+                evidence_kind=EVIDENCE_KINDS[LOCAL_HUB_INFO_TOOL],
+            )
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    LOCAL_HUB_INFO_TOOL, data, failed=True, fallback_error=result.text
+                ) or "I could not read the hub health status."
+
+            def field(name: str, unit_name: str | None = None) -> str | None:
+                raw = data.get(name)
+                if raw is None or str(raw).strip() == "":
+                    return None
+                text = str(raw).strip()
+                unit = str(data.get(unit_name) or "").strip() if unit_name else ""
+                return f"{text} {unit}".strip() if unit else text
+
+            alerts_raw = data.get("hub_alerts")
+            alerts = [
+                str(item).strip()
+                for item in (alerts_raw if isinstance(alerts_raw, list) else [])
+                if str(item).strip()
+            ]
+            if alerts:
+                headline = f"The hub has {len(alerts)} active alert(s): {', '.join(alerts)}."
+            elif alerts_raw is None:
+                headline = "The hub did not report an alert status."
+            else:
+                headline = "The hub is healthy with no active alerts."
+
+            rows: list[tuple[str, str | None]] = [
+                ("Uptime", field("uptime")),
+                ("Free Memory", field("free_memory", "free_memory_unit")),
+                ("CPU Load", field("cpu_percent")),
+                ("Internal Temperature", field("temperature", "temperature_unit")),
+                ("Database Size", field("database_size", "database_size_unit")),
+                ("Zigbee", field("zigbee_healthy")),
+                ("Z-Wave", field("zwave_healthy")),
+                ("Matter", field("matter_status")),
+            ]
+            lines = [f"- **{label}:** {value}" for label, value in rows if value is not None]
+            if not lines:
+                return headline
+            return headline + "\n\n**Current Status:**\n" + "\n".join(lines)
 
         return await self._direct_outcome(operation, request_class="live-read")
 
@@ -887,6 +962,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     explain_cause=True,
                     session_key=session_key,
                 )
+
+            if parse_hub_health_intent(user_prompt):
+                return await self._hub_health_outcome(session_key=session_key)
 
             if parse_firmware_status_intent(user_prompt):
                 return await self._firmware_status_outcome(session_key=session_key)

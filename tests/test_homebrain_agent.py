@@ -928,6 +928,127 @@ async def test_firmware_status_query_does_not_match_install_intent(
     assert outcome.confirmation_count == 0
 
 
+class HubHealthMCP:
+    """Fake MCP exposing the same Hub Info device shape as FirmwareMCP
+    above, but with the resource-telemetry attributes (unit-tagged, the
+    same list-of-dicts shape used by test_hub_info_service.py) that the
+    hub health fast path reads instead of the firmware fields.
+    """
+
+    def __init__(
+        self,
+        *,
+        db_size: float = 126.0,
+        db_unit: str = "MB",
+        free_memory: float = 977.4,
+        free_memory_unit: str = "MB",
+        temperature: float = 47.6,
+        temperature_unit: str = "°C",
+        uptime: str = "0d 21h 24m",
+        hub_alerts: list[str] | None = None,
+    ) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.db_size = db_size
+        self.db_unit = db_unit
+        self.free_memory = free_memory
+        self.free_memory_unit = free_memory_unit
+        self.temperature = temperature
+        self.temperature_unit = temperature_unit
+        self.uptime = uptime
+        self.hub_alerts = hub_alerts if hub_alerts is not None else []
+
+    async def list_tools(self) -> list[MCPTool]:
+        return [MCPTool("hub_search_tools", "Search tools", {"type": "object"})]
+
+    async def get_cached_devices(self) -> list[dict[str, object]]:
+        return [{"id": "1089", "label": "Hub Info (C8 Pro)"}]
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        if name == "hub_manage_devices":
+            return MCPToolResult(name, arguments, {}, "ok", {"success": True})
+        if name == "hub_search_tools":
+            return MCPToolResult(name, arguments, {}, "", {"matches": []})
+        return MCPToolResult(
+            name,
+            arguments,
+            {},
+            "",
+            {
+                "devices": [{
+                    "id": "1089",
+                    "label": "Hub Info (C8 Pro)",
+                    "attributes": [
+                        {
+                            "name": "freeMemory",
+                            "currentValue": self.free_memory,
+                            "unit": self.free_memory_unit,
+                        },
+                        {
+                            "name": "temperatureC",
+                            "currentValue": self.temperature,
+                            "unit": self.temperature_unit,
+                        },
+                        {
+                            "name": "dbSize",
+                            "currentValue": self.db_size,
+                            "unit": self.db_unit,
+                        },
+                        {"name": "formattedUptime", "currentValue": self.uptime},
+                        {"name": "hubAlerts", "currentValue": self.hub_alerts},
+                    ],
+                }]
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_reports_the_hubs_own_units_without_the_model() -> None:
+    """Regression test for a live bug: "check the hub health status" used
+    to reach the local model unfiltered, which mislabelled a correctly-
+    reported 126 MB database size as "126 KB" in its own free-text prose,
+    and fabricated an unrelated "Cloud Backup: Successful" line with no
+    corresponding field in the tool result at all. This must now answer
+    deterministically from homebrain_hub_info_snapshot's already
+    unit-tagged fields, reporting the hub's actual reported unit (MB) and
+    never inventing a field the snapshot didn't return.
+    """
+
+    mcp = HubHealthMCP(db_size=126.0, db_unit="MB")
+    ai = FakeAI("unused -- deterministic report must not need this")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "Check the hub health status", session_id="hub-health-test"
+    )
+
+    assert "126.0 MB" in outcome.message
+    assert "KB" not in outcome.message
+    assert "healthy with no active alerts" in outcome.message
+    assert "Cloud Backup" not in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_surfaces_real_active_alerts() -> None:
+    """When the hub itself reports active alerts, they must be surfaced,
+    not silently suppressed by a generic "healthy" headline.
+    """
+
+    mcp = HubHealthMCP(hub_alerts=["zigbeeRadioOffline"])
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "hub health", session_id="hub-health-test-2"
+    )
+
+    assert "1 active alert" in outcome.message
+    assert "zigbeeRadioOffline" in outcome.message
+    assert "healthy with no active alerts" not in outcome.message
+    assert ai.requests == []
+
+
 # Real device shapes pulled live from the hub this bug was found against:
 # two devices both plausibly named "tv" -- a plain power-switch labelled
 # exactly "TV", and a separate network-integration device labelled "Block

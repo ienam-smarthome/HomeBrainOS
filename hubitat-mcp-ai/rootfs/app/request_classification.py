@@ -131,6 +131,44 @@ def parse_firmware_status_intent(prompt: str) -> bool:
     return _FIRMWARE_STATUS.fullmatch(str(prompt).strip()) is not None
 
 
+_HUB_HEALTH_STATUS = re.compile(
+    r"^\s*(?:please\s+)?check\s+(?:the\s+)?hub\s+health(?:\s+status)?\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?(?:what(?:'s|\s+is)|how(?:'s|\s+is))\s+(?:the\s+)?"
+    r"hub(?:'s)?\s+health(?:\s+status)?\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?is\s+the\s+hub\s+health(?:y|ie?r)?\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?hub\s+health(?:\s+status)?\s*[?.!]*\s*$"
+    r"|^\s*(?:please\s+)?(?:what(?:'s|\s+is)|how(?:'s|\s+is))\s+the\s+hub\s+"
+    r"doing\s*[?.!]*\s*$",
+    re.I,
+)
+
+
+def parse_hub_health_intent(prompt: str) -> bool:
+    """True for a question asking about overall hub health/status.
+
+    Deliberately a narrow `fullmatch` over the WebUI's own "Check the hub
+    health status" quick-action button text and close natural variants,
+    the same pattern as `parse_firmware_status_intent` right above -- a
+    broader question that happens to mention the hub (e.g. "what firmware
+    is installed") must not match here.
+
+    Added after a live-observed unit-labelling bug: "check the hub health
+    status" was left to the free-text model (running locally, e.g.
+    gemma4:31b) to answer from a raw `hub_read_diagnostics`/
+    `hub_get_metrics` tool result -- the underlying Hubitat data correctly
+    reported the database size in MB (confirmed live against the hub's own
+    Hub Info device page, "DB Size: 126 MB"), but the model's own prose
+    summary mislabelled it as "126 KB". This intent now routes to a
+    deterministic snapshot-and-format path (see
+    `UnifiedMCPAgent._hub_health_outcome`) built on
+    `homebrain_hub_info_snapshot`, which already carries an explicit
+    `database_size_unit` field (see `hub_info_service.py`) instead of
+    letting the model choose or guess a unit while writing free text.
+    """
+
+    return _HUB_HEALTH_STATUS.fullmatch(str(prompt).strip()) is not None
+
+
 def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
     """Parse generic on/off/toggle control grammar without device-name encoding."""
 
