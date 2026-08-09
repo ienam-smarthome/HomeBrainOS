@@ -427,6 +427,18 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         removes the model from the unit-labelling and fact-selection
         decision entirely -- every line below traces to a real field in the
         snapshot, and nothing is reported that the snapshot didn't return.
+
+        Live re-test of this exact fast path (0.10.387) surfaced a second,
+        smaller live bug: "Internal Temperature: 46.9 °C °C". The real
+        Hub Info driver's `temperatureC` attribute already reports its
+        `currentValue` as a display string with the unit baked in (e.g.
+        "46.9 °C"), not a bare number -- the mock fixture this fast path
+        shipped with used a bare numeric `currentValue`, which is why the
+        duplication was never caught in tests. `field()` below now strips
+        a trailing occurrence of the unit already present in the raw value
+        before appending the tracked unit, so it renders correctly whether
+        a given field/driver reports a bare number or a pre-unit-suffixed
+        string.
         """
 
         async def operation() -> str:
@@ -452,7 +464,26 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     return None
                 text = str(raw).strip()
                 unit = str(data.get(unit_name) or "").strip() if unit_name else ""
-                return f"{text} {unit}".strip() if unit else text
+                if not unit:
+                    return text
+                # The raw value itself sometimes already carries the unit
+                # suffix baked in (see docstring above -- live-observed
+                # "46.9 °C °C"). Strip a trailing occurrence of the same
+                # unit before appending it once, so it renders correctly
+                # whether the underlying driver reports a bare number or a
+                # pre-formatted display string.
+                deduped = re.sub(
+                    rf"\s*{re.escape(unit)}\s*$", "", text, flags=re.I
+                ).strip()
+                return f"{deduped or text} {unit}".strip()
+
+            def health_word(raw: Any) -> str | None:
+                if raw is None:
+                    return None
+                if isinstance(raw, bool):
+                    return "Healthy" if raw else "Not healthy"
+                text = str(raw).strip()
+                return text or None
 
             alerts_raw = data.get("hub_alerts")
             alerts = [
@@ -467,14 +498,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             else:
                 headline = "The hub is healthy with no active alerts."
 
+            cpu_percent = field("cpu_percent")
             rows: list[tuple[str, str | None]] = [
                 ("Uptime", field("uptime")),
                 ("Free Memory", field("free_memory", "free_memory_unit")),
-                ("CPU Load", field("cpu_percent")),
+                ("CPU Load", f"{cpu_percent}%" if cpu_percent is not None else None),
                 ("Internal Temperature", field("temperature", "temperature_unit")),
                 ("Database Size", field("database_size", "database_size_unit")),
-                ("Zigbee", field("zigbee_healthy")),
-                ("Z-Wave", field("zwave_healthy")),
+                ("Zigbee", health_word(data.get("zigbee_healthy"))),
+                ("Z-Wave", health_word(data.get("zwave_healthy"))),
                 ("Matter", field("matter_status")),
             ]
             lines = [f"- **{label}:** {value}" for label, value in rows if value is not None]
