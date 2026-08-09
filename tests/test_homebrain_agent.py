@@ -947,8 +947,13 @@ class HubHealthMCP:
         uptime: str = "0d 21h 24m",
         hub_alerts: list[str] | None = None,
         cpu_percent: float = 22.25,
-        zigbee_healthy: bool | None = True,
-        zwave_healthy: bool | None = False,
+        # Deliberately typed as `object`, defaulting to the real Hub Info
+        # driver's live shape: Hubitat attribute values are transmitted as
+        # strings ("true"/"false"), not JSON/Python booleans -- see
+        # test_hub_health_query_reports_cpu_percent_and_human_radio_health's
+        # docstring for the live regression this default reproduces.
+        zigbee_healthy: object = "true",
+        zwave_healthy: object = "false",
     ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.db_size = db_size
@@ -1093,11 +1098,19 @@ async def test_hub_health_query_does_not_duplicate_a_unit_already_baked_into_the
 @pytest.mark.asyncio
 async def test_hub_health_query_reports_cpu_percent_and_human_radio_health() -> None:
     """CPU load must read as an actual percentage (not a bare number with
-    no unit at all), and the boolean zigbee/zwave health flags must render
-    as readable words instead of literal "true"/"false".
+    no unit at all), and the zigbee/zwave health flags must render as
+    readable words instead of literal "true"/"false".
+
+    Regression test for a live bug that survived the first version of this
+    fast path: the real Hub Info driver reports zbHealthy/zwHealthy as the
+    literal strings "true"/"false" (Hubitat attribute values are
+    transmitted as strings), not a Python/JSON bool -- an
+    isinstance(raw, bool) check alone never catches that, so
+    HubHealthMCP's default fixture now reproduces the real string shape
+    rather than an actual bool.
     """
 
-    mcp = HubHealthMCP()
+    mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
     ai = FakeAI("unused")
     agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
 
@@ -1105,9 +1118,11 @@ async def test_hub_health_query_reports_cpu_percent_and_human_radio_health() -> 
         "Check the hub health status", session_id="hub-health-test-4"
     )
 
+    assert "22.25%" in outcome.message
     assert "true" not in outcome.message.casefold()
     assert "false" not in outcome.message.casefold()
-    assert "Not healthy" in outcome.message or "Healthy" in outcome.message
+    assert "Healthy" in outcome.message
+    assert "Not healthy" in outcome.message
     assert ai.requests == []
 
 
