@@ -69,6 +69,15 @@ _READ_GATEWAYS = {
 }
 _DESTRUCTIVE_GATEWAYS = {"hub_manage_destructive_ops"}
 _SENSITIVE_GATEWAYS = {HUB_UPDATE_FIRMWARE_TOOL}
+# hub_manage_virtual_device and hub_manage_mode are documented as *direct*
+# tools by the connected Hubitat MCP server, not gateways -- they don't
+# expose sub-tools, so an empty-args call to either isn't the harmless
+# "list this gateway's sub-tools" schema-discovery convention every other
+# hub_manage_* gateway supports. Excluding them from the schema-probe check
+# means an empty-args call falls through to the normal hub_manage_
+# classification path and fails closed to SENSITIVE_WRITE (requiring
+# confirmation) instead of being waved through as a safe read.
+_DIRECT_MANAGE_TOOLS = {"hub_manage_virtual_device", "hub_manage_mode"}
 _ROUTINE_DEVICE_COMMANDS = {
     "off", "on", "ping", "refresh", "set_color", "set_color_temperature",
     "set_level", "toggle", "update_check",
@@ -127,9 +136,18 @@ def _operation_effect(operations: list[str]) -> ToolEffect | None:
 
 
 def _is_gateway_schema_probe(tool_name: str, arguments: dict[str, Any]) -> bool:
-    """Recognise the upstream no-argument gateway schema contract."""
+    """Recognise the upstream no-argument gateway schema contract.
 
-    return tool_name.startswith("hub_manage_") and not arguments
+    hub_manage_virtual_device and hub_manage_mode are excluded: they are
+    documented direct tools, not gateways, so an empty-args call to either
+    is a real invocation attempt, not a harmless schema-discovery probe.
+    """
+
+    return (
+        tool_name.startswith("hub_manage_")
+        and tool_name not in _DIRECT_MANAGE_TOOLS
+        and not arguments
+    )
 
 
 def _is_rule_capability_probe(tool_name: str, arguments: dict[str, Any]) -> bool:
