@@ -43,6 +43,41 @@ def test_chat_and_ask_use_unified_agent(monkeypatch, tmp_path):
     assert calls == [("Lights?", "mobile"), ("Lights?", "web")]
 
 
+def test_omitted_session_id_gets_its_own_isolated_key_per_request(monkeypatch, tmp_path):
+    """Regression test: session_id used to default to the literal string
+    "default" for any caller (e.g. a direct public-API request) that
+    omitted it, so two unrelated callers who both omitted session_id
+    would share one session key -- one caller's pending confirmation or
+    "last device" pronoun context could be read, or even confirmed, by
+    the other caller's next request. Each request that omits session_id
+    must now get its own random key, never the shared literal "default",
+    and never the same key as another omitted-session_id request.
+    """
+
+    module = load_app(monkeypatch, tmp_path)
+    calls = []
+
+    async def answer_result(prompt, history, *, session_id):
+        calls.append(session_id)
+        return SimpleNamespace(
+            message="Completed.",
+            request_class="live-read",
+            evidence=[],
+        )
+
+    monkeypatch.setattr(module.agent, "process_user_request_result", answer_result)
+    with TestClient(module.app) as client:
+        first = client.post("/api/chat", json={"prompt": "Lights?"})
+        second = client.post("/api/chat", json={"prompt": "Lights?"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert len(calls) == 2
+    assert "default" not in calls
+    assert calls[0] != calls[1]
+    assert all(session_id for session_id in calls)
+
+
 def test_stream_idle_timeout_is_wired_to_agent(monkeypatch, tmp_path):
     options = tmp_path / "options.json"
     options.write_text('{"stream_idle_timeout_seconds": 7}', encoding="utf-8")

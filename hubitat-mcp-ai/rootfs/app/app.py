@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Awaitable
@@ -225,7 +226,7 @@ class ChatRequest(BaseModel):
     prompt: str | None = Field(default=None, max_length=2000)
     query: str | None = Field(default=None, max_length=2000)
     history: list[HistoryItem] = Field(default_factory=list)
-    session_id: str = Field(default="default", min_length=1, max_length=160)
+    session_id: str | None = Field(default=None, min_length=1, max_length=160)
     request_id: str | None = Field(default=None, min_length=1, max_length=160)
 
     @model_validator(mode="after")
@@ -233,6 +234,27 @@ class ChatRequest(BaseModel):
         value = (self.prompt or self.query or "").strip()
         if not value:
             raise ValueError("Prompt required")
+        return self
+
+    @model_validator(mode="after")
+    def default_session_id(self) -> "ChatRequest":
+        """Give every caller that omits session_id its own isolated key.
+
+        The bundled WebUI always sends a real per-tab UUID (see
+        webui.py's newSessionId()), so it never hits this path. A direct
+        public-API caller that omits session_id, however, previously fell
+        back to the literal string "default" -- every such caller shared
+        one session key, so one caller's pending write confirmation,
+        active disambiguation choices, or "last device" pronoun context
+        could be read, or even confirmed, by a completely unrelated
+        caller's next request. Each request that omits session_id now
+        gets its own random, unguessable UUID instead, so concurrent
+        callers who don't supply one are isolated from each other rather
+        than silently sharing state.
+        """
+
+        if not self.session_id:
+            self.session_id = uuid.uuid4().hex
         return self
 
     @property
