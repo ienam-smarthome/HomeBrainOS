@@ -942,20 +942,31 @@ class HubHealthMCP:
         db_unit: str = "MB",
         free_memory: float = 977.4,
         free_memory_unit: str = "MB",
-        temperature: float = 47.6,
+        temperature: object = 47.6,
         temperature_unit: str = "°C",
         uptime: str = "0d 21h 24m",
         hub_alerts: list[str] | None = None,
+        cpu_percent: float = 22.25,
+        zigbee_healthy: bool | None = True,
+        zwave_healthy: bool | None = False,
     ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.db_size = db_size
         self.db_unit = db_unit
         self.free_memory = free_memory
         self.free_memory_unit = free_memory_unit
+        # Deliberately typed as `object`, not `float`: the real Hub Info
+        # driver's temperatureC attribute has been observed live reporting
+        # its currentValue as a display string with the unit already baked
+        # in (e.g. "46.9 °C"), not a bare number -- see
+        # test_hub_health_query_does_not_duplicate_a_unit_already_baked_into_the_raw_value.
         self.temperature = temperature
         self.temperature_unit = temperature_unit
         self.uptime = uptime
         self.hub_alerts = hub_alerts if hub_alerts is not None else []
+        self.cpu_percent = cpu_percent
+        self.zigbee_healthy = zigbee_healthy
+        self.zwave_healthy = zwave_healthy
 
     async def list_tools(self) -> list[MCPTool]:
         return [MCPTool("hub_search_tools", "Search tools", {"type": "object"})]
@@ -969,6 +980,30 @@ class HubHealthMCP:
             return MCPToolResult(name, arguments, {}, "ok", {"success": True})
         if name == "hub_search_tools":
             return MCPToolResult(name, arguments, {}, "", {"matches": []})
+        attributes: list[dict[str, object]] = [
+            {
+                "name": "freeMemory",
+                "currentValue": self.free_memory,
+                "unit": self.free_memory_unit,
+            },
+            {
+                "name": "temperatureC",
+                "currentValue": self.temperature,
+                "unit": self.temperature_unit,
+            },
+            {
+                "name": "dbSize",
+                "currentValue": self.db_size,
+                "unit": self.db_unit,
+            },
+            {"name": "formattedUptime", "currentValue": self.uptime},
+            {"name": "hubAlerts", "currentValue": self.hub_alerts},
+            {"name": "cpuPct", "currentValue": self.cpu_percent},
+        ]
+        if self.zigbee_healthy is not None:
+            attributes.append({"name": "zbHealthy", "currentValue": self.zigbee_healthy})
+        if self.zwave_healthy is not None:
+            attributes.append({"name": "zwHealthy", "currentValue": self.zwave_healthy})
         return MCPToolResult(
             name,
             arguments,
@@ -978,25 +1013,7 @@ class HubHealthMCP:
                 "devices": [{
                     "id": "1089",
                     "label": "Hub Info (C8 Pro)",
-                    "attributes": [
-                        {
-                            "name": "freeMemory",
-                            "currentValue": self.free_memory,
-                            "unit": self.free_memory_unit,
-                        },
-                        {
-                            "name": "temperatureC",
-                            "currentValue": self.temperature,
-                            "unit": self.temperature_unit,
-                        },
-                        {
-                            "name": "dbSize",
-                            "currentValue": self.db_size,
-                            "unit": self.db_unit,
-                        },
-                        {"name": "formattedUptime", "currentValue": self.uptime},
-                        {"name": "hubAlerts", "currentValue": self.hub_alerts},
-                    ],
+                    "attributes": attributes,
                 }]
             },
         )
@@ -1046,6 +1063,51 @@ async def test_hub_health_query_surfaces_real_active_alerts() -> None:
     assert "1 active alert" in outcome.message
     assert "zigbeeRadioOffline" in outcome.message
     assert "healthy with no active alerts" not in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_does_not_duplicate_a_unit_already_baked_into_the_raw_value() -> None:
+    """Regression test for a live bug in the 0.10.387 fast path itself:
+    "Internal Temperature: 46.9 °C °C". The real Hub Info driver reported
+    temperatureC's currentValue as the display string "46.9 °C" (unit
+    already included), not a bare number -- appending the separately
+    tracked temperature_unit again produced the duplicate. The formatter
+    must strip an existing trailing unit before appending it once, however
+    the underlying driver happens to report the value.
+    """
+
+    mcp = HubHealthMCP(temperature="46.9 °C", temperature_unit="°C")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "Check the hub health status", session_id="hub-health-test-3"
+    )
+
+    assert "46.9 °C" in outcome.message
+    assert "°C °C" not in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_reports_cpu_percent_and_human_radio_health() -> None:
+    """CPU load must read as an actual percentage (not a bare number with
+    no unit at all), and the boolean zigbee/zwave health flags must render
+    as readable words instead of literal "true"/"false".
+    """
+
+    mcp = HubHealthMCP()
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "Check the hub health status", session_id="hub-health-test-4"
+    )
+
+    assert "true" not in outcome.message.casefold()
+    assert "false" not in outcome.message.casefold()
+    assert "Not healthy" in outcome.message or "Healthy" in outcome.message
     assert ai.requests == []
 
 
