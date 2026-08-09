@@ -51,6 +51,40 @@ class MCPToolResult:
     is_error: bool = False
 
 
+def tool_succeeded(result: MCPToolResult) -> bool:
+    """Decide whether a tool call actually succeeded.
+
+    Single source of truth for this check -- device_control_service.py
+    and device_query_service.py each had their own private
+    `_tool_succeeded` implementation, and they disagreed on a partial-
+    failure shape like `{"success": true, "error": "..."}`: the control
+    path treated the presence of any `error` field as failure regardless
+    of `success`, while the query path only treated `error` as failure
+    when `success` wasn't explicitly `True` -- so the identical response
+    was reported as a failed command by one code path and a successful
+    read by the other. An explicit `error` field alongside `success:
+    true` is a genuine partial-failure signal (Hubitat/upstream tools
+    don't set both for no reason), so this always treats it as failure,
+    matching the more conservative of the two prior behaviours. Also
+    checks one level of nesting (`result`/`data`/`output`), since some
+    tool responses wrap their real payload under one of those keys.
+    """
+
+    if result.is_error:
+        return False
+    data = result.data
+    if isinstance(data, dict):
+        if data.get("success") is False or data.get("error"):
+            return False
+        for key in ("result", "data", "output"):
+            nested = data.get(key)
+            if isinstance(nested, dict) and (
+                nested.get("success") is False or nested.get("error")
+            ):
+                return False
+    return True
+
+
 class HubitatMCPClient:
     """Small Streamable-HTTP MCP client tailored to Hubitat's local endpoint."""
 

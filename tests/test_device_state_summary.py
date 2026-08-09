@@ -7,7 +7,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from device_state_summary import device_attributes  # noqa: E402
+from device_state_summary import device_attributes, is_light_device  # noqa: E402
 
 
 def test_device_attributes_merges_all_hubitat_state_shapes():
@@ -80,3 +80,49 @@ def test_real_numeric_value_is_never_overwritten_by_valuestr():
     }
 
     assert device_attributes(device)["value"] == 42
+
+
+def test_is_light_device_recognises_a_color_bulb_with_no_light_capability_token():
+    """Regression test: is_light_device() used to do a crude substring
+    search over str(capabilities) for "light"/"bulb" only -- a color bulb
+    that advertises ColorControl/ColorTemperature but no capability
+    literally containing "light" or "bulb" (a real, common Hubitat
+    driver shape) was silently excluded, while device_query_service's own
+    separate _matches_device_kind("light") check already correctly
+    included it. Both call paths must agree.
+    """
+
+    color_bulb = {
+        "id": "1",
+        "label": "Living Room Bulb",
+        "capabilities": ["ColorControl", "ColorTemperature", "Switch"],
+    }
+
+    assert is_light_device(color_bulb) is True
+
+
+def test_is_light_device_recognises_a_lamp_labelled_device_with_no_light_capability():
+    """A device labelled "lamp" with only a bare Switch capability (no
+    Light/Bulb/ColorControl/ColorTemperature token at all) is still a
+    light in every practical sense -- device_query_service's
+    _matches_device_kind already covered this via a label check;
+    is_light_device() must match it too.
+    """
+
+    lamp = {
+        "id": "2",
+        "label": "Bedroom Lamp",
+        "capabilities": ["Switch"],
+    }
+
+    assert is_light_device(lamp) is True
+
+
+def test_is_light_device_excludes_an_ordinary_switch():
+    plain_switch = {
+        "id": "3",
+        "label": "Hallway Switch",
+        "capabilities": ["Switch"],
+    }
+
+    assert is_light_device(plain_switch) is False

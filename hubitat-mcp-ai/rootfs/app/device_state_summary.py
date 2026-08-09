@@ -68,9 +68,42 @@ def room_name(device: dict[str, Any]) -> str | None:
     return value if value and value.lower() not in {"none", "null", "unassigned"} else None
 
 
+def capability_names(device: dict[str, Any]) -> set[str]:
+    """Return every capability name a device advertises, casefolded.
+
+    Single source of truth for capability extraction -- this used to be
+    duplicated as a private `_capability_names` inside
+    `device_query_service.py` with its own, richer light-detection logic
+    (capabilities intersecting `{"light", "bulb", "colorcontrol",
+    "colortemperature"}`, plus a label check for "lamp"/"bulb"/" light")
+    while `is_light_device` below only ever did a crude substring search
+    over `str(capabilities)` for "light"/"bulb" -- missing color bulbs
+    that only advertise `ColorControl`/`ColorTemperature` and devices
+    labelled e.g. "Bedroom Lamp" with no light-ish capability token at
+    all. The two diverging implementations meant a color bulb could be
+    included as a light in one code path and excluded in another. Both
+    now share this helper and the richer detection logic in
+    `is_light_device` below.
+    """
+
+    values = device.get("capabilities") or []
+    if isinstance(values, dict):
+        values = values.keys()
+    names: set[str] = set()
+    for item in values if isinstance(values, (list, tuple, set, dict)) else []:
+        if isinstance(item, dict):
+            item = item.get("name") or item.get("capability")
+        if item:
+            names.add(str(item).casefold())
+    return names
+
+
 def is_light_device(device: dict[str, Any]) -> bool:
-    capabilities = str(device.get("capabilities") or "").lower()
-    return "light" in capabilities or "bulb" in capabilities
+    capabilities = capability_names(device)
+    label = str(device.get("label") or device.get("name") or "").casefold()
+    return bool(
+        capabilities & {"light", "bulb", "colorcontrol", "colortemperature"}
+    ) or any(word in label for word in (" light", "lamp", "bulb"))
 
 
 def active_non_light_switches(
@@ -146,6 +179,7 @@ __all__ = [
     "active_lights",
     "active_non_light_switches",
     "active_room_summary",
+    "capability_names",
     "device_attributes",
     "is_light_device",
     "room_name",

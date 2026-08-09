@@ -7,6 +7,7 @@ APP_DIR = Path(__file__).parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from device_query_service import DeviceQueryService  # noqa: E402
+from device_state_summary import is_light_device  # noqa: E402
 from device_target_resolver import resolve_device_candidate  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 
@@ -32,6 +33,29 @@ def device(label, room, capabilities, **attributes):
         "capabilities": capabilities,
         "attributes": attributes,
     }
+
+
+def test_matches_device_kind_light_detection_agrees_with_is_light_device():
+    """Regression test: DeviceQueryService._matches_device_kind("light")
+    and device_state_summary.is_light_device() used to implement the
+    light-detection formula independently (capability set intersection +
+    label check duplicated in both files) and could diverge -- a color
+    bulb exposing only ColorControl/ColorTemperature, or a device
+    labelled "lamp" with no light-ish capability token, could be treated
+    as a light by one and excluded by the other. Both now share the same
+    underlying check and must always agree.
+    """
+
+    fixtures = [
+        device("Living Room Bulb", "Living Room", ["ColorControl", "ColorTemperature", "Switch"]),
+        device("Bedroom Lamp", "Bedroom", ["Switch"]),
+        device("Hallway Switch", "Hallway", ["Switch"]),
+        device("Kitchen Light", "Kitchen", ["Light", "Switch"]),
+    ]
+    for fixture in fixtures:
+        assert DeviceQueryService._matches_device_kind(fixture, "light") == is_light_device(
+            fixture
+        ), fixture["label"]
 
 
 @pytest.mark.asyncio

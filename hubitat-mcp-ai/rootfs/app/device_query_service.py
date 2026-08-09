@@ -12,7 +12,9 @@ from device_state_summary import (
     active_lights,
     active_non_light_switches,
     active_room_summary,
+    capability_names,
     device_attributes,
+    is_light_device,
 )
 from device_target_resolver import (
     CandidateResolution,
@@ -21,6 +23,7 @@ from device_target_resolver import (
     targeted_name_variants,
 )
 from mcp_client import HubitatMCPClient, MCPToolResult
+from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import active_request_identity
 
 
@@ -53,15 +56,13 @@ class DeviceQueryService:
 
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:
-        if result.is_error:
-            return False
-        data = result.data
-        if isinstance(data, dict):
-            if data.get("success") is False:
-                return False
-            if data.get("error") and data.get("success") is not True:
-                return False
-        return True
+        # Delegates to the shared implementation in mcp_client.py so this
+        # and DeviceControlService's identically-named method can never
+        # diverge again -- see tool_succeeded()'s docstring for the
+        # partial-failure bug this closes (this method used to treat
+        # {"success": true, "error": "..."} as success, while the
+        # control-path method already treated the same shape as failure).
+        return _shared_tool_succeeded(result)
 
     @staticmethod
     def _normalized_attribute(value: str) -> str:
@@ -147,16 +148,12 @@ class DeviceQueryService:
 
     @staticmethod
     def _capability_names(device: dict[str, Any]) -> set[str]:
-        values = device.get("capabilities") or []
-        names: set[str] = set()
-        if isinstance(values, dict):
-            values = values.keys()
-        for item in values if isinstance(values, (list, tuple, set, dict)) else []:
-            if isinstance(item, dict):
-                item = item.get("name") or item.get("capability")
-            if item:
-                names.add(str(item).casefold())
-        return names
+        # Delegates to the shared helper in device_state_summary.py so
+        # capability extraction has one implementation, not two -- this
+        # used to be duplicated here, which let is_light_device() in
+        # device_state_summary.py drift into a cruder, less accurate
+        # light-detection check than the one below.
+        return capability_names(device)
 
     @classmethod
     def _matches_device_kind(cls, device: dict[str, Any], kind: str) -> bool:
@@ -166,10 +163,10 @@ class DeviceQueryService:
         label = str(device.get("label") or device.get("name") or "").casefold()
         room = str(device.get("room") or device.get("roomName") or "").casefold()
         capabilities = cls._capability_names(device)
-        is_light = (
-            bool(capabilities & {"light", "bulb", "colorcontrol", "colortemperature"})
-            or any(word in label for word in (" light", "lamp", "bulb"))
-        )
+        # is_light_device() (device_state_summary.py) now implements this
+        # exact same check -- calling it here instead of re-deriving it
+        # keeps both call paths permanently in sync.
+        is_light = is_light_device(device)
         is_socket = (
             "outlet" in capabilities
             or any(word in label for word in ("socket", "plug", "outlet"))
