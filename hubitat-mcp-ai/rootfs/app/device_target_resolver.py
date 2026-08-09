@@ -498,12 +498,27 @@ def resolve_device_candidate(
                 "below the confidence floor."
             ),
         )
+    # ranked[:3] (built above) can pad this disambiguation list with a
+    # candidate far below any real similarity threshold, just because it
+    # happened to score third highest across the whole inventory --
+    # live-reproduced: "turn off the lamp" against a house with two real
+    # lamps ("Big lamp", "My Floor Lamp", both scoring 0.9) surfaced
+    # "HallwayCAM (MQTT)" (scoring 0.43, well below missing_floor) as a
+    # third choice button, offering the user a device with nothing to do
+    # with lamps. Every candidate reaching this point already has
+    # top_score >= missing_floor (the branch above returns early
+    # otherwise), so filtering ranked[:3] down to only entries that clear
+    # the same floor always keeps at least the top candidate while
+    # dropping implausible padding.
+    plausible_alternatives = tuple(
+        name for score, name, _device in ranked[:3] if score >= missing_floor
+    )
     return _ambiguous_resolution(
         confidence=top_score,
-        alternatives=alternatives,
+        alternatives=plausible_alternatives,
         reason=(
             f"{requested!r} is ambiguous; the closest candidates are "
-            f"{', '.join(alternatives)}."
+            f"{', '.join(plausible_alternatives)}."
         ),
     )
 
