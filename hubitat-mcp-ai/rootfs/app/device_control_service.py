@@ -12,6 +12,7 @@ import re
 from device_state_summary import device_attributes, is_light_device, room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
+from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import increment_active_metric
 from time_expressions import strip_trailing_time
 
@@ -218,19 +219,11 @@ class DeviceControlService:
 
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:
-        if result.is_error:
-            return False
-        data = result.data
-        if isinstance(data, dict):
-            if data.get("success") is False or data.get("error"):
-                return False
-            for key in ("result", "data", "output"):
-                nested = data.get(key)
-                if isinstance(nested, dict) and (
-                    nested.get("success") is False or nested.get("error")
-                ):
-                    return False
-        return True
+        # Delegates to the shared implementation in mcp_client.py so this
+        # and DeviceQueryService's identically-named method can never
+        # diverge again -- see tool_succeeded()'s docstring for the
+        # partial-failure bug this closes.
+        return _shared_tool_succeeded(result)
 
     @staticmethod
     def _is_switch_device(device: dict[str, Any]) -> bool:
