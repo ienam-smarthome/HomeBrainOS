@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 from collections.abc import Awaitable, Callable
@@ -498,10 +499,34 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 return text or None
 
             alerts_raw = data.get("hub_alerts")
+            # Live-observed regression: this originally only recognised
+            # hub_alerts as a Python list. device_query_service.py's own
+            # empty-alerts sentinel check (`hub_alerts not in (None, "",
+            # "[]", [])`) proves the real Hub Info driver reports
+            # hubAlerts as a STRING, not a list -- so a genuine active
+            # alert here would have failed `isinstance(alerts_raw, list)`
+            # and been silently reported as "no active alerts", masking
+            # exactly what this feature exists to surface. A string value
+            # is now parsed the same way: try it as a JSON array first
+            # (covers a driver that serialises a real list into a string),
+            # then fall back to treating the whole non-empty string as one
+            # alert message.
+            if isinstance(alerts_raw, list):
+                alerts_list = alerts_raw
+            elif isinstance(alerts_raw, str):
+                text = alerts_raw.strip()
+                if not text or text in {"[]", "none", "None"}:
+                    alerts_list = []
+                else:
+                    try:
+                        parsed = json.loads(text)
+                    except (ValueError, TypeError):
+                        parsed = None
+                    alerts_list = parsed if isinstance(parsed, list) else [text]
+            else:
+                alerts_list = []
             alerts = [
-                str(item).strip()
-                for item in (alerts_raw if isinstance(alerts_raw, list) else [])
-                if str(item).strip()
+                str(item).strip() for item in alerts_list if str(item).strip()
             ]
             if alerts:
                 headline = f"The hub has {len(alerts)} active alert(s): {', '.join(alerts)}."
