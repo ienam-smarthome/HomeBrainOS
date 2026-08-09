@@ -490,6 +490,48 @@ async def test_bare_attribute_query_never_reaches_model_tool_selection(
 
 
 @pytest.mark.asyncio
+async def test_bare_attribute_query_offers_every_real_reporter_not_just_three(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for a real live failure: "what's the current
+    temperature" against a house where 6 devices report temperature only
+    ever offered 3 of them as disambiguation choices (two different
+    hardcoded 3-item caps -- one in DeviceQueryService.resolve_device's
+    bare-attribute guard, one in device_target_resolver's generic
+    ambiguous-name branch -- both silently dropped real reporters
+    regardless of which one happened to fire first). Every device that
+    actually reports the requested attribute must be offered, not an
+    arbitrary subset.
+    """
+
+    async def fail_if_reached(_self: object, *_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError(
+            "bare attribute query reached the model tool-selection loop"
+        )
+
+    monkeypatch.setattr(
+        BaseUnifiedMCPAgent, "process_user_request_result", fail_if_reached
+    )
+
+    mcp = DeviceMCP([
+        {
+            "id": str(index),
+            "label": f"Sensor {index}",
+            "room": f"Room {index}",
+            "capabilities": ["TemperatureMeasurement"],
+            "attributes": {"temperature": 20.0 + index},
+        }
+        for index in range(6)
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result("What's the current temperature")
+
+    for index in range(6):
+        assert f"Sensor {index}" in outcome.message
+
+
+@pytest.mark.asyncio
 async def test_bare_attribute_query_resolves_single_exact_label_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -527,12 +527,28 @@ class DeviceQueryService:
         # it into a disambiguation instead of trusting the ranked score --
         # but only for non-exact matches; a device whose actual name/label
         # is literally "Thermostat" should still resolve to itself.
+        #
+        # This must fire whenever resolve_device_candidate's outcome for a
+        # bare attribute word wasn't a genuine exact-name match, not only
+        # when it confidently (and wrongly) picked one device by fuzzy
+        # name-string similarity. resolve_device_candidate's own ambiguous
+        # branch can just as easily fire first for a bare attribute word
+        # (several device labels scoring similarly against "temperature"),
+        # and that branch caps its own alternatives at 3 by
+        # name-similarity rank -- not at "every real reporter". Live-
+        # reproduced: "what's the current temperature" against a house
+        # where 12 devices report temperature only ever offered 3 of them
+        # this way, silently dropping the other 9 real reporters.
         attribute_key = self._normalized_attribute(
             self._strip_leading_article(requested)
         )
+        _EXACT_MATCH_REASONS = {
+            "exact normalized name",
+            "exact semantic room and device name",
+            "exact semantic name with device-kind token omitted",
+        }
         if (
-            resolution.target is not None
-            and resolution.reason == "high-confidence ranked candidate"
+            resolution.reason not in _EXACT_MATCH_REASONS
             and attribute_key in self._ATTRIBUTE_ALIASES
         ):
             reporters = [
@@ -541,9 +557,18 @@ class DeviceQueryService:
                 if self._attribute_value(device, attribute_key)[0] is not None
             ]
             if len(reporters) > 1:
+                # Every device that actually reports this attribute is a
+                # legitimate choice -- truncating to the first 3 (in
+                # whatever order the inventory happens to return them, not
+                # ranked by relevance) silently dropped real reporters.
+                # Live-reproduced: "what's the current temperature"
+                # against a house where 12 devices report temperature
+                # only ever offered 3 of them, arbitrarily excluding the
+                # other 9 (including, in one run, every actual room
+                # sensor) from the choice list.
                 alternative_labels = tuple(
                     str(device.get("label") or device.get("name") or "").strip()
-                    for device in reporters[:3]
+                    for device in reporters
                 )
                 resolution = CandidateResolution(
                     target=None,
@@ -552,7 +577,7 @@ class DeviceQueryService:
                     alternatives=alternative_labels,
                     reason=(
                         f"{requested!r} is a bare attribute reported by "
-                        f"{len(reporters)} devices; the candidates include "
+                        f"{len(reporters)} devices; the candidates are "
                         f"{', '.join(alternative_labels)}."
                     ),
                 )

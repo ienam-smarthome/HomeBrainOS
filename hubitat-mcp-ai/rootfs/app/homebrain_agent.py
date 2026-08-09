@@ -253,7 +253,35 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             matches = [
                 item for item in filtered_data.get("matches") or [] if isinstance(item, dict)
             ]
-            alternatives = capability_choice_labels(name, matches)
+            if name.casefold() == attribute.casefold():
+                # Bare-attribute query ("what's the current temperature")
+                # with no real device/room qualifier -- name is literally
+                # the attribute word here, not a device name to filter by.
+                # `matches` is already correctly scoped to devices that
+                # report this attribute by homebrain_filter_devices, so
+                # every one of them is a legitimate choice.
+                # capability_choice_labels's token filter requires the
+                # device's own label to literally contain the attribute
+                # word ("temperature"), which essentially no real device
+                # label does ("Hallway Meter", "Bedroom 1 TRV",
+                # "Thermostat" -- none say "temperature"). Live-
+                # reproduced: this silently discarded 9 of 12 real
+                # temperature reporters and fell through to unrelated
+                # name-similarity alternatives instead, offering an
+                # incomplete and effectively arbitrary choice list
+                # ("Livingroom temp & humidity, Bedroom 1 Meter, or
+                # Thermostat") instead of every device that actually
+                # reports temperature.
+                alternatives: list[str] = []
+                seen_labels: set[str] = set()
+                for item in matches:
+                    label = str(item.get("label") or item.get("name") or "").strip()
+                    key = label.casefold()
+                    if label and key not in seen_labels:
+                        alternatives.append(label)
+                        seen_labels.add(key)
+            else:
+                alternatives = capability_choice_labels(name, matches)
             if len(alternatives) > 1:
                 self._choices.set(alternatives)
                 self.request_metrics.increment("device_resolution_ambiguous")

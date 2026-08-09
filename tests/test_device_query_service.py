@@ -422,6 +422,29 @@ async def test_resolve_device_bare_attribute_with_multiple_reporters_is_unresolv
 
 
 @pytest.mark.asyncio
+async def test_resolve_device_bare_attribute_alternatives_are_never_truncated():
+    """Regression test for a real live failure: "what's the current
+    temperature" against a house where 12 devices report temperature only
+    ever offered 3 of them (reporters[:3], sliced in whatever order the
+    inventory happens to return them -- not ranked by relevance), silently
+    dropping the other 9 real reporters from the choice list. Every device
+    that actually reports the requested attribute must be offered.
+    """
+
+    devices = [
+        device(f"Sensor {index}", f"Room {index}", ["TemperatureMeasurement"], temperature=20.0 + index)
+        for index in range(6)
+    ]
+    service = DeviceQueryService(_TargetedMCP(devices), lambda *args, **kwargs: None)
+
+    result = await service.resolve_device({"name": "temperature"})
+
+    assert result.data["matched"] is False
+    assert len(result.data["alternatives"]) == 6
+    assert set(result.data["alternatives"]) == {f"Sensor {index}" for index in range(6)}
+
+
+@pytest.mark.asyncio
 async def test_resolve_device_exact_label_match_bypasses_bare_attribute_guard():
     """A device whose real label literally *is* the attribute word (e.g.
     a driver labelled "Temperature") must still resolve deterministically
