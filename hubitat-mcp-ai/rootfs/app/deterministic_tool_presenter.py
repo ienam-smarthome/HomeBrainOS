@@ -19,6 +19,53 @@ _OPERATORS = {
 }
 
 
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    """Coerce a possibly-string boolean-ish flag to a real bool.
+
+    Hubitat and this codebase's own tool results consistently transmit
+    boolean-ish values as the strings "true"/"false" rather than a JSON
+    boolean (already confirmed live for the zbHealthy/zwHealthy hub-health
+    attributes -- see homebrain_agent.py's health_word()). A bare
+    `bool(x)` on the string "false" is wrong (non-empty strings are always
+    truthy), and `x is False`/`x is True` never matches a string at all --
+    both silently misread an explicit "false" as true. Recognises an
+    actual bool, or "true"/"false" (case-insensitive, surrounding
+    whitespace ignored); anything else, including a missing/None value,
+    falls back to `default` so every call site keeps its prior behaviour
+    for the "we don't actually know" case.
+    """
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().casefold()
+        if text == "true":
+            return True
+        if text == "false":
+            return False
+    return default
+
+
+def _append_unit(value: Any, unit: Any) -> str:
+    """Render `value` with `unit` appended exactly once.
+
+    hub_info_service.py's underlying fields have been observed live
+    reporting a value with its unit already baked into the display string
+    (e.g. temperature as "46.9 °C" rather than a bare 46.9) -- appending
+    the separately tracked *_unit field again produces a duplicate like
+    "46.9 °C °C". This is the single place that guard now lives, applied
+    to every hub-resource field that carries a companion unit field, not
+    just the one (temperature) where it was first caught live.
+    """
+
+    text = str(value).strip()
+    unit_text = str(unit or "").strip()
+    if not unit_text or unit_text.casefold() in text.casefold():
+        return text
+    separator = "" if unit_text == "%" else " "
+    return f"{text}{separator}{unit_text}"
+
+
 class _HomeSummaryText(str):
     """Clean user-visible summary with temporary legacy containment aliases."""
 
@@ -186,7 +233,7 @@ def _present_control(data: dict[str, Any]) -> str:
         str(x.get("label")) for x in data.get("failed", [])
         if isinstance(x, dict) and x.get("label") and x.get("command_sent") is not True
     ]
-    if not data.get("success"):
+    if not _coerce_bool(data.get("success"), default=False):
         if succeeded or unverified or failed_items:
             parts = []
             if succeeded:
@@ -209,10 +256,13 @@ def _present_control(data: dict[str, Any]) -> str:
     # with no such flag (e.g. a hand-built result in an older test or a
     # different caller) default to the prior behaviour of being named
     # alongside the rest.
-    changed = [str(x["label"]) for x in succeeded_items if x.get("changed", True)]
+    changed = [
+        str(x["label"]) for x in succeeded_items
+        if _coerce_bool(x.get("changed", True), default=True)
+    ]
     already_in_state = [
         str(x["label"]) for x in succeeded_items
-        if "changed" in x and not x.get("changed", True)
+        if "changed" in x and not _coerce_bool(x.get("changed", True), default=True)
     ]
     if changed:
         message = f"{verb} {_joined(changed)}."
@@ -236,7 +286,7 @@ def _present_control(data: dict[str, Any]) -> str:
 
 def _present_device_history(data: dict[str, Any]) -> str:
     label = str(data.get("label") or data.get("requested") or "the device")
-    if data.get("success") is False:
+    if _coerce_bool(data.get("success"), default=True) is False:
         alternatives = [str(item) for item in data.get("alternatives") or [] if str(item)]
         if alternatives:
             return (
@@ -285,7 +335,7 @@ def _present_hub_info(data: dict[str, Any]) -> str:
     available = data.get("available_firmware")
     parts: list[str] = []
     if scope in {"firmware", "full"}:
-        if installed and bool(data.get("update_available")) and available:
+        if installed and _coerce_bool(data.get("update_available"), default=False) and available:
             parts.append(f"Hub firmware {installed} is installed and {available} is available.")
         elif installed:
             parts.append(f"Hub firmware {installed} is up to date.")
@@ -295,23 +345,27 @@ def _present_hub_info(data: dict[str, Any]) -> str:
         resources: list[str] = []
         cpu_load, cpu_percent = data.get("cpu_5_min"), data.get("cpu_percent")
         if cpu_load not in {None, ""}:
-            cpu = f"{cpu_load}" + (f" / {cpu_percent}%" if cpu_percent not in {None, ""} else "")
+            cpu = f"{cpu_load}" + (
+                f" / {_append_unit(cpu_percent, '%')}" if cpu_percent not in {None, ""} else ""
+            )
             resources.append(f"**CPU load (5 min):** {cpu}")
         free_memory = data.get("free_memory")
         if free_memory not in {None, ""}:
-            unit = str(data.get("free_memory_unit") or "").strip()
-            resources.append(f"**Free memory:** {free_memory}{f' {unit}' if unit else ''}")
+            resources.append(
+                f"**Free memory:** {_append_unit(free_memory, data.get('free_memory_unit'))}"
+            )
         temperature = data.get("temperature")
         if temperature not in {None, ""}:
-            rendered_temperature = str(temperature).strip()
-            unit = str(data.get("temperature_unit") or "").strip()
-            if unit and unit.casefold() not in rendered_temperature.casefold():
-                rendered_temperature += f" {unit}"
-            resources.append(f"**Temperature:** {rendered_temperature}")
+            resources.append(
+                f"**Temperature:** {_append_unit(temperature, data.get('temperature_unit'))}"
+            )
         if data.get("uptime") not in {None, ""}:
             resources.append(f"**Uptime:** {data.get('uptime')}")
         if data.get("database_size") not in {None, ""}:
-            resources.append(f"**Database size:** {data.get('database_size')} {str(data.get('database_size_unit') or 'MB').strip()}")
+            resources.append(
+                "**Database size:** "
+                + _append_unit(data.get("database_size"), data.get("database_size_unit") or "MB")
+            )
         if resources:
             parts.append("Hub resources:\n\n- " + "\n- ".join(resources))
     return " ".join(parts) or "The Hub Info device returned no usable attributes."

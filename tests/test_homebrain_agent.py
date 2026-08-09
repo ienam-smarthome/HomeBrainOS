@@ -945,7 +945,11 @@ class HubHealthMCP:
         temperature: object = 47.6,
         temperature_unit: str = "°C",
         uptime: str = "0d 21h 24m",
-        hub_alerts: list[str] | None = None,
+        # Deliberately typed as `object`, defaulting to the real Hub Info
+        # driver's live shape: hubAlerts is reported as the STRING "[]"
+        # when empty, not an actual empty list -- see
+        # test_hub_health_query_recognises_a_real_alert_reported_as_a_string.
+        hub_alerts: object = "[]",
         cpu_percent: float = 22.25,
         # Deliberately typed as `object`, defaulting to the real Hub Info
         # driver's live shape: Hubitat attribute values are transmitted as
@@ -968,7 +972,7 @@ class HubHealthMCP:
         self.temperature = temperature
         self.temperature_unit = temperature_unit
         self.uptime = uptime
-        self.hub_alerts = hub_alerts if hub_alerts is not None else []
+        self.hub_alerts = hub_alerts
         self.cpu_percent = cpu_percent
         self.zigbee_healthy = zigbee_healthy
         self.zwave_healthy = zwave_healthy
@@ -1068,6 +1072,61 @@ async def test_hub_health_query_surfaces_real_active_alerts() -> None:
     assert "1 active alert" in outcome.message
     assert "zigbeeRadioOffline" in outcome.message
     assert "healthy with no active alerts" not in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_recognises_a_real_alert_reported_as_a_string() -> None:
+    """Regression test for a live bug never actually exercised against a
+    real hub: hub_alerts was only ever recognised as a Python list, but
+    device_query_service.py's own empty-alerts sentinel check (comparing
+    against the literal string "[]") proves the real Hub Info driver
+    reports hubAlerts as a STRING, not a list. A genuine active alert
+    reported that way must still be surfaced, not silently swallowed as
+    "no active alerts" -- both a JSON-array-shaped string and a plain
+    text string must work.
+    """
+
+    json_shaped = HubHealthMCP(hub_alerts='["zigbeeRadioOffline"]')
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(json_shaped, "key", ai_client=ai)
+    outcome = await agent.process_user_request_result(
+        "hub health", session_id="hub-health-test-json-alert"
+    )
+    assert "1 active alert" in outcome.message
+    assert "zigbeeRadioOffline" in outcome.message
+    assert "healthy with no active alerts" not in outcome.message
+
+    plain_text = HubHealthMCP(hub_alerts="Zigbee radio offline")
+    ai2 = FakeAI("unused")
+    agent2 = UnifiedMCPAgent(plain_text, "key", ai_client=ai2)
+    outcome2 = await agent2.process_user_request_result(
+        "hub health", session_id="hub-health-test-text-alert"
+    )
+    assert "1 active alert" in outcome2.message
+    assert "Zigbee radio offline" in outcome2.message
+    assert "healthy with no active alerts" not in outcome2.message
+    assert ai.requests == []
+    assert ai2.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_treats_the_string_empty_sentinel_as_healthy() -> None:
+    """The real hub's "no alerts" state is the string "[]", not an empty
+    Python list or None -- this must still read as healthy, not as "did
+    not report an alert status" (reserved for a genuinely missing field).
+    """
+
+    mcp = HubHealthMCP(hub_alerts="[]")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "hub health", session_id="hub-health-test-empty-string-alert"
+    )
+
+    assert "healthy with no active alerts" in outcome.message
+    assert "did not report" not in outcome.message
     assert ai.requests == []
 
 
