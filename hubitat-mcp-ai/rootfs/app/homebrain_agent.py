@@ -478,11 +478,23 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 return f"{deduped or text} {unit}".strip()
 
             def health_word(raw: Any) -> str | None:
+                # Live-observed regression: the real Hub Info driver reports
+                # zbHealthy/zwHealthy as the literal strings "true"/"false"
+                # (Hubitat attribute values are almost always transmitted as
+                # strings, the same way a switch reports "on"/"off" rather
+                # than a JSON boolean), not a Python bool -- the mock
+                # fixture this shipped with used an actual bool, so the
+                # isinstance(raw, bool) check alone never fired against the
+                # real hub and the raw string leaked straight through.
                 if raw is None:
                     return None
                 if isinstance(raw, bool):
                     return "Healthy" if raw else "Not healthy"
                 text = str(raw).strip()
+                if text.casefold() == "true":
+                    return "Healthy"
+                if text.casefold() == "false":
+                    return "Not healthy"
                 return text or None
 
             alerts_raw = data.get("hub_alerts")
