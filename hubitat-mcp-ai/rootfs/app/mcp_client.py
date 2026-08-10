@@ -88,6 +88,12 @@ def tool_succeeded(result: MCPToolResult) -> bool:
 class HubitatMCPClient:
     """Small Streamable-HTTP MCP client tailored to Hubitat's local endpoint."""
 
+    # Hard cap on device-list pages fetched per get_cached_devices() call.
+    # A misbehaving or malicious upstream that always reports hasMore=True
+    # would otherwise page forever; this bounds worst-case fetch time and
+    # request volume to a large-but-finite manifest (50/page default).
+    _MAX_DEVICE_PAGES = 200
+
     def __init__(
         self,
         endpoint_url: str,
@@ -283,11 +289,29 @@ class HubitatMCPClient:
         if using_gateway:
             devices = list(value or [])
             page = self._find_device_page(result.data)
-            while page and page.get("hasMore") is True and page.get("nextOffset") is not None:
-                arguments["args"]["offset"] = int(page["nextOffset"])
+            current_offset = int(arguments["args"]["offset"])
+            pages_fetched = 1
+            while (
+                page
+                and page.get("hasMore") is True
+                and page.get("nextOffset") is not None
+                and pages_fetched < self._MAX_DEVICE_PAGES
+            ):
+                try:
+                    next_offset = int(page["nextOffset"])
+                except (TypeError, ValueError):
+                    break
+                if next_offset <= current_offset:
+                    # A non-advancing (or regressing) offset means the
+                    # upstream page contract is broken -- stop instead of
+                    # looping on the same page forever.
+                    break
+                current_offset = next_offset
+                arguments["args"]["offset"] = current_offset
                 result = await self.call_tool(tool_name, arguments)
                 devices.extend(self._find_device_list(result.data) or [])
                 page = self._find_device_page(result.data)
+                pages_fetched += 1
             value = devices
         if isinstance(value, list):
             self._cached_devices = [item for item in value if isinstance(item, dict)]

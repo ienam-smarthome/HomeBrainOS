@@ -44,6 +44,21 @@ class ProviderTokenEstimator:
             "default",
         )
 
+    # UTF-8 encodes ASCII text at 1 byte/char, but non-ASCII text commonly
+    # runs 2-4 bytes/char (Latin-extended/Cyrillic/Greek ~2, CJK ~3, emoji
+    # up to 4). bytes_per_token above is calibrated against UTF-8 *byte*
+    # length, but chars_for_token_budget() returns a *character* ceiling
+    # that callers use to slice Python str content (see
+    # token_aware_context_policy.py). Treating the raw byte budget as a
+    # literal character count silently over-allows non-ASCII-heavy text:
+    # the resulting truncated text's actual UTF-8 byte size -- and
+    # therefore its real token count -- can exceed the intended budget.
+    # This floor keeps the character estimate conservative for mixed-
+    # script content. Callers still retain a hard, script-independent
+    # character cap as the ultimate backstop, so this only ever tightens
+    # (never loosens) the effective limit.
+    _MIN_BYTES_PER_CHAR = 1.5
+
     @property
     def bytes_per_token(self) -> float:
         return self._PROFILE_BYTES_PER_TOKEN[self.profile]
@@ -70,10 +85,17 @@ class ProviderTokenEstimator:
         return TokenEstimate(total_tokens, total_bytes, self.profile)
 
     def chars_for_token_budget(self, token_budget: int) -> int:
-        """Return a conservative character ceiling for a token budget."""
+        """Return a conservative character ceiling for a token budget.
+
+        The byte budget implied by ``bytes_per_token`` is divided by
+        ``_MIN_BYTES_PER_CHAR`` before being returned as a character count,
+        so the estimate stays safe even when the underlying text is not
+        plain ASCII (see the class-level comment above).
+        """
 
         budget = max(0, int(token_budget))
-        return max(0, math.floor(budget * self.bytes_per_token))
+        byte_budget = max(0, math.floor(budget * self.bytes_per_token))
+        return max(0, math.floor(byte_budget / self._MIN_BYTES_PER_CHAR))
 
 
 __all__ = ["ProviderTokenEstimator", "TokenEstimate"]
