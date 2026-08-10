@@ -42,6 +42,15 @@ from direct_outcome_context import DirectOutcomeContext
 from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
 from live_evidence_authority import LiveEvidenceAuthority
+from location_event_queries import (
+    find_mode_last_entered,
+    mode_active_before,
+    parse_location_events_intent,
+    parse_mode_last_entered,
+    present_location_events,
+    present_mode_at_time,
+    present_mode_last_entered,
+)
 from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedMCPAgent
 from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
@@ -343,6 +352,35 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         })
         return result, result.data if isinstance(result.data, dict) else {}
 
+    async def _read_location_events(
+        self, *, hours_back: int = 168, limit: int = 50
+    ) -> tuple[Any, dict[str, Any]]:
+        result = await self.device_history.location_events({
+            "hours_back": hours_back,
+            "limit": limit,
+        })
+        return result, result.data if isinstance(result.data, dict) else {}
+
+    async def _mode_active_at(self, reference_timestamp: str) -> str | None:
+        """Best-effort lookup of the hub mode active at another event's
+        timestamp, for enriching a "why did X happen" answer with context.
+
+        Deliberately swallows a failed/empty location-event read rather
+        than surfacing an error here -- this is supplementary context for
+        an already-successful device-history answer, not something that
+        should ever downgrade or block it. Returns None (never a guess)
+        whenever the mode genuinely can't be determined, e.g. the window
+        fetched doesn't reach back far enough or the location-event read
+        itself failed.
+        """
+
+        result, data = await self._read_location_events()
+        if not self._tool_succeeded(result):
+            return None
+        events = [item for item in data.get("events", []) if isinstance(item, dict)]
+        active = mode_active_before(events, reference_timestamp=reference_timestamp)
+        return present_mode_at_time(active)
+
     async def _contact_event_outcome(
         self,
         name: str,
@@ -371,11 +409,39 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             verb = "opened" if state == "open" else "closed"
             if explain_cause:
                 article = "an" if state == "open" else "a"
+                mode_clause = await self._mode_active_at(raw_timestamp)
+                mode_suffix = f" The hub was in {mode_clause} at the time." if mode_clause else ""
                 return (
-                    f"{label} reported {article} {state} contact event at {timestamp}. "
-                    "The device history does not identify which person or automation caused it."
+                    f"{label} reported {article} {state} contact event at {timestamp}."
+                    f"{mode_suffix} The device history does not identify which person or "
+                    "automation caused it."
                 )
             return f"{label} last {verb} at {timestamp}."
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
+    async def _location_events_outcome(self) -> AgentOutcome:
+        async def operation() -> str:
+            result, data = await self._read_location_events()
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_location_events", data, failed=True, fallback_error=result.text
+                ) or "I could not read the location event history."
+            events = [item for item in data.get("events", []) if isinstance(item, dict)]
+            return present_location_events(events)
+
+        return await self._direct_outcome(operation, request_class="live-read")
+
+    async def _mode_last_entered_outcome(self, mode_name: str) -> AgentOutcome:
+        async def operation() -> str:
+            result, data = await self._read_location_events()
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_location_events", data, failed=True, fallback_error=result.text
+                ) or "I could not read the location event history."
+            events = [item for item in data.get("events", []) if isinstance(item, dict)]
+            matching = find_mode_last_entered(events, mode_name=mode_name)
+            return present_mode_last_entered(mode_name, matching)
 
         return await self._direct_outcome(operation, request_class="live-read")
 
@@ -1074,6 +1140,13 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     explain_cause=True,
                     session_key=session_key,
                 )
+
+            if parse_location_events_intent(user_prompt):
+                return await self._location_events_outcome()
+
+            mode_last_entered = parse_mode_last_entered(user_prompt)
+            if mode_last_entered is not None:
+                return await self._mode_last_entered_outcome(mode_last_entered)
 
             if parse_hub_health_intent(user_prompt):
                 return await self._hub_health_outcome(session_key=session_key)

@@ -22,6 +22,7 @@ from mcp_client import HubitatMCPClient, MCPToolResult
 
 
 DEVICE_HISTORY_TOOL = "homebrain_device_history"
+LOCATION_EVENTS_TOOL = "homebrain_location_events"
 DEVICE_GATEWAY = "hub_read_devices"
 EVENT_OPERATION = "hub_list_device_events"
 
@@ -97,6 +98,99 @@ class DeviceHistoryService:
             if len(events) >= limit:
                 break
         return events
+
+    async def location_events(self, arguments: dict[str, Any]) -> MCPToolResult:
+        """Read the hub's own location-scoped event stream (mode changes,
+        sunrise/sunset, HSM, hub variables) -- confirmed live to be the
+        exact same rows the hub's own Logs > Location events page shows.
+
+        This is the same ``hub_list_device_events`` operation ``history()``
+        uses for a single device's events, but called with both
+        ``deviceId`` and ``appId`` omitted, which is the documented
+        upstream contract for location events rather than a device- or
+        app-scoped read. No device resolution is needed since this isn't
+        about any one device.
+        """
+
+        hours_back = self._integer(
+            arguments.get("hours_back"),
+            default=24,
+            minimum=1,
+            maximum=168,
+        )
+        limit = self._integer(
+            arguments.get("limit"),
+            default=20,
+            minimum=1,
+            maximum=50,
+        )
+        event_args: dict[str, Any] = {"hoursBack": hours_back, "limit": limit}
+        source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
+        started = time.monotonic()
+        try:
+            source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
+        except Exception as exc:
+            elapsed_ms = round((time.monotonic() - started) * 1000)
+            self._record_evidence(
+                DEVICE_GATEWAY,
+                source_arguments,
+                success=False,
+                elapsed_ms=elapsed_ms,
+                summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                supports_live_claim=True,
+                evidence_kind="authoritative_location_event_history",
+            )
+            data = {"success": False, "error": str(exc)[:500]}
+            return MCPToolResult(
+                LOCATION_EVENTS_TOOL,
+                arguments,
+                {},
+                json.dumps(data),
+                data,
+                is_error=True,
+            )
+
+        success = not source.is_error and not (
+            isinstance(source.data, dict) and source.data.get("success") is False
+        )
+        events = self._events(source.data, limit=limit) if success else []
+        self._record_evidence(
+            DEVICE_GATEWAY,
+            source_arguments,
+            success=success,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(events)} location events",
+            supports_live_claim=True,
+            evidence_kind="authoritative_location_event_history",
+        )
+        if not success:
+            data = {
+                "success": False,
+                "error": source.text or "Hubitat location-event read failed",
+            }
+            return MCPToolResult(
+                LOCATION_EVENTS_TOOL,
+                arguments,
+                source.raw,
+                json.dumps(data),
+                data,
+                is_error=True,
+            )
+
+        data = {
+            "success": True,
+            "hoursBack": hours_back,
+            "count": len(events),
+            "events": events,
+            "newestFirst": True,
+        }
+        return MCPToolResult(
+            LOCATION_EVENTS_TOOL,
+            arguments,
+            source.raw,
+            json.dumps(data, ensure_ascii=False, default=str),
+            data,
+        )
 
     async def history(self, arguments: dict[str, Any]) -> MCPToolResult:
         requested = str(arguments.get("name") or "").strip()
@@ -269,5 +363,6 @@ __all__ = [
     "DEVICE_GATEWAY",
     "DEVICE_HISTORY_TOOL",
     "EVENT_OPERATION",
+    "LOCATION_EVENTS_TOOL",
     "DeviceHistoryService",
 ]
