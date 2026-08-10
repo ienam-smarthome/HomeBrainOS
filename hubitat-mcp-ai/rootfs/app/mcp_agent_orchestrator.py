@@ -19,6 +19,12 @@ from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirmation
 from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
 from deterministic_tool_presenter import present_tool_result
+from device_claim_grounding import (
+    DeviceClaimAction,
+    DeviceClaimGroundingPolicy,
+    extract_receipt_device_ids,
+    find_named_device_mismatch,
+)
 from device_control_service import DeviceControlService
 from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
@@ -706,6 +712,7 @@ class UnifiedMCPAgent:
             conversational=self._is_conversational_prompt(user_prompt),
         )
         capability_grounding = CapabilityGroundingPolicy()
+        device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
         ungrounded_confirmation_claim_seen = False
         for _ in range(self.max_tool_rounds):
@@ -813,6 +820,40 @@ class UnifiedMCPAgent:
                     is CapabilityAction.REJECT_UNGROUNDED
                 ):
                     return str(capability_decision.message)
+                # Content-blind evidence grounding gap (2026-08-09 code
+                # review, finding #14): the check just below only asks
+                # "did *some* live tool call succeed this turn", not
+                # "does that evidence actually back the claim in the
+                # answer" -- a model that read Device A's live state could
+                # still answer a question about Device B and pass it
+                # untouched. This narrow check only fires when the answer
+                # names a known device by label AND this turn collected
+                # device-scoped evidence for a *different* device; see
+                # device_claim_grounding.py's module docstring for the
+                # accepted scope and limitations of this partial fix.
+                receipt_device_ids = extract_receipt_device_ids(
+                    self.evidence.receipts()
+                )
+                if receipt_device_ids:
+                    mismatched_label = find_named_device_mismatch(
+                        answer,
+                        await self.mcp.get_cached_devices(),
+                        receipt_device_ids,
+                    )
+                    device_claim_decision = device_claim_grounding.decide(
+                        mismatched_label
+                    )
+                    if device_claim_decision.action is DeviceClaimAction.RETRY:
+                        messages.extend([
+                            assistant,
+                            {
+                                "role": "user",
+                                "content": str(device_claim_decision.message),
+                            },
+                        ])
+                        continue
+                    if device_claim_decision.action is DeviceClaimAction.REFUSE:
+                        return str(device_claim_decision.message)
                 decision = grounding.decide_no_tool_calls(
                     has_live_evidence=self.evidence.has_live_evidence()
                 )

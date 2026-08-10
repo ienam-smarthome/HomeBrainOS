@@ -19,6 +19,7 @@ The repository drift test compares this table directly with the live directory. 
 | `contact_history_queries.py` | Parses and presents bounded contact-history follow-ups and calendar-day aggregations. |
 | `contextual_read_fast_path.py` | Parses and presents deterministic session-context attribute reads and motion aggregation. |
 | `deterministic_tool_presenter.py` | Formats fixed answers for supported deterministic reads. |
+| `device_claim_grounding.py` | Grounds a named-device claim in the final answer against this turn's device-scoped evidence. |
 | `device_control_service.py` | Executes bounded device-control operations. |
 | `device_history_service.py` | Resolves one device and reads bounded event history. |
 | `device_query_service.py` | Performs read-side inventory queries and aggregation. |
