@@ -127,6 +127,44 @@ async def test_resource_snapshot_refreshes_and_preserves_reported_units():
 
 
 @pytest.mark.asyncio
+async def test_resource_snapshot_reports_units_that_diverge_from_hardcoded_defaults():
+    """Live-observed gap: merge_device_identity() flattens the live device's
+    "attributes" list into a plain dict *before* device_attribute_units() --
+    which only understands the original list shape -- ever runs on it, so
+    attribute_units was always {} and every unit silently fell back to the
+    hardcoded/inferred default. The previous test above can't catch this
+    because its fixture happens to report units matching those defaults
+    (MB / degrees C). This fixture reports Fahrenheit and kilobytes instead, so
+    a regression back to the always-{} bug would report the wrong unit.
+    """
+
+    cached = [{"id": "1089", "label": "Hub Info (C8 Pro)"}]
+    refresh = result("hub_manage_devices", {}, {"success": True})
+    live = result(
+        "hub_read_devices",
+        {},
+        {
+            "id": "1089",
+            "attributes": [
+                {"name": "freeMemory", "currentValue": 512000, "unit": "KB"},
+                {"name": "temperatureC", "currentValue": 120.6, "unit": "°F"},
+                {"name": "dbSize", "currentValue": 2.1, "unit": "GB"},
+            ],
+        },
+    )
+    mcp = FakeMCP(cached, [refresh, live])
+
+    snapshot = await HubInfoService(mcp, sleep=no_sleep).snapshot(
+        {"scope": "resources"}
+    )
+
+    assert snapshot.data["success"] is True
+    assert snapshot.data["free_memory_unit"] == "KB"
+    assert snapshot.data["temperature_unit"] == "°F"
+    assert snapshot.data["database_size_unit"] == "GB"
+
+
+@pytest.mark.asyncio
 async def test_failed_refresh_command_returns_structured_error():
     cached = [{"id": "1089", "label": "Hub Info"}]
     failed = result(

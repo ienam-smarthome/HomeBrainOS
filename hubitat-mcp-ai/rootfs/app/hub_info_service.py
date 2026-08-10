@@ -233,6 +233,13 @@ class HubInfoService:
                     ),
                 )
         live_device: dict[str, Any] | None = None
+        # Captured from the raw, list-shaped live device *before*
+        # merge_device_identity() flattens its "attributes" into a plain
+        # {name: value} dict -- device_attribute_units() only understands
+        # the original list shape (see its own `if not isinstance(...,
+        # list): return {}` guard) and silently returns {} for anything
+        # merge_device_identity() has already touched.
+        live_device_units: dict[str, str] = {}
         poll_attempts = 10 if scope in {"firmware", "full"} else 6
         for attempt in range(poll_attempts):
             source = await self.mcp.call_tool(
@@ -255,6 +262,7 @@ class HubInfoService:
             if live_device is None and len(candidates) == 1:
                 live_device = candidates[0]
             if live_device is not None:
+                live_device_units = self.device_attribute_units(live_device)
                 live_device = self.merge_device_identity(
                     [live_device],
                     [hub_device],
@@ -285,7 +293,11 @@ class HubInfoService:
                 "Hub Info attributes were unavailable after refresh",
             )
         values = {**live_device, **self.device_attributes(live_device)}
-        attribute_units = self.device_attribute_units(live_device)
+        # Use the units captured before merge_device_identity() flattened
+        # the attribute list -- device_attribute_units(live_device) here
+        # would always return {} since live_device's "attributes" is now a
+        # plain dict, not the list shape that helper requires.
+        attribute_units = live_device_units
 
         def value(*names: str) -> Any:
             return next(
