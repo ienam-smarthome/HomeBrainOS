@@ -515,15 +515,30 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 # fixture this shipped with used an actual bool, so the
                 # isinstance(raw, bool) check alone never fired against the
                 # real hub and the raw string leaked straight through.
+                #
+                # Live-observed follow-up (0.10.400): this used to render
+                # "Healthy"/"Not healthy". A radio the user deliberately
+                # disabled from the hub's own Settings page (confirmed live:
+                # "Z-Wave is disabled") reports zbHealthy/zwHealthy=false the
+                # same as a radio that's enabled but genuinely malfunctioning
+                # -- this attribute cannot tell the two apart. Labelling a
+                # deliberately-disabled radio "Not healthy" reads as an
+                # alarm for what's actually a normal, intentional
+                # configuration, and it doesn't match Matter's own
+                # already-live "online" style immediately below it in this
+                # same table. Renamed to Online/Offline -- a neutral state
+                # word this attribute actually supports, consistent with
+                # Matter's phrasing, without claiming a "disabled" state
+                # this attribute can't verify.
                 if raw is None:
                     return None
                 if isinstance(raw, bool):
-                    return "Healthy" if raw else "Not healthy"
+                    return "Online" if raw else "Offline"
                 text = str(raw).strip()
                 if text.casefold() == "true":
-                    return "Healthy"
+                    return "Online"
                 if text.casefold() == "false":
-                    return "Not healthy"
+                    return "Offline"
                 return text or None
 
             alerts_raw = data.get("hub_alerts")

@@ -1222,8 +1222,35 @@ async def test_hub_health_query_reports_cpu_percent_and_human_radio_health() -> 
     assert "22.25%" in outcome.message
     assert "true" not in outcome.message.casefold()
     assert "false" not in outcome.message.casefold()
-    assert "Healthy" in outcome.message
-    assert "Not healthy" in outcome.message
+    assert "Online" in outcome.message
+    assert "Offline" in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_does_not_label_a_disabled_radio_as_unhealthy() -> None:
+    """Live-observed regression: a radio the user deliberately disabled
+    from the hub's own Settings page (confirmed live -- the hub's own
+    "Z-Wave is disabled" page) still reports zbHealthy/zwHealthy=false,
+    the same value a genuinely malfunctioning-but-enabled radio would
+    report. The old "Healthy"/"Not healthy" wording read as an alarm for
+    what's actually a normal, intentional configuration, and didn't match
+    Matter's own already-live "online" phrasing in the same table. Both
+    radios must now use the same neutral Online/Offline vocabulary Matter
+    already uses, never the word "healthy".
+    """
+
+    mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "Check the hub health status", session_id="hub-health-test-5"
+    )
+
+    assert "Not healthy" not in outcome.message
+    assert "**Zigbee:** Online" in outcome.message
+    assert "**Z-Wave:** Offline" in outcome.message
     assert ai.requests == []
 
 
