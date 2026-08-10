@@ -1611,3 +1611,59 @@ async def test_last_contact_answer_is_not_enriched_with_mode() -> None:
         and not (arguments.get("args") or {}).get("deviceId")
     ]
     assert location_calls == []
+
+
+@pytest.mark.asyncio
+async def test_last_contact_bare_statement_phrasing_gives_a_direct_answer() -> None:
+    """Live-observed UX gap: "front door last opened" (no "when did"
+    prefix) fell through every deterministic parser into the general model
+    tool-calling loop, which answered with the full raw event list from
+    homebrain_device_history instead of this fast path's single direct
+    sentence. This phrasing must now match the same fast path as "when did
+    Front Door last open?".
+    """
+
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "front door last opened", session_id="last-contact-statement-test"
+    )
+
+    assert outcome.message == "Front Door last opened at 7:15 am on Monday 10 August 2026."
+    device_history_calls = [
+        arguments for _, arguments in mcp.calls
+        if arguments.get("tool") == "hub_list_device_events"
+        and (arguments.get("args") or {}).get("deviceId")
+    ]
+    assert len(device_history_calls) == 1
+    assert device_history_calls[0]["args"]["hoursBack"] == 168
+
+
+@pytest.mark.asyncio
+async def test_last_contact_when_was_phrasing_matches_the_same_fast_path() -> None:
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "When was Front Door last opened?", session_id="last-contact-when-was-test"
+    )
+
+    assert outcome.message == "Front Door last opened at 7:15 am on Monday 10 August 2026."
+
+
+@pytest.mark.asyncio
+async def test_why_contact_phrasing_is_not_hijacked_by_the_new_statement_pattern() -> None:
+    """"Why did ... open" questions must keep going through the why-contact
+    (causal-framing) path, not the new bare last-contact statement pattern,
+    even though both share the words "did" and "open".
+    """
+
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "Why did Front Door open?", session_id="why-contact-not-hijacked-test"
+    )
+
+    assert "does not identify which person or automation caused it" in outcome.message

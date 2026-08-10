@@ -129,6 +129,8 @@ def find_named_device_mismatch(
     text = str(answer or "")
     if not text.strip() or not receipt_device_ids:
         return None
+
+    candidates: list[tuple[str, str]] = []
     for device in devices:
         if not isinstance(device, dict):
             continue
@@ -136,12 +138,38 @@ def find_named_device_mismatch(
         device_id = _normalize_id(device.get("id"))
         if not label or not device_id or len(label) < _MIN_LABEL_LENGTH:
             continue
+        candidates.append((label, device_id))
+
+    # Live-observed false positive: when one device's label is a prefix of
+    # another's (e.g. "Front Door" vs. "Front Door Sensor"), a correct,
+    # fully-evidenced answer about the longer-labeled device still matched
+    # the shorter label as a valid word-bounded substring (a space isn't a
+    # word character), flagging a device the answer never actually named.
+    # Matching longest labels first, and treating a shorter label's match
+    # as already accounted for once it falls entirely inside a longer
+    # label's match span, avoids double-counting the same mention under
+    # two different device labels.
+    candidates.sort(key=lambda item: len(item[0]), reverse=True)
+
+    claimed_spans: list[tuple[int, int]] = []
+    mismatch: str | None = None
+    for label, device_id in candidates:
+        pattern = rf"(?<![\w-]){re.escape(label)}(?![\w-])"
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match is None:
+            continue
+        start, end = match.span()
+        if any(
+            claimed_start <= start and end <= claimed_end
+            for claimed_start, claimed_end in claimed_spans
+        ):
+            continue
+        claimed_spans.append((start, end))
         if device_id in receipt_device_ids:
             continue
-        pattern = rf"(?<![\w-]){re.escape(label)}(?![\w-])"
-        if re.search(pattern, text, re.IGNORECASE):
-            return label
-    return None
+        if mismatch is None:
+            mismatch = label
+    return mismatch
 
 
 class DeviceClaimGroundingPolicy:

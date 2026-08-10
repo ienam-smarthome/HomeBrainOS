@@ -106,6 +106,58 @@ def test_short_labels_are_never_matched_to_avoid_false_positives():
     assert mismatch is None
 
 
+def test_prefix_label_collision_does_not_produce_a_false_mismatch():
+    """Live-observed false positive: a correct, fully-evidenced answer
+    about "Front Door Sensor" was flagged as naming a mismatched device
+    because "Front Door" (a *different* real device, id "1") matched as a
+    valid word-bounded substring of the longer label -- even though the
+    answer never actually named that shorter-labeled device at all.
+    """
+
+    devices = [
+        {"id": "1", "label": "Front Door"},
+        {"id": "2", "label": "Front Door Sensor"},
+    ]
+
+    mismatch = find_named_device_mismatch(
+        "The Front Door Sensor shows the door is closed.", devices, {"2"}
+    )
+
+    assert mismatch is None
+
+
+def test_prefix_label_collision_still_catches_a_genuine_mismatch():
+    """The longest-match-first fix must not blind the check to a real,
+    separately-mentioned mismatch just because a longer-labeled sibling
+    device also exists."""
+
+    devices = [
+        {"id": "1", "label": "Front Door"},
+        {"id": "2", "label": "Front Door Sensor"},
+    ]
+
+    mismatch = find_named_device_mismatch(
+        "The Front Door is locked.", devices, {"2"}
+    )
+
+    assert mismatch == "Front Door"
+
+
+def test_prefix_label_collision_still_catches_a_different_unrelated_device():
+    devices = [
+        {"id": "1", "label": "Front Door Sensor"},
+        {"id": "3", "label": "Kitchen Light"},
+    ]
+
+    mismatch = find_named_device_mismatch(
+        "The Front Door Sensor shows closed but the Kitchen Light is on.",
+        devices,
+        {"1"},
+    )
+
+    assert mismatch == "Kitchen Light"
+
+
 def test_policy_accepts_when_there_is_no_mismatch():
     policy = DeviceClaimGroundingPolicy()
 
