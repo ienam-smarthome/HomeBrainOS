@@ -111,7 +111,7 @@ _FIRMWARE_STATUS = re.compile(
     r"update\s+(?:status|progress)\s*[?.!]*\s*$"
     r"|^\s*(?:please\s+)?(?:check\s+)?(?:the\s+)?firmware\s+update\s+"
     r"(?:status|progress)\s*[?.!]*\s*$"
-    r"|^\s*(?:please\s+)?how(?:'s|\s+is)\s+the\s+(?:firmware\s+)?update\s+"
+    r"|^\s*(?:please\s+)?how(?:'s|s|\s+is)\s+the\s+(?:firmware\s+)?update\s+"
     r"(?:going|coming\s+along|progressing)\s*[?.!]*\s*$"
     r"|^\s*(?:please\s+)?is\s+the\s+(?:firmware\s+)?update\s+"
     r"(?:done|finished|complete|over)\s*[?.!]*\s*$"
@@ -151,11 +151,11 @@ def parse_firmware_status_intent(prompt: str) -> bool:
 
 _HUB_HEALTH_STATUS = re.compile(
     r"^\s*(?:please\s+)?check\s+(?:the\s+)?hub\s+health(?:\s+status)?\s*[?.!]*\s*$"
-    r"|^\s*(?:please\s+)?(?:what(?:'s|\s+is)|how(?:'s|\s+is))\s+(?:the\s+)?"
+    r"|^\s*(?:please\s+)?(?:what(?:'s|s|\s+is)|how(?:'s|s|\s+is))\s+(?:the\s+)?"
     r"hub(?:'s)?\s+health(?:\s+status)?\s*[?.!]*\s*$"
     r"|^\s*(?:please\s+)?is\s+the\s+hub\s+health(?:y|ie?r)?\s*[?.!]*\s*$"
     r"|^\s*(?:please\s+)?hub\s+health(?:\s+status)?\s*[?.!]*\s*$"
-    r"|^\s*(?:please\s+)?(?:what(?:'s|\s+is)|how(?:'s|\s+is))\s+the\s+hub\s+"
+    r"|^\s*(?:please\s+)?(?:what(?:'s|s|\s+is)|how(?:'s|s|\s+is))\s+the\s+hub\s+"
     r"doing\s*[?.!]*\s*$",
     re.I,
 )
