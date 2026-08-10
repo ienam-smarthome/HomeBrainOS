@@ -81,6 +81,26 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         r"^\s*when\s+did\s+(?P<name>.+?)\s+last\s+(?P<state>open|close|closed)\s*[?.!]*\s*$",
         re.I,
     )
+    # "when was NAME last opened/closed" -- same intent as _LAST_CONTACT
+    # ("when did ... last open"), just the "was ... -ed" phrasing instead of
+    # "did ... open".
+    _LAST_CONTACT_WHEN_WAS = re.compile(
+        r"^\s*when\s+was\s+(?P<name>.+?)\s+last\s+(?P<state>opened|closed|open|close)\s*[?.!]*\s*$",
+        re.I,
+    )
+    # Bare statement form with no leading question word at all, e.g.
+    # "front door last opened" -- live-observed: this phrasing fell through
+    # every deterministic parser into the general model tool-calling loop,
+    # which answered with the full raw event list from homebrain_device_history
+    # instead of the single direct sentence this fast path gives. The
+    # negative lookahead keeps this from swallowing "why did ... last open"
+    # or "when did/was ... last open" questions, which are handled by their
+    # own, more specific patterns above/below.
+    _LAST_CONTACT_STATEMENT = re.compile(
+        r"^\s*(?!why\b|when\b|did\b|was\b)(?P<name>.+?)\s+last\s+"
+        r"(?P<state>opened|closed|open|close)\s*[?.!]*\s*$",
+        re.I,
+    )
     _WHY_CONTACT = re.compile(
         r"^\s*why\s+did\s+(?P<name>.+?)\s+(?P<state>open|close|closed)(?:\s+.+?)?\s*[?.!]*\s*$",
         re.I,
@@ -141,8 +161,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
     @classmethod
     def _last_contact_request(cls, prompt: str) -> tuple[str, str] | None:
-        match = cls._LAST_CONTACT.fullmatch(prompt)
-        if match is None:
+        for pattern in (
+            cls._LAST_CONTACT,
+            cls._LAST_CONTACT_WHEN_WAS,
+            cls._LAST_CONTACT_STATEMENT,
+        ):
+            match = pattern.fullmatch(prompt)
+            if match is not None:
+                break
+        else:
             return None
         state = match.group("state").casefold()
         return cls._literal_device_name(match.group("name")), "closed" if state.startswith("clos") else "open"

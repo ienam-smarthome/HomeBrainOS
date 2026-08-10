@@ -37,6 +37,11 @@ SENSITIVE_LOCATION_KEYS = {
     "journeyclearlastat", "journeysuppressactive",
     "distance", "accuracy", "speed", "isdriving",
     "resolvedstationary", "resolvedplaceconfidence",
+    # Live-observed: the hub's own Hub Info device reports the hub's home
+    # postal code as a plain attribute ("zipCode": "SE13 7SD") -- the same
+    # category of precise-location PII as a street address, just missed by
+    # the original key list.
+    "zipcode", "zip", "postalcode", "postal_code",
 }
 
 
