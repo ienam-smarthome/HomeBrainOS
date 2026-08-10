@@ -27,17 +27,28 @@ CAPABILITY_ACTION_FAILURE = (
     "valid structured action. No command was sent."
 )
 
+# Subjects that plausibly self-report the assistant/system's *own* operational
+# ability -- deliberately excludes arbitrary device nouns ("the dimmer",
+# "the front door lock"), so a factual statement about one device's hardware
+# limits doesn't get mistaken for the assistant denying it has the capability
+# at all (see the anchored "does not support/expose/advertise" pattern below).
+_DENIAL_SUBJECT = r"(?:i|homebrain(?:os)?|this (?:assistant|system)|hubitat)"
+
 _DENIAL_PATTERNS = (
     re.compile(
-        r"\b(?:i|homebrain(?:os)?|this (?:assistant|system))\s+"
-        r"(?:cannot|can't|am unable to|do not have (?:the )?"
+        rf"\b{_DENIAL_SUBJECT}\s+"
+        r"(?:cannot|can't|am unable to|(?:do not|don't) have (?:the )?"
         r"(?:ability|capability) to)\b",
         re.IGNORECASE,
     ),
     re.compile(r"\bi can only\b", re.IGNORECASE),
+    # Passive "is not supported"/"is unsupported" carries no subject noun to
+    # anchor on (unlike the active "does not support" below, whose subject
+    # is always present in the sentence), so this stays subject-agnostic,
+    # matching its pre-existing behaviour.
+    re.compile(r"\b(?:is not supported|is unsupported)\b", re.IGNORECASE),
     re.compile(
-        r"\b(?:is not supported|is unsupported|does not "
-        r"(?:support|expose|advertise))\b",
+        rf"\b{_DENIAL_SUBJECT}\s+does not (?:support|expose|advertise)\b",
         re.IGNORECASE,
     ),
 )

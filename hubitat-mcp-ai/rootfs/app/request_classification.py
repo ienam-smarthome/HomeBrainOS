@@ -67,6 +67,20 @@ def requests_mutation(prompt: str) -> bool:
         value,
     ):
         return True
+    # Polite modal-verb phrasing not paired with "please" -- "can you lock
+    # the front door" and "would you set the thermostat to 68" are just as
+    # much a mutation request as "please lock the front door", but only
+    # the "please"-suffixed form was recognised above. Real, if lower-
+    # stakes, instance of the same phrasing-coverage gap already fixed
+    # once for "please".
+    if re.search(
+        r"\b(?:can|could|would|will)\s+you\s+(?:please\s+)?"
+        r"(?:close|create|delete|disable|enable|install|lock|open|pause|"
+        r"reboot|remove|restart|resume|set|shutdown|start|stop|toggle|"
+        r"unlock|update|write)\b",
+        value,
+    ):
+        return True
     return False
 
 

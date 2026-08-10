@@ -186,7 +186,7 @@ def _present_home_snapshot(data: dict[str, Any]) -> str:
     switches = _labels(data, "switches_on")
     contacts = _labels(data, "open_contacts")
     locks = _labels(data, "unlocked_locks")
-    alerts = _labels(data, "alerts")
+    alerts = [x for x in data.get("alerts", []) if isinstance(x, dict)]
     sections: list[str] = []
 
     if present:
@@ -215,9 +215,21 @@ def _present_home_snapshot(data: dict[str, Any]) -> str:
         rendered = [f"{x.get('label') or x.get('id') or 'Unknown'} ({x.get('battery')}%)" for x in batteries]
         sections.append(f"**Low batteries:** {_joined(rendered)}.")
     if alerts:
+        # `alerts` merges two distinct sources (device_query_service.py):
+        # a genuine connectivity signal (healthStatus/networkStatus/rtt)
+        # and the device's raw hubAlerts text, which can carry battery,
+        # tamper, or firmware warnings unrelated to connectivity. Every
+        # entry used to be rendered with the same hardcoded "offline or
+        # unavailable" wording regardless of source, misreporting the
+        # actual alert reason for a hubAlerts-sourced entry. Render each
+        # with its own reported status text instead.
+        rendered_alerts = [
+            f"{x.get('label') or x.get('id') or 'Unknown'} ({x.get('status') or 'attention needed'})"
+            for x in alerts
+        ]
         sections.append(
             f"**Attention needed:** {len(alerts)} {'device is' if len(alerts) == 1 else 'devices are'} "
-            f"offline or unavailable: {_joined(alerts)}."
+            f"flagged: {_joined(rendered_alerts)}."
         )
     if not sections:
         return "Everything appears quiet at home; no active conditions were reported."

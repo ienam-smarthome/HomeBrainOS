@@ -24,6 +24,38 @@ def test_ordinary_answer_is_accepted_without_discovery():
     assert decision.message is None
 
 
+def test_a_grounded_statement_about_one_devices_hardware_limits_is_not_a_denial():
+    """Regression test: the "does not support" pattern used to have no
+    subject anchor, so it also matched ordinary factual statements about a
+    *device's* hardware limits, not just the assistant's own operational
+    ability -- turning an already-correct, grounded answer into a false
+    REJECT_UNGROUNDED cycle.
+    """
+
+    policy = CapabilityGroundingPolicy()
+
+    decision = policy.decide("The dimmer does not support color temperature.")
+
+    assert decision.action is CapabilityAction.ACCEPT
+    assert decision.message is None
+
+
+def test_contraction_denial_phrasing_is_still_recognised():
+    """Regression test: the denial patterns required spelled-out "do not"/
+    "am unable to" and missed contractions -- "I don't have the ability to
+    control locks." bypassed denial detection entirely, silently disabling
+    the one-shot discovery-recovery mechanism for the most natural phrasing
+    of a real capability gap.
+    """
+
+    policy = CapabilityGroundingPolicy()
+
+    decision = policy.decide("I don't have the ability to control locks.")
+
+    assert decision.action is CapabilityAction.DISCOVER
+    assert decision.message == CAPABILITY_RETRY_INSTRUCTION
+
+
 def test_explicit_capability_denials_trigger_one_recovery():
     examples = [
         "I cannot create new rules.",

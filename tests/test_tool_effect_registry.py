@@ -323,6 +323,22 @@ class GatewayMCP:
             ToolEffect.DESTRUCTIVE_WRITE,
         ),
         (
+            # Regression test: `_DESTRUCTIVE_ACTIONS` stores "factory_reset"
+            # as one multi-word entry, but `_operation_effect` used to only
+            # ever check single-word tokens split on "_" -- so
+            # {"factory", "reset"} & _DESTRUCTIVE_ACTIONS was always empty
+            # and this operation could never match, despite being a member
+            # of the set itself.
+            gateway("hub_manage_destructive_ops"),
+            {"tool": "hub_factory_reset", "args": {}},
+            ToolEffect.DESTRUCTIVE_WRITE,
+        ),
+        (
+            gateway("hub_manage_destructive_ops"),
+            {"tool": "hub_reset_database", "args": {}},
+            ToolEffect.DESTRUCTIVE_WRITE,
+        ),
+        (
             gateway("hub_manage_native_rules_and_apps"),
             {"tool": "hub_set_rule_paused", "args": {"paused": True}},
             ToolEffect.SENSITIVE_WRITE,

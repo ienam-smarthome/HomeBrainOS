@@ -131,7 +131,13 @@ class GroundingPolicy:
         """Observe an executed call without treating unrelated tools as logs."""
 
         if self.is_live_log_call(name, arguments):
-            self.logs_checked = bool(success)
+            # Latch, don't overwrite: a later failed or duplicate log fetch
+            # in the same request must not un-satisfy log evidence a prior
+            # call in this same turn already recorded successfully. Once
+            # true, this stays true for the life of the request -- exactly
+            # mirroring _evidence_retry_used/_log_retry_used, which are
+            # also one-way latches on this same policy object.
+            self.logs_checked = self.logs_checked or bool(success)
 
     def decide_no_tool_calls(self, *, has_live_evidence: bool) -> GroundingDecision:
         """Accept, retry once, or refuse when the model emits no tool calls."""

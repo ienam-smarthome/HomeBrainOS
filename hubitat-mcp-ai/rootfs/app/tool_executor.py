@@ -13,6 +13,7 @@ from typing import Any
 from evidence_recorder import EvidenceRecorder
 from location_privacy import redact_precise_location
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
+from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import add_active_metric_ms, increment_active_metric
 from tool_registry import ToolEffect, classify_tool_effect
 
@@ -72,19 +73,19 @@ class ToolExecutor:
 
     @staticmethod
     def succeeded(result: MCPToolResult) -> bool:
-        if result.is_error:
-            return False
-        data = result.data
-        if isinstance(data, dict):
-            if data.get("success") is False or data.get("error"):
-                return False
-            for key in ("result", "data", "output"):
-                nested = data.get(key)
-                if isinstance(nested, dict) and (
-                    nested.get("success") is False or nested.get("error")
-                ):
-                    return False
-        return True
+        """Delegates to the shared mcp_client.tool_succeeded() rather than
+        repeating its own strict `is False` identity check -- this was an
+        independent third copy of the exact same check (alongside
+        device_control_service.py and device_query_service.py's now-shared
+        implementations), and it gates `ToolExecution.success`, which
+        `confirmed_action_coordinator.py` and every other consumer of a
+        `ToolExecution` treats as authoritative. A strict `is False` check
+        never matches a string "false" success flag -- see
+        tool_succeeded()'s own docstring for the fuller history of this bug
+        class across this codebase.
+        """
+
+        return _shared_tool_succeeded(result)
 
     @staticmethod
     def result_summary(result: MCPToolResult) -> str:

@@ -341,6 +341,40 @@ async def test_home_snapshot_tracked_presence_includes_away_people_too():
     assert tracked["Tahmid Khan"]["presence"] == "not present"
 
 
+@pytest.mark.asyncio
+async def test_home_snapshot_tags_alert_source_so_the_presenter_can_tell_them_apart():
+    """Regression test: `alerts` merges a genuine connectivity signal
+    (healthStatus/networkStatus/rtt) and the device's raw hubAlerts text
+    (which can carry battery, tamper, or firmware warnings unrelated to
+    connectivity) into one bucket with no way to tell which is which --
+    the presenter then rendered every entry with the same hardcoded
+    "offline or unavailable" wording regardless of source. Each alert must
+    now carry a "source" the presenter can use to render it accurately.
+    """
+
+    service = DeviceQueryService(
+        QueryMCP([
+            device(
+                "Hallway Motion", "Hallway", ["MotionSensor"],
+                healthStatus="offline",
+            ),
+            device(
+                "Front Door Lock", "Hallway", ["Lock"],
+                hubAlerts="lowBattery",
+            ),
+        ]),
+        lambda *_a, **_k: None,
+    )
+
+    result = await service.home_snapshot({})
+
+    alerts = {item["label"]: item for item in result.data["alerts"]}
+    assert alerts["Hallway Motion"]["source"] == "connectivity"
+    assert alerts["Hallway Motion"]["status"] == "offline"
+    assert alerts["Front Door Lock"]["source"] == "hub_alert"
+    assert alerts["Front Door Lock"]["status"] == "lowBattery"
+
+
 def test_attribute_value_generic_fallback_is_opt_in_only():
     """Regression test for a real live failure: "show current power" on
     "Octopus Meter Current Power" answered "does not report a current

@@ -659,7 +659,16 @@ class UnifiedMCPAgent:
             # without ever calling hub_set_rule. Use the full set of tools
             # known to exist on the connected MCP server instead.
             available_gateways=set(catalog.available_names),
-            can_read_rules="hub_read_rules" in catalog.available_names,
+            # _existing_names() calls hub_read_rules directly via the MCP
+            # client, not through the model's declared-tool schema, so it
+            # never needed `hub_read_rules` to have survived this turn's
+            # tool-catalog truncation (`catalog.available_names`, capped at
+            # `tool_limit`) in the first place. Gating on that incidental
+            # signal used to silently skip duplicate-rule protection on
+            # every request whose catalog build happened to drop
+            # `hub_read_rules` -- see rule_authoring_service.py's
+            # `propose()` docstring for the fuller history.
+            can_read_rules=True,
         )
         if rule_decision.handled:
             return self._rule_proposal_confirmation.resolve(
@@ -935,6 +944,7 @@ class UnifiedMCPAgent:
                 )
                 return str(decision.message)
             messages.append(assistant)
+            duplicate_signature_seen = False
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -943,7 +953,33 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 signature = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False, default=str)
                 if signature in completed_calls:
-                    return await self._final_answer(messages)
+                    # Do not re-execute a call whose exact signature already
+                    # ran this turn (avoids double side effects for a
+                    # repeated mutating call), but still append a tool-role
+                    # reply so every tool_call_id in the assistant message
+                    # already appended above gets a matching reply, and keep
+                    # processing the rest of *this* round -- a duplicate
+                    # earlier in a mixed round (e.g. "turn off kitchen
+                    # lights and lock the front door" where the light call
+                    # happens to repeat an earlier one) must not silently
+                    # abandon a later, genuinely new call in the same round
+                    # with no tool-role reply and no evidence receipt, while
+                    # a narration claiming the whole round succeeded. The
+                    # loop still ends with a final answer once this round
+                    # finishes (see below), matching the previous intent of
+                    # not letting the model repeat itself forever.
+                    duplicate_signature_seen = True
+                    messages.append({
+                        "role": "tool",
+                        "tool_name": name,
+                        "content": json.dumps({
+                            "note": (
+                                "Skipped: identical to a call already "
+                                "executed earlier this turn."
+                            ),
+                        }),
+                    })
+                    continue
                 completed_calls.add(signature)
                 tool = catalog.declared_tool(name)
                 if not tool:
@@ -1017,6 +1053,13 @@ class UnifiedMCPAgent:
                                 "gateway needed to finish the original task."
                             ),
                         })
+            if duplicate_signature_seen:
+                # Every call in this round now has a tool-role reply (real
+                # or the "skipped duplicate" note above), so it's safe to
+                # end the agentic loop here -- deferred from inside the
+                # `for call in calls` loop so a duplicate earlier in the
+                # round can no longer abandon a later, genuinely new call.
+                return await self._final_answer(messages)
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         if ungrounded_confirmation_claim_seen:
             return (
