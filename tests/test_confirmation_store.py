@@ -85,3 +85,29 @@ def test_capacity_evicts_the_soonest_expiring_session():
     queued(store, "third")
 
     assert set(store.pending) == {"second", "third"}
+
+
+def test_session_id_is_stripped_the_same_way_confirmation_policy_does():
+    """confirmation_policy.py normalizes session_id with str(...).strip()
+    before comparing; this store previously used a bare str(...) with no
+    strip, so a caller sending incidental whitespace on the session id
+    (e.g. "session " vs "session") would queue/consume under a key that
+    never matched the policy layer's own normalized comparison.
+    """
+
+    store = ConfirmationStore()
+    pending = queued(store, "  session  ")
+
+    assert store.consume("session", "confirm") is pending
+    # Already consumed once above -- a second consume must find nothing,
+    # under either the raw or the stripped form of the same session id.
+    assert store.consume("  session  ", "confirm") is None
+
+
+def test_cancel_strips_session_id_the_same_way_queue_does():
+    store = ConfirmationStore()
+    queued(store, "  session  ")
+
+    store.cancel("session")
+
+    assert store.pending == {}

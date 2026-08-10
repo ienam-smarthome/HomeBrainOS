@@ -62,3 +62,45 @@ def test_expiry_outside_request_context_is_ignored() -> None:
     now[0] = 111.0
 
     assert store.pending == {}
+
+
+def test_eviction_under_capacity_pressure_is_counted() -> None:
+    """Under sustained pending-session pressure, the oldest pending
+    confirmation (which may belong to a wholly different session than the
+    one whose queue() call triggers the eviction) used to be dropped with
+    no observability at all. `confirmation_evicted` makes that visible in
+    the technical metrics panel without changing the eviction itself or
+    affecting this request's own outcome classification.
+    """
+
+    now = [0.0]
+    store = ConfirmationStore(30, max_pending_sessions=2, clock=lambda: now[0])
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        _queue(store, "first")
+        now[0] = 1.0
+        _queue(store, "second")
+        now[0] = 2.0
+        _queue(store, "third")  # evicts "first"
+        snapshot = metrics.snapshot()
+    finally:
+        metrics.reset(token)
+
+    assert snapshot["counters"]["confirmation_evicted"] == 1
+    assert set(store.pending) == {"second", "third"}
+
+
+def test_no_eviction_metric_when_under_capacity() -> None:
+    now = [0.0]
+    store = ConfirmationStore(30, max_pending_sessions=5, clock=lambda: now[0])
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        _queue(store, "first")
+        _queue(store, "second")
+        snapshot = metrics.snapshot()
+    finally:
+        metrics.reset(token)
+
+    assert "confirmation_evicted" not in snapshot["counters"]

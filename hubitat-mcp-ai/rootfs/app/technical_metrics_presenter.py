@@ -12,6 +12,7 @@ _COUNTER_LABELS = (
     ("grounding_refusals", "Grounding refusals"),
     ("confirmation_queued", "Confirmations queued"),
     ("confirmation_expired", "Confirmations expired"),
+    ("confirmation_evicted", "Confirmations evicted"),
     ("mutation_verification_failures", "Verification failures"),
     ("device_control_failures", "Device control failures"),
     ("request_cancellations", "Cancellations"),

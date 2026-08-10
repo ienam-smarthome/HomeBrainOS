@@ -63,7 +63,7 @@ class ConfirmationStore:
         assistant_message: dict[str, Any],
     ) -> PendingConfirmation:
         self._purge_expired()
-        session_key = str(session_id)
+        session_key = self._normalize_session_id(session_id)
         if (
             session_key not in self._pending
             and len(self._pending) >= self.max_pending_sessions
@@ -73,6 +73,14 @@ class ConfirmationStore:
                 key=lambda key: self._pending[key].expires_at,
             )
             self._pending.pop(oldest, None)
+            # Observability only: an evicted session's confirmation is
+            # silently lost under sustained pending-session pressure. This
+            # does not affect the current request's own outcome
+            # classification (the eviction targets a different session's
+            # entry, not this request's), it's purely a passive counter so
+            # sustained eviction pressure is visible in the technical
+            # metrics panel instead of going unnoticed.
+            increment_active_metric("confirmation_evicted")
         pending = PendingConfirmation(
             expires_at=self._clock() + self.ttl_seconds,
             actions=deepcopy(actions),
@@ -88,14 +96,25 @@ class ConfirmationStore:
         prompt: str,
     ) -> PendingConfirmation | None:
         self._purge_expired()
-        pending = self._pending.pop(str(session_id), None)
+        pending = self._pending.pop(self._normalize_session_id(session_id), None)
         if pending is None:
             return None
         normalized = " ".join(str(prompt).strip().casefold().split())
         return pending if normalized in CONFIRM_WORDS else None
 
     def cancel(self, session_id: str) -> None:
-        self._pending.pop(str(session_id), None)
+        self._pending.pop(self._normalize_session_id(session_id), None)
+
+    @staticmethod
+    def _normalize_session_id(session_id: str) -> str:
+        # confirmation_policy.py normalizes session_id with str(...).strip()
+        # before comparing; this store previously used a bare str(...),
+        # so a caller passing incidental leading/trailing whitespace on the
+        # session id would queue/consume/cancel under a key that never
+        # matches the policy layer's own normalized comparison. Match the
+        # same normalization here so both layers agree on the same key for
+        # the same session id.
+        return str(session_id).strip()
 
     def _purge_expired(self) -> None:
         now = self._clock()

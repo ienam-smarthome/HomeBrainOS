@@ -1197,6 +1197,30 @@ async def test_hub_health_query_does_not_duplicate_a_unit_already_baked_into_the
 
 
 @pytest.mark.asyncio
+async def test_hub_health_query_does_not_duplicate_a_percent_unit_already_baked_in() -> None:
+    """Regression test for the same unit-doubling bug class, missed for
+    CPU Load: that row built its "%" suffix with a bare f-string instead of
+    routing through the shared dedup guard used for Free Memory/
+    Temperature/Database Size on the same screen, so a Hub Info driver that
+    reports cpuPct's currentValue as an already-formatted "45%" (the same
+    pre-formatted-string shape already observed live for temperature) would
+    have rendered "45%%".
+    """
+
+    mcp = HubHealthMCP(cpu_percent="45%")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "Check the hub health status", session_id="hub-health-test-cpu-dedup"
+    )
+
+    assert "45%" in outcome.message
+    assert "45%%" not in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
 async def test_hub_health_query_reports_cpu_percent_and_human_radio_health() -> None:
     """CPU load must read as an actual percentage (not a bare number with
     no unit at all), and the zigbee/zwave health flags must render as
