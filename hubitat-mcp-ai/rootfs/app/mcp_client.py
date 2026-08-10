@@ -51,6 +51,23 @@ class MCPToolResult:
     is_error: bool = False
 
 
+def _is_false_flag(value: Any) -> bool:
+    """True when a possibly-string boolean-ish flag means false.
+
+    Hubitat and this codebase's own tool results consistently transmit
+    boolean-ish flags as the strings "true"/"false" rather than a JSON
+    boolean -- already confirmed live and fixed for several adjacent
+    fields (zbHealthy/zwHealthy, update_available, hub_alerts, the
+    "changed" flag). A strict `value is False` identity check never
+    matches the string "false", so `{"success": "false"}` would silently
+    pass as success without this.
+    """
+
+    if value is False:
+        return True
+    return isinstance(value, str) and value.strip().casefold() == "false"
+
+
 def tool_succeeded(result: MCPToolResult) -> bool:
     """Decide whether a tool call actually succeeded.
 
@@ -74,12 +91,12 @@ def tool_succeeded(result: MCPToolResult) -> bool:
         return False
     data = result.data
     if isinstance(data, dict):
-        if data.get("success") is False or data.get("error"):
+        if _is_false_flag(data.get("success")) or data.get("error"):
             return False
         for key in ("result", "data", "output"):
             nested = data.get(key)
             if isinstance(nested, dict) and (
-                nested.get("success") is False or nested.get("error")
+                _is_false_flag(nested.get("success")) or nested.get("error")
             ):
                 return False
     return True

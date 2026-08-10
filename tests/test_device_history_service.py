@@ -198,6 +198,50 @@ async def test_unresolved_device_never_reads_event_history():
     )
 
 
+class StringFalseHistoryMCP(HistoryMCP):
+    """Reproduces a live-plausible partial-failure shape: the event-history
+    read reports `"success": "false"` (string, not JSON boolean) instead of
+    an explicit is_error transport failure. Both history() and
+    location_events() used to check this with a strict `is False` identity
+    comparison, which never matches a string -- so this was silently
+    treated as a successful, empty-events read instead of a failure.
+    """
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        if operation == "hub_list_devices":
+            return await super().call_tool(name, arguments)
+        if operation == EVENT_OPERATION:
+            return MCPToolResult(
+                name, arguments, {}, "device unreachable",
+                {"success": "false", "error": "device unreachable"},
+            )
+        raise AssertionError(f"unexpected operation: {operation}")
+
+
+@pytest.mark.asyncio
+async def test_history_treats_a_string_false_success_flag_as_failure():
+    mcp = StringFalseHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({"name": "living room light 1"})
+
+    assert result.is_error is True
+    assert result.data["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_location_events_treats_a_string_false_success_flag_as_failure():
+    mcp = StringFalseHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.location_events({})
+
+    assert result.is_error is True
+    assert result.data["success"] is False
+
+
 class LocationEventsMCP:
     """Fake MCP reproducing the confirmed-live location-events response
     shape: hub_list_device_events called with both deviceId and appId

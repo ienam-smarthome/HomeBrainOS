@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
 from mcp_client import HubitatMCPClient, MCPToolResult
+from mcp_client import tool_succeeded as _shared_tool_succeeded
 
 
 DEVICE_HISTORY_TOOL = "homebrain_device_history"
@@ -150,9 +151,13 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        success = not source.is_error and not (
-            isinstance(source.data, dict) and source.data.get("success") is False
-        )
+        # Delegates to the shared helper rather than repeating a strict
+        # `is False` check here -- Hubitat/this codebase's own tool
+        # results also transmit boolean-ish flags as the string "false",
+        # which a strict identity check would silently miss (see
+        # tool_succeeded()'s own docstring for the fuller history of this
+        # bug class).
+        success = _shared_tool_succeeded(source)
         events = self._events(source.data, limit=limit) if success else []
         self._record_evidence(
             DEVICE_GATEWAY,
@@ -308,9 +313,13 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        success = not source.is_error and not (
-            isinstance(source.data, dict) and source.data.get("success") is False
-        )
+        # Delegates to the shared helper rather than repeating a strict
+        # `is False` check here -- Hubitat/this codebase's own tool
+        # results also transmit boolean-ish flags as the string "false",
+        # which a strict identity check would silently miss (see
+        # tool_succeeded()'s own docstring for the fuller history of this
+        # bug class).
+        success = _shared_tool_succeeded(source)
         events = self._events(source.data, limit=limit) if success else []
         self._record_evidence(
             DEVICE_GATEWAY,
