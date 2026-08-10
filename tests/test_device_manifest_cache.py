@@ -117,3 +117,106 @@ async def test_device_manifest_uses_consolidated_read_gateway(monkeypatch):
         },
     )]
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_manifest_pagination_follows_advancing_offsets(monkeypatch):
+    """A well-behaved paginated gateway should still fetch every page."""
+
+    client = HubitatMCPClient("http://hub/mcp")
+    pages = [
+        {"devices": [{"id": "1"}], "hasMore": True, "nextOffset": 50},
+        {"devices": [{"id": "2"}], "hasMore": True, "nextOffset": 100},
+        {"devices": [{"id": "3"}], "hasMore": False, "nextOffset": None},
+    ]
+    calls = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "device gateway", {"type": "object"})]
+
+    async def call_tool(name, arguments):
+        calls.append(arguments["args"]["offset"])
+        return MCPToolResult(name, arguments, {}, "", {"result": pages[len(calls) - 1]})
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+
+    devices = await client.get_cached_devices()
+
+    assert devices == [{"id": "1"}, {"id": "2"}, {"id": "3"}]
+    assert calls == [0, 50, 100]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_manifest_pagination_stops_on_non_advancing_offset(monkeypatch):
+    """A broken upstream that repeats the same nextOffset must not loop forever."""
+
+    client = HubitatMCPClient("http://hub/mcp")
+    calls = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "device gateway", {"type": "object"})]
+
+    async def call_tool(name, arguments):
+        offset = arguments["args"]["offset"]
+        calls.append(offset)
+        return MCPToolResult(
+            name,
+            arguments,
+            {},
+            "",
+            {"result": {
+                "devices": [{"id": str(offset)}],
+                "hasMore": True,
+                # Always repeats the same offset instead of advancing.
+                "nextOffset": 0,
+            }},
+        )
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+
+    devices = await client.get_cached_devices()
+
+    assert calls == [0]
+    assert devices == [{"id": "0"}]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_manifest_pagination_is_bounded_by_a_hard_page_cap(monkeypatch):
+    """A misbehaving upstream that always reports hasMore=True with a
+    genuinely advancing offset must still terminate eventually.
+    """
+
+    client = HubitatMCPClient("http://hub/mcp")
+    calls = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "device gateway", {"type": "object"})]
+
+    async def call_tool(name, arguments):
+        offset = arguments["args"]["offset"]
+        calls.append(offset)
+        next_offset = offset + 50
+        return MCPToolResult(
+            name,
+            arguments,
+            {},
+            "",
+            {"result": {
+                "devices": [{"id": str(offset)}],
+                "hasMore": True,
+                "nextOffset": next_offset,
+            }},
+        )
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+
+    devices = await client.get_cached_devices()
+
+    assert len(calls) == HubitatMCPClient._MAX_DEVICE_PAGES
+    assert len(devices) == HubitatMCPClient._MAX_DEVICE_PAGES
+    await client.close()
