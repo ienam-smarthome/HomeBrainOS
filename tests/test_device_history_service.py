@@ -13,6 +13,7 @@ from device_history_service import (  # noqa: E402
     DEVICE_GATEWAY,
     DEVICE_HISTORY_TOOL,
     EVENT_OPERATION,
+    LOCATION_EVENTS_TOOL,
     DeviceHistoryService,
 )
 from mcp_client import MCPToolResult  # noqa: E402
@@ -195,6 +196,95 @@ async def test_unresolved_device_never_reads_event_history():
         arguments.get("tool") != EVENT_OPERATION
         for _, arguments in mcp.calls
     )
+
+
+class LocationEventsMCP:
+    """Fake MCP reproducing the confirmed-live location-events response
+    shape: hub_list_device_events called with both deviceId and appId
+    omitted returns "source": "location" and mode-change rows.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        if operation == EVENT_OPERATION:
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {
+                    "source": "location",
+                    "events": [
+                        {
+                            "name": "mode",
+                            "value": "Afternoon",
+                            "description": "Hub C8 Pro is now in Afternoon mode",
+                            "date": "2026-08-10T12:00:02.375+0100",
+                            "type": "LOCATION_MODE_CHANGE",
+                            "isStateChange": True,
+                        },
+                        {
+                            "name": "sunriseSunsetUpdated",
+                            "value": "",
+                            "date": "2026-08-10T12:00:02.228+0100",
+                            "type": "API",
+                            "isStateChange": True,
+                        },
+                    ],
+                    "count": 2,
+                },
+            )
+        raise AssertionError(f"unexpected operation: {operation}")
+
+
+@pytest.mark.asyncio
+async def test_location_events_omits_device_and_app_id():
+    """The upstream contract for location events is a hub_list_device_events
+    call with BOTH deviceId and appId omitted -- this must never resolve or
+    attach any device target, unlike history().
+    """
+
+    mcp = LocationEventsMCP()
+    receipts = []
+    service = DeviceHistoryService(
+        mcp,
+        lambda *args, **kwargs: receipts.append((args, kwargs)),
+    )
+
+    result = await service.location_events({"hours_back": 48, "limit": 20})
+
+    assert result.is_error is False
+    assert result.data["success"] is True
+    assert result.data["hoursBack"] == 48
+    assert result.data["count"] == 2
+    assert mcp.calls[-1] == (
+        DEVICE_GATEWAY,
+        {"tool": EVENT_OPERATION, "args": {"hoursBack": 48, "limit": 20}},
+    )
+    assert "deviceId" not in mcp.calls[-1][1]["args"]
+    assert "appId" not in mcp.calls[-1][1]["args"]
+    assert receipts[-1][1]["evidence_kind"] == "authoritative_location_event_history"
+    assert receipts[-1][1]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_location_events_bounds_hours_back_and_limit():
+    mcp = LocationEventsMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.location_events({"hours_back": 9999, "limit": 9999})
+
+    assert result.data["hoursBack"] == 168
+    assert mcp.calls[-1][1]["args"]["limit"] == 50
+
+
+def test_location_events_tool_name_is_distinct_from_device_history_tool():
+    assert LOCATION_EVENTS_TOOL == "homebrain_location_events"
+    assert LOCATION_EVENTS_TOOL != DEVICE_HISTORY_TOOL
 
 
 def test_history_tool_is_a_bounded_read_only_local_schema():

@@ -32,6 +32,7 @@ The repository drift test compares this table directly with the live directory. 
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
 | `live_evidence_authority.py` | Combines live evidence receipts with grounding decisions. |
+| `location_event_queries.py` | Parses and presents bounded hub location-event (mode change) follow-ups. |
 | `location_privacy.py` | Redacts precise-location device attributes (GPS, address, map tiles, journey logs) from provider-bound tool results. |
 | `mcp_agent_orchestrator.py` | Coordinates the native tool-calling agent loop. |
 | `mcp_client.py` | Implements Hubitat MCP JSON-RPC transport and tool access. |

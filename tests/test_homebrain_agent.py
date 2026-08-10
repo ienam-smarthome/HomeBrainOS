@@ -1409,3 +1409,181 @@ async def test_no_capable_device_reports_a_clear_error_not_a_wrong_device() -> N
 
     assert "could not find a device that supports blocking internet access" in outcome.message
     assert mcp.calls == []
+
+
+class LocationEventsMCP:
+    """Fake MCP exposing a single contact-sensor device plus both its
+    device-scoped event history and the hub's own location-scoped event
+    stream (mode changes) -- confirmed live to be the same
+    hub_list_device_events operation, distinguished only by whether
+    deviceId/appId are present in the call arguments.
+    """
+
+    def __init__(
+        self,
+        *,
+        contact_events: list[dict[str, object]] | None = None,
+        location_events: list[dict[str, object]] | None = None,
+    ) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.contact_events = contact_events if contact_events is not None else [
+            {
+                "name": "contact",
+                "value": "open",
+                "date": "2026-08-10T07:15:30.000+0100",
+                "isStateChange": True,
+            },
+        ]
+        self.location_events = location_events if location_events is not None else [
+            {
+                "name": "mode",
+                "value": "School Run",
+                "date": "2026-08-10T07:15:01.414+0100",
+                "isStateChange": True,
+            },
+            {
+                "name": "mode",
+                "value": "Early morning",
+                "date": "2026-08-10T06:30:01.816+0100",
+                "isStateChange": True,
+            },
+        ]
+
+    async def get_cached_devices(self) -> list[dict[str, object]]:
+        return [{
+            "id": "9",
+            "label": "Front Door",
+            "capabilities": ["ContactSensor"],
+        }]
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        if operation == "hub_list_devices":
+            return MCPToolResult(
+                name, arguments, {}, "ok",
+                {"devices": [{
+                    "id": "9",
+                    "label": "Front Door",
+                    "capabilities": ["ContactSensor"],
+                }]},
+            )
+        if operation == "hub_list_device_events":
+            args = arguments.get("args") or {}
+            if isinstance(args, dict) and (args.get("deviceId") or args.get("appId")):
+                return MCPToolResult(
+                    name, arguments, {}, "ok",
+                    {"source": "device", "events": self.contact_events},
+                )
+            return MCPToolResult(
+                name, arguments, {}, "ok",
+                {"source": "location", "events": self.location_events},
+            )
+        raise AssertionError(f"unexpected operation: {operation}")
+
+
+@pytest.mark.asyncio
+async def test_location_events_query_lists_recent_mode_changes() -> None:
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "show recent mode changes", session_id="location-events-test"
+    )
+
+    assert "School Run" in outcome.message
+    assert "Early morning" in outcome.message
+    location_calls = [
+        arguments for _, arguments in mcp.calls
+        if arguments.get("tool") == "hub_list_device_events"
+    ]
+    assert location_calls == [{
+        "tool": "hub_list_device_events",
+        "args": {"hoursBack": 168, "limit": 50},
+    }]
+
+
+@pytest.mark.asyncio
+async def test_mode_last_entered_query_reports_the_matching_timestamp() -> None:
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "When did we last enter School Run mode?", session_id="mode-last-entered-test"
+    )
+
+    assert "School Run" in outcome.message
+    assert "hub last entered" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_mode_last_entered_query_is_explicit_when_never_reported() -> None:
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "When did we last enter Vacation mode?", session_id="mode-last-entered-missing-test"
+    )
+
+    assert "No" in outcome.message
+    assert "Vacation" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_why_contact_answer_is_enriched_with_the_active_mode() -> None:
+    """The front door opened at 07:15:30, one second after the location log
+    shows the hub entering "School Run" mode at 07:15:01 -- the why-answer
+    should now cite that mode as extra context, without claiming it caused
+    the door to open.
+    """
+
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "Why did Front Door open?", session_id="why-contact-mode-test"
+    )
+
+    assert "School Run mode" in outcome.message
+    assert "does not identify which person or automation caused it" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_why_contact_answer_omits_mode_clause_when_unavailable() -> None:
+    """No mode event exists anywhere near the contact event's timestamp in
+    this fixture -- the answer must not fabricate a mode, just fall back to
+    the original wording with no mode clause at all.
+    """
+
+    mcp = LocationEventsMCP(location_events=[])
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "Why did Front Door open?", session_id="why-contact-no-mode-test"
+    )
+
+    assert "mode" not in outcome.message.casefold()
+    assert "does not identify which person or automation caused it" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_last_contact_answer_is_not_enriched_with_mode() -> None:
+    """Only the "why" (explain_cause) path should pay the extra
+    location-events read -- a plain "when did X last open" question has no
+    causal framing to enrich and must not issue the extra call.
+    """
+
+    mcp = LocationEventsMCP()
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "When did Front Door last open?", session_id="last-contact-no-mode-test"
+    )
+
+    assert "mode" not in outcome.message.casefold()
+    location_calls = [
+        arguments for _, arguments in mcp.calls
+        if arguments.get("tool") == "hub_list_device_events"
+        and not (arguments.get("args") or {}).get("deviceId")
+    ]
+    assert location_calls == []
