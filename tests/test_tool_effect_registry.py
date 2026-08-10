@@ -337,10 +337,40 @@ class GatewayMCP:
             {},
             ToolEffect.SENSITIVE_WRITE,
         ),
+        (
+            gateway("hub_manage_virtual_device"),
+            {},
+            ToolEffect.SENSITIVE_WRITE,
+        ),
+        (
+            gateway("hub_manage_mode"),
+            {},
+            ToolEffect.SENSITIVE_WRITE,
+        ),
     ],
 )
 def test_structured_tool_effect_classification(tool, arguments, expected):
     assert classify_tool_effect(tool, arguments) is expected
+
+
+def test_direct_manage_tools_are_never_treated_as_a_gateway_schema_probe():
+    """hub_manage_virtual_device/hub_manage_mode are direct tools, not
+    gateways -- an empty-args call must fail closed to SENSITIVE_WRITE
+    (requiring confirmation) instead of being waved through as the
+    harmless no-argument gateway schema-discovery convention.
+    """
+
+    for name in ("hub_manage_virtual_device", "hub_manage_mode"):
+        effect = classify_tool_effect(gateway(name), {})
+        assert effect is ToolEffect.SENSITIVE_WRITE
+        assert effect.requires_confirmation is True
+
+    # Control case: an ordinary hub_manage_* gateway called empty is still
+    # treated as a safe schema-discovery probe.
+    assert (
+        classify_tool_effect(gateway("hub_manage_devices", destructiveHint=True), {})
+        is ToolEffect.READ
+    )
 
 
 def test_local_tools_declare_their_effects():
