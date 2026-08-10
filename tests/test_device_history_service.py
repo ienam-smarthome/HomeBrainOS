@@ -322,6 +322,35 @@ def test_history_presenter_reports_transitions_without_inventing_cause():
     assert "do not by themselves identify what caused them" in message
 
 
+def test_history_presenter_renders_natural_local_time_not_raw_iso():
+    """Live-observed gap: the general device-history answer rendered the
+    raw Hubitat ISO timestamp verbatim ("2026-08-10T15:04:12.318+0100")
+    instead of a human-readable local time, unlike every other
+    history-style presenter in this codebase (contact_history_queries.py,
+    location_event_queries.py), which already go through
+    natural_datetime.format_natural_datetime.
+    """
+
+    message = present_tool_result(
+        DEVICE_HISTORY_TOOL,
+        {
+            "success": True,
+            "label": "Front Door",
+            "hoursBack": 24,
+            "count": 1,
+            "events": [{
+                "name": "contact",
+                "value": "closed",
+                "date": "2026-08-10T15:04:12.318+0100",
+                "description": "Front Door contact is closed (raw:true)",
+            }],
+        },
+    )
+
+    assert "2026-08-10T15:04:12.318+0100" not in message
+    assert "3:04 pm on Monday 10 August 2026" in message
+
+
 def test_empty_history_is_explicit_about_window_and_attribute():
     message = present_tool_result(
         DEVICE_HISTORY_TOOL,
