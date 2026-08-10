@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from natural_datetime import format_natural_datetime
+
 _FILTER_TOOL = "homebrain_filter_devices"
 _ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 _ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
@@ -314,7 +316,14 @@ def _present_device_history(data: dict[str, Any]) -> str:
         value = event.get("value")
         unit = str(event.get("unit") or "")
         value_text = "unknown" if value is None else f"{value}{unit}"
-        timestamp = str(event.get("date") or "time not reported")
+        # Render as natural local time ("3:04 PM on Monday 10 August 2026")
+        # instead of the raw Hubitat ISO timestamp -- every other history-
+        # style presenter in this codebase (contact_history_queries.py,
+        # location_event_queries.py) already goes through this same
+        # helper; this was the one remaining raw-ISO leak, live-observed
+        # in the general device-history answer ("2026-08-10T15:04:12.318
+        # +0100 -- **contact: closed**").
+        timestamp = format_natural_datetime(event.get("date"))
         description = str(event.get("description") or "").strip()
         detail = f"{timestamp} — **{name}: {value_text}**"
         if description and description.casefold() not in detail.casefold():
