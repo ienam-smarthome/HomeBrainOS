@@ -2412,7 +2412,7 @@ def test_conversation_history_keeps_recent_messages_with_char_budget():
     assert len(bounded) == 3
     assert bounded[-1]["content"].startswith("09")
     assert bounded[0]["content"].startswith("07")
-    assert bounded[0]["content"].endswith("[earlier history truncated]")
+    assert bounded[0]["content"].endswith("[message content truncated]")
     assert sum(len(item["content"]) for item in bounded) <= 110
 
 

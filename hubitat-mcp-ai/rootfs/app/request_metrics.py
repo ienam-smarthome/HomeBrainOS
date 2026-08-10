@@ -35,7 +35,8 @@ class RequestMetrics:
     ALLOWED_COUNTERS = frozenset({
         "model_rounds", "tool_calls", "tool_discovery_calls", "mcp_retries",
         "evidence_retries", "grounding_refusals", "confirmation_queued",
-        "confirmation_expired", "mutation_verification_failures",
+        "confirmation_expired", "confirmation_evicted",
+        "mutation_verification_failures",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
     })

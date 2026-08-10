@@ -65,7 +65,20 @@ class ModelContextPolicy:
             if remaining <= 0:
                 break
             if len(content) > remaining:
-                marker = "\n[earlier history truncated]"
+                # This message's own tail is what gets cut here, not
+                # "earlier history" -- the loop walks newest-to-oldest and
+                # this branch fires on whichever message overflows the
+                # remaining budget, which may not even be the oldest kept
+                # message. The marker text used to claim "earlier history
+                # truncated," which reads as if prior turns were dropped
+                # for this reason; the actual content lost is this
+                # message's own tail (any fully-dropped earlier messages
+                # are a separate, correct effect of the message-count/char
+                # budget, not represented by this marker at all). Kept the
+                # same character length as the old marker text so this
+                # wording fix does not itself change which messages fit
+                # inside the existing char budget.
+                marker = "\n[message content truncated]"
                 if remaining <= len(marker):
                     break
                 keep = max(0, remaining - len(marker))

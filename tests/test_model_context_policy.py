@@ -29,7 +29,7 @@ def test_history_keeps_newest_messages_inside_shared_character_budget():
     assert len(bounded) == 3
     assert bounded[-1]["content"].startswith("09")
     assert bounded[0]["content"].startswith("07")
-    assert bounded[0]["content"].endswith("[earlier history truncated]")
+    assert bounded[0]["content"].endswith("[message content truncated]")
     assert sum(len(item["content"]) for item in bounded) <= 110
     assert history[7]["content"] == "07" + "x" * 38
 

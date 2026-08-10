@@ -553,12 +553,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     LOCAL_HUB_INFO_TOOL, data, failed=True, fallback_error=result.text
                 ) or "I could not read the hub health status."
 
-            def field(name: str, unit_name: str | None = None) -> str | None:
+            def field(
+                name: str,
+                unit_name: str | None = None,
+                *,
+                literal_unit: str | None = None,
+            ) -> str | None:
                 raw = data.get(name)
                 if raw is None or str(raw).strip() == "":
                     return None
                 text = str(raw).strip()
-                unit = str(data.get(unit_name) or "").strip() if unit_name else ""
+                unit = (
+                    str(data.get(unit_name) or "").strip()
+                    if unit_name
+                    else str(literal_unit or "").strip()
+                )
                 if not unit:
                     return text
                 # The raw value itself sometimes already carries the unit
@@ -566,11 +575,20 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 # "46.9 °C °C"). Strip a trailing occurrence of the same
                 # unit before appending it once, so it renders correctly
                 # whether the underlying driver reports a bare number or a
-                # pre-formatted display string.
+                # pre-formatted display string. Live-observed follow-up: the
+                # CPU Load row used to build its "%" suffix with a bare
+                # f-string instead of going through this guard at all --
+                # the same unit-doubling bug already fixed here for Free
+                # Memory/Temperature/Database Size, just missed for CPU
+                # Load because it never had a companion *_unit field to
+                # route through `unit_name`. `literal_unit` lets a caller
+                # supply a fixed unit (like "%") that isn't sourced from
+                # `data`, so CPU Load gets the same dedup guard.
                 deduped = re.sub(
                     rf"\s*{re.escape(unit)}\s*$", "", text, flags=re.I
                 ).strip()
-                return f"{deduped or text} {unit}".strip()
+                separator = "" if unit == "%" else " "
+                return f"{deduped or text}{separator}{unit}".strip()
 
             def health_word(raw: Any) -> str | None:
                 # Live-observed regression: the real Hub Info driver reports
@@ -644,11 +662,10 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             else:
                 headline = "The hub is healthy with no active alerts."
 
-            cpu_percent = field("cpu_percent")
             rows: list[tuple[str, str | None]] = [
                 ("Uptime", field("uptime")),
                 ("Free Memory", field("free_memory", "free_memory_unit")),
-                ("CPU Load", f"{cpu_percent}%" if cpu_percent is not None else None),
+                ("CPU Load", field("cpu_percent", literal_unit="%")),
                 ("Internal Temperature", field("temperature", "temperature_unit")),
                 ("Database Size", field("database_size", "database_size_unit")),
                 ("Zigbee", health_word(data.get("zigbee_healthy"))),
