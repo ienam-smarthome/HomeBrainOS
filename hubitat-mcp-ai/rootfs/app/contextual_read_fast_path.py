@@ -61,6 +61,25 @@ _PRONOUN_NAMES = {
     "it", "its", "it's", "that", "that device", "this", "this device",
     "the", "a", "an", "current",
 }
+# "What's the whole house power?" / "...current whole house power?" hit the
+# exact same backtracking pattern as "current"/"the" above: _NAMED_ATTRIBUTE
+# has no real device name to assign, so its name group swallows the
+# aggregate-scope qualifier phrase instead ("whole house", "current whole
+# house") -- which then gets treated as a literal device name to resolve,
+# producing an "Unresolved... Which device do you mean" clarification full
+# of devices that have nothing to do with power (whatever the fuzzy matcher's
+# nearest, still-low-scoring names happen to be). These phrases describe an
+# aggregate/whole-house question, never a single device, so they belong with
+# the pronoun-only exclusions: falling through here lets the request reach
+# the model's tool-calling loop, which (per agent_prompt_policy.py's
+# whole-house-meter guidance and the query_devices() meter-candidate logic)
+# already handles "current power usage" correctly.
+_AGGREGATE_SCOPE_NAMES = {
+    "whole house", "whole home", "entire house", "entire home",
+    "whole house's", "whole home's", "entire house's", "entire home's",
+    "current whole house", "current whole home",
+    "current entire house", "current entire home",
+}
 _SELECTION_PREFIX = re.compile(r"^\s*(?:select|use|choose|i\s+mean)\b", re.I)
 
 
@@ -74,7 +93,8 @@ def is_pronoun_reference(name: str) -> bool:
     than a real device name to resolve.
     """
 
-    return str(name).strip().casefold() in _PRONOUN_NAMES
+    normalized = str(name).strip().casefold()
+    return normalized in _PRONOUN_NAMES or normalized in _AGGREGATE_SCOPE_NAMES
 
 
 def clean_choice_label(value: str) -> str:
