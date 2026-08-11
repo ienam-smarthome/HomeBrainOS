@@ -849,10 +849,16 @@ class DeviceQueryService:
                 or ""
             ).casefold()
             if health in {"offline", "unavailable", "timeout", "failed"}:
-                alerts.append({**identity, "status": health})
+                # "source" distinguishes this from a hubAlerts-sourced entry
+                # below -- both land in the same `alerts` bucket, but only
+                # this one is actually a connectivity signal. The
+                # presenter needs that distinction to avoid describing a
+                # battery/tamper/firmware hubAlerts entry as "offline or
+                # unavailable" just because it shares this bucket.
+                alerts.append({**identity, "status": health, "source": "connectivity"})
             hub_alerts = attrs.get("hubAlerts")
             if hub_alerts not in (None, "", "[]", []):
-                alerts.append({**identity, "status": hub_alerts})
+                alerts.append({**identity, "status": hub_alerts, "source": "hub_alert"})
 
         lights = active_lights(devices)
         switches = active_non_light_switches(devices)

@@ -427,6 +427,31 @@ async def test_single_trigger_duplicate_rule_is_not_requeued():
 
 
 @pytest.mark.asyncio
+async def test_duplicate_check_now_runs_even_when_can_read_rules_is_not_passed():
+    """Regression test: `can_read_rules` used to default to False and was
+    driven by whether `hub_read_rules` happened to survive this turn's
+    tool-catalog truncation -- an incidental, discovery-dependent signal,
+    not a guarantee the gateway doesn't exist. `_existing_names()` calls
+    `hub_read_rules` directly via the MCP client rather than through the
+    model's declared-tool schema, so it never needed that signal at all.
+    The default is now True, and the duplicate check must fire even when a
+    caller doesn't pass `can_read_rules` explicitly.
+    """
+
+    rules = [{"id": "1", "name": "Turn on Bedroom 1 Light (Daily)"}]
+    service = RuleAuthoringService(RuleMCP([real_bedroom_light()], rules), recorder)
+
+    decision = await service.propose(
+        "create a rule to turn on Bedroom 1 Light every day at 7am",
+        available_gateways={RULE_MACHINE_GATEWAY, "hub_read_rules"},
+    )
+
+    assert decision.handled is True
+    assert decision.actions == ()
+    assert "already exists" in str(decision.message)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "prompt",
     [

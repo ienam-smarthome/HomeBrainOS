@@ -510,9 +510,27 @@ class RuleAuthoringService:
         prompt: str,
         *,
         available_gateways: set[str],
-        can_read_rules: bool = False,
+        can_read_rules: bool = True,
     ) -> RuleAuthoringDecision:
-        """Return a complete validated plan only for the supported grammar."""
+        """Return a complete validated plan only for the supported grammar.
+
+        `can_read_rules` is accepted for backward compatibility but no
+        longer gates the duplicate-rule check below (default changed to
+        True). It used to be tied to whether `hub_read_rules` happened to
+        survive this turn's per-request tool-catalog truncation
+        (`tool_limit`, default 48) -- an incidental, discovery-dependent
+        signal, not a guarantee that the gateway doesn't exist. That let a
+        server exposing more than `tool_limit` gateways silently skip
+        duplicate-rule protection on every single schedule request whose
+        catalog build happened not to include `hub_read_rules`, creating
+        additional duplicate Rule Machine rules for repeated identical
+        requests instead of reporting "already exists". `_existing_names()`
+        calls `hub_read_rules` directly via the MCP client, not through the
+        model's declared-tool schema, so it never needed this turn's
+        catalog to include the tool in the first place -- and it already
+        fails closed to an empty set (skipping the check, not raising) if
+        the call genuinely errors.
+        """
 
         intent = self._intent(prompt)
         if intent is None:

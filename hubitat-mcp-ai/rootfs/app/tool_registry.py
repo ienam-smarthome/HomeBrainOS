@@ -118,8 +118,17 @@ def _structured_operations(arguments: dict[str, Any]) -> list[str]:
 
 def _operation_effect(operations: list[str]) -> ToolEffect | None:
     for operation in operations:
+        # `_DESTRUCTIVE_ACTIONS` holds both single-word entries ("delete",
+        # "remove") and two-word entries ("factory_reset",
+        # "reset_database") -- splitting `operation` on "_" and
+        # intersecting with the set only ever matches the single-word
+        # ones (`{"factory", "reset"} & _DESTRUCTIVE_ACTIONS` is empty
+        # even though "factory_reset" is a member of the set itself), so
+        # the two multi-word entries could never match. Checking the
+        # un-split, already-normalised operation string directly catches
+        # those too, alongside the existing single-token check.
         tokens = set(operation.split("_"))
-        if tokens & _DESTRUCTIVE_ACTIONS:
+        if operation in _DESTRUCTIVE_ACTIONS or tokens & _DESTRUCTIVE_ACTIONS:
             return ToolEffect.DESTRUCTIVE_WRITE
     for operation in operations:
         if operation in _SENSITIVE_DEVICE_COMMANDS:

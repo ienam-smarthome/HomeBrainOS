@@ -9,6 +9,7 @@ sys.path.insert(0, str(APP_DIR))
 from device_control_service import DeviceControlService  # noqa: E402
 from device_query_service import DeviceQueryService  # noqa: E402
 from mcp_client import MCPToolResult, tool_succeeded  # noqa: E402
+from tool_executor import ToolExecutor  # noqa: E402
 
 
 def _result(data: object, *, is_error: bool = False) -> MCPToolResult:
@@ -100,3 +101,25 @@ def test_string_true_success_flag_is_still_success():
     string_true = _result({"success": "true"})
 
     assert tool_succeeded(string_true) is True
+
+
+def test_tool_executor_succeeded_now_delegates_to_the_shared_helper():
+    """ToolExecutor.succeeded() was an independent third copy of the exact
+    same strict `is False` check -- unlike DeviceControlService and
+    DeviceQueryService, which already delegated to the shared helper, this
+    one directly gates `ToolExecution.success`, which
+    confirmed_action_coordinator.py and every other consumer of a
+    ToolExecution treats as authoritative. It must now agree with
+    tool_succeeded() on every case this file already covers, including the
+    string "false" success flag.
+    """
+
+    string_false = _result({"success": "false"})
+    partial_failure = _result({"success": True, "error": "device unreachable"})
+    clean_success = _result({"success": True})
+    nested_failure = _result({"result": {"success": False}})
+
+    assert ToolExecutor.succeeded(string_false) is False
+    assert ToolExecutor.succeeded(partial_failure) is False
+    assert ToolExecutor.succeeded(clean_success) is True
+    assert ToolExecutor.succeeded(nested_failure) is False

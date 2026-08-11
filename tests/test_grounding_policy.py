@@ -83,6 +83,35 @@ def test_unrelated_or_failed_diagnostic_call_does_not_satisfy_log_requirement():
     assert decision.action is GroundingAction.RETRY
 
 
+def test_logs_checked_latches_and_is_not_un_satisfied_by_a_later_failed_call():
+    """Regression test: `logs_checked = bool(success)` used to overwrite on
+    every log-tool call, so a later failed or duplicate log fetch in the
+    same request could un-satisfy log evidence a prior call already
+    recorded successfully -- producing a spurious retry, or in the worst
+    case a false LOG_REFUSAL, despite genuinely available log evidence
+    gathered earlier in the same turn. Once satisfied, it must stay
+    satisfied for the life of the request.
+    """
+
+    policy = GroundingPolicy(logs_requested=True, conversational=False)
+    policy.record_tool_outcome(
+        "hub_read_diagnostics",
+        {"tool": "hub_get_logs", "args": {"since": "30m"}},
+        success=True,
+    )
+    policy.record_tool_outcome(
+        "hub_read_diagnostics",
+        {"tool": "hub_get_logs", "args": {"since": "5m"}},
+        success=False,
+    )
+
+    decision = policy.decide_no_tool_calls(has_live_evidence=True)
+
+    assert policy.logs_checked is True
+    assert decision.action is GroundingAction.ACCEPT
+    assert decision.message is None
+
+
 def test_conversational_answer_does_not_require_live_evidence():
     policy = GroundingPolicy(logs_requested=False, conversational=True)
 

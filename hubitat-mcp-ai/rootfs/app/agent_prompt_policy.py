@@ -1,6 +1,25 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+
+# Strips embedded control characters (newlines, carriage returns, tabs, and
+# other non-printable ASCII bytes) from a device's own reported attribute
+# value before it goes into the system prompt. Device *labels* already get
+# this protection via `repr()` below, but attribute values were rendered
+# with a bare `str(value)` -- a compromised or maliciously-renamed device
+# driver could embed a newline in its own reported attribute value to make
+# it look like a new prompt line (e.g. fake "SYSTEM:" instructions), a
+# narrow prompt-injection surface this closes.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_attribute_value(value: Any) -> str:
+    rendered = _CONTROL_CHARS.sub(" ", str(value))
+    if len(rendered) > 80:
+        rendered = rendered[:77] + "..."
+    return rendered
 
 
 def render_device_manifest(
@@ -44,10 +63,7 @@ def render_device_manifest(
                 normalized = str(key).lower().replace("_", "")
                 if normalized not in common and not (is_weather and len(states) < 16):
                     continue
-                rendered = str(value)
-                if len(rendered) > 80:
-                    rendered = rendered[:77] + "..."
-                states.append(f"{key}={rendered}")
+                states.append(f"{key}={_sanitize_attribute_value(value)}")
                 if len(states) >= (16 if is_weather else 10):
                     break
         rows.append(
@@ -66,7 +82,7 @@ def render_app_manifest(apps: list[dict[str, Any]]) -> str:
         if app_id is None or not label:
             continue
         state = " | ".join(
-            f"{key}: {app[key]}"
+            f"{key}: {_sanitize_attribute_value(app[key])}"
             for key in ("status", "enabled", "paused", "active", "broken")
             if app.get(key) is not None
         )
