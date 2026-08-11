@@ -121,6 +121,21 @@ _EXCLUSION_CLAUSE = re.compile(
 )
 _LEADING_ARTICLE = re.compile(r"^(?:the|a|an)\s+", re.I)
 
+# "turn off the hallway lights"/"turn off the living room switches" -- a
+# room name followed by a generic plural (or singular) kind word -- carries
+# the same room-wide intent as a bare room name ("turn off the hallway"),
+# plus an explicit capability filter the bare form doesn't have. Live-
+# observed gap: this fell straight into ordinary per-name fuzzy resolution
+# (nothing in the inventory is literally labelled "the hallway lights"),
+# reporting every "Hallway *" device -- including Hallway TRV, a
+# thermostat radiator valve that isn't a light at all -- as an
+# undifferentiated disambiguation offer instead of doing the obviously
+# intended room+kind action. Deliberately narrow: only a trailing bare
+# "light(s)"/"switch(es)" word is recognised, so "turn off Kitchen Light"
+# (a real device name, not a room) still reaches ordinary per-name
+# resolution untouched.
+_ROOM_KIND_SUFFIX = re.compile(r"^(?P<room>.+?)\s+(?P<kind>lights?|switches?)$", re.I)
+
 
 def split_all_lights_exclusion(name: str) -> tuple[str, list[str]]:
     """Split "all lights except X[, Y and Z]" into (base phrase, excluded terms).
@@ -378,9 +393,11 @@ class DeviceControlService:
             ]
         except Exception as exc:
             logger.warning("Fast control identity lookup unavailable: %s", exc)
-        identity_candidates = [
-            device for device in identity_manifest if self._matches_kind(kind, device)
-        ]
+        room_names_present = {
+            normalized_name(room_name(device))
+            for device in identity_manifest
+            if room_name(device)
+        }
         # A single device_names entry can be a room name rather than a
         # device name -- the model has no dedicated slot to distinguish
         # "turn off Bedroom 1" (a room-wide action) from "turn off Bedroom1
@@ -397,43 +414,62 @@ class DeviceControlService:
         # inventory data, not a guess): even in the rare case a device
         # happens to share that exact normalized name, it is very unlikely
         # to be what "turn off <room name>" was asking for.
+        #
+        # This must resolve (and, for the kind-suffix case, may rewrite
+        # `kind`) before identity_candidates is built below, since that
+        # list is filtered by `kind` -- deciding room+kind here first and
+        # filtering once afterwards is what keeps a same-room TRV (Switch-
+        # capable but not a light) out of a "hallway lights" result; doing
+        # it the other way around would already have thrown away the
+        # kind information identity_candidates needs.
         all_lights_requested = False
         excluded_ids: set[str] = set()
         if not room and len(names) == 1:
             candidate_room = str(names[0]).strip()
             wanted_candidate = normalized_name(candidate_room)
-            room_names_present = {
-                normalized_name(room_name(device))
-                for device in identity_manifest
-                if room_name(device)
-            }
             if wanted_candidate and wanted_candidate in room_names_present:
                 room = candidate_room
                 names = []
             else:
-                base_phrase, excluded_terms = split_all_lights_exclusion(candidate_room)
-                if is_all_lights_target(base_phrase):
-                    all_lights_requested = True
-                    if excluded_terms:
-                        excluded_ids, unresolved = resolve_all_lights_exclusions(
-                            excluded_terms, identity_manifest
-                        )
-                        if unresolved:
-                            error_message = (
-                                f"I could not find {_human_join(unresolved)} to "
-                                "exclude, so nothing was changed. Check the room "
-                                "or device name and try again."
+                room_kind_hit = False
+                kind_suffix_match = _ROOM_KIND_SUFFIX.match(candidate_room)
+                if kind_suffix_match:
+                    candidate_room_part = kind_suffix_match.group("room").strip()
+                    kind_word = kind_suffix_match.group("kind").casefold()
+                    wanted_room_part = normalized_name(candidate_room_part)
+                    if wanted_room_part and wanted_room_part in room_names_present:
+                        room = candidate_room_part
+                        names = []
+                        if kind == "auto":
+                            kind = "light" if kind_word.startswith("light") else "switch"
+                        room_kind_hit = True
+                if not room_kind_hit:
+                    base_phrase, excluded_terms = split_all_lights_exclusion(candidate_room)
+                    if is_all_lights_target(base_phrase):
+                        all_lights_requested = True
+                        if excluded_terms:
+                            excluded_ids, unresolved = resolve_all_lights_exclusions(
+                                excluded_terms, identity_manifest
                             )
-                            data = {
-                                "success": False,
-                                "error": error_message,
-                                "matched": [],
-                                "executed": 0,
-                            }
-                            return MCPToolResult(
-                                DEVICE_CONTROL_TOOL, arguments, {}, error_message, data,
-                                is_error=True,
-                            )
+                            if unresolved:
+                                error_message = (
+                                    f"I could not find {_human_join(unresolved)} to "
+                                    "exclude, so nothing was changed. Check the room "
+                                    "or device name and try again."
+                                )
+                                data = {
+                                    "success": False,
+                                    "error": error_message,
+                                    "matched": [],
+                                    "executed": 0,
+                                }
+                                return MCPToolResult(
+                                    DEVICE_CONTROL_TOOL, arguments, {}, error_message, data,
+                                    is_error=True,
+                                )
+        identity_candidates = [
+            device for device in identity_manifest if self._matches_kind(kind, device)
+        ]
         fast_targets: list[dict[str, Any]] = []
         if room:
             wanted_room = normalized_name(room)
