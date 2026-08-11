@@ -795,8 +795,14 @@ def hub_info_tool() -> MCPTool:
         (
             "Refresh and read the authoritative Hub Information Driver device. "
             "Use this for Hubitat firmware availability, installed firmware, "
-            "CPU, memory, temperature, uptime, database size, hub health, or "
-            "general hub-information questions. This does not install firmware."
+            "CPU, memory, temperature, uptime, database size, Zigbee radio "
+            "status, Z-Wave radio status, or general hub-information "
+            "questions. This is the only tool with Zigbee/Z-Wave radio "
+            "status (online/offline/disabled) -- hub_read_diagnostics does "
+            "not carry it. For any 'hub health' or 'is everything OK with "
+            "the hub' question, call this with scope='full' and report the "
+            "radio status alongside memory/uptime, not instead of it. This "
+            "does not install firmware."
         ),
         {
             "type": "object",

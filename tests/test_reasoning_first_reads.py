@@ -252,3 +252,57 @@ async def test_non_causal_history_question_keeps_the_deterministic_template() ->
         "round"
     )
     assert "do not by themselves identify" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_causal_bypass_nudges_the_model_to_check_a_correlated_sensor() -> None:
+    """Regression test (0.10.411): a live run of the causal "why" bypass
+    just re-narrated the same switch-only event list instead of checking a
+    plausible related sensor (e.g. motion) in the same room, even though
+    the bypass gave it a second round to do so -- a second round alone does
+    not make the model investigate. The orchestrator must now inject an
+    explicit host hint after the device-history tool result telling the
+    model to consider a related sensor before answering.
+    """
+
+    mcp = ReasoningModeMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [_device_history_call()]}},
+        {"message": {"role": "assistant", "content": "Likely a motion-timeout automation."}},
+    ])
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    await agent.process_user_request_result(
+        "why did the shower light turn off this morning?",
+        session_id="reasoning-mode-causal-hint",
+    )
+
+    assert len(ai.requests) >= 2
+    second_round_messages = ai.requests[1][1]["json"]["messages"]
+    hint_messages = [
+        message.get("content", "")
+        for message in second_round_messages
+        if message.get("role") == "user"
+    ]
+    assert any(
+        "HOST CAUSAL-INVESTIGATION HINT" in content for content in hint_messages
+    ), "the model must be explicitly nudged to check a correlated sensor"
+
+
+def test_hub_info_tool_description_advertises_zigbee_and_zwave_radio_status() -> None:
+    """Regression test (0.10.411): a live run of "check the hub health
+    status" in reasoning mode came back with memory/uptime/temperature but
+    no Zigbee/Z-Wave radio status at all -- the data was always in
+    homebrain_hub_info_snapshot's result, but its tool description never
+    told the model this was the tool to call for radio status, so the
+    model reached for hub_read_diagnostics instead (which does not carry
+    it) and never asked for it. The description is the only signal the
+    model has before deciding which tool to call, so it must mention
+    Zigbee/Z-Wave radio status explicitly.
+    """
+
+    from tool_registry import hub_info_tool
+
+    description = hub_info_tool().description.casefold()
+    assert "zigbee" in description
+    assert "z-wave" in description or "zwave" in description

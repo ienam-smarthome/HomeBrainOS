@@ -1062,6 +1062,35 @@ class UnifiedMCPAgent:
                         ):
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
+                if causal_history_bypass:
+                    # Live-observed gap (0.10.411): the early-return bypass
+                    # above only buys a second reasoning round -- it does
+                    # not, by itself, make the model investigate. A first
+                    # live test of this bypass ("why did the shower light
+                    # turn off this morning?") just re-narrated the same
+                    # switch-only event list from homebrain_device_history
+                    # instead of checking whether a motion sensor in the
+                    # same room correlates in time, even though that was
+                    # one more tool call away. Nudge the model toward that
+                    # second call explicitly rather than assuming a bare
+                    # "why" bypass is enough on its own.
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST CAUSAL-INVESTIGATION HINT\n"
+                            "The user asked why this happened, not just what happened. "
+                            "The event history above only proves the state changed, not "
+                            "what caused it. Before answering, consider calling "
+                            "homebrain_device_history again for a plausible related "
+                            "sensor in the same room (e.g. a motion sensor, contact "
+                            "sensor, or button) to check whether its timestamps line up "
+                            "with this change -- a close time match is suggestive of an "
+                            "automation, not proof of one. If no related sensor data "
+                            "supports a specific cause, say so plainly rather than "
+                            "inventing one; do not just restate the same event list you "
+                            "already have."
+                        ),
+                    })
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:

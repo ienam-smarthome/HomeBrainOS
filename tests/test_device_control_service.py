@@ -26,6 +26,15 @@ HALLWAY_LIGHT_2 = {
     "capabilities": ["Actuator", "Refresh", "ChangeLevel", "SwitchLevel", "Light", "Switch"],
     "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
 }
+# A real same-room device that is NOT a light, despite advertising Switch --
+# "the hallway lights" must exclude this even though it lives in the same
+# room, the same way "the lights" (house-wide) already excludes non-light
+# switches elsewhere in this file.
+HALLWAY_TRV = {
+    "id": "7331", "label": "Hallway TRV", "roomName": "Hallway",
+    "capabilities": ["Actuator", "Refresh", "Switch", "Thermostat"],
+    "attributes": [{"name": "switch", "dataType": "ENUM", "value": "on"}],
+}
 
 
 class ControlMCP:
@@ -242,6 +251,82 @@ async def test_room_name_in_device_names_acts_on_the_room_not_a_lookalike_device
     succeeded_ids = {item["id"] for item in result.data["succeeded"]}
     assert succeeded_ids == {"7057", "7028"}
     assert "7101" not in succeeded_ids
+
+
+@pytest.mark.asyncio
+async def test_room_plus_lights_suffix_acts_on_every_light_in_that_room_only():
+    """Regression test for a real live failure: "turn off the hallway
+    lights" fell into ordinary per-name fuzzy resolution (nothing is
+    literally labelled "the hallway lights"), which correctly scored every
+    "Hallway *" device -- including Hallway TRV, a thermostat that isn't a
+    light -- below the confidence floor and reported "Unresolved" with a
+    three-way disambiguation offer instead of doing the obviously intended
+    room+kind action: turn off every light in the Hallway, and only the
+    lights.
+    """
+
+    mcp = ControlMCP([HALLWAY_LIGHT_1, HALLWAY_LIGHT_2, HALLWAY_TRV, BEDROOM1_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["the hallway lights"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"7046", "7037"}
+    assert "7331" not in succeeded_ids
+    assert "7057" not in succeeded_ids
+
+
+@pytest.mark.asyncio
+async def test_room_plus_switches_suffix_matches_switch_kind_not_lights():
+    """The kind word in the suffix must actually gate the result: "hallway
+    switches" should behave like device_kind="switch", not "light" -- the
+    opposite selection from the "hallway lights" test above, using the
+    same three-device room to prove the kind word (not just the room) is
+    what determines the result.
+    """
+
+    mcp = ControlMCP([HALLWAY_LIGHT_1, HALLWAY_LIGHT_2, HALLWAY_TRV])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["the hallway switches"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    # device_kind="switch" means Switch-capable AND NOT a light (see
+    # _matches_kind's docstring) -- Hallway Light 1/2 are excluded even
+    # though they also advertise Switch, leaving only the TRV.
+    assert succeeded_ids == {"7331"}
+
+
+@pytest.mark.asyncio
+async def test_a_real_device_name_ending_in_light_is_unaffected():
+    """The room+kind-suffix pattern must not hijack an ordinary device name
+    that happens to end in the word "Light" (or "Lights") -- "Kitchen
+    Light" is a real device label, not a room name, so it must keep
+    reaching ordinary per-name resolution untouched.
+    """
+
+    mcp = ControlMCP([KITCHEN_LIGHT])
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Kitchen Light"],
+        "device_kind": "auto",
+        "command": "off",
+    })
+
+    assert result.data["success"] is True
+    succeeded_ids = {item["id"] for item in result.data["succeeded"]}
+    assert succeeded_ids == {"8001"}
 
 
 KITCHEN_LIGHT = {
