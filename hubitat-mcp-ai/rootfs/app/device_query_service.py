@@ -187,6 +187,57 @@ class DeviceQueryService:
             return not bool(capabilities & {"switch", "outlet"}) and not is_light
         return True
 
+    _METER_LABEL_TOKENS = ("meter", "energy monitor", "power monitor")
+    _METER_EXCLUDED_LABEL_TOKENS = ("plug", "socket", "outlet", "switch")
+
+    @classmethod
+    def _whole_house_meter_candidate(
+        cls, devices: list[dict[str, Any]], device_kind: str, attribute: str
+    ) -> dict[str, Any] | None:
+        """Surface a single dedicated whole-house meter device, if one
+        exists, separately from the discrete power/energy scan below.
+
+        A community/bridge-imported whole-house meter (e.g. an Octopus
+        Energy integration device) commonly has no attribute literally
+        named `power`/`activePower`/`powerMeter` -- it reports its one
+        reading only via `valueStr`/`value` -- so it is invisible to the
+        aggregate scan in query_devices() below no matter how many
+        discrete smart plugs that scan finds. Previously this meant a
+        "current power usage" question could get a structurally
+        successful, non-empty answer (e.g. summing 15 monitored smart
+        plugs to 81 W) while silently ignoring a real whole-house meter
+        reporting 4.7 kW, because the empty-rows `hint` below only fires
+        when the scan finds nothing at all. This performs a narrow,
+        label-based match (a device labelled with a "meter" word, and
+        explicitly not a controllable plug/socket/switch) so the model is
+        always told a whole-house meter candidate exists, whether or not
+        the discrete-device scan itself found rows.
+        """
+
+        if cls._normalized_attribute(attribute) != "power":
+            return None
+        for device in devices:
+            if not cls._matches_device_kind(device, device_kind):
+                continue
+            label = str(device.get("label") or device.get("name") or "").casefold()
+            if not any(token in label for token in cls._METER_LABEL_TOKENS):
+                continue
+            if any(token in label for token in cls._METER_EXCLUDED_LABEL_TOKENS):
+                continue
+            source_attribute, raw_value = cls._attribute_value(
+                device, attribute, allow_generic_value_fallback=True
+            )
+            if raw_value is None:
+                continue
+            return {
+                "id": device.get("id") or device.get("deviceId"),
+                "label": device.get("label") or device.get("name"),
+                "room": device.get("room") or device.get("roomName"),
+                "source_attribute": source_attribute,
+                "raw_value": raw_value,
+            }
+        return None
+
     @staticmethod
     def _is_ambient_room_reading(
         device: dict[str, Any],
@@ -692,6 +743,18 @@ class DeviceQueryService:
             "conversion_errors": conversion_errors,
             "complete": True,
         }
+        meter_candidate = self._whole_house_meter_candidate(devices, device_kind, attribute)
+        if meter_candidate is not None:
+            data["whole_house_meter_candidate"] = meter_candidate
+            data["whole_house_meter_hint"] = (
+                f"'{meter_candidate['label']}' looks like a dedicated "
+                f"whole-house meter device (reads via "
+                f"'{meter_candidate['source_attribute']}' = "
+                f"{meter_candidate['raw_value']!r}), separate from the "
+                f"{len(rows)} discrete device(s) counted above. For a "
+                f"'current power usage' style question, prefer this "
+                f"single meter's reading over summing discrete devices."
+            )
         if not rows:
             # An empty result for a named attribute is ambiguous: it could
             # mean "no device reports this at all" (a real, final answer)

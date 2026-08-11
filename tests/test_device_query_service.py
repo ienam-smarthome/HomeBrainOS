@@ -448,6 +448,83 @@ async def test_query_devices_hints_at_valuestr_fallback_on_an_empty_power_scan()
 
 
 @pytest.mark.asyncio
+async def test_query_devices_surfaces_a_whole_house_meter_candidate_alongside_plug_rows():
+    """Regression test for a live failure that survived the first 0.10.414
+    hint fix: "current power usage" against a hub with 15 metered smart
+    plugs (each with a literal `power` attribute) AND a separate
+    "Octopus Meter Current Power" device (valueStr-only, no `power`
+    attribute) answered "No whole-house meter was found. Summing the 15
+    monitored smart plugs, your current power usage is 81 W." -- ignoring
+    the real 4.7 kW whole-house reading, because the discrete scan found
+    non-empty rows and the empty-rows-only `hint` never fired. The meter
+    candidate must be surfaced unconditionally, whether or not the
+    discrete scan also found rows.
+    """
+
+    plugs = [
+        device(f"Plug {i}", "Living Room", ["Outlet", "Switch"], power=5)
+        for i in range(15)
+    ]
+    meter = device(
+        "Octopus Meter Current Power", "Octopus Energy",
+        ["Refresh", "HealthCheck"], value=4700.0, valueStr="4.70 kW",
+    )
+    service = DeviceQueryService(
+        QueryMCP([*plugs, meter]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.query_devices({
+        "attribute": "power",
+        "operation": "top",
+    })
+
+    assert result.data["count"] == 15
+    candidate = result.data["whole_house_meter_candidate"]
+    assert candidate["label"] == "Octopus Meter Current Power"
+    assert candidate["source_attribute"] == "valueStr"
+    assert candidate["raw_value"] == "4.70 kW"
+    assert "whole_house_meter_hint" in result.data
+
+
+@pytest.mark.asyncio
+async def test_query_devices_omits_meter_candidate_when_label_looks_like_a_plug():
+    smart_plug_meter_named_device = device(
+        "Kitchen Smart Plug Meter", "Kitchen", ["Outlet", "Switch"], power=12,
+    )
+    service = DeviceQueryService(
+        QueryMCP([smart_plug_meter_named_device]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.query_devices({
+        "attribute": "power",
+        "operation": "count",
+    })
+
+    assert "whole_house_meter_candidate" not in result.data
+
+
+@pytest.mark.asyncio
+async def test_query_devices_omits_meter_candidate_for_non_power_attributes():
+    meter = device(
+        "Octopus Meter Current Power", "Octopus Energy",
+        ["Refresh", "HealthCheck"], value=4700.0, valueStr="4.70 kW",
+    )
+    service = DeviceQueryService(
+        QueryMCP([meter]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.query_devices({
+        "attribute": "temperature",
+        "operation": "count",
+    })
+
+    assert "whole_house_meter_candidate" not in result.data
+
+
+@pytest.mark.asyncio
 async def test_query_devices_omits_hint_when_no_fallback_reading_exists():
     service = DeviceQueryService(
         QueryMCP([

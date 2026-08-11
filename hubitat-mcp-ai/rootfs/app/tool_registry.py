@@ -493,7 +493,11 @@ def device_query_tool() -> MCPTool:
             "Query all live Hubitat devices and compute a numeric aggregate before "
             "answering. Use maximum/minimum for highest or lowest, top/sort for "
             "rankings, and count for totals. Set group_by=room when the user asks "
-            "which room, and device_kind=socket for socket or outlet questions."
+            "which room, and device_kind=socket for socket or outlet questions. For "
+            "a 'current power usage' style question, check the response's "
+            "'whole_house_meter_candidate'/'whole_house_meter_hint' fields first -- "
+            "when present, that single dedicated meter's reading is the correct "
+            "answer, not a sum of the discrete devices this query also counted."
         ),
         {
             "type": "object",
@@ -510,7 +514,9 @@ def device_query_tool() -> MCPTool:
                         "attribute to retry with) instead of asking the user to name "
                         "a device -- this is a whole-house/aggregate query, not a "
                         "single-device lookup, so there is no specific device to ask "
-                        "about."
+                        "about. Also check 'whole_house_meter_candidate': a dedicated "
+                        "meter device may exist even when the discrete-device scan "
+                        "found rows, and its reading takes priority over any sum."
                     ),
                 },
                 "operation": {
