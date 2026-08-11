@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from natural_datetime import format_natural_datetime
@@ -358,9 +359,39 @@ def _present_device_history(data: dict[str, Any]) -> str:
             detail += f" — {description}"
         lines.append(f"- {detail}")
     noun = "event" if len(events) == 1 else "events"
-    return (
+    header = (
         f"Recent history for **{label}** over the last {hours} "
-        f"{'hour' if hours == 1 else 'hours'} ({len(events)} {noun}, newest first):\n\n"
+        f"{'hour' if hours == 1 else 'hours'} ({len(events)} {noun}, newest first):"
+    )
+    # Live-observed gap (0.10.412 follow-up): "when was the fridge door
+    # last opened?" -- a plain point-in-time question, not a broad "what
+    # happened" review -- got the full unfiltered event dump as its only
+    # answer, including unrelated housekeeping events (ipAddress,
+    # networkStatus) mixed in with the actual contact events, because this
+    # is the same early-return template the causal "why" bypass
+    # deliberately does not apply to for non-causal questions. Rather than
+    # widen that bypass (which would let the model narrate over the same
+    # unfiltered noise with no safety net), lead with a one-line "most
+    # recent" summary drawn directly from events[0] -- but only when the
+    # call itself was already scoped to one attribute (see
+    # device_history_tool()'s updated description), since events[0] of an
+    # *unfiltered* multi-attribute fetch is not reliably the reading the
+    # user actually asked about.
+    summary_line = None
+    if attribute and events:
+        first = events[0]
+        first_value = first.get("value")
+        first_unit = str(first.get("unit") or "")
+        first_value_text = "unknown" if first_value is None else f"{first_value}{first_unit}"
+        first_timestamp = format_natural_datetime(first.get("date"))
+        summary_line = (
+            f"Most recent: **{label}** {attribute} was **{first_value_text}** "
+            f"at {first_timestamp}."
+        )
+    return (
+        (f"{summary_line}\n\n" if summary_line else "")
+        + header
+        + "\n\n"
         + "\n".join(lines)
         + "\n\nThese events confirm reported changes, but do not by themselves identify what caused them."
     )
@@ -406,11 +437,55 @@ def _radio_status_word(status_raw: Any, healthy_raw: Any) -> str | None:
     return _radio_health_word(healthy_raw)
 
 
+def _hub_alerts_headline(alerts_raw: Any) -> str:
+    """Render the Hub Info driver's hubAlerts attribute as one headline.
+
+    Mirrors homebrain_agent.py's _hub_health_outcome alerts parsing (see
+    its own comment for the live finding this implements): the real driver
+    reports hubAlerts as a STRING, not a Python list -- a naive
+    isinstance(x, list) check alone would silently report a genuine active
+    alert as "no active alerts". A string value is parsed as JSON first
+    (covers a driver that serialises a real list into a string), then
+    falls back to treating the whole non-empty string as one alert.
+    """
+
+    if isinstance(alerts_raw, list):
+        alerts_list = alerts_raw
+    elif isinstance(alerts_raw, str):
+        text = alerts_raw.strip()
+        if not text or text in {"[]", "none", "None"}:
+            alerts_list = []
+        else:
+            try:
+                parsed = json.loads(text)
+            except (ValueError, TypeError):
+                parsed = None
+            alerts_list = parsed if isinstance(parsed, list) else [text]
+    else:
+        alerts_list = []
+    alerts = [str(item).strip() for item in alerts_list if str(item).strip()]
+    if alerts:
+        return f"The hub has {len(alerts)} active alert(s): {', '.join(alerts)}."
+    if alerts_raw is None:
+        return "The hub did not report an alert status."
+    return "The hub is healthy with no active alerts."
+
+
 def _present_hub_info(data: dict[str, Any]) -> str:
     scope = str(data.get("scope") or "full")
     installed = data.get("installed_firmware")
     available = data.get("available_firmware")
     parts: list[str] = []
+    # Live-observed gap (0.10.412 follow-up, spotted via a side-by-side
+    # comparison with a more capable model's answer to the same "check the
+    # hub health status" question): the pre-0.10.410 deterministic path
+    # (_hub_health_outcome, now opt-in) always led with an alert headline
+    # and included a Matter status row; this presenter -- which now fires
+    # unconditionally for every homebrain_hub_info_snapshot call -- never
+    # picked either up, so the default (reasoning-first) answer was less
+    # complete than the answer this same feature used to give.
+    if scope in {"resources", "full"}:
+        parts.append(_hub_alerts_headline(data.get("hub_alerts")))
     if scope in {"firmware", "full"}:
         if installed and _coerce_bool(data.get("update_available"), default=False) and available:
             parts.append(f"Hub firmware {installed} is installed and {available} is available.")
@@ -457,6 +532,9 @@ def _present_hub_info(data: dict[str, Any]) -> str:
         zwave_word = _radio_status_word(data.get("zwave_status"), data.get("zwave_healthy"))
         if zwave_word is not None:
             resources.append(f"**Z-Wave:** {zwave_word}")
+        matter_status = data.get("matter_status")
+        if matter_status not in {None, ""}:
+            resources.append(f"**Matter:** {matter_status}")
         if resources:
             parts.append("Hub resources:\n\n- " + "\n- ".join(resources))
     return " ".join(parts) or "The Hub Info device returned no usable attributes."

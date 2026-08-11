@@ -215,7 +215,11 @@ def test_hub_info_resources_include_driver_units():
         },
     )
 
+    # A "resources" (or "full") scope call now also leads with an alert
+    # headline (0.10.412 follow-up) -- see the dedicated
+    # test_hub_info_*_alert* tests below for that behaviour in isolation.
     assert message == (
+        "The hub did not report an alert status. "
         "Hub resources:\n\n"
         "- **CPU load (5 min):** 0.81 / 20.25%\n"
         "- **Free memory:** 1.02 GB\n"
@@ -223,6 +227,57 @@ def test_hub_info_resources_include_driver_units():
         "- **Uptime:** 0d:0h:49m:47s\n"
         "- **Database size:** 243 MB"
     )
+
+
+def test_hub_info_resources_lead_with_an_active_alert_headline():
+    """Regression test (0.10.412 follow-up): a side-by-side comparison
+    with a more capable model's hub-health answer showed HomeBrainOS's
+    reasoning-mode answer omitting alert status entirely, even though the
+    pre-0.10.410 deterministic path always led with an alert headline. The
+    driver reports hubAlerts as a STRING (confirmed live), not a Python
+    list -- parsed here as JSON first, falling back to one alert message.
+    """
+
+    message = present_tool_result(
+        "homebrain_hub_info_snapshot",
+        {
+            "success": True,
+            "scope": "full",
+            "installed_firmware": "2.5.1.151",
+            "hub_alerts": '["Z-Wave radio offline"]',
+        },
+    )
+
+    assert message.startswith(
+        "The hub has 1 active alert(s): Z-Wave radio offline."
+    )
+
+
+def test_hub_info_resources_alert_headline_handles_a_bare_string_alert():
+    """A driver that reports one alert as a plain (non-JSON) string must
+    still be surfaced, not silently swallowed by a failed JSON parse.
+    """
+
+    message = present_tool_result(
+        "homebrain_hub_info_snapshot",
+        {"success": True, "scope": "resources", "hub_alerts": "Low memory"},
+    )
+
+    assert "The hub has 1 active alert(s): Low memory." in message
+
+
+def test_hub_info_resources_include_matter_status():
+    message = present_tool_result(
+        "homebrain_hub_info_snapshot",
+        {
+            "success": True,
+            "scope": "resources",
+            "cpu_5_min": 1.0,
+            "matter_status": "Online",
+        },
+    )
+
+    assert "**Matter:** Online" in message
 
 
 def test_hub_info_resources_include_zigbee_and_zwave_radio_status():
@@ -368,6 +423,71 @@ def test_device_history_presenter_treats_a_string_success_flag_as_failure():
     )
 
     assert "could not read event history" in message.casefold()
+
+
+def test_device_history_presenter_leads_with_a_most_recent_summary_when_attribute_scoped():
+    """Regression test (0.10.412 follow-up): a live "when was the fridge
+    door last opened?" answer was a full 15-event dump (including
+    unrelated ipAddress/networkStatus housekeeping events) with no direct
+    answer to the actual question. When the call was scoped to one
+    attribute, the presenter now leads with a one-line "most recent"
+    summary drawn from the newest event, ahead of the full list.
+    """
+
+    message = present_tool_result(
+        "homebrain_device_history",
+        {
+            "success": True,
+            "label": "Fridge Door",
+            "hoursBack": 24,
+            "attribute": "contact",
+            "events": [
+                {
+                    "name": "contact", "value": "open", "unit": None,
+                    "date": "2026-08-11T16:18:24.000+0100", "isStateChange": True,
+                },
+                {
+                    "name": "contact", "value": "closed", "unit": None,
+                    "date": "2026-08-11T16:05:48.000+0100", "isStateChange": True,
+                },
+            ],
+        },
+    )
+
+    assert message.startswith("Most recent: **Fridge Door** contact was **open** at")
+    assert "Recent history for **Fridge Door**" in message
+
+
+def test_device_history_presenter_omits_the_summary_line_for_an_unscoped_multi_attribute_fetch():
+    """When the call was NOT scoped to one attribute, events[0] is not
+    reliably the reading the user asked about (it could be an unrelated
+    housekeeping event like ipAddress that merely happens to be newest) --
+    the summary line must not fabricate a "most recent" answer from an
+    unfiltered mix.
+    """
+
+    message = present_tool_result(
+        "homebrain_device_history",
+        {
+            "success": True,
+            "label": "Fridge Door",
+            "hoursBack": 24,
+            "attribute": "",
+            "events": [
+                {
+                    "name": "ipAddress", "value": "192.168.1.211", "unit": None,
+                    "date": "2026-08-11T07:20:00.000+0100", "isStateChange": True,
+                },
+                {
+                    "name": "contact", "value": "closed", "unit": None,
+                    "date": "2026-08-11T04:19:00.000+0100", "isStateChange": True,
+                },
+            ],
+        },
+    )
+
+    assert not message.startswith("Most recent:")
+    assert "Recent history for **Fridge Door**" in message
 
 
 def test_control_presenter_treats_a_string_changed_flag_correctly():
