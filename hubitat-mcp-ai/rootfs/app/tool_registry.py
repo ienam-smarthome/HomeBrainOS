@@ -505,7 +505,12 @@ def device_query_tool() -> MCPTool:
                         "battery. Some meter drivers report their reading only as "
                         "'value' or 'valueStr' -- if 'power' returns no results on "
                         "the expected device, retry with attribute='valueStr' or "
-                        "attribute='value'."
+                        "attribute='value'. If the response has count=0 and includes "
+                        "a 'hint' field, follow it exactly (it names the concrete "
+                        "attribute to retry with) instead of asking the user to name "
+                        "a device -- this is a whole-house/aggregate query, not a "
+                        "single-device lookup, so there is no specific device to ask "
+                        "about."
                     ),
                 },
                 "operation": {
