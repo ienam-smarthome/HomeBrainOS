@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from natural_datetime import format_natural_datetime
+from natural_datetime import format_natural_datetime, normalize_iso_offset
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,11 +79,24 @@ def parse_after_that(prompt: str) -> tuple[str | None, str] | None:
 
 
 def parse_event_datetime(value: Any) -> datetime | None:
+    """Parse a raw Hubitat event timestamp, shared by this module and
+    location_event_queries.py (which imports this function directly).
+
+    Uses natural_datetime.normalize_iso_offset() for the same
+    offset-without-colon normalization format_natural_datetime() applies --
+    currently inert in practice (the deployed Python parses a trailing
+    "+0100"-style offset natively), but this call site used to carry its
+    own bare `.replace("Z", "+00:00")` with no such guard, a latent
+    inconsistency against natural_datetime.py's fix if that Python-version
+    reliance ever changes. Delegating to the shared helper keeps both call
+    sites in exact agreement rather than drifting.
+    """
+
     text = str(value or "").strip()
     if not text:
         return None
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return datetime.fromisoformat(normalize_iso_offset(text))
     except ValueError:
         return None
 

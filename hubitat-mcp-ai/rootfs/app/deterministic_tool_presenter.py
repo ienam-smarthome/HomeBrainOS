@@ -90,6 +90,22 @@ class _HomeSummaryText(str):
         return super().__contains__(item)
 
 
+def _battery_percent(value: Any) -> str:
+    """Render a raw battery attribute value as a bare number, no unit.
+
+    device_query_service.py's own low-battery aggregation (feeding the
+    home-snapshot presenter below) already strips a pre-existing "%" before
+    parsing (`str(battery).strip().rstrip("%")`) -- but homebrain_filter_devices
+    passes the raw matched attribute value straight through with no such
+    guard. A device reporting battery as an already-suffixed string
+    ("45%") rendered as "45%%" once this branch appended its own "%".
+    Mirrors the established stripping pattern rather than duplicating a
+    second, divergent one.
+    """
+
+    return str(value).strip().rstrip("%")
+
+
 def _joined(values: list[str]) -> str:
     if not values:
         return ""
@@ -131,7 +147,7 @@ def _present_filter(data: dict[str, Any]) -> str:
         if not matches:
             return f"No devices have battery levels {operator} {expected}%."
         entries = [
-            f"{x.get('label') or x.get('id') or 'Unknown device'} ({x.get('value')}%)"
+            f"{x.get('label') or x.get('id') or 'Unknown device'} ({_battery_percent(x.get('value'))}%)"
             for x in matches
         ]
         noun = "device has" if len(entries) == 1 else "devices have"

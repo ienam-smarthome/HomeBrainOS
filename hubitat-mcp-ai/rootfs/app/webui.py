@@ -8,8 +8,18 @@ def render_page(title: str, version: str) -> str:
     """Render the self-contained Home Assistant ingress UI."""
 
     safe_title = html.escape(title)
-    title_json = json.dumps(title)
-    version_json = json.dumps(version)
+    # json.dumps() does not escape a literal "</script>" sequence inside the
+    # string it encodes -- these values are interpolated directly into an
+    # inline <script> block below, so an unescaped "</script>" in either
+    # value would close the script tag early and let anything following it
+    # be parsed as raw HTML. title comes from admin/add-on config
+    # (web_title), not a remote-input surface, but the escape is cheap and
+    # correct defense-in-depth regardless of where the value originates.
+    # The standard fix: escape the forward slash in "</" so the JS engine
+    # still parses it as the same string via a (harmless) backslash escape,
+    # while the raw "</script>" byte sequence never appears in the markup.
+    title_json = json.dumps(title).replace("</", "<\\/")
+    version_json = json.dumps(version).replace("</", "<\\/")
     return (
         r"""<!doctype html>
 <html lang="en">
