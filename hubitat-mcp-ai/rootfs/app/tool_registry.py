@@ -458,7 +458,15 @@ def device_filter_tool() -> MCPTool:
             "properties": {
                 "attribute": {
                     "type": "string",
-                    "description": "Hubitat attribute name, for example battery, temperature, humidity, power, switch, or motion.",
+                    "description": (
+                        "Hubitat attribute name, for example battery, temperature, "
+                        "humidity, power, switch, or motion. Some community/bridge "
+                        "meter drivers (e.g. energy-provider integrations) report "
+                        "their reading only as 'value' or 'valueStr', with no "
+                        "attribute literally named 'power' -- if a power/energy "
+                        "query on the expected device returns nothing, retry with "
+                        "attribute='valueStr' or attribute='value' before giving up."
+                    ),
                 },
                 "operator": {
                     "type": "string",
@@ -492,7 +500,13 @@ def device_query_tool() -> MCPTool:
             "properties": {
                 "attribute": {
                     "type": "string",
-                    "description": "Numeric attribute such as power, temperature, humidity, or battery.",
+                    "description": (
+                        "Numeric attribute such as power, temperature, humidity, or "
+                        "battery. Some meter drivers report their reading only as "
+                        "'value' or 'valueStr' -- if 'power' returns no results on "
+                        "the expected device, retry with attribute='valueStr' or "
+                        "attribute='value'."
+                    ),
                 },
                 "operation": {
                     "type": "string",
@@ -615,7 +629,12 @@ def device_history_tool() -> MCPTool:
             "lookups and calls hub_list_device_events with bounded arguments. "
             "Use this for when, what changed, last on/off, repeated changes, "
             "or why questions about a device. Events prove reported state "
-            "transitions but do not by themselves prove what caused them."
+            "transitions but do not by themselves prove what caused them. "
+            "For a 'when was X last opened/closed/on/off' point question, "
+            "always pass the specific attribute (e.g. 'contact', 'switch') "
+            "and a small limit (1-3) so the result is the answer itself, "
+            "not an unfiltered dump mixed with unrelated housekeeping "
+            "events like ipAddress or networkStatus."
         ),
         {
             "type": "object",
@@ -634,13 +653,23 @@ def device_history_tool() -> MCPTool:
                 },
                 "attribute": {
                     "type": "string",
-                    "description": "Optional event attribute filter such as switch, motion, contact, or temperature.",
+                    "description": (
+                        "Event attribute filter such as switch, motion, contact, "
+                        "or temperature. Always set this for a 'when was X last "
+                        "<state>' question so the result is not mixed with "
+                        "unrelated attributes."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 50,
                     "default": 20,
+                    "description": (
+                        "Max events to return. Use 1-3 for a 'last/most recent' "
+                        "question instead of the default -- the default is sized "
+                        "for a broader 'what happened' history review."
+                    ),
                 },
             },
             "required": ["name"],
