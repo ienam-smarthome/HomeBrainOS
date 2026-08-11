@@ -110,8 +110,36 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         re.I | re.S,
     )
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        deterministic_reads_enabled: bool = False,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
+        # Rollback lever for the 0.10.410 reasoning-first refactor: every
+        # historical/causal/diagnostic READ question (last-contact,
+        # count/list-yesterday, motion aggregation, location events,
+        # mode-last-entered, hub health, firmware status) used to be
+        # intercepted by a hand-coded deterministic parser + canned answer
+        # template before the model ever saw the prompt -- each one added
+        # because a specific hallucination/wrong-unit/wrong-device bug got
+        # caught live and hand-patched, an ever-growing list of bespoke
+        # parsers for every new phrasing. Default is now False: those
+        # questions fall through to the general native-function-calling
+        # loop, which calls the exact same underlying tools
+        # (homebrain_device_history, homebrain_location_events,
+        # homebrain_hub_info_snapshot, etc. -- unchanged, still unit-correct
+        # and still tested) and reasons over the result itself, grounded by
+        # the existing evidence/grounding-policy machinery instead of a
+        # fixed string. Immediate device control (turn on/off, lock/unlock,
+        # set level), firmware install, and immediate internet-access
+        # block/allow remain deterministic unconditionally -- those are
+        # writes with real-world side effects, not reads, and are never
+        # gated by this flag. Setting this True restores the exact prior
+        # all-deterministic-reads behaviour without a code change, in case
+        # reasoning-mode answers prove worse in practice for a given model.
+        self.deterministic_reads_enabled = bool(deterministic_reads_enabled)
         self.context_policy = TokenAwareModelContextPolicy(
             model_name=self.model_name,
             max_history_messages=self.context_policy.max_history_messages,
@@ -1117,13 +1145,14 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             if pending_confirmation is not None:
                 return pending_confirmation
 
-            before_that = parse_before_that(user_prompt)
-            if before_that is not None:
-                return await self._relative_that_outcome(before_that[0], before_that[1], "before", session_key)
+            if self.deterministic_reads_enabled:
+                before_that = parse_before_that(user_prompt)
+                if before_that is not None:
+                    return await self._relative_that_outcome(before_that[0], before_that[1], "before", session_key)
 
-            after_that = parse_after_that(user_prompt)
-            if after_that is not None:
-                return await self._relative_that_outcome(after_that[0], after_that[1], "after", session_key)
+                after_that = parse_after_that(user_prompt)
+                if after_that is not None:
+                    return await self._relative_that_outcome(after_that[0], after_that[1], "after", session_key)
 
             selection = parse_device_selection(user_prompt)
             if selection is not None:
@@ -1182,48 +1211,49 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     session_key=session_key,
                 )
 
-            motion_activity = parse_motion_activity(user_prompt)
-            if motion_activity is not None:
-                return await self._motion_activity_outcome(motion_activity[0], count_only=motion_activity[1])
+            if self.deterministic_reads_enabled:
+                motion_activity = parse_motion_activity(user_prompt)
+                if motion_activity is not None:
+                    return await self._motion_activity_outcome(motion_activity[0], count_only=motion_activity[1])
 
-            count_yesterday = parse_count_yesterday(user_prompt)
-            if count_yesterday is not None:
-                return await self._count_yesterday_outcome(count_yesterday[0], count_yesterday[1])
+                count_yesterday = parse_count_yesterday(user_prompt)
+                if count_yesterday is not None:
+                    return await self._count_yesterday_outcome(count_yesterday[0], count_yesterday[1])
 
-            list_yesterday = parse_list_yesterday(user_prompt)
-            if list_yesterday is not None:
-                return await self._list_yesterday_outcome(list_yesterday)
+                list_yesterday = parse_list_yesterday(user_prompt)
+                if list_yesterday is not None:
+                    return await self._list_yesterday_outcome(list_yesterday)
 
-            last_contact = self._last_contact_request(user_prompt)
-            if last_contact is not None:
-                return await self._contact_event_outcome(
-                    last_contact[0],
-                    last_contact[1],
-                    explain_cause=False,
-                    session_key=session_key,
-                )
+                last_contact = self._last_contact_request(user_prompt)
+                if last_contact is not None:
+                    return await self._contact_event_outcome(
+                        last_contact[0],
+                        last_contact[1],
+                        explain_cause=False,
+                        session_key=session_key,
+                    )
 
-            why_contact = self._why_contact_request(user_prompt)
-            if why_contact is not None:
-                return await self._contact_event_outcome(
-                    why_contact[0],
-                    why_contact[1],
-                    explain_cause=True,
-                    session_key=session_key,
-                )
+                why_contact = self._why_contact_request(user_prompt)
+                if why_contact is not None:
+                    return await self._contact_event_outcome(
+                        why_contact[0],
+                        why_contact[1],
+                        explain_cause=True,
+                        session_key=session_key,
+                    )
 
-            if parse_location_events_intent(user_prompt):
-                return await self._location_events_outcome()
+                if parse_location_events_intent(user_prompt):
+                    return await self._location_events_outcome()
 
-            mode_last_entered = parse_mode_last_entered(user_prompt)
-            if mode_last_entered is not None:
-                return await self._mode_last_entered_outcome(mode_last_entered)
+                mode_last_entered = parse_mode_last_entered(user_prompt)
+                if mode_last_entered is not None:
+                    return await self._mode_last_entered_outcome(mode_last_entered)
 
-            if parse_hub_health_intent(user_prompt):
-                return await self._hub_health_outcome(session_key=session_key)
+                if parse_hub_health_intent(user_prompt):
+                    return await self._hub_health_outcome(session_key=session_key)
 
-            if parse_firmware_status_intent(user_prompt):
-                return await self._firmware_status_outcome(session_key=session_key)
+                if parse_firmware_status_intent(user_prompt):
+                    return await self._firmware_status_outcome(session_key=session_key)
 
             if parse_firmware_install_intent(user_prompt):
                 return await self._firmware_install_outcome(session_key=session_key)

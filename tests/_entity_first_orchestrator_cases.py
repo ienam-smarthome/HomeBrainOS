@@ -1038,7 +1038,7 @@ async def test_initial_registry_payload_stays_bounded_with_many_remote_tools():
     declared = ai.requests[0][1]["json"]["tools"]
     names = [item["function"]["name"] for item in declared]
     assert answer == "Hello."
-    assert len(declared) == 12
+    assert len(declared) == 13
     assert names[0] == "hub_search_tools"
     assert "homebrain_resolve_device" in names
     assert "homebrain_device_history" in names
@@ -1226,6 +1226,7 @@ async def test_model_invokes_general_filter_for_complete_low_battery_answer():
             "homebrain_query_devices",
             "homebrain_resolve_device",
             "homebrain_device_history",
+            "homebrain_location_events",
             "homebrain_active_lights",
         "homebrain_active_rooms",
             "homebrain_active_switches",
@@ -1856,6 +1857,7 @@ async def test_generic_tv_write_uses_only_high_level_control_and_verifies():
         "homebrain_query_devices",
         "homebrain_resolve_device",
         "homebrain_device_history",
+        "homebrain_location_events",
         "homebrain_active_lights",
         "homebrain_active_rooms",
         "homebrain_active_switches",

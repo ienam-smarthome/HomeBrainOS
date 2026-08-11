@@ -72,6 +72,16 @@ def load_options() -> dict[str, Any]:
         "unified_mcp_max_tool_rounds": 9,
         "max_tool_result_chars": 24000,
         "require_sensitive_confirmation": True,
+        # Rollback lever for the 0.10.410 reasoning-first refactor -- see
+        # UnifiedMCPAgent.__init__'s docstring comment for the full
+        # rationale. Default False: historical/causal/diagnostic READ
+        # questions reason through the general model loop using the same
+        # underlying tools instead of a hand-coded deterministic template.
+        # Immediate device control, firmware install, and immediate
+        # internet-access block/allow are writes and are never gated by
+        # this flag. Set True to restore the exact prior all-deterministic
+        # behaviour without a code change.
+        "deterministic_reads_enabled": False,
         "web_title": "Hubitat MCP AI",
     }
     if OPTIONS_PATH.exists():
@@ -137,6 +147,9 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("require_sensitive_confirmation"), True
     ),
     confirmation_ttl_seconds=float(OPTIONS.get("confirmation_ttl_seconds") or 120),
+    deterministic_reads_enabled=_bool(
+        OPTIONS.get("deterministic_reads_enabled"), False
+    ),
 )
 
 

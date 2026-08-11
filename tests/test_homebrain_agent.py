@@ -909,7 +909,7 @@ async def test_firmware_status_query_reports_in_progress_without_the_model() -> 
 
     mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "How's the firmware update going?", session_id="firmware-status-test"
@@ -935,7 +935,7 @@ async def test_firmware_status_query_reports_up_to_date_when_versions_converge()
 
     mcp = FirmwareMCP(installed="2.5.1.147", available="2.5.1.147")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "update status", session_id="firmware-status-test-2"
@@ -1098,7 +1098,7 @@ async def test_hub_health_query_reports_the_hubs_own_units_without_the_model() -
 
     mcp = HubHealthMCP(db_size=126.0, db_unit="MB")
     ai = FakeAI("unused -- deterministic report must not need this")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test"
@@ -1119,7 +1119,7 @@ async def test_hub_health_query_surfaces_real_active_alerts() -> None:
 
     mcp = HubHealthMCP(hub_alerts=["zigbeeRadioOffline"])
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "hub health", session_id="hub-health-test-2"
@@ -1145,7 +1145,7 @@ async def test_hub_health_query_recognises_a_real_alert_reported_as_a_string() -
 
     json_shaped = HubHealthMCP(hub_alerts='["zigbeeRadioOffline"]')
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(json_shaped, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(json_shaped, "key", ai_client=ai, deterministic_reads_enabled=True)
     outcome = await agent.process_user_request_result(
         "hub health", session_id="hub-health-test-json-alert"
     )
@@ -1155,7 +1155,7 @@ async def test_hub_health_query_recognises_a_real_alert_reported_as_a_string() -
 
     plain_text = HubHealthMCP(hub_alerts="Zigbee radio offline")
     ai2 = FakeAI("unused")
-    agent2 = UnifiedMCPAgent(plain_text, "key", ai_client=ai2)
+    agent2 = UnifiedMCPAgent(plain_text, "key", ai_client=ai2, deterministic_reads_enabled=True)
     outcome2 = await agent2.process_user_request_result(
         "hub health", session_id="hub-health-test-text-alert"
     )
@@ -1175,7 +1175,7 @@ async def test_hub_health_query_treats_the_string_empty_sentinel_as_healthy() ->
 
     mcp = HubHealthMCP(hub_alerts="[]")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "hub health", session_id="hub-health-test-empty-string-alert"
@@ -1199,7 +1199,7 @@ async def test_hub_health_query_does_not_duplicate_a_unit_already_baked_into_the
 
     mcp = HubHealthMCP(temperature="46.9 °C", temperature_unit="°C")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-3"
@@ -1223,7 +1223,7 @@ async def test_hub_health_query_does_not_duplicate_a_percent_unit_already_baked_
 
     mcp = HubHealthMCP(cpu_percent="45%")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-cpu-dedup"
@@ -1251,7 +1251,7 @@ async def test_hub_health_query_reports_cpu_percent_and_human_radio_health() -> 
 
     mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-4"
@@ -1280,7 +1280,7 @@ async def test_hub_health_query_does_not_label_a_disabled_radio_as_unhealthy() -
 
     mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-5"
@@ -1313,7 +1313,7 @@ async def test_hub_health_query_reports_a_deliberately_disabled_radio_as_disable
         zwave_status="disabled",
     )
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-radio-status"
@@ -1336,7 +1336,7 @@ async def test_hub_health_query_falls_back_to_healthy_binary_without_a_status_at
 
     mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-radio-status-fallback"
@@ -1579,7 +1579,7 @@ class LocationEventsMCP:
 @pytest.mark.asyncio
 async def test_location_events_query_lists_recent_mode_changes() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "show recent mode changes", session_id="location-events-test"
@@ -1600,7 +1600,7 @@ async def test_location_events_query_lists_recent_mode_changes() -> None:
 @pytest.mark.asyncio
 async def test_mode_last_entered_query_reports_the_matching_timestamp() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When did we last enter School Run mode?", session_id="mode-last-entered-test"
@@ -1613,7 +1613,7 @@ async def test_mode_last_entered_query_reports_the_matching_timestamp() -> None:
 @pytest.mark.asyncio
 async def test_mode_last_entered_query_is_explicit_when_never_reported() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When did we last enter Vacation mode?", session_id="mode-last-entered-missing-test"
@@ -1632,7 +1632,7 @@ async def test_why_contact_answer_is_enriched_with_the_active_mode() -> None:
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Why did Front Door open?", session_id="why-contact-mode-test"
@@ -1650,7 +1650,7 @@ async def test_why_contact_answer_omits_mode_clause_when_unavailable() -> None:
     """
 
     mcp = LocationEventsMCP(location_events=[])
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Why did Front Door open?", session_id="why-contact-no-mode-test"
@@ -1668,7 +1668,7 @@ async def test_last_contact_answer_is_not_enriched_with_mode() -> None:
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When did Front Door last open?", session_id="last-contact-no-mode-test"
@@ -1694,7 +1694,7 @@ async def test_last_contact_bare_statement_phrasing_gives_a_direct_answer() -> N
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "front door last opened", session_id="last-contact-statement-test"
@@ -1713,7 +1713,7 @@ async def test_last_contact_bare_statement_phrasing_gives_a_direct_answer() -> N
 @pytest.mark.asyncio
 async def test_last_contact_when_was_phrasing_matches_the_same_fast_path() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When was Front Door last opened?", session_id="last-contact-when-was-test"
@@ -1730,7 +1730,7 @@ async def test_why_contact_phrasing_is_not_hijacked_by_the_new_statement_pattern
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Why did Front Door open?", session_id="why-contact-not-hijacked-test"

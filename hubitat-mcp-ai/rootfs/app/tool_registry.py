@@ -26,6 +26,13 @@ LOCAL_HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 LOCAL_CONTROL_TOOL = "homebrain_control_devices"
 LOCAL_HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 LOCAL_WEATHER_TOOL = "homebrain_weather_snapshot"
+# Added 0.10.410: previously only reachable through a deterministic dispatch
+# branch that called the MCP client directly, bypassing the model's declared
+# tool set entirely -- location/mode-history questions had no way to work at
+# all once that dispatch branch is disabled (deterministic_reads_enabled=False,
+# the new default). Declaring it here lets the general model loop fetch and
+# reason over the same location-event data the deterministic path always used.
+LOCAL_LOCATION_EVENTS_TOOL = "homebrain_location_events"
 HUB_UPDATE_FIRMWARE_TOOL = "hub_update_firmware"
 
 EVIDENCE_KINDS = {
@@ -40,6 +47,7 @@ EVIDENCE_KINDS = {
     LOCAL_CONTROL_TOOL: "deterministic_device_control",
     LOCAL_HUB_INFO_TOOL: "authoritative_hub_info_snapshot",
     LOCAL_WEATHER_TOOL: "authoritative_weather_snapshot",
+    LOCAL_LOCATION_EVENTS_TOOL: "authoritative_location_event_history",
 }
 
 
@@ -556,6 +564,42 @@ def device_resolver_tool() -> MCPTool:
                 },
             },
             "required": ["name"],
+            "additionalProperties": False,
+        },
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
+    )
+
+
+def location_events_tool() -> MCPTool:
+    return MCPTool(
+        LOCAL_LOCATION_EVENTS_TOOL,
+        (
+            "Read the hub's own location-scoped event stream: mode changes, "
+            "sunrise/sunset, HSM (Home Security Monitor) status changes, and "
+            "hub variable changes -- the same rows the hub's own Logs > "
+            "Location events page shows. Use this for when-did-we-enter-a-mode, "
+            "what mode was active at a given time, HSM arm/disarm history, or "
+            "any question about location-level (not device-level) events. Not "
+            "for a single device's own event history -- use "
+            "homebrain_device_history for that."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "hours_back": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 168,
+                    "default": 24,
+                    "description": "Relative history window in hours, up to seven days.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 20,
+                },
+            },
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
