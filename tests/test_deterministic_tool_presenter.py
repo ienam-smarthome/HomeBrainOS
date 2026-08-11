@@ -30,6 +30,28 @@ def test_filter_presenter_preserves_every_match_and_count():
     )
 
 
+def test_filter_presenter_battery_value_already_carrying_a_percent_suffix_is_not_doubled():
+    """Regression test (Tier 3 finding #15): the battery-filter branch
+    rendered the raw matched attribute value with a hardcoded "%" suffix
+    and no unit-dedup guard, unlike device_query_service.py's low-battery
+    aggregation (feeding the home-snapshot presenter), which already strips
+    a pre-existing "%" before parsing. A device reporting battery as an
+    already-suffixed string ("45%") used to render as "45%%"."""
+
+    message = present_tool_result(
+        "homebrain_filter_devices",
+        {
+            "attribute": "battery",
+            "operator": "lte",
+            "comparison_value": 20,
+            "matches": [{"label": "Door", "value": "14%"}],
+        },
+    )
+
+    assert message == "1 device has battery levels at or below 20%: Door (14%)."
+    assert "14%%" not in message
+
+
 def test_filter_presenter_uses_speech_friendly_comparisons():
     expected_phrases = {
         "eq": "temperature equal to 20",

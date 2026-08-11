@@ -7,6 +7,7 @@ from contact_history_queries import (
     find_before_reference,
     parse_before_that,
     parse_count_yesterday,
+    parse_event_datetime,
     parse_list_yesterday,
     present_count,
     present_yesterday_events,
@@ -16,6 +17,36 @@ from contact_history_queries import (
 
 def _event(value: str, date: str) -> dict[str, str]:
     return {"name": "contact", "value": value, "date": date}
+
+
+def test_parse_event_datetime_handles_a_colonless_utc_offset() -> None:
+    """Regression test (Tier 3 finding #16): this module's own datetime
+    parsing used to carry a bare `.replace("Z", "+00:00")` with no offset-
+    without-colon normalization, unlike natural_datetime.py's
+    format_natural_datetime(), which explicitly rewrites a trailing
+    "+0100"-style offset (no colon) to "+01:00" before calling
+    fromisoformat() -- required on Python 3.10 and earlier, where
+    fromisoformat() only accepts the colon form. Hubitat emits event
+    timestamps in exactly this colonless shape
+    ("...23:32:52.656+0100"). Currently inert on the deployed Python
+    version (which parses the colonless form natively), but this proves
+    parse_event_datetime() now shares the exact same normalization as
+    format_natural_datetime() rather than silently drifting from it."""
+
+    parsed = parse_event_datetime("2026-08-03T23:32:52.656+0100")
+
+    assert parsed is not None
+    assert parsed.utcoffset().total_seconds() == 3600
+    assert parsed.hour == 23
+    assert parsed.minute == 32
+
+
+def test_parse_event_datetime_still_handles_a_trailing_z() -> None:
+    parsed = parse_event_datetime("2026-08-03T23:32:52Z")
+
+    assert parsed is not None
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset().total_seconds() == 0
 
 
 def test_parses_supported_history_queries() -> None:
