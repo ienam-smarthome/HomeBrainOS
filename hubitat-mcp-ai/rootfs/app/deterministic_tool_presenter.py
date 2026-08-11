@@ -366,6 +366,46 @@ def _present_device_history(data: dict[str, Any]) -> str:
     )
 
 
+def _radio_health_word(raw: Any) -> str | None:
+    """Render a zbHealthy/zwHealthy attribute as Online/Offline.
+
+    Mirrors homebrain_agent.py's health_word() (the pre-0.10.410
+    deterministic hub-health path) so this presenter -- which now fires for
+    every homebrain_hub_info_snapshot call regardless of
+    deterministic_reads_enabled, see mcp_agent_orchestrator.py's exclusion
+    set -- renders the exact same wording. The Hub Info driver reports this
+    attribute as the literal string "true"/"false", not a Python bool.
+    """
+
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return "Online" if raw else "Offline"
+    text = str(raw).strip()
+    if text.casefold() == "true":
+        return "Online"
+    if text.casefold() == "false":
+        return "Offline"
+    return text or None
+
+
+def _radio_status_word(status_raw: Any, healthy_raw: Any) -> str | None:
+    """Prefer the driver's explicit enabled/disabled status attribute
+    (zwaveStatus/zigbeeStatus) over the binary healthy/unhealthy attribute.
+
+    Mirrors homebrain_agent.py's radio_word() (see its docstring for the
+    live 0.10.409 finding this implements): a deliberately disabled radio
+    still reports zbHealthy/zwHealthy="false", identical to a genuinely
+    malfunctioning-but-enabled radio, so the explicit status string is
+    checked first when the driver reports it.
+    """
+
+    status_text = str(status_raw or "").strip().casefold()
+    if status_text == "disabled":
+        return "Disabled"
+    return _radio_health_word(healthy_raw)
+
+
 def _present_hub_info(data: dict[str, Any]) -> str:
     scope = str(data.get("scope") or "full")
     installed = data.get("installed_firmware")
@@ -403,6 +443,20 @@ def _present_hub_info(data: dict[str, Any]) -> str:
                 "**Database size:** "
                 + _append_unit(data.get("database_size"), data.get("database_size_unit") or "MB")
             )
+        # Live-observed gap (0.10.411 follow-up): this presenter's early
+        # return in mcp_agent_orchestrator.py fires for every
+        # homebrain_hub_info_snapshot call, regardless of
+        # deterministic_reads_enabled -- the model's own narration never
+        # runs, so a 0.10.411 system-prompt/tool-description fix asking the
+        # model to mention radio status had nothing to act on. Radio
+        # status must be rendered here, the same way homebrain_agent.py's
+        # now-opt-in _hub_health_outcome always did.
+        zigbee_word = _radio_status_word(data.get("zigbee_status"), data.get("zigbee_healthy"))
+        if zigbee_word is not None:
+            resources.append(f"**Zigbee:** {zigbee_word}")
+        zwave_word = _radio_status_word(data.get("zwave_status"), data.get("zwave_healthy"))
+        if zwave_word is not None:
+            resources.append(f"**Z-Wave:** {zwave_word}")
         if resources:
             parts.append("Hub resources:\n\n- " + "\n- ".join(resources))
     return " ".join(parts) or "The Hub Info device returned no usable attributes."

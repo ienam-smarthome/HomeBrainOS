@@ -225,6 +225,54 @@ def test_hub_info_resources_include_driver_units():
     )
 
 
+def test_hub_info_resources_include_zigbee_and_zwave_radio_status():
+    """Regression test (0.10.411 follow-up): a live "check the hub health
+    status" answer in reasoning mode stopped mentioning Zigbee/Z-Wave
+    entirely once deterministic_reads_enabled defaulted to False. The 0.10.411
+    fix only updated the tool description and system prompt, but this
+    presenter's early return in mcp_agent_orchestrator.py fires for every
+    homebrain_hub_info_snapshot call regardless of that flag -- the model's
+    own narration never runs, so radio status must be rendered here.
+    """
+
+    message = present_tool_result(
+        "homebrain_hub_info_snapshot",
+        {
+            "success": True,
+            "scope": "full",
+            "installed_firmware": "2.5.1.151",
+            "cpu_5_min": 1.06,
+            "zigbee_status": None,
+            "zigbee_healthy": "true",
+            "zwave_status": "disabled",
+            "zwave_healthy": "false",
+        },
+    )
+
+    assert "**Zigbee:** Online" in message
+    assert "**Z-Wave:** Disabled" in message
+
+
+def test_hub_info_resources_omit_radio_lines_when_the_driver_reports_neither_attribute():
+    """A hub whose driver never reports zbHealthy/zwHealthy/zwaveStatus/
+    zigbeeStatus at all (older firmware) must not fabricate a radio line --
+    silently rendering "Online" for missing data would be worse than
+    omitting the line entirely.
+    """
+
+    message = present_tool_result(
+        "homebrain_hub_info_snapshot",
+        {
+            "success": True,
+            "scope": "resources",
+            "cpu_5_min": 1.06,
+        },
+    )
+
+    assert "Zigbee" not in message
+    assert "Z-Wave" not in message
+
+
 def test_hub_info_resources_do_not_duplicate_a_unit_already_baked_into_free_memory_or_database_size():
     """Regression test: the temperature field was already guarded against a
     baked-in unit producing a duplicate ("46.9 °C °C" was a live bug), but
