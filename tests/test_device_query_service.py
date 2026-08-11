@@ -411,6 +411,60 @@ def test_attribute_value_named_alias_still_wins_over_generic_fallback():
     assert result == ("power", 74)
 
 
+@pytest.mark.asyncio
+async def test_query_devices_hints_at_valuestr_fallback_on_an_empty_power_scan():
+    """Regression test for a live failure that survived 0.10.413: a
+    whole-house 'current power usage' query against a meter that only
+    reports valueStr (no attribute literally named power) returned a
+    structurally successful but empty result (count=0, winner=None), with
+    no signal for the model to retry -- so after several rounds it gave up
+    and asked the user to name a device, even though this is a whole-house
+    aggregate query with no specific device in play. query_devices() must
+    not apply the generic value/valueStr fallback to its own rows (that
+    stays opt-in per test_attribute_value_generic_fallback_is_opt_in_only
+    above), but an empty result should still surface an explicit hint when
+    a scanned device demonstrably carries the reading under valueStr/value.
+    """
+
+    service = DeviceQueryService(
+        QueryMCP([
+            device(
+                "Octopus Meter Current Power", "Octopus Energy",
+                ["Refresh", "HealthCheck"], value=340.0, valueStr="340 W",
+            ),
+        ]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.query_devices({
+        "attribute": "power",
+        "operation": "count",
+    })
+
+    assert result.data["count"] == 0
+    assert result.data["winner"] is None
+    assert "hint" in result.data
+    assert "valueStr" in result.data["hint"]
+
+
+@pytest.mark.asyncio
+async def test_query_devices_omits_hint_when_no_fallback_reading_exists():
+    service = DeviceQueryService(
+        QueryMCP([
+            device("Hallway Motion", "Hallway", ["MotionSensor"], motion="inactive"),
+        ]),
+        lambda *args, **kwargs: None,
+    )
+
+    result = await service.query_devices({
+        "attribute": "power",
+        "operation": "count",
+    })
+
+    assert result.data["count"] == 0
+    assert "hint" not in result.data
+
+
 class _TargetedMCP:
     """Minimal MCP fake returning a fixed device list, mirroring the
     TargetedMCP used inline in the earlier resolve_device test above."""

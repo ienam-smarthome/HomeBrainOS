@@ -692,6 +692,38 @@ class DeviceQueryService:
             "conversion_errors": conversion_errors,
             "complete": True,
         }
+        if not rows:
+            # An empty result for a named attribute is ambiguous: it could
+            # mean "no device reports this at all" (a real, final answer)
+            # or "the only matching device(s) report this reading through
+            # valueStr/value instead of an attribute literally named
+            # `attribute`" -- see _attribute_value()'s comment above for
+            # why that generic fallback is deliberately never applied to
+            # this cross-device scan. Rather than silently returning an
+            # empty, structurally "successful" result that gives the model
+            # nothing to retry from (which previously led it to abandon
+            # the query and ask the user to name a device), detect
+            # whether any scanned device actually carries a valueStr/value
+            # reading and surface that as an explicit hint so the model
+            # retries with the concrete attribute name instead of
+            # guessing or giving up.
+            fallback_candidates = sum(
+                1
+                for device in devices
+                if self._matches_device_kind(device, device_kind)
+                and self._attribute_value(
+                    device, attribute, allow_generic_value_fallback=True
+                )[0] in {"valueStr", "value"}
+            )
+            if fallback_candidates:
+                data["hint"] = (
+                    f"No device reported an attribute literally named "
+                    f"'{attribute}', but {fallback_candidates} matching "
+                    f"device(s) report a reading via 'valueStr' or 'value' "
+                    f"instead (common for community/bridge-imported meters). "
+                    f"Retry this exact query with attribute='valueStr', and "
+                    f"if that is still empty, attribute='value'."
+                )
         return MCPToolResult(DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
