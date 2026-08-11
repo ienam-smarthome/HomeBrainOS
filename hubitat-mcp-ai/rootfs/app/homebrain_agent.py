@@ -652,6 +652,33 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     return "Offline"
                 return text or None
 
+            def radio_word(status_raw: Any, healthy_raw: Any) -> str | None:
+                """Prefer the driver's own explicit enabled/disabled status
+                attribute (zwaveStatus/zigbeeStatus) over the binary
+                healthy/unhealthy attribute when both are available.
+
+                Live-observed (0.10.409): confirmed live against a hub with
+                Z-Wave turned off from its own Settings page --
+                zwHealthy still reports the string "false", the exact same
+                value a genuinely malfunctioning-but-enabled radio would
+                report, so health_word() alone renders both cases as the
+                identical "Offline". zwaveStatus separately reports the
+                literal string "disabled" for this exact case -- an
+                attribute the 0.10.400 fix's own docstring said this
+                driver "can't verify", written before this second attribute
+                was checked. When the driver reports it, a deliberately
+                disabled radio now reads "Disabled" rather than "Offline",
+                which used to read as an alarm for a normal, intentional
+                configuration. Falls back to health_word()'s existing
+                Online/Offline wording when the status attribute is absent
+                (older driver versions) or itself reports "enabled".
+                """
+
+                status_text = str(status_raw or "").strip().casefold()
+                if status_text == "disabled":
+                    return "Disabled"
+                return health_word(healthy_raw)
+
             alerts_raw = data.get("hub_alerts")
             # Live-observed regression: this originally only recognised
             # hub_alerts as a Python list. device_query_service.py's own
@@ -695,8 +722,8 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 ("CPU Load", field("cpu_percent", literal_unit="%")),
                 ("Internal Temperature", field("temperature", "temperature_unit")),
                 ("Database Size", field("database_size", "database_size_unit")),
-                ("Zigbee", health_word(data.get("zigbee_healthy"))),
-                ("Z-Wave", health_word(data.get("zwave_healthy"))),
+                ("Zigbee", radio_word(data.get("zigbee_status"), data.get("zigbee_healthy"))),
+                ("Z-Wave", radio_word(data.get("zwave_status"), data.get("zwave_healthy"))),
                 ("Matter", field("matter_status")),
             ]
             lines = [f"- **{label}:** {value}" for label, value in rows if value is not None]
