@@ -22,6 +22,7 @@ from tool_registry import (
     device_resolver_tool,
     home_snapshot_tool,
     hub_info_tool,
+    location_events_tool,
     weather_snapshot_tool,
 )
 
@@ -39,6 +40,7 @@ def build_request_tool_catalog(remote_tools: list) -> ToolDiscoveryCatalog:
         device_query_tool(),
         device_resolver_tool(),
         device_history_tool(),
+        location_events_tool(),
         active_lights_tool(),
         active_rooms_tool(),
         active_switches_tool(),

@@ -353,6 +353,16 @@ class HubInfoService:
             "ip_address": value("localIP", "ipAddress"),
             "zigbee_healthy": value("zbHealthy"),
             "zwave_healthy": value("zwHealthy"),
+            # Live-observed (0.10.409): the Hub Info driver also reports a
+            # dedicated zwaveStatus/zigbeeStatus attribute ("enabled" /
+            # "disabled") distinct from zbHealthy/zwHealthy -- confirmed
+            # live with a hub that has Z-Wave turned off from its own
+            # Settings page: zwHealthy still reads "false" (indistinguishable
+            # from a genuinely malfunctioning-but-enabled radio) while
+            # zwaveStatus reads "disabled" outright. homebrain_agent.py's
+            # radio_word() prefers this explicit status when present.
+            "zigbee_status": value("zigbeeStatus", "zigbeeStatus2"),
+            "zwave_status": value("zwaveStatus"),
             "hub_alerts": value("hubAlerts"),
             "matter_status": value("matterStatus"),
             "last_poll": value("lastPollTime"),

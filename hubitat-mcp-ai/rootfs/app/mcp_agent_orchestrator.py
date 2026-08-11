@@ -53,6 +53,7 @@ from tool_registry import (
     LOCAL_FILTER_TOOL as _LOCAL_FILTER_TOOL,
     LOCAL_HOME_SNAPSHOT_TOOL as _LOCAL_HOME_SNAPSHOT_TOOL,
     LOCAL_HUB_INFO_TOOL as _LOCAL_HUB_INFO_TOOL,
+    LOCAL_LOCATION_EVENTS_TOOL as _LOCAL_LOCATION_EVENTS_TOOL,
     LOCAL_QUERY_TOOL as _LOCAL_QUERY_TOOL,
     LOCAL_RESOLVE_TOOL as _LOCAL_RESOLVE_TOOL,
     LOCAL_WEATHER_TOOL as _LOCAL_WEATHER_TOOL,
@@ -78,6 +79,18 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
+# Live-observed (0.10.410): homebrain_device_history's deterministic
+# presenter message ("...does not by themselves identify what caused
+# them") used to short-circuit this loop unconditionally on every
+# successful call, for every question shape -- including a genuinely
+# causal "why did X happen" question the model had itself decided needed
+# investigating, cutting it off before it could look at anything else
+# (motion sensors, hub logs) the way it's fully capable of when actually
+# allowed to keep reasoning. A plain "what happened" / "list history"
+# question has no such need -- the templated, hallucination-safe summary
+# is the right answer for those, unchanged. This pattern narrowly
+# identifies the causal case so only that one bypasses the early return.
+_CAUSAL_QUESTION = re.compile(r"\bwhy\b", re.I)
 
 @dataclass(slots=True)
 class AgentOutcome:
@@ -172,6 +185,7 @@ class UnifiedMCPAgent:
                 _LOCAL_QUERY_TOOL: self._query_devices,
                 _LOCAL_RESOLVE_TOOL: self._resolve_device,
                 _LOCAL_DEVICE_HISTORY_TOOL: self.device_history.history,
+                _LOCAL_LOCATION_EVENTS_TOOL: self.device_history.location_events,
                 _LOCAL_WEATHER_TOOL: self._weather_snapshot,
                 _LOCAL_ACTIVE_LIGHTS_TOOL: self._active_lights,
                 _LOCAL_ACTIVE_ROOMS_TOOL: self._active_rooms,
@@ -1030,12 +1044,21 @@ class UnifiedMCPAgent:
                                 for pattern in _HOME_STATE_PATTERNS
                             )
                         )
-                        if deterministic_message is not None and (
-                            (
-                                name not in {_LOCAL_FILTER_TOOL, _LOCAL_QUERY_TOOL, _LOCAL_HOME_SNAPSHOT_TOOL, _LOCAL_WEATHER_TOOL}
-                                or direct_home_snapshot
+                        causal_history_bypass = (
+                            name == _LOCAL_DEVICE_HISTORY_TOOL
+                            and self._tool_succeeded(result)
+                            and _CAUSAL_QUESTION.search(user_prompt) is not None
+                        )
+                        if (
+                            deterministic_message is not None
+                            and not causal_history_bypass
+                            and (
+                                (
+                                    name not in {_LOCAL_FILTER_TOOL, _LOCAL_QUERY_TOOL, _LOCAL_HOME_SNAPSHOT_TOOL, _LOCAL_WEATHER_TOOL}
+                                    or direct_home_snapshot
+                                )
+                                or not self._tool_succeeded(result)
                             )
-                            or not self._tool_succeeded(result)
                         ):
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})

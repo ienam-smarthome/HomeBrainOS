@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.10.408"
+version: "0.10.410"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -49,6 +49,7 @@ options:
   require_sensitive_confirmation: true
   rule_write_enabled: true
   rule_create_paused_required: true
+  deterministic_reads_enabled: false
   web_title: "Hubitat MCP AI"
 schema:
   hubitat_mcp_url: str
@@ -79,4 +80,5 @@ schema:
   require_sensitive_confirmation: bool
   rule_write_enabled: bool
   rule_create_paused_required: bool
+  deterministic_reads_enabled: bool
   web_title: str

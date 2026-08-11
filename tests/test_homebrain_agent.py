@@ -909,7 +909,7 @@ async def test_firmware_status_query_reports_in_progress_without_the_model() -> 
 
     mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "How's the firmware update going?", session_id="firmware-status-test"
@@ -935,7 +935,7 @@ async def test_firmware_status_query_reports_up_to_date_when_versions_converge()
 
     mcp = FirmwareMCP(installed="2.5.1.147", available="2.5.1.147")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "update status", session_id="firmware-status-test-2"
@@ -1000,6 +1000,14 @@ class HubHealthMCP:
         # docstring for the live regression this default reproduces.
         zigbee_healthy: object = "true",
         zwave_healthy: object = "false",
+        # Live-observed (0.10.409): the real Hub Info driver also reports a
+        # dedicated zwaveStatus/zigbeeStatus attribute distinct from
+        # zbHealthy/zwHealthy -- see
+        # test_hub_health_query_reports_a_deliberately_disabled_radio_as_disabled.
+        # Defaults to None (attribute absent), matching every fixture that
+        # predates this attribute being read at all.
+        zigbee_status: str | None = None,
+        zwave_status: str | None = None,
     ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.db_size = db_size
@@ -1018,6 +1026,8 @@ class HubHealthMCP:
         self.cpu_percent = cpu_percent
         self.zigbee_healthy = zigbee_healthy
         self.zwave_healthy = zwave_healthy
+        self.zigbee_status = zigbee_status
+        self.zwave_status = zwave_status
 
     async def list_tools(self) -> list[MCPTool]:
         return [MCPTool("hub_search_tools", "Search tools", {"type": "object"})]
@@ -1055,6 +1065,10 @@ class HubHealthMCP:
             attributes.append({"name": "zbHealthy", "currentValue": self.zigbee_healthy})
         if self.zwave_healthy is not None:
             attributes.append({"name": "zwHealthy", "currentValue": self.zwave_healthy})
+        if self.zigbee_status is not None:
+            attributes.append({"name": "zigbeeStatus", "currentValue": self.zigbee_status})
+        if self.zwave_status is not None:
+            attributes.append({"name": "zwaveStatus", "currentValue": self.zwave_status})
         return MCPToolResult(
             name,
             arguments,
@@ -1084,7 +1098,7 @@ async def test_hub_health_query_reports_the_hubs_own_units_without_the_model() -
 
     mcp = HubHealthMCP(db_size=126.0, db_unit="MB")
     ai = FakeAI("unused -- deterministic report must not need this")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test"
@@ -1105,7 +1119,7 @@ async def test_hub_health_query_surfaces_real_active_alerts() -> None:
 
     mcp = HubHealthMCP(hub_alerts=["zigbeeRadioOffline"])
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "hub health", session_id="hub-health-test-2"
@@ -1131,7 +1145,7 @@ async def test_hub_health_query_recognises_a_real_alert_reported_as_a_string() -
 
     json_shaped = HubHealthMCP(hub_alerts='["zigbeeRadioOffline"]')
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(json_shaped, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(json_shaped, "key", ai_client=ai, deterministic_reads_enabled=True)
     outcome = await agent.process_user_request_result(
         "hub health", session_id="hub-health-test-json-alert"
     )
@@ -1141,7 +1155,7 @@ async def test_hub_health_query_recognises_a_real_alert_reported_as_a_string() -
 
     plain_text = HubHealthMCP(hub_alerts="Zigbee radio offline")
     ai2 = FakeAI("unused")
-    agent2 = UnifiedMCPAgent(plain_text, "key", ai_client=ai2)
+    agent2 = UnifiedMCPAgent(plain_text, "key", ai_client=ai2, deterministic_reads_enabled=True)
     outcome2 = await agent2.process_user_request_result(
         "hub health", session_id="hub-health-test-text-alert"
     )
@@ -1161,7 +1175,7 @@ async def test_hub_health_query_treats_the_string_empty_sentinel_as_healthy() ->
 
     mcp = HubHealthMCP(hub_alerts="[]")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "hub health", session_id="hub-health-test-empty-string-alert"
@@ -1185,7 +1199,7 @@ async def test_hub_health_query_does_not_duplicate_a_unit_already_baked_into_the
 
     mcp = HubHealthMCP(temperature="46.9 °C", temperature_unit="°C")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-3"
@@ -1209,7 +1223,7 @@ async def test_hub_health_query_does_not_duplicate_a_percent_unit_already_baked_
 
     mcp = HubHealthMCP(cpu_percent="45%")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-cpu-dedup"
@@ -1237,7 +1251,7 @@ async def test_hub_health_query_reports_cpu_percent_and_human_radio_health() -> 
 
     mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-4"
@@ -1266,7 +1280,7 @@ async def test_hub_health_query_does_not_label_a_disabled_radio_as_unhealthy() -
 
     mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
     ai = FakeAI("unused")
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Check the hub health status", session_id="hub-health-test-5"
@@ -1275,6 +1289,62 @@ async def test_hub_health_query_does_not_label_a_disabled_radio_as_unhealthy() -
     assert "Not healthy" not in outcome.message
     assert "**Zigbee:** Online" in outcome.message
     assert "**Z-Wave:** Offline" in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_reports_a_deliberately_disabled_radio_as_disabled() -> None:
+    """Live-observed regression (0.10.409): confirmed live against a real
+    hub with Z-Wave turned off from its own Settings page. zwHealthy still
+    reports the string "false" -- the previous test's own "Offline" wording
+    was chosen specifically because that attribute alone can't distinguish
+    a deliberately disabled radio from a genuinely malfunctioning one. But
+    the same live hub's Hub Info device also reports a separate zwaveStatus
+    attribute with the literal string "disabled" for this exact case --
+    this attribute actually does verify it, it just wasn't being read.
+    When the driver reports it, the radio must now read "Disabled", not
+    the healthy/offline binary's "Offline".
+    """
+
+    mcp = HubHealthMCP(
+        zigbee_healthy="true",
+        zwave_healthy="false",
+        zigbee_status="enabled",
+        zwave_status="disabled",
+    )
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
+
+    outcome = await agent.process_user_request_result(
+        "Check the hub health status", session_id="hub-health-test-radio-status"
+    )
+
+    assert "**Zigbee:** Online" in outcome.message
+    assert "**Z-Wave:** Disabled" in outcome.message
+    assert "**Z-Wave:** Offline" not in outcome.message
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_hub_health_query_falls_back_to_healthy_binary_without_a_status_attribute() -> None:
+    """When the driver doesn't report zwaveStatus/zigbeeStatus at all
+    (older driver versions, or a hub that predates this attribute), the
+    existing zbHealthy/zwHealthy-based Online/Offline wording must still
+    apply exactly as before -- this is the same fixture default already
+    exercised by test_hub_health_query_does_not_label_a_disabled_radio_as_unhealthy,
+    asserted again here to pin the fallback explicitly."""
+
+    mcp = HubHealthMCP(zigbee_healthy="true", zwave_healthy="false")
+    ai = FakeAI("unused")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai, deterministic_reads_enabled=True)
+
+    outcome = await agent.process_user_request_result(
+        "Check the hub health status", session_id="hub-health-test-radio-status-fallback"
+    )
+
+    assert "**Zigbee:** Online" in outcome.message
+    assert "**Z-Wave:** Offline" in outcome.message
+    assert "Disabled" not in outcome.message
     assert ai.requests == []
 
 
@@ -1509,7 +1579,7 @@ class LocationEventsMCP:
 @pytest.mark.asyncio
 async def test_location_events_query_lists_recent_mode_changes() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "show recent mode changes", session_id="location-events-test"
@@ -1530,7 +1600,7 @@ async def test_location_events_query_lists_recent_mode_changes() -> None:
 @pytest.mark.asyncio
 async def test_mode_last_entered_query_reports_the_matching_timestamp() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When did we last enter School Run mode?", session_id="mode-last-entered-test"
@@ -1543,7 +1613,7 @@ async def test_mode_last_entered_query_reports_the_matching_timestamp() -> None:
 @pytest.mark.asyncio
 async def test_mode_last_entered_query_is_explicit_when_never_reported() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When did we last enter Vacation mode?", session_id="mode-last-entered-missing-test"
@@ -1562,7 +1632,7 @@ async def test_why_contact_answer_is_enriched_with_the_active_mode() -> None:
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Why did Front Door open?", session_id="why-contact-mode-test"
@@ -1580,7 +1650,7 @@ async def test_why_contact_answer_omits_mode_clause_when_unavailable() -> None:
     """
 
     mcp = LocationEventsMCP(location_events=[])
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Why did Front Door open?", session_id="why-contact-no-mode-test"
@@ -1598,7 +1668,7 @@ async def test_last_contact_answer_is_not_enriched_with_mode() -> None:
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When did Front Door last open?", session_id="last-contact-no-mode-test"
@@ -1624,7 +1694,7 @@ async def test_last_contact_bare_statement_phrasing_gives_a_direct_answer() -> N
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "front door last opened", session_id="last-contact-statement-test"
@@ -1643,7 +1713,7 @@ async def test_last_contact_bare_statement_phrasing_gives_a_direct_answer() -> N
 @pytest.mark.asyncio
 async def test_last_contact_when_was_phrasing_matches_the_same_fast_path() -> None:
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "When was Front Door last opened?", session_id="last-contact-when-was-test"
@@ -1660,7 +1730,7 @@ async def test_why_contact_phrasing_is_not_hijacked_by_the_new_statement_pattern
     """
 
     mcp = LocationEventsMCP()
-    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"), deterministic_reads_enabled=True)
 
     outcome = await agent.process_user_request_result(
         "Why did Front Door open?", session_id="why-contact-not-hijacked-test"
