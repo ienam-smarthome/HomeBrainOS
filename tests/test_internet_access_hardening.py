@@ -140,3 +140,28 @@ def test_bare_unblock_or_restore_without_internet_wording_is_never_hijacked():
     assert parse_immediate_internet_access_intent("restore the backup") is None
     assert parse_immediate_internet_access_intent("restore default settings") is None
     assert parse_immediate_internet_access_intent("unblock the front door") is None
+
+
+def test_disable_enable_app_wording_is_never_hijacked_into_a_device_lookup():
+    """Regression test for a real live failure: "disable humidity
+    controller app" named a Hubitat app/automation, not a device, but
+    _BLOCK_INTERNET's unconstrained target group matched the whole phrase
+    anyway and dispatched a device-inventory lookup for "humidity
+    controller app" with required_command="blockInternet" -- guaranteed to
+    fail (no device is named that) and, live-reproduced, surfaced a "Which
+    device do you mean" clarification listing completely unrelated devices
+    (a security camera, a NUC box). There is no deterministic app-disable
+    path in this codebase; "app" wording must fall through to the model's
+    tool-calling loop instead, where hub_manage_native_rules_and_apps is
+    available.
+    """
+
+    assert parse_immediate_internet_access_intent(
+        "disable humidity controller app"
+    ) is None
+    assert parse_immediate_internet_access_intent(
+        "enable the irrigation app"
+    ) is None
+    assert parse_immediate_internet_access_intent(
+        "please disable the presence app"
+    ) is None
