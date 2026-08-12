@@ -134,6 +134,46 @@ async def test_ollama_native_multi_round_tool_execution():
 
 
 @pytest.mark.asyncio
+async def test_undeclared_tool_call_does_not_crash_causal_bypass_check():
+    """Regression test for a real live crash: `causal_history_bypass` was
+    only ever assigned inside the "if result is not None" branch of the
+    per-tool-call loop, but read unconditionally later in that same
+    iteration. A call to a tool name the catalog never declared takes the
+    early "if not tool" branch, which never touches `result` at all --
+    live-reproduced as "cannot access local variable 'causal_history_bypass'
+    where it is not associated with a value" (a 500, not a graceful
+    failure) the moment the model's first tool call of a round named an
+    undeclared tool. This must degrade to a normal tool-error reply
+    instead of crashing the whole request.
+    """
+
+    mcp = FakeMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "totally_undeclared_tool",
+                "arguments": {},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "totally_undeclared_tool",
+                "arguments": {},
+            }
+        }]}},
+        {"message": {"role": "assistant", "content": "I could not complete that request."}},
+    ])
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b", ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    answer = await agent.process_user_request("enable it")
+
+    assert answer == "I could not complete that request."
+
+
+@pytest.mark.asyncio
 async def test_rule_authoring_uses_deterministic_compiler_before_model():
     class RuleAuthoringMCP(FakeMCP):
         async def list_tools(self):
