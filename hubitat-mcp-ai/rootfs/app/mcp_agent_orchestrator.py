@@ -92,6 +92,25 @@ _HOME_STATE_PATTERNS = (
 # identifies the causal case so only that one bypasses the early return.
 _CAUSAL_QUESTION = re.compile(r"\bwhy\b", re.I)
 
+# Live-observed, safety-relevant gap: a write-classified turn ("enable it",
+# right after "disable humidity controller app" -> confirm -> disabled)
+# returned "Enabled the '01. Humidity Controller' app." with model_rounds=1,
+# tool_calls=0, and evidence=[] -- the model narrated a mutation success with
+# no tool ever having executed. This only reaches the plain "return the
+# model's own narration" branch at the bottom of the no-tool-calls handling
+# below, which every other outcome (a queued confirmation, a rejected
+# confirmation, a capability/device-claim/grounding refusal, a proposal
+# error) already bypasses via its own earlier `return`. So checking right
+# at that one fall-through point -- rather than message-sniffing for
+# "already admits failure" wording, which turned out to be an unbounded
+# and fragile set of legitimate phrasings elsewhere in this file -- reaches
+# exactly the one case that was never verified: a mutation the model
+# claimed but never actually attempted through a tool call this turn.
+UNVERIFIED_MUTATION_REFUSAL = (
+    "I could not verify that this action actually ran on Hubitat -- no "
+    "successful tool result confirms it, so I will not report it as done."
+)
+
 @dataclass(slots=True)
 class AgentOutcome:
     message: str
@@ -907,6 +926,11 @@ class UnifiedMCPAgent:
                     continue
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
+                if self._mutation_call_seen.get() and not any(
+                    receipt.get("success") and receipt.get("mutates")
+                    for receipt in self.evidence.receipts()
+                ):
+                    return UNVERIFIED_MUTATION_REFUSAL
                 return str(assistant.get("content") or "Done.")
             sensitive: list[tuple[str, dict[str, Any]]] = []
             # Every call in this tool-calling round, sensitive or not, in the
