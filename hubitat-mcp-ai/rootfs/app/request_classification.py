@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from contextual_read_fast_path import is_pronoun_reference
 from time_expressions import AT_TIME
 
 _STRONG_CONTROL_VERBS = {
@@ -348,6 +349,18 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
         target = str(match.group("target") or "").strip(" ,.-")
         target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
         target = _strip_trailing_please(target)
-        if target:
+        # "enable it" / "block that" -- live-reproduced immediately after
+        # the "app" wording fix above: a bare pronoun target has no literal
+        # device to resolve, and unlike device-control follow-ups (which
+        # substitute the session's last selected device via
+        # is_pronoun_reference()/_resolve_pronoun_control_target in
+        # homebrain_agent.py), this deterministic path has no such
+        # substitution and dispatched a doomed device-name search for "it"
+        # instead, producing "I could not find a device ... matching 'it'".
+        # Falling through here at least lets the model's own tool-calling
+        # loop take a turn (which may have enough conversation context to
+        # infer the actual target) rather than guaranteeing a nonsense
+        # device-search failure.
+        if target and not is_pronoun_reference(target):
             return target, command
     return None

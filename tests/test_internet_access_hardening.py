@@ -165,3 +165,22 @@ def test_disable_enable_app_wording_is_never_hijacked_into_a_device_lookup():
     assert parse_immediate_internet_access_intent(
         "please disable the presence app"
     ) is None
+
+
+def test_pronoun_only_target_falls_through_instead_of_a_doomed_device_search():
+    """Regression test for a real live failure immediately following the
+    "app" wording fix above: after "disable humidity controller app"
+    succeeded, "enable it" -- a pronoun follow-up clearly meaning
+    "re-enable the app I just disabled" -- was still being parsed as an
+    internet-access request with target="it", dispatching a doomed
+    device-inventory search for a device literally named "it" and failing
+    with "I could not find a device that supports allowing internet
+    access matching \"it\"". A bare pronoun is never a literal device
+    name (see is_pronoun_reference(), already used this same way for
+    device-control follow-ups), so it must fall through here too instead
+    of guaranteeing that nonsense failure.
+    """
+
+    assert parse_immediate_internet_access_intent("enable it") is None
+    assert parse_immediate_internet_access_intent("block that") is None
+    assert parse_immediate_internet_access_intent("allow this device") is None
