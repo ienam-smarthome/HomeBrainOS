@@ -457,7 +457,9 @@ class UnifiedMCPAgent:
             logger.warning("Could not build app manifest: %s", exc)
         return list(self._app_manifest)
 
-    async def _system_prompt(self, user_prompt: str = "") -> str:
+    async def _system_prompt(
+        self, user_prompt: str = "", conversation_history: Any = None
+    ) -> str:
         manifest = "Device manifest omitted or unavailable."
         if self._include_identity_manifest(user_prompt):
             try:
@@ -476,7 +478,24 @@ class UnifiedMCPAgent:
             except Exception as exc:
                 logger.warning("Could not build live device manifest: %s", exc)
         app_section = ""
-        if _matches(user_prompt, _APP_TERMS):
+        # A bare pronoun follow-up ("enable it") never matches _APP_TERMS
+        # on its own -- live-reproduced: after "disable humidity controller
+        # app" (which does match) succeeded, "enable it" omitted the app
+        # manifest entirely, leaving the model with no numeric appId to
+        # reference for hub_set_app_disabled. It then guessed using a
+        # numbered display label ("01. Humidity Controller") as the appId
+        # argument instead, which the gateway correctly rejected ("appId
+        # must be a positive integer"). Also checking the most recent prior
+        # user turn lets a pronoun follow-up to an app request still get
+        # the manifest it needs, the same way device pronoun follow-ups
+        # already resolve against the session's last selected device
+        # elsewhere in this class.
+        previous_user_prompt = ""
+        for message in reversed(self._history(conversation_history)):
+            if message.get("role") == "user":
+                previous_user_prompt = str(message.get("content") or "")
+                break
+        if _matches(user_prompt, _APP_TERMS) or _matches(previous_user_prompt, _APP_TERMS):
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
         return build_system_prompt(manifest, app_section)
@@ -692,7 +711,7 @@ class UnifiedMCPAgent:
             )
         tools = catalog.schemas()
         prompt_started = time.monotonic()
-        system_prompt = await self._system_prompt(user_prompt)
+        system_prompt = await self._system_prompt(user_prompt, conversation_history)
         if capability_discovery:
             system_prompt += (
                 "\n\nHOST ORIGINAL-REQUEST CAPABILITY DISCOVERY\n"
