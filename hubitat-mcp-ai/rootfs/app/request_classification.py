@@ -234,6 +234,23 @@ _INTERNET_ACCESS_WINDOW = re.compile(
     re.I,
 )
 _RULE_AUTHORING_WORDS = re.compile(r"\b(?:automation|rule|schedule)\b", re.I)
+# "disable humidity controller app" / "enable the irrigation app" name a
+# Hubitat *app* (an installed automation/integration, e.g. Rule Machine or
+# a community app) -- not a physical device with a network connection to
+# block. _BLOCK_INTERNET/_ALLOW_INTERNET's target group is unconstrained
+# free text, so this phrasing fullmatched anyway and got dispatched to
+# homebrain_resolve_device with required_command="blockInternet", which can
+# only ever search the device inventory -- guaranteed to fail (no device is
+# literally named "humidity controller app") and, live-reproduced,
+# surfaced a "Which device do you mean" clarification full of completely
+# unrelated devices (a security camera, a NUC box) for a request that was
+# never about a device at all. There is no deterministic app-disable path
+# in this codebase; the correct tool (hub_manage_native_rules_and_apps /
+# hub_set_rule_paused) is only reachable through the model's own
+# tool-calling loop, so the fix is to exclude "app" phrasing here and let
+# it fall through to that loop instead of being hijacked into a doomed
+# device lookup.
+_APP_OR_AUTOMATION_TARGET = re.compile(r"\bapps?\b", re.I)
 _RELATIVE_DELAY = re.compile(
     r"\bin\s+(?:\d+|a|an)\s*(?:min(?:ute)?s?|hours?|hrs?)\b", re.I,
 )
@@ -301,6 +318,12 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
     restores the pre-0.10.377 behaviour of falling through to the model
     for this specific, currently-unsupported phrasing rather than
     mishandling it deterministically.
+
+    Also excludes any "app"/"apps" wording: "disable humidity controller
+    app" names a Hubitat app/automation, not a device, and this parser has
+    no way to act on that -- it can only search the device inventory. See
+    ``_APP_OR_AUTOMATION_TARGET`` above for the live regression this
+    guards against.
     """
 
     text = " ".join(str(prompt).strip().split())
@@ -311,6 +334,7 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
         or _INTERNET_ACCESS_WINDOW.search(text) is not None
         or _RULE_AUTHORING_WORDS.search(text) is not None
         or _RELATIVE_DELAY.search(text) is not None
+        or _APP_OR_AUTOMATION_TARGET.search(text) is not None
     ):
         return None
     for pattern, command in (

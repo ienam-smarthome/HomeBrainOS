@@ -28,6 +28,50 @@ def test_webui_core_controls_and_routes_remain_present() -> None:
         assert token in page
 
 
+def test_webui_dashboard_tiles_drop_switches_and_reorder_the_remaining_four() -> None:
+    """The "Switches on" stat tile was removed at the user's request, and
+    the remaining four reordered to Active rooms, Lights on, Motion
+    active, Low batteries. The JS status() function updates each tile's
+    DOM node in one try block -- if any referenced element id no longer
+    exists, getElementById() returns null and the assignment throws,
+    silently aborting every subsequent update in that same block (a real
+    risk when removing a tile, not just a cosmetic change), so this also
+    confirms no leftover "dashSwitches" reference remains in the script.
+    """
+
+    page = render_page("HomeBrain", "0.10.417")
+
+    assert "Switches on" not in page
+    assert "dashSwitches" not in page
+    assert "switches_on" not in page
+
+    order = [
+        page.index(">Active rooms<"),
+        page.index(">Lights on<"),
+        page.index(">Motion active<"),
+        page.index(">Low batteries<"),
+    ]
+    assert order == sorted(order), order
+
+
+def test_webui_shortcuts_drop_hub_resources_device_health_and_weather() -> None:
+    """These three shortcuts were plain NLP-query buttons with no live
+    data behind them (unlike the stat tile row) and were removed at the
+    user's request in favour of more directly useful shortcuts."""
+
+    page = render_page("HomeBrain", "0.10.417")
+
+    assert "Hub resources" not in page
+    assert "Device health" not in page
+    assert "🌦️ Weather" not in page
+    assert "Open sensors" in page
+    assert "Firmware update" in page
+    # "Hub health" (a distinct, pre-existing shortcut) must survive --
+    # confirms the removal targeted the right three buttons, not a
+    # substring match that also caught this one.
+    assert "Hub health" in page
+
+
 def test_webui_title_is_html_escaped_and_script_values_are_json_encoded() -> None:
     page = render_page('</title><script>alert("x")</script>', "1.2.3")
 

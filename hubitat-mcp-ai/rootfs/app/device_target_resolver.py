@@ -440,6 +440,21 @@ def resolve_device_candidate(
         )
     ranked.sort(key=lambda item: (-item[0], item[1].casefold()))
     alternatives = tuple(item[1] for item in ranked[:3])
+    # A "missing" outcome (nothing matched well enough) must not still hand
+    # back an unfiltered top-3 as if those were plausible near-misses --
+    # live-reproduced: "what's the whole house power" (an aggregate-scope
+    # phrase with no real device name, misrouted into this resolver by the
+    # contextual-attribute parser before that was fixed) scored near-zero
+    # against every device, and ranked[:3]'s arbitrary tie-break order
+    # surfaced completely unrelated devices ("Front Door", "Google
+    # Chromecast+") as "Which device do you mean?" choices. Once a
+    # candidate is being reported as *not* similar enough, its alternatives
+    # must clear the same missing_floor used to decide that -- otherwise
+    # the reported alternatives contradict the reason string that says
+    # nothing matched.
+    missing_alternatives = tuple(
+        name for score, name, _device in ranked[:3] if score >= missing_floor
+    )
     if not ranked:
         return _missing_resolution(
             confidence=0.0,
@@ -458,7 +473,7 @@ def resolve_device_candidate(
             )
         return _missing_resolution(
             confidence=top_score,
-            alternatives=alternatives,
+            alternatives=missing_alternatives,
             reason=f"The only candidate was not similar enough to {requested!r}.",
         )
     second_score = ranked[1][0]
@@ -489,9 +504,22 @@ def resolve_device_candidate(
             "dominant ranked candidate despite moderate absolute score",
         )
     if top_score < missing_floor:
+        # The caller (homebrain_agent.py) turns any non-empty `alternatives`
+        # into a "Which device do you mean: ..." clarification regardless of
+        # why this resolution came back empty -- it does not distinguish a
+        # "missing" outcome from an "ambiguous" one. A missing outcome by
+        # definition means nothing cleared the confidence floor, so offering
+        # ranked[:3]'s below-floor names here produces exactly the same
+        # nonsense-candidate clarification this function's docstring already
+        # guards against elsewhere (see the ambiguous branch below): a
+        # misrouted aggregate-scope phrase like "whole house power" scoring
+        # near-zero against every device surfaced unrelated devices such as
+        # "Front Door" or "Google Chromecast+" as if they were plausible
+        # guesses. Reporting no alternatives here correctly routes the
+        # caller to "I could not find a device named ..." instead.
         return _missing_resolution(
             confidence=top_score,
-            alternatives=alternatives,
+            alternatives=(),
             reason=(
                 f"No candidate was similar enough to {requested!r}; the "
                 f"closest inventory names ({', '.join(alternatives)}) fell "

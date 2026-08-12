@@ -88,6 +88,31 @@ def test_parse_named_attribute_none_for_pronoun_name():
     assert parse_named_attribute("what's it's temperature?") is None
 
 
+def test_parse_named_attribute_none_for_whole_house_aggregate_scope():
+    """Regression test for a live failure: "what's the current whole house
+    power" / "what's the whole house power" hit the same backtracking bug
+    as "the"/"current" above -- with no real device name in the sentence,
+    _NAMED_ATTRIBUTE's name group swallowed the aggregate-scope qualifier
+    phrase ("whole house", "current whole house") and treated it as a
+    literal device name to resolve. That deterministic single-device
+    lookup then failed and offered an "Unresolved... Which device do you
+    mean" clarification listing devices with nothing to do with power
+    (e.g. "Front Door", "Google Chromecast+") -- both because this phrase
+    should never have reached device-name resolution at all (it describes
+    a whole-house aggregate question, which the model's tool-calling loop
+    already handles correctly for "current power usage") and because the
+    fuzzy matcher's fallback candidates weren't filtered by relevance
+    (covered separately in test_device_target_resolver.py). These phrases
+    must fall through to None so the request reaches the model loop.
+    """
+
+    assert parse_named_attribute("what's the whole house power") is None
+    assert parse_named_attribute("what's the current whole house power?") is None
+    assert parse_named_attribute("what is the whole home power") is None
+    assert is_pronoun_reference("whole house") is True
+    assert is_pronoun_reference("current whole house") is True
+
+
 def test_parse_named_attribute_none_for_history_wording():
     assert parse_named_attribute("what was the front door temperature yesterday?") is None
 

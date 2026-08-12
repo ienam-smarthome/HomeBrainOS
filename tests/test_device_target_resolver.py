@@ -164,6 +164,33 @@ def test_genuinely_absent_device_type_is_missing_not_ambiguous():
         assert "confidence floor" in resolution.reason, absent_query
 
 
+def test_missing_resolution_reports_no_alternatives_not_below_floor_padding():
+    """Regression test for a live failure: "what's the whole house power"
+    was misrouted into device-name resolution (fixed separately in
+    contextual_read_fast_path.py), scored near-zero against every device,
+    and the "missing" branch still handed back ranked[:3]'s arbitrary,
+    below-floor tie-break order as "alternatives" -- which the caller
+    (homebrain_agent.py) turns into a "Which device do you mean: ..."
+    clarification regardless of why the resolution came back empty. That
+    surfaced completely unrelated devices ("Front Door", "Google
+    Chromecast+") as if they were plausible guesses. A missing resolution
+    (nothing cleared the confidence floor) must report zero alternatives,
+    not just a low confidence score.
+    """
+
+    inventory = [
+        {"id": "1", "label": "Front Door"},
+        {"id": "2", "label": "Google Chromecast+"},
+        {"id": "3", "label": "Weather Open-Meteo"},
+        {"id": "4", "label": "Shower Light"},
+    ]
+
+    resolution = resolve_device_candidate("whole house power", inventory)
+
+    assert resolution.target is None
+    assert resolution.alternatives == ()
+
+
 def test_same_kind_ambiguity_is_unaffected_by_the_missing_floor():
     """The fix above must not turn genuine same-kind ambiguity into a false
     "missing" result -- these score well above the floor and should still
