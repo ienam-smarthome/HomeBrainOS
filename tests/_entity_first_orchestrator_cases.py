@@ -2789,3 +2789,88 @@ async def test_app_prompt_uses_cached_app_manifest_and_omits_devices():
     assert "hub_set_rule_paused" in prompt
     assert again
     assert len(mcp.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_pronoun_follow_up_still_gets_the_app_manifest_from_prior_turn():
+    """Regression test for a real live failure: after "disable humidity
+    controller app" succeeded, "enable it" (a bare pronoun follow-up)
+    omitted the app manifest entirely -- _APP_TERMS never matched "enable
+    it" on its own -- leaving the model with no numeric appId to
+    reference. It then passed the numbered display label ("01. Humidity
+    Controller") as the literal appId argument to
+    hub_manage_native_rules_and_apps, which the gateway correctly
+    rejected ("appId must be a positive integer"). The most recent prior
+    user turn must also be checked for app wording, the same way device
+    pronoun follow-ups already resolve against session context elsewhere
+    in this class.
+    """
+
+    class AppMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_read_apps_code", "apps", {"type": "object"}),
+                MCPTool(
+                    "hub_manage_native_rules_and_apps",
+                    "manage apps",
+                    {"type": "object"},
+                ),
+            ]
+
+        async def get_cached_devices(self):
+            raise AssertionError("device manifest should not load for app requests")
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {"apps": [{"id": "3995", "label": "01. Humidity Controller"}]},
+            )
+
+    mcp = AppMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+
+    history = [
+        {"role": "user", "content": "disable humidity controller app"},
+        {"role": "assistant", "content": "The Humidity Controller app has been disabled."},
+    ]
+    prompt = await agent._system_prompt("enable it", history)
+
+    assert "'01. Humidity Controller' | appId: 3995" in prompt
+
+
+@pytest.mark.asyncio
+async def test_unrelated_pronoun_follow_up_after_a_non_app_turn_omits_the_app_manifest():
+    """The widened lookback must stay scoped to app-related prior turns --
+    a pronoun follow-up to an unrelated prior request (e.g. a device
+    question) must not needlessly pull in the app manifest."""
+
+    class AppMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool(
+                    "hub_manage_native_rules_and_apps",
+                    "manage apps",
+                    {"type": "object"},
+                ),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name, arguments, {}, "", {"apps": [{"id": "1", "label": "Some App"}]},
+            )
+
+    mcp = AppMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+
+    history = [
+        {"role": "user", "content": "what's the current battery level of the front door lock"},
+        {"role": "assistant", "content": "The front door lock battery is at 84%."},
+    ]
+    prompt = await agent._system_prompt("what about it now", history)
+
+    assert "LIVE APP MANIFEST" not in prompt
