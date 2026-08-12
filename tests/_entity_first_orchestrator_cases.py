@@ -174,6 +174,94 @@ async def test_undeclared_tool_call_does_not_crash_causal_bypass_check():
 
 
 @pytest.mark.asyncio
+async def test_unverified_mutation_claim_is_refused_not_narrated():
+    """Regression test for a real, safety-relevant live bug: after
+    "disable humidity controller app" -> confirm -> disabled succeeded,
+    "enable it" came back "Enabled the '01. Humidity Controller' app." with
+    model_rounds=1, tool_calls=0, and evidence=[] -- the model narrated a
+    mutation success with no tool ever having actually executed. The
+    system prompt already tells the model "Never claim a mutation
+    succeeded unless its tool result confirms it," but nothing
+    deterministically enforced that: request_class becomes "write" purely
+    because a mutating tool call was *attempted* (even one naming an
+    undeclared tool, which never reaches execution or records evidence),
+    and the model was then free to narrate whatever it wanted on a later
+    round with no tool calls at all. A write-classified answer with no
+    successful mutating evidence receipt must be refused, never returned
+    as if it were a confirmed success.
+    """
+
+    class MCPWithDiagnostics(FakeMCP):
+        """FakeMCP's default tool list has no non-mutating tool at all
+        (hub_search_tools is explicitly excluded from live-claim evidence,
+        and set_switch mutates) -- add hub_read_diagnostics, one of the
+        always-declared initial tools (see
+        tool_discovery_catalog.INITIAL_TOOL_ORDER), so a normal
+        model-issued call to it is available to make and is recorded as
+        real live-state evidence."""
+
+        async def list_tools(self):
+            return [
+                *await super().list_tools(),
+                MCPTool("hub_read_diagnostics", "Diagnostics", {"type": "object"}),
+            ]
+
+        async def call_tool(self, name, arguments):
+            if name == "hub_read_diagnostics":
+                self.calls.append((name, arguments))
+                return MCPToolResult(name, arguments, {}, "ok", {"status": "ok"})
+            return await super().call_tool(name, arguments)
+
+    mcp = MCPWithDiagnostics()
+    ai = FakeAI([
+        # Round 1: a genuine declared, non-mutating (READ) tool call that
+        # actually executes and records live evidence -- this mirrors the
+        # real live bug's shape, where the turn had *some* prior live tool
+        # activity so grounding's own generic "did any live evidence
+        # exist" check has nothing to object to.
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "hub_read_diagnostics",
+                "arguments": {},
+            }
+        }]}},
+        # Round 2: a mutating attempt naming an undeclared tool -- this is
+        # what actually flips request_class to "write" (see
+        # tool_registry.classify_tool_effect: tool is None -> fail-closed
+        # SENSITIVE_WRITE), but it can never execute, so no mutation
+        # evidence is ever recorded.
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {
+                "name": "totally_undeclared_tool",
+                "arguments": {},
+            }
+        }]}},
+        # Round 3: zero tool calls, narrating a mutation success. Because
+        # round 1 already produced live (non-mutating) evidence,
+        # GroundingPolicy.decide_no_tool_calls ACCEPTs this immediately
+        # (no retry) -- exactly like the real bug's model_rounds=1 shape
+        # once the mutation-attempt round is factored in. This is the
+        # narration the new safety check must catch and refuse.
+        {"message": {"role": "assistant", "content": "Enabled the '01. Humidity Controller' app."}},
+        {"message": {"role": "assistant", "content": "Enabled the '01. Humidity Controller' app."}},
+    ])
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b", ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result("enable it")
+
+    assert outcome.request_class == "write"
+    assert not any(
+        receipt.get("success") and receipt.get("mutates")
+        for receipt in outcome.evidence
+    )
+    assert "Enabled" not in outcome.message
+    assert "could not verify" in outcome.message.casefold()
+
+
+@pytest.mark.asyncio
 async def test_rule_authoring_uses_deterministic_compiler_before_model():
     class RuleAuthoringMCP(FakeMCP):
         async def list_tools(self):
