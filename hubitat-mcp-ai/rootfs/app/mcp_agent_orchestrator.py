@@ -995,6 +995,26 @@ class UnifiedMCPAgent:
                     })
                     continue
                 completed_calls.add(signature)
+                # Reset per call: this used to be assigned only inside the
+                # "if result is not None" branch below, but read
+                # unconditionally later in this same loop iteration (see
+                # "if causal_history_bypass:" further down). Any iteration
+                # that never reaches that assignment -- an undeclared tool
+                # name (the "if not tool" branch just below, which never
+                # touches `result` at all) or a declared tool whose
+                # execution result is None -- left the previous iteration's
+                # value in scope for calls after the first, or raised
+                # UnboundLocalError outright when it was the first tool
+                # call of the round. Live-reproduced: "enable it" fell
+                # through to the model loop as intended by 0.10.418's
+                # pronoun-target fix, and the model's first tool call that
+                # round hit the undeclared-tool branch, crashing the whole
+                # request with "cannot access local variable
+                # 'causal_history_bypass'". Explicitly resetting it to
+                # False at the top of every iteration makes each call's
+                # bypass decision independent, matching the code's actual
+                # intent, instead of leaking state across calls or crashing.
+                causal_history_bypass = False
                 tool = catalog.declared_tool(name)
                 if not tool:
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
