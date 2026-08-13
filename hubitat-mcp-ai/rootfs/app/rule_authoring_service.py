@@ -9,6 +9,7 @@ Rule Machine calls for the existing confirmation pipeline.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -17,6 +18,8 @@ from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
 from mcp_client import HubitatMCPClient
+
+logger = logging.getLogger("HomeBrainOS.RuleAuthoringService")
 from time_expressions import AT_TIME as _SHARED_AT_TIME, parse_clock as _shared_parse_clock
 from tool_registry import rule_machine_proposal_error
 
@@ -485,6 +488,15 @@ class RuleAuthoringService:
         try:
             result = await self.mcp.call_tool("hub_read_rules", arguments)
         except Exception:
+            # Silently disables duplicate-rule-name detection for this
+            # request (an empty set means no existing name will be
+            # flagged as a collision) -- not a user-facing failure by
+            # itself, but a hub/network hiccup here was previously
+            # invisible with zero trace, unlike every other best-effort
+            # fallback elsewhere in this codebase (hub_info_service.py,
+            # device_query_service.py, mcp_agent_orchestrator.py all log
+            # before falling back the same way).
+            logger.warning("Could not read existing rule names", exc_info=True)
             return set()
         success = not result.is_error and not (
             isinstance(result.data, dict) and result.data.get("success") is False
