@@ -1105,10 +1105,32 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             missing = catalog.replace_declared(pending_names)
             if missing:
                 message = self.confirmation_policy.unavailable_tools_message(missing)
+                evidence: list[dict[str, Any]] = []
             else:
-                message = await self._resume_confirmation(resolved, catalog)
+                # `_resume_confirmation` executes the queued tool call(s)
+                # directly (see `ConfirmedActionCoordinator.resume`), which
+                # records real evidence via `self.evidence.record(...)` --
+                # but that recorder is a no-op unless a request-scoped
+                # receipt list has been started with `begin()` first (see
+                # `EvidenceRecorder.record`'s `if receipts is None: return`
+                # guard). This confirm branch runs directly inside
+                # `operation()`, before the `DirectOutcomeContext`/base
+                # `process_user_request_result` wrapping that normally
+                # opens that scope, so every receipt from a confirmed
+                # action was silently discarded and this outcome always
+                # hardcoded `evidence=[]` regardless of what actually ran.
+                # Live-observed: a genuinely successful "enable it" confirm
+                # still reported `evidence: []` and `tool_calls: 0` in the
+                # technical-details panel. Open the same scope here so the
+                # real receipts flow through.
+                evidence_token = self.evidence.begin()
+                try:
+                    message = await self._resume_confirmation(resolved, catalog)
+                    evidence = self.evidence.receipts()
+                finally:
+                    self.evidence.reset(evidence_token)
             return AgentOutcome(
-                message=message, request_class="write", evidence=[], choices=[]
+                message=message, request_class="write", evidence=evidence, choices=[]
             )
 
         normalized_prompt = " ".join(str(user_prompt).strip().casefold().split())
