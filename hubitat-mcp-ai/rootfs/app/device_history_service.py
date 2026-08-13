@@ -289,13 +289,29 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
+        # Live-observed bug (2026-08-13, after the hours_back widening
+        # above): even with a full seven-day window, "When did the front
+        # door last open?" still answered "No contact events...". Direct
+        # live testing against the real hub found why -- the upstream
+        # hub_list_device_events `attribute` filter is unreliable: passing
+        # attribute="contact" for the Front Door device silently returned
+        # zero events despite real contact events existing in the exact
+        # same window (confirmed by re-running the identical call with no
+        # attribute filter), while attribute="motion" on that same device
+        # filtered correctly. Since this failure is silent -- no error, no
+        # is_error flag, just an empty list indistinguishable from "no
+        # events occurred" -- this code can no longer trust the upstream
+        # filter for any attribute. It now always fetches the widest
+        # bounded, unfiltered window (up to the maximum limit of 50 when a
+        # single attribute is requested) and filters by attribute name on
+        # this side, where a mismatch is directly testable and cannot
+        # silently swallow real events again.
+        fetch_limit = 50 if attribute else limit
         event_args: dict[str, Any] = {
             "deviceId": str(device_id),
             "hoursBack": hours_back,
-            "limit": limit,
+            "limit": fetch_limit,
         }
-        if attribute:
-            event_args["attribute"] = attribute
         source_arguments = {
             "tool": EVENT_OPERATION,
             "args": event_args,
@@ -337,7 +353,13 @@ class DeviceHistoryService:
         # tool_succeeded()'s own docstring for the fuller history of this
         # bug class).
         success = _shared_tool_succeeded(source)
-        events = self._events(source.data, limit=limit) if success else []
+        events = self._events(source.data, limit=fetch_limit) if success else []
+        if attribute:
+            attribute_cf = attribute.casefold()
+            events = [
+                event for event in events
+                if str(event.get("name") or "").casefold() == attribute_cf
+            ][:limit]
         self._record_evidence(
             DEVICE_GATEWAY,
             source_arguments,
