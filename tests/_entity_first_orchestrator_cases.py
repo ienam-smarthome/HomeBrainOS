@@ -2962,3 +2962,59 @@ async def test_unrelated_pronoun_follow_up_after_a_non_app_turn_omits_the_app_ma
     prompt = await agent._system_prompt("what about it now", history)
 
     assert "LIVE APP MANIFEST" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_pronoun_follow_up_after_a_confirm_round_trip_still_gets_the_app_manifest():
+    """Regression test for a real live failure that survived 0.10.420:
+    "disable humidity controller app" -> assistant asks to confirm -> user
+    replies "confirm" -> disable succeeds -> "enable it" still omitted the
+    app manifest. The single-turn lookback added in 0.10.420 only checked
+    the *immediately* prior user turn, but every sensitive app mutation
+    requires a "confirm" round-trip -- so that immediately prior turn is
+    almost always the bare word "confirm" from finishing the previous
+    action, not the "...app" wording that actually named it. The lookback
+    must skip past bare confirmation replies (the same words the
+    confirmation store itself recognizes) to find the turn that named the
+    app.
+    """
+
+    class AppMCP(FakeMCP):
+        async def list_tools(self):
+            return [
+                MCPTool("hub_read_apps_code", "apps", {"type": "object"}),
+                MCPTool(
+                    "hub_manage_native_rules_and_apps",
+                    "manage apps",
+                    {"type": "object"},
+                ),
+            ]
+
+        async def get_cached_devices(self):
+            raise AssertionError("device manifest should not load for app requests")
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {"apps": [{"id": "3995", "label": "01. Humidity Controller"}]},
+            )
+
+    mcp = AppMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+
+    history = [
+        {"role": "user", "content": "disable humidity controller app"},
+        {
+            "role": "assistant",
+            "content": "This will disable '01. Humidity Controller'. Reply 'confirm' to proceed.",
+        },
+        {"role": "user", "content": "confirm"},
+        {"role": "assistant", "content": "The Humidity Controller app has been disabled."},
+    ]
+    prompt = await agent._system_prompt("enable it", history)
+
+    assert "'01. Humidity Controller' | appId: 3995" in prompt

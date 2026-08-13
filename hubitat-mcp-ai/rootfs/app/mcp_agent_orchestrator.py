@@ -504,16 +504,30 @@ class UnifiedMCPAgent:
         # reference for hub_set_app_disabled. It then guessed using a
         # numbered display label ("01. Humidity Controller") as the appId
         # argument instead, which the gateway correctly rejected ("appId
-        # must be a positive integer"). Also checking the most recent prior
-        # user turn lets a pronoun follow-up to an app request still get
-        # the manifest it needs, the same way device pronoun follow-ups
-        # already resolve against the session's last selected device
-        # elsewhere in this class.
+        # must be a positive integer"). Checking the most recent prior user
+        # turn lets a pronoun follow-up to an app request still get the
+        # manifest it needs, the same way device pronoun follow-ups already
+        # resolve against the session's last selected device elsewhere in
+        # this class.
+        #
+        # 0.10.421 live retest: still broken. Sensitive app mutations
+        # (disable/enable) always require a "confirm" round-trip, so the
+        # single most recent user turn before "enable it" is almost always
+        # the literal word "confirm" from finishing the *previous* action,
+        # not the "...app" wording that named it. A single-turn lookback
+        # therefore missed the app-mentioning turn in exactly the sequence
+        # this fix exists for. Skip past bare confirmation replies (the
+        # same CONFIRM_WORDS the confirmation store itself recognizes) so
+        # the lookback lands on the turn that actually named the app.
         previous_user_prompt = ""
         for message in reversed(self._history(conversation_history)):
-            if message.get("role") == "user":
-                previous_user_prompt = str(message.get("content") or "")
-                break
+            if message.get("role") != "user":
+                continue
+            content = str(message.get("content") or "")
+            if content.strip().casefold() in CONFIRM_WORDS:
+                continue
+            previous_user_prompt = content
+            break
         if _matches(user_prompt, _APP_TERMS) or _matches(previous_user_prompt, _APP_TERMS):
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
