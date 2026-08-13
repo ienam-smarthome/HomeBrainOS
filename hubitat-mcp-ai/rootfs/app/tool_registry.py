@@ -645,7 +645,11 @@ def device_history_tool() -> MCPTool:
             "always pass the specific attribute (e.g. 'contact', 'switch') "
             "and a small limit (1-3) so the result is the answer itself, "
             "not an unfiltered dump mixed with unrelated housekeeping "
-            "events like ipAddress or networkStatus."
+            "events like ipAddress or networkStatus. When attribute is set "
+            "and hours_back is left unset, the host widens the search "
+            "window to the full seven days automatically, because a 'last "
+            "X' question has no natural cutoff -- it wants the most recent "
+            "matching event whenever it happened, not only within one day."
         ),
         {
             "type": "object",
@@ -660,7 +664,14 @@ def device_history_tool() -> MCPTool:
                     "minimum": 1,
                     "maximum": 168,
                     "default": 24,
-                    "description": "Relative history window in hours, up to seven days.",
+                    "description": (
+                        "Relative history window in hours, up to seven days. "
+                        "Default is 24 for a broad 'what happened' review; "
+                        "when attribute is set and this is left unset, the "
+                        "host uses 168 instead so a 'last <state>' question "
+                        "is never falsely answered 'no events' just because "
+                        "the real last event was more than a day ago."
+                    ),
                 },
                 "attribute": {
                     "type": "string",

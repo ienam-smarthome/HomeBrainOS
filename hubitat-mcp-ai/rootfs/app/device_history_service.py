@@ -209,9 +209,27 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
+        attribute = str(arguments.get("attribute") or "").strip()
+        # Live-observed bug (2026-08-13): "When did the front door last
+        # open?" and its "before that" follow-up both answered "No contact
+        # events were reported...in the last 24 hours" -- even though real
+        # contact events existed, just further back than 24 hours. The
+        # model had asked for a single attribute (exactly what the tool's
+        # own description tells it to do for a "last X" point question) but
+        # never explicitly widened the window, so it silently inherited the
+        # generic 24-hour default meant for open-ended "what happened"
+        # questions. A "last <state>" question has no natural window at
+        # all -- it wants the most recent matching event whenever it
+        # occurred -- so when the caller has scoped to one attribute and
+        # left hours_back unset, default to the full seven-day bound
+        # instead of one day. This costs nothing: the result is still
+        # capped by ``limit`` (small for point questions per the tool's own
+        # guidance), so a genuinely recent event is reported exactly as
+        # before -- only the false "no events" negative goes away.
+        default_hours_back = 168 if attribute else 24
         hours_back = self._integer(
             arguments.get("hours_back"),
-            default=24,
+            default=default_hours_back,
             minimum=1,
             maximum=168,
         )
@@ -221,7 +239,6 @@ class DeviceHistoryService:
             minimum=1,
             maximum=50,
         )
-        attribute = str(arguments.get("attribute") or "").strip()
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
         resolution = await resolver.resolve_device({"name": requested})
