@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
@@ -60,6 +61,37 @@ def test_render_device_manifest_surfaces_valuestr_only_sensors():
     assert "Octopus Meter Current Power" in manifest
     assert "Current:" in manifest
     assert "valueStr=231 W" in manifest
+
+
+def test_system_prompt_anchors_the_model_to_a_concrete_current_date_and_time():
+    """Code-audit finding (2026-08-13): reasoning-mode question categories
+    (default since 0.10.410 -- deterministic_reads_enabled defaults false)
+    hand "yesterday"/"today"/"this morning" style questions straight to
+    the model with no server-side date math at all, unlike the
+    still-present opt-in deterministic paths (parse_count_yesterday etc.),
+    which anchor on `datetime.now().astimezone()` themselves. Without an
+    explicit anchor in the system prompt, the model has no grounded notion
+    of "now" to reason relative dates from -- it would have to infer it
+    from tool-result timestamps or its own assumptions, a reasoning error
+    no live spot-check reliably catches (a wrong answer here still looks
+    plausible). The system prompt must carry an explicit, injectable
+    current date/time anchor.
+    """
+
+    fixed_now = datetime(2026, 8, 13, 14, 30, tzinfo=timezone(timedelta(hours=1)))
+
+    prompt = build_system_prompt(
+        device_manifest="", app_manifest_section="", now=fixed_now
+    )
+
+    assert "CURRENT DATE AND TIME" in prompt
+    assert "Thursday, 2026-08-13 14:30" in prompt
+    assert "+0100" in prompt
+    assert "never infer 'now'" in prompt.casefold()
+    # The anchor must appear before the rest of the prompt's guidance, not
+    # buried after it, so it reliably grounds every relative-date question
+    # regardless of how long the rest of the prompt runs.
+    assert prompt.index("CURRENT DATE AND TIME") < prompt.index("HomeBrainOS")
 
 
 def test_system_prompt_scopes_weather_snapshot_to_outdoor_qualified_questions():

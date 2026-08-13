@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 
@@ -100,8 +101,34 @@ def render_app_manifest(apps: list[dict[str, Any]]) -> str:
 def build_system_prompt(
     device_manifest: str,
     app_manifest_section: str = "",
+    *,
+    now: datetime | None = None,
 ) -> str:
+    # Reasoning-mode question categories (0.10.410, deterministic_reads_
+    # enabled default false) hand "yesterday"/"today"/"this morning"/"last
+    # night" style questions straight to the model with no server-side date
+    # math at all -- unlike the still-present opt-in deterministic paths
+    # (parse_count_yesterday etc.), which anchor on
+    # `datetime.now().astimezone()` themselves. Without an explicit anchor
+    # here, the model has no grounded notion of "now" to reason relative
+    # dates from at all, and would have to infer it from tool-result
+    # timestamps alone -- exactly the kind of silent, hard-to-catch
+    # reasoning error a live-testing pass can't reliably surface (it'd look
+    # like a plausible answer, just off by a day or a timezone). Uses the
+    # same `datetime.now().astimezone()` convention the deterministic path
+    # already trusts, so reasoning mode is at least as well-anchored as the
+    # path it replaced by default, not a regression from it.
+    current = now if now is not None else datetime.now().astimezone()
+    current_time_line = (
+        "CURRENT DATE AND TIME: "
+        f"{current.strftime('%A, %Y-%m-%d %H:%M')} (UTC offset "
+        f"{current.strftime('%z') or 'unknown'}). Use this as your anchor "
+        "for every relative date/time question (today, yesterday, this "
+        "morning, last night, this week, etc.) -- never infer 'now' from a "
+        "tool result's own timestamps or from training knowledge.\n\n"
+    )
     return (
+        current_time_line +
         "You are HomeBrainOS, a concise smart-home assistant. Use Hubitat MCP "
         "for every live claim and action. Never invent devices, states, results, "
         "or successful actions. Ask one short clarification only when necessary. "
