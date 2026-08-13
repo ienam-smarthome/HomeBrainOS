@@ -452,6 +452,39 @@ async def test_duplicate_check_now_runs_even_when_can_read_rules_is_not_passed()
 
 
 @pytest.mark.asyncio
+async def test_existing_names_lookup_failure_logs_and_falls_back_not_crashes(caplog):
+    """Code-audit finding (2026-08-13): `_existing_names()` swallowed any
+    `hub_read_rules` failure with a bare `except Exception: return set()`
+    and no logging at all -- unlike every other best-effort fallback
+    elsewhere in this codebase, which logs before falling back. A
+    hub/network hiccup here was previously invisible with zero trace.
+    Proposing a rule must still succeed (duplicate detection just can't
+    be verified this turn), but the failure must now be logged.
+    """
+
+    class FailingRuleMCP(RuleMCP):
+        async def call_tool(self, name, arguments):
+            if name == "hub_read_rules":
+                raise RuntimeError("upstream timeout")
+            return await super().call_tool(name, arguments)
+
+    service = RuleAuthoringService(FailingRuleMCP([real_bedroom_light()]), recorder)
+
+    with caplog.at_level("WARNING", logger="HomeBrainOS.RuleAuthoringService"):
+        decision = await service.propose(
+            "create a rule to turn on Bedroom 1 Light every day at 7am",
+            available_gateways={RULE_MACHINE_GATEWAY, "hub_read_rules"},
+        )
+
+    assert decision.handled is True
+    assert decision.actions != ()
+    assert any(
+        "existing rule names" in record.message.casefold()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "prompt",
     [

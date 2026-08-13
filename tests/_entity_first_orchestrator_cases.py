@@ -145,6 +145,17 @@ async def test_undeclared_tool_call_does_not_crash_causal_bypass_check():
     failure) the moment the model's first tool call of a round named an
     undeclared tool. This must degrade to a normal tool-error reply
     instead of crashing the whole request.
+
+    The exact reply text changed after the 2026-08-13 audit: this fixture
+    also happens to hit the duplicate-call-signature `_final_answer` exit
+    (same undeclared tool called twice), and an undeclared tool call is a
+    mutating-effect attempt (`classify_tool_effect`'s fail-closed
+    SENSITIVE_WRITE for `tool is None`) with no successful evidence behind
+    it -- so `_unverified_mutation_guard` now correctly refuses the
+    model's own free-form content here instead of passing it through
+    verbatim. The crash regression this test guards is unaffected; only
+    the no-crash reply's wording is now the deterministic refusal instead
+    of whatever the model said.
     """
 
     mcp = FakeMCP()
@@ -170,7 +181,7 @@ async def test_undeclared_tool_call_does_not_crash_causal_bypass_check():
 
     answer = await agent.process_user_request("enable it")
 
-    assert answer == "I could not complete that request."
+    assert "could not verify" in answer.casefold()
 
 
 @pytest.mark.asyncio
@@ -248,6 +259,95 @@ async def test_unverified_mutation_claim_is_refused_not_narrated():
     agent = UnifiedMCPAgent(
         mcp, "test-key", "gemma4:31b", ai_client=ai,
         require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result("enable it")
+
+    assert outcome.request_class == "write"
+    assert not any(
+        receipt.get("success") and receipt.get("mutates")
+        for receipt in outcome.evidence
+    )
+    assert "Enabled" not in outcome.message
+    assert "could not verify" in outcome.message.casefold()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_call_signature_exit_also_refuses_an_unverified_mutation():
+    """Regression test for a code-audit finding (2026-08-13): the
+    unverified-mutation refusal added in 0.10.421 only guarded the
+    `decide_no_tool_calls` ACCEPT fall-through, but `_final_answer` --
+    called from two OTHER loop exit points -- returned raw model
+    narration with no such check. This one exercises the
+    duplicate-call-signature exit: a mutating call naming an undeclared
+    tool is attempted (flips request_class to "write" without ever
+    executing or recording evidence, exactly as in the test above), then
+    the model repeats the identical call signature on the next round,
+    which ends the loop via `_final_answer` instead of the normal
+    no-tool-calls path. `_final_answer`'s own narration must still be
+    refused, not returned as a fabricated success.
+    """
+
+    mcp = FakeMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {"name": "totally_undeclared_tool", "arguments": {}}
+        }]}},
+        # Same name + same (empty) arguments -- an identical call
+        # signature to round 1, which triggers duplicate_signature_seen
+        # and ends the loop via _final_answer instead of another model
+        # round.
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {"name": "totally_undeclared_tool", "arguments": {}}
+        }]}},
+        # _final_answer's own one-shot "answer using only what's already
+        # provided" chat call.
+        {"message": {"role": "assistant", "content": "Enabled the '01. Humidity Controller' app."}},
+    ])
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b", ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result("enable it")
+
+    assert outcome.request_class == "write"
+    assert not any(
+        receipt.get("success") and receipt.get("mutates")
+        for receipt in outcome.evidence
+    )
+    assert "Enabled" not in outcome.message
+    assert "could not verify" in outcome.message.casefold()
+
+
+@pytest.mark.asyncio
+async def test_tool_round_limit_exit_also_refuses_an_unverified_mutation():
+    """Regression test for the same code-audit finding, exercising the
+    OTHER `_final_answer` exit point: the tool-round-limit exhaustion
+    fallback. A mutating attempt naming an undeclared tool flips
+    request_class to "write" on round 1; the model then keeps issuing
+    fresh (non-duplicate) undeclared tool calls until `max_tool_rounds`
+    is exhausted, landing on the tool-round-limit `_final_answer` call
+    instead of the duplicate-signature one. That narration must also be
+    refused, not returned as a fabricated success.
+    """
+
+    mcp = FakeMCP()
+    ai = FakeAI([
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {"name": "totally_undeclared_tool", "arguments": {"n": 1}}
+        }]}},
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{
+            "function": {"name": "totally_undeclared_tool", "arguments": {"n": 2}}
+        }]}},
+        # _final_answer's own one-shot chat call after the 2-round limit
+        # is exhausted.
+        {"message": {"role": "assistant", "content": "Enabled the '01. Humidity Controller' app."}},
+    ])
+    agent = UnifiedMCPAgent(
+        mcp, "test-key", "gemma4:31b", ai_client=ai,
+        require_sensitive_confirmation=False,
+        max_tool_rounds=2,
     )
 
     outcome = await agent.process_user_request_result("enable it")

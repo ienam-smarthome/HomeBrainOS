@@ -559,6 +559,32 @@ class UnifiedMCPAgent:
     async def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         return await self.transport.chat(self._bounded_messages(messages), tools)
 
+    def _unverified_mutation_guard(self, content: str) -> str:
+        """Refuse instead of narrating a mutation the model claimed but
+        never actually got a successful tool result for.
+
+        `_mutation_call_seen` flips true the moment ANY mutating tool call
+        is *attempted* in this turn's loop -- including one naming an
+        undeclared tool, which fails closed to a sensitive-write
+        classification (`tool_registry.classify_tool_effect`) without ever
+        executing or recording evidence (see 0.10.421). Originally this
+        check only guarded the `decide_no_tool_calls` ACCEPT fall-through.
+        A live-code audit (2026-08-13) found `_final_answer` has two other
+        callers -- the duplicate-tool-call-signature early return and the
+        tool-round-limit exhaustion fallback -- that returned raw model
+        narration through the exact same gap 0.10.421 fixed for the more
+        common case. Centralising the check here means every current and
+        future `_final_answer` caller is covered by construction instead
+        of needing to remember to add it themselves.
+        """
+
+        if self._mutation_call_seen.get() and not any(
+            receipt.get("success") and receipt.get("mutates")
+            for receipt in self.evidence.receipts()
+        ):
+            return UNVERIFIED_MUTATION_REFUSAL
+        return content
+
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
         final_messages = [
             *messages,
@@ -571,7 +597,8 @@ class UnifiedMCPAgent:
             },
         ]
         response = await self._chat(final_messages, [])
-        return str(response.get("content") or "The MCP request completed without a written answer.")
+        content = str(response.get("content") or "The MCP request completed without a written answer.")
+        return self._unverified_mutation_guard(content)
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
         return self.confirmations.consume(session_id, prompt)
@@ -940,12 +967,9 @@ class UnifiedMCPAgent:
                     continue
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
-                if self._mutation_call_seen.get() and not any(
-                    receipt.get("success") and receipt.get("mutates")
-                    for receipt in self.evidence.receipts()
-                ):
-                    return UNVERIFIED_MUTATION_REFUSAL
-                return str(assistant.get("content") or "Done.")
+                return self._unverified_mutation_guard(
+                    str(assistant.get("content") or "Done.")
+                )
             sensitive: list[tuple[str, dict[str, Any]]] = []
             # Every call in this tool-calling round, sensitive or not, in the
             # model's original order. If the round contains any sensitive
