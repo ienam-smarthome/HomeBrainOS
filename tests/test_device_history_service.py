@@ -106,6 +106,11 @@ async def test_reads_bounded_authoritative_history_after_targeted_resolution():
     assert result.data["hoursBack"] == 168
     assert result.data["count"] == 2
     assert result.data["causationAvailable"] is False
+    # `attribute` is deliberately NOT forwarded to the upstream call -- see
+    # test_attribute_filter_is_applied_locally_not_forwarded_upstream for
+    # why (a live-confirmed upstream filter bug for at least one attribute
+    # name). The full unfiltered window is fetched instead and filtered by
+    # attribute name on this side.
     assert mcp.calls[-1] == (
         DEVICE_GATEWAY,
         {
@@ -114,7 +119,6 @@ async def test_reads_bounded_authoritative_history_after_targeted_resolution():
                 "deviceId": "42",
                 "hoursBack": 168,
                 "limit": 50,
-                "attribute": "switch",
             },
         },
     )
@@ -151,6 +155,11 @@ async def test_attribute_scoped_query_widens_default_window_to_seven_days():
 
     assert result.is_error is False
     assert result.data["hoursBack"] == 168
+    # `attribute` is no longer forwarded upstream (see
+    # test_attribute_filter_is_applied_locally_not_forwarded_upstream) and
+    # the fetch always uses the max bound when scoped to one attribute, so
+    # the caller's small `limit` is applied client-side after filtering,
+    # not sent to the upstream call.
     assert mcp.calls[-1] == (
         DEVICE_GATEWAY,
         {
@@ -158,11 +167,11 @@ async def test_attribute_scoped_query_widens_default_window_to_seven_days():
             "args": {
                 "deviceId": "42",
                 "hoursBack": 168,
-                "limit": 3,
-                "attribute": "switch",
+                "limit": 50,
             },
         },
     )
+    assert result.data["count"] == 2
 
 
 @pytest.mark.asyncio
@@ -198,6 +207,116 @@ async def test_explicit_hours_back_still_overrides_attribute_default():
 
     assert result.is_error is False
     assert result.data["hoursBack"] == 6
+
+
+class BrokenAttributeFilterHistoryMCP(HistoryMCP):
+    """Reproduces a live-confirmed upstream bug (2026-08-13): calling
+    hub_list_device_events with attribute="contact" for the real Front
+    Door device silently returned zero events -- despite real contact
+    events existing in the exact same window, confirmed by re-running the
+    identical call with no attribute filter at all. attribute="motion" on
+    that same device filtered correctly, so this is not a device- or
+    account-wide outage, just a specific, silent, per-attribute filter
+    failure with no error and no is_error flag -- indistinguishable from
+    "no events occurred" unless the caller stops trusting the filter.
+    """
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        if operation == "hub_list_devices":
+            return await super().call_tool(name, arguments)
+        if operation == EVENT_OPERATION:
+            args = arguments.get("args") or {}
+            if args.get("attribute") == "contact":
+                # The exact live failure: an attribute filter the upstream
+                # server silently can't honour comes back as a clean empty
+                # list, not an error.
+                return MCPToolResult(
+                    name, arguments, {}, "ok",
+                    {"events": [], "count": 0},
+                )
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {
+                    "events": [
+                        {
+                            "name": "motion",
+                            "value": "active",
+                            "date": "2026-08-13T22:17:53.559+0100",
+                            "isStateChange": True,
+                        },
+                        {
+                            "name": "contact",
+                            "value": "closed",
+                            "date": "2026-08-13T22:17:53.470+0100",
+                            "description": "Front Door contact is closed (raw:true)",
+                            "isStateChange": True,
+                        },
+                        {
+                            "name": "contact",
+                            "value": "open",
+                            "date": "2026-08-13T22:17:46.015+0100",
+                            "description": "Front Door contact is open (raw:false)",
+                            "isStateChange": True,
+                        },
+                    ],
+                    "count": 3,
+                },
+            )
+        raise AssertionError(f"unexpected operation: {operation}")
+
+
+@pytest.mark.asyncio
+async def test_attribute_filter_is_applied_locally_not_forwarded_upstream():
+    """Direct regression test for the live-confirmed upstream attribute-
+    filter bug: 'When did the front door last open?' still answered 'No
+    contact events...' even after the seven-day window widening fix,
+    because the upstream hub_list_device_events attribute="contact" filter
+    itself silently drops real events. The fix must never forward
+    `attribute` to the upstream call -- it must fetch the unfiltered window
+    and filter by attribute name on this side, so a broken upstream filter
+    for any attribute can no longer produce a false "no events" answer.
+    """
+
+    mcp = BrokenAttributeFilterHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({
+        "name": "living room light 1",
+        "attribute": "contact",
+        "limit": 1,
+    })
+
+    assert result.is_error is False
+    assert result.data["count"] == 1
+    assert result.data["events"][0]["name"] == "contact"
+    assert result.data["events"][0]["value"] == "closed"
+    # The upstream call itself must never carry the attribute filter that
+    # was proven unreliable.
+    assert "attribute" not in mcp.calls[-1][1]["args"]
+
+
+@pytest.mark.asyncio
+async def test_client_side_attribute_filter_still_respects_requested_limit():
+    """The client-side filtering fallback must still cap results to the
+    caller's requested `limit` after filtering, not the wider fetch bound
+    used to work around the unreliable upstream filter."""
+
+    mcp = BrokenAttributeFilterHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({
+        "name": "living room light 1",
+        "attribute": "contact",
+        "limit": 1,
+    })
+
+    assert result.data["count"] == 1
+    assert len(result.data["events"]) == 1
 
 
 @pytest.mark.asyncio
