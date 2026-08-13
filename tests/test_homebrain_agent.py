@@ -718,6 +718,46 @@ async def test_firmware_confirm_deterministically_reports_a_hub_side_failure() -
 
 
 @pytest.mark.asyncio
+async def test_confirm_resume_reports_real_evidence_not_a_hardcoded_empty_list() -> None:
+    """Regression test for a real live gap found right after 0.10.422:
+    a genuinely successful "enable it" confirm still showed `evidence: []`
+    and `tool_calls: 0` in the technical-details panel, even though a real
+    tool call executed and succeeded.
+
+    Root cause: `_resolve_pending_confirmation` intercepts "confirm" before
+    any deterministic fast path runs, including the base
+    `process_user_request_result` / `DirectOutcomeContext` wrapping that
+    normally opens the request-scoped evidence receipt list via
+    `EvidenceRecorder.begin()`. `ConfirmedActionCoordinator.resume()` does
+    call `self.evidence.record(...)` for the real tool execution, but
+    `EvidenceRecorder.record()` silently no-ops when no receipt list has
+    been started (`if receipts is None: return`) -- so every receipt from
+    a confirmed action was discarded, and the returned `AgentOutcome`
+    hardcoded `evidence=[]` on top of that regardless of what actually ran.
+    """
+
+    mcp = FirmwareMCP(installed="2.5.1.145", available="2.5.1.147")
+    ai = FakeAI("unused -- deterministic report must not need this")
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
+
+    await agent.process_user_request_result(
+        "Install the available Hubitat firmware update", session_id="evidence-test"
+    )
+    confirm = await agent.process_user_request_result(
+        "confirm", session_id="evidence-test"
+    )
+
+    assert confirm.message.startswith("Firmware update initiated.")
+    assert confirm.evidence != []
+    assert any(
+        receipt.get("tool") == "hub_update_firmware"
+        and receipt.get("success") is True
+        and receipt.get("mutates") is True
+        for receipt in confirm.evidence
+    )
+
+
+@pytest.mark.asyncio
 async def test_firmware_confirm_surfaces_a_hub_warning_alongside_success() -> None:
     """A `warning` field on an otherwise successful install result must be
     surfaced too, not silently dropped.
