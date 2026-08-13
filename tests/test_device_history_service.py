@@ -125,6 +125,82 @@ async def test_reads_bounded_authoritative_history_after_targeted_resolution():
 
 
 @pytest.mark.asyncio
+async def test_attribute_scoped_query_widens_default_window_to_seven_days():
+    """Live-observed bug (2026-08-13): "When did the front door last open?"
+    and its "and when did it close before that?" follow-up both answered
+    "No contact events were reported for Front Door in the last 24 hours" --
+    even though real contact events existed, just further back than one
+    day. The model correctly scoped the query to attribute="contact" with a
+    small limit per the tool's own guidance for a "last X" point question,
+    but never passed hours_back, so it silently inherited the generic
+    24-hour default meant for open-ended "what happened" reviews. A "last
+    <state>" question has no natural window -- it wants the most recent
+    matching event whenever it occurred -- so when attribute is set and
+    hours_back is left unset, the host must widen the search to the full
+    seven-day bound instead of truncating to one day.
+    """
+
+    mcp = HistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({
+        "name": "living room light 1",
+        "attribute": "switch",
+        "limit": 3,
+    })
+
+    assert result.is_error is False
+    assert result.data["hoursBack"] == 168
+    assert mcp.calls[-1] == (
+        DEVICE_GATEWAY,
+        {
+            "tool": EVENT_OPERATION,
+            "args": {
+                "deviceId": "42",
+                "hoursBack": 168,
+                "limit": 3,
+                "attribute": "switch",
+            },
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_unscoped_query_keeps_the_original_twenty_four_hour_default():
+    """Companion to the attribute-scoped-widening fix above: a query with
+    no attribute filter (a broad 'what happened' review, not a 'last X'
+    point question) must keep the original 24-hour default -- only the
+    attribute-scoped case changes.
+    """
+
+    mcp = HistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({"name": "living room light 1"})
+
+    assert result.is_error is False
+    assert result.data["hoursBack"] == 24
+
+
+@pytest.mark.asyncio
+async def test_explicit_hours_back_still_overrides_attribute_default():
+    """An explicit hours_back must still win even when attribute is set --
+    the widened 168 is only a default for when the model leaves it unset."""
+
+    mcp = HistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({
+        "name": "living room light 1",
+        "attribute": "switch",
+        "hours_back": 6,
+    })
+
+    assert result.is_error is False
+    assert result.data["hoursBack"] == 6
+
+
+@pytest.mark.asyncio
 async def test_short_name_resolves_prefixed_hyphenated_device_before_history():
     class PrefixedHistoryMCP(HistoryMCP):
         def __init__(self):
