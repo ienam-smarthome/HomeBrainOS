@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from mcp_retry_metrics import record_mcp_retry_attempt
+from request_metrics import add_active_metric_ms
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,10 @@ class HubitatMCPClient:
         self.server_info: dict[str, Any] = {}
         self._cached_devices: list[dict[str, Any]] = []
         self._devices_cached_at = 0.0
+        # A dashboard refresh and a natural-language summary commonly ask for
+        # the same whole-home state almost back-to-back. Keep the established
+        # two-second freshness bound while allowing the manifest fetch to warm
+        # this exact snapshot and avoid an immediate duplicate inventory read.
         self._live_device_snapshot_ttl_seconds = 2.0
         self._live_device_snapshot: tuple[float, int, MCPToolResult] | None = None
         self._live_device_snapshot_generation = 0
@@ -333,6 +338,26 @@ class HubitatMCPClient:
         if isinstance(value, list):
             self._cached_devices = [item for item in value if isinstance(item, dict)]
             self._devices_cached_at = now
+            # Warm the exact whole-home snapshot cache from the dashboard/device
+            # manifest we just fetched. This lets an immediately-following
+            # homebrain_active_rooms/lights/switches request reuse the same
+            # authoritative state instead of issuing another expensive full
+            # inventory call. Writes still invalidate this snapshot.
+            if self._cached_devices:
+                snapshot_data = {"devices": deepcopy(self._cached_devices)}
+                snapshot_result = MCPToolResult(
+                    name="hub_read_devices",
+                    arguments={"tool": "hub_list_devices", "args": {}},
+                    raw={},
+                    text=json.dumps(snapshot_data, ensure_ascii=False),
+                    data=snapshot_data,
+                    is_error=False,
+                )
+                self._live_device_snapshot = (
+                    self._devices_cached_at,
+                    self._live_device_snapshot_generation,
+                    snapshot_result,
+                )
         return list(self._cached_devices)
 
     async def get_device_identities(self) -> list[dict[str, Any]]:
@@ -430,7 +455,11 @@ class HubitatMCPClient:
             ):
                 return self._copy_tool_result(cached_result)
 
+        lock_started = time.monotonic()
         async with self._lock:
+            add_active_metric_ms(
+                "mcp_lock_wait", (time.monotonic() - lock_started) * 1000
+            )
             if cacheable and self._live_device_snapshot is not None:
                 cached_at, cached_generation, cached_result = self._live_device_snapshot
                 if (
@@ -448,7 +477,13 @@ class HubitatMCPClient:
                     "arguments": arguments,
                 },
             }
-            response = await self._post(payload)
+            http_started = time.monotonic()
+            try:
+                response = await self._post(payload)
+            finally:
+                add_active_metric_ms(
+                    "mcp_http", (time.monotonic() - http_started) * 1000
+                )
             result = self._rpc_result(response)
 
         content = result.get("content") or []

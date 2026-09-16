@@ -41,7 +41,8 @@ class RequestMetrics:
         "device_resolution_missing", "device_control_failures",
     })
     ALLOWED_TIMINGS = frozenset({
-        "provider", "tool_discovery", "mcp", "local_tool", "verification", "total",
+        "provider", "tool_discovery", "mcp", "mcp_lock_wait", "mcp_http",
+        "local_tool", "verification", "total",
     })
     ALLOWED_OUTCOMES = frozenset({
         "success", "refused", "unresolved", "cancelled", "failed",
