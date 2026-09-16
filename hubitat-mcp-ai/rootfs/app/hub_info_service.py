@@ -168,10 +168,22 @@ class HubInfoService:
                 "scope must be firmware, resources, or full",
             )
         try:
-            cached = await self.mcp.get_cached_devices()
+            # The real client exposes a non-blocking peek specifically so Hub Info
+            # discovery cannot trigger a whole-home detailed manifest refresh. Keep
+            # a compatibility fallback for lightweight test/legacy clients that do
+            # not yet expose peek_cached_devices(); production HubitatMCPClient
+            # instances always take the non-blocking path.
+            if isinstance(self.mcp, HubitatMCPClient):
+                cached = self.mcp.peek_cached_devices()
+            else:
+                peek_cached = getattr(self.mcp, "peek_cached_devices", None)
+                if callable(peek_cached):
+                    cached = peek_cached()
+                else:
+                    cached = await self.mcp.get_cached_devices()
         except Exception as exc:
             cached = []
-            logger.warning("Could not load Hub Info identity manifest: %s", exc)
+            logger.warning("Could not inspect cached Hub Info identity manifest: %s", exc)
         hub_device = self.hub_info_device(list(cached or []))
         if hub_device is None:
             source = await self.mcp.call_tool(
@@ -241,6 +253,8 @@ class HubInfoService:
         # merge_device_identity() has already touched.
         live_device_units: dict[str, str] = {}
         poll_attempts = 10 if scope in {"firmware", "full"} else 6
+        last_complete_firmware: tuple[Any, Any] | None = None
+        stable_complete_reads = 0
         for attempt in range(poll_attempts):
             source = await self.mcp.call_tool(
                 "hub_read_devices",
@@ -272,16 +286,26 @@ class HubInfoService:
                     attributes.get("hubUpdateStatus"),
                     attributes.get("hubUpdateVersion"),
                 )
+                complete_firmware = all(
+                    value is not None for value in refreshed_firmware
+                )
+                if complete_firmware:
+                    if refreshed_firmware == last_complete_firmware:
+                        stable_complete_reads += 1
+                    else:
+                        last_complete_firmware = refreshed_firmware
+                        stable_complete_reads = 1
+                else:
+                    last_complete_firmware = None
+                    stable_complete_reads = 0
                 firmware_settled = (
                     refreshed_firmware != baseline_firmware
+                    or stable_complete_reads >= 2
                     or attempt == poll_attempts - 1
                 )
                 if (
                     scope not in {"firmware", "full"}
-                    or (
-                        all(value is not None for value in refreshed_firmware)
-                        and firmware_settled
-                    )
+                    or (complete_firmware and firmware_settled)
                 ):
                     break
             if attempt < poll_attempts - 1:

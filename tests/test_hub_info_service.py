@@ -23,8 +23,11 @@ class FakeMCP:
         self.responses = list(responses or [])
         self.calls = []
 
-    async def get_cached_devices(self):
+    def peek_cached_devices(self):
         return list(self.cached)
+
+    async def get_cached_devices(self):
+        raise AssertionError("Hub Info discovery must not trigger a detailed manifest refresh")
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
@@ -86,6 +89,38 @@ def test_nested_device_record_and_identity_merge_preserve_live_state():
         "roomName": "System",
         "attributes": {"freeMemory": 900, "hubModel": "C-8 Pro"},
     }]
+
+
+@pytest.mark.asyncio
+async def test_cold_snapshot_uses_targeted_label_lookup_not_manifest_refresh():
+    listing = result(
+        "hub_read_devices",
+        {},
+        {"devices": [{"id": "1089", "label": "Hub Info (C8 Pro)"}]},
+    )
+    update = result("hub_manage_devices", {}, {"success": True})
+    live = result(
+        "hub_read_devices",
+        {},
+        {
+            "id": "1089",
+            "label": "Hub Info (C8 Pro)",
+            "attributes": [
+                {"name": "hubUpdateStatus", "currentValue": "up to date"},
+                {"name": "hubUpdateVersion", "currentValue": "2.5.1.141"},
+                {"name": "firmwareVersionString", "currentValue": "2.5.1.141"},
+            ],
+        },
+    )
+    mcp = FakeMCP([], [listing, update, live])
+
+    snapshot = await HubInfoService(mcp, sleep=no_sleep).snapshot({"scope": "firmware"})
+
+    assert snapshot.data["success"] is True
+    assert mcp.calls[0] == (
+        "hub_read_devices",
+        {"tool": "hub_list_devices", "args": {"labelFilter": "Hub Info"}},
+    )
 
 
 @pytest.mark.asyncio

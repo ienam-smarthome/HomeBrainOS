@@ -269,7 +269,7 @@ class HubitatMCPClient:
             return [dict(item) for item in devices]
 
         task = asyncio.create_task(
-            self._refresh_cached_devices(now),
+            self._refresh_cached_devices(),
             name="hubitat-device-manifest-refresh",
         )
         self._device_manifest_inflight = task
@@ -280,7 +280,7 @@ class HubitatMCPClient:
             if self._device_manifest_inflight is task:
                 self._device_manifest_inflight = None
 
-    async def _refresh_cached_devices(self, now: float) -> list[dict[str, Any]]:
+    async def _refresh_cached_devices(self) -> list[dict[str, Any]]:
         generation = self._live_device_snapshot_generation
         tools = await self.list_tools()
         names = {tool.name for tool in tools}
@@ -337,14 +337,15 @@ class HubitatMCPClient:
             value = devices
         if isinstance(value, list):
             self._cached_devices = [item for item in value if isinstance(item, dict)]
-            self._devices_cached_at = now
+            completed_at = self._clock()
+            self._devices_cached_at = completed_at
             if (
                 self._cached_devices
                 and generation == self._live_device_snapshot_generation
             ):
                 snapshot_result = self._device_snapshot_result(self._cached_devices)
                 self._live_device_snapshot = (
-                    self._devices_cached_at,
+                    completed_at,
                     generation,
                     snapshot_result,
                 )

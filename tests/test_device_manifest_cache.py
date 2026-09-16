@@ -13,7 +13,7 @@ from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult  # noqa: E402
 
 @pytest.mark.asyncio
 async def test_device_manifest_cache_honours_ttl(monkeypatch):
-    clock = iter([100.0, 105.0, 113.0])
+    clock = iter([100.0, 105.0, 113.0, 118.0, 119.0])
     client = HubitatMCPClient(
         "http://hub/mcp", device_cache_seconds=12, clock=lambda: next(clock)
     )
@@ -33,6 +33,35 @@ async def test_device_manifest_cache_honours_ttl(monkeypatch):
     assert await client.get_cached_devices() == [{"id": "1", "label": "Lamp"}]
     assert await client.get_cached_devices() == [{"id": "1", "label": "Lamp"}]
     assert len(calls) == 2
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_manifest_ttl_starts_when_slow_refresh_completes(monkeypatch):
+    now = [100.0]
+    client = HubitatMCPClient(
+        "http://hub/mcp", device_cache_seconds=12, clock=lambda: now[0]
+    )
+    calls = []
+
+    async def list_tools():
+        return [MCPTool("hub_list_devices", "devices", {"type": "object"})]
+
+    async def call_tool(name, arguments):
+        calls.append((name, arguments))
+        # Model a very slow upstream read. The completed manifest should still
+        # receive a full TTL instead of inheriting the pre-fetch timestamp.
+        now[0] = 125.0
+        return MCPToolResult(name, arguments, {}, "", [{"id": "1", "label": "Lamp"}])
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+
+    assert await client.get_cached_devices() == [{"id": "1", "label": "Lamp"}]
+    assert client._devices_cached_at == 125.0
+    now[0] = 126.0
+    assert await client.get_cached_devices() == [{"id": "1", "label": "Lamp"}]
+    assert len(calls) == 1
     await client.close()
 
 
