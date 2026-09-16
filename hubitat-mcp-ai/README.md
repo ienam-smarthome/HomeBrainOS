@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.429**.
+Current add-on version: **0.10.430**.
 
 ## Architecture
 
@@ -59,9 +59,11 @@ instead of a bare label that would enter the model loop. Deterministic operation
 within one observed request reuse a single request-local live-device snapshot, so
 capability filtering and target resolution do not repeat the same Hubitat inventory
 read. Very closely spaced read-only requests may reuse the exact unfiltered live
-inventory for at most two seconds; every mutating tool attempt invalidates that
-shared snapshot before and after execution, and historical event reads are never
-served from it.
+inventory for at most five seconds. A freshly fetched dashboard/device manifest
+also warms that same five-second snapshot, so an immediately-following aggregate
+query such as active rooms does not repeat the full Hubitat inventory read. Every
+mutating tool attempt invalidates the shared snapshot before and after execution,
+and historical event reads are never served from it.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
@@ -69,7 +71,9 @@ cumulative discovery duration, cumulative remote MCP duration, actual MCP retry
 attempts, grounding retries and refusals, confirmation queuing and expiry,
 confirmed Rule Machine verification duration, verification failures, ambiguous
 and missing device resolutions, cancellation, total duration, and the final
-request outcome. Completed-request classification is delegated to the pure
+request outcome. It also exposes MCP lock-wait and MCP HTTP durations so a slow
+Hubitat request can be separated from time spent queued behind another MCP call.
+Completed-request classification is delegated to the pure
 `request_outcome_policy` module, which applies an explicit fixed precedence to
 privacy-safe counters only. A grounding refusal is labelled `refused`; a mutation
 verification failure is labelled `failed`; a recorded cancellation is labelled
