@@ -24,6 +24,7 @@ The repository drift test compares this table directly with the live directory. 
 | `device_control_service.py` | Executes bounded device-control operations. |
 | `device_history_service.py` | Resolves one device and reads bounded event history. |
 | `device_query_service.py` | Performs read-side inventory queries and aggregation. |
+| `device_read_contract.py` | Centralizes Hubitat device-list projection modes, state-field normalization, and projected-state shape validation. |
 | `device_state_summary.py` | Provides shared pure device-state summary helpers. |
 | `device_target_resolver.py` | Resolves natural-language targets to concrete devices. |
 | `time_expressions.py` | Shared deterministic clock-time recognition (parsing an isolated "at &lt;time&gt;" token, never scanning free text for meaning); used by `rule_authoring_service.py` and `device_control_service.py`. |

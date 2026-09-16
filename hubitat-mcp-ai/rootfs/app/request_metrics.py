@@ -42,7 +42,7 @@ class RequestMetrics:
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait", "mcp_http",
-        "local_tool", "verification", "total",
+        "mcp_shared_wait", "local_tool", "verification", "total",
     })
     ALLOWED_OUTCOMES = frozenset({
         "success", "refused", "unresolved", "cancelled", "failed",
