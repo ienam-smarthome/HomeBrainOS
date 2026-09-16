@@ -66,6 +66,15 @@ def test_millisecond_values_remain_compact() -> None:
     ]
 
 
+def test_local_tool_path_is_visible_beside_mcp_timing() -> None:
+    assert present_request_metrics(
+        {"timings_ms": {"mcp": 41118, "local_tool": 41121}}
+    ) == [
+        {"label": "MCP", "value": "41.1 s"},
+        {"label": "Local tool path", "value": "41.1 s"},
+    ]
+
+
 def test_refused_outcome_and_production_counter_names_are_supported() -> None:
     assert present_request_metrics(
         {
