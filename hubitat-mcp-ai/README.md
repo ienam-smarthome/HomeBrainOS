@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.433**.
+Current add-on version: **0.10.434**.
 
 ## Architecture
 
@@ -63,21 +63,32 @@ inventory for at most two seconds. A freshly fetched dashboard/device manifest
 also warms that same two-second snapshot, so an immediately-following aggregate
 query such as active rooms does not repeat the full Hubitat inventory read. While
 a manifest refresh is still in progress, concurrent refresh callers and aggregate
-live-state reads now share that in-flight work instead of queuing behind the MCP
-lock and then launching another whole-home inventory read. Every mutating tool
-attempt invalidates the shared snapshot generation, so an in-flight pre-write
-manifest cannot be reused as post-write authoritative state. Historical event reads
-are never served from this cache.
+live-state reads share that in-flight work instead of queuing behind the MCP lock
+and then launching another whole-home inventory read. Every mutating tool attempt
+invalidates the shared snapshot generation, so an in-flight pre-write manifest
+cannot be reused as post-write authoritative state. Historical event reads are
+never served from this cache.
 
-`homebrain_active_rooms` uses a capability-filtered live-read path. It queries
-`hub_list_devices` separately for `MotionSensor` and `Switch` devices, requests only
-`id`, `name`, `label`, `room`, `capabilities`, and `currentStates`, follows the
-server's pagination contract, and de-duplicates devices by id before applying the
-unchanged active-room definition. This avoids the 0.10.432 projection that returned
-zero records on the live hub. If the filtered path fails or yields no source records,
-the adapter falls back to the established complete authoritative inventory instead
-of turning a projection/schema problem into a confident "no active rooms" answer.
-Other whole-home queries keep the normal complete-inventory path.
+Hubitat device-list projection semantics are centralized in `device_read_contract`.
+The upstream MCP server has two distinct live-state result contracts: compact
+summary reads expose `currentStates`, while detailed reads expose the same reported
+state as `attributes`; requesting capabilities or commands promotes a projection to
+detailed mode. `HubitatMCPClient` normalizes every projected `hub_list_devices`
+request at the protocol boundary, independent of prompt wording, model choice, or
+which local adapter initiated it. It also validates that a non-empty projected
+response actually contains the promised state container. A structurally incomplete
+response is treated as a read failure rather than as proof that all devices are
+inactive, allowing the established authoritative fallback to run. The cached
+device manifest is built from the same contract so dashboard and query consumers
+cannot drift onto different state-field conventions.
+
+`homebrain_active_rooms` continues to use capability-filtered reads for
+`MotionSensor` and `Switch` devices, but those reads now pass through the common
+projection contract above. The active-room definition remains unchanged:
+`motion=active OR light switch=on`. If a filtered read fails, returns no usable
+records, or violates the expected projected-state shape, the adapter falls back to
+the complete authoritative inventory rather than emitting a confident false-zero
+answer. Other whole-home queries retain the normal complete-inventory path.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
@@ -85,18 +96,18 @@ cumulative discovery duration, cumulative remote MCP duration, actual MCP retry
 attempts, grounding retries and refusals, confirmation queuing and expiry,
 confirmed Rule Machine verification duration, verification failures, ambiguous
 and missing device resolutions, cancellation, total duration, and the final
-request outcome. It also exposes MCP lock-wait and MCP HTTP durations so a slow
-Hubitat request can be separated from time spent queued behind another MCP call.
-Completed-request classification is delegated to the pure
-`request_outcome_policy` module, which applies an explicit fixed precedence to
-privacy-safe counters only. A grounding refusal is labelled `refused`; a mutation
-verification failure is labelled `failed`; a recorded cancellation is labelled
-`cancelled`; expired confirmations and deterministic ambiguous or missing device
-resolution are labelled `unresolved`. The policy never inspects user or model text.
-Local adapters are excluded from MCP timing. Its fixed metric vocabulary rejects
-dynamic labels so device names, prompts, credentials, and tool arguments cannot
-become metric dimensions. Metrics are returned on the production
-`ObservedAgentOutcome` without changing the original result fields.
+request outcome. It also exposes MCP lock-wait, MCP HTTP, and MCP shared-read-wait
+durations, so time spent awaiting another already-running manifest/snapshot is no
+longer hidden inside a local tool's elapsed time. Completed-request classification
+is delegated to the pure `request_outcome_policy` module, which applies an explicit
+fixed precedence to privacy-safe counters only. A grounding refusal is labelled
+`refused`; a mutation verification failure is labelled `failed`; a recorded
+cancellation is labelled `cancelled`; expired confirmations and deterministic
+ambiguous or missing device resolution are labelled `unresolved`. The policy never
+inspects user or model text. Local adapters are excluded from MCP timing. Its fixed
+metric vocabulary rejects dynamic labels so device names, prompts, credentials,
+and tool arguments cannot become metric dimensions. Metrics are returned on the
+production `ObservedAgentOutcome` without changing the original result fields.
 
 MCP retries are counted at the transport loop immediately before an actual retry
 POST begins. Transport failures and retryable HTTP 5xx responses share the same
@@ -218,8 +229,8 @@ rather than one flat number:
 - `ollama_local_timeout_seconds` (default 12s) bounds how long it waits for
   a response *after* connecting -- generous, because Ollama loads a model
   into memory on first use after being idle, and that cold load alone can
-  take several seconds. A single flat timeout would either be too long for
-  "nothing is listening" or too short for "just woke up and is loading."
+take several seconds. A single flat timeout would either be too long for
+"nothing is listening" or too short for "just woke up and is loading."
 
 There is no persistent "local is down" state -- if the local instance comes
 back online, the very next request uses it again automatically.
