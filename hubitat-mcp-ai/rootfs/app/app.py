@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, model_validator
 from api_response_builder import build_agent_response
 from automation_ideas_service import suggest_new_automations
 from automation_status_service import AutomationStatusService
+from device_read_contract import live_context_devices, live_context_is_complete
 from device_state_summary import (
     active_non_light_switches,
     active_room_summary,
@@ -251,20 +252,7 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def default_session_id(self) -> "ChatRequest":
-        """Give every caller that omits session_id its own isolated key.
-
-        The bundled WebUI always sends a real per-tab UUID (see
-        webui.py's newSessionId()), so it never hits this path. A direct
-        public-API caller that omits session_id, however, previously fell
-        back to the literal string "default" -- every such caller shared
-        one session key, so one caller's pending write confirmation,
-        active disambiguation choices, or "last device" pronoun context
-        could be read, or even confirmed, by a completely unrelated
-        caller's next request. Each request that omits session_id now
-        gets its own random, unguessable UUID instead, so concurrent
-        callers who don't supply one are isolated from each other rather
-        than silently sharing state.
-        """
+        """Give every caller that omits session_id its own isolated key per request."""
 
         if not self.session_id:
             self.session_id = uuid.uuid4().hex
@@ -280,15 +268,7 @@ class ChatRequest(BaseModel):
 
 
 async def _creative_automation_recommendation() -> Any:
-    """Advisory automations request that specifically wants NEW ideas.
-
-    Runs the same deterministic gap-analysis snapshot first (so the
-    grounded fallback is always available), then asks the model to
-    synthesize creative, themed suggestions from that same real data. If
-    the model call fails or produces nothing, the deterministic message is
-    returned completely unchanged -- this can only ever add to the
-    response, never break it.
-    """
+    """Advisory automations request that specifically wants NEW ideas."""
 
     outcome = await automation_status.snapshot(advisory=True)
     suggestion = await suggest_new_automations(
@@ -423,10 +403,29 @@ def _hub_info(devices: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+async def _dashboard_devices() -> tuple[list[dict[str, Any]], str]:
+    """Prefer the server's one-bulk-read live context for dashboard state.
+
+    Older MCP servers or partial/truncated context snapshots fall back to the
+    established detailed manifest. This keeps compatibility while preventing the
+    WebUI's 30-second dashboard poll from forcing a detailed per-device refresh on
+    servers that expose the bulk resource.
+    """
+
+    try:
+        context = await mcp.get_live_context()
+        if live_context_is_complete(context):
+            return live_context_devices(context), "bulk-live-context"
+        logger.warning("Dashboard live context was partial; using detailed manifest")
+    except Exception as exc:
+        logger.warning("Dashboard live context unavailable; using detailed manifest: %s", exc)
+    return list(await mcp.get_cached_devices()), "detailed-manifest"
+
+
 @app.get("/api/dashboard")
 async def dashboard() -> dict[str, Any]:
     try:
-        devices = await mcp.get_cached_devices()
+        devices, source = await _dashboard_devices()
     except Exception as exc:
         logger.warning("Dashboard device enrichment failed: %s", exc)
         return {
@@ -461,8 +460,15 @@ async def dashboard() -> dict[str, Any]:
                 low_batteries += 1
         except (TypeError, ValueError):
             pass
+
+    # Rich hub-info attributes are not part of the compact context resource.
+    # Reuse a detailed manifest only if one is already cached; never trigger an
+    # expensive detailed refresh merely to decorate the dashboard payload.
+    detailed = mcp.peek_cached_devices()
+    hub_info_devices = detailed if detailed else devices
     return {
         "success": True,
+        "source": source,
         "devices": len(devices),
         "lights_on": lights_on,
         "motion_active": motion_active,
@@ -476,7 +482,7 @@ async def dashboard() -> dict[str, Any]:
             for name, count in sorted(room_counts.items(), key=lambda item: item[0].lower())
         ],
         "active_rooms": active_room_summary(devices),
-        "hub_info": _hub_info(devices),
+        "hub_info": _hub_info(hub_info_devices),
     }
 
 
