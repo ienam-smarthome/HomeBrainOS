@@ -85,6 +85,16 @@ def test_projection_shape_validation_distinguishes_missing_from_empty_state() ->
     )
 
 
+def test_projection_shape_validation_rejects_mixed_complete_and_missing_records() -> None:
+    assert not projected_state_shape_is_usable(
+        [
+            {"id": "1", "attributes": [{"name": "motion", "value": "active"}]},
+            {"id": "2", "capabilities": ["MotionSensor"]},
+        ],
+        "attributes",
+    )
+
+
 @pytest.mark.asyncio
 async def test_mcp_client_normalizes_detailed_projection_before_posting() -> None:
     client = HubitatMCPClient("http://hubitat.test/mcp")
