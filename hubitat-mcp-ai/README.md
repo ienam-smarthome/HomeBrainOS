@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.434**.
+Current add-on version: **0.10.435**.
 
 ## Architecture
 
@@ -55,19 +55,37 @@ replace the browser-session target without model involvement, and live values ar
 refreshed from authoritative Hubitat state before each current-state response.
 The WebUI preserves the original requested attribute when a clarification button
 is tapped, so selecting a device resubmits a deterministic named-attribute request
-instead of a bare label that would enter the model loop. Deterministic operations
-within one observed request reuse a single request-local live-device snapshot, so
-capability filtering and target resolution do not repeat the same Hubitat inventory
-read. Very closely spaced read-only requests may reuse the exact unfiltered live
-inventory for at most two seconds. A freshly fetched dashboard/device manifest
-also warms that same two-second snapshot, so an immediately-following aggregate
-query such as active rooms does not repeat the full Hubitat inventory read. While
-a manifest refresh is still in progress, concurrent refresh callers and aggregate
-live-state reads share that in-flight work instead of queuing behind the MCP lock
-and then launching another whole-home inventory read. Every mutating tool attempt
-invalidates the shared snapshot generation, so an in-flight pre-write manifest
-cannot be reused as post-write authoritative state. Historical event reads are
-never served from this cache.
+instead of a bare label that would enter the model loop.
+
+The live device layer separates common state from richer device metadata. On MCP
+servers that expose `hubitat://context`, `HubitatMCPClient` reads that resource as
+a two-second, generation-fenced snapshot. The upstream resource is specifically
+built from one bulk Hubitat inventory read and returns device id, label, room,
+capabilities, and the common live attributes used by aggregate questions. Concurrent
+context readers share one in-flight request. Every mutation invalidates the same
+snapshot generation; a pre-write context response is rejected rather than reused
+as post-write evidence. If the resource is unavailable, partial, truncated, or has
+incomplete device identity coverage, HomeBrain falls back to the established full
+inventory path instead of weakening an exhaustive claim.
+
+This bulk path is selected from structured data requirements, not prompt wording.
+Active rooms require `motion` and `switch`; active lights and non-light switches
+require `switch`; deterministic attribute filters use the resource only when the
+requested attribute is one of the resource's declared live-state fields. Attributes
+outside that contract remain on the complete inventory path. The active-room
+definition is unchanged: `motion=active OR light switch=on`. The resource's compact
+`attributes` map is normalized to `currentStates` so richer typed/unit-bearing
+metadata can still be merged by device id without stale metadata overwriting fresh
+live values.
+
+The WebUI dashboard uses the same bulk live-context snapshot for its 30-second
+state poll rather than forcing a detailed device-manifest refresh each time. Rich
+hub-information decoration is taken from an already-cached detailed manifest when
+one exists; the dashboard does not create a detailed refresh solely for decoration.
+An explicit `/api/refresh` still refreshes MCP tools and the detailed manifest.
+Detailed inventory remains the source for command metadata, measurement units,
+health/alert fields, target resolution that needs richer metadata, and other reads
+whose requirements are not covered by the context resource.
 
 Hubitat device-list projection semantics are centralized in `device_read_contract`.
 The upstream MCP server has two distinct live-state result contracts: compact
@@ -79,16 +97,7 @@ which local adapter initiated it. It also validates that a non-empty projected
 response actually contains the promised state container. A structurally incomplete
 response is treated as a read failure rather than as proof that all devices are
 inactive, allowing the established authoritative fallback to run. The cached
-device manifest is built from the same contract so dashboard and query consumers
-cannot drift onto different state-field conventions.
-
-`homebrain_active_rooms` continues to use capability-filtered reads for
-`MotionSensor` and `Switch` devices, but those reads now pass through the common
-projection contract above. The active-room definition remains unchanged:
-`motion=active OR light switch=on`. If a filtered read fails, returns no usable
-records, or violates the expected projected-state shape, the adapter falls back to
-the complete authoritative inventory rather than emitting a confident false-zero
-answer. Other whole-home queries retain the normal complete-inventory path.
+detailed device manifest is built from the same contract.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
