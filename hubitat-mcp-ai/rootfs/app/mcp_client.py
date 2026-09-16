@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from device_read_contract import device_read_plan
 from mcp_retry_metrics import record_mcp_retry_attempt
 from request_metrics import add_active_metric_ms
 
@@ -246,7 +247,13 @@ class HubitatMCPClient:
 
         inflight = self._device_manifest_inflight
         if inflight is not None and not inflight.done():
-            devices = await asyncio.shield(inflight)
+            wait_started = time.monotonic()
+            try:
+                devices = await asyncio.shield(inflight)
+            finally:
+                add_active_metric_ms(
+                    "mcp_shared_wait", (time.monotonic() - wait_started) * 1000
+                )
             return [dict(item) for item in devices]
 
         task = asyncio.create_task(
@@ -278,17 +285,14 @@ class HubitatMCPClient:
         if not tool_name and "hub_read_devices" in names:
             tool_name = "hub_read_devices"
             using_gateway = True
+            plan = device_read_plan(
+                include_states=True,
+                include_capabilities=True,
+                include_commands=True,
+            )
             arguments = {
                 "tool": "hub_list_devices",
-                "args": {
-                    "detailed": True,
-                    "fields": [
-                        "id", "name", "label", "room",
-                        "capabilities", "attributes", "commands",
-                    ],
-                    "limit": 50,
-                    "offset": 0,
-                },
+                "args": plan.arguments(limit=50, offset=0),
             }
         if not tool_name:
             return list(self._cached_devices)
@@ -444,12 +448,17 @@ class HubitatMCPClient:
             manifest_task = self._device_manifest_inflight
             if manifest_task is not None and not manifest_task.done():
                 wait_generation = self._live_device_snapshot_generation
+                wait_started = time.monotonic()
                 try:
                     devices = await asyncio.shield(manifest_task)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
                     devices = []
+                finally:
+                    add_active_metric_ms(
+                        "mcp_shared_wait", (time.monotonic() - wait_started) * 1000
+                    )
                 if (
                     devices
                     and wait_generation == self._live_device_snapshot_generation
