@@ -63,9 +63,7 @@ class DeviceQueryService:
         return re.sub(r"[^a-z0-9]", "", value.lower())
 
     @classmethod
-    def _attribute_matches(
-        cls, actual: Any, operator: str, expected: Any
-    ) -> bool:
+    def _attribute_matches(cls, actual: Any, operator: str, expected: Any) -> bool:
         if operator == "exists":
             return actual is not None
         if operator == "not_exists":
@@ -187,9 +185,7 @@ class DeviceQueryService:
         return None
 
     @staticmethod
-    def _is_ambient_room_reading(
-        device: dict[str, Any], attribute: str
-    ) -> bool:
+    def _is_ambient_room_reading(device: dict[str, Any], attribute: str) -> bool:
         if attribute.casefold() not in {"temperature", "humidity"}:
             return True
         room = str(device.get("room") or device.get("roomName") or "").strip().casefold()
@@ -312,7 +308,13 @@ class DeviceQueryService:
         return source, devices
 
     async def _active_room_devices(self) -> tuple[MCPToolResult, list[dict[str, Any]]]:
-        """Fetch only the live fields needed to decide active rooms."""
+        """Read only motion sensors and switch devices needed by active-room logic.
+
+        The upstream gateway supports server-side capability filtering and field
+        projection. Reading current state for every device is expensive, so query
+        only MotionSensor and Switch devices and request currentStates rather than
+        the unsupported/empty `attributes` projection used in 0.10.432.
+        """
 
         started = time.monotonic()
         if not isinstance(self.mcp, HubitatMCPClient):
@@ -333,60 +335,84 @@ class DeviceQueryService:
             )
             return source, devices
 
-        page_args: dict[str, Any] = {
-            "detailed": True,
-            "fields": ["id", "name", "label", "room", "capabilities", "attributes"],
-            "limit": 200,
-            "offset": 0,
-        }
-        source_arguments = {"tool": "hub_list_devices", "args": dict(page_args)}
-        source = await self.mcp.call_tool("hub_read_devices", source_arguments)
-        devices = [
-            item
-            for item in (HubitatMCPClient._find_device_list(source.data) or [])
-            if isinstance(item, dict)
+        projected_fields = [
+            "id", "name", "label", "room", "capabilities", "currentStates"
         ]
-        page = HubitatMCPClient._find_device_page(source.data)
-        pages_fetched = 1
-        current_offset = 0
-        while (
-            self._tool_succeeded(source)
-            and page
-            and page.get("hasMore") is True
-            and page.get("nextOffset") is not None
-            and pages_fetched < 20
-        ):
-            try:
-                next_offset = int(page["nextOffset"])
-            except (TypeError, ValueError):
-                break
-            if next_offset <= current_offset:
-                break
-            current_offset = next_offset
-            page_args = {**page_args, "offset": current_offset}
-            next_arguments = {"tool": "hub_list_devices", "args": page_args}
-            next_source = await self.mcp.call_tool("hub_read_devices", next_arguments)
-            if not self._tool_succeeded(next_source):
-                source = next_source
-                break
-            devices.extend(
-                item
-                for item in (HubitatMCPClient._find_device_list(next_source.data) or [])
-                if isinstance(item, dict)
-            )
-            source = next_source
-            page = HubitatMCPClient._find_device_page(next_source.data)
-            pages_fetched += 1
+        capability_filters = ("MotionSensor", "Switch")
+        queries: list[dict[str, Any]] = []
+        merged_by_id: dict[str, dict[str, Any]] = {}
+        last_source: MCPToolResult | None = None
+        failed = False
 
+        for capability_filter in capability_filters:
+            offset = 0
+            pages_fetched = 0
+            while pages_fetched < 20:
+                page_args: dict[str, Any] = {
+                    "detailed": True,
+                    "capabilityFilter": capability_filter,
+                    "fields": projected_fields,
+                    "limit": 100,
+                    "offset": offset,
+                }
+                source_arguments = {"tool": "hub_list_devices", "args": page_args}
+                queries.append(source_arguments)
+                source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+                last_source = source
+                if not self._tool_succeeded(source):
+                    failed = True
+                    break
+
+                for item in HubitatMCPClient._find_device_list(source.data) or []:
+                    if not isinstance(item, dict):
+                        continue
+                    key = str(item.get("id") or item.get("deviceId") or "")
+                    if not key:
+                        key = f"anon:{len(merged_by_id)}"
+                    previous = merged_by_id.get(key, {})
+                    combined = dict(previous)
+                    combined.update(item)
+                    merged_by_id[key] = combined
+
+                page = HubitatMCPClient._find_device_page(source.data)
+                pages_fetched += 1
+                if not page or page.get("hasMore") is not True:
+                    break
+                try:
+                    next_offset = int(page.get("nextOffset"))
+                except (TypeError, ValueError):
+                    break
+                if next_offset <= offset:
+                    break
+                offset = next_offset
+
+            if failed:
+                break
+
+        devices = list(merged_by_id.values())
+        if failed or not devices or last_source is None:
+            # A filtered/projection query must never turn a transport/schema
+            # problem into a confident "no active rooms" answer. Fall back to
+            # the established complete authoritative snapshot when the fast path
+            # cannot prove it has any source records.
+            logger.warning(
+                "Active-room fast read returned no usable records; falling back to full inventory"
+            )
+            return await self._live_devices(enrich_identity=True)
+
+        evidence_arguments = {
+            "strategy": "capability-filtered-active-rooms",
+            "queries": queries,
+        }
         self._record_evidence(
             "hub_read_devices",
-            source_arguments,
-            success=self._tool_succeeded(source),
+            evidence_arguments,
+            success=True,
             elapsed_ms=round((time.monotonic() - started) * 1000),
-            summary=f"{len(devices)} active-room source device records",
+            summary=f"{len(devices)} capability-filtered active-room source device records",
             evidence_kind="authoritative_state_snapshot",
         )
-        return source, devices
+        return last_source, devices
 
     @staticmethod
     def _read_failure(
@@ -411,13 +437,19 @@ class DeviceQueryService:
         }
         if not attribute or operator not in valid:
             return MCPToolResult(
-                DEVICE_FILTER_TOOL, arguments, {}, "Invalid filter arguments",
+                DEVICE_FILTER_TOOL,
+                arguments,
+                {},
+                "Invalid filter arguments",
                 {"error": "attribute and a valid operator are required"},
                 is_error=True,
             )
         if operator not in {"exists", "not_exists"} and "value" not in arguments:
             return MCPToolResult(
-                DEVICE_FILTER_TOOL, arguments, {}, "Comparison value required",
+                DEVICE_FILTER_TOOL,
+                arguments,
+                {},
+                "Comparison value required",
                 {"error": "value is required for this operator"},
                 is_error=True,
             )
@@ -433,7 +465,8 @@ class DeviceQueryService:
             attributes = self._device_attributes(device)
             actual = next(
                 (
-                    value for key, value in attributes.items()
+                    value
+                    for key, value in attributes.items()
                     if self._normalized_attribute(str(key)) == wanted
                 ),
                 None,
@@ -441,7 +474,8 @@ class DeviceQueryService:
             if actual is None:
                 actual = next(
                     (
-                        value for key, value in device.items()
+                        value
+                        for key, value in device.items()
                         if self._normalized_attribute(str(key)) == wanted
                     ),
                     None,
@@ -452,13 +486,15 @@ class DeviceQueryService:
                 comparison_errors += 1
                 continue
             if matched:
-                matches.append({
-                    "id": device.get("id") or device.get("deviceId"),
-                    "label": device.get("label") or device.get("name"),
-                    "room": device.get("room") or device.get("roomName"),
-                    "attribute": attribute,
-                    "value": actual,
-                })
+                matches.append(
+                    {
+                        "id": device.get("id") or device.get("deviceId"),
+                        "label": device.get("label") or device.get("name"),
+                        "room": device.get("room") or device.get("roomName"),
+                        "attribute": attribute,
+                        "value": actual,
+                    }
+                )
         data = {
             "attribute": attribute,
             "operator": operator,
@@ -542,7 +578,10 @@ class DeviceQueryService:
             "exact semantic room and device name",
             "exact semantic name with device-kind token omitted",
         }
-        if resolution.reason not in exact_match_reasons and attribute_key in self._ATTRIBUTE_ALIASES:
+        if (
+            resolution.reason not in exact_match_reasons
+            and attribute_key in self._ATTRIBUTE_ALIASES
+        ):
             reporters = [
                 device
                 for device in scoped_candidates
@@ -601,7 +640,10 @@ class DeviceQueryService:
             "maximum", "minimum", "top", "sort", "count",
         }:
             return MCPToolResult(
-                DEVICE_QUERY_TOOL, arguments, {}, "Invalid query arguments",
+                DEVICE_QUERY_TOOL,
+                arguments,
+                {},
+                "Invalid query arguments",
                 {
                     "error": (
                         "attribute and operation maximum, minimum, top, sort, "
@@ -630,15 +672,17 @@ class DeviceQueryService:
             except (TypeError, ValueError):
                 conversion_errors += 1
                 continue
-            rows.append({
-                "id": device.get("id") or device.get("deviceId"),
-                "label": device.get("label") or device.get("name"),
-                "room": device.get("room") or device.get("roomName"),
-                "attribute": attribute,
-                "source_attribute": source_attribute,
-                "value": int(numeric) if numeric.is_integer() else numeric,
-                "unit": self._unit_for(device, attribute, source_attribute),
-            })
+            rows.append(
+                {
+                    "id": device.get("id") or device.get("deviceId"),
+                    "label": device.get("label") or device.get("name"),
+                    "room": device.get("room") or device.get("roomName"),
+                    "attribute": attribute,
+                    "source_attribute": source_attribute,
+                    "value": int(numeric) if numeric.is_integer() else numeric,
+                    "unit": self._unit_for(device, attribute, source_attribute),
+                }
+            )
 
         reverse = operation != "minimum"
         rows.sort(
@@ -692,7 +736,8 @@ class DeviceQueryService:
                 if self._matches_device_kind(device, device_kind)
                 and self._attribute_value(
                     device, attribute, allow_generic_value_fallback=True
-                )[0] in {"valueStr", "value"}
+                )[0]
+                in {"valueStr", "value"}
             )
             if fallback_candidates:
                 data["hint"] = (
@@ -732,12 +777,14 @@ class DeviceQueryService:
                 or "weather" in capabilities
             ):
                 continue
-            candidates.append({
-                "id": device.get("id") or device.get("deviceId"),
-                "label": label,
-                "room": room or None,
-                "attributes": self._device_attributes(device),
-            })
+            candidates.append(
+                {
+                    "id": device.get("id") or device.get("deviceId"),
+                    "label": label,
+                    "room": room or None,
+                    "attributes": self._device_attributes(device),
+                }
+            )
 
         candidates.sort(
             key=lambda item: (
@@ -765,7 +812,7 @@ class DeviceQueryService:
             "definition": "motion=active OR light switch=on",
             "total_scanned": len(devices),
             "complete": True,
-            "read_scope": "active-room fields only",
+            "read_scope": "capability-filtered motion/switch currentStates",
         }
         return MCPToolResult(ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data)
 
@@ -815,11 +862,13 @@ class DeviceQueryService:
             ):
                 presence.append({**identity, "presence": attrs.get("presence")})
             if "presencesensor" in capabilities or attrs.get("presence") is not None:
-                tracked_presence.append({
-                    **identity,
-                    "presence": attrs.get("presence") or "unknown",
-                    "home": is_home,
-                })
+                tracked_presence.append(
+                    {
+                        **identity,
+                        "presence": attrs.get("presence") or "unknown",
+                        "home": is_home,
+                    }
+                )
             if str(attrs.get("motion") or "").casefold() == "active":
                 motion.append({**identity, "motion": "active"})
             if str(attrs.get("contact") or "").casefold() == "open":
