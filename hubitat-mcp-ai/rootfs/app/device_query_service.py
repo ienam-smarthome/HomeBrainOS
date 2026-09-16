@@ -8,6 +8,12 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any
 
+from device_read_contract import (
+    LIVE_CONTEXT_ATTRIBUTES,
+    LIVE_CONTEXT_RESOURCE_URI,
+    live_context_devices,
+    live_context_is_complete,
+)
 from device_state_summary import (
     active_lights,
     active_non_light_switches,
@@ -41,6 +47,11 @@ WEATHER_SNAPSHOT_TOOL = "homebrain_weather_snapshot"
 _REQUEST_DEVICE_SNAPSHOT: ContextVar[
     tuple[object, MCPToolResult, list[dict[str, Any]]] | None
 ] = ContextVar("homebrain_request_device_snapshot", default=None)
+
+_CONTEXT_ATTRIBUTE_BY_NORMALIZED = {
+    re.sub(r"[^a-z0-9]", "", name.casefold()): name
+    for name in LIVE_CONTEXT_ATTRIBUTES
+}
 
 
 class DeviceQueryService:
@@ -256,6 +267,70 @@ class DeviceQueryService:
             merged.append(combined)
         return merged
 
+    @classmethod
+    def _context_attribute_name(cls, attribute: str) -> str | None:
+        """Return a context-resource attribute only for an exact structural match.
+
+        Attribute aliases such as ``batteryLevel`` are intentionally not mapped to
+        ``battery`` here: the upstream context resource asks the hub for the named
+        default attributes and cannot prove that a differently named driver state is
+        equivalent. Unsupported attributes stay on the complete detailed read path.
+        """
+
+        return _CONTEXT_ATTRIBUTE_BY_NORMALIZED.get(cls._normalized_attribute(attribute))
+
+    async def _bulk_live_devices(
+        self,
+        required_attributes: set[str],
+    ) -> tuple[MCPToolResult, list[dict[str, Any]]]:
+        """Use Hubitat's single-bulk-read context resource when it covers the need.
+
+        This path is based on structured state requirements, never prompt wording.
+        Any unsupported attribute, unavailable resource, partial inventory, truncation,
+        or generation invalidation falls back to the established complete inventory.
+        """
+
+        wanted = {str(value) for value in required_attributes if str(value)}
+        supported = {name.casefold() for name in LIVE_CONTEXT_ATTRIBUTES}
+        if any(value.casefold() not in supported for value in wanted):
+            return await self._live_devices(enrich_identity=False)
+        if not isinstance(self.mcp, HubitatMCPClient):
+            return await self._live_devices(enrich_identity=False)
+
+        started = time.monotonic()
+        try:
+            context = await self.mcp.get_live_context()
+        except Exception as exc:
+            logger.warning("Bulk live context unavailable; using full inventory: %s", exc)
+            return await self._live_devices(enrich_identity=False)
+        if not live_context_is_complete(context):
+            logger.warning("Bulk live context was partial; using full inventory")
+            return await self._live_devices(enrich_identity=False)
+
+        devices = live_context_devices(context)
+        source_arguments = {
+            "resource": LIVE_CONTEXT_RESOURCE_URI,
+            "strategy": "bulk-live-context",
+            "required_attributes": sorted(wanted, key=str.casefold),
+        }
+        data = {"devices": devices, "resource": LIVE_CONTEXT_RESOURCE_URI}
+        source = MCPToolResult(
+            "hub_read_devices",
+            source_arguments,
+            {},
+            json.dumps(data, ensure_ascii=False),
+            data,
+        )
+        self._record_evidence(
+            "hub_read_devices",
+            source_arguments,
+            success=True,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(devices)} bulk live-context device records",
+            evidence_kind="authoritative_state_snapshot",
+        )
+        return source, devices
+
     async def _live_devices(
         self, *, enrich_identity: bool
     ) -> tuple[MCPToolResult, list[dict[str, Any]]]:
@@ -297,9 +372,14 @@ class DeviceQueryService:
                 logger.warning("Could not enrich live device states with identity: %s", exc)
                 identities = []
             devices = self._merge_device_identity(devices, identities)
+        evidence_arguments = (
+            dict(source.arguments)
+            if isinstance(source.arguments, dict) and source.arguments
+            else source_arguments
+        )
         self._record_evidence(
             "hub_read_devices",
-            source_arguments,
+            evidence_arguments,
             success=self._tool_succeeded(source),
             elapsed_ms=round((time.monotonic() - started) * 1000),
             summary=f"{len(devices)} source device records",
@@ -308,111 +388,9 @@ class DeviceQueryService:
         return source, devices
 
     async def _active_room_devices(self) -> tuple[MCPToolResult, list[dict[str, Any]]]:
-        """Read only motion sensors and switch devices needed by active-room logic.
+        """Read the structural live-state set required by active-room logic."""
 
-        The upstream gateway supports server-side capability filtering and field
-        projection. Reading current state for every device is expensive, so query
-        only MotionSensor and Switch devices and request currentStates rather than
-        the unsupported/empty `attributes` projection used in 0.10.432.
-        """
-
-        started = time.monotonic()
-        if not isinstance(self.mcp, HubitatMCPClient):
-            source_arguments = {"tool": "hub_list_devices", "args": {}}
-            source = await self.mcp.call_tool("hub_read_devices", source_arguments)
-            devices = [
-                item
-                for item in (HubitatMCPClient._find_device_list(source.data) or [])
-                if isinstance(item, dict)
-            ]
-            self._record_evidence(
-                "hub_read_devices",
-                source_arguments,
-                success=self._tool_succeeded(source),
-                elapsed_ms=round((time.monotonic() - started) * 1000),
-                summary=f"{len(devices)} active-room source device records",
-                evidence_kind="authoritative_state_snapshot",
-            )
-            return source, devices
-
-        projected_fields = [
-            "id", "name", "label", "room", "capabilities", "currentStates"
-        ]
-        capability_filters = ("MotionSensor", "Switch")
-        queries: list[dict[str, Any]] = []
-        merged_by_id: dict[str, dict[str, Any]] = {}
-        last_source: MCPToolResult | None = None
-        failed = False
-
-        for capability_filter in capability_filters:
-            offset = 0
-            pages_fetched = 0
-            while pages_fetched < 20:
-                page_args: dict[str, Any] = {
-                    "detailed": True,
-                    "capabilityFilter": capability_filter,
-                    "fields": projected_fields,
-                    "limit": 100,
-                    "offset": offset,
-                }
-                source_arguments = {"tool": "hub_list_devices", "args": page_args}
-                queries.append(source_arguments)
-                source = await self.mcp.call_tool("hub_read_devices", source_arguments)
-                last_source = source
-                if not self._tool_succeeded(source):
-                    failed = True
-                    break
-
-                for item in HubitatMCPClient._find_device_list(source.data) or []:
-                    if not isinstance(item, dict):
-                        continue
-                    key = str(item.get("id") or item.get("deviceId") or "")
-                    if not key:
-                        key = f"anon:{len(merged_by_id)}"
-                    previous = merged_by_id.get(key, {})
-                    combined = dict(previous)
-                    combined.update(item)
-                    merged_by_id[key] = combined
-
-                page = HubitatMCPClient._find_device_page(source.data)
-                pages_fetched += 1
-                if not page or page.get("hasMore") is not True:
-                    break
-                try:
-                    next_offset = int(page.get("nextOffset"))
-                except (TypeError, ValueError):
-                    break
-                if next_offset <= offset:
-                    break
-                offset = next_offset
-
-            if failed:
-                break
-
-        devices = list(merged_by_id.values())
-        if failed or not devices or last_source is None:
-            # A filtered/projection query must never turn a transport/schema
-            # problem into a confident "no active rooms" answer. Fall back to
-            # the established complete authoritative snapshot when the fast path
-            # cannot prove it has any source records.
-            logger.warning(
-                "Active-room fast read returned no usable records; falling back to full inventory"
-            )
-            return await self._live_devices(enrich_identity=True)
-
-        evidence_arguments = {
-            "strategy": "capability-filtered-active-rooms",
-            "queries": queries,
-        }
-        self._record_evidence(
-            "hub_read_devices",
-            evidence_arguments,
-            success=True,
-            elapsed_ms=round((time.monotonic() - started) * 1000),
-            summary=f"{len(devices)} capability-filtered active-room source device records",
-            evidence_kind="authoritative_state_snapshot",
-        )
-        return last_source, devices
+        return await self._bulk_live_devices({"motion", "switch"})
 
     @staticmethod
     def _read_failure(
@@ -454,7 +432,11 @@ class DeviceQueryService:
                 is_error=True,
             )
 
-        source, devices = await self._live_devices(enrich_identity=False)
+        context_attribute = self._context_attribute_name(attribute)
+        if context_attribute is not None:
+            source, devices = await self._bulk_live_devices({context_attribute})
+        else:
+            source, devices = await self._live_devices(enrich_identity=False)
         if not self._tool_succeeded(source):
             return self._read_failure(DEVICE_FILTER_TOOL, arguments, source)
 
@@ -748,7 +730,7 @@ class DeviceQueryService:
         return MCPToolResult(DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
-        source, devices = await self._live_devices(enrich_identity=True)
+        source, devices = await self._bulk_live_devices({"switch"})
         if not self._tool_succeeded(source):
             return self._read_failure(ACTIVE_LIGHTS_TOOL, arguments, source)
         lights = active_lights(devices)
@@ -758,6 +740,7 @@ class DeviceQueryService:
             "definition": "light/bulb capability with switch=on",
             "total_scanned": len(devices),
             "complete": True,
+            "read_scope": "bulk live context",
         }
         return MCPToolResult(ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data)
 
@@ -812,12 +795,12 @@ class DeviceQueryService:
             "definition": "motion=active OR light switch=on",
             "total_scanned": len(devices),
             "complete": True,
-            "read_scope": "capability-filtered motion/switch currentStates",
+            "read_scope": "bulk live context",
         }
         return MCPToolResult(ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_switches(self, arguments: dict[str, Any]) -> MCPToolResult:
-        source, devices = await self._live_devices(enrich_identity=True)
+        source, devices = await self._bulk_live_devices({"switch"})
         if not self._tool_succeeded(source):
             return self._read_failure(ACTIVE_SWITCHES_TOOL, arguments, source)
         switches = active_non_light_switches(devices)
@@ -827,6 +810,7 @@ class DeviceQueryService:
             "definition": "switch=on excluding light/bulb capabilities",
             "total_scanned": len(devices),
             "complete": True,
+            "read_scope": "bulk live context",
         }
         return MCPToolResult(ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data)
 
