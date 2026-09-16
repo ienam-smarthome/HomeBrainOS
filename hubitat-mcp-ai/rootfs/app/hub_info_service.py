@@ -168,10 +168,13 @@ class HubInfoService:
                 "scope must be firmware, resources, or full",
             )
         try:
-            cached = await self.mcp.get_cached_devices()
+            # Hub Info discovery must never force a whole-home detailed manifest
+            # refresh. Reuse a warm manifest when one already exists; otherwise the
+            # server-side label filter is the authoritative, bounded discovery path.
+            cached = self.mcp.peek_cached_devices()
         except Exception as exc:
             cached = []
-            logger.warning("Could not load Hub Info identity manifest: %s", exc)
+            logger.warning("Could not inspect cached Hub Info identity manifest: %s", exc)
         hub_device = self.hub_info_device(list(cached or []))
         if hub_device is None:
             source = await self.mcp.call_tool(
