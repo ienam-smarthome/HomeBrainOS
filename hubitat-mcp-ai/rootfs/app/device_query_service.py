@@ -282,30 +282,35 @@ class DeviceQueryService:
     async def _bulk_live_devices(
         self,
         required_attributes: set[str],
+        *,
+        enrich_fallback_identity: bool = False,
     ) -> tuple[MCPToolResult, list[dict[str, Any]]]:
         """Use Hubitat's single-bulk-read context resource when it covers the need.
 
         This path is based on structured state requirements, never prompt wording.
         Any unsupported attribute, unavailable resource, partial inventory, truncation,
         or generation invalidation falls back to the established complete inventory.
+        Aggregate consumers that need capability/room identity can request enrichment
+        on that fallback, preserving the pre-context correctness contract without
+        making the successful bulk-context path pay for a detailed manifest refresh.
         """
 
         wanted = {str(value) for value in required_attributes if str(value)}
         supported = {name.casefold() for name in LIVE_CONTEXT_ATTRIBUTES}
         if any(value.casefold() not in supported for value in wanted):
-            return await self._live_devices(enrich_identity=False)
+            return await self._live_devices(enrich_identity=enrich_fallback_identity)
         if not isinstance(self.mcp, HubitatMCPClient):
-            return await self._live_devices(enrich_identity=False)
+            return await self._live_devices(enrich_identity=enrich_fallback_identity)
 
         started = time.monotonic()
         try:
             context = await self.mcp.get_live_context()
         except Exception as exc:
             logger.warning("Bulk live context unavailable; using full inventory: %s", exc)
-            return await self._live_devices(enrich_identity=False)
+            return await self._live_devices(enrich_identity=enrich_fallback_identity)
         if not live_context_is_complete(context):
             logger.warning("Bulk live context was partial; using full inventory")
-            return await self._live_devices(enrich_identity=False)
+            return await self._live_devices(enrich_identity=enrich_fallback_identity)
 
         devices = live_context_devices(context)
         source_arguments = {
@@ -390,7 +395,9 @@ class DeviceQueryService:
     async def _active_room_devices(self) -> tuple[MCPToolResult, list[dict[str, Any]]]:
         """Read the structural live-state set required by active-room logic."""
 
-        return await self._bulk_live_devices({"motion", "switch"})
+        return await self._bulk_live_devices(
+            {"motion", "switch"}, enrich_fallback_identity=True
+        )
 
     @staticmethod
     def _read_failure(
@@ -730,7 +737,9 @@ class DeviceQueryService:
         return MCPToolResult(DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_lights(self, arguments: dict[str, Any]) -> MCPToolResult:
-        source, devices = await self._bulk_live_devices({"switch"})
+        source, devices = await self._bulk_live_devices(
+            {"switch"}, enrich_fallback_identity=True
+        )
         if not self._tool_succeeded(source):
             return self._read_failure(ACTIVE_LIGHTS_TOOL, arguments, source)
         lights = active_lights(devices)
@@ -800,7 +809,9 @@ class DeviceQueryService:
         return MCPToolResult(ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_switches(self, arguments: dict[str, Any]) -> MCPToolResult:
-        source, devices = await self._bulk_live_devices({"switch"})
+        source, devices = await self._bulk_live_devices(
+            {"switch"}, enrich_fallback_identity=True
+        )
         if not self._tool_succeeded(source):
             return self._read_failure(ACTIVE_SWITCHES_TOOL, arguments, source)
         switches = active_non_light_switches(devices)
