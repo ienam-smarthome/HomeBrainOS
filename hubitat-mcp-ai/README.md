@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.431**.
+Current add-on version: **0.10.432**.
 
 ## Architecture
 
@@ -68,6 +68,13 @@ lock and then launching another whole-home inventory read. Every mutating tool
 attempt invalidates the shared snapshot generation, so an in-flight pre-write
 manifest cannot be reused as post-write authoritative state. Historical event reads
 are never served from this cache.
+
+`homebrain_active_rooms` has an additional narrow live-read path. The active-room
+definition needs only device identity/room, capabilities, and current attributes,
+so this adapter requests exactly those fields from `hub_list_devices` with a large
+page size instead of asking the gateway for the complete 124-device record shape.
+If the server caps page size, the adapter follows the advertised pagination contract.
+Other whole-home queries keep the normal complete-inventory path.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and
