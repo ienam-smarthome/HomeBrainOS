@@ -28,6 +28,7 @@ from device_target_resolver import (
     resolve_device_candidate,
     targeted_name_variants,
 )
+from home_snapshot_service import HomeSnapshotService
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import active_request_identity
@@ -826,101 +827,10 @@ class DeviceQueryService:
         return MCPToolResult(ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data)
 
     async def home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
-        source, devices = await self._live_devices(enrich_identity=True)
-        if not self._tool_succeeded(source):
-            return self._read_failure(HOME_SNAPSHOT_TOOL, arguments, source)
-
-        presence: list[dict[str, Any]] = []
-        tracked_presence: list[dict[str, Any]] = []
-        motion: list[dict[str, Any]] = []
-        contacts: list[dict[str, Any]] = []
-        locks: list[dict[str, Any]] = []
-        low_batteries: list[dict[str, Any]] = []
-        alerts: list[dict[str, Any]] = []
-        for device in devices:
-            attrs = device_attributes(device)
-            label = device.get("label") or device.get("name")
-            room = device.get("room") or device.get("roomName")
-            identity = {
-                "id": device.get("id") or device.get("deviceId"),
-                "label": label,
-                "room": room,
-            }
-
-            presence_value = str(attrs.get("presence") or "").casefold()
-            capabilities = self._capability_names(device)
-            is_home = presence_value in {"present", "home", "arrived", "true", "active"}
-            if (
-                is_home
-                and "switch" not in capabilities
-                and not bool(capabilities & {"actuator", "outlet"})
-            ):
-                presence.append({**identity, "presence": attrs.get("presence")})
-            if "presencesensor" in capabilities or attrs.get("presence") is not None:
-                tracked_presence.append(
-                    {
-                        **identity,
-                        "presence": attrs.get("presence") or "unknown",
-                        "home": is_home,
-                    }
-                )
-            if str(attrs.get("motion") or "").casefold() == "active":
-                motion.append({**identity, "motion": "active"})
-            if str(attrs.get("contact") or "").casefold() == "open":
-                contacts.append({**identity, "contact": "open"})
-            if str(attrs.get("lock") or "").casefold() == "unlocked":
-                locks.append({**identity, "lock": "unlocked"})
-
-            battery = attrs.get("battery")
-            try:
-                battery_number = float(str(battery).strip().rstrip("%"))
-            except (TypeError, ValueError):
-                battery_number = None
-            if battery_number is not None and battery_number <= 20:
-                rendered_battery: int | float = (
-                    int(battery_number) if battery_number.is_integer() else battery_number
-                )
-                low_batteries.append({**identity, "battery": rendered_battery})
-
-            health = str(
-                attrs.get("healthStatus")
-                or attrs.get("networkStatus")
-                or attrs.get("rtt")
-                or ""
-            ).casefold()
-            if health in {"offline", "unavailable", "timeout", "failed"}:
-                alerts.append({**identity, "status": health, "source": "connectivity"})
-            hub_alerts = attrs.get("hubAlerts")
-            if hub_alerts not in (None, "", "[]", []):
-                alerts.append({**identity, "status": hub_alerts, "source": "hub_alert"})
-
-        lights = active_lights(devices)
-        switches = active_non_light_switches(devices)
-        rooms = active_room_summary(devices)
-        sort_key = lambda item: str(item.get("label") or "").casefold()
-        data = {
-            "presence": sorted(presence, key=sort_key),
-            "tracked_presence": sorted(tracked_presence, key=sort_key),
-            "active_motion": sorted(motion, key=sort_key),
-            "lights_on": lights,
-            "switches_on": switches,
-            "active_rooms": rooms,
-            "open_contacts": sorted(contacts, key=sort_key),
-            "unlocked_locks": sorted(locks, key=sort_key),
-            "low_batteries": sorted(low_batteries, key=sort_key),
-            "alerts": sorted(alerts, key=sort_key),
-            "counts": {
-                "presence": len(presence),
-                "active_motion": len(motion),
-                "lights_on": len(lights),
-                "switches_on": len(switches),
-                "active_rooms": len(rooms),
-                "open_contacts": len(contacts),
-                "unlocked_locks": len(locks),
-                "low_batteries": len(low_batteries),
-                "alerts": len(alerts),
-            },
-            "total_scanned": len(devices),
-            "complete": True,
-        }
-        return MCPToolResult(HOME_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data)
+        service = HomeSnapshotService(
+            self.mcp,
+            self._record_evidence,
+            bulk_live_devices=self._bulk_live_devices,
+            full_live_devices=self._live_devices,
+        )
+        return await service.snapshot(arguments)
