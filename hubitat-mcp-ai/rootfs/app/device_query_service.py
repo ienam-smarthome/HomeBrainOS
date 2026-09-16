@@ -312,17 +312,27 @@ class DeviceQueryService:
         return source, devices
 
     async def _active_room_devices(self) -> tuple[MCPToolResult, list[dict[str, Any]]]:
-        """Fetch only the live fields needed to decide active rooms.
-
-        The generic whole-home read returns the full record for every device and
-        has taken about 26-27 seconds against the live 124-device hub. Active-room
-        evaluation needs only identity/room, capabilities, and current attributes.
-        Ask the gateway for exactly those fields and use a large page so the normal
-        124-device installation completes in one upstream operation. If the server
-        caps the page size, continue through its advertised pagination contract.
-        """
+        """Fetch only the live fields needed to decide active rooms."""
 
         started = time.monotonic()
+        if not isinstance(self.mcp, HubitatMCPClient):
+            source_arguments = {"tool": "hub_list_devices", "args": {}}
+            source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+            devices = [
+                item
+                for item in (HubitatMCPClient._find_device_list(source.data) or [])
+                if isinstance(item, dict)
+            ]
+            self._record_evidence(
+                "hub_read_devices",
+                source_arguments,
+                success=self._tool_succeeded(source),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{len(devices)} active-room source device records",
+                evidence_kind="authoritative_state_snapshot",
+            )
+            return source, devices
+
         page_args: dict[str, Any] = {
             "detailed": True,
             "fields": ["id", "name", "label", "room", "capabilities", "attributes"],
