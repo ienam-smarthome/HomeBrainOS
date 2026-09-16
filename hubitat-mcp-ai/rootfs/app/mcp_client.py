@@ -13,7 +13,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from device_read_contract import (
+    LIVE_CONTEXT_RESOURCE_URI,
     device_read_plan,
+    live_context_is_complete,
     normalize_hub_list_devices_arguments,
     projected_state_shape_is_usable,
 )
@@ -121,6 +123,11 @@ class HubitatMCPClient:
         self._devices_cached_at = 0.0
         self._live_device_snapshot_ttl_seconds = 2.0
         self._live_device_snapshot: tuple[float, int, MCPToolResult] | None = None
+        self._live_context_ttl_seconds = 2.0
+        self._live_context_snapshot: tuple[float, int, dict[str, Any]] | None = None
+        self._live_context_inflight: tuple[
+            int, asyncio.Task[dict[str, Any]]
+        ] | None = None
         self._live_device_snapshot_generation = 0
         self._device_manifest_inflight: asyncio.Task[list[dict[str, Any]]] | None = None
 
@@ -234,8 +241,13 @@ class HubitatMCPClient:
         await self.list_tools()
         return self._tools.get(name)
 
+    def peek_cached_devices(self) -> list[dict[str, Any]]:
+        """Return the current detailed manifest without triggering a hub read."""
+
+        return [dict(item) for item in self._cached_devices]
+
     async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
-        """Return a short-lived device manifest and coalesce concurrent refreshes."""
+        """Return a short-lived detailed device manifest and coalesce refreshes."""
 
         now = self._clock()
         if (
@@ -338,6 +350,96 @@ class HubitatMCPClient:
                 )
         return list(self._cached_devices)
 
+    async def get_live_context(self, refresh: bool = False) -> dict[str, Any]:
+        """Read the server's one-bulk-read live context resource.
+
+        This is deliberately separate from the detailed device-manifest cache.
+        The context resource carries the room/capability identity and common live
+        states needed by aggregate reads, while the detailed manifest remains the
+        source for commands, units, and richer metadata.
+        """
+
+        await self.initialize()
+        generation = self._live_device_snapshot_generation
+        if not refresh and self._live_context_snapshot is not None:
+            cached_at, cached_generation, cached = self._live_context_snapshot
+            if (
+                cached_generation == generation
+                and self._clock() - cached_at < self._live_context_ttl_seconds
+            ):
+                return deepcopy(cached)
+
+        inflight = self._live_context_inflight
+        if (
+            inflight is not None
+            and inflight[0] == generation
+            and not inflight[1].done()
+        ):
+            wait_started = time.monotonic()
+            try:
+                value = await asyncio.shield(inflight[1])
+            finally:
+                add_active_metric_ms(
+                    "mcp_shared_wait", (time.monotonic() - wait_started) * 1000
+                )
+            return deepcopy(value)
+
+        task = asyncio.create_task(
+            self._refresh_live_context(generation),
+            name="hubitat-live-context-refresh",
+        )
+        self._live_context_inflight = (generation, task)
+        try:
+            value = await asyncio.shield(task)
+            return deepcopy(value)
+        finally:
+            current = self._live_context_inflight
+            if current is not None and current[1] is task:
+                self._live_context_inflight = None
+
+    async def _refresh_live_context(self, generation: int) -> dict[str, Any]:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": self._next_id(),
+            "method": "resources/read",
+            "params": {"uri": LIVE_CONTEXT_RESOURCE_URI},
+        }
+        lock_started = time.monotonic()
+        async with self._lock:
+            add_active_metric_ms(
+                "mcp_lock_wait", (time.monotonic() - lock_started) * 1000
+            )
+            http_started = time.monotonic()
+            try:
+                response = await self._post(payload)
+            finally:
+                add_active_metric_ms(
+                    "mcp_http", (time.monotonic() - http_started) * 1000
+                )
+            result = self._rpc_result(response)
+
+        contents = result.get("contents") or []
+        text: str | None = None
+        for item in contents if isinstance(contents, list) else []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("uri") == LIVE_CONTEXT_RESOURCE_URI and item.get("text") is not None:
+                text = str(item.get("text"))
+                break
+        if text is None:
+            raise MCPError("MCP live context resource returned no JSON content")
+        try:
+            value = json.loads(text)
+        except Exception as exc:
+            raise MCPError("MCP live context resource returned invalid JSON") from exc
+        if not isinstance(value, dict):
+            raise MCPError("MCP live context resource was not a JSON object")
+        if generation != self._live_device_snapshot_generation:
+            raise MCPError("Live context was invalidated while it was being read")
+        if live_context_is_complete(value):
+            self._live_context_snapshot = (self._clock(), generation, deepcopy(value))
+        return value
+
     async def get_device_identities(self) -> list[dict[str, Any]]:
         if self._cached_devices:
             return list(self._cached_devices)
@@ -423,6 +525,7 @@ class HubitatMCPClient:
     def invalidate_live_device_snapshot(self) -> None:
         self._live_device_snapshot_generation += 1
         self._live_device_snapshot = None
+        self._live_context_snapshot = None
 
     async def call_tool(
         self,

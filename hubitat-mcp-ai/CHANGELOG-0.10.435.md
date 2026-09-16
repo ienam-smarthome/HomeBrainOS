@@ -1,0 +1,10 @@
+# 0.10.435
+
+- Replace the active-room-specific pair of capability-filtered device reads with the Hubitat MCP server's standard `hubitat://context` resource for common whole-home live state. The upstream resource is designed around one bulk hub inventory read and carries id, label, room, capabilities, and common live attributes.
+- Keep the optimization structural rather than prompt-specific: active rooms, active lights, active non-light switches, and deterministic filters for attributes covered by the live-context contract use the same bounded snapshot. Unsupported attributes retain the established complete-inventory path.
+- Add a two-second, generation-fenced live-context cache with single-flight sharing. Mutations invalidate the generation, and a pre-write context response is rejected if it finishes after invalidation.
+- Reject partial, truncated, or identity-incomplete context resources and fall back to the complete authoritative inventory instead of weakening exhaustive live claims.
+- Normalize the context resource's compact `attributes` map into `currentStates` so richer detailed metadata can still be joined by device id without overwriting fresher live values.
+- Move `/api/dashboard` to the same bulk live-context source when available. The WebUI's 30-second dashboard polling no longer forces a detailed device-manifest refresh solely for state counts; rich hub-info data is reused only from an already-cached detailed manifest.
+- Preserve the detailed manifest for commands, units, richer metadata, health/alert fields, and reads outside the context resource's declared attribute coverage. Explicit `/api/refresh` continues to refresh it.
+- Add regression coverage for context completeness, normalization, two-second caching, concurrent single-flight reads, mutation invalidation, aggregate snapshot reuse, fallback behavior, and dashboard avoidance of detailed refreshes.

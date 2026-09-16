@@ -7,6 +7,33 @@ from typing import Any
 _IDENTITY_FIELDS = ("id", "name", "label", "room")
 _DETAIL_ONLY_FIELDS = frozenset({"capabilities", "attributes", "commands"})
 
+LIVE_CONTEXT_RESOURCE_URI = "hubitat://context"
+LIVE_CONTEXT_ATTRIBUTES = frozenset(
+    {
+        "switch",
+        "level",
+        "motion",
+        "contact",
+        "presence",
+        "lock",
+        "temperature",
+        "humidity",
+        "illuminance",
+        "battery",
+        "power",
+        "energy",
+        "thermostatMode",
+        "thermostatOperatingState",
+        "heatingSetpoint",
+        "coolingSetpoint",
+        "speed",
+        "position",
+        "valve",
+        "water",
+        "smoke",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class DeviceReadPlan:
@@ -147,9 +174,62 @@ def projected_state_shape_is_usable(
     return any(state_field in device for device in devices)
 
 
+def live_context_is_complete(value: Any) -> bool:
+    """Return whether ``hubitat://context`` can support exhaustive live claims.
+
+    The upstream resource deliberately reports truncation, incomplete identity
+    coverage, and per-device metadata/state failures in-band. HomeBrain must not
+    turn any of those recoverable conditions into a confident whole-home answer;
+    callers fall back to the established detailed inventory instead.
+    """
+
+    if not isinstance(value, dict):
+        return False
+    devices = value.get("devices")
+    if not isinstance(devices, list) or not all(isinstance(item, dict) for item in devices):
+        return False
+    if value.get("truncated") is True or value.get("idsComplete") is False:
+        return False
+    if value.get("partial") is True:
+        return False
+    total = value.get("totalDevices")
+    if total is not None:
+        try:
+            if int(total) != len(devices):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def live_context_devices(value: Any) -> list[dict[str, Any]]:
+    """Normalize the compact context resource into HomeBrain's device shape.
+
+    ``hubitat://context`` calls its compact state map ``attributes``. Convert that
+    map to ``currentStates`` so a later merge with the richer metadata manifest
+    keeps the manifest's typed/unit-bearing ``attributes`` list while live values
+    still win in ``device_attributes``' merge order.
+    """
+
+    if not live_context_is_complete(value):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in value.get("devices") or []:
+        device = dict(item)
+        states = device.pop("attributes", {})
+        if isinstance(states, dict):
+            device["currentStates"] = dict(states)
+        normalized.append(device)
+    return normalized
+
+
 __all__ = [
     "DeviceReadPlan",
+    "LIVE_CONTEXT_ATTRIBUTES",
+    "LIVE_CONTEXT_RESOURCE_URI",
     "device_read_plan",
+    "live_context_devices",
+    "live_context_is_complete",
     "normalize_hub_list_devices_arguments",
     "projected_state_shape_is_usable",
 ]

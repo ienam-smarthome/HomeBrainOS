@@ -44,16 +44,6 @@ def test_chat_and_ask_use_unified_agent(monkeypatch, tmp_path):
 
 
 def test_omitted_session_id_gets_its_own_isolated_key_per_request(monkeypatch, tmp_path):
-    """Regression test: session_id used to default to the literal string
-    "default" for any caller (e.g. a direct public-API request) that
-    omitted it, so two unrelated callers who both omitted session_id
-    would share one session key -- one caller's pending confirmation or
-    "last device" pronoun context could be read, or even confirmed, by
-    the other caller's next request. Each request that omits session_id
-    must now get its own random key, never the shared literal "default",
-    and never the same key as another omitted-session_id request.
-    """
-
     module = load_app(monkeypatch, tmp_path)
     calls = []
 
@@ -182,6 +172,7 @@ def test_dashboard_counts_current_states(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert response.json() == {
         "success": True,
+        "source": "detailed-manifest",
         "devices": 3,
         "lights_on": 1,
         "motion_active": 1,
@@ -276,13 +267,6 @@ def test_dashboard_reads_hub_info_device(monkeypatch, tmp_path):
 def test_new_automation_idea_request_is_routed_to_the_model_and_falls_back_gracefully(
     monkeypatch, tmp_path
 ):
-    """"Recommend useful automations for my home" must route to the
-    creative-suggestion path (model call grounded in real device data),
-    not the plain audit/status dump -- and if the model call fails, the
-    deterministic gap-analysis message must still come through unchanged
-    rather than erroring out.
-    """
-
     module = load_app(monkeypatch, tmp_path)
 
     from automation_status_service import AutomationStatusOutcome
@@ -314,8 +298,6 @@ def test_new_automation_idea_request_is_routed_to_the_model_and_falls_back_grace
     assert "Idea: motion-activated hallway light." in body["message"]
     assert "Fallback deterministic message." in body["message"]
 
-    # Now simulate the model call failing entirely -- the deterministic
-    # message must still be returned, unchanged, with no error surfaced.
     async def failing_chat(messages, tools):
         raise RuntimeError("network down")
 
@@ -335,11 +317,6 @@ def test_new_automation_idea_request_is_routed_to_the_model_and_falls_back_grace
 def test_review_existing_automations_request_still_uses_plain_status_route(
     monkeypatch, tmp_path
 ):
-    """A request to review EXISTING automations (not brainstorm new ones)
-    must still go through the plain deterministic snapshot -- the new
-    creative-suggestion path must not be called for this phrasing.
-    """
-
     module = load_app(monkeypatch, tmp_path)
 
     calls = {"snapshot_advisory": None, "chat_called": False}

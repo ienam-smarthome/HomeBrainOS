@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -9,70 +11,75 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from device_query_service import DeviceQueryService  # noqa: E402
-from mcp_client import HubitatMCPClient, MCPToolResult  # noqa: E402
+from mcp_client import HubitatMCPClient  # noqa: E402
 
 
-class ActiveRoomMCP(HubitatMCPClient):
-    def __init__(self) -> None:
-        # Deliberately do not construct the transport: these tests exercise the
-        # production-client branch while replacing call_tool with a deterministic
-        # fake upstream.
-        self.calls: list[tuple[str, dict]] = []
-
-    async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
-        self.calls.append((name, arguments))
-        args = arguments.get("args") or {}
-        capability = args.get("capabilityFilter")
-        if capability == "MotionSensor":
-            devices = [
+def _resource_response(context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "result": {
+            "contents": [
                 {
-                    "id": "1",
-                    "label": "Living Room Motion",
-                    "room": "Living Room",
-                    "capabilities": ["MotionSensor"],
-                    "currentStates": [
-                        {"name": "motion", "currentValue": "active"}
-                    ],
+                    "uri": "hubitat://context",
+                    "mimeType": "application/json",
+                    "text": json.dumps(context),
                 }
-            ]
-        elif capability == "Switch":
-            devices = [
-                {
-                    "id": "2",
-                    "label": "Bedroom Lamp",
-                    "room": "Bedroom 1",
-                    "capabilities": ["Switch"],
-                    "currentStates": [
-                        {"name": "switch", "currentValue": "off"}
-                    ],
-                },
-                {
-                    "id": "3",
-                    "label": "Kitchen Light",
-                    "room": "Kitchen",
-                    "capabilities": ["Light", "Switch"],
-                    "currentStates": [
-                        {"name": "switch", "currentValue": "on"}
-                    ],
-                },
-            ]
-        else:
-            devices = []
-        return MCPToolResult(
-            name,
-            arguments,
-            {},
-            "ok",
-            {"devices": devices, "hasMore": False},
-        )
+            ],
+            "ttlMs": 0,
+            "cacheScope": "private",
+        }
+    }
+
+
+def _context() -> dict[str, Any]:
+    return {
+        "currentMode": "Home",
+        "devices": [
+            {
+                "id": "1",
+                "label": "Living Room Motion",
+                "room": "Living Room",
+                "capabilities": ["MotionSensor"],
+                "attributes": {"motion": "active", "battery": "88"},
+            },
+            {
+                "id": "2",
+                "label": "Bedroom Lamp",
+                "room": "Bedroom 1",
+                "capabilities": ["Switch", "Light"],
+                "attributes": {"switch": "off"},
+            },
+            {
+                "id": "3",
+                "label": "Kitchen Light",
+                "room": "Kitchen",
+                "capabilities": ["Switch", "Light"],
+                "attributes": {"switch": "on", "battery": "15"},
+            },
+        ],
+        "totalDevices": 3,
+        "partial": False,
+        "truncated": False,
+    }
 
 
 @pytest.mark.asyncio
-async def test_active_rooms_uses_capability_filtered_current_states() -> None:
-    mcp = ActiveRoomMCP()
+async def test_active_rooms_uses_one_bulk_context_resource_read() -> None:
+    client = HubitatMCPClient("http://hubitat.test/mcp")
+    client._initialized = True
+    posts: list[dict[str, Any]] = []
+
+    async def fake_post(
+        payload: dict[str, Any], allow_empty: bool = False
+    ) -> dict[str, Any]:
+        posts.append(payload)
+        assert payload["method"] == "resources/read"
+        assert payload["params"] == {"uri": "hubitat://context"}
+        return _resource_response(_context())
+
+    client._post = fake_post  # type: ignore[method-assign]
     receipts = []
     service = DeviceQueryService(
-        mcp, lambda *args, **kwargs: receipts.append((args, kwargs))
+        client, lambda *args, **kwargs: receipts.append((args, kwargs))
     )
 
     result = await service.active_rooms({})
@@ -81,110 +88,112 @@ async def test_active_rooms_uses_capability_filtered_current_states() -> None:
         {"name": "Kitchen", "reasons": ["light on"]},
         {"name": "Living Room", "reasons": ["motion"]},
     ]
-    assert result.data["read_scope"] == (
-        "capability-filtered motion/switch currentStates"
-    )
-    assert len(mcp.calls) == 2
-    assert [call[1]["args"]["capabilityFilter"] for call in mcp.calls] == [
-        "MotionSensor",
-        "Switch",
-    ]
-    for tool_name, arguments in mcp.calls:
-        assert tool_name == "hub_read_devices"
-        assert arguments["tool"] == "hub_list_devices"
-        assert arguments["args"]["fields"] == [
-            "id", "name", "label", "room", "capabilities", "currentStates"
-        ]
-        assert arguments["args"]["limit"] == 100
+    assert result.data["read_scope"] == "bulk live context"
+    assert len(posts) == 1
     assert len(receipts) == 1
-    assert receipts[0][1]["evidence_kind"] == "authoritative_state_snapshot"
-    assert receipts[0][1]["summary"].startswith("3 capability-filtered")
+    assert receipts[0][0][0] == "hub_read_devices"
+    assert receipts[0][0][1]["resource"] == "hubitat://context"
+    assert receipts[0][0][1]["required_attributes"] == ["motion", "switch"]
+    assert receipts[0][1]["summary"] == "3 bulk live-context device records"
+
+    await client.close()
 
 
 @pytest.mark.asyncio
-async def test_active_rooms_follows_pagination_per_capability() -> None:
-    class PagedMCP(HubitatMCPClient):
-        def __init__(self) -> None:
-            self.calls: list[tuple[str, dict]] = []
+async def test_common_live_reads_share_the_same_short_lived_context_snapshot() -> None:
+    client = HubitatMCPClient("http://hubitat.test/mcp")
+    client._initialized = True
+    posts: list[dict[str, Any]] = []
 
-        async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
-            self.calls.append((name, arguments))
-            args = arguments["args"]
-            capability = args["capabilityFilter"]
-            offset = args["offset"]
-            if capability == "MotionSensor" and offset == 0:
-                data = {
-                    "devices": [{
-                        "id": "1",
-                        "label": "Hall Motion",
-                        "room": "Hallway",
-                        "capabilities": ["MotionSensor"],
-                        "currentStates": [
-                            {"name": "motion", "currentValue": "active"}
-                        ],
-                    }],
-                    "hasMore": True,
-                    "nextOffset": 1,
-                }
-            elif capability == "MotionSensor":
-                data = {"devices": [], "hasMore": False}
-            else:
-                data = {
-                    "devices": [{
-                        "id": "2",
-                        "label": "Kitchen Light",
-                        "room": "Kitchen",
-                        "capabilities": ["Light", "Switch"],
-                        "currentStates": [
-                            {"name": "switch", "currentValue": "on"}
-                        ],
-                    }],
-                    "hasMore": False,
-                }
-            return MCPToolResult(name, arguments, {}, "ok", data)
+    async def fake_post(
+        payload: dict[str, Any], allow_empty: bool = False
+    ) -> dict[str, Any]:
+        posts.append(payload)
+        return _resource_response(_context())
 
-    mcp = PagedMCP()
-    service = DeviceQueryService(mcp, lambda *_a, **_k: None)
+    client._post = fake_post  # type: ignore[method-assign]
+    service = DeviceQueryService(client, lambda *_a, **_k: None)
 
-    result = await service.active_rooms({})
+    rooms = await service.active_rooms({})
+    lights = await service.active_lights({})
+    low_battery = await service.filter_devices(
+        {"attribute": "battery", "operator": "lte", "value": 20}
+    )
+    motion = await service.filter_devices(
+        {"attribute": "motion", "operator": "eq", "value": "active"}
+    )
 
-    assert {item["name"] for item in result.data["active_rooms"]} == {
-        "Hallway", "Kitchen"
-    }
-    assert len(mcp.calls) == 3
-    assert mcp.calls[1][1]["args"]["offset"] == 1
+    assert rooms.data["count"] == 2
+    assert lights.data["lights"] == [
+        {
+            "id": "3",
+            "label": "Kitchen Light",
+            "room": "Kitchen",
+            "switch": "on",
+        }
+    ]
+    assert low_battery.data["count"] == 1
+    assert low_battery.data["matches"][0]["label"] == "Kitchen Light"
+    assert motion.data["count"] == 1
+    assert motion.data["matches"][0]["label"] == "Living Room Motion"
+    # One upstream bulk read serves all four structured consumers inside the 2s TTL.
+    assert [post["method"] for post in posts] == ["resources/read"]
+
+    await client.close()
 
 
 @pytest.mark.asyncio
-async def test_active_rooms_zero_filtered_records_falls_back_to_full_inventory() -> None:
-    class EmptyProjectionMCP(HubitatMCPClient):
-        def __init__(self) -> None:
-            self.calls: list[tuple[str, dict]] = []
+async def test_partial_context_falls_back_to_complete_inventory() -> None:
+    client = HubitatMCPClient("http://hubitat.test/mcp")
+    client._initialized = True
+    # Aggregate fallbacks historically enrich compact live records with cached
+    # identity/capability metadata. Seed that cache explicitly so this regression
+    # exercises the fallback itself rather than triggering an unrelated manifest read.
+    client._cached_devices = [
+        {
+            "id": "7",
+            "label": "Fallback Motion",
+            "room": "Office",
+            "capabilities": ["MotionSensor"],
+        }
+    ]
+    client._devices_cached_at = client._clock()
+    posts: list[dict[str, Any]] = []
 
-        async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
-            self.calls.append((name, arguments))
-            args = arguments.get("args") or {}
-            if args.get("capabilityFilter"):
-                data = {"devices": [], "hasMore": False}
-            else:
-                data = {
-                    "devices": [{
-                        "id": "7",
-                        "label": "Fallback Motion",
-                        "room": "Office",
-                        "capabilities": ["MotionSensor"],
-                        "attributes": {"motion": "active"},
-                    }]
+    partial = _context()
+    partial["partial"] = True
+
+    async def fake_post(
+        payload: dict[str, Any], allow_empty: bool = False
+    ) -> dict[str, Any]:
+        posts.append(payload)
+        if payload["method"] == "resources/read":
+            return _resource_response(partial)
+        assert payload["method"] == "tools/call"
+        assert payload["params"]["arguments"] == {
+            "tool": "hub_list_devices",
+            "args": {},
+        }
+        return {
+            "result": {
+                "structuredContent": {
+                    "devices": [
+                        {
+                            "id": "7",
+                            "label": "Fallback Motion",
+                            "room": "Office",
+                            "capabilities": ["MotionSensor"],
+                            "currentStates": {"motion": "active"},
+                        }
+                    ]
                 }
-            return MCPToolResult(name, arguments, {}, "ok", data)
+            }
+        }
 
-        async def get_cached_devices(self):
-            return []
-
-    mcp = EmptyProjectionMCP()
+    client._post = fake_post  # type: ignore[method-assign]
     receipts = []
     service = DeviceQueryService(
-        mcp, lambda *args, **kwargs: receipts.append((args, kwargs))
+        client, lambda *args, **kwargs: receipts.append((args, kwargs))
     )
 
     result = await service.active_rooms({})
@@ -192,11 +201,48 @@ async def test_active_rooms_zero_filtered_records_falls_back_to_full_inventory()
     assert result.data["active_rooms"] == [
         {"name": "Office", "reasons": ["motion"]}
     ]
-    assert len(mcp.calls) == 3
-    assert mcp.calls[-1] == (
-        "hub_read_devices", {"tool": "hub_list_devices", "args": {}}
-    )
-    # Only the fallback complete snapshot is authoritative evidence; the empty
-    # fast-path attempt is not presented as a successful state snapshot.
+    assert [post["method"] for post in posts] == ["resources/read", "tools/call"]
+    # Partial context is never recorded as authoritative evidence; only fallback is.
     assert len(receipts) == 1
-    assert receipts[0][1]["summary"] == "1 source device records"
+    assert receipts[0][0][1] == {"tool": "hub_list_devices", "args": {}}
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_attribute_outside_context_contract_uses_complete_inventory() -> None:
+    client = HubitatMCPClient("http://hubitat.test/mcp")
+    client._initialized = True
+    posts: list[dict[str, Any]] = []
+
+    async def fake_post(
+        payload: dict[str, Any], allow_empty: bool = False
+    ) -> dict[str, Any]:
+        posts.append(payload)
+        assert payload["method"] == "tools/call"
+        return {
+            "result": {
+                "structuredContent": {
+                    "devices": [
+                        {
+                            "id": "9",
+                            "label": "Offline Sensor",
+                            "attributes": {"healthStatus": "offline"},
+                        }
+                    ]
+                }
+            }
+        }
+
+    client._post = fake_post  # type: ignore[method-assign]
+    service = DeviceQueryService(client, lambda *_a, **_k: None)
+
+    result = await service.filter_devices(
+        {"attribute": "healthStatus", "operator": "eq", "value": "offline"}
+    )
+
+    assert result.data["count"] == 1
+    assert result.data["matches"][0]["label"] == "Offline Sensor"
+    assert [post["method"] for post in posts] == ["tools/call"]
+
+    await client.close()
