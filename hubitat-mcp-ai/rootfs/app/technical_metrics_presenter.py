@@ -23,6 +23,8 @@ _COUNTER_LABELS = (
 _DURATION_LABELS = (
     ("provider", "Provider"),
     ("mcp", "MCP"),
+    ("mcp_lock_wait", "MCP lock wait"),
+    ("mcp_http", "MCP HTTP"),
     ("local_tool", "Local tool path"),
     ("tool_discovery", "Discovery"),
     ("verification", "Verification"),
