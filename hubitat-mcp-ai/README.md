@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.437**.
+Current add-on version: **0.10.438**.
 
 ## Architecture
 
@@ -93,8 +93,8 @@ summary reads expose `currentStates`, while detailed reads expose the same repor
 state as `attributes`; requesting capabilities or commands promotes a projection to
 detailed mode. `HubitatMCPClient` normalizes every projected `hub_list_devices`
 request at the protocol boundary, independent of prompt wording, model choice, or
-which local adapter initiated it. It also validates that a non-empty projected
-response actually contains the promised state container. A structurally incomplete
+which local adapter initiated it. It also validates that every record in a non-empty
+projected response contains the promised state container. A structurally incomplete
 response is treated as a read failure rather than as proof that all devices are
 inactive, allowing the established authoritative fallback to run. The cached
 detailed device manifest is built from the same contract.
