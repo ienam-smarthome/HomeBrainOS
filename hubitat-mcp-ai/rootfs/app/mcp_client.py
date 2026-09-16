@@ -148,10 +148,10 @@ class HubitatMCPClient:
         self._cached_devices: list[dict[str, Any]] = []
         self._devices_cached_at = 0.0
         # A dashboard refresh and a natural-language summary commonly ask for
-        # the same whole-home state within a few seconds of one another. Reuse
-        # that exact snapshot for a bounded five-second window rather than
-        # forcing another 124-device Hubitat inventory read immediately.
-        self._live_device_snapshot_ttl_seconds = 5.0
+        # the same whole-home state almost back-to-back. Keep the established
+        # two-second freshness bound while allowing the manifest fetch to warm
+        # this exact snapshot and avoid an immediate duplicate inventory read.
+        self._live_device_snapshot_ttl_seconds = 2.0
         self._live_device_snapshot: tuple[float, int, MCPToolResult] | None = None
         self._live_device_snapshot_generation = 0
 
@@ -337,7 +337,7 @@ class HubitatMCPClient:
             value = devices
         if isinstance(value, list):
             self._cached_devices = [item for item in value if isinstance(item, dict)]
-            self._devices_cached_at = self._clock()
+            self._devices_cached_at = now
             # Warm the exact whole-home snapshot cache from the dashboard/device
             # manifest we just fetched. This lets an immediately-following
             # homebrain_active_rooms/lights/switches request reuse the same
