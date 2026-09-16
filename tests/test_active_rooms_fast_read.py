@@ -146,6 +146,18 @@ async def test_common_live_reads_share_the_same_short_lived_context_snapshot() -
 async def test_partial_context_falls_back_to_complete_inventory() -> None:
     client = HubitatMCPClient("http://hubitat.test/mcp")
     client._initialized = True
+    # Aggregate fallbacks historically enrich compact live records with cached
+    # identity/capability metadata. Seed that cache explicitly so this regression
+    # exercises the fallback itself rather than triggering an unrelated manifest read.
+    client._cached_devices = [
+        {
+            "id": "7",
+            "label": "Fallback Motion",
+            "room": "Office",
+            "capabilities": ["MotionSensor"],
+        }
+    ]
+    client._devices_cached_at = client._clock()
     posts: list[dict[str, Any]] = []
 
     partial = _context()
