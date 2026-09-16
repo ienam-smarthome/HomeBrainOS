@@ -24,6 +24,7 @@ _DURATION_LABELS = (
     ("provider", "Provider"),
     ("mcp", "MCP"),
     ("mcp_lock_wait", "MCP lock wait"),
+    ("mcp_shared_wait", "MCP shared-read wait"),
     ("mcp_http", "MCP HTTP"),
     ("local_tool", "Local tool path"),
     ("tool_discovery", "Discovery"),
