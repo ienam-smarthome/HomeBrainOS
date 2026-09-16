@@ -56,12 +56,6 @@ class DeviceQueryService:
 
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:
-        # Delegates to the shared implementation in mcp_client.py so this
-        # and DeviceControlService's identically-named method can never
-        # diverge again -- see tool_succeeded()'s docstring for the
-        # partial-failure bug this closes (this method used to treat
-        # {"success": true, "error": "..."} as success, while the
-        # control-path method already treated the same shape as failure).
         return _shared_tool_succeeded(result)
 
     @staticmethod
@@ -123,21 +117,6 @@ class DeviceQueryService:
         for key, value in combined.items():
             if cls._normalized_attribute(str(key)) in wanted and value is not None:
                 return str(key), value
-        # Some community/bridge drivers (e.g. Home-Assistant-imported
-        # sensors) report their one reading only as `value`/`valueStr`,
-        # with no attribute named after what it actually measures --
-        # "Octopus Meter Current Power" has no "power" attribute at all,
-        # only value/valueStr, so a query for its power reading found
-        # nothing and wrongly answered "does not report a current power
-        # value" despite the reading being right there. This fallback is
-        # deliberately opt-in and only used for a single, already-
-        # identified device (see the caller in homebrain_agent.py) -- it
-        # is never applied to the cross-device ranking/aggregation path in
-        # query_devices() below, because a bare "value" attribute is not
-        # reliably about *this* requested attribute (power, humidity,
-        # etc.) when scanning many different devices at once, and could
-        # wrongly sweep in an unrelated device's own differently-meaning
-        # generic reading.
         if allow_generic_value_fallback:
             value_str = combined.get("valueStr")
             if isinstance(value_str, str) and value_str.strip():
@@ -148,11 +127,6 @@ class DeviceQueryService:
 
     @staticmethod
     def _capability_names(device: dict[str, Any]) -> set[str]:
-        # Delegates to the shared helper in device_state_summary.py so
-        # capability extraction has one implementation, not two -- this
-        # used to be duplicated here, which let is_light_device() in
-        # device_state_summary.py drift into a cruder, less accurate
-        # light-detection check than the one below.
         return capability_names(device)
 
     @classmethod
@@ -163,9 +137,6 @@ class DeviceQueryService:
         label = str(device.get("label") or device.get("name") or "").casefold()
         room = str(device.get("room") or device.get("roomName") or "").casefold()
         capabilities = cls._capability_names(device)
-        # is_light_device() (device_state_summary.py) now implements this
-        # exact same check -- calling it here instead of re-deriving it
-        # keeps both call paths permanently in sync.
         is_light = is_light_device(device)
         is_socket = (
             "outlet" in capabilities
@@ -179,10 +150,7 @@ class DeviceQueryService:
         if kind == "switch":
             return "switch" in capabilities and not is_light
         if kind == "motion":
-            return (
-                bool(capabilities & {"motionsensor"})
-                or "motion" in label
-            )
+            return bool(capabilities & {"motionsensor"}) or "motion" in label
         if kind == "sensor":
             return not bool(capabilities & {"switch", "outlet"}) and not is_light
         return True
@@ -194,26 +162,6 @@ class DeviceQueryService:
     def _whole_house_meter_candidate(
         cls, devices: list[dict[str, Any]], device_kind: str, attribute: str
     ) -> dict[str, Any] | None:
-        """Surface a single dedicated whole-house meter device, if one
-        exists, separately from the discrete power/energy scan below.
-
-        A community/bridge-imported whole-house meter (e.g. an Octopus
-        Energy integration device) commonly has no attribute literally
-        named `power`/`activePower`/`powerMeter` -- it reports its one
-        reading only via `valueStr`/`value` -- so it is invisible to the
-        aggregate scan in query_devices() below no matter how many
-        discrete smart plugs that scan finds. Previously this meant a
-        "current power usage" question could get a structurally
-        successful, non-empty answer (e.g. summing 15 monitored smart
-        plugs to 81 W) while silently ignoring a real whole-house meter
-        reporting 4.7 kW, because the empty-rows `hint` below only fires
-        when the scan finds nothing at all. This performs a narrow,
-        label-based match (a device labelled with a "meter" word, and
-        explicitly not a controllable plug/socket/switch) so the model is
-        always told a whole-house meter candidate exists, whether or not
-        the discrete-device scan itself found rows.
-        """
-
         if cls._normalized_attribute(attribute) != "power":
             return None
         for device in devices:
@@ -240,11 +188,8 @@ class DeviceQueryService:
 
     @staticmethod
     def _is_ambient_room_reading(
-        device: dict[str, Any],
-        attribute: str,
+        device: dict[str, Any], attribute: str
     ) -> bool:
-        """Reject equipment telemetry from room climate comparisons."""
-
         if attribute.casefold() not in {"temperature", "humidity"}:
             return True
         room = str(device.get("room") or device.get("roomName") or "").strip().casefold()
@@ -267,24 +212,6 @@ class DeviceQueryService:
     def _unit_for(
         device: dict[str, Any], attribute: str, source_attribute: str | None = None
     ) -> str | None:
-        """Prefer the unit the device itself actually reported over a
-        fixed table keyed only on attribute name.
-
-        This previously always returned the hardcoded table's value
-        regardless of what the device's own live state said -- a
-        Fahrenheit-configured hub's "92.1 °F" temperature reading would be
-        mislabelled "°C" in ranking/aggregation queries ("what's the
-        hottest room"). device_target_resolver.py's own
-        `_measurement_units()` already prefers a device's own reported
-        unit for exactly this reason; this mirrors that same preference
-        order directly against the raw state list rather than importing
-        it, since that helper's returned dict mixes raw and normalised
-        attribute-name keys in a way that doesn't line up cleanly with
-        `source_attribute` here. Falls back to the fixed table only when
-        the device's own state carries no unit metadata for this
-        attribute at all.
-        """
-
         wanted_names = {
             str(name).casefold()
             for name in (source_attribute, attribute)
@@ -313,8 +240,7 @@ class DeviceQueryService:
 
     @staticmethod
     def _merge_device_identity(
-        devices: list[dict[str, Any]],
-        identities: list[dict[str, Any]],
+        devices: list[dict[str, Any]], identities: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         identity_by_id = {
             str(item.get("id") or item.get("deviceId")): item
@@ -335,9 +261,7 @@ class DeviceQueryService:
         return merged
 
     async def _live_devices(
-        self,
-        *,
-        enrich_identity: bool,
+        self, *, enrich_identity: bool
     ) -> tuple[MCPToolResult, list[dict[str, Any]]]:
         request_identity = active_request_identity()
         cached = _REQUEST_DEVICE_SNAPSHOT.get()
@@ -387,11 +311,86 @@ class DeviceQueryService:
         )
         return source, devices
 
+    async def _active_room_devices(self) -> tuple[MCPToolResult, list[dict[str, Any]]]:
+        """Fetch only the live fields needed to decide active rooms."""
+
+        started = time.monotonic()
+        if not isinstance(self.mcp, HubitatMCPClient):
+            source_arguments = {"tool": "hub_list_devices", "args": {}}
+            source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+            devices = [
+                item
+                for item in (HubitatMCPClient._find_device_list(source.data) or [])
+                if isinstance(item, dict)
+            ]
+            self._record_evidence(
+                "hub_read_devices",
+                source_arguments,
+                success=self._tool_succeeded(source),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{len(devices)} active-room source device records",
+                evidence_kind="authoritative_state_snapshot",
+            )
+            return source, devices
+
+        page_args: dict[str, Any] = {
+            "detailed": True,
+            "fields": ["id", "name", "label", "room", "capabilities", "attributes"],
+            "limit": 200,
+            "offset": 0,
+        }
+        source_arguments = {"tool": "hub_list_devices", "args": dict(page_args)}
+        source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+        devices = [
+            item
+            for item in (HubitatMCPClient._find_device_list(source.data) or [])
+            if isinstance(item, dict)
+        ]
+        page = HubitatMCPClient._find_device_page(source.data)
+        pages_fetched = 1
+        current_offset = 0
+        while (
+            self._tool_succeeded(source)
+            and page
+            and page.get("hasMore") is True
+            and page.get("nextOffset") is not None
+            and pages_fetched < 20
+        ):
+            try:
+                next_offset = int(page["nextOffset"])
+            except (TypeError, ValueError):
+                break
+            if next_offset <= current_offset:
+                break
+            current_offset = next_offset
+            page_args = {**page_args, "offset": current_offset}
+            next_arguments = {"tool": "hub_list_devices", "args": page_args}
+            next_source = await self.mcp.call_tool("hub_read_devices", next_arguments)
+            if not self._tool_succeeded(next_source):
+                source = next_source
+                break
+            devices.extend(
+                item
+                for item in (HubitatMCPClient._find_device_list(next_source.data) or [])
+                if isinstance(item, dict)
+            )
+            source = next_source
+            page = HubitatMCPClient._find_device_page(next_source.data)
+            pages_fetched += 1
+
+        self._record_evidence(
+            "hub_read_devices",
+            source_arguments,
+            success=self._tool_succeeded(source),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(devices)} active-room source device records",
+            evidence_kind="authoritative_state_snapshot",
+        )
+        return source, devices
+
     @staticmethod
     def _read_failure(
-        tool_name: str,
-        arguments: dict[str, Any],
-        source: MCPToolResult,
+        tool_name: str, arguments: dict[str, Any], source: MCPToolResult
     ) -> MCPToolResult:
         return MCPToolResult(
             tool_name,
@@ -485,22 +484,6 @@ class DeviceQueryService:
 
     @classmethod
     def _infer_kind_hint(cls, requested: str) -> str:
-        """Detect a device-kind word in a spoken name so resolution can be
-        scoped to devices that could plausibly be that kind.
-
-        This mirrors the same keyword-to-capability mapping
-        ``DeviceControlService`` already applies before calling
-        ``resolve_device_candidate`` for on/off commands. Without it, a
-        query like "hallway light" is scored purely on text similarity
-        against the *entire* device inventory -- observed live, that
-        surfaces "Hallway TRV" and "Bathroom meter" as disambiguation
-        options alongside the real lights, because a thermostat valve
-        labelled with the same room name scores just as well as an actual
-        light by string similarity alone. Filtering is applied only when
-        it leaves at least one candidate, so an unrecognised or
-        unconventional label can never be filtered out entirely.
-        """
-
         text = f" {requested.strip().casefold()} "
         for kind, words in cls._KIND_HINT_WORDS.items():
             if any(word in text for word in words):
@@ -542,16 +525,6 @@ class DeviceQueryService:
             if kind_filtered:
                 scoped_candidates = kind_filtered
 
-        # Scope to devices that actually advertise a specifically-required
-        # command *before* name resolution, mirroring the kind_hint
-        # filtering above. Without this, a name match that happens to be
-        # exact (e.g. a plain "TV" switch) always outranks a better-suited
-        # but non-exact match (e.g. "Block Google-TV-Streamer") even when
-        # only the latter can actually perform the requested command --
-        # confirmed live for scheduled "block the tv at <time>" requests,
-        # which used to be flatly rejected with "does not advertise the
-        # required command" instead of finding the capable device that was
-        # right there in the same candidate list.
         required_command = str(arguments.get("required_command") or "").strip()
         if required_command:
             capable = [
@@ -563,57 +536,19 @@ class DeviceQueryService:
                 scoped_candidates = capable
 
         resolution = resolve_device_candidate(requested, scoped_candidates)
-
-        # A bare attribute word ("temperature", "humidity", "battery",
-        # "power") can still score a single winner above the ranked
-        # threshold on name-string similarity alone, even when several
-        # other devices in the house independently report that exact
-        # attribute. Observed live against a real inventory: "temperature"
-        # silently resolved to one sensor while six others were reporting
-        # materially different readings at the same moment. That is a
-        # confident-wrong-answer risk, not a missing-device risk, so widen
-        # it into a disambiguation instead of trusting the ranked score --
-        # but only for non-exact matches; a device whose actual name/label
-        # is literally "Thermostat" should still resolve to itself.
-        #
-        # This must fire whenever resolve_device_candidate's outcome for a
-        # bare attribute word wasn't a genuine exact-name match, not only
-        # when it confidently (and wrongly) picked one device by fuzzy
-        # name-string similarity. resolve_device_candidate's own ambiguous
-        # branch can just as easily fire first for a bare attribute word
-        # (several device labels scoring similarly against "temperature"),
-        # and that branch caps its own alternatives at 3 by
-        # name-similarity rank -- not at "every real reporter". Live-
-        # reproduced: "what's the current temperature" against a house
-        # where 12 devices report temperature only ever offered 3 of them
-        # this way, silently dropping the other 9 real reporters.
-        attribute_key = self._normalized_attribute(
-            self._strip_leading_article(requested)
-        )
-        _EXACT_MATCH_REASONS = {
+        attribute_key = self._normalized_attribute(self._strip_leading_article(requested))
+        exact_match_reasons = {
             "exact normalized name",
             "exact semantic room and device name",
             "exact semantic name with device-kind token omitted",
         }
-        if (
-            resolution.reason not in _EXACT_MATCH_REASONS
-            and attribute_key in self._ATTRIBUTE_ALIASES
-        ):
+        if resolution.reason not in exact_match_reasons and attribute_key in self._ATTRIBUTE_ALIASES:
             reporters = [
                 device
                 for device in scoped_candidates
                 if self._attribute_value(device, attribute_key)[0] is not None
             ]
             if len(reporters) > 1:
-                # Every device that actually reports this attribute is a
-                # legitimate choice -- truncating to the first 3 (in
-                # whatever order the inventory happens to return them, not
-                # ranked by relevance) silently dropped real reporters.
-                # Live-reproduced: "what's the current temperature"
-                # against a house where 12 devices report temperature
-                # only ever offered 3 of them, arbitrarily excluding the
-                # other 9 (including, in one run, every actual room
-                # sensor) from the choice list.
                 alternative_labels = tuple(
                     str(device.get("label") or device.get("name") or "").strip()
                     for device in reporters
@@ -654,8 +589,6 @@ class DeviceQueryService:
         return MCPToolResult(DEVICE_RESOLVE_TOOL, arguments, {}, json.dumps(data), data)
 
     async def query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
-        """Compute aggregates over live device attributes before LLM synthesis."""
-
         attribute = str(arguments.get("attribute") or "").strip()
         operation = str(arguments.get("operation") or "").strip().lower()
         device_kind = str(arguments.get("device_kind") or "any").strip().lower()
@@ -747,29 +680,12 @@ class DeviceQueryService:
         if meter_candidate is not None:
             data["whole_house_meter_candidate"] = meter_candidate
             data["whole_house_meter_hint"] = (
-                f"'{meter_candidate['label']}' looks like a dedicated "
-                f"whole-house meter device (reads via "
-                f"'{meter_candidate['source_attribute']}' = "
-                f"{meter_candidate['raw_value']!r}), separate from the "
-                f"{len(rows)} discrete device(s) counted above. For a "
-                f"'current power usage' style question, prefer this "
-                f"single meter's reading over summing discrete devices."
+                f"'{meter_candidate['label']}' looks like a dedicated whole-house "
+                f"meter device (reads via '{meter_candidate['source_attribute']}' = "
+                f"{meter_candidate['raw_value']!r}), separate from the {len(rows)} "
+                "discrete device(s) counted above."
             )
         if not rows:
-            # An empty result for a named attribute is ambiguous: it could
-            # mean "no device reports this at all" (a real, final answer)
-            # or "the only matching device(s) report this reading through
-            # valueStr/value instead of an attribute literally named
-            # `attribute`" -- see _attribute_value()'s comment above for
-            # why that generic fallback is deliberately never applied to
-            # this cross-device scan. Rather than silently returning an
-            # empty, structurally "successful" result that gives the model
-            # nothing to retry from (which previously led it to abandon
-            # the query and ask the user to name a device), detect
-            # whether any scanned device actually carries a valueStr/value
-            # reading and surface that as an explicit hint so the model
-            # retries with the concrete attribute name instead of
-            # guessing or giving up.
             fallback_candidates = sum(
                 1
                 for device in devices
@@ -780,12 +696,9 @@ class DeviceQueryService:
             )
             if fallback_candidates:
                 data["hint"] = (
-                    f"No device reported an attribute literally named "
-                    f"'{attribute}', but {fallback_candidates} matching "
-                    f"device(s) report a reading via 'valueStr' or 'value' "
-                    f"instead (common for community/bridge-imported meters). "
-                    f"Retry this exact query with attribute='valueStr', and "
-                    f"if that is still empty, attribute='value'."
+                    f"No device reported an attribute literally named '{attribute}', "
+                    f"but {fallback_candidates} matching device(s) report a reading "
+                    "via 'valueStr' or 'value' instead."
                 )
         return MCPToolResult(DEVICE_QUERY_TOOL, arguments, {}, json.dumps(data), data)
 
@@ -804,8 +717,6 @@ class DeviceQueryService:
         return MCPToolResult(ACTIVE_LIGHTS_TOOL, arguments, {}, json.dumps(data), data)
 
     async def weather_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
-        """Return current attributes from the hub's weather device."""
-
         source, devices = await self._live_devices(enrich_identity=True)
         if not self._tool_succeeded(source):
             return self._read_failure(WEATHER_SNAPSHOT_TOOL, arguments, source)
@@ -844,7 +755,7 @@ class DeviceQueryService:
         return MCPToolResult(WEATHER_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data)
 
     async def active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
-        source, devices = await self._live_devices(enrich_identity=True)
+        source, devices = await self._active_room_devices()
         if not self._tool_succeeded(source):
             return self._read_failure(ACTIVE_ROOMS_TOOL, arguments, source)
         rooms = active_room_summary(devices)
@@ -854,6 +765,7 @@ class DeviceQueryService:
             "definition": "motion=active OR light switch=on",
             "total_scanned": len(devices),
             "complete": True,
+            "read_scope": "active-room fields only",
         }
         return MCPToolResult(ACTIVE_ROOMS_TOOL, arguments, {}, json.dumps(data), data)
 
@@ -872,22 +784,11 @@ class DeviceQueryService:
         return MCPToolResult(ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data)
 
     async def home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
-        """Return one complete, internally consistent whole-home snapshot."""
-
         source, devices = await self._live_devices(enrich_identity=True)
         if not self._tool_succeeded(source):
             return self._read_failure(HOME_SNAPSHOT_TOOL, arguments, source)
 
         presence: list[dict[str, Any]] = []
-        # Every presence-capable device (person or otherwise), regardless of
-        # current status -- not just who's currently home. `presence` above
-        # only ever lists people who ARE present, so a question about one
-        # specific named person who is away has no evidence in it at all;
-        # before this field existed, that silence was indistinguishable
-        # from "this person isn't tracked" and produced a real, observed
-        # wrong answer ("I don't see anyone named X") for someone who is a
-        # perfectly real, currently-away Life360 member. This field lets a
-        # specific-person question be answered correctly either way.
         tracked_presence: list[dict[str, Any]] = []
         motion: list[dict[str, Any]] = []
         contacts: list[dict[str, Any]] = []
@@ -944,12 +845,6 @@ class DeviceQueryService:
                 or ""
             ).casefold()
             if health in {"offline", "unavailable", "timeout", "failed"}:
-                # "source" distinguishes this from a hubAlerts-sourced entry
-                # below -- both land in the same `alerts` bucket, but only
-                # this one is actually a connectivity signal. The
-                # presenter needs that distinction to avoid describing a
-                # battery/tamper/firmware hubAlerts entry as "offline or
-                # unavailable" just because it shares this bucket.
                 alerts.append({**identity, "status": health, "source": "connectivity"})
             hub_alerts = attrs.get("hubAlerts")
             if hub_alerts not in (None, "", "[]", []):
