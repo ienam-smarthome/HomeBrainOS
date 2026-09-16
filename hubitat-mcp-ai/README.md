@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.430**.
+Current add-on version: **0.10.431**.
 
 ## Architecture
 
@@ -59,11 +59,15 @@ instead of a bare label that would enter the model loop. Deterministic operation
 within one observed request reuse a single request-local live-device snapshot, so
 capability filtering and target resolution do not repeat the same Hubitat inventory
 read. Very closely spaced read-only requests may reuse the exact unfiltered live
-inventory for at most five seconds. A freshly fetched dashboard/device manifest
-also warms that same five-second snapshot, so an immediately-following aggregate
-query such as active rooms does not repeat the full Hubitat inventory read. Every
-mutating tool attempt invalidates the shared snapshot before and after execution,
-and historical event reads are never served from it.
+inventory for at most two seconds. A freshly fetched dashboard/device manifest
+also warms that same two-second snapshot, so an immediately-following aggregate
+query such as active rooms does not repeat the full Hubitat inventory read. While
+a manifest refresh is still in progress, concurrent refresh callers and aggregate
+live-state reads now share that in-flight work instead of queuing behind the MCP
+lock and then launching another whole-home inventory read. Every mutating tool
+attempt invalidates the shared snapshot generation, so an in-flight pre-write
+manifest cannot be reused as post-write authoritative state. Historical event reads
+are never served from this cache.
 
 `RequestMetrics` wraps the maintained production request path. It records model
 rounds, provider time, evidence-backed tool calls, exact tool-discovery calls and

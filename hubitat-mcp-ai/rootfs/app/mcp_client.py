@@ -53,41 +53,12 @@ class MCPToolResult:
 
 
 def _is_false_flag(value: Any) -> bool:
-    """True when a possibly-string boolean-ish flag means false.
-
-    Hubitat and this codebase's own tool results consistently transmit
-    boolean-ish flags as the strings "true"/"false" rather than a JSON
-    boolean -- already confirmed live and fixed for several adjacent
-    fields (zbHealthy/zwHealthy, update_available, hub_alerts, the
-    "changed" flag). A strict `value is False` identity check never
-    matches the string "false", so `{"success": "false"}` would silently
-    pass as success without this.
-    """
-
     if value is False:
         return True
     return isinstance(value, str) and value.strip().casefold() == "false"
 
 
 def tool_succeeded(result: MCPToolResult) -> bool:
-    """Decide whether a tool call actually succeeded.
-
-    Single source of truth for this check -- device_control_service.py
-    and device_query_service.py each had their own private
-    `_tool_succeeded` implementation, and they disagreed on a partial-
-    failure shape like `{"success": true, "error": "..."}`: the control
-    path treated the presence of any `error` field as failure regardless
-    of `success`, while the query path only treated `error` as failure
-    when `success` wasn't explicitly `True` -- so the identical response
-    was reported as a failed command by one code path and a successful
-    read by the other. An explicit `error` field alongside `success:
-    true` is a genuine partial-failure signal (Hubitat/upstream tools
-    don't set both for no reason), so this always treats it as failure,
-    matching the more conservative of the two prior behaviours. Also
-    checks one level of nesting (`result`/`data`/`output`), since some
-    tool responses wrap their real payload under one of those keys.
-    """
-
     if result.is_error:
         return False
     data = result.data
@@ -106,10 +77,6 @@ def tool_succeeded(result: MCPToolResult) -> bool:
 class HubitatMCPClient:
     """Small Streamable-HTTP MCP client tailored to Hubitat's local endpoint."""
 
-    # Hard cap on device-list pages fetched per get_cached_devices() call.
-    # A misbehaving or malicious upstream that always reports hasMore=True
-    # would otherwise page forever; this bounds worst-case fetch time and
-    # request volume to a large-but-finite manifest (50/page default).
     _MAX_DEVICE_PAGES = 200
 
     def __init__(
@@ -147,13 +114,14 @@ class HubitatMCPClient:
         self.server_info: dict[str, Any] = {}
         self._cached_devices: list[dict[str, Any]] = []
         self._devices_cached_at = 0.0
-        # A dashboard refresh and a natural-language summary commonly ask for
-        # the same whole-home state almost back-to-back. Keep the established
-        # two-second freshness bound while allowing the manifest fetch to warm
-        # this exact snapshot and avoid an immediate duplicate inventory read.
         self._live_device_snapshot_ttl_seconds = 2.0
         self._live_device_snapshot: tuple[float, int, MCPToolResult] | None = None
         self._live_device_snapshot_generation = 0
+        # Exactly one dashboard/device-manifest refresh may be in flight at a
+        # time. Aggregate live reads can await this task and reuse its result
+        # instead of waiting for the MCP lock and then starting a duplicate
+        # whole-home inventory read.
+        self._device_manifest_inflight: asyncio.Task[list[dict[str, Any]]] | None = None
 
     @staticmethod
     def _with_token(url: str, token: str) -> str:
@@ -266,7 +234,7 @@ class HubitatMCPClient:
         return self._tools.get(name)
 
     async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
-        """Return a short-lived live device manifest using the server's own tool schema."""
+        """Return a short-lived device manifest and coalesce concurrent refreshes."""
 
         now = self._clock()
         if (
@@ -276,6 +244,25 @@ class HubitatMCPClient:
         ):
             return list(self._cached_devices)
 
+        inflight = self._device_manifest_inflight
+        if inflight is not None and not inflight.done():
+            devices = await asyncio.shield(inflight)
+            return [dict(item) for item in devices]
+
+        task = asyncio.create_task(
+            self._refresh_cached_devices(now),
+            name="hubitat-device-manifest-refresh",
+        )
+        self._device_manifest_inflight = task
+        try:
+            devices = await asyncio.shield(task)
+            return [dict(item) for item in devices]
+        finally:
+            if self._device_manifest_inflight is task:
+                self._device_manifest_inflight = None
+
+    async def _refresh_cached_devices(self, now: float) -> list[dict[str, Any]]:
+        generation = self._live_device_snapshot_generation
         tools = await self.list_tools()
         names = {tool.name for tool in tools}
         tool_name = next(
@@ -324,9 +311,6 @@ class HubitatMCPClient:
                 except (TypeError, ValueError):
                     break
                 if next_offset <= current_offset:
-                    # A non-advancing (or regressing) offset means the
-                    # upstream page contract is broken -- stop instead of
-                    # looping on the same page forever.
                     break
                 current_offset = next_offset
                 arguments["args"]["offset"] = current_offset
@@ -338,31 +322,19 @@ class HubitatMCPClient:
         if isinstance(value, list):
             self._cached_devices = [item for item in value if isinstance(item, dict)]
             self._devices_cached_at = now
-            # Warm the exact whole-home snapshot cache from the dashboard/device
-            # manifest we just fetched. This lets an immediately-following
-            # homebrain_active_rooms/lights/switches request reuse the same
-            # authoritative state instead of issuing another expensive full
-            # inventory call. Writes still invalidate this snapshot.
-            if self._cached_devices:
-                snapshot_data = {"devices": deepcopy(self._cached_devices)}
-                snapshot_result = MCPToolResult(
-                    name="hub_read_devices",
-                    arguments={"tool": "hub_list_devices", "args": {}},
-                    raw={},
-                    text=json.dumps(snapshot_data, ensure_ascii=False),
-                    data=snapshot_data,
-                    is_error=False,
-                )
+            if (
+                self._cached_devices
+                and generation == self._live_device_snapshot_generation
+            ):
+                snapshot_result = self._device_snapshot_result(self._cached_devices)
                 self._live_device_snapshot = (
                     self._devices_cached_at,
-                    self._live_device_snapshot_generation,
+                    generation,
                     snapshot_result,
                 )
         return list(self._cached_devices)
 
     async def get_device_identities(self) -> list[dict[str, Any]]:
-        """Return known identity metadata without refreshing an expired state TTL."""
-
         if self._cached_devices:
             return list(self._cached_devices)
         return await self.get_cached_devices()
@@ -432,9 +404,19 @@ class HubitatMCPClient:
             is_error=result.is_error,
         )
 
-    def invalidate_live_device_snapshot(self) -> None:
-        """Invalidate the very short shared state snapshot after any write attempt."""
+    @staticmethod
+    def _device_snapshot_result(devices: list[dict[str, Any]]) -> MCPToolResult:
+        data = {"devices": deepcopy(devices)}
+        return MCPToolResult(
+            name="hub_read_devices",
+            arguments={"tool": "hub_list_devices", "args": {}},
+            raw={},
+            text=json.dumps(data, ensure_ascii=False),
+            data=data,
+            is_error=False,
+        )
 
+    def invalidate_live_device_snapshot(self) -> None:
         self._live_device_snapshot_generation += 1
         self._live_device_snapshot = None
 
@@ -454,6 +436,31 @@ class HubitatMCPClient:
                 and self._clock() - cached_at < self._live_device_snapshot_ttl_seconds
             ):
                 return self._copy_tool_result(cached_result)
+
+        # If a dashboard/device-manifest refresh is already doing the expensive
+        # whole-home read, share that in-flight work rather than queue behind it
+        # on the MCP lock and then issue a second hub_list_devices request.
+        if cacheable:
+            manifest_task = self._device_manifest_inflight
+            if manifest_task is not None and not manifest_task.done():
+                wait_generation = self._live_device_snapshot_generation
+                try:
+                    devices = await asyncio.shield(manifest_task)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    devices = []
+                if (
+                    devices
+                    and wait_generation == self._live_device_snapshot_generation
+                ):
+                    shared_result = self._device_snapshot_result(devices)
+                    self._live_device_snapshot = (
+                        self._clock(),
+                        wait_generation,
+                        self._copy_tool_result(shared_result),
+                    )
+                    return shared_result
 
         lock_started = time.monotonic()
         async with self._lock:
