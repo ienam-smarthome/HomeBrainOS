@@ -9,11 +9,13 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from device_query_service import DeviceQueryService  # noqa: E402
-from mcp_client import MCPToolResult  # noqa: E402
+from mcp_client import HubitatMCPClient, MCPToolResult  # noqa: E402
 
 
-class ActiveRoomMCP:
+class ActiveRoomMCP(HubitatMCPClient):
     def __init__(self) -> None:
+        # Deliberately do not construct the transport: the test only needs the
+        # production-client type marker plus the overridden call_tool method.
         self.calls: list[tuple[str, dict]] = []
 
     async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
@@ -75,7 +77,7 @@ async def test_active_rooms_uses_narrow_gateway_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_active_rooms_follows_gateway_pagination() -> None:
-    class PagedMCP:
+    class PagedMCP(HubitatMCPClient):
         def __init__(self) -> None:
             self.calls: list[tuple[str, dict]] = []
 
