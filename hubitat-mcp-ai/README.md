@@ -59,8 +59,8 @@ instead of a bare label that would enter the model loop. Deterministic operation
 within one observed request reuse a single request-local live-device snapshot, so
 capability filtering and target resolution do not repeat the same Hubitat inventory
 read. Very closely spaced read-only requests may reuse the exact unfiltered live
-inventory for at most five seconds. A freshly fetched dashboard/device manifest
-also warms that same five-second snapshot, so an immediately-following aggregate
+inventory for at most two seconds. A freshly fetched dashboard/device manifest
+also warms that same two-second snapshot, so an immediately-following aggregate
 query such as active rooms does not repeat the full Hubitat inventory read. Every
 mutating tool attempt invalidates the shared snapshot before and after execution,
 and historical event reads are never served from it.
