@@ -161,17 +161,17 @@ def projected_state_shape_is_usable(
     devices: list[dict[str, Any]],
     state_field: str | None,
 ) -> bool:
-    """Check that a non-empty projected result actually carries state data.
+    """Check that every projected record carries the promised state container.
 
-    A missing state key on every returned record is a projection-contract
-    failure, not evidence that all devices are inactive. Empty containers are
-    valid; key presence is what distinguishes an empty state from an omitted
-    field.
+    Empty state containers are valid. A missing state key on even one returned
+    record means the projected response is structurally incomplete and cannot
+    support an exhaustive live-state claim. Accepting a single well-shaped record
+    would allow another malformed record to be silently interpreted as inactive.
     """
 
     if state_field is None or not devices:
         return True
-    return any(state_field in device for device in devices)
+    return all(state_field in device for device in devices)
 
 
 def live_context_is_complete(value: Any) -> bool:
