@@ -26,6 +26,13 @@ async def test_active_rooms_falls_back_when_projected_records_omit_live_state() 
         payload: dict[str, Any], allow_empty: bool = False
     ) -> dict[str, Any]:
         posts.append(payload)
+        if payload.get("method") == "tools/list":
+            # The fallback read asks for identity enrichment after it has obtained
+            # the complete live snapshot. This test is about the live-state
+            # fallback, so make the optional manifest catalogue unavailable
+            # without throwing and without adding another device read.
+            return {"result": {"tools": []}}
+
         arguments = payload["params"]["arguments"]
         args = arguments.get("args") or {}
         if args.get("capabilityFilter"):
@@ -75,11 +82,12 @@ async def test_active_rooms_falls_back_when_projected_records_omit_live_state() 
         {"name": "Office", "reasons": ["motion"]}
     ]
     assert result.data["count"] == 1
-    assert len(posts) == 2
-    projected_args = posts[0]["params"]["arguments"]["args"]
+    tool_calls = [post for post in posts if post.get("method") == "tools/call"]
+    assert len(tool_calls) == 2
+    projected_args = tool_calls[0]["params"]["arguments"]["args"]
     assert "attributes" in projected_args["fields"]
     assert "currentStates" not in projected_args["fields"]
-    assert posts[1]["params"]["arguments"] == {
+    assert tool_calls[1]["params"]["arguments"] == {
         "tool": "hub_list_devices",
         "args": {},
     }
