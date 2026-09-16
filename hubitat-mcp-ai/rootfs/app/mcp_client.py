@@ -12,7 +12,11 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
-from device_read_contract import device_read_plan
+from device_read_contract import (
+    device_read_plan,
+    normalize_hub_list_devices_arguments,
+    projected_state_shape_is_usable,
+)
 from mcp_retry_metrics import record_mcp_retry_attempt
 from request_metrics import add_active_metric_ms
 
@@ -118,10 +122,6 @@ class HubitatMCPClient:
         self._live_device_snapshot_ttl_seconds = 2.0
         self._live_device_snapshot: tuple[float, int, MCPToolResult] | None = None
         self._live_device_snapshot_generation = 0
-        # Exactly one dashboard/device-manifest refresh may be in flight at a
-        # time. Aggregate live reads can await this task and reuse its result
-        # instead of waiting for the MCP lock and then starting a duplicate
-        # whole-home inventory read.
         self._device_manifest_inflight: asyncio.Task[list[dict[str, Any]]] | None = None
 
     @staticmethod
@@ -431,6 +431,7 @@ class HubitatMCPClient:
     ) -> MCPToolResult:
         await self.initialize()
         arguments = arguments if isinstance(arguments, dict) else {}
+        expected_state_field = normalize_hub_list_devices_arguments(name, arguments)
         cacheable = self._is_live_device_snapshot_request(name, arguments)
         generation = self._live_device_snapshot_generation
         if cacheable and self._live_device_snapshot is not None:
@@ -441,9 +442,6 @@ class HubitatMCPClient:
             ):
                 return self._copy_tool_result(cached_result)
 
-        # If a dashboard/device-manifest refresh is already doing the expensive
-        # whole-home read, share that in-flight work rather than queue behind it
-        # on the MCP lock and then issue a second hub_list_devices request.
         if cacheable:
             manifest_task = self._device_manifest_inflight
             if manifest_task is not None and not manifest_task.done():
@@ -520,6 +518,33 @@ class HubitatMCPClient:
         text = "\n".join(part for part in text_parts if part).strip()
         data = structured if structured is not None else self._decode_tool_text(text)
         is_error = bool(result.get("isError"))
+
+        projected_devices = [
+            item
+            for item in (self._find_device_list(data) or [])
+            if isinstance(item, dict)
+        ]
+        if (
+            not is_error
+            and expected_state_field is not None
+            and projected_devices
+            and not projected_state_shape_is_usable(
+                projected_devices, expected_state_field
+            )
+        ):
+            message = (
+                "hub_list_devices response omitted the projected live-state field "
+                f"'{expected_state_field}'"
+            )
+            mismatch_data = dict(data) if isinstance(data, dict) else {}
+            mismatch_data["devices"] = projected_devices
+            mismatch_data["error"] = message
+            mismatch_data["projectionMismatch"] = True
+            mismatch_data["expectedStateField"] = expected_state_field
+            data = mismatch_data
+            text = message
+            is_error = True
+
         tool_result = MCPToolResult(
             name=name,
             arguments=arguments,
