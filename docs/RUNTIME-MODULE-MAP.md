@@ -13,6 +13,7 @@ The repository drift test compares this table directly with the live directory. 
 | `automation_status_service.py` | Reads and normalises Hubitat automation status. |
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
+| `chatgpt_mcp.py` | Exposes the opt-in ChatGPT-facing Streamable HTTP MCP transport and high-level HomeBrainOS tools. |
 | `confirmation_policy.py` | Decides whether structured actions require confirmation. |
 | `confirmation_store.py` | Stores, expires, consumes, and cancels pending confirmations. |
 | `confirmed_action_coordinator.py` | Revalidates and executes confirmed action groups. |
