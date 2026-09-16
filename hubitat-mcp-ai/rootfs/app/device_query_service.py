@@ -826,10 +826,17 @@ class DeviceQueryService:
         return MCPToolResult(ACTIVE_SWITCHES_TOOL, arguments, {}, json.dumps(data), data)
 
     async def home_snapshot(self, arguments: dict[str, Any]) -> MCPToolResult:
-        source, devices = await self._live_devices(enrich_identity=True)
+        source, devices = await self._bulk_live_devices(
+            {"presence", "motion", "switch", "contact", "lock", "battery"},
+            enrich_fallback_identity=True,
+        )
         if not self._tool_succeeded(source):
             return self._read_failure(HOME_SNAPSHOT_TOOL, arguments, source)
 
+        context_source = (
+            isinstance(source.arguments, dict)
+            and source.arguments.get("resource") == LIVE_CONTEXT_RESOURCE_URI
+        )
         presence: list[dict[str, Any]] = []
         tracked_presence: list[dict[str, Any]] = []
         motion: list[dict[str, Any]] = []
@@ -850,13 +857,15 @@ class DeviceQueryService:
             presence_value = str(attrs.get("presence") or "").casefold()
             capabilities = self._capability_names(device)
             is_home = presence_value in {"present", "home", "arrived", "true", "active"}
-            if (
-                is_home
-                and "switch" not in capabilities
-                and not bool(capabilities & {"actuator", "outlet"})
-            ):
+            presence_reporter = (
+                "presencesensor" in capabilities or attrs.get("presence") is not None
+            )
+            person_presence = presence_reporter and not bool(
+                capabilities & {"motionsensor", "occupancysensor", "switch", "actuator", "outlet"}
+            )
+            if person_presence and is_home:
                 presence.append({**identity, "presence": attrs.get("presence")})
-            if "presencesensor" in capabilities or attrs.get("presence") is not None:
+            if person_presence:
                 tracked_presence.append(
                     {
                         **identity,
@@ -882,22 +891,28 @@ class DeviceQueryService:
                 )
                 low_batteries.append({**identity, "battery": rendered_battery})
 
-            health = str(
-                attrs.get("healthStatus")
-                or attrs.get("networkStatus")
-                or attrs.get("rtt")
-                or ""
-            ).casefold()
-            if health in {"offline", "unavailable", "timeout", "failed"}:
-                alerts.append({**identity, "status": health, "source": "connectivity"})
-            hub_alerts = attrs.get("hubAlerts")
-            if hub_alerts not in (None, "", "[]", []):
-                alerts.append({**identity, "status": hub_alerts, "source": "hub_alert"})
+            # The upstream bulk context resource intentionally does not carry rich
+            # health/alert fields. Never turn that omission into a false "no alerts"
+            # claim. When the complete-inventory fallback is used, retain the existing
+            # exhaustive alert scan; otherwise mark alert coverage explicitly partial.
+            if not context_source:
+                health = str(
+                    attrs.get("healthStatus")
+                    or attrs.get("networkStatus")
+                    or attrs.get("rtt")
+                    or ""
+                ).casefold()
+                if health in {"offline", "unavailable", "timeout", "failed"}:
+                    alerts.append({**identity, "status": health, "source": "connectivity"})
+                hub_alerts = attrs.get("hubAlerts")
+                if hub_alerts not in (None, "", "[]", []):
+                    alerts.append({**identity, "status": hub_alerts, "source": "hub_alert"})
 
         lights = active_lights(devices)
         switches = active_non_light_switches(devices)
         rooms = active_room_summary(devices)
         sort_key = lambda item: str(item.get("label") or "").casefold()
+        alerts_complete = not context_source
         data = {
             "presence": sorted(presence, key=sort_key),
             "tracked_presence": sorted(tracked_presence, key=sort_key),
@@ -909,6 +924,10 @@ class DeviceQueryService:
             "unlocked_locks": sorted(locks, key=sort_key),
             "low_batteries": sorted(low_batteries, key=sort_key),
             "alerts": sorted(alerts, key=sort_key),
+            "alerts_complete": alerts_complete,
+            "alerts_source": (
+                "complete inventory" if alerts_complete else "not available from bulk live context"
+            ),
             "counts": {
                 "presence": len(presence),
                 "active_motion": len(motion),
@@ -918,9 +937,10 @@ class DeviceQueryService:
                 "open_contacts": len(contacts),
                 "unlocked_locks": len(locks),
                 "low_batteries": len(low_batteries),
-                "alerts": len(alerts),
+                "alerts": len(alerts) if alerts_complete else None,
             },
             "total_scanned": len(devices),
             "complete": True,
+            "read_scope": "bulk live context" if context_source else "complete inventory",
         }
         return MCPToolResult(HOME_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data)
