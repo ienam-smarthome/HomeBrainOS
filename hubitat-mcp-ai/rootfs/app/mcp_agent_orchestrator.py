@@ -81,17 +81,14 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
-# Live-observed (0.10.410): homebrain_device_history's deterministic
-# presenter message ("...does not by themselves identify what caused
-# them") used to short-circuit this loop unconditionally on every
-# successful call, for every question shape -- including a genuinely
-# causal "why did X happen" question the model had itself decided needed
-# investigating, cutting it off before it could look at anything else
-# (motion sensors, hub logs) the way it's fully capable of when actually
-# allowed to keep reasoning. A plain "what happened" / "list history"
-# question has no such need -- the templated, hallucination-safe summary
-# is the right answer for those, unchanged. This pattern narrowly
-# identifies the causal case so only that one bypasses the early return.
+# History reads are evidence, not an answer template.  0.10.410 first opened
+# a second reasoning round only for causal "why" questions.  Live comparison
+# in 0.10.446 showed the same early-return still blocked analytical questions
+# such as "how long was Big lamp on last night?": the tool had all ten switch
+# transitions, but the request ended as a generic event dump before the model
+# could pair intervals or answer the question.  0.10.447 therefore lets every
+# successful homebrain_device_history result continue to synthesis.  Causal
+# questions additionally keep the stronger investigation hint below.
 _CAUSAL_QUESTION = re.compile(r"\bwhy\b", re.I)
 
 # Live-observed, safety-relevant gap: a write-classified turn ("enable it",
@@ -179,8 +176,6 @@ class UnifiedMCPAgent:
             max_tool_context_chars=max_tool_context_chars,
             compacted_tool_result_chars=compacted_tool_result_chars,
         )
-        # Compatibility views for callers that inspect the established agent
-        # configuration surface. Context behavior lives in ModelContextPolicy.
         self.max_history_messages = self.context_policy.max_history_messages
         self.max_history_chars = self.context_policy.max_history_chars
         self.max_tool_context_chars = self.context_policy.max_tool_context_chars
@@ -508,28 +503,6 @@ class UnifiedMCPAgent:
             except Exception as exc:
                 logger.warning("Could not build live device manifest: %s", exc)
         app_section = ""
-        # A bare pronoun follow-up ("enable it") never matches _APP_TERMS
-        # on its own -- live-reproduced: after "disable humidity controller
-        # app" (which does match) succeeded, "enable it" omitted the app
-        # manifest entirely, leaving the model with no numeric appId to
-        # reference for hub_set_app_disabled. It then guessed using a
-        # numbered display label ("01. Humidity Controller") as the appId
-        # argument instead, which the gateway correctly rejected ("appId
-        # must be a positive integer"). Checking the most recent prior user
-        # turn lets a pronoun follow-up to an app request still get the
-        # manifest it needs, the same way device pronoun follow-ups already
-        # resolve against the session's last selected device elsewhere in
-        # this class.
-        #
-        # 0.10.421 live retest: still broken. Sensitive app mutations
-        # (disable/enable) always require a "confirm" round-trip, so the
-        # single most recent user turn before "enable it" is almost always
-        # the literal word "confirm" from finishing the *previous* action,
-        # not the "...app" wording that named it. A single-turn lookback
-        # therefore missed the app-mentioning turn in exactly the sequence
-        # this fix exists for. Skip past bare confirmation replies (the
-        # same CONFIRM_WORDS the confirmation store itself recognizes) so
-        # the lookback lands on the turn that actually named the app.
         previous_user_prompt = ""
         for message in reversed(self._history(conversation_history)):
             if message.get("role") != "user":
@@ -571,24 +544,6 @@ class UnifiedMCPAgent:
         return await self.transport.chat(self._bounded_messages(messages), tools)
 
     def _unverified_mutation_guard(self, content: str) -> str:
-        """Refuse instead of narrating a mutation the model claimed but
-        never actually got a successful tool result for.
-
-        `_mutation_call_seen` flips true the moment ANY mutating tool call
-        is *attempted* in this turn's loop -- including one naming an
-        undeclared tool, which fails closed to a sensitive-write
-        classification (`tool_registry.classify_tool_effect`) without ever
-        executing or recording evidence (see 0.10.421). Originally this
-        check only guarded the `decide_no_tool_calls` ACCEPT fall-through.
-        A live-code audit (2026-08-13) found `_final_answer` has two other
-        callers -- the duplicate-tool-call-signature early return and the
-        tool-round-limit exhaustion fallback -- that returned raw model
-        narration through the exact same gap 0.10.421 fixed for the more
-        common case. Centralising the check here means every current and
-        future `_final_answer` caller is covered by construction instead
-        of needing to remember to add it themselves.
-        """
-
         if self._mutation_call_seen.get() and not any(
             receipt.get("success") and receipt.get("mutates")
             for receipt in self.evidence.receipts()
@@ -746,32 +701,7 @@ class UnifiedMCPAgent:
                 )
         rule_decision = await self.rule_authoring.propose(
             user_prompt,
-            # The deterministic rule-authoring path never asks the model to
-            # call hub_manage_rule_machine itself -- it calls the MCP server
-            # directly and queues a confirmation (see
-            # rule_proposal_confirmation.py). Gating this on
-            # `catalog.declared_names` (the subset of tools currently
-            # exposed to the model this turn, driven by an incidental
-            # capability-discovery search over the raw prompt) was wrong:
-            # control-language scheduling prompts like "turn off X every day
-            # at 7am" don't semantically match a search for Rule Machine, so
-            # the gateway was never declared and this deterministic path
-            # silently bailed out every time, even though the schedule
-            # grammar matched. That pushed every schedule request into the
-            # generic model tool loop, where the model could -- and did --
-            # narrate a fabricated "I have scheduled a rule" success message
-            # without ever calling hub_set_rule. Use the full set of tools
-            # known to exist on the connected MCP server instead.
             available_gateways=set(catalog.available_names),
-            # _existing_names() calls hub_read_rules directly via the MCP
-            # client, not through the model's declared-tool schema, so it
-            # never needed `hub_read_rules` to have survived this turn's
-            # tool-catalog truncation (`catalog.available_names`, capped at
-            # `tool_limit`) in the first place. Gating on that incidental
-            # signal used to silently skip duplicate-rule protection on
-            # every request whose catalog build happened to drop
-            # `hub_read_rules` -- see rule_authoring_service.py's
-            # `propose()` docstring for the fuller history.
             can_read_rules=True,
         )
         if rule_decision.handled:
@@ -949,17 +879,6 @@ class UnifiedMCPAgent:
                     is CapabilityAction.REJECT_UNGROUNDED
                 ):
                     return str(capability_decision.message)
-                # Content-blind evidence grounding gap (2026-08-09 code
-                # review, finding #14): the check just below only asks
-                # "did *some* live tool call succeed this turn", not
-                # "does that evidence actually back the claim in the
-                # answer" -- a model that read Device A's live state could
-                # still answer a question about Device B and pass it
-                # untouched. This narrow check only fires when the answer
-                # names a known device by label AND this turn collected
-                # device-scoped evidence for a *different* device; see
-                # device_claim_grounding.py's module docstring for the
-                # accepted scope and limitations of this partial fix.
                 receipt_device_ids = extract_receipt_device_ids(
                     self.evidence.receipts()
                 )
@@ -998,15 +917,6 @@ class UnifiedMCPAgent:
                     str(assistant.get("content") or "Done.")
                 )
             sensitive: list[tuple[str, dict[str, Any]]] = []
-            # Every call in this tool-calling round, sensitive or not, in the
-            # model's original order. If the round contains any sensitive
-            # call, the *whole* round is queued for confirmation (see below)
-            # rather than just the sensitive subset -- a mixed round like
-            # "turn off kitchen lights and lock the front door" must not
-            # silently drop the routine light call while the lock waits on
-            # confirmation. Replaying the full round on confirm also
-            # guarantees every tool_call_id in the stored assistant message
-            # gets a matching tool-role reply once resumed.
             round_actions: list[tuple[str, dict[str, Any]]] = []
             proposal_errors: list[tuple[str, str]] = []
             for call in calls:
@@ -1091,11 +1001,6 @@ class UnifiedMCPAgent:
                 return rule_create_error
             if sensitive:
                 last_proposal_error = None
-                # Confirmation wording and the max-actions bound are judged
-                # against the sensitive subset only -- a routine call along
-                # for the ride should not count against that limit or be
-                # described as "sensitive" in the prompt. Replay on confirm
-                # covers the whole round; see round_actions above.
                 decision = self.confirmation_policy.decide(session_id, sensitive)
                 if decision.action is ConfirmationAction.REJECT:
                     return str(decision.message)
@@ -1116,21 +1021,6 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 signature = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False, default=str)
                 if signature in completed_calls:
-                    # Do not re-execute a call whose exact signature already
-                    # ran this turn (avoids double side effects for a
-                    # repeated mutating call), but still append a tool-role
-                    # reply so every tool_call_id in the assistant message
-                    # already appended above gets a matching reply, and keep
-                    # processing the rest of *this* round -- a duplicate
-                    # earlier in a mixed round (e.g. "turn off kitchen
-                    # lights and lock the front door" where the light call
-                    # happens to repeat an earlier one) must not silently
-                    # abandon a later, genuinely new call in the same round
-                    # with no tool-role reply and no evidence receipt, while
-                    # a narration claiming the whole round succeeded. The
-                    # loop still ends with a final answer once this round
-                    # finishes (see below), matching the previous intent of
-                    # not letting the model repeat itself forever.
                     duplicate_signature_seen = True
                     messages.append({
                         "role": "tool",
@@ -1144,25 +1034,10 @@ class UnifiedMCPAgent:
                     })
                     continue
                 completed_calls.add(signature)
-                # Reset per call: this used to be assigned only inside the
-                # "if result is not None" branch below, but read
-                # unconditionally later in this same loop iteration (see
-                # "if causal_history_bypass:" further down). Any iteration
-                # that never reaches that assignment -- an undeclared tool
-                # name (the "if not tool" branch just below, which never
-                # touches `result` at all) or a declared tool whose
-                # execution result is None -- left the previous iteration's
-                # value in scope for calls after the first, or raised
-                # UnboundLocalError outright when it was the first tool
-                # call of the round. Live-reproduced: "enable it" fell
-                # through to the model loop as intended by 0.10.418's
-                # pronoun-target fix, and the model's first tool call that
-                # round hit the undeclared-tool branch, crashing the whole
-                # request with "cannot access local variable
-                # 'causal_history_bypass'". Explicitly resetting it to
-                # False at the top of every iteration makes each call's
-                # bypass decision independent, matching the code's actual
-                # intent, instead of leaking state across calls or crashing.
+                # Every call gets fresh history-reasoning flags.  Keeping
+                # these per call avoids state leaking from a prior tool in a
+                # mixed round or an undeclared-tool branch.
+                history_reasoning_bypass = False
                 causal_history_bypass = False
                 tool = catalog.declared_tool(name)
                 if not tool:
@@ -1213,14 +1088,17 @@ class UnifiedMCPAgent:
                                 for pattern in _HOME_STATE_PATTERNS
                             )
                         )
-                        causal_history_bypass = (
+                        history_reasoning_bypass = (
                             name == _LOCAL_DEVICE_HISTORY_TOOL
                             and self._tool_succeeded(result)
+                        )
+                        causal_history_bypass = (
+                            history_reasoning_bypass
                             and _CAUSAL_QUESTION.search(user_prompt) is not None
                         )
                         if (
                             deterministic_message is not None
-                            and not causal_history_bypass
+                            and not history_reasoning_bypass
                             and (
                                 (
                                     name not in {_LOCAL_FILTER_TOOL, _LOCAL_QUERY_TOOL, _LOCAL_HOME_SNAPSHOT_TOOL, _LOCAL_WEATHER_TOOL}
@@ -1231,18 +1109,26 @@ class UnifiedMCPAgent:
                         ):
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
+                if history_reasoning_bypass and not causal_history_bypass:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST HISTORY-SYNTHESIS HINT\n"
+                            "The successful device-history result is evidence, not the "
+                            "finished answer. Answer the user's original question "
+                            "directly. When temporalAnalysis is present, use its "
+                            "pre-computed intervals, totalActiveDuration, intervalCount, "
+                            "longestActiveDuration, continuous, coverage, and "
+                            "totalIsLowerBound fields instead of redoing timestamp "
+                            "arithmetic yourself. If coverage is partial or "
+                            "totalIsLowerBound is true, describe the computed total as "
+                            "a lower bound rather than inventing a missing boundary. "
+                            "Do not turn the answer into a generic event dump unless "
+                            "the user asked for the event list. State changes do not "
+                            "prove which automation or person caused them."
+                        ),
+                    })
                 if causal_history_bypass:
-                    # Live-observed gap (0.10.411): the early-return bypass
-                    # above only buys a second reasoning round -- it does
-                    # not, by itself, make the model investigate. A first
-                    # live test of this bypass ("why did the shower light
-                    # turn off this morning?") just re-narrated the same
-                    # switch-only event list from homebrain_device_history
-                    # instead of checking whether a motion sensor in the
-                    # same room correlates in time, even though that was
-                    # one more tool call away. Nudge the model toward that
-                    # second call explicitly rather than assuming a bare
-                    # "why" bypass is enough on its own.
                     messages.append({
                         "role": "user",
                         "content": (
@@ -1275,11 +1161,6 @@ class UnifiedMCPAgent:
                             ),
                         })
             if duplicate_signature_seen:
-                # Every call in this round now has a tool-role reply (real
-                # or the "skipped duplicate" note above), so it's safe to
-                # end the agentic loop here -- deferred from inside the
-                # `for call in calls` loop so a duplicate earlier in the
-                # round can no longer abandon a later, genuinely new call.
                 return await self._final_answer(messages)
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         if ungrounded_confirmation_claim_seen:
