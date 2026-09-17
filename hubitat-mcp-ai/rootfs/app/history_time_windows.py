@@ -70,9 +70,11 @@ def active_history_window_request() -> dict[str, Any] | None:
 
 
 def _local_now(now: datetime) -> datetime:
-    if now.tzinfo is None:
-        return now.astimezone()
-    return now.astimezone()
+    # An injected aware datetime already carries the authoritative local offset
+    # for that request/test. The production default is datetime.now().astimezone(),
+    # so preserving awareness avoids accidentally converting an explicit Hubitat
+    # local offset to the container's timezone during deterministic tests.
+    return now if now.tzinfo is not None else now.astimezone()
 
 
 def _parse_clock(value: str) -> time | None:
