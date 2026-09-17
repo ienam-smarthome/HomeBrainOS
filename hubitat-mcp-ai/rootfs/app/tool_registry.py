@@ -246,12 +246,32 @@ def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
             capability = str(condition.get("capability") or "").strip()
             if not capability:
                 return f"{field} condition {index} requires capability"
+            has_time_window = (
+                condition.get("comparator") == "between"
+                or "start" in condition
+                or "end" in condition
+            )
+            if has_time_window and capability.casefold() != "between two times":
+                return (
+                    f"{field} condition {index} describes a time window but uses "
+                    f"capability={capability!r}; use capability='Between two times'"
+                )
+            if capability == "Certain Time (and optional date)":
+                return (
+                    f"{field} condition {index} uses the wall-clock trigger "
+                    "capability; required-expression time windows use "
+                    "capability='Between two times'"
+                )
             if capability.casefold() != "between two times":
                 continue
-            if {"startTime", "stopTime", "value"}.intersection(condition):
+            unsupported = {
+                "startTime", "stopTime", "value", "comparator",
+            }.intersection(condition)
+            if unsupported:
                 return (
-                    f"{field} condition {index} 'Between two times' uses "
-                    "unsupported flat time fields; use start and end objects"
+                    f"{field} condition {index} 'Between two times' contains "
+                    f"unsupported fields {sorted(unsupported)}; use only "
+                    "capability plus start and end objects"
                 )
             for endpoint in ("start", "end"):
                 value = condition.get(endpoint)
@@ -368,6 +388,8 @@ def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
 def rule_machine_proposal_error(
     tool_name: str,
     arguments: dict[str, Any],
+    *,
+    user_prompt: str | None = None,
 ) -> str | None:
     """Reject incomplete or invented hub_set_rule writes before confirmation."""
 
@@ -451,6 +473,36 @@ def rule_machine_proposal_error(
             "schemas, then retry with direct gateway args. No action was queued "
             "or executed."
         )
+    prompt = str(user_prompt or "").casefold()
+    delay_match = re.search(
+        r"(?:\bafter\s+|\bwait(?:\s+for)?\s+|\bdelay(?:ed)?(?:\s+by|\s+for)?\s+)?"
+        r"(\d+)\s*(minutes?|mins?|hours?|hrs?)\s+later\b"
+        r"|\b(?:after|wait(?:\s+for)?|delay(?:ed)?(?:\s+by|\s+for)?)\s+"
+        r"(\d+)\s*(minutes?|mins?|hours?|hrs?)\b",
+        prompt,
+    )
+    if delay_match:
+        amount_text = delay_match.group(1) or delay_match.group(3)
+        unit = delay_match.group(2) or delay_match.group(4) or "minutes"
+        requested_minutes = int(amount_text) * (
+            60 if unit.startswith(("hour", "hr")) else 1
+        )
+        actions, _ = _rule_specs(payload, "addAction", "addActions")
+        delay_positions = [
+            index
+            for index, action in enumerate(actions)
+            if str(action.get("capability") or "").casefold() == "delay"
+            and action.get("minutes") == requested_minutes
+        ]
+        if not delay_positions or not any(
+            index < len(actions) - 1 for index in delay_positions
+        ):
+            return (
+                "Invalid Rule Machine proposal: the request requires a "
+                f"{requested_minutes}-minute delay before the device action, "
+                "but the proposed ordered action list does not contain it. "
+                "No action was queued or executed."
+            )
     return None
 
 

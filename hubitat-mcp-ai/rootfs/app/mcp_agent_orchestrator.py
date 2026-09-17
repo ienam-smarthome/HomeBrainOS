@@ -1007,7 +1007,9 @@ class UnifiedMCPAgent:
                 round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
-                proposal_error = rule_machine_proposal_error(name, arguments)
+                proposal_error = rule_machine_proposal_error(
+                    name, arguments, user_prompt=user_prompt
+                )
                 if proposal_error is not None and effect.mutates:
                     proposal_errors.append((name, proposal_error))
                 if effect.mutates:

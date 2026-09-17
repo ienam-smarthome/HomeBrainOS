@@ -174,8 +174,8 @@ def test_between_times_required_expression_rejects_flat_time_fields():
     error = rule_machine_proposal_error("hub_manage_rule_machine", proposal)
 
     assert error is not None
-    assert "unsupported flat time fields" in error
-    assert "use start and end objects" in error
+    assert "contains unsupported fields" in error
+    assert "start and end objects" in error
     assert "No action was queued or executed" in error
 
 
@@ -365,6 +365,85 @@ def test_invalid_action_shortcuts_are_rejected(action, expected):
 
     assert error is not None
     assert expected in error
+
+
+def test_time_window_rejects_trigger_capability_before_confirmation():
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off (Night)",
+            "addRequiredExpression": {
+                "conditions": [{
+                    "capability": "Certain Time (and optional date)",
+                    "comparator": "between",
+                    "start": {"type": "clock", "time": "02:30"},
+                    "end": {"type": "clock", "time": "06:30"},
+                }],
+                "operator": "AND",
+            },
+            "addTrigger": {
+                "capability": "switch", "deviceIds": ["7827"], "state": "on",
+            },
+            "addAction": {
+                "capability": "switch", "action": "off", "deviceIds": ["7827"],
+            },
+        },
+    }
+
+    error = rule_machine_proposal_error("hub_manage_rule_machine", proposal)
+
+    assert error is not None
+    assert "use capability='Between two times'" in error
+
+
+def test_explicit_relative_delay_must_be_preserved_in_action_sequence():
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off (Night)",
+            "addTrigger": {
+                "capability": "switch", "deviceIds": ["7827"], "state": "on",
+            },
+            "addAction": {
+                "capability": "switch", "action": "off", "deviceIds": ["7827"],
+            },
+        },
+    }
+
+    error = rule_machine_proposal_error(
+        "hub_manage_rule_machine",
+        proposal,
+        user_prompt="Turn Big lamp off 30 minutes later",
+    )
+
+    assert error is not None
+    assert "requires a 30-minute delay" in error
+
+
+def test_matching_relative_delay_and_following_action_are_accepted():
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off (Night)",
+            "addTrigger": {
+                "capability": "switch", "deviceIds": ["7827"], "state": "on",
+            },
+            "addActions": [
+                {"capability": "delay", "minutes": 30},
+                {
+                    "capability": "switch",
+                    "action": "off",
+                    "deviceIds": ["7827"],
+                },
+            ],
+        },
+    }
+
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine",
+        proposal,
+        user_prompt="Turn Big lamp off 30 minutes later",
+    ) is None
 
 
 def gateway(name: str, **annotations: object) -> MCPTool:
