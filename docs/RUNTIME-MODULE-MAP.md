@@ -28,7 +28,7 @@ The repository drift test compares this table directly with the live directory. 
 | `device_state_summary.py` | Provides shared pure device-state summary helpers. |
 | `device_target_resolver.py` | Resolves natural-language targets to concrete devices. |
 | `time_expressions.py` | Shared deterministic clock-time recognition (parsing an isolated "at &lt;time&gt;" token, never scanning free text for meaning); used by `rule_authoring_service.py` and `device_control_service.py`. |
-| `direct_outcome_context.py` | Owns request-local evidence, choice, request-class, and mutation context for deterministic outcomes. |
+| `direct_outcome_context.py` | Owns request-local evidence, choice, request class, and mutation state, restoring every context token on normal completion and failure. |
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
@@ -36,6 +36,7 @@ The repository drift test compares this table directly with the live directory. 
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
+| `hub_timezone.py` | Resolves and briefly caches the authoritative Hubitat IANA timezone for semantic history windows. |
 | `live_evidence_authority.py` | Combines live evidence receipts with grounding decisions. |
 | `location_event_queries.py` | Parses and presents bounded hub location-event (mode change) follow-ups. |
 | `location_privacy.py` | Redacts precise-location device attributes (GPS, address, map tiles, journey logs) from provider-bound tool results. |
