@@ -27,13 +27,13 @@ EVIDENCE_REVIEW_INSTRUCTION = (
 )
 
 FINAL_SYNTHESIS_INSTRUCTION = (
-    "Answer the original request now using only the evidence already gathered. "
-    "Do not request another tool. Cover every material part that the evidence "
-    "supports. Synthesize the evidence instead of repeating raw tool output; "
-    "distinguish direct observations and deterministic calculations from "
-    "inference, state material uncertainty or incomplete coverage, and never "
-    "present correlation as proven causation. Be concise and do not reveal "
-    "hidden reasoning."
+    "Answer the original request now using only the MCP results already provided "
+    "and the evidence already gathered. Do not request another tool. Cover every "
+    "material part that the evidence supports. Synthesize the evidence instead "
+    "of repeating raw tool output; distinguish direct observations and "
+    "deterministic calculations from inference, state material uncertainty or "
+    "incomplete coverage, and never present correlation as proven causation. Be "
+    "concise and do not reveal hidden reasoning."
 )
 
 # The transport sees the complete native function-calling response before the
