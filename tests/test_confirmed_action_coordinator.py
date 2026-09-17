@@ -633,3 +633,62 @@ async def test_one_time_rule_pause_followup_failure_is_reported_distinctly():
         "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was created but "
         "could not be confirmed paused afterward: Rule 4171 not found."
     ) in report
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        None,
+        "partial",
+        "updateRuleFailed",
+        "expressionNotLive",
+        "verificationFetchFailed",
+        "hubRenderError",
+        "requiredExpressionAlreadyExists",
+        "error",
+    ],
+)
+def test_upstream_nested_expression_receipt(fault):
+    arguments = _rule_arguments("Big Lamp Auto-Off (Night)")
+    arguments["args"]["addRequiredExpression"] = {"conditions": []}
+    receipt = {
+        "success": True,
+        "partial": False,
+        "updateRuleFailed": False,
+        "expressionNotLive": False,
+    }
+    if fault:
+        receipt[fault] = True
+    data = {
+        "success": True,
+        "appId": 4204,
+        "health": {"ok": True},
+        "requiredExpression": receipt,
+    }
+    execution = _execution("hub_manage_rule_machine", arguments, data, success=True)
+    assert ConfirmedActionCoordinator.verified_rule_execution(execution, arguments) is (fault is None)
+    # An older acknowledgement must never override an explicit nested failure.
+    data["requiredExpressionApplied"] = True
+    assert ConfirmedActionCoordinator.verified_rule_execution(execution, arguments) is (fault is None)
+
+
+def test_missing_expression_receipt_does_not_recommend_deleting_rule():
+    arguments = _rule_arguments("Big lamp")
+    arguments["args"]["addRequiredExpression"] = {"conditions": []}
+    execution = _execution(
+        "hub_manage_rule_machine",
+        arguments,
+        {
+            "success": True,
+            "appId": 4204,
+            "health": {"ok": True},
+            "note": "FULLY committed",
+        },
+        success=True,
+    )
+    report = ConfirmedActionCoordinator.confirmed_rule_report(
+        [("hub_manage_rule_machine", arguments, execution)], queued_count=1
+    )
+    assert "was not verified" in report
+    assert "only partially created" not in report
+    assert "Pause or delete" not in report
+    assert "did not confirm" in report

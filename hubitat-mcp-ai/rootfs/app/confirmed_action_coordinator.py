@@ -101,6 +101,32 @@ class ConfirmedActionCoordinator:
             {"addRequiredExpression", "replaceRequiredExpression"}.intersection(source)
         )
 
+    @staticmethod
+    def _expression_applied(data: dict[str, Any]) -> bool:
+        """Accept the upstream structured expression receipt, never note text."""
+        nested = data.get("requiredExpression")
+        receipts = [data] + ([nested] if isinstance(nested, dict) else [])
+        for receipt in receipts:
+            if any(
+                receipt.get(key)
+                for key in (
+                    "partial",
+                    "error",
+                    "repairHints",
+                    "updateRuleFailed",
+                    "expressionNotLive",
+                    "requiredExpressionAlreadyExists",
+                    "verificationFetchFailed",
+                    "hubRenderError",
+                )
+            ):
+                return False
+        if data.get("requiredExpressionApplied") is False:
+            return False
+        if isinstance(nested, dict):
+            return nested.get("success") is True
+        return data.get("requiredExpressionApplied") is True
+
     @classmethod
     def verified_rule_execution(
         cls,
@@ -117,7 +143,7 @@ class ConfirmedActionCoordinator:
         )
         expression_verified = (
             not cls._requests_required_expression(arguments)
-            or data.get("requiredExpressionApplied") is True
+            or cls._expression_applied(data)
         )
         return (
             bool(getattr(execution, "success", False))
@@ -205,14 +231,13 @@ class ConfirmedActionCoordinator:
             error = getattr(execution, "error", None)
             detail = (
                 data.get("error")
-                or data.get("note")
                 or data.get("repairHints")
                 or data.get("partialTriggers")
                 or data.get("partialActions")
                 or (
                     "the hub did not confirm that the required expression was applied"
                     if cls._requests_required_expression(arguments)
-                    and data.get("requiredExpressionApplied") is not True
+                    and not cls._expression_applied(data)
                     else None
                 )
                 or (
@@ -227,7 +252,9 @@ class ConfirmedActionCoordinator:
                     f"paused afterward: {detail}. It may still fire again -- "
                     "check Rule Machine directly."
                 )
-            elif app_id not in {None, ""} and "appId" not in (
+            elif (
+                data.get("partial") is True or data.get("success") is False
+            ) and app_id not in {None, ""} and "appId" not in (
                 (arguments.get("args") or {})
             ):
                 lines.append(
@@ -236,7 +263,11 @@ class ConfirmedActionCoordinator:
                     "Machine before retrying."
                 )
             else:
-                lines.append(f"- **{name} was not verified:** {detail}.")
+                lines.append(
+                    f"- **{name} was not verified** (appId: {app_id}): {detail}. "
+                    "Inspect the existing rule before retrying; verification failure "
+                    "does not establish that creation was incomplete."
+                )
         skipped = max(0, queued_count - len(outcomes))
         if skipped:
             failed = True
