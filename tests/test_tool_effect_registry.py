@@ -146,6 +146,60 @@ def test_documented_required_expression_fields_are_not_rejected(valid_field):
     ) is None
 
 
+def test_between_times_required_expression_rejects_flat_time_fields():
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off (2:30am-6:30am)",
+            "addRequiredExpression": {
+                "conditions": [{
+                    "capability": "Between two times",
+                    "startTime": "02:30",
+                    "stopTime": "06:30",
+                }],
+                "operator": "AND",
+            },
+            "addTrigger": {
+                "capability": "Switch",
+                "deviceIds": ["7827"],
+                "state": "on",
+            },
+            "addActions": [
+                {"capability": "delay", "minutes": 30},
+                {"capability": "switch", "action": "off", "deviceIds": ["7827"]},
+            ],
+        },
+    }
+
+    error = rule_machine_proposal_error("hub_manage_rule_machine", proposal)
+
+    assert error is not None
+    assert "unsupported flat time fields" in error
+    assert "use start and end objects" in error
+    assert "No action was queued or executed" in error
+
+
+def test_between_times_required_expression_accepts_endpoint_maps():
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off (2:30am-6:30am)",
+            "addRequiredExpression": {
+                "conditions": [{
+                    "capability": "Between two times",
+                    "start": {"type": "clock", "time": "02:30"},
+                    "end": {"type": "clock", "time": "06:30"},
+                }],
+                "operator": "AND",
+            },
+        },
+    }
+
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine", proposal
+    ) is None
+
+
 def test_observed_multi_time_rule_is_rejected_before_confirmation():
     observed = {
         "tool": "hub_set_rule",

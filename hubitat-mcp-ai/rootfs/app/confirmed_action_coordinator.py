@@ -227,6 +227,14 @@ class ConfirmedActionCoordinator:
                     f"paused afterward: {detail}. It may still fire again -- "
                     "check Rule Machine directly."
                 )
+            elif app_id not in {None, ""} and "appId" not in (
+                (arguments.get("args") or {})
+            ):
+                lines.append(
+                    f"- **{name}** was only partially created (appId: {app_id}): "
+                    f"{detail}. Pause or delete this incomplete rule in Rule "
+                    "Machine before retrying."
+                )
             else:
                 lines.append(f"- **{name} was not verified:** {detail}.")
         skipped = max(0, queued_count - len(outcomes))
