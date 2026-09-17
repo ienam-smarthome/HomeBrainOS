@@ -89,6 +89,7 @@ class EvidenceRecorder:
         evidence_kind: str = "tool_result",
         mutates: bool | None = None,
         effect: ToolEffect | str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         """Append one sanitised structured receipt when a request is active."""
 
@@ -102,7 +103,7 @@ class EvidenceRecorder:
             if isinstance(effect, str) and effect in ToolEffect._value2member_map_
             else classify_tool_effect(MCPTool(gateway, gateway, {}), arguments)
         )
-        receipts.append({
+        receipt = {
             "tool": gateway,
             "sub_tool": arguments.get("tool"),
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -114,7 +115,10 @@ class EvidenceRecorder:
             "effect": resolved_effect.value,
             "arguments": self.redact(arguments),
             "summary": summary,
-        })
+        }
+        if details:
+            receipt["details"] = self.redact(details)
+        receipts.append(receipt)
 
     def has_live_evidence(self) -> bool:
         """Report whether a successful receipt supports a current-state claim."""

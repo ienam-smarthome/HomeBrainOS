@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.449**.
+Current add-on version: **0.10.450**.
 
 ## Architecture
 
@@ -132,6 +132,10 @@ session, or request identifiers to the response payload. It returns privacy-safe
 normalised outcome value, human-readable label, and tone token for WebUI styling.
 The response includes model metadata only when request metrics confirm at least
 one model round, so deterministic responses no longer imply that Gemma participated.
+For a single deterministic device-history proof, this boundary also rejects an
+explicit numeric total-duration claim that contradicts the pre-computed temporal
+total; the serialized answer is replaced by the concise deterministic summary and
+the evidence receipt marks that a final-answer correction was applied.
 
 `technical_metrics_presenter.present_request_metrics` converts only the fixed,
 privacy-safe request metric vocabulary into compact technical-detail rows. It
@@ -189,14 +193,17 @@ switch, contact, motion, lock, and valve, deterministic temporal analysis pairs
 complete intervals and pre-computes totals, longest duration, continuity, and
 boundary coverage. Successful history reads then return to the model for one
 answer-synthesis round so it can answer the user's actual question from those
-grounded derived facts instead of ending at a generic event dump. Analytical
-attribute-history calls without an explicit time window now keep the normal
-24-hour bound; the automatic seven-day widening is reserved for explicit small
-(1-3 event) point lookups such as “when was it last on/open?”. This prevents an
-old unmatched boundary event from turning a complete overnight duration into an
-unnecessary lower-bound answer, while preserving the deeper lookup used for true
-“last occurrence” questions. Reported transitions are still treated as evidence
-of what changed, never as proof of who or what caused the change.
+grounded derived facts instead of ending at a generic event dump. The same
+pre-computed totals are copied into bounded evidence `details` so technical
+output exposes `totalActiveDuration`, `totalActiveSeconds`, `intervalCount`,
+`longestActiveDuration`, and coverage without dumping the full event stream.
+Analytical attribute-history calls without an explicit time window now keep the
+normal 24-hour bound; the automatic seven-day widening is reserved for explicit
+small (1-3 event) point lookups such as “when was it last on/open?”. This prevents
+an old unmatched boundary event from turning a complete overnight duration into
+an unnecessary lower-bound answer, while preserving the deeper lookup used for
+true “last occurrence” questions. Reported transitions are still treated as
+evidence of what changed, never as proof of who or what caused the change.
 
 Final device-claim grounding is deliberately non-blocking with respect to the
 Hubitat inventory. After synthesis, the agent validates named-device claims using

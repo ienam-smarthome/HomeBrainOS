@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from evidence_recorder import EvidenceRecorder
+from history_temporal_analysis import history_temporal_evidence_details
 from location_privacy import redact_precise_location
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
@@ -88,7 +89,27 @@ class ToolExecutor:
         return _shared_tool_succeeded(result)
 
     @staticmethod
+    def result_details(result: MCPToolResult) -> dict[str, Any] | None:
+        """Return bounded structured proof that is useful in technical receipts."""
+
+        return history_temporal_evidence_details(result.data)
+
+    @staticmethod
     def result_summary(result: MCPToolResult) -> str:
+        details = ToolExecutor.result_details(result)
+        if details is not None:
+            temporal = details.get("temporalAnalysis") or {}
+            interval_count = temporal.get("intervalCount")
+            total_duration = temporal.get("totalActiveDuration")
+            total_seconds = temporal.get("totalActiveSeconds")
+            longest = temporal.get("longestActiveDuration")
+            coverage = temporal.get("coverage")
+            qualifier = " lower-bound" if temporal.get("totalIsLowerBound") else ""
+            return (
+                "temporal history: "
+                f"intervals={interval_count}, total={total_duration} "
+                f"({total_seconds}s), longest={longest}, coverage={coverage}{qualifier}"
+            )
         data = result.data
         if isinstance(data, dict):
             keys = ", ".join(map(str, list(data)[:10]))
@@ -239,6 +260,7 @@ class ToolExecutor:
                     evidence_kind=evidence_kind,
                     mutates=effect.mutates if mutates is None else bool(mutates),
                     effect=effect,
+                    details=self.result_details(result),
                 )
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
             if effect.mutates:

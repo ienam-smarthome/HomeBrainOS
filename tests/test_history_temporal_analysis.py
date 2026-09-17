@@ -6,7 +6,11 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from history_temporal_analysis import analyze_state_intervals  # noqa: E402
+from history_temporal_analysis import (  # noqa: E402
+    analyze_state_intervals,
+    guard_history_duration_claim,
+    history_temporal_evidence_details,
+)
 
 
 def _event(value: str, timestamp: str, *, state_change: object = True) -> dict:
@@ -18,8 +22,8 @@ def _event(value: str, timestamp: str, *, state_change: object = True) -> dict:
     }
 
 
-def test_big_lamp_history_pairs_intervals_and_totals_without_model_math() -> None:
-    events = [
+def _big_lamp_events() -> list[dict]:
+    return [
         _event("off", "2026-09-17T07:34:00.000+0100"),
         _event("on", "2026-09-17T04:56:00.000+0100"),
         _event("off", "2026-09-17T04:00:00.000+0100"),
@@ -32,7 +36,31 @@ def test_big_lamp_history_pairs_intervals_and_totals_without_model_math() -> Non
         _event("on", "2026-09-17T01:08:00.000+0100"),
     ]
 
-    analysis = analyze_state_intervals("switch", events)
+
+def _big_lamp_history_data() -> dict:
+    analysis = analyze_state_intervals("switch", _big_lamp_events())
+    assert analysis is not None
+    return {
+        "success": True,
+        "label": "Big lamp",
+        "attribute": "switch",
+        "hoursBack": 24,
+        "temporalAnalysis": analysis,
+    }
+
+
+def _big_lamp_receipt() -> dict:
+    details = history_temporal_evidence_details(_big_lamp_history_data())
+    assert details is not None
+    return {
+        "tool": "homebrain_device_history",
+        "success": True,
+        "details": details,
+    }
+
+
+def test_big_lamp_history_pairs_intervals_and_totals_without_model_math() -> None:
+    analysis = analyze_state_intervals("switch", _big_lamp_events())
 
     assert analysis is not None
     assert analysis["intervalCount"] == 5
@@ -120,3 +148,55 @@ def test_unsupported_attribute_returns_no_synthetic_analysis() -> None:
         "temperature",
         [{"name": "temperature", "value": 21, "date": "2026-09-17T01:00:00+0100"}],
     ) is None
+
+
+def test_temporal_evidence_details_expose_auditable_duration_proof() -> None:
+    details = history_temporal_evidence_details(_big_lamp_history_data())
+
+    assert details is not None
+    assert details["label"] == "Big lamp"
+    assert details["attribute"] == "switch"
+    assert details["hoursBack"] == 24
+    assert details["temporalAnalysis"]["activeState"] == "on"
+    assert details["temporalAnalysis"]["totalActiveSeconds"] == 16260
+    assert details["temporalAnalysis"]["totalActiveDuration"] == "4h 31m"
+    assert details["temporalAnalysis"]["intervalCount"] == 5
+    assert details["temporalAnalysis"]["longestActiveDuration"] == "2h 38m"
+    assert details["temporalAnalysis"]["coverage"] == "complete"
+
+
+def test_wrong_model_total_is_replaced_with_deterministic_history_summary() -> None:
+    message, applied = guard_history_duration_claim(
+        (
+            "The big lamp was on for a total of 4 hours and 29 minutes last night, "
+            "across 5 separate intervals. The longest stretch was 2 hours and 38 minutes."
+        ),
+        [_big_lamp_receipt()],
+    )
+
+    assert applied is True
+    assert message == (
+        "Big lamp was on for a total of 4h 31m across 5 separate intervals. "
+        "The longest interval was 2h 38m."
+    )
+
+
+def test_correct_model_total_passes_through_unchanged() -> None:
+    original = (
+        "Big lamp was on for a total of 4 hours and 31 minutes across 5 intervals; "
+        "the longest was 2 hours and 38 minutes."
+    )
+
+    message, applied = guard_history_duration_claim(original, [_big_lamp_receipt()])
+
+    assert applied is False
+    assert message == original
+
+
+def test_longest_only_claim_is_not_rewritten_as_total() -> None:
+    original = "The longest Big lamp interval was 2 hours and 38 minutes."
+
+    message, applied = guard_history_duration_claim(original, [_big_lamp_receipt()])
+
+    assert applied is False
+    assert message == original
