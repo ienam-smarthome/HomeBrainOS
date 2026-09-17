@@ -67,10 +67,10 @@ async def test_invalid_rule_proposal_returns_exact_failed_outcome():
                 }],
                 "operator": "AND",
             },
-            "addActions": {
-                "capability": "delay",
-                "minutes": 30,
-            },
+            "addActions": [
+                {"capability": "delay", "minutes": 30},
+                "not-an-action-object",
+            ],
         },
     }
     ai = _suite.FakeAI([
@@ -101,8 +101,8 @@ async def test_invalid_rule_proposal_returns_exact_failed_outcome():
     assert "No Hubitat action was queued or executed" in outcome.message
     assert "Exact reason:" in outcome.message
     assert "Rejected payload:" in outcome.message
-    assert '"addActions": {' in outcome.message
-    assert "addActions must be a non-empty array" in outcome.message
+    assert '"not-an-action-object"' in outcome.message
+    assert "every addActions item must be an object" in outcome.message
     assert len(ai.requests) == 2
 
 

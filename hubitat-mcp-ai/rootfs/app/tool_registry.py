@@ -211,6 +211,43 @@ def _rule_specs(
     return specs, None
 
 
+def normalize_rule_machine_proposal(
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Repair only unambiguous singular/plural shortcut container swaps."""
+
+    if tool_name != "hub_manage_rule_machine":
+        return arguments
+    if _normalized_operation(arguments.get("tool")) != "hub_set_rule":
+        return arguments
+    payload = arguments.get("args")
+    if not isinstance(payload, dict):
+        return arguments
+
+    normalized_payload = dict(payload)
+    changed = False
+    for singular, plural in (
+        ("addTrigger", "addTriggers"),
+        ("addAction", "addActions"),
+    ):
+        if singular in normalized_payload and plural not in normalized_payload:
+            value = normalized_payload[singular]
+            if isinstance(value, list):
+                normalized_payload[plural] = normalized_payload.pop(singular)
+                changed = True
+        elif plural in normalized_payload and singular not in normalized_payload:
+            value = normalized_payload[plural]
+            if isinstance(value, dict):
+                normalized_payload[singular] = normalized_payload.pop(plural)
+                changed = True
+    if not changed:
+        return arguments
+    normalized = dict(arguments)
+    normalized["args"] = normalized_payload
+    return normalized
+
+
 def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
     """Validate stable upstream trigger/action shortcut invariants.
 

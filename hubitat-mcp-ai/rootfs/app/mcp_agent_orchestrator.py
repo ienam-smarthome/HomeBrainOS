@@ -60,6 +60,7 @@ from tool_registry import (
     LOCAL_WEATHER_TOOL as _LOCAL_WEATHER_TOOL,
     ToolEffect,
     classify_tool_effect,
+    normalize_rule_machine_proposal,
     rule_machine_proposal_error,
 )
 
@@ -1004,6 +1005,7 @@ class UnifiedMCPAgent:
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
+                arguments = normalize_rule_machine_proposal(name, arguments)
                 round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
