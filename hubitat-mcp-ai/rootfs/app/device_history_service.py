@@ -18,6 +18,7 @@ import time
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
+from history_temporal_analysis import analyze_state_intervals
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 
@@ -386,6 +387,16 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
+        # 0.10.447: expose deterministic interval arithmetic alongside the
+        # raw authoritative events.  The model still decides how to answer
+        # the user's question, but it no longer has to pair timestamps or
+        # add durations itself (the live Big Lamp comparison showed exactly
+        # how easy it is for a capable model to drift by a minute while
+        # doing that arithmetic in prose).  Unsupported attributes simply
+        # omit this field and retain the same raw history contract.
+        temporal_analysis = (
+            analyze_state_intervals(attribute, events) if attribute else None
+        )
         data = {
             "success": True,
             "requested": requested,
@@ -398,6 +409,8 @@ class DeviceHistoryService:
             "newestFirst": True,
             "causationAvailable": False,
         }
+        if temporal_analysis is not None:
+            data["temporalAnalysis"] = temporal_analysis
         return MCPToolResult(
             DEVICE_HISTORY_TOOL,
             arguments,

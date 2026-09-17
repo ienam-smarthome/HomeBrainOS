@@ -256,13 +256,21 @@ async def test_history_uses_targeted_local_resolver():
             raise AssertionError((name, arguments))
 
     mcp = HistoryMCP()
-    ai = _suite.FakeAI([{"message": {
-        "role": "assistant",
-        "tool_calls": [{"function": {
-            "name": "homebrain_device_history",
-            "arguments": {"name": "tab s9"},
-        }}],
-    }}])
+    ai = _suite.FakeAI([
+        {"message": {
+            "role": "assistant",
+            "tool_calls": [{"function": {
+                "name": "homebrain_device_history",
+                "arguments": {"name": "tab s9"},
+            }}],
+        }},
+        {"message": {
+            "role": "assistant",
+            "content": (
+                "Block Tab-S9-FE last changed at 2:55 pm on Saturday 1 August 2026."
+            ),
+        }},
+    ])
     agent = _suite.UnifiedMCPAgent(mcp, "key", "model", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
@@ -271,6 +279,7 @@ async def test_history_uses_targeted_local_resolver():
 
     assert outcome.request_class == "live-read"
     assert "Block Tab-S9-FE" in outcome.message
+    assert len(ai.requests) == 2
     assert mcp.calls[-1][1]["args"]["deviceId"] == "6916"
     inventory_calls = [
         arguments

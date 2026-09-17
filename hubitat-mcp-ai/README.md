@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.446**.
+Current add-on version: **0.10.447**.
 
 ## Architecture
 
@@ -184,8 +184,14 @@ snapshot.
 
 Named-device history questions use `DeviceHistoryService`. It resolves one
 device through the shared fuzzy-safe resolver and reads a bounded, optional
-attribute-filtered event window from Hubitat. Reported transitions are treated
-as evidence of what changed, never as proof of who or what caused the change.
+attribute-filtered event window from Hubitat. For state-pair attributes such as
+switch, contact, motion, lock, and valve, deterministic temporal analysis pairs
+complete intervals and pre-computes totals, longest duration, continuity, and
+boundary coverage. Successful history reads then return to the model for one
+answer-synthesis round so it can answer the user's actual question from those
+grounded derived facts instead of ending at a generic event dump. Reported
+transitions are still treated as evidence of what changed, never as proof of who
+or what caused the change.
 
 Resolved device targets preserve structured measurement units from Hubitat and
 supply conservative standard units for common attributes when the gateway omits
