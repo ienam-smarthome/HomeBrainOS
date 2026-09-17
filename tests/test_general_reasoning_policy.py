@@ -223,8 +223,6 @@ async def test_thinking_is_enabled_for_reasoning_models_and_trace_is_not_retaine
             }
         }
     ])
-    transport = ChatTransport("key", "gemma4:31b-cloud", ai_client=ai) if False else None
-
     # ChatTransport's injected client parameter is named `client`; keep this
     # test independent from the agent wrapper that calls it `ai_client`.
     transport = ChatTransport("key", "gemma4:31b-cloud", client=ai)
