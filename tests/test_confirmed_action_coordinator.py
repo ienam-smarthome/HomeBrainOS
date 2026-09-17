@@ -304,6 +304,24 @@ def test_nested_rule_result_verification_requires_id_and_healthy_result():
     assert ConfirmedActionCoordinator.verified_rule_execution(partial) is False
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("partialTriggers", [{"index": 1, "error": "not applied"}]),
+        ("partialActions", [{"index": 2, "error": "not applied"}]),
+        ("repairHints", ["Open Rule Machine and add the missing condition"]),
+    ],
+)
+def test_rule_verification_rejects_component_level_partial_results(field, value):
+    arguments = _rule_arguments("Partially created")
+    data = {"success": True, "appId": 44, "health": {"ok": True}, field: value}
+    execution = _execution(
+        "hub_manage_rule_machine", arguments, data, success=True
+    )
+
+    assert ConfirmedActionCoordinator.verified_rule_execution(execution) is False
+
+
 @pytest.mark.asyncio
 async def test_verified_rule_records_verification_duration_without_failure():
     gateway = "hub_manage_rule_machine"

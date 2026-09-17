@@ -80,6 +80,40 @@ def test_incomplete_rule_machine_proposals_fail_before_confirmation():
     ) is None
 
 
+def test_required_expression_alias_is_rejected_before_confirmation():
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off After 2AM",
+            "requiredExpression": {
+                "conditions": [{
+                    "capability": "Between two times",
+                    "startTime": "02:00",
+                    "stopTime": "05:59",
+                }],
+                "operator": "AND",
+            },
+            "addTrigger": {
+                "capability": "Switch",
+                "deviceIds": ["7827"],
+                "state": "on",
+            },
+            "addAction": {
+                "capability": "switch",
+                "action": "off",
+                "deviceIds": ["7827"],
+            },
+        },
+    }
+
+    error = rule_machine_proposal_error("hub_manage_rule_machine", proposal)
+
+    assert error is not None
+    assert "requiredExpression is not a supported" in error
+    assert "addRequiredExpression" in error
+    assert "No action was queued or executed" in error
+
+
 def test_observed_multi_time_rule_is_rejected_before_confirmation():
     observed = {
         "tool": "hub_set_rule",

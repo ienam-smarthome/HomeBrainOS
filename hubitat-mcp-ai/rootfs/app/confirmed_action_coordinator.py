@@ -92,11 +92,17 @@ class ConfirmedActionCoordinator:
     def verified_rule_execution(cls, execution: ToolExecution | Any) -> bool:
         data = cls.rule_result_data(execution)
         health = data.get("health") if isinstance(data.get("health"), dict) else {}
+        incomplete = (
+            data.get("partial") is True
+            or bool(data.get("partialTriggers"))
+            or bool(data.get("partialActions"))
+            or bool(data.get("repairHints"))
+        )
         return (
             bool(getattr(execution, "success", False))
             and data.get("success") is True
             and (data.get("appId") or data.get("ruleId")) not in {None, ""}
-            and data.get("partial") is not True
+            and not incomplete
             and health.get("ok") is True
         )
 
@@ -174,6 +180,9 @@ class ConfirmedActionCoordinator:
             detail = (
                 data.get("error")
                 or data.get("note")
+                or data.get("repairHints")
+                or data.get("partialTriggers")
+                or data.get("partialActions")
                 or (
                     str(error)
                     if error is not None

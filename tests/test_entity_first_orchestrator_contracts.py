@@ -13,6 +13,17 @@ _suite = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_suite)
 
 
+def test_model_rule_authoring_omits_eager_full_device_manifest():
+    agent = object.__new__(_suite.UnifiedMCPAgent)
+
+    assert agent._include_identity_manifest(
+        "create a rule: if Big lamp turns on after 2am, turn it off 30 minutes later"
+    ) is False
+    assert agent._include_identity_manifest(
+        "delete the Big lamp device"
+    ) is True
+
+
 @pytest.mark.asyncio
 async def test_rule_authoring_uses_complete_inventory_before_model():
     class RuleAuthoringMCP(_suite.FakeMCP):
