@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.454**.
+Current add-on version: **0.10.455**.
 
 ## Architecture
 
@@ -66,7 +66,11 @@ replace the browser-session target without model involvement, and live values ar
 refreshed from authoritative Hubitat state before each current-state response.
 The WebUI preserves the original requested attribute when a clarification button
 is tapped, so selecting a device resubmits a deterministic named-attribute request
-instead of a bare label that would enter the model loop.
+instead of a bare label that would enter the model loop. For other ambiguous
+history/reasoning questions, the WebUI now preserves the entire original question
+and appends the exact selected device, so phrases such as `last night` and `during
+the night` survive clarification instead of degrading into an unbounded 24-hour
+follow-up.
 
 The live device layer separates common state from richer device metadata. On MCP
 servers that expose `hubitat://context`, `HubitatMCPClient` reads that resource as
@@ -84,10 +88,15 @@ Active rooms require `motion` and `switch`; active lights and non-light switches
 require `switch`; deterministic attribute filters use the resource only when the
 requested attribute is one of the resource's declared live-state fields. Numeric
 aggregate queries such as top/highest/lowest/count power, battery, temperature,
-and humidity now use the same complete bulk live-context path when the requested
+and humidity use the same complete bulk live-context path when the requested
 attribute is covered, avoiding an unnecessary full detailed inventory read. An
 unsupported or partial context resource still falls back to the complete inventory
-path. Attributes outside that contract remain on the complete inventory path. The
+path. Once a request has a complete, non-empty canonical power/energy aggregate,
+request-local execution policy rejects later model attempts to re-run the same
+question through generic `value`/`valueStr` fields; those fields remain available
+only when the canonical measurement returned no usable rows. This prevents a valid
+bulk-context result from turning into an unnecessary ~30-second detailed inventory
+read. Attributes outside that contract remain on the complete inventory path. The
 active-room definition is unchanged: `motion=active OR light switch=on`. The
 resource's compact `attributes` map is normalized to `currentStates` so richer
 typed/unit-bearing metadata can still be merged by device id without stale
@@ -147,10 +156,11 @@ session, or request identifiers to the response payload. It returns privacy-safe
 normalised outcome value, human-readable label, and tone token for WebUI styling.
 The response includes model metadata only when request metrics confirm at least
 one model round, so deterministic responses no longer imply that Gemma participated.
-For a single deterministic device-history proof, this boundary also rejects an
-explicit numeric total-duration claim that contradicts the pre-computed temporal
-total; the serialized answer is replaced by the concise deterministic summary and
-the evidence receipt marks that a final-answer correction was applied.
+For deterministic device-history proof this boundary rejects both an explicit
+numeric total-duration claim that contradicts the pre-computed temporal total and
+a named `no data`/`no history` sentence when the same current-turn evidence proves
+one or more intervals. Corrected evidence receipts mark that a final-answer
+correction was applied.
 
 `technical_metrics_presenter.present_request_metrics` converts only the fixed,
 privacy-safe request metric vocabulary into compact technical-detail rows. It
@@ -224,18 +234,19 @@ unnecessary lower-bound answer, while preserving the deeper lookup used for true
 
 For semantic calendar phrases, `history_time_windows` binds the original
 request to an explicit local-time interval before tool execution. Supported
-phrases are `last night`, `yesterday`, `this morning`, `since midnight`, `today`,
-and explicit `between <clock> and <clock>` ranges. `last night` has one stable,
-auditable definition: 18:00 on the previous local calendar day through 08:00 on
-the current day, capped at the current time if that overnight window is still in
-progress. An explicit clock range overrides that default. The authoritative local
-timezone is read from the Hubitat MCP Rule Server's `hub_get_info.timeZone` IANA
-identifier and cached briefly; container UTC is never preferred when Hubitat
-reports its own timezone. The upstream Hubitat API still receives one bounded
-`hoursBack` read; HomeBrain widens it only far enough to reach the requested
-start plus a boundary buffer, using absolute UTC elapsed time for the fetch bound
-so autumn DST fallback cannot under-fetch, then clips interval arithmetic locally
-to the requested start/end.
+phrases are `last night`, the common equivalents `during the night`, `overnight`,
+and `through the night`, plus `yesterday`, `this morning`, `since midnight`,
+`today`, and explicit `between <clock> and <clock>` ranges. `last night` has one
+stable, auditable definition: 18:00 on the previous local calendar day through
+08:00 on the current day, capped at the current time if that overnight window is
+still in progress. An explicit clock range overrides that default. The
+authoritative local timezone is read from the Hubitat MCP Rule Server's
+`hub_get_info.timeZone` IANA identifier and cached briefly; container UTC is never
+preferred when Hubitat reports its own timezone. The upstream Hubitat API still
+receives one bounded `hoursBack` read; HomeBrain widens it only far enough to reach
+the requested start plus a boundary buffer, using absolute UTC elapsed time for
+the fetch bound so autumn DST fallback cannot under-fetch, then clips interval
+arithmetic locally to the requested start/end.
 
 Window coverage is conservative. A state event before the requested start proves
 the boundary state. If no predecessor is present but the returned event page is
