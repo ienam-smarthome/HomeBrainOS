@@ -15,6 +15,11 @@ from history_temporal_analysis import history_temporal_evidence_details
 from location_privacy import redact_precise_location
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
+from reasoning_policy import (
+    EVIDENCE_REVIEW_INSTRUCTION,
+    model_evidence_review_active,
+    should_defer_deterministic_presentation,
+)
 from request_metrics import add_active_metric_ms, increment_active_metric
 from tool_registry import ToolEffect, classify_tool_effect
 
@@ -128,11 +133,18 @@ class ToolExecutor:
         safe_data = (
             redact_precise_location(result.data) if result.data is not None else None
         )
-        payload = (
+        payload: dict[str, Any] = (
             {"error": result.text or "MCP tool failed"}
             if result.is_error
             else {"result": safe_data if safe_data is not None else result.text}
         )
+        # Only model-driven tool rounds receive the generic evidence-review
+        # contract. Direct deterministic paths and confirmed-action execution
+        # retain their historical payload shape and latency. The transport sets
+        # this request-local state from the native function-calling response;
+        # there is no prompt or question-category classifier here.
+        if model_evidence_review_active():
+            payload["host_instruction"] = EVIDENCE_REVIEW_INSTRUCTION
         serialized = json.dumps(payload, ensure_ascii=False, default=str)
         if len(serialized) <= self.max_tool_result_chars:
             return serialized
@@ -265,10 +277,23 @@ class ToolExecutor:
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
             if effect.mutates:
                 self._invalidate_live_device_snapshot()
+
+            # In a multi-tool model round, selected deterministic presenters
+            # would otherwise return from the orchestrator after the first call
+            # and silently skip every later call in that same native response.
+            # Keep the real result for evidence and provider content, but hide it
+            # only from the legacy presenter branch so the loop can finish the
+            # whole round and then synthesize all gathered evidence. Single-tool
+            # requests retain their direct deterministic fast path.
+            presentation_result = (
+                None
+                if should_defer_deterministic_presentation(name, result.data)
+                else result
+            )
             return ToolExecution(
                 name=name, arguments=receipt_arguments, effect=effect,
                 success=success, elapsed_ms=elapsed_ms,
-                content=self.result_payload(result), result=result,
+                content=self.result_payload(result), result=presentation_result,
             )
         except Exception as exc:
             elapsed_ms = round((self._clock() - started) * 1000)
