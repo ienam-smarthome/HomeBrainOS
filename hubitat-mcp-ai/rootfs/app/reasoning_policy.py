@@ -41,15 +41,16 @@ EVIDENCE_REVIEW_INSTRUCTION = (
 
 FINAL_SYNTHESIS_INSTRUCTION = (
     "Answer the original request now using only the MCP results already provided "
-    "from the CURRENT TURN. Conversation history is context only and is not "
-    "evidence for a live or historical factual claim. Do not request another "
-    "tool. Cover every material part that the current-turn evidence supports; if "
-    "a requested fact is not established by current-turn evidence, say so instead "
-    "of copying an earlier assistant claim. Synthesize the evidence instead of "
-    "repeating raw tool output; distinguish direct observations and deterministic "
-    "calculations from inference, state material uncertainty or incomplete "
-    "coverage, and never present correlation as proven causation. Be concise and "
-    "do not reveal hidden reasoning."
+    "from the CURRENT TURN and the evidence already gathered in this turn. "
+    "Conversation history is context only and is not evidence for a live or "
+    "historical factual claim. Do not request another tool. Cover every material "
+    "part that the current-turn evidence supports; if a requested fact is not "
+    "established by current-turn evidence, say so instead of copying an earlier "
+    "assistant claim. Synthesize the evidence instead of repeating raw tool "
+    "output; distinguish direct observations and deterministic calculations from "
+    "inference, state material uncertainty or incomplete coverage, and never "
+    "present correlation as proven causation. Be concise and do not reveal hidden "
+    "reasoning."
 )
 
 # 0.10.453 proved that open-ended read investigations can become materially more
