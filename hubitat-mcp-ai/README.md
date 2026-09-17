@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.447**.
+Current add-on version: **0.10.448**.
 
 ## Architecture
 
@@ -189,9 +189,14 @@ switch, contact, motion, lock, and valve, deterministic temporal analysis pairs
 complete intervals and pre-computes totals, longest duration, continuity, and
 boundary coverage. Successful history reads then return to the model for one
 answer-synthesis round so it can answer the user's actual question from those
-grounded derived facts instead of ending at a generic event dump. Reported
-transitions are still treated as evidence of what changed, never as proof of who
-or what caused the change.
+grounded derived facts instead of ending at a generic event dump. Analytical
+attribute-history calls without an explicit time window now keep the normal
+24-hour bound; the automatic seven-day widening is reserved for explicit small
+(1-3 event) point lookups such as “when was it last on/open?”. This prevents an
+old unmatched boundary event from turning a complete overnight duration into an
+unnecessary lower-bound answer, while preserving the deeper lookup used for true
+“last occurrence” questions. Reported transitions are still treated as evidence
+of what changed, never as proof of who or what caused the change.
 
 Resolved device targets preserve structured measurement units from Hubitat and
 supply conservative standard units for common attributes when the gateway omits
