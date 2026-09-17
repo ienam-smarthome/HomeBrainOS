@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.453**.
+Current add-on version: **0.10.454**.
 
 ## Architecture
 
@@ -23,6 +23,17 @@ used, and concurrent production requests cannot leak recorders or metrics across
 request contexts. Grounding retries and refusals are recorded at the authority
 decision boundary rather than inferred from final messages. No regex router or
 prompt-keyword tool gate controls read-versus-write behaviour.
+
+Model-driven reads use a generic evidence-reasoning contract. Current-turn tool
+results are the only evidence allowed to support live or historical factual
+claims; prior assistant messages remain conversation context only. Native read
+investigations have a soft generic budget of three model tool rounds and eight
+model-directed read executions. Once that budget is spent, callable read tools
+are removed for the next provider turn and the model must synthesize from the
+evidence already gathered. Mutation executions are not rejected by this read
+budget. The older causal sensor-hunting hint is filtered before provider calls,
+so causal questions use the same bounded evidence-sufficiency policy as every
+other read and correlation is never promoted to proof of causation.
 
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
@@ -71,12 +82,16 @@ inventory path instead of weakening an exhaustive claim.
 This bulk path is selected from structured data requirements, not prompt wording.
 Active rooms require `motion` and `switch`; active lights and non-light switches
 require `switch`; deterministic attribute filters use the resource only when the
-requested attribute is one of the resource's declared live-state fields. Attributes
-outside that contract remain on the complete inventory path. The active-room
-definition is unchanged: `motion=active OR light switch=on`. The resource's compact
-`attributes` map is normalized to `currentStates` so richer typed/unit-bearing
-metadata can still be merged by device id without stale metadata overwriting fresh
-live values.
+requested attribute is one of the resource's declared live-state fields. Numeric
+aggregate queries such as top/highest/lowest/count power, battery, temperature,
+and humidity now use the same complete bulk live-context path when the requested
+attribute is covered, avoiding an unnecessary full detailed inventory read. An
+unsupported or partial context resource still falls back to the complete inventory
+path. Attributes outside that contract remain on the complete inventory path. The
+active-room definition is unchanged: `motion=active OR light switch=on`. The
+resource's compact `attributes` map is normalized to `currentStates` so richer
+typed/unit-bearing metadata can still be merged by device id without stale
+metadata overwriting fresh live values.
 
 The WebUI dashboard uses the same bulk live-context snapshot for its 30-second
 state poll rather than forcing a detailed device-manifest refresh each time. Rich
@@ -188,13 +203,16 @@ snapshot.
 
 Named-device history questions use `DeviceHistoryService`. It resolves one
 device through the shared fuzzy-safe resolver and reads a bounded, optional
-attribute-filtered event window from Hubitat. For state-pair attributes such as
-switch, contact, motion, lock, and valve, deterministic temporal analysis pairs
-complete intervals and pre-computes totals, longest duration, continuity, and
-boundary coverage. Successful history reads then return to the model for one
-answer-synthesis round so it can answer the user's actual question from those
-grounded derived facts instead of ending at a generic event dump. The same
-pre-computed totals are copied into bounded evidence `details` so technical
+attribute-filtered event window from Hubitat. An exact multi-word target miss gets
+one bounded broader targeted lookup using the final identifying token; any broader
+match is surfaced as a clarification candidate and is never silently substituted.
+Missing and ambiguous history targets are reported separately. For state-pair
+attributes such as switch, contact, motion, lock, and valve, deterministic temporal
+analysis pairs complete intervals and pre-computes totals, longest duration,
+continuity, and boundary coverage. Successful history reads then return to the
+model for one answer-synthesis round so it can answer the user's actual question
+from those grounded derived facts instead of ending at a generic event dump. The
+same pre-computed totals are copied into bounded evidence `details` so technical
 output exposes `totalActiveDuration`, `totalActiveSeconds`, `intervalCount`,
 `longestActiveDuration`, and coverage without dumping the full event stream.
 Analytical attribute-history calls without an explicit time window keep the
