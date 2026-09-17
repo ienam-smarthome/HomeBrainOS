@@ -422,19 +422,15 @@ class UnifiedMCPAgent:
         )
 
     def _include_identity_manifest(self, prompt: str) -> bool:
-        tokens = set(re.findall(r"[a-z0-9]+", prompt.casefold()))
-        rule_authoring = bool(tokens & {"automation", "rule", "schedule"})
-        routine_control = (
-            _requests_mutation(prompt)
-            and bool(tokens & {"on", "off", "toggle"})
-            and not bool(tokens & {"garage", "lock", "security", "unlock"})
-        )
-        return (
-            self._needs_device_manifest(prompt)
-            and _requests_mutation(prompt)
-            and not routine_control
-            and not rule_authoring
-        )
+        """Never preload the full device inventory for a mutation.
+
+        Every model-routed write must resolve its named target through the
+        targeted local resolver.  Preloading all devices duplicates that work
+        and live testing showed it adds roughly 30 seconds for 124 devices.
+        App identity is handled separately by the bounded app manifest.
+        """
+
+        return False
 
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:

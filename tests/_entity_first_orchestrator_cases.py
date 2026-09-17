@@ -1025,14 +1025,15 @@ async def test_post_only_test_client_keeps_non_streaming_compatibility():
 
 
 @pytest.mark.asyncio
-async def test_non_routine_write_prompt_contains_live_device_identity():
+async def test_non_routine_write_prompt_uses_targeted_resolution_without_manifest():
     agent = UnifiedMCPAgent(FakeMCP(), "key", "model", ai_client=FakeAI([]))
     request_token = agent._request_class.set("write")
     try:
         instruction = await agent._system_prompt("Set the couch lamp level to 50")
     finally:
         agent._request_class.reset(request_token)
-    assert "'Couch Lamp' | ID: 42 | Room: Lounge" in instruction
+    assert "'Couch Lamp' | ID: 42 | Room: Lounge" not in instruction
+    assert "homebrain_resolve_device" in instruction
 
 
 @pytest.mark.asyncio

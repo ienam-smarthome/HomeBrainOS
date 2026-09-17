@@ -325,7 +325,12 @@ def test_rule_verification_rejects_component_level_partial_results(field, value)
 def test_required_expression_write_requires_explicit_applied_acknowledgement():
     arguments = _rule_arguments("Big Lamp Auto-Off (2am-6am)")
     arguments["args"]["addRequiredExpression"] = {
-        "capability": "Certain Time (and optional date)",
+        "conditions": [{
+            "capability": "Between two times",
+            "start": {"type": "clock", "time": "02:00"},
+            "end": {"type": "clock", "time": "06:00"},
+        }],
+        "operator": "AND",
     }
     healthy_only = _execution(
         "hub_manage_rule_machine",
@@ -358,7 +363,12 @@ async def test_required_expression_without_ack_is_reported_unverified():
     gateway = "hub_manage_rule_machine"
     arguments = _rule_arguments("Big Lamp Auto-Off (2am-6am)")
     arguments["args"]["addRequiredExpression"] = {
-        "capability": "Certain Time (and optional date)",
+        "conditions": [{
+            "capability": "Between two times",
+            "start": {"type": "clock", "time": "02:00"},
+            "end": {"type": "clock", "time": "06:00"},
+        }],
+        "operator": "AND",
     }
     executor = FakeExecutor([
         _execution(
@@ -383,6 +393,48 @@ async def test_required_expression_without_ack_is_reported_unverified():
     assert "not fully completed" in report
     assert "required expression was applied" in report
     assert "reported it healthy" not in report
+
+
+@pytest.mark.asyncio
+async def test_failed_create_with_app_id_warns_about_partial_rule_shell():
+    gateway = "hub_manage_rule_machine"
+    arguments = _rule_arguments("Big Lamp Auto-Off (2:30am-6:30am)")
+    arguments["args"]["addRequiredExpression"] = {
+        "conditions": [{
+            "capability": "Between two times",
+            "start": {"type": "clock", "time": "02:30"},
+            "end": {"type": "clock", "time": "06:30"},
+        }],
+        "operator": "AND",
+    }
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            arguments,
+            {
+                "success": False,
+                "partial": True,
+                "appId": 4203,
+                "error": "Stopped after requiredExpression failed",
+                "health": {"ok": False},
+            },
+            success=False,
+        )
+    ])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("partial Rule Machine writes must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True), executor, unexpected_chat, lambda: None
+    )
+
+    report = await coordinator.resume(
+        _pending([(gateway, arguments)]), _catalog(gateway)
+    )
+
+    assert "only partially created (appId: 4203)" in report
+    assert "Pause or delete this incomplete rule" in report
 
 
 @pytest.mark.asyncio

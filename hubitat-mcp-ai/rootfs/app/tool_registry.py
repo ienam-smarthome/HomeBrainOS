@@ -227,6 +227,61 @@ def _rule_shortcut_error(payload: dict[str, Any]) -> str | None:
     if error:
         return error
 
+    for field in ("addRequiredExpression", "replaceRequiredExpression"):
+        expression = payload.get(field)
+        if expression is None:
+            continue
+        if not isinstance(expression, dict):
+            return f"{field} must be an object"
+        if expression.get("discover") is True:
+            continue
+        conditions = expression.get("conditions")
+        if not isinstance(conditions, list) or not conditions:
+            return f"{field} requires a non-empty conditions array"
+        if expression.get("operator") not in {"AND", "OR"}:
+            return f"{field} requires operator='AND' or operator='OR'"
+        for index, condition in enumerate(conditions, 1):
+            if not isinstance(condition, dict):
+                return f"{field} condition {index} must be an object"
+            capability = str(condition.get("capability") or "").strip()
+            if not capability:
+                return f"{field} condition {index} requires capability"
+            if capability.casefold() != "between two times":
+                continue
+            if {"startTime", "stopTime", "value"}.intersection(condition):
+                return (
+                    f"{field} condition {index} 'Between two times' uses "
+                    "unsupported flat time fields; use start and end objects"
+                )
+            for endpoint in ("start", "end"):
+                value = condition.get(endpoint)
+                if not isinstance(value, dict):
+                    return (
+                        f"{field} condition {index} 'Between two times' requires "
+                        f"{endpoint}={{'type':'clock','time':'HH:mm'}} (or type "
+                        "'sunrise'/'sunset' with optional offset)"
+                    )
+                endpoint_type = str(value.get("type") or "").casefold()
+                if endpoint_type not in {"clock", "sunrise", "sunset"}:
+                    return (
+                        f"{field} condition {index} {endpoint}.type must be "
+                        "'clock', 'sunrise', or 'sunset'"
+                    )
+                if endpoint_type == "clock" and re.fullmatch(
+                    r"(?:[01]\d|2[0-3]):[0-5]\d", str(value.get("time") or "")
+                ) is None:
+                    return (
+                        f"{field} condition {index} {endpoint} clock requires "
+                        "time='HH:mm'"
+                    )
+                offset = value.get("offset")
+                if offset is not None and (
+                    isinstance(offset, bool) or not isinstance(offset, (int, float))
+                ):
+                    return (
+                        f"{field} condition {index} {endpoint}.offset must be numeric"
+                    )
+
     for index, trigger in enumerate(triggers, 1):
         capability = str(trigger.get("capability") or "").strip()
         if not capability:

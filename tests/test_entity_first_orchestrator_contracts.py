@@ -21,7 +21,10 @@ def test_model_rule_authoring_omits_eager_full_device_manifest():
     ) is False
     assert agent._include_identity_manifest(
         "delete the Big lamp device"
-    ) is True
+    ) is False
+    assert agent._include_identity_manifest(
+        "if Big lamp turns on between 2:30am and 6:30am, turn it off 30 minutes later"
+    ) is False
 
 
 @pytest.mark.asyncio
