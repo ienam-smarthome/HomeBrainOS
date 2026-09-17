@@ -456,15 +456,8 @@ async def test_duplicate_check_now_runs_even_when_can_read_rules_is_not_passed()
 
 
 @pytest.mark.asyncio
-async def test_existing_names_lookup_failure_logs_and_falls_back_not_crashes(caplog):
-    """Code-audit finding (2026-08-13): `_existing_names()` swallowed any
-    `hub_read_rules` failure with a bare `except Exception: return set()`
-    and no logging at all -- unlike every other best-effort fallback
-    elsewhere in this codebase, which logs before falling back. A
-    hub/network hiccup here was previously invisible with zero trace.
-    Proposing a rule must still succeed (duplicate detection just can't
-    be verified this turn), but the failure must now be logged.
-    """
+async def test_existing_names_lookup_failure_logs_and_fails_closed(caplog):
+    """A failed duplicate read must not silently permit a new rule."""
 
     class FailingRuleMCP(RuleMCP):
         async def call_tool(self, name, arguments):
@@ -481,11 +474,27 @@ async def test_existing_names_lookup_failure_logs_and_falls_back_not_crashes(cap
         )
 
     assert decision.handled is True
-    assert decision.actions != ()
+    assert decision.actions == ()
+    assert "could not verify" in str(decision.message)
     assert any(
         "existing rule names" in record.message.casefold()
         for record in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_create_group_rejects_repeated_name_without_hub_read():
+    mcp = RuleMCP([real_bedroom_light()])
+    service = RuleAuthoringService(mcp, recorder)
+    action = {
+        "tool": "hub_set_rule",
+        "args": {"name": "Same rule", "addAction": {"capability": "delay", "minutes": 1}},
+    }
+
+    error = await service.duplicate_create_group_error([action, action])
+
+    assert "same new rule name more than once" in str(error)
+    assert not any(name == "hub_read_rules" for name, _ in mcp.calls)
 
 
 @pytest.mark.asyncio

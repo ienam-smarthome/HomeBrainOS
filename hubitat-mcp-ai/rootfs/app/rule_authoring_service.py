@@ -482,22 +482,23 @@ class RuleAuthoringService:
             return [item for item in value if isinstance(item, dict)]
         return []
 
-    async def _existing_names(self) -> set[str]:
+    async def _existing_names(self) -> set[str] | None:
         arguments = {"tool": "hub_list_rules", "args": {}}
         started = time.monotonic()
         try:
             result = await self.mcp.call_tool("hub_read_rules", arguments)
-        except Exception:
-            # Silently disables duplicate-rule-name detection for this
-            # request (an empty set means no existing name will be
-            # flagged as a collision) -- not a user-facing failure by
-            # itself, but a hub/network hiccup here was previously
-            # invisible with zero trace, unlike every other best-effort
-            # fallback elsewhere in this codebase (hub_info_service.py,
-            # device_query_service.py, mcp_agent_orchestrator.py all log
-            # before falling back the same way).
+        except Exception as exc:
             logger.warning("Could not read existing rule names", exc_info=True)
-            return set()
+            self._record_evidence(
+                "hub_read_rules",
+                arguments,
+                success=False,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                supports_live_claim=True,
+                evidence_kind="rule_duplicate_check",
+            )
+            return None
         success = not result.is_error and not (
             isinstance(result.data, dict) and result.data.get("success") is False
         )
@@ -511,11 +512,83 @@ class RuleAuthoringService:
             supports_live_claim=True,
             evidence_kind="rule_duplicate_check",
         )
+        if not success:
+            return None
         return {
             str(item.get("name") or item.get("label") or "").strip().casefold()
             for item in rows
             if item.get("name") or item.get("label")
         }
+
+    @staticmethod
+    def _create_name(arguments: dict[str, Any]) -> str | None:
+        """Return the name only for a direct new-rule proposal."""
+
+        if arguments.get("tool") != "hub_set_rule":
+            return None
+        payload = arguments.get("args")
+        if not isinstance(payload, dict) or payload.get("appId") not in {None, ""}:
+            return None
+        name = str(payload.get("name") or "").strip()
+        return name or None
+
+    async def duplicate_create_error(
+        self,
+        arguments: dict[str, Any],
+    ) -> str | None:
+        return await self.duplicate_create_group_error([arguments])
+
+    async def duplicate_create_group_error(
+        self,
+        arguments: list[dict[str, Any]],
+    ) -> str | None:
+        """Fail closed when a new Rule Machine name cannot be proved unique.
+
+        This is intentionally reusable by both proposal-time validation and
+        confirmation replay.  Checking twice closes the time-of-check/time-of-
+        use window: another request may create the same rule while the user is
+        reading the confirmation prompt.
+        """
+
+        names = [
+            name
+            for item in arguments
+            if (name := self._create_name(item)) is not None
+        ]
+        if not names:
+            return None
+        normalized = [name.casefold() for name in names]
+        duplicates_in_group = sorted(
+            {
+                name
+                for name in names
+                if normalized.count(name.casefold()) > 1
+            }
+        )
+        if duplicates_in_group:
+            rendered = ", ".join(f"**{name}**" for name in duplicates_in_group)
+            return (
+                "The Rule Machine action group was cancelled because it contains "
+                f"the same new rule name more than once: {rendered}. Nothing was "
+                "queued or executed."
+            )
+        existing = await self._existing_names()
+        if existing is None:
+            return (
+                "The Rule Machine action was cancelled because HomeBrain could "
+                "not verify the current rule list. Nothing was queued or "
+                "executed; retry after the hub read succeeds."
+            )
+        collisions = [name for name in names if name.casefold() in existing]
+        if collisions:
+            rendered = ", ".join(f"**{name}**" for name in collisions)
+            return (
+                "No duplicate rule was created because the following Rule Machine "
+                f"rule{'s' if len(collisions) != 1 else ''} already exist"
+                f"{'s' if len(collisions) == 1 else ''}: {rendered}. Nothing was "
+                "executed."
+            )
+        return None
 
     async def propose(
         self,
@@ -626,6 +699,15 @@ class RuleAuthoringService:
                 suffix = f"One-time {date_part} {time_part[:5]}"
             single_name = self._rule_name(intent.start_label, target_label, suffix)
             existing = await self._existing_names() if can_read_rules else set()
+            if existing is None:
+                return RuleAuthoringDecision(
+                    True,
+                    "The rule was not queued because HomeBrain could not verify "
+                    "the current Rule Machine list. Retry after the hub read "
+                    "succeeds.",
+                    rule_names=(single_name,),
+                    target=target,
+                )
             if single_name.casefold() in existing:
                 return RuleAuthoringDecision(
                     True,
@@ -656,6 +738,15 @@ class RuleAuthoringService:
         start_name = self._rule_name(intent.start_label, target_label, "Start")
         end_name = self._rule_name(intent.start_label, target_label, "End")
         existing = await self._existing_names() if can_read_rules else set()
+        if existing is None:
+            return RuleAuthoringDecision(
+                True,
+                "The rules were not queued because HomeBrain could not verify "
+                "the current Rule Machine list. Retry after the hub read "
+                "succeeds.",
+                rule_names=(start_name, end_name),
+                target=target,
+            )
         duplicates = [name for name in (start_name, end_name) if name.casefold() in existing]
         if duplicates:
             return RuleAuthoringDecision(

@@ -129,6 +129,68 @@ async def test_verified_rule_group_executes_sequentially_and_reports_ids():
 
 
 @pytest.mark.asyncio
+async def test_confirmation_replay_rechecks_duplicate_before_any_write():
+    gateway = "hub_manage_rule_machine"
+    arguments = _rule_arguments("Existing rule")
+    executor = FakeExecutor([])
+    checked = []
+
+    async def duplicate_check(items):
+        checked.extend(items)
+        return (
+            "No duplicate rule was created because this Rule Machine rule "
+            "already exists: **Existing rule**. Nothing was executed."
+        )
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("duplicate cancellation must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True),
+        executor,
+        unexpected_chat,
+        lambda: None,
+        rule_create_preflight=duplicate_check,
+    )
+
+    report = await coordinator.resume(
+        _pending([(gateway, arguments)]), _catalog(gateway)
+    )
+
+    assert "already exists" in report
+    assert checked == [arguments]
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
+async def test_whole_confirmation_group_is_validated_before_first_write():
+    gateway = "hub_manage_rule_machine"
+    valid = _rule_arguments("Valid first rule")
+    invalid = {
+        "tool": "hub_set_rule",
+        "args": {"name": "Invalid second rule", "addAction": []},
+    }
+    executor = FakeExecutor([])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("preflight cancellation must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True),
+        executor,
+        unexpected_chat,
+        lambda: None,
+    )
+
+    report = await coordinator.resume(
+        _pending([(gateway, valid), (gateway, invalid)]), _catalog(gateway)
+    )
+
+    assert "payload is incomplete" in report
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
 async def test_unverified_rule_stops_group_and_reports_skipped_actions():
     gateway = "hub_manage_rule_machine"
     first = _rule_arguments("Broken rule")

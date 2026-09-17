@@ -591,10 +591,9 @@ async def test_rule_authoring_reachable_when_search_discovery_misses_gateway():
     )
 
     assert outcome.request_class == "write"
-    assert outcome.message == (
-        "Please confirm before I run the sensitive Hubitat action "
-        "`hub_manage_rule_machine`."
-    )
+    assert "Please confirm this Rule Machine change" in outcome.message
+    assert "**Turn off Livingroom Light 1 (Daily)**" in outcome.message
+    assert "run off" in outcome.message
     # No model round happened at all -- the deterministic compiler resolved
     # this fully before ever building a system prompt or calling the model,
     # so nothing was fabricated.
@@ -733,10 +732,9 @@ async def test_rule_authoring_sees_commands_from_targeted_projected_lookup():
         session_id="rule-authoring-commands-merge",
     )
 
-    assert outcome.message == (
-        "Please confirm before I run the sensitive Hubitat action "
-        "`hub_manage_rule_machine`."
-    )
+    assert "Please confirm this Rule Machine change" in outcome.message
+    assert "**Turn on Livingroom Light 1 (Daily)**" in outcome.message
+    assert "run on" in outcome.message
     assert "does not advertise the required command" not in outcome.message
     assert agent._pending["rule-authoring-commands-merge"].actions[0][1]["args"][
         "addAction"
@@ -750,10 +748,13 @@ async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_ve
             return [
                 MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
                 MCPTool("hub_manage_rule_machine", "Manage rules", {"type": "object"}),
+                MCPTool("hub_read_rules", "Read rules", {"type": "object"}),
             ]
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
+            if name == "hub_read_rules":
+                return MCPToolResult(name, arguments, {}, "", {"rules": []})
             assert name == "hub_manage_rule_machine"
             assert arguments["args"]["confirm"] is True
             app_id = 4160 if "Block" in arguments["args"]["name"] else 4161
@@ -911,10 +912,13 @@ async def test_confirmed_rule_authoring_never_claims_success_without_verified_ru
             return [
                 MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
                 MCPTool("hub_manage_rule_machine", "Manage rules", {"type": "object"}),
+                MCPTool("hub_read_rules", "Read rules", {"type": "object"}),
             ]
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
+            if name == "hub_read_rules":
+                return MCPToolResult(name, arguments, {}, "", {"rules": []})
             return MCPToolResult(
                 name, arguments, {}, "",
                 {"success": False, "error": "Rule validation failed"},
@@ -960,7 +964,10 @@ async def test_confirmed_rule_authoring_never_claims_success_without_verified_ru
     assert "Rule validation failed" in outcome.message
     assert "1 remaining confirmed action was not attempted" in outcome.message
     assert "completed successfully" not in outcome.message.casefold()
-    assert len(agent.mcp.calls) == 1
+    assert [name for name, _ in agent.mcp.calls] == [
+        "hub_read_rules",
+        "hub_manage_rule_machine",
+    ]
 
 
 @pytest.mark.asyncio
@@ -2982,6 +2989,37 @@ async def test_app_prompt_uses_cached_app_manifest_and_omits_devices():
     assert "hub_set_rule_paused" in prompt
     assert again
     assert len(mcp.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_mutation_invalidates_cached_app_manifest():
+    class AppMCP(FakeMCP):
+        async def list_tools(self):
+            return [MCPTool("hub_read_apps_code", "apps", {"type": "object"})]
+
+        async def get_cached_devices(self):
+            raise AssertionError("device manifest should not load for app requests")
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "",
+                {"apps": [{"id": str(len(self.calls)), "label": "Rule"}]},
+            )
+
+    mcp = AppMCP()
+    agent = UnifiedMCPAgent(mcp, "key", "model", ai_client=FakeAI([]))
+    await agent._system_prompt("list rules")
+    await agent._system_prompt("list rules")
+    assert len(mcp.calls) == 1
+
+    agent._mark_mutation()
+    await agent._system_prompt("list rules")
+
+    assert len(mcp.calls) == 2
 
 
 @pytest.mark.asyncio
