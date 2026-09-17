@@ -156,7 +156,7 @@ def analyze_state_intervals(
         "totalActiveDuration": _duration_text(total_seconds),
         "longestActiveSeconds": longest_seconds,
         "longestActiveDuration": _duration_text(longest_seconds),
-        "continuous": len(intervals) <= 1 and coverage_complete,
+        "continuous": len(intervals) == 1 and coverage_complete,
         "coverage": "complete" if coverage_complete else "partial",
         "totalIsLowerBound": not coverage_complete,
         "openActiveInterval": open_interval,
