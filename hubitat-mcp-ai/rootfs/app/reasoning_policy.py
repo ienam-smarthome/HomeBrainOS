@@ -40,16 +40,16 @@ EVIDENCE_REVIEW_INSTRUCTION = (
 )
 
 FINAL_SYNTHESIS_INSTRUCTION = (
-    "Answer the original request now using only the CURRENT-TURN MCP/tool results "
-    "already provided. Conversation history is context only and is not evidence "
-    "for a live or historical factual claim. Do not request another tool. Cover "
-    "every material part that the current-turn evidence supports; if a requested "
-    "fact is not established by current-turn evidence, say so instead of copying "
-    "an earlier assistant claim. Synthesize the evidence instead of repeating raw "
-    "tool output; distinguish direct observations and deterministic calculations "
-    "from inference, state material uncertainty or incomplete coverage, and never "
-    "present correlation as proven causation. Be concise and do not reveal hidden "
-    "reasoning."
+    "Answer the original request now using only the MCP results already provided "
+    "from the CURRENT TURN. Conversation history is context only and is not "
+    "evidence for a live or historical factual claim. Do not request another "
+    "tool. Cover every material part that the current-turn evidence supports; if "
+    "a requested fact is not established by current-turn evidence, say so instead "
+    "of copying an earlier assistant claim. Synthesize the evidence instead of "
+    "repeating raw tool output; distinguish direct observations and deterministic "
+    "calculations from inference, state material uncertainty or incomplete "
+    "coverage, and never present correlation as proven causation. Be concise and "
+    "do not reveal hidden reasoning."
 )
 
 # 0.10.453 proved that open-ended read investigations can become materially more
@@ -133,9 +133,15 @@ def _budget_state() -> tuple[object | None, int, int, bool, int]:
 
 
 def reset_reasoning_budget() -> None:
-    """Reset request reasoning counters (primarily for isolated unit tests)."""
+    """Reset request reasoning counters.
+
+    Production requests normally reset implicitly from RequestMetrics identity.
+    The explicit reset also protects direct/base-agent callers that do not install
+    metrics and therefore have no identity token to distinguish consecutive turns.
+    """
 
     _REASONING_BUDGET.set((active_request_identity(), 0, 0, False, 0))
+    _ACTIVE_TOOL_ROUND.set((0, ()))
 
 
 def observe_assistant_message(message: dict[str, Any]) -> int:
@@ -245,6 +251,47 @@ def reasoning_budget_status() -> dict[str, Any]:
     }
 
 
+def _add_system_boundary(
+    messages: list[dict[str, Any]], boundary: str
+) -> list[dict[str, Any]]:
+    """Add a host invariant without displacing a more specific trailing hint.
+
+    Target/device/confirmation retry messages intentionally live at the end of the
+    transcript. Appending a generic user message after them weakens their recency
+    and broke exact retry contracts. Put the invariant in the system message
+    instead, preserving both ordering and the last-message semantics.
+    """
+
+    prepared = [dict(message) for message in messages]
+    for index, message in enumerate(prepared):
+        if message.get("role") != "system":
+            continue
+        content = str(message.get("content") or "")
+        if boundary not in content:
+            prepared[index] = {**message, "content": content + "\n\n" + boundary}
+        return prepared
+    return [{"role": "system", "content": boundary}, *prepared]
+
+
+def _append_final_instruction(
+    messages: list[dict[str, Any]], instruction: str
+) -> list[dict[str, Any]]:
+    """Add final synthesis while preserving an existing trailing user contract."""
+
+    prepared = [dict(message) for message in messages]
+    if prepared and prepared[-1].get("role") == "user":
+        content = str(prepared[-1].get("content") or "")
+        if FINAL_SYNTHESIS_INSTRUCTION in content:
+            return prepared
+        prepared[-1] = {
+            **prepared[-1],
+            "content": content + "\n\n" + instruction,
+        }
+        return prepared
+    prepared.append({"role": "user", "content": instruction})
+    return prepared
+
+
 def prepare_reasoning_turn(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]],
@@ -269,12 +316,18 @@ def prepare_reasoning_turn(
             continue
         prepared.append(dict(message))
 
+    has_tool_message = any(message.get("role") == "tool" for message in prepared)
+    # Direct/base-agent callers do not always install RequestMetrics. Their first
+    # provider turn is still structurally identifiable: callable tools are present
+    # and no current-turn tool result exists yet. Reset here so a prior direct
+    # request cannot spend the next request's ContextVar budget.
+    if tools and not has_tool_message:
+        reset_reasoning_budget()
+
     status = reasoning_budget_status()
-    has_current_tool_evidence = any(
-        message.get("role") == "tool" for message in prepared
-    ) or status["readCalls"] > 0
+    has_current_tool_evidence = has_tool_message or status["readCalls"] > 0
     if has_current_tool_evidence:
-        prepared.append({"role": "user", "content": CURRENT_TURN_EVIDENCE_RULE})
+        prepared = _add_system_boundary(prepared, CURRENT_TURN_EVIDENCE_RULE)
 
     force_synthesis = bool(tools) and reasoning_budget_exhausted()
     outgoing_tools = [] if force_synthesis else list(tools)
@@ -285,7 +338,7 @@ def prepare_reasoning_turn(
                 " The host read-reasoning budget is now exhausted; do not ask for "
                 "more evidence in this turn."
             )
-        prepared.append({"role": "user", "content": final_instruction})
+        prepared = _append_final_instruction(prepared, final_instruction)
     return prepared, outgoing_tools
 
 
