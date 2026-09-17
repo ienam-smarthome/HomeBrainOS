@@ -27,7 +27,11 @@ from request_metrics import add_active_metric_ms, increment_active_metric
 from rule_authoring_service import NEW_RULE_ID_TOKEN
 from tool_discovery_catalog import ToolDiscoveryCatalog
 from tool_executor import ToolExecution, ToolExecutor
-from tool_registry import HUB_UPDATE_FIRMWARE_TOOL, rule_machine_proposal_error
+from tool_registry import (
+    HUB_UPDATE_FIRMWARE_TOOL,
+    normalize_rule_machine_proposal,
+    rule_machine_proposal_error,
+)
 
 
 ChatCallback = Callable[
@@ -432,10 +436,13 @@ class ConfirmedActionCoordinator:
         resolved_new_rule_id: str | None = None
         for tool_name, raw_arguments in pending.actions:
             self._mark_mutation()
-            arguments = (
+            resolved_arguments = (
                 self._substitute_new_rule_id(raw_arguments, resolved_new_rule_id)
                 if resolved_new_rule_id is not None
                 else raw_arguments
+            )
+            arguments = normalize_rule_machine_proposal(
+                tool_name, resolved_arguments
             )
             proposal_error = rule_machine_proposal_error(tool_name, arguments)
             if proposal_error is not None:

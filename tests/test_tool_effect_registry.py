@@ -16,6 +16,7 @@ from tool_registry import (  # noqa: E402
     classify_tool_effect,
     control_devices_tool,
     home_snapshot_tool,
+    normalize_rule_machine_proposal,
     rule_machine_proposal_error,
 )
 
@@ -443,6 +444,63 @@ def test_matching_relative_delay_and_following_action_are_accepted():
         "hub_manage_rule_machine",
         proposal,
         user_prompt="Turn Big lamp off 30 minutes later",
+    ) is None
+
+
+def test_singular_action_array_is_normalized_before_validation():
+    observed = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off (Night)",
+            "addTrigger": {
+                "capability": "Switch", "deviceIds": ["7827"], "state": "on",
+            },
+            "addAction": [
+                {"capability": "delay", "minutes": 30},
+                {
+                    "capability": "switch",
+                    "action": "off",
+                    "deviceIds": ["7827"],
+                },
+            ],
+        },
+    }
+
+    normalized = normalize_rule_machine_proposal(
+        "hub_manage_rule_machine", observed
+    )
+
+    assert "addAction" in observed["args"]
+    assert "addAction" not in normalized["args"]
+    assert normalized["args"]["addActions"] == observed["args"]["addAction"]
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine",
+        normalized,
+        user_prompt="Turn Big lamp off 30 minutes later",
+    ) is None
+
+
+def test_plural_single_object_is_normalized_to_singular_container():
+    observed = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Off",
+            "addActions": {
+                "capability": "switch",
+                "action": "off",
+                "deviceIds": ["7827"],
+            },
+        },
+    }
+
+    normalized = normalize_rule_machine_proposal(
+        "hub_manage_rule_machine", observed
+    )
+
+    assert "addActions" not in normalized["args"]
+    assert normalized["args"]["addAction"] == observed["args"]["addActions"]
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine", normalized
     ) is None
 
 
