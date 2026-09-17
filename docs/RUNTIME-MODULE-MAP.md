@@ -28,7 +28,7 @@ The repository drift test compares this table directly with the live directory. 
 | `device_state_summary.py` | Provides shared pure device-state summary helpers. |
 | `device_target_resolver.py` | Resolves natural-language targets to concrete devices. |
 | `time_expressions.py` | Shared deterministic clock-time recognition (parsing an isolated "at &lt;time&gt;" token, never scanning free text for meaning); used by `rule_authoring_service.py` and `device_control_service.py`. |
-| `direct_outcome_context.py` | Owns request-local evidence, choice, request class, and mutation state, restoring every context token on normal completion and failure. |
+| `direct_outcome_context.py` | Owns request-local evidence, choice, request-class, and mutation context. |
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
