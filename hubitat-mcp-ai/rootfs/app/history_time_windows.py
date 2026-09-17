@@ -7,9 +7,11 @@ the add-on's local timezone into explicit aware datetimes.
 
 The stable policy for ``last night`` is 18:00 on the previous local calendar
 day through 08:00 today, capped at ``now`` when that overnight window is still
-in progress. Explicit ``between X and Y`` clock ranges override that default
-and are resolved to yesterday/today/last-night when those anchors are present,
-or to the most recent started occurrence otherwise.
+in progress. Common equivalent wording (``during the night``, ``overnight``,
+``through the night``) maps to that same auditable window. Explicit
+``between X and Y`` clock ranges override that default and are resolved to
+yesterday/today/last-night when those anchors are present, or to the most
+recent started occurrence otherwise.
 """
 
 from __future__ import annotations
@@ -29,6 +31,12 @@ _BETWEEN = re.compile(
     rf"\bbetween\s+(?P<start>{_CLOCK_TOKEN})\s+(?:and|to)\s+"
     rf"(?P<end>{_CLOCK_TOKEN})\b",
     re.I,
+)
+_NIGHT_ALIASES = (
+    "last night",
+    "during the night",
+    "overnight",
+    "through the night",
 )
 _ACTIVE_HISTORY_WINDOW: ContextVar[dict[str, Any] | None] = ContextVar(
     "homebrain_history_time_window",
@@ -113,6 +121,10 @@ def _clock_label(value: time) -> str:
     return f"{hour}{suffix}"
 
 
+def _night_phrase_present(text: str) -> bool:
+    return any(phrase in text for phrase in _NIGHT_ALIASES)
+
+
 def parse_history_window_request(prompt: str) -> dict[str, Any] | None:
     """Recognise a bounded semantic history window from the original prompt."""
 
@@ -127,7 +139,7 @@ def parse_history_window_request(prompt: str) -> dict[str, Any] | None:
         if start is not None and end is not None:
             if "yesterday" in text:
                 anchor = "yesterday"
-            elif "last night" in text:
+            elif _night_phrase_present(text):
                 anchor = "last_night"
             elif "today" in text or "this morning" in text or "since midnight" in text:
                 anchor = "today"
@@ -141,7 +153,7 @@ def parse_history_window_request(prompt: str) -> dict[str, Any] | None:
                 "anchor": anchor,
             }
 
-    if "last night" in text:
+    if _night_phrase_present(text):
         return {"kind": "last_night", "label": "last night"}
     if "yesterday" in text:
         return {"kind": "yesterday", "label": "yesterday"}
