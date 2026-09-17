@@ -676,7 +676,19 @@ class DeviceQueryService:
                 is_error=True,
             )
 
-        source, devices = await self._live_devices(enrich_identity=True)
+        # Numeric aggregate questions only need the requested live attribute plus
+        # compact identity. When hubitat://context can supply that attribute, use
+        # the same complete bulk snapshot path as the home summary instead of
+        # paying for a full detailed hub_list_devices inventory. Unsupported or
+        # partial context resources still fall back to the established complete
+        # inventory path, preserving correctness.
+        context_attribute = self._context_attribute_name(attribute)
+        if context_attribute is not None:
+            source, devices = await self._bulk_live_devices(
+                {context_attribute}, enrich_fallback_identity=True
+            )
+        else:
+            source, devices = await self._live_devices(enrich_identity=True)
         if not self._tool_succeeded(source):
             return self._read_failure(DEVICE_QUERY_TOOL, arguments, source)
 
