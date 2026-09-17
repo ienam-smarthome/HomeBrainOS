@@ -6,9 +6,10 @@ turns authoritative state-change rows into complete observed intervals and
 pre-computed totals that the model can safely synthesize into a natural answer.
 
 Only state pairs with unambiguous active/inactive semantics are analysed. A
-partial boundary is never guessed: if the first observed row is an inactive
-state, or the newest row leaves the device active, totals are explicitly marked
-as lower bounds rather than silently closing an interval at an invented time.
+partial boundary is never guessed. Window-aware analysis additionally clips
+intervals to an explicit requested start/end and records whether the state at
+the window start is known from a predecessor event or can be inferred from the
+first complete state transition in the window.
 
 The module also owns the narrow final-answer consistency guard for temporal
 history claims. When one authoritative history receipt proves a total duration
@@ -126,24 +127,15 @@ def _duration_mentions_seconds(text: str) -> list[int]:
     return values
 
 
-def analyze_state_intervals(
+def _parsed_state_rows(
     attribute: str,
     events: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    """Derive complete active-state intervals from newest-first event rows.
-
-    The input order from Hubitat is newest first. Rows are sorted into
-    chronological order using their full timestamps. For identical timestamps
-    the original newest-first order is reversed, preserving the only sequence
-    information available from the upstream feed.
-    """
-
+) -> tuple[str, str, str, list[tuple[datetime, int, str, dict[str, Any]]], int] | None:
     attribute_name = str(attribute or "").strip()
     pair = _STATE_PAIRS.get(attribute_name.casefold())
     if pair is None:
         return None
     active_state, inactive_state = pair
-
     parsed: list[tuple[datetime, int, str, dict[str, Any]]] = []
     ignored_rows = 0
     for index, event in enumerate(events):
@@ -165,11 +157,46 @@ def analyze_state_intervals(
             ignored_rows += 1
             continue
         parsed.append((timestamp, index, value, event))
+    parsed.sort(key=lambda item: (item[0], -item[1]))
+    return attribute_name, active_state, inactive_state, parsed, ignored_rows
 
+
+def _interval(
+    start: datetime,
+    end: datetime,
+    *,
+    start_value: Any | None = None,
+    end_value: Any | None = None,
+    clipped_start: bool = False,
+    clipped_end: bool = False,
+) -> dict[str, Any]:
+    duration_seconds = max(0, int(round((end - start).total_seconds())))
+    start_text = str(start_value or start.isoformat())
+    end_text = str(end_value or end.isoformat())
+    return {
+        "start": start_text,
+        "end": end_text,
+        "startNatural": format_natural_datetime(start_text),
+        "endNatural": format_natural_datetime(end_text),
+        "durationSeconds": duration_seconds,
+        "duration": _duration_text(duration_seconds),
+        "clippedAtWindowStart": clipped_start,
+        "clippedAtWindowEnd": clipped_end,
+    }
+
+
+def analyze_state_intervals(
+    attribute: str,
+    events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Derive complete active-state intervals from newest-first event rows."""
+
+    parsed_result = _parsed_state_rows(attribute, events)
+    if parsed_result is None:
+        return None
+    attribute_name, active_state, inactive_state, parsed, ignored_rows = parsed_result
     if not parsed:
         return None
-
-    parsed.sort(key=lambda item: (item[0], -item[1]))
 
     intervals: list[dict[str, Any]] = []
     active_start: tuple[datetime, dict[str, Any]] | None = None
@@ -189,26 +216,20 @@ def analyze_state_intervals(
             continue
 
         start_timestamp, start_event = active_start
-        duration_seconds = max(
-            0,
-            int(round((timestamp - start_timestamp).total_seconds())),
+        intervals.append(
+            _interval(
+                start_timestamp,
+                timestamp,
+                start_value=start_event.get("date"),
+                end_value=event.get("date"),
+            )
         )
-        intervals.append({
-            "start": start_event.get("date"),
-            "end": event.get("date"),
-            "startNatural": format_natural_datetime(start_event.get("date")),
-            "endNatural": format_natural_datetime(event.get("date")),
-            "durationSeconds": duration_seconds,
-            "duration": _duration_text(duration_seconds),
-        })
         active_start = None
 
     open_interval = active_start is not None
-    total_seconds = sum(
-        int(interval.get("durationSeconds") or 0) for interval in intervals
-    )
+    total_seconds = sum(int(item.get("durationSeconds") or 0) for item in intervals)
     longest_seconds = max(
-        (int(interval.get("durationSeconds") or 0) for interval in intervals),
+        (int(item.get("durationSeconds") or 0) for item in intervals),
         default=0,
     )
     coverage_complete = not open_interval and unmatched_inactive_rows == 0
@@ -233,6 +254,133 @@ def analyze_state_intervals(
     }
 
 
+def analyze_state_intervals_in_window(
+    attribute: str,
+    events: list[dict[str, Any]],
+    *,
+    start: datetime,
+    end: datetime,
+    window_label: str,
+    source_complete_to_start: bool,
+    window_ongoing: bool = False,
+) -> dict[str, Any] | None:
+    """Measure active time strictly inside ``[start, end)``.
+
+    A predecessor event before ``start`` establishes the boundary state. If no
+    predecessor is present but the upstream event feed is known complete back to
+    the window start, the first state-change event inside the window establishes
+    the opposite state immediately before that transition. Otherwise the total
+    remains a lower bound rather than inventing the missing boundary state.
+    """
+
+    if start.tzinfo is None or end.tzinfo is None or end <= start:
+        return None
+    parsed_result = _parsed_state_rows(attribute, events)
+    if parsed_result is None:
+        return None
+    attribute_name, active_state, inactive_state, parsed, ignored_rows = parsed_result
+
+    before = [row for row in parsed if row[0] < start]
+    inside = [row for row in parsed if start <= row[0] < end]
+    predecessor = before[-1] if before else None
+
+    current_state: str | None = None
+    boundary_known = False
+    boundary_basis = "unknown"
+    if predecessor is not None:
+        current_state = predecessor[2]
+        boundary_known = True
+        boundary_basis = "predecessor-event"
+    elif inside and source_complete_to_start:
+        first_value = inside[0][2]
+        current_state = inactive_state if first_value == active_state else active_state
+        boundary_known = True
+        boundary_basis = "first-transition-inference"
+
+    intervals: list[dict[str, Any]] = []
+    duplicate_state_rows = 0
+    active_start: datetime | None = start if current_state == active_state else None
+    active_start_raw: Any | None = None
+    active_start_clipped = active_start is not None
+
+    for timestamp, _index, value, event in inside:
+        if current_state is None:
+            current_state = value
+            if value == active_state:
+                active_start = timestamp
+                active_start_raw = event.get("date")
+                active_start_clipped = False
+            continue
+        if value == current_state:
+            duplicate_state_rows += 1
+            continue
+        if value == active_state:
+            current_state = active_state
+            active_start = timestamp
+            active_start_raw = event.get("date")
+            active_start_clipped = False
+            continue
+        if current_state == active_state and active_start is not None:
+            intervals.append(
+                _interval(
+                    active_start,
+                    timestamp,
+                    start_value=active_start_raw,
+                    end_value=event.get("date"),
+                    clipped_start=active_start_clipped,
+                )
+            )
+        current_state = inactive_state
+        active_start = None
+        active_start_raw = None
+        active_start_clipped = False
+
+    if current_state == active_state and active_start is not None:
+        intervals.append(
+            _interval(
+                active_start,
+                end,
+                start_value=active_start_raw,
+                clipped_start=active_start_clipped,
+                clipped_end=True,
+            )
+        )
+
+    total_seconds = sum(int(item.get("durationSeconds") or 0) for item in intervals)
+    longest_seconds = max(
+        (int(item.get("durationSeconds") or 0) for item in intervals),
+        default=0,
+    )
+    coverage_complete = boundary_known
+
+    return {
+        "attribute": attribute_name,
+        "activeState": active_state,
+        "inactiveState": inactive_state,
+        "intervalCount": len(intervals),
+        "intervals": intervals,
+        "totalActiveSeconds": total_seconds,
+        "totalActiveDuration": _duration_text(total_seconds),
+        "longestActiveSeconds": longest_seconds,
+        "longestActiveDuration": _duration_text(longest_seconds),
+        "continuous": len(intervals) == 1 and coverage_complete,
+        "coverage": "complete" if coverage_complete else "partial",
+        "totalIsLowerBound": not coverage_complete,
+        "openActiveInterval": bool(window_ongoing and current_state == active_state),
+        "unmatchedInactiveRows": 0,
+        "duplicateStateRowsIgnored": duplicate_state_rows,
+        "ignoredRows": ignored_rows,
+        "windowed": True,
+        "windowLabel": str(window_label),
+        "windowStart": start.isoformat(),
+        "windowEnd": end.isoformat(),
+        "windowOngoing": bool(window_ongoing),
+        "boundaryStateKnown": boundary_known,
+        "boundaryBasis": boundary_basis,
+        "sourceCompleteToWindowStart": bool(source_complete_to_start),
+    }
+
+
 def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None:
     """Return the small, privacy-safe temporal proof subset for evidence output."""
 
@@ -253,11 +401,20 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "continuous",
         "coverage",
         "totalIsLowerBound",
+        "windowed",
+        "windowLabel",
+        "windowStart",
+        "windowEnd",
+        "windowOngoing",
+        "boundaryStateKnown",
+        "boundaryBasis",
+        "sourceCompleteToWindowStart",
     )
     details = {
         "label": result_data.get("label"),
         "attribute": result_data.get("attribute"),
         "hoursBack": result_data.get("hoursBack"),
+        "timeWindow": result_data.get("timeWindow"),
         "temporalAnalysis": {
             key: temporal.get(key)
             for key in temporal_keys
@@ -271,14 +428,7 @@ def guard_history_duration_claim(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Correct an explicit total-duration claim that conflicts with one proof.
-
-    This is intentionally narrow. It runs only when exactly one successful
-    ``homebrain_device_history`` receipt exposes deterministic temporal details,
-    the final answer makes a total-ish duration claim, and that numeric duration
-    does not include the deterministic total at the same display precision.
-    Queries/answers about a longest interval alone are therefore left untouched.
-    """
+    """Correct an explicit total-duration claim that conflicts with one proof."""
 
     text = str(message or "")
     if not _TOTALISH_DURATION_CLAIM.search(text):
@@ -304,7 +454,7 @@ def guard_history_duration_claim(
     except (TypeError, ValueError):
         return text, False
     total_duration = str(temporal.get("totalActiveDuration") or "").strip()
-    if not total_duration or interval_count <= 0:
+    if not total_duration or interval_count < 0:
         return text, False
 
     mentions = _duration_mentions_seconds(text)
@@ -318,11 +468,19 @@ def guard_history_duration_claim(
     active_state = str(temporal.get("activeState") or "active").strip() or "active"
     lower_bound = bool(temporal.get("totalIsLowerBound"))
     qualifier = "at least " if lower_bound else ""
-    interval_word = "interval" if interval_count == 1 else "separate intervals"
-    corrected = (
-        f"{label} was {active_state} for a total of {qualifier}{total_duration} "
-        f"across {interval_count} {interval_word}."
-    )
+    window_label = str(temporal.get("windowLabel") or "").strip()
+    window_suffix = f" {window_label}" if window_label else ""
+    if interval_count == 0:
+        corrected = (
+            f"{label} had a total of {qualifier}{total_duration} in the "
+            f"{active_state} state{window_suffix}."
+        )
+    else:
+        interval_word = "interval" if interval_count == 1 else "separate intervals"
+        corrected = (
+            f"{label} was {active_state} for a total of {qualifier}{total_duration}"
+            f"{window_suffix} across {interval_count} {interval_word}."
+        )
     longest = str(temporal.get("longestActiveDuration") or "").strip()
     if longest and interval_count > 1:
         corrected += f" The longest interval was {longest}."
@@ -336,6 +494,7 @@ def guard_history_duration_claim(
 
 __all__ = [
     "analyze_state_intervals",
+    "analyze_state_intervals_in_window",
     "guard_history_duration_claim",
     "history_temporal_evidence_details",
 ]

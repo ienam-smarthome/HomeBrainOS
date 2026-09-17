@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.450**.
+Current add-on version: **0.10.451**.
 
 ## Architecture
 
@@ -197,13 +197,33 @@ grounded derived facts instead of ending at a generic event dump. The same
 pre-computed totals are copied into bounded evidence `details` so technical
 output exposes `totalActiveDuration`, `totalActiveSeconds`, `intervalCount`,
 `longestActiveDuration`, and coverage without dumping the full event stream.
-Analytical attribute-history calls without an explicit time window now keep the
+Analytical attribute-history calls without an explicit time window keep the
 normal 24-hour bound; the automatic seven-day widening is reserved for explicit
 small (1-3 event) point lookups such as “when was it last on/open?”. This prevents
-an old unmatched boundary event from turning a complete overnight duration into
-an unnecessary lower-bound answer, while preserving the deeper lookup used for
-true “last occurrence” questions. Reported transitions are still treated as
-evidence of what changed, never as proof of who or what caused the change.
+an old unmatched boundary event from turning a complete duration into an
+unnecessary lower-bound answer, while preserving the deeper lookup used for true
+“last occurrence” questions.
+
+For semantic calendar phrases, `history_time_windows` now binds the original
+request to an explicit local-time interval before tool execution. Supported
+phrases are `last night`, `yesterday`, `this morning`, `since midnight`, `today`,
+and explicit `between <clock> and <clock>` ranges. `last night` has one stable,
+auditable definition: 18:00 on the previous local calendar day through 08:00 on
+the current day, capped at the current time if that overnight window is still in
+progress. An explicit clock range overrides that default. The upstream Hubitat
+API still receives one bounded `hoursBack` read; HomeBrain widens it only far
+enough to reach the requested start plus a boundary buffer, then clips interval
+arithmetic locally to the requested start/end.
+
+Window coverage is conservative. A state event before the requested start proves
+the boundary state. If no predecessor is present but the returned event page is
+known complete back to the start, the first binary state transition can establish
+the state immediately before it. If a full 50-event source page does not reach the
+requested start, the boundary remains unknown and the result is marked partial/
+lower-bound rather than inventing missing time. Exact window start/end, boundary
+basis, coverage, and deterministic totals are included in bounded evidence details.
+Reported transitions are still treated as evidence of what changed, never as proof
+of who or what caused the change.
 
 Final device-claim grounding is deliberately non-blocking with respect to the
 Hubitat inventory. After synthesis, the agent validates named-device claims using

@@ -27,6 +27,11 @@ from device_state_summary import (
     is_light_device,
     room_name,
 )
+from history_time_windows import (
+    parse_history_window_request,
+    reset_history_window_request,
+    set_history_window_request,
+)
 from homebrain_agent import UnifiedMCPAgent
 from mcp_client import HubitatMCPClient
 from webui import render_page
@@ -285,6 +290,20 @@ async def _creative_automation_recommendation() -> Any:
     return outcome
 
 
+async def _agent_request(request: ChatRequest) -> Any:
+    """Bind deterministic calendar semantics to this request's async context."""
+
+    token = set_history_window_request(parse_history_window_request(request.message))
+    try:
+        return await agent.process_user_request_result(
+            request.message,
+            request.history,
+            session_id=request.session_id,
+        )
+    finally:
+        reset_history_window_request(token)
+
+
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
     try:
         operation: Awaitable[Any]
@@ -300,11 +319,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         else:
             if not _bool(OPTIONS.get("ollama_direct_cloud_enabled"), True):
                 raise HTTPException(status_code=503, detail="Ollama Online is disabled")
-            operation = agent.process_user_request_result(
-                request.message,
-                request.history,
-                session_id=request.session_id,
-            )
+            operation = _agent_request(request)
         return await request_coordinator.run(
             request.coordination_key,
             operation,
