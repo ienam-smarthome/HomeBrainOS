@@ -152,12 +152,6 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        # Delegates to the shared helper rather than repeating a strict
-        # `is False` check here -- Hubitat/this codebase's own tool
-        # results also transmit boolean-ish flags as the string "false",
-        # which a strict identity check would silently miss (see
-        # tool_succeeded()'s own docstring for the fuller history of this
-        # bug class).
         success = _shared_tool_succeeded(source)
         events = self._events(source.data, limit=limit) if success else []
         self._record_evidence(
@@ -211,34 +205,30 @@ class DeviceHistoryService:
             )
 
         attribute = str(arguments.get("attribute") or "").strip()
-        # Live-observed bug (2026-08-13): "When did the front door last
-        # open?" and its "before that" follow-up both answered "No contact
-        # events were reported...in the last 24 hours" -- even though real
-        # contact events existed, just further back than 24 hours. The
-        # model had asked for a single attribute (exactly what the tool's
-        # own description tells it to do for a "last X" point question) but
-        # never explicitly widened the window, so it silently inherited the
-        # generic 24-hour default meant for open-ended "what happened"
-        # questions. A "last <state>" question has no natural window at
-        # all -- it wants the most recent matching event whenever it
-        # occurred -- so when the caller has scoped to one attribute and
-        # left hours_back unset, default to the full seven-day bound
-        # instead of one day. This costs nothing: the result is still
-        # capped by ``limit`` (small for point questions per the tool's own
-        # guidance), so a genuinely recent event is reported exactly as
-        # before -- only the false "no events" negative goes away.
-        default_hours_back = 168 if attribute else 24
-        hours_back = self._integer(
-            arguments.get("hours_back"),
-            default=default_hours_back,
-            minimum=1,
-            maximum=168,
-        )
         limit = self._integer(
             arguments.get("limit"),
             default=20,
             minimum=1,
             maximum=50,
+        )
+
+        # 0.10.448: only widen an omitted time window to seven days for an
+        # explicitly point-like lookup (the caller supplied a small 1-3
+        # event limit).  0.10.447 widened *every* attribute-scoped request,
+        # so an analytical question such as "how long was Big lamp on last
+        # night?" silently fetched 168 hours.  One older unmatched OFF row
+        # then made otherwise complete overnight intervals look boundary-
+        # incomplete and the model correctly-but-unhelpfully said "at least".
+        # Broad/analytical history now stays on the normal 24-hour default;
+        # true "when was it last on/open/etc." calls keep the seven-day
+        # protection by following the tool contract and supplying limit 1-3.
+        explicit_small_limit = "limit" in arguments and limit <= 3
+        default_hours_back = 168 if attribute and explicit_small_limit else 24
+        hours_back = self._integer(
+            arguments.get("hours_back"),
+            default=default_hours_back,
+            minimum=1,
+            maximum=168,
         )
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
@@ -290,23 +280,8 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        # Live-observed bug (2026-08-13, after the hours_back widening
-        # above): even with a full seven-day window, "When did the front
-        # door last open?" still answered "No contact events...". Direct
-        # live testing against the real hub found why -- the upstream
-        # hub_list_device_events `attribute` filter is unreliable: passing
-        # attribute="contact" for the Front Door device silently returned
-        # zero events despite real contact events existing in the exact
-        # same window (confirmed by re-running the identical call with no
-        # attribute filter), while attribute="motion" on that same device
-        # filtered correctly. Since this failure is silent -- no error, no
-        # is_error flag, just an empty list indistinguishable from "no
-        # events occurred" -- this code can no longer trust the upstream
-        # filter for any attribute. It now always fetches the widest
-        # bounded, unfiltered window (up to the maximum limit of 50 when a
-        # single attribute is requested) and filters by attribute name on
-        # this side, where a mismatch is directly testable and cannot
-        # silently swallow real events again.
+        # The upstream attribute filter is not reliable for every driver, so
+        # fetch a bounded unfiltered set and filter by event name locally.
         fetch_limit = 50 if attribute else limit
         event_args: dict[str, Any] = {
             "deviceId": str(device_id),
@@ -347,12 +322,6 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        # Delegates to the shared helper rather than repeating a strict
-        # `is False` check here -- Hubitat/this codebase's own tool
-        # results also transmit boolean-ish flags as the string "false",
-        # which a strict identity check would silently miss (see
-        # tool_succeeded()'s own docstring for the fuller history of this
-        # bug class).
         success = _shared_tool_succeeded(source)
         events = self._events(source.data, limit=fetch_limit) if success else []
         if attribute:
@@ -387,13 +356,6 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        # 0.10.447: expose deterministic interval arithmetic alongside the
-        # raw authoritative events.  The model still decides how to answer
-        # the user's question, but it no longer has to pair timestamps or
-        # add durations itself (the live Big Lamp comparison showed exactly
-        # how easy it is for a capable model to drift by a minute while
-        # doing that arithmetic in prose).  Unsupported attributes simply
-        # omit this field and retain the same raw history contract.
         temporal_analysis = (
             analyze_state_intervals(attribute, events) if attribute else None
         )
