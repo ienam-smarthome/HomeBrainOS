@@ -117,6 +117,25 @@ def _joined(values: list[str]) -> str:
     return f"{', '.join(values[:-1])}, and {values[-1]}"
 
 
+def _choice_joined(values: list[str]) -> str:
+    """Render alternatives with an explicit ``or`` delimiter.
+
+    The production agent extracts deterministic clarification choices from this
+    presenter text. ``_joined`` deliberately uses natural ``and`` for ordinary
+    lists, but two ambiguity choices rendered as ``A and B`` were parsed as one
+    button. Keep choice grammar distinct and machine-readable without changing
+    normal prose list rendering.
+    """
+
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} or {values[1]}"
+    return f"{', '.join(values[:-1])}, or {values[-1]}"
+
+
 def _error(data: dict[str, Any], fallback: str) -> str:
     return str(data.get("error") or fallback)
 
@@ -322,7 +341,7 @@ def _present_device_history(data: dict[str, Any]) -> str:
         if alternatives:
             return (
                 f"I could not resolve **{label}** uniquely. Possible matches: "
-                f"{_joined(alternatives)}."
+                f"{_choice_joined(alternatives)}."
             )
         return _error(data, f"I could not read event history for {label}.")
 
