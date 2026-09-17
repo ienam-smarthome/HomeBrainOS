@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import re
 import time
 from typing import Any, Callable
 
@@ -156,6 +157,28 @@ class DeviceHistoryService:
         if not offset:
             return None
         return f"{offset[:3]}:{offset[3:]}" if len(offset) == 5 else offset
+
+    @staticmethod
+    def _fallback_resolution_name(requested: str) -> str | None:
+        """Return one bounded broader lookup token for an exact-filter miss.
+
+        This is not a natural-language intent parser. It only helps targeted
+        device resolution recover from labels that omit a room/qualifier (for
+        example a request such as ``bathroom fan`` when the actual labels are
+        ``Fan Switch`` / ``Fan Boost``). The final non-numeric identifying token
+        is used once and the result is surfaced as alternatives, never silently
+        substituted as the requested device.
+        """
+
+        tokens = re.findall(r"[a-z0-9]+", str(requested or "").casefold())
+        if len(tokens) < 2:
+            return None
+        for token in reversed(tokens):
+            if token in {"the", "a", "an"} or token.isdigit() or len(token) < 3:
+                continue
+            if token != "".join(tokens):
+                return token
+        return None
 
     async def location_events(self, arguments: dict[str, Any]) -> MCPToolResult:
         """Read the hub's own location-scoped event stream."""
@@ -310,11 +333,45 @@ class DeviceHistoryService:
                 for item in resolution_data.get("alternatives") or []
                 if str(item).strip()
             ]
+            fallback_name = None
+            # An exact label-filter miss can be too strict when the spoken name
+            # contains a room/qualifier absent from the actual device label. Do
+            # one smaller targeted lookup and surface what it finds as choices;
+            # never auto-select the broader match.
+            if not alternatives:
+                fallback_name = self._fallback_resolution_name(requested)
+                if fallback_name:
+                    fallback = await resolver.resolve_device({"name": fallback_name})
+                    fallback_data = (
+                        fallback.data if isinstance(fallback.data, dict) else {}
+                    )
+                    fallback_target = (
+                        fallback_data.get("target")
+                        if isinstance(fallback_data.get("target"), dict)
+                        else None
+                    )
+                    if fallback_target is not None:
+                        fallback_label = str(
+                            fallback_target.get("label")
+                            or fallback_target.get("name")
+                            or ""
+                        ).strip()
+                        if fallback_label:
+                            alternatives.append(fallback_label)
+                    alternatives.extend(
+                        str(item)
+                        for item in fallback_data.get("alternatives") or []
+                        if str(item).strip()
+                    )
+            alternatives = list(dict.fromkeys(alternatives))[:3]
+            error = "device is ambiguous" if alternatives else "device not found"
             data = {
                 "success": False,
                 "requested": requested,
-                "error": "device could not be resolved uniquely",
-                "alternatives": alternatives[:3],
+                "error": error,
+                "alternatives": alternatives,
+                "resolutionReason": resolution_data.get("reason"),
+                "fallbackLookup": fallback_name,
             }
             return MCPToolResult(
                 DEVICE_HISTORY_TOOL,
