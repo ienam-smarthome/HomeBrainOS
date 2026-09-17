@@ -8,12 +8,25 @@ from typing import Any
 
 import httpx
 
+from reasoning_policy import observe_assistant_message
+
 
 logger = logging.getLogger("HomeBrainOS.ChatTransport")
 
+# Ollama's native `think` field is model-family-specific. Keep the allow-list
+# deliberately conservative: these are reasoning families HomeBrain currently
+# uses or explicitly supports. Unknown/local models retain their prior request
+# shape rather than risking an unsupported option.
+_THINKING_MODEL_PREFIXES = (
+    "gemma4",
+    "qwen3",
+    "deepseek-r1",
+    "gpt-oss",
+)
+
 
 class ChatTransport:
-    """Own the Ollama HTTP client and assemble native chat responses.
+    """Owns the Ollama HTTP client and assemble native chat responses.
 
     Supports an optional local Ollama instance (e.g. a machine on the same
     network running `ollama serve`) as a first-choice target, with automatic
@@ -37,6 +50,10 @@ class ChatTransport:
     that many idle seconds instead of relying on Ollama's undocumented-here
     default. It is never sent to the cloud endpoint, which doesn't manage
     memory this way.
+
+    Reasoning-capable model families receive Ollama's native `think=true`.
+    Provider reasoning traces are never returned to the orchestrator: only
+    final content and structured tool calls survive response normalization.
     """
 
     def __init__(
@@ -53,6 +70,7 @@ class ChatTransport:
         local_timeout_seconds: float = 12,
         local_connect_timeout_seconds: float = 3,
         local_keep_alive_seconds: float = 120,
+        thinking_enabled: bool = True,
     ) -> None:
         self.api_key = str(api_key or "").strip()
         self.model_name = str(model_name or "").strip()
@@ -70,6 +88,7 @@ class ChatTransport:
             0.5, float(local_connect_timeout_seconds)
         )
         self.local_keep_alive_seconds = float(local_keep_alive_seconds)
+        self.thinking_enabled = bool(thinking_enabled)
         self.client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
@@ -87,6 +106,31 @@ class ChatTransport:
         close = getattr(self.client, "aclose", None)
         if callable(close):
             await close()
+
+    @staticmethod
+    def _supports_thinking(model_name: str) -> bool:
+        normalized = str(model_name or "").strip().casefold()
+        return normalized.startswith(_THINKING_MODEL_PREFIXES)
+
+    @staticmethod
+    def _normalized_assistant_message(message: dict[str, Any]) -> dict[str, Any]:
+        """Keep only final assistant content and native tool calls.
+
+        Ollama reasoning models may return a separate `thinking` field. It is
+        useful inside the provider for tool selection but is intentionally not
+        copied into HomeBrain's conversation, logs, evidence, or API response.
+        """
+
+        normalized: dict[str, Any] = {
+            "role": str(message.get("role") or "assistant"),
+            "content": str(message.get("content") or ""),
+        }
+        calls = message.get("tool_calls")
+        if isinstance(calls, list):
+            kept = [call for call in calls if isinstance(call, dict)]
+            if kept:
+                normalized["tool_calls"] = kept
+        return normalized
 
     async def chat(
         self,
@@ -177,6 +221,8 @@ class ChatTransport:
             "stream": stream,
             "options": {"temperature": 0.1},
         }
+        if self.thinking_enabled and self._supports_thinking(model_name):
+            payload["think"] = True
         if keep_alive is not None:
             # Ollama accepts a plain number of seconds here; 0 unloads
             # immediately after the response, a positive number keeps the
@@ -213,13 +259,15 @@ class ChatTransport:
         message = payload.get("message")
         if not isinstance(message, dict):
             raise RuntimeError("Ollama returned no assistant message")
+        normalized = self._normalized_assistant_message(message)
+        observe_assistant_message(normalized)
         logger.info(
             "Ollama round completed in %.3fs with %d declared tools (%s)",
             time.monotonic() - started,
             len(tools),
             base_url,
         )
-        return message
+        return normalized
 
     async def _chat_stream(
         self,
@@ -289,6 +337,8 @@ class ChatTransport:
                 message = payload.get("message")
                 if not isinstance(message, dict):
                     continue
+                # Deliberately ignore message['thinking']; only final content
+                # and structured tool calls are retained by HomeBrain.
                 if message.get("content"):
                     content.append(str(message["content"]))
                 calls = message.get("tool_calls")
@@ -306,7 +356,11 @@ class ChatTransport:
             len(tools),
             base_url,
         )
-        message = {"role": "assistant", "content": "".join(content)}
+        message: dict[str, Any] = {
+            "role": "assistant",
+            "content": "".join(content),
+        }
         if tool_calls:
             message["tool_calls"] = tool_calls
+        observe_assistant_message(message)
         return message
