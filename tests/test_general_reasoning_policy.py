@@ -135,7 +135,8 @@ def test_reasoning_instructions_are_generic_and_causally_conservative() -> None:
     assert "every material part" in review
     assert "correlation" in review and "causation" in review
     assert "do not reveal hidden reasoning" in review
-    assert "using only the evidence already gathered" in final
+    assert "mcp results already provided" in final
+    assert "evidence already gathered" in final
     assert "correlation" in final and "causation" in final
 
 
