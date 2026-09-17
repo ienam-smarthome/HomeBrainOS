@@ -15,6 +15,11 @@ from history_temporal_analysis import history_temporal_evidence_details
 from location_privacy import redact_precise_location
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
+from reasoning_policy import (
+    EVIDENCE_REVIEW_INSTRUCTION,
+    claim_model_tool_call,
+    should_defer_deterministic_presentation,
+)
 from request_metrics import add_active_metric_ms, increment_active_metric
 from tool_registry import ToolEffect, classify_tool_effect
 
@@ -119,7 +124,12 @@ class ToolExecutor:
         text = str(result.text or data or "").strip()
         return (text[:157] + "...") if len(text) > 160 else (text or "empty result")
 
-    def result_payload(self, result: MCPToolResult) -> str:
+    def result_payload(
+        self,
+        result: MCPToolResult,
+        *,
+        reasoning_active: bool = False,
+    ) -> str:
         # Precise-location attributes (GPS coordinates, street addresses, map
         # tiles, journey logs) are stripped here -- the single point every
         # provider-bound tool message passes through -- before anything is
@@ -128,11 +138,18 @@ class ToolExecutor:
         safe_data = (
             redact_precise_location(result.data) if result.data is not None else None
         )
-        payload = (
+        payload: dict[str, Any] = (
             {"error": result.text or "MCP tool failed"}
             if result.is_error
             else {"result": safe_data if safe_data is not None else result.text}
         )
+        # Only an execution that exactly matches a native model-emitted tool
+        # call receives the generic evidence-review contract. Pre-model tool
+        # discovery, direct deterministic paths, and resumed confirmations keep
+        # their historical payload shape even if they happen in the same async
+        # context as an earlier model round.
+        if reasoning_active:
+            payload["host_instruction"] = EVIDENCE_REVIEW_INSTRUCTION
         serialized = json.dumps(payload, ensure_ascii=False, default=str)
         if len(serialized) <= self.max_tool_result_chars:
             return serialized
@@ -230,6 +247,7 @@ class ToolExecutor:
     ) -> ToolExecution:
         safe_arguments = deepcopy(arguments)
         receipt_arguments = deepcopy(arguments)
+        reasoning_round_size = claim_model_tool_call(name, safe_arguments)
         declared_tool = tool or MCPTool(name, name, {})
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)
@@ -265,10 +283,31 @@ class ToolExecutor:
             logger.info("Tool %s completed in %.3fs", name, elapsed_ms / 1000)
             if effect.mutates:
                 self._invalidate_live_device_snapshot()
+
+            # In a multi-tool model round, selected deterministic presenters
+            # would otherwise return from the orchestrator after the first call
+            # and silently skip every later call in that same native response.
+            # Keep the real result for evidence and provider content, but hide it
+            # only from the legacy presenter branch so the loop can finish the
+            # whole round and then synthesize all gathered evidence. Single-tool
+            # requests retain their direct deterministic fast path.
+            presentation_result = (
+                None
+                if should_defer_deterministic_presentation(
+                    name,
+                    result.data,
+                    round_size=reasoning_round_size,
+                )
+                else result
+            )
             return ToolExecution(
                 name=name, arguments=receipt_arguments, effect=effect,
                 success=success, elapsed_ms=elapsed_ms,
-                content=self.result_payload(result), result=result,
+                content=self.result_payload(
+                    result,
+                    reasoning_active=reasoning_round_size > 0,
+                ),
+                result=presentation_result,
             )
         except Exception as exc:
             elapsed_ms = round((self._clock() - started) * 1000)

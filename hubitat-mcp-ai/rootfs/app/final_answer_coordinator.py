@@ -3,11 +3,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
 
-FINAL_ANSWER_INSTRUCTION = (
-    "Answer the original request now using only the MCP results already "
-    "provided. Do not request another tool. Be concise and factual."
-)
+
+FINAL_ANSWER_INSTRUCTION = FINAL_SYNTHESIS_INSTRUCTION
 DEFAULT_FINAL_ANSWER = "The MCP request completed without a written answer."
 
 
