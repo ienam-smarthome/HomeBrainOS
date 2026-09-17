@@ -17,7 +17,7 @@ from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from reasoning_policy import (
     EVIDENCE_REVIEW_INSTRUCTION,
-    model_evidence_review_active,
+    claim_model_tool_call,
     should_defer_deterministic_presentation,
 )
 from request_metrics import add_active_metric_ms, increment_active_metric
@@ -124,7 +124,12 @@ class ToolExecutor:
         text = str(result.text or data or "").strip()
         return (text[:157] + "...") if len(text) > 160 else (text or "empty result")
 
-    def result_payload(self, result: MCPToolResult) -> str:
+    def result_payload(
+        self,
+        result: MCPToolResult,
+        *,
+        reasoning_active: bool = False,
+    ) -> str:
         # Precise-location attributes (GPS coordinates, street addresses, map
         # tiles, journey logs) are stripped here -- the single point every
         # provider-bound tool message passes through -- before anything is
@@ -138,12 +143,12 @@ class ToolExecutor:
             if result.is_error
             else {"result": safe_data if safe_data is not None else result.text}
         )
-        # Only model-driven tool rounds receive the generic evidence-review
-        # contract. Direct deterministic paths and confirmed-action execution
-        # retain their historical payload shape and latency. The transport sets
-        # this request-local state from the native function-calling response;
-        # there is no prompt or question-category classifier here.
-        if model_evidence_review_active():
+        # Only an execution that exactly matches a native model-emitted tool
+        # call receives the generic evidence-review contract. Pre-model tool
+        # discovery, direct deterministic paths, and resumed confirmations keep
+        # their historical payload shape even if they happen in the same async
+        # context as an earlier model round.
+        if reasoning_active:
             payload["host_instruction"] = EVIDENCE_REVIEW_INSTRUCTION
         serialized = json.dumps(payload, ensure_ascii=False, default=str)
         if len(serialized) <= self.max_tool_result_chars:
@@ -242,6 +247,7 @@ class ToolExecutor:
     ) -> ToolExecution:
         safe_arguments = deepcopy(arguments)
         receipt_arguments = deepcopy(arguments)
+        reasoning_round_size = claim_model_tool_call(name, safe_arguments)
         declared_tool = tool or MCPTool(name, name, {})
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)
@@ -287,13 +293,21 @@ class ToolExecutor:
             # requests retain their direct deterministic fast path.
             presentation_result = (
                 None
-                if should_defer_deterministic_presentation(name, result.data)
+                if should_defer_deterministic_presentation(
+                    name,
+                    result.data,
+                    round_size=reasoning_round_size,
+                )
                 else result
             )
             return ToolExecution(
                 name=name, arguments=receipt_arguments, effect=effect,
                 success=success, elapsed_ms=elapsed_ms,
-                content=self.result_payload(result), result=presentation_result,
+                content=self.result_payload(
+                    result,
+                    reasoning_active=reasoning_round_size > 0,
+                ),
+                result=presentation_result,
             )
         except Exception as exc:
             elapsed_ms = round((self._clock() - started) * 1000)
