@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from reasoning_policy import observe_assistant_message
+from reasoning_policy import observe_assistant_message, prepare_reasoning_turn
 
 
 logger = logging.getLogger("HomeBrainOS.ChatTransport")
@@ -54,6 +54,11 @@ class ChatTransport:
     Reasoning-capable model families receive Ollama's native `think=true`.
     Provider reasoning traces are never returned to the orchestrator: only
     final content and structured tool calls survive response normalization.
+
+    Before each provider round, the generic reasoning policy reinforces the
+    current-turn evidence boundary and can remove callable tools once a
+    read-only investigation has spent its soft reasoning budget. This keeps
+    the orchestration policy generic and applies equally to local/cloud models.
     """
 
     def __init__(
@@ -184,10 +189,11 @@ class ChatTransport:
         read_timeout: float,
         keep_alive: float | None,
     ) -> dict[str, Any]:
+        prepared_messages, prepared_tools = prepare_reasoning_turn(messages, tools)
         if callable(getattr(self.client, "stream", None)):
             return await self._chat_stream(
-                messages,
-                tools,
+                prepared_messages,
+                prepared_tools,
                 base_url=base_url,
                 model_name=model_name,
                 api_key=api_key,
@@ -196,8 +202,8 @@ class ChatTransport:
                 keep_alive=keep_alive,
             )
         return await self._chat_post(
-            messages,
-            tools,
+            prepared_messages,
+            prepared_tools,
             base_url=base_url,
             model_name=model_name,
             api_key=api_key,
