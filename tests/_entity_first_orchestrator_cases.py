@@ -624,7 +624,7 @@ async def test_rule_authoring_reachable_when_search_discovery_misses_gateway():
 
 
 @pytest.mark.asyncio
-async def test_rule_authoring_sees_commands_from_identity_enrichment_not_bare_device_list():
+async def test_rule_authoring_sees_commands_from_targeted_projected_lookup():
     """Regression test for a second, previously-masked bug found while
     live-testing the 0.10.347 discovery-gate fix: with that fix in place,
     every schedule request reached RuleAuthoringService's device-command
@@ -686,8 +686,7 @@ async def test_rule_authoring_sees_commands_from_identity_enrichment_not_bare_de
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
             if name == "hub_read_devices":
-                # Mirrors the real (non-detailed) hub_list_devices shape:
-                # only currentStates, no commands/capabilities at all.
+                assert arguments["args"]["labelFilter"] == "livingroom light 1"
                 return MCPToolResult(
                     name,
                     arguments,
@@ -698,7 +697,9 @@ async def test_rule_authoring_sees_commands_from_identity_enrichment_not_bare_de
                             {
                                 "id": "7027",
                                 "label": "Livingroom Light 1",
-                                "currentStates": {"switch": "off", "level": 80},
+                                "attributes": {"switch": "off", "level": 80},
+                                "commands": ["off", "on", "refresh", "setLevel"],
+                                "capabilities": ["SwitchLevel", "Light", "Switch"],
                             }
                         ]
                     },
@@ -841,6 +842,7 @@ async def test_one_time_rule_end_to_end_creates_then_self_pauses():
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
             if name == "hub_read_devices":
+                assert arguments["args"]["labelFilter"] == "livingroom light 1"
                 return MCPToolResult(
                     name, arguments, {}, "",
                     {
@@ -848,7 +850,9 @@ async def test_one_time_rule_end_to_end_creates_then_self_pauses():
                             {
                                 "id": "7027",
                                 "label": "Livingroom Light 1",
-                                "currentStates": {"switch": "off"},
+                                "attributes": {"switch": "off"},
+                                "commands": ["off", "on"],
+                                "capabilities": ["Switch"],
                             }
                         ]
                     },

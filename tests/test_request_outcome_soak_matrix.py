@@ -20,6 +20,7 @@ from technical_metrics_presenter import present_request_outcome  # noqa: E402
         ("device_resolution_missing", "unresolved", "Unresolved", "warning"),
         ("grounding_refusals", "refused", "Refused", "warning"),
         ("mutation_verification_failures", "failed", "Failed", "critical"),
+        ("proposal_validation_failures", "failed", "Failed", "critical"),
         ("confirmation_expired", "unresolved", "Unresolved", "warning"),
         ("request_cancellations", "cancelled", "Cancelled", "neutral"),
     ],

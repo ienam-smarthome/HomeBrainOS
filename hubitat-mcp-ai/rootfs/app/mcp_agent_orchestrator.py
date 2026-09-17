@@ -38,6 +38,7 @@ from request_classification import (
     requests_mutation as _requests_mutation,
     routine_control_arguments as _routine_control_arguments,
 )
+from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
@@ -815,10 +816,26 @@ class UnifiedMCPAgent:
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
         ungrounded_confirmation_claim_seen = False
+        last_proposal_error: tuple[str, dict[str, Any], str] | None = None
+        proposal_error_retries = 0
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
+                if last_proposal_error is not None:
+                    name, rejected_arguments, reason = last_proposal_error
+                    increment_active_metric("proposal_validation_failures")
+                    rejected = json.dumps(
+                        {"tool": name, "arguments": rejected_arguments},
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    return (
+                        "No Hubitat action was queued or executed because Rule "
+                        f"Machine proposal validation failed. Exact reason: {reason} "
+                        f"Rejected payload: {rejected}"
+                    )
                 answer = str(assistant.get("content") or "")
                 resolver_used = any(
                     json.loads(signature)[0] == _LOCAL_RESOLVE_TOOL
@@ -1001,6 +1018,34 @@ class UnifiedMCPAgent:
                 ):
                     sensitive.append((name, arguments))
             if proposal_errors:
+                failed_name, failed_reason = proposal_errors[0]
+                failed_arguments = next(
+                    (
+                        arguments
+                        for name, arguments in round_actions
+                        if name == failed_name
+                    ),
+                    {},
+                )
+                last_proposal_error = (
+                    failed_name,
+                    failed_arguments,
+                    failed_reason,
+                )
+                proposal_error_retries += 1
+                if proposal_error_retries >= 2:
+                    increment_active_metric("proposal_validation_failures")
+                    rejected = json.dumps(
+                        {"tool": failed_name, "arguments": failed_arguments},
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    return (
+                        "No Hubitat action was queued or executed because Rule "
+                        "Machine proposal validation failed twice. Exact reason: "
+                        f"{failed_reason} Rejected payload: {rejected}"
+                    )
                 messages.append(assistant)
                 errors_by_name = dict(proposal_errors)
                 for call in calls:
@@ -1021,6 +1066,7 @@ class UnifiedMCPAgent:
                     })
                 continue
             if sensitive:
+                last_proposal_error = None
                 # Confirmation wording and the max-actions bound are judged
                 # against the sensitive subset only -- a routine call along
                 # for the ride should not count against that limit or be
@@ -1217,6 +1263,20 @@ class UnifiedMCPAgent:
                 "No Hubitat action was queued or executed because the model did not "
                 "submit a complete structured action group. Please retry the original "
                 "request."
+            )
+        if last_proposal_error is not None:
+            name, rejected_arguments, reason = last_proposal_error
+            increment_active_metric("proposal_validation_failures")
+            rejected = json.dumps(
+                {"tool": name, "arguments": rejected_arguments},
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            )
+            return (
+                "No Hubitat action was queued or executed because Rule Machine "
+                f"proposal validation failed. Exact reason: {reason} Rejected "
+                f"payload: {rejected}"
             )
         return await self._final_answer(messages)
 

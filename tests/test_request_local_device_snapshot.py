@@ -46,15 +46,15 @@ async def test_device_snapshot_is_reused_only_within_active_request() -> None:
         resolved = await service.resolve_device({"name": "Bedroom 1"})
         assert not filtered.is_error
         assert not resolved.is_error
-        assert mcp.calls == 1
-        assert len(evidence) == 1
+        assert mcp.calls == 2
+        assert len(evidence) == 2
     finally:
         metrics.reset(first)
 
     second = metrics.begin()
     try:
         await service.filter_devices({"attribute": "humidity", "operator": "exists"})
-        assert mcp.calls == 2
-        assert len(evidence) == 2
+        assert mcp.calls == 3
+        assert len(evidence) == 3
     finally:
         metrics.reset(second)

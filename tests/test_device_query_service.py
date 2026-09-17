@@ -155,7 +155,8 @@ async def test_targeted_resolver_handles_spaces_hyphens_and_label_prefixes():
 
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
-            assert arguments == {"tool": "hub_list_devices", "args": {}}
+            assert arguments["tool"] == "hub_list_devices"
+            assert arguments["args"]["labelFilter"] == "tab s9"
             return MCPToolResult(
                 name, arguments, {}, "ok", {"devices": self.devices}
             )
@@ -177,11 +178,11 @@ async def test_targeted_resolver_handles_spaces_hyphens_and_label_prefixes():
     assert result.data["target"]["commands"] == [
         "blockInternet", "allowInternet", "addTime"
     ]
-    assert mcp.calls == [
-        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
-    ]
+    assert len(mcp.calls) == 1
+    assert mcp.calls[0][0] == "hub_read_devices"
+    assert mcp.calls[0][1]["args"]["labelFilter"] == "tab s9"
     assert len(receipts) == 1
-    assert receipts[0][1]["evidence_kind"] == "authoritative_state_snapshot"
+    assert receipts[0][1]["evidence_kind"] == "targeted_device_lookup"
 
 
 @pytest.mark.asyncio

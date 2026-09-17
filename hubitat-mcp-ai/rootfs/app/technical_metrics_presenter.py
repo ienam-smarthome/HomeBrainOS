@@ -14,6 +14,7 @@ _COUNTER_LABELS = (
     ("confirmation_expired", "Confirmations expired"),
     ("confirmation_evicted", "Confirmations evicted"),
     ("mutation_verification_failures", "Verification failures"),
+    ("proposal_validation_failures", "Proposal validation failures"),
     ("device_control_failures", "Device control failures"),
     ("request_cancellations", "Cancellations"),
     ("device_resolution_ambiguous", "Ambiguous resolutions"),

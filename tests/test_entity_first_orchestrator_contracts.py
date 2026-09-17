@@ -12,6 +12,8 @@ assert _SPEC is not None and _SPEC.loader is not None
 _suite = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_suite)
 
+from request_metrics import RequestMetrics  # noqa: E402
+
 
 def test_model_rule_authoring_omits_eager_full_device_manifest():
     agent = object.__new__(_suite.UnifiedMCPAgent)
@@ -25,6 +27,83 @@ def test_model_rule_authoring_omits_eager_full_device_manifest():
     assert agent._include_identity_manifest(
         "if Big lamp turns on between 2:30am and 6:30am, turn it off 30 minutes later"
     ) is False
+
+
+@pytest.mark.asyncio
+async def test_invalid_rule_proposal_returns_exact_failed_outcome():
+    class RuleMCP(_suite.FakeMCP):
+        async def list_tools(self):
+            return [
+                _suite.MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+                _suite.MCPTool(
+                    "hub_manage_rule_machine", "Manage rules", {"type": "object"}
+                ),
+            ]
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_search_tools":
+                return _suite.MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {"results": [{
+                        "tool": "hub_set_rule",
+                        "gateway": "hub_manage_rule_machine",
+                    }]},
+                )
+            raise AssertionError("invalid proposal must not reach Hubitat")
+
+    rejected_arguments = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Big Lamp Auto-Off (2:30am-6:30am)",
+            "addRequiredExpression": {
+                "conditions": [{
+                    "capability": "Between two times",
+                    "start": {"type": "clock", "time": "02:30"},
+                    "end": {"type": "clock", "time": "06:30"},
+                }],
+                "operator": "AND",
+            },
+            "addActions": {
+                "capability": "delay",
+                "minutes": 30,
+            },
+        },
+    }
+    ai = _suite.FakeAI([
+        {"message": {
+            "role": "assistant",
+            "tool_calls": [{"function": {
+                "name": "hub_manage_rule_machine",
+                "arguments": rejected_arguments,
+            }}],
+        }},
+        {"message": {
+            "role": "assistant",
+            "content": "The action sequence had a formatting error.",
+        }},
+    ])
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        agent = _suite.UnifiedMCPAgent(RuleMCP(), "key", "model", ai_client=ai)
+        outcome = await agent.process_user_request_result(
+            "Create the advanced Big Lamp rule", session_id="invalid-rule"
+        )
+        assert metrics.completed_outcome() == "failed"
+        assert metrics.snapshot()["counters"]["proposal_validation_failures"] == 1
+    finally:
+        metrics.reset(token)
+
+    assert "No Hubitat action was queued or executed" in outcome.message
+    assert "Exact reason:" in outcome.message
+    assert "Rejected payload:" in outcome.message
+    assert '"addActions": {' in outcome.message
+    assert "addActions must be a non-empty array" in outcome.message
+    assert len(ai.requests) == 2
 
 
 @pytest.mark.asyncio
@@ -54,7 +133,8 @@ async def test_rule_authoring_uses_complete_inventory_before_model():
         async def call_tool(self, name, arguments):
             self.calls.append((name, arguments))
             if name == "hub_read_devices":
-                assert arguments == {"tool": "hub_list_devices", "args": {}}
+                assert arguments["tool"] == "hub_list_devices"
+                assert arguments["args"]["labelFilter"] == "tab s9"
                 return _suite.MCPToolResult(
                     name,
                     arguments,
@@ -103,13 +183,25 @@ async def test_rule_authoring_uses_complete_inventory_before_model():
             "hub_search_tools",
             {"query": "write a rule to block tab s9 from 9am to 7pm everyday"},
         ),
-        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}}),
+        (
+            "hub_read_devices",
+            {
+                "tool": "hub_list_devices",
+                "args": {
+                    "labelFilter": "tab s9",
+                    "fields": [
+                        "id", "name", "label", "room", "capabilities",
+                        "attributes", "commands",
+                    ],
+                },
+            },
+        ),
         ("hub_read_rules", {"tool": "hub_list_rules", "args": {}}),
     ]
 
 
 @pytest.mark.asyncio
-async def test_history_uses_complete_inventory_local_resolver():
+async def test_history_uses_targeted_local_resolver():
     class HistoryMCP(_suite.FakeMCP):
         async def list_tools(self):
             return [
@@ -140,7 +232,7 @@ async def test_history_uses_complete_inventory_local_resolver():
                 )
             operation = arguments.get("tool")
             if operation == "hub_list_devices":
-                assert arguments.get("args") == {}
+                assert arguments["args"]["labelFilter"] == "tab s9"
                 return _suite.MCPToolResult(
                     name,
                     arguments,
@@ -185,4 +277,5 @@ async def test_history_uses_complete_inventory_local_resolver():
         for _name, arguments in mcp.calls
         if arguments.get("tool") == "hub_list_devices"
     ]
-    assert inventory_calls == [{"tool": "hub_list_devices", "args": {}}]
+    assert len(inventory_calls) == 1
+    assert inventory_calls[0]["args"]["labelFilter"] == "tab s9"
