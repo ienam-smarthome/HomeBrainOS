@@ -1,11 +1,11 @@
-"""Generic model-loop evidence review policy.
+"""Generic model-loop evidence review and bounded reasoning policy.
 
 This module deliberately contains no user-question grammar. It tracks only the
-shape of the model's current tool round and supplies stable instructions for
-reasoning over already-gathered evidence. Domain adapters remain authoritative
-for facts, arithmetic, safety, and verification; the model is responsible for
+shape of the model's current tool round and the amount of model-directed read
+work performed in the current request. Domain adapters remain authoritative for
+facts, arithmetic, safety, and verification; the model is responsible for
 understanding the user's whole objective and deciding whether the available
-evidence is sufficient to answer it.
+current-turn evidence is sufficient to answer it.
 """
 
 from __future__ import annotations
@@ -14,28 +14,57 @@ import json
 from contextvars import ContextVar
 from typing import Any
 
+from request_metrics import active_request_identity
+
+
+CURRENT_TURN_EVIDENCE_RULE = (
+    "CURRENT-TURN EVIDENCE BOUNDARY: Conversation history is context only, not "
+    "proof of a live or historical fact in this request. Never repeat or rely on "
+    "a previous assistant factual claim unless a tool result from THIS request "
+    "independently supports it. If the current-turn tools do not establish a "
+    "requested fact, say that the available evidence does not establish it."
+)
 
 EVIDENCE_REVIEW_INSTRUCTION = (
     "HOST EVIDENCE-REVIEW CONTRACT: Treat this tool result as evidence, not "
     "automatically as the finished answer. Re-read the user's original request "
-    "and all evidence gathered this turn. Check that every material part is "
-    "supported. If material evidence is still missing, call the most relevant "
-    "declared read tool; do not call extra tools merely to be thorough. When the "
-    "evidence is sufficient, synthesize it instead of dumping raw fields. "
-    "Distinguish direct observations and deterministic calculations from "
+    "and all CURRENT-TURN tool evidence gathered so far. Conversation history is "
+    "context only and must not be treated as evidence for a live or historical "
+    "claim. Check that every material part is supported. If material evidence is "
+    "still missing, call the most relevant declared read tool; do not call extra "
+    "tools merely to be thorough and do not re-read the same fact in a different "
+    "form. When the evidence is sufficient, synthesize it instead of dumping raw "
+    "fields. Distinguish direct observations and deterministic calculations from "
     "inference, state material uncertainty or incomplete coverage, and never "
     "present correlation as proven causation. Do not reveal hidden reasoning."
 )
 
 FINAL_SYNTHESIS_INSTRUCTION = (
-    "Answer the original request now using only the MCP results already provided "
-    "and the evidence already gathered. Do not request another tool. Cover every "
-    "material part that the evidence supports. Synthesize the evidence instead "
-    "of repeating raw tool output; distinguish direct observations and "
-    "deterministic calculations from inference, state material uncertainty or "
-    "incomplete coverage, and never present correlation as proven causation. Be "
-    "concise and do not reveal hidden reasoning."
+    "Answer the original request now using only the CURRENT-TURN MCP/tool results "
+    "already provided. Conversation history is context only and is not evidence "
+    "for a live or historical factual claim. Do not request another tool. Cover "
+    "every material part that the current-turn evidence supports; if a requested "
+    "fact is not established by current-turn evidence, say so instead of copying "
+    "an earlier assistant claim. Synthesize the evidence instead of repeating raw "
+    "tool output; distinguish direct observations and deterministic calculations "
+    "from inference, state material uncertainty or incomplete coverage, and never "
+    "present correlation as proven causation. Be concise and do not reveal hidden "
+    "reasoning."
 )
+
+# 0.10.453 proved that open-ended read investigations can become materially more
+# useful, but live tests also showed runaway evidence gathering (19-30 calls and
+# 5-7 model rounds). These are soft READ budgets, not action budgets. Writes and
+# confirmation flows are never blocked by this policy. Once the budget is spent,
+# HomeBrain keeps the evidence it already gathered and forces one synthesis turn.
+DEFAULT_MAX_READ_TOOL_CALLS = 8
+DEFAULT_MAX_READ_TOOL_ROUNDS = 3
+
+# Legacy 0.10.447 causal prompting told the model to hunt related room sensors.
+# The 0.10.453 generic evidence contract supersedes it. Transport normalization
+# removes this old message if an older orchestrator path still appends it, so
+# causal investigation is governed by the same bounded policy as every other read.
+LEGACY_CAUSAL_HINT_PREFIX = "HOST CAUSAL-INVESTIGATION HINT"
 
 # The transport sees the complete native function-calling response before the
 # orchestrator executes it. Keep an immutable request-local snapshot containing
@@ -46,6 +75,11 @@ FINAL_SYNTHESIS_INSTRUCTION = (
 # "reasoning mode" merely because an earlier model response had tool calls.
 _ACTIVE_TOOL_ROUND: ContextVar[tuple[int, tuple[str, ...]]] = ContextVar(
     "homebrain_active_tool_round", default=(0, ())
+)
+
+# (request identity, tool rounds, executed read calls, mutation seen, skipped reads)
+_REASONING_BUDGET: ContextVar[tuple[object | None, int, int, bool, int]] = ContextVar(
+    "homebrain_reasoning_budget", default=(None, 0, 0, False, 0)
 )
 
 # These tools have deterministic presenters that can return directly from the
@@ -88,6 +122,22 @@ def _call_signature(name: str, arguments: Any) -> str:
     )
 
 
+def _budget_state() -> tuple[object | None, int, int, bool, int]:
+    current_identity = active_request_identity()
+    identity, rounds, reads, mutation, skipped = _REASONING_BUDGET.get()
+    if current_identity is not None and identity is not current_identity:
+        state = (current_identity, 0, 0, False, 0)
+        _REASONING_BUDGET.set(state)
+        return state
+    return identity, rounds, reads, mutation, skipped
+
+
+def reset_reasoning_budget() -> None:
+    """Reset request reasoning counters (primarily for isolated unit tests)."""
+
+    _REASONING_BUDGET.set((active_request_identity(), 0, 0, False, 0))
+
+
 def observe_assistant_message(message: dict[str, Any]) -> int:
     """Record the exact native tool calls in the current model response."""
 
@@ -106,6 +156,9 @@ def observe_assistant_message(message: dict[str, Any]) -> int:
             signatures.append(_call_signature(name, function.get("arguments") or {}))
     state = (len(signatures), tuple(signatures))
     _ACTIVE_TOOL_ROUND.set(state)
+    if signatures:
+        identity, rounds, reads, mutation, skipped = _budget_state()
+        _REASONING_BUDGET.set((identity, rounds + 1, reads, mutation, skipped))
     return state[0]
 
 
@@ -143,6 +196,99 @@ def claim_model_tool_call(name: str, arguments: dict[str, Any]) -> int:
     return max(0, int(total))
 
 
+def register_model_tool_execution(*, mutates: bool) -> bool:
+    """Reserve one model-directed tool execution under the read budget.
+
+    Returns ``False`` only when a read should be skipped because the current
+    request already spent its generic reasoning budget. Mutation calls are always
+    allowed and permanently disable read-budget forcing for that request so the
+    confirmation/verification safety path is never truncated by this policy.
+    """
+
+    identity, rounds, reads, mutation_seen, skipped = _budget_state()
+    if mutates:
+        _REASONING_BUDGET.set((identity, rounds, reads, True, skipped))
+        return True
+    if mutation_seen:
+        return True
+    if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
+        _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
+        return False
+    _REASONING_BUDGET.set((identity, rounds, reads + 1, mutation_seen, skipped))
+    return True
+
+
+def reasoning_budget_exhausted() -> bool:
+    """Whether a read-only model investigation should synthesize now."""
+
+    _identity, rounds, reads, mutation_seen, _skipped = _budget_state()
+    if mutation_seen or reads <= 0:
+        return False
+    return (
+        reads >= DEFAULT_MAX_READ_TOOL_CALLS
+        or rounds >= DEFAULT_MAX_READ_TOOL_ROUNDS
+    )
+
+
+def reasoning_budget_status() -> dict[str, Any]:
+    """Privacy-safe budget state for tests/logging and host instructions."""
+
+    _identity, rounds, reads, mutation_seen, skipped = _budget_state()
+    return {
+        "toolRounds": rounds,
+        "readCalls": reads,
+        "mutationSeen": mutation_seen,
+        "skippedReadCalls": skipped,
+        "maxToolRounds": DEFAULT_MAX_READ_TOOL_ROUNDS,
+        "maxReadCalls": DEFAULT_MAX_READ_TOOL_CALLS,
+        "exhausted": reasoning_budget_exhausted(),
+    }
+
+
+def prepare_reasoning_turn(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Normalize provider input around current-turn evidence and read budgets.
+
+    This is intentionally generic. It does not inspect the user's wording or
+    choose domain tools. It removes only the obsolete causal sensor-hunting host
+    hint, reinforces that prior conversation is not evidence, and when the soft
+    read budget is spent it removes callable tools and requests synthesis from the
+    evidence already collected.
+    """
+
+    prepared: list[dict[str, Any]] = []
+    for message in messages:
+        if (
+            message.get("role") == "user"
+            and str(message.get("content") or "").lstrip().startswith(
+                LEGACY_CAUSAL_HINT_PREFIX
+            )
+        ):
+            continue
+        prepared.append(dict(message))
+
+    status = reasoning_budget_status()
+    has_current_tool_evidence = any(
+        message.get("role") == "tool" for message in prepared
+    ) or status["readCalls"] > 0
+    if has_current_tool_evidence:
+        prepared.append({"role": "user", "content": CURRENT_TURN_EVIDENCE_RULE})
+
+    force_synthesis = bool(tools) and reasoning_budget_exhausted()
+    outgoing_tools = [] if force_synthesis else list(tools)
+    if not outgoing_tools and has_current_tool_evidence:
+        final_instruction = FINAL_SYNTHESIS_INSTRUCTION
+        if force_synthesis:
+            final_instruction += (
+                " The host read-reasoning budget is now exhausted; do not ask for "
+                "more evidence in this turn."
+            )
+        prepared.append({"role": "user", "content": final_instruction})
+    return prepared, outgoing_tools
+
+
 def should_defer_deterministic_presentation(
     tool_name: str,
     data: Any,
@@ -169,11 +315,19 @@ def should_defer_deterministic_presentation(
 
 
 __all__ = [
+    "CURRENT_TURN_EVIDENCE_RULE",
+    "DEFAULT_MAX_READ_TOOL_CALLS",
+    "DEFAULT_MAX_READ_TOOL_ROUNDS",
     "EVIDENCE_REVIEW_INSTRUCTION",
     "FINAL_SYNTHESIS_INSTRUCTION",
     "active_tool_round_size",
     "claim_model_tool_call",
     "model_evidence_review_active",
     "observe_assistant_message",
+    "prepare_reasoning_turn",
+    "reasoning_budget_exhausted",
+    "reasoning_budget_status",
+    "register_model_tool_execution",
+    "reset_reasoning_budget",
     "should_defer_deterministic_presentation",
 ]
