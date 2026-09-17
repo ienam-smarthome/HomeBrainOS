@@ -23,7 +23,12 @@ from history_temporal_analysis import (
     analyze_state_intervals,
     analyze_state_intervals_in_window,
 )
-from history_time_windows import required_history_hours, resolve_history_window
+from history_time_windows import (
+    active_history_window_request,
+    required_history_hours,
+    resolve_history_window,
+)
+from hub_timezone import HubTimezoneResolver, required_history_hours_absolute
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from natural_datetime import normalize_iso_offset
@@ -48,6 +53,10 @@ class DeviceHistoryService:
         self.mcp = mcp_client
         self._record_evidence = record_evidence
         self._now = now or (lambda: datetime.now().astimezone())
+        self._hub_timezone = HubTimezoneResolver(
+            self.mcp,
+            self._record_evidence,
+        )
 
     @staticmethod
     def _integer(
@@ -140,6 +149,13 @@ class DeviceHistoryService:
         if not timestamps:
             return False
         return min(timestamps) <= window_start
+
+    @staticmethod
+    def _utc_offset_text(value: datetime) -> str | None:
+        offset = value.strftime("%z")
+        if not offset:
+            return None
+        return f"{offset[:3]}:{offset[3:]}" if len(offset) == 5 else offset
 
     async def location_events(self, arguments: dict[str, Any]) -> MCPToolResult:
         """Read the hub's own location-scoped event stream."""
@@ -250,18 +266,34 @@ class DeviceHistoryService:
             maximum=168,
         )
 
+        explicit_window = (
+            arguments.get("time_window")
+            if isinstance(arguments.get("time_window"), dict)
+            else None
+        )
+        window_request = explicit_window or active_history_window_request()
         now = self._now()
+        hub_timezone_name: str | None = None
+        timezone_source = "runtime"
+        if window_request is not None:
+            now, hub_timezone_name, timezone_source = (
+                await self._hub_timezone.now_in_hub_timezone(self._now)
+            )
+
         time_window = resolve_history_window(
-            arguments.get("time_window") if isinstance(arguments.get("time_window"), dict) else None,
+            window_request,
             now=now,
         )
         if time_window is not None:
-            # Fetch far enough to get at least one hour before the semantic
-            # boundary. The upstream API has no start/end filter, so exact
-            # clipping happens locally after the bounded read.
+            # The upstream API has no start/end filter. Fetch enough history to
+            # reach at least one hour before the semantic boundary, then clip
+            # exactly in local deterministic arithmetic. The absolute-time
+            # variant keeps this safe across DST fallback nights, where Python
+            # wall-clock subtraction can otherwise under-count by one hour.
             hours_back = max(
                 hours_back,
                 required_history_hours(time_window, now=now),
+                required_history_hours_absolute(time_window.start, now=now),
             )
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
@@ -426,6 +458,10 @@ class DeviceHistoryService:
         if time_window is not None:
             data["timeWindow"] = {
                 **time_window.as_dict(),
+                "timeZone": hub_timezone_name,
+                "timeZoneSource": timezone_source,
+                "startUtcOffset": self._utc_offset_text(time_window.start),
+                "endUtcOffset": self._utc_offset_text(time_window.end),
                 "sourceCompleteToStart": source_complete_to_start,
             }
         if temporal_analysis is not None:
