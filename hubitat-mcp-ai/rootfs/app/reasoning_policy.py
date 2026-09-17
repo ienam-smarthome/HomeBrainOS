@@ -10,6 +10,7 @@ evidence is sufficient to answer it.
 
 from __future__ import annotations
 
+import json
 from contextvars import ContextVar
 from typing import Any
 
@@ -37,11 +38,14 @@ FINAL_SYNTHESIS_INSTRUCTION = (
 )
 
 # The transport sees the complete native function-calling response before the
-# orchestrator executes it, so it is the one generic place that can record the
-# number of calls in the current model round without inspecting prompt wording.
-# ContextVar keeps concurrent requests isolated.
-_ACTIVE_TOOL_ROUND_SIZE: ContextVar[int] = ContextVar(
-    "homebrain_active_tool_round_size", default=0
+# orchestrator executes it. Keep an immutable request-local snapshot containing
+# both the total size of that native round and the exact unclaimed call
+# signatures. ToolExecutor claims a signature before executing it. This is more
+# robust than a bare boolean/round-size flag: pre-model discovery, direct fast
+# paths, resumed confirmations, or a later request cannot accidentally inherit
+# "reasoning mode" merely because an earlier model response had tool calls.
+_ACTIVE_TOOL_ROUND: ContextVar[tuple[int, tuple[str, ...]]] = ContextVar(
+    "homebrain_active_tool_round", default=(0, ())
 )
 
 # These tools have deterministic presenters that can return directly from the
@@ -62,30 +66,88 @@ _MULTI_CALL_PRESENTER_TOOLS = frozenset(
 )
 
 
+def _arguments_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _call_signature(name: str, arguments: Any) -> str:
+    return json.dumps(
+        [str(name or ""), _arguments_object(arguments)],
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+        separators=(",", ":"),
+    )
+
+
 def observe_assistant_message(message: dict[str, Any]) -> int:
-    """Record the native tool-call count for the current model response."""
+    """Record the exact native tool calls in the current model response."""
 
     calls = message.get("tool_calls")
-    size = len([item for item in calls if isinstance(item, dict)]) if isinstance(calls, list) else 0
-    _ACTIVE_TOOL_ROUND_SIZE.set(size)
-    return size
+    signatures: list[str] = []
+    if isinstance(calls, list):
+        for item in calls:
+            if not isinstance(item, dict):
+                continue
+            function = item.get("function")
+            if not isinstance(function, dict):
+                continue
+            name = str(function.get("name") or "")
+            if not name:
+                continue
+            signatures.append(_call_signature(name, function.get("arguments") or {}))
+    state = (len(signatures), tuple(signatures))
+    _ACTIVE_TOOL_ROUND.set(state)
+    return state[0]
 
 
 def active_tool_round_size() -> int:
-    """Return the request-local number of calls in the current model round."""
+    """Return the total current model round size while calls remain unclaimed."""
 
-    return max(0, int(_ACTIVE_TOOL_ROUND_SIZE.get()))
+    total, remaining = _ACTIVE_TOOL_ROUND.get()
+    return max(0, int(total)) if remaining else 0
 
 
 def model_evidence_review_active() -> bool:
-    """True while executing calls emitted by a model tool round."""
+    """True while at least one exact model-emitted tool call remains unclaimed."""
 
     return active_tool_round_size() > 0
+
+
+def claim_model_tool_call(name: str, arguments: dict[str, Any]) -> int:
+    """Claim one exact model-emitted call and return its original round size.
+
+    Non-model executions return zero and do not consume unrelated state. The
+    immutable replacement prevents mutable ContextVar values from leaking across
+    copied async contexts.
+    """
+
+    total, remaining = _ACTIVE_TOOL_ROUND.get()
+    if not remaining:
+        return 0
+    signature = _call_signature(name, arguments)
+    try:
+        index = remaining.index(signature)
+    except ValueError:
+        return 0
+    next_remaining = remaining[:index] + remaining[index + 1 :]
+    _ACTIVE_TOOL_ROUND.set((total, next_remaining))
+    return max(0, int(total))
 
 
 def should_defer_deterministic_presentation(
     tool_name: str,
     data: Any,
+    *,
+    round_size: int | None = None,
 ) -> bool:
     """Defer only a multi-call presenter's early return.
 
@@ -96,7 +158,8 @@ def should_defer_deterministic_presentation(
     active model tool round.
     """
 
-    if active_tool_round_size() <= 1 or tool_name not in _MULTI_CALL_PRESENTER_TOOLS:
+    size = active_tool_round_size() if round_size is None else max(0, int(round_size))
+    if size <= 1 or tool_name not in _MULTI_CALL_PRESENTER_TOOLS:
         return False
     if tool_name == "homebrain_control_devices" and isinstance(data, dict):
         choices = data.get("choices")
@@ -109,6 +172,7 @@ __all__ = [
     "EVIDENCE_REVIEW_INSTRUCTION",
     "FINAL_SYNTHESIS_INSTRUCTION",
     "active_tool_round_size",
+    "claim_model_tool_call",
     "model_evidence_review_active",
     "observe_assistant_message",
     "should_defer_deterministic_presentation",
