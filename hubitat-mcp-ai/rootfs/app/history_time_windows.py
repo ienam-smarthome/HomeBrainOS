@@ -186,8 +186,10 @@ def resolve_history_window(
     *,
     now: datetime,
 ) -> HistoryWindow | None:
-    """Resolve a parsed request into exact local-time boundaries."""
+    """Resolve a parsed request, falling back to the request-scoped prompt window."""
 
+    if not isinstance(request, dict):
+        request = active_history_window_request()
     if not isinstance(request, dict):
         return None
     local_now = _local_now(now)
