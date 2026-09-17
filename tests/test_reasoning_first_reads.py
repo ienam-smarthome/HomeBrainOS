@@ -233,29 +233,41 @@ async def test_non_causal_history_gets_grounded_synthesis_round() -> None:
 
 
 @pytest.mark.asyncio
-async def test_causal_bypass_nudges_the_model_to_check_a_correlated_sensor() -> None:
+async def test_causal_history_uses_generic_evidence_contract_not_sensor_hunt() -> None:
+    """0.10.454: causal reads share the generic bounded reasoning contract.
+
+    The legacy hint explicitly told the model to hunt related room sensors and
+    caused 19-call/76-second live investigations. The orchestrator may still
+    append that compatibility message internally, but transport policy must
+    remove it before the provider sees the turn and retain the current-turn
+    evidence boundary plus the generic tool-result review contract.
+    """
+
     mcp = ReasoningModeMCP()
     ai = FakeAI([
         {"message": {"role": "assistant", "tool_calls": [_device_history_call()]}},
-        {"message": {"role": "assistant", "content": "Likely a motion-timeout automation."}},
+        {"message": {"role": "assistant", "content": "The event history alone does not prove the cause."}},
     ])
     agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
 
     await agent.process_user_request_result(
         "why did the shower light turn off this morning?",
-        session_id="reasoning-mode-causal-hint",
+        session_id="reasoning-mode-causal-generic",
     )
 
     assert len(ai.requests) >= 2
     second_round_messages = ai.requests[1][1]["json"]["messages"]
-    hint_messages = [
-        message.get("content", "")
+    rendered = "\n".join(
+        str(message.get("content") or "") for message in second_round_messages
+    )
+    assert "HOST CAUSAL-INVESTIGATION HINT" not in rendered
+    assert "CURRENT-TURN EVIDENCE BOUNDARY" in rendered
+    tool_messages = [
+        str(message.get("content") or "")
         for message in second_round_messages
-        if message.get("role") == "user"
+        if message.get("role") == "tool"
     ]
-    assert any(
-        "HOST CAUSAL-INVESTIGATION HINT" in content for content in hint_messages
-    ), "the model must be explicitly nudged to check a correlated sensor"
+    assert any("HOST EVIDENCE-REVIEW CONTRACT" in content for content in tool_messages)
 
 
 def test_hub_info_tool_description_advertises_zigbee_and_zwave_radio_status() -> None:
