@@ -322,6 +322,69 @@ def test_rule_verification_rejects_component_level_partial_results(field, value)
     assert ConfirmedActionCoordinator.verified_rule_execution(execution) is False
 
 
+def test_required_expression_write_requires_explicit_applied_acknowledgement():
+    arguments = _rule_arguments("Big Lamp Auto-Off (2am-6am)")
+    arguments["args"]["addRequiredExpression"] = {
+        "capability": "Certain Time (and optional date)",
+    }
+    healthy_only = _execution(
+        "hub_manage_rule_machine",
+        arguments,
+        {"success": True, "appId": 4202, "health": {"ok": True}},
+        success=True,
+    )
+    acknowledged = _execution(
+        "hub_manage_rule_machine",
+        arguments,
+        {
+            "success": True,
+            "appId": 4203,
+            "health": {"ok": True},
+            "requiredExpressionApplied": True,
+        },
+        success=True,
+    )
+
+    assert ConfirmedActionCoordinator.verified_rule_execution(
+        healthy_only, arguments
+    ) is False
+    assert ConfirmedActionCoordinator.verified_rule_execution(
+        acknowledged, arguments
+    ) is True
+
+
+@pytest.mark.asyncio
+async def test_required_expression_without_ack_is_reported_unverified():
+    gateway = "hub_manage_rule_machine"
+    arguments = _rule_arguments("Big Lamp Auto-Off (2am-6am)")
+    arguments["args"]["addRequiredExpression"] = {
+        "capability": "Certain Time (and optional date)",
+    }
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            arguments,
+            {"success": True, "appId": 4202, "health": {"ok": True}},
+            success=True,
+        )
+    ])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("unverified Rule Machine writes must not use AI reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True), executor, unexpected_chat, lambda: None
+    )
+
+    report = await coordinator.resume(
+        _pending([(gateway, arguments)]), _catalog(gateway)
+    )
+
+    assert "not fully completed" in report
+    assert "required expression was applied" in report
+    assert "reported it healthy" not in report
+
+
 @pytest.mark.asyncio
 async def test_verified_rule_records_verification_duration_without_failure():
     gateway = "hub_manage_rule_machine"

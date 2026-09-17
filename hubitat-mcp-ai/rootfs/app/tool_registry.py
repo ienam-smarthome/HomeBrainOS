@@ -341,12 +341,20 @@ def rule_machine_proposal_error(
             "model. HomeBrain adds upstream approval only after the user confirms. "
             "No action was queued or executed."
         )
-    if "requiredExpression" in payload:
+    invalid_required_expression_fields = [
+        str(key)
+        for key in payload
+        if "requiredexpression" in re.sub(r"[^a-z]", "", str(key).casefold())
+        and key not in {"addRequiredExpression", "replaceRequiredExpression"}
+    ]
+    if invalid_required_expression_fields:
+        invalid_fields = ", ".join(sorted(invalid_required_expression_fields))
         return (
-            "Invalid Rule Machine proposal: requiredExpression is not a supported "
-            "hub_set_rule field. Use addRequiredExpression when creating a rule "
-            "or replaceRequiredExpression when editing one, using the exact shape "
-            "returned by live discovery. No action was queued or executed."
+            f"Invalid Rule Machine proposal: {invalid_fields} is not a supported "
+            "required-expression field. Only addRequiredExpression when creating "
+            "a rule or replaceRequiredExpression when editing one is accepted, "
+            "using the exact shape returned by live discovery. No action was "
+            "queued or executed."
         )
     app_id = payload.get("appId")
     if app_id in {None, ""} and not str(payload.get("name") or "").strip():

@@ -80,12 +80,22 @@ def test_incomplete_rule_machine_proposals_fail_before_confirmation():
     ) is None
 
 
-def test_required_expression_alias_is_rejected_before_confirmation():
+@pytest.mark.parametrize(
+    "invalid_field",
+    [
+        "requiredExpression",
+        "requiredExpressions",
+        "required_expression",
+        "addRequiredExpressions",
+        "replaceRequiredExpressions",
+    ],
+)
+def test_required_expression_alias_is_rejected_before_confirmation(invalid_field):
     proposal = {
         "tool": "hub_set_rule",
         "args": {
             "name": "Big Lamp Auto-Off After 2AM",
-            "requiredExpression": {
+            invalid_field: {
                 "conditions": [{
                     "capability": "Between two times",
                     "startTime": "02:00",
@@ -109,9 +119,31 @@ def test_required_expression_alias_is_rejected_before_confirmation():
     error = rule_machine_proposal_error("hub_manage_rule_machine", proposal)
 
     assert error is not None
-    assert "requiredExpression is not a supported" in error
+    assert f"{invalid_field} is not a supported" in error
     assert "addRequiredExpression" in error
     assert "No action was queued or executed" in error
+
+
+@pytest.mark.parametrize(
+    "valid_field", ["addRequiredExpression", "replaceRequiredExpression"]
+)
+def test_documented_required_expression_fields_are_not_rejected(valid_field):
+    identity = (
+        {"appId": "4202"}
+        if valid_field == "replaceRequiredExpression"
+        else {"name": "Big Lamp Auto-Off After 2AM"}
+    )
+    proposal = {
+        "tool": "hub_set_rule",
+        "args": {
+            **identity,
+            valid_field: {"discover": True},
+        },
+    }
+
+    assert rule_machine_proposal_error(
+        "hub_manage_rule_machine", proposal
+    ) is None
 
 
 def test_observed_multi_time_rule_is_rejected_before_confirmation():

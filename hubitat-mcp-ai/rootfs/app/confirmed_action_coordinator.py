@@ -88,8 +88,25 @@ class ConfirmedActionCoordinator:
             data = nested
         return data if isinstance(data, dict) else {}
 
+    @staticmethod
+    def _requests_required_expression(arguments: dict[str, Any] | None) -> bool:
+        if not isinstance(arguments, dict):
+            return False
+        payload = arguments.get("args")
+        if not isinstance(payload, dict):
+            return False
+        envelope = payload.get("args")
+        source = envelope if isinstance(envelope, dict) else payload
+        return bool(
+            {"addRequiredExpression", "replaceRequiredExpression"}.intersection(source)
+        )
+
     @classmethod
-    def verified_rule_execution(cls, execution: ToolExecution | Any) -> bool:
+    def verified_rule_execution(
+        cls,
+        execution: ToolExecution | Any,
+        arguments: dict[str, Any] | None = None,
+    ) -> bool:
         data = cls.rule_result_data(execution)
         health = data.get("health") if isinstance(data.get("health"), dict) else {}
         incomplete = (
@@ -98,17 +115,26 @@ class ConfirmedActionCoordinator:
             or bool(data.get("partialActions"))
             or bool(data.get("repairHints"))
         )
+        expression_verified = (
+            not cls._requests_required_expression(arguments)
+            or data.get("requiredExpressionApplied") is True
+        )
         return (
             bool(getattr(execution, "success", False))
             and data.get("success") is True
             and (data.get("appId") or data.get("ruleId")) not in {None, ""}
             and not incomplete
             and health.get("ok") is True
+            and expression_verified
         )
 
-    def _record_rule_verification(self, execution: ToolExecution | Any) -> bool:
+    def _record_rule_verification(
+        self,
+        execution: ToolExecution | Any,
+        arguments: dict[str, Any],
+    ) -> bool:
         started = self._clock()
-        verified = self.verified_rule_execution(execution)
+        verified = self.verified_rule_execution(execution, arguments)
         add_active_metric_ms("verification", (self._clock() - started) * 1000)
         if not verified:
             increment_active_metric("mutation_verification_failures")
@@ -163,7 +189,7 @@ class ConfirmedActionCoordinator:
                 last_created_name = name
             data = cls.rule_result_data(execution)
             app_id = data.get("appId") or data.get("ruleId")
-            if cls.verified_rule_execution(execution):
+            if cls.verified_rule_execution(execution, arguments):
                 if is_self_pause:
                     lines.append(
                         f"- **{name}** was paused immediately after its "
@@ -183,6 +209,12 @@ class ConfirmedActionCoordinator:
                 or data.get("repairHints")
                 or data.get("partialTriggers")
                 or data.get("partialActions")
+                or (
+                    "the hub did not confirm that the required expression was applied"
+                    if cls._requests_required_expression(arguments)
+                    and data.get("requiredExpressionApplied") is not True
+                    else None
+                )
                 or (
                     str(error)
                     if error is not None
@@ -394,7 +426,7 @@ class ConfirmedActionCoordinator:
                 "content": execution.content,
             })
             if tool_name == self.RULE_GATEWAY:
-                verified = self._record_rule_verification(execution)
+                verified = self._record_rule_verification(execution, approved_arguments)
                 if not verified:
                     break
                 if is_create:
