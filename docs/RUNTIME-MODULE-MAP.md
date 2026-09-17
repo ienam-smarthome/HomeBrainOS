@@ -7,6 +7,7 @@ The repository drift test compares this table directly with the live directory. 
 | Module | Role |
 | --- | --- |
 | `agent_prompt_policy.py` | Builds the system prompt and optional identity manifests. |
+| `aggregate_fallback_policy.py` | Keeps generic value/valueStr aggregate fallbacks request-local and suppresses them after complete non-empty canonical meter evidence. |
 | `api_response_builder.py` | Builds the stable API response and presented metrics. |
 | `app.py` | Owns FastAPI routes, configuration, shared services, and request coordination. |
 | `automation_ideas_service.py` | Asks the model for grounded, creative new-automation suggestions (never factual claims). |

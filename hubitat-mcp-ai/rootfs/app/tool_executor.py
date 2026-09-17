@@ -10,6 +10,10 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from aggregate_fallback_policy import (
+    blocked_generic_fallback,
+    observe_aggregate_result,
+)
 from evidence_recorder import EvidenceRecorder
 from history_temporal_analysis import history_temporal_evidence_details
 from location_privacy import redact_precise_location
@@ -242,6 +246,35 @@ class ToolExecutor:
         handler = self.local_handlers.get(name)
         remote = handler is None
 
+        # A generic value/valueStr aggregate is an expensive fallback path because
+        # those fields are not part of hubitat://context and therefore require the
+        # complete detailed inventory. Once this request already has a complete,
+        # non-empty canonical power/energy aggregate, do not let the model discard
+        # it and pay ~30 seconds to ask the same question through a generic field.
+        # The guard is current-request structural state, not prompt wording.
+        fallback_reason = (
+            blocked_generic_fallback(name, safe_arguments)
+            if reasoning_round_size > 0 and not effect.mutates
+            else None
+        )
+        if fallback_reason is not None:
+            logger.info("Skipped redundant aggregate fallback %s", name)
+            return ToolExecution(
+                name=name,
+                arguments=receipt_arguments,
+                effect=effect,
+                success=True,
+                elapsed_ms=0,
+                content=json.dumps(
+                    {
+                        "note": fallback_reason,
+                        "host_instruction": FINAL_SYNTHESIS_INSTRUCTION,
+                    },
+                    ensure_ascii=False,
+                ),
+                result=None,
+            )
+
         # Only exact native model-emitted calls participate in the generic read
         # budget. Pre-model discovery, deterministic direct reads, confirmations,
         # and verification calls have reasoning_round_size == 0 and are unchanged.
@@ -288,6 +321,8 @@ class ToolExecutor:
             elapsed_ms = round((self._clock() - started) * 1000)
             self._record_execution_metrics(name, elapsed_ms, remote=remote)
             success = self.succeeded(result)
+            if success:
+                observe_aggregate_result(name, receipt_arguments, result)
             if record_evidence:
                 self.evidence.record(
                     name,

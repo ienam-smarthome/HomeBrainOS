@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any
 
 from history_temporal_analysis import guard_history_duration_claim
 from technical_metrics_presenter import (
     present_request_metrics,
     present_request_outcome,
+)
+
+
+_NO_HISTORY_DATA = re.compile(
+    r"\b(?:no\s+(?:recorded\s+)?data|no\s+history|no\s+(?:recorded\s+)?events?|"
+    r"nothing\s+(?:was\s+)?recorded)\b",
+    re.I,
 )
 
 
@@ -21,23 +29,110 @@ def _participating_model(metrics: dict[str, Any], model: str) -> str | None:
     return str(model) if model_rounds > 0 else None
 
 
+def _mark_history_correction(receipt: dict[str, Any]) -> None:
+    details = receipt.get("details")
+    if isinstance(details, dict):
+        details["finalAnswerCorrectionApplied"] = True
+
+
+def _history_absence_replacement(receipt: dict[str, Any]) -> str | None:
+    """Return a compact deterministic correction for a false no-history claim."""
+
+    details = receipt.get("details")
+    if not isinstance(details, dict):
+        return None
+    temporal = details.get("temporalAnalysis")
+    if not isinstance(temporal, dict):
+        return None
+    try:
+        interval_count = int(temporal.get("intervalCount") or 0)
+    except (TypeError, ValueError):
+        return None
+    if interval_count <= 0:
+        return None
+
+    label = str(details.get("label") or "").strip()
+    duration = str(temporal.get("totalActiveDuration") or "").strip()
+    lower_bound = bool(temporal.get("totalIsLowerBound"))
+    noun = "interval" if interval_count == 1 else "intervals"
+    qualifier = "at least " if lower_bound and duration else ""
+    if duration:
+        return (
+            f"{label} has recorded history in this evidence: {interval_count} active "
+            f"{noun} totaling {qualifier}{duration}."
+        )
+    return f"{label} has recorded history in this evidence: {interval_count} active {noun}."
+
+
+def _guard_history_absence_claims(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Correct a named no-data claim contradicted by current-turn history proof.
+
+    This guard is intentionally narrow. It only edits a sentence that both names
+    the exact history device and contains an explicit no-data/no-history phrase,
+    and only when that same request has deterministic temporal proof of one or
+    more active intervals for the device. It does not infer anything from prior
+    conversation or from unrelated receipts.
+    """
+
+    text = str(message or "")
+    receipts = [
+        receipt
+        for receipt in evidence
+        if isinstance(receipt, dict)
+        and receipt.get("tool") == "homebrain_device_history"
+        and receipt.get("success") is True
+        and isinstance(receipt.get("details"), dict)
+    ]
+    if not receipts or not _NO_HISTORY_DATA.search(text):
+        return text, False
+
+    # Split only on sentence whitespace so formatting/newlines are preserved well
+    # enough for the WebUI while keeping the replacement local to the contradiction.
+    pieces = re.split(r"(?<=[.!?])(?P<space>\s+)", text)
+    changed = False
+    for index in range(0, len(pieces), 2):
+        sentence = pieces[index]
+        if not _NO_HISTORY_DATA.search(sentence):
+            continue
+        comparable = re.sub(r"[*_`]", "", sentence).casefold()
+        for receipt in receipts:
+            details = receipt.get("details") or {}
+            label = str(details.get("label") or "").strip()
+            if not label or label.casefold() not in comparable:
+                continue
+            replacement = _history_absence_replacement(receipt)
+            if replacement is None:
+                continue
+            pieces[index] = replacement
+            _mark_history_correction(receipt)
+            changed = True
+            break
+    return "".join(pieces), changed
+
+
 def _guard_history_message(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> str:
     """Keep the serialized answer consistent with deterministic history proof."""
 
-    corrected, applied = guard_history_duration_claim(message, evidence)
-    if applied:
+    corrected, absence_applied = _guard_history_absence_claims(message, evidence)
+    corrected, duration_applied = guard_history_duration_claim(corrected, evidence)
+    if duration_applied:
         for receipt in evidence:
             if not isinstance(receipt, dict):
                 continue
             if receipt.get("tool") != "homebrain_device_history":
                 continue
-            details = receipt.get("details")
-            if isinstance(details, dict):
-                details["finalAnswerCorrectionApplied"] = True
+            if isinstance(receipt.get("details"), dict):
+                _mark_history_correction(receipt)
                 break
+    # Keep the local variable explicit so future guards can share this boundary
+    # without losing whether any serializer-side correction happened.
+    _ = absence_applied or duration_applied
     return corrected
 
 
