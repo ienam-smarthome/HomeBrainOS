@@ -1,19 +1,20 @@
 """Deterministic semantic time windows for device-history questions.
 
 The model decides that device history is needed, but calendar phrases such as
-"last night" must not be left to free-form model arithmetic.  This module
+"last night" must not be left to free-form model arithmetic. This module
 recognises a deliberately small, auditable vocabulary and resolves it against
 the add-on's local timezone into explicit aware datetimes.
 
 The stable policy for ``last night`` is 18:00 on the previous local calendar
 day through 08:00 today, capped at ``now`` when that overnight window is still
-in progress.  Explicit ``between X and Y`` clock ranges override that default
+in progress. Explicit ``between X and Y`` clock ranges override that default
 and are resolved to yesterday/today/last-night when those anchors are present,
 or to the most recent started occurrence otherwise.
 """
 
 from __future__ import annotations
 
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 import math
@@ -28,6 +29,10 @@ _BETWEEN = re.compile(
     rf"\bbetween\s+(?P<start>{_CLOCK_TOKEN})\s+(?:and|to)\s+"
     rf"(?P<end>{_CLOCK_TOKEN})\b",
     re.I,
+)
+_ACTIVE_HISTORY_WINDOW: ContextVar[dict[str, Any] | None] = ContextVar(
+    "homebrain_history_time_window",
+    default=None,
 )
 
 
@@ -47,6 +52,21 @@ class HistoryWindow:
             "end": self.end.isoformat(),
             "ongoing": self.ongoing,
         }
+
+
+def set_history_window_request(request: dict[str, Any] | None) -> Token:
+    """Bind one parsed semantic window to the current async request context."""
+
+    return _ACTIVE_HISTORY_WINDOW.set(dict(request) if isinstance(request, dict) else None)
+
+
+def reset_history_window_request(token: Token) -> None:
+    _ACTIVE_HISTORY_WINDOW.reset(token)
+
+
+def active_history_window_request() -> dict[str, Any] | None:
+    value = _ACTIVE_HISTORY_WINDOW.get()
+    return dict(value) if isinstance(value, dict) else None
 
 
 def _local_now(now: datetime) -> datetime:
@@ -76,7 +96,7 @@ def _parse_clock(value: str) -> time | None:
         if ampm == "pm":
             hour += 12
     else:
-        # Bare "10" is too ambiguous for a deterministic clock range.  A
+        # Bare "10" is too ambiguous for a deterministic clock range. A
         # colon (10:00) or an explicit am/pm marker is required.
         if minute_text is None or not 0 <= hour <= 23:
             return None
@@ -210,6 +230,8 @@ def resolve_history_window(
 
     if anchor == "yesterday":
         start, end = _range_from_start(today - timedelta(days=1), start_clock, end_clock)
+        if start > local_now:
+            return None
         return HistoryWindow(kind, label, start, min(end, local_now), end > local_now)
 
     if anchor == "today":
@@ -260,7 +282,10 @@ def required_history_hours(window: HistoryWindow, *, now: datetime) -> int:
 
 __all__ = [
     "HistoryWindow",
+    "active_history_window_request",
     "parse_history_window_request",
     "required_history_hours",
+    "reset_history_window_request",
     "resolve_history_window",
+    "set_history_window_request",
 ]
