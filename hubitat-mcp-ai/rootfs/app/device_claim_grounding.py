@@ -5,9 +5,9 @@ tool call succeeded this turn, never that it actually backs the specific
 device the final answer names -- a model that reads Device A's live state
 could still answer a question about Device B and pass that check untouched.
 This module adds one further, narrow check on top of it: when the final
-answer names a specific device (matched against the known inventory label)
-and this turn's successful evidence receipts carry a *different* device's
-id, the claim is not grounded for that device.
+answer names a specific device (matched against a known inventory or
+request-local evidence label) and this turn's successful evidence receipts
+carry a *different* device's id, the claim is not grounded for that device.
 
 This deliberately does not attempt full claim-to-evidence verification
 (extracting every factual statement in the answer and matching each one to
@@ -22,6 +22,12 @@ when:
     relevant guard, not this one), or
   - the named device's id *is* among this turn's evidence.
 
+The final-answer path must not perform a fresh full-device inventory read just
+to run this auxiliary guard. ``extract_tool_message_device_identities`` derives
+bounded device id/label pairs from tool results already present in the model
+transcript. Callers can combine those with an already-populated inventory cache
+without adding Hubitat I/O after synthesis.
+
 Known limitation: label matching is a plain case-insensitive whole-word
 search over the final answer text, not an understanding of which clauses
 are factual claims. An answer that merely *mentions* another device for
@@ -34,6 +40,7 @@ harmless even when the mention was incidental.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -55,6 +62,8 @@ DEVICE_CLAIM_REFUSAL = (
 
 _DEVICE_ID_KEYS = ("deviceId", "device_id", "id")
 _MIN_LABEL_LENGTH = 3
+_MAX_TOOL_IDENTITY_NODES = 300
+_MAX_TOOL_IDENTITY_LIST_ITEMS = 50
 
 
 class DeviceClaimAction(str, Enum):
@@ -109,6 +118,65 @@ def extract_receipt_device_ids(receipts: list[dict[str, Any]]) -> set[str]:
             continue
         _walk(receipt.get("arguments"))
     return ids
+
+
+def extract_tool_message_device_identities(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Return bounded id/label pairs already present in tool-result messages.
+
+    Tool results such as ``homebrain_device_history`` and
+    ``homebrain_resolve_device`` include the resolved stable device id and label
+    in their structured result. Those identities are sufficient to validate the
+    common named-device final answer without forcing ``get_cached_devices()`` to
+    refresh the complete Hubitat inventory after the model has already finished.
+
+    Only dictionaries that contain both a scalar device id and an explicit
+    ``label`` are accepted. Naked ids and generic ``name`` fields are ignored so
+    event attributes (for example ``name='switch'``) cannot accidentally become
+    device identities. Traversal is deliberately bounded because provider-bound
+    tool results can contain nested event arrays.
+    """
+
+    identities: dict[str, dict[str, str]] = {}
+    visited = 0
+
+    def _walk(node: Any) -> None:
+        nonlocal visited
+        if visited >= _MAX_TOOL_IDENTITY_NODES:
+            return
+        visited += 1
+        if isinstance(node, dict):
+            device_id = next(
+                (
+                    normalized
+                    for key in _DEVICE_ID_KEYS
+                    if (normalized := _normalize_id(node.get(key))) is not None
+                ),
+                None,
+            )
+            label = str(node.get("label") or "").strip()
+            if device_id and len(label) >= _MIN_LABEL_LENGTH:
+                identities.setdefault(device_id, {"id": device_id, "label": label})
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for item in node[:_MAX_TOOL_IDENTITY_LIST_ITEMS]:
+                _walk(item)
+
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        payload: Any = message.get("content")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+        _walk(payload)
+        if visited >= _MAX_TOOL_IDENTITY_NODES:
+            break
+    return list(identities.values())
 
 
 def find_named_device_mismatch(
@@ -204,5 +272,6 @@ __all__ = [
     "DeviceClaimDecision",
     "DeviceClaimGroundingPolicy",
     "extract_receipt_device_ids",
+    "extract_tool_message_device_identities",
     "find_named_device_mismatch",
 ]

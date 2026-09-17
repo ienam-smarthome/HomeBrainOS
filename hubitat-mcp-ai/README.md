@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.448**.
+Current add-on version: **0.10.449**.
 
 ## Architecture
 
@@ -197,6 +197,15 @@ old unmatched boundary event from turning a complete overnight duration into an
 unnecessary lower-bound answer, while preserving the deeper lookup used for true
 “last occurrence” questions. Reported transitions are still treated as evidence
 of what changed, never as proof of who or what caused the change.
+
+Final device-claim grounding is deliberately non-blocking with respect to the
+Hubitat inventory. After synthesis, the agent validates named-device claims using
+id/label pairs already present in this turn's structured tool results plus any
+detailed manifest that is already cached. It never refreshes the complete device
+manifest solely for that auxiliary final-answer check. This preserves the mismatch
+retry/refusal guard when the relevant identities are already known while avoiding
+a hidden multi-page inventory read after a targeted history or device query has
+otherwise completed.
 
 Resolved device targets preserve structured measurement units from Hubitat and
 supply conservative standard units for common attributes when the gateway omits

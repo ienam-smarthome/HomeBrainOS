@@ -23,6 +23,7 @@ from device_claim_grounding import (
     DeviceClaimAction,
     DeviceClaimGroundingPolicy,
     extract_receipt_device_ids,
+    extract_tool_message_device_identities,
     find_named_device_mismatch,
 )
 from device_control_service import DeviceControlService
@@ -883,9 +884,23 @@ class UnifiedMCPAgent:
                     self.evidence.receipts()
                 )
                 if receipt_device_ids:
+                    # Device-claim grounding is an auxiliary final-answer guard;
+                    # it must not trigger a new complete-inventory read after the
+                    # model has already synthesized its answer. Reuse any detailed
+                    # manifest already cached for another reason and supplement it
+                    # with id/label pairs from this turn's structured tool results.
+                    # The latter covers common targeted reads such as
+                    # homebrain_device_history even when the full cache is empty.
+                    peek_cached = getattr(self.mcp, "peek_cached_devices", None)
+                    known_devices = (
+                        list(peek_cached()) if callable(peek_cached) else []
+                    )
+                    known_devices.extend(
+                        extract_tool_message_device_identities(messages)
+                    )
                     mismatched_label = find_named_device_mismatch(
                         answer,
-                        await self.mcp.get_cached_devices(),
+                        known_devices,
                         receipt_device_ids,
                     )
                     device_claim_decision = device_claim_grounding.decide(

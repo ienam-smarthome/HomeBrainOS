@@ -47,6 +47,7 @@ class TwoDeviceMCP:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.full_manifest_reads = 0
 
     async def list_tools(self) -> list[MCPTool]:
         return [
@@ -59,11 +60,15 @@ class TwoDeviceMCP:
             ),
         ]
 
-    async def get_cached_devices(self) -> list[dict[str, object]]:
+    def peek_cached_devices(self) -> list[dict[str, object]]:
         return [
             {"id": "42", "label": "Kitchen Light"},
             {"id": "77", "label": "Front Door"},
         ]
+
+    async def get_cached_devices(self) -> list[dict[str, object]]:
+        self.full_manifest_reads += 1
+        raise AssertionError("final claim grounding must not refresh the full manifest")
 
     async def call_tool(
         self, name: str, arguments: dict[str, object]
@@ -111,6 +116,7 @@ async def test_answer_naming_a_different_device_than_the_evidence_is_retried_onc
 
     assert outcome.message == "The Kitchen Light is on."
     assert len(ai.requests) == 3
+    assert mcp.full_manifest_reads == 0
     retry_content = ai.requests[2]["json"]["messages"][-1]["content"]
     assert retry_content == DEVICE_CLAIM_RETRY_INSTRUCTION.format(label="Front Door")
 
@@ -131,6 +137,7 @@ async def test_repeated_wrong_device_claim_is_refused_after_one_retry() -> None:
 
     assert outcome.message == DEVICE_CLAIM_REFUSAL.format(label="Front Door")
     assert len(ai.requests) == 3
+    assert mcp.full_manifest_reads == 0
 
 
 @pytest.mark.asyncio
@@ -148,6 +155,7 @@ async def test_answer_naming_the_evidenced_device_is_accepted_immediately() -> N
 
     assert outcome.message == "The Kitchen Light is on."
     assert len(ai.requests) == 2
+    assert mcp.full_manifest_reads == 0
 
 
 @pytest.mark.asyncio
@@ -165,3 +173,80 @@ async def test_answer_naming_no_device_at_all_is_unaffected() -> None:
 
     assert outcome.message == "It is currently on."
     assert len(ai.requests) == 2
+    assert mcp.full_manifest_reads == 0
+
+
+class HistoryIdentityMCP:
+    """History result carries the only device label; no full cache exists."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.full_manifest_reads = 0
+
+    async def list_tools(self) -> list[MCPTool]:
+        return [
+            MCPTool("hub_search_tools", "Search tools", {"type": "object"}),
+            MCPTool("homebrain_device_history", "History", {"type": "object"}),
+        ]
+
+    def peek_cached_devices(self) -> list[dict[str, object]]:
+        return []
+
+    async def get_cached_devices(self) -> list[dict[str, object]]:
+        self.full_manifest_reads += 1
+        raise AssertionError("history synthesis must not load the full device manifest")
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, object]
+    ) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        if name == "hub_search_tools":
+            return MCPToolResult(name, arguments, {}, "", {"results": []})
+        raise AssertionError((name, arguments))
+
+
+@pytest.mark.asyncio
+async def test_history_synthesis_uses_tool_result_identity_without_manifest_refresh() -> None:
+    mcp = HistoryIdentityMCP()
+    ai = SequencedAI([
+        {"message": {
+            "role": "assistant",
+            "tool_calls": [{"function": {
+                "name": "homebrain_device_history",
+                "arguments": {"name": "big lamp", "attribute": "switch", "hours_back": 24},
+            }}],
+        }},
+        {"message": {
+            "role": "assistant",
+            "content": "The Big lamp was on for 4 hours and 29 minutes.",
+        }},
+    ])
+    agent = UnifiedMCPAgent(
+        mcp, "key", "model", ai_client=ai, require_sensitive_confirmation=False
+    )
+
+    async def history(_arguments: dict[str, object]) -> MCPToolResult:
+        data = {
+            "success": True,
+            "deviceId": "7827",
+            "label": "Big lamp",
+            "attribute": "switch",
+            "count": 2,
+            "events": [],
+            "temporalAnalysis": {
+                "totalActiveDuration": "4h 29m",
+                "intervalCount": 5,
+                "coverage": "complete",
+                "totalIsLowerBound": False,
+            },
+        }
+        return MCPToolResult("homebrain_device_history", _arguments, {}, "", data)
+
+    agent.executor.local_handlers["homebrain_device_history"] = history
+    outcome = await agent.process_user_request_result(
+        "How long was big lamp on last night?"
+    )
+
+    assert outcome.message == "The Big lamp was on for 4 hours and 29 minutes."
+    assert len(ai.requests) == 2
+    assert mcp.full_manifest_reads == 0

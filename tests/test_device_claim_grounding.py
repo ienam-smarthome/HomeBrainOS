@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from device_claim_grounding import (  # noqa: E402
     DeviceClaimAction,
     DeviceClaimGroundingPolicy,
     extract_receipt_device_ids,
+    extract_tool_message_device_identities,
     find_named_device_mismatch,
 )
 
@@ -61,6 +63,59 @@ def test_extract_receipt_device_ids_ignores_non_scalar_id_values():
     ]
 
     assert extract_receipt_device_ids(receipts) == set()
+
+
+def test_tool_message_identities_extract_history_result_without_inventory():
+    messages = [{
+        "role": "tool",
+        "tool_name": "homebrain_device_history",
+        "content": json.dumps({
+            "result": {
+                "success": True,
+                "deviceId": "7827",
+                "label": "Big lamp",
+                "events": [{"name": "switch", "value": "off"}],
+            }
+        }),
+    }]
+
+    assert extract_tool_message_device_identities(messages) == [
+        {"id": "7827", "label": "Big lamp"}
+    ]
+
+
+def test_tool_message_identities_extract_nested_resolver_target_and_dedupe():
+    messages = [
+        {
+            "role": "tool",
+            "content": json.dumps({
+                "result": {
+                    "deviceId": "77",
+                    "label": "Front Door",
+                    "target": {"id": "77", "label": "Front Door"},
+                }
+            }),
+        },
+        {
+            "role": "tool",
+            "content": json.dumps({"result": {"id": "77", "label": "Front Door"}}),
+        },
+    ]
+
+    assert extract_tool_message_device_identities(messages) == [
+        {"id": "77", "label": "Front Door"}
+    ]
+
+
+def test_tool_message_identities_ignore_naked_ids_generic_names_and_bad_json():
+    messages = [
+        {"role": "assistant", "content": '{"deviceId":"42","label":"Kitchen Light"}'},
+        {"role": "tool", "content": "not-json"},
+        {"role": "tool", "content": json.dumps({"result": {"deviceId": "42"}})},
+        {"role": "tool", "content": json.dumps({"result": {"id": "9", "name": "switch"}})},
+    ]
+
+    assert extract_tool_message_device_identities(messages) == []
 
 
 def test_named_device_mismatch_is_found_when_evidence_covers_a_different_device():
