@@ -39,6 +39,7 @@ ChatCallback = Callable[
     Awaitable[dict[str, Any]],
 ]
 MutationObserver = Callable[[], None]
+RuleCreatePreflight = Callable[[list[dict[str, Any]]], Awaitable[str | None]]
 Clock = Callable[[], float]
 
 
@@ -54,12 +55,14 @@ class ConfirmedActionCoordinator:
         chat: ChatCallback,
         mark_mutation: MutationObserver,
         *,
+        rule_create_preflight: RuleCreatePreflight | None = None,
         clock: Clock = time.monotonic,
     ) -> None:
         self.confirmation_policy = confirmation_policy
         self.executor = executor
         self._chat = chat
         self._mark_mutation = mark_mutation
+        self._rule_create_preflight = rule_create_preflight
         self._clock = clock
 
     @staticmethod
@@ -427,22 +430,14 @@ class ConfirmedActionCoordinator:
     ) -> str:
         messages = [*pending.messages, pending.assistant_message]
         outcomes: list[tuple[str, dict[str, Any], ToolExecution]] = []
-        # Set once a rule-creation action in this same confirmed group is
-        # executed and verified; substituted into any later action still
-        # carrying NEW_RULE_ID_TOKEN (see RuleAuthoringService._self_pause_
-        # action). A one-time rule's create+pause pair is always queued and
-        # executed together in this one loop, so the id is always resolved
-        # before the action that needs it runs.
-        resolved_new_rule_id: str | None = None
+        # Validate the whole immutable group before executing its first write.
+        # Previously a malformed later item was only discovered after earlier
+        # items had already mutated the hub, creating the exact partial-group
+        # state the confirmation boundary is supposed to prevent.
+        normalized_actions: list[tuple[str, dict[str, Any]]] = []
         for tool_name, raw_arguments in pending.actions:
-            self._mark_mutation()
-            resolved_arguments = (
-                self._substitute_new_rule_id(raw_arguments, resolved_new_rule_id)
-                if resolved_new_rule_id is not None
-                else raw_arguments
-            )
             arguments = normalize_rule_machine_proposal(
-                tool_name, resolved_arguments
+                tool_name, raw_arguments
             )
             proposal_error = rule_machine_proposal_error(tool_name, arguments)
             if proposal_error is not None:
@@ -450,6 +445,32 @@ class ConfirmedActionCoordinator:
                     "The queued Rule Machine action was cancelled because its "
                     f"payload is incomplete. {proposal_error}"
                 )
+            normalized_actions.append((tool_name, arguments))
+        if self._rule_create_preflight is not None:
+            rule_arguments = [
+                arguments
+                for tool_name, arguments in normalized_actions
+                if tool_name == self.RULE_GATEWAY
+            ]
+            duplicate_error = await self._rule_create_preflight(rule_arguments)
+            if duplicate_error is not None:
+                return duplicate_error
+
+        # Set once a rule-creation action in this same confirmed group is
+        # executed and verified; substituted into any later action still
+        # carrying NEW_RULE_ID_TOKEN (see RuleAuthoringService._self_pause_
+        # action). A one-time rule's create+pause pair is always queued and
+        # executed together in this one loop, so the id is always resolved
+        # before the action that needs it runs.
+        resolved_new_rule_id: str | None = None
+        for tool_name, raw_arguments in normalized_actions:
+            self._mark_mutation()
+            resolved_arguments = (
+                self._substitute_new_rule_id(raw_arguments, resolved_new_rule_id)
+                if resolved_new_rule_id is not None
+                else raw_arguments
+            )
+            arguments = resolved_arguments
             tool = catalog.available_tool(tool_name)
             approved_arguments = self.confirmation_policy.approved_arguments(
                 tool_name,

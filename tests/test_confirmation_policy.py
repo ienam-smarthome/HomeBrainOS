@@ -86,6 +86,42 @@ def test_firmware_action_uses_explicit_restart_warning():
     assert "may restart" in str(decision.message)
 
 
+def test_rule_confirmation_describes_name_window_trigger_and_actions():
+    proposed = (
+        "hub_manage_rule_machine",
+        {
+            "tool": "hub_set_rule",
+            "args": {
+                "name": "Big Lamp Auto-Off (Night)",
+                "addRequiredExpression": {
+                    "operator": "AND",
+                    "conditions": [{
+                        "capability": "Between two times",
+                        "start": {"type": "clock", "time": "02:30"},
+                        "end": {"type": "clock", "time": "06:30"},
+                    }],
+                },
+                "addTrigger": {
+                    "capability": "Switch",
+                    "deviceIds": ["7827"],
+                    "state": "on",
+                },
+                "addActions": [
+                    {"capability": "delay", "minutes": 30},
+                    {"capability": "switch", "action": "off", "deviceIds": ["7827"]},
+                ],
+            },
+        },
+    )
+
+    message = ConfirmationPolicy.confirmation_prompt([proposed])
+
+    assert "**Big Lamp Auto-Off (Night)**" in message
+    assert "required time 02:30–06:30" in message
+    assert "1 trigger" in message
+    assert "delay 30 minutes → switch off" in message
+
+
 def test_multiple_actions_use_count_and_sorted_unique_gateway_names():
     decision = ConfirmationPolicy().decide(
         "session",

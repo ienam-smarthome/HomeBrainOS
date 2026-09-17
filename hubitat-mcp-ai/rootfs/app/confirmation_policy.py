@@ -67,6 +67,84 @@ SESSION_REQUIRED = (
 )
 
 
+def _items(
+    payload: dict[str, Any],
+    singular: str,
+    plural: str,
+) -> list[dict[str, Any]]:
+    value = payload.get(singular)
+    if isinstance(value, dict):
+        return [value]
+    values = payload.get(plural)
+    if not isinstance(values, list):
+        return []
+    return [item for item in values if isinstance(item, dict)]
+
+
+def _rule_confirmation_prompt(
+    actions: list[tuple[str, dict[str, Any]]],
+) -> str | None:
+    """Render only facts carried by validated direct hub_set_rule payloads."""
+
+    if not actions or any(
+        name != "hub_manage_rule_machine" for name, _ in actions
+    ):
+        return None
+    summaries: list[str] = []
+    for _, arguments in actions:
+        if arguments.get("tool") != "hub_set_rule":
+            return None
+        payload = arguments.get("args")
+        if not isinstance(payload, dict):
+            return None
+        name = str(payload.get("name") or "").strip()
+        app_id = payload.get("appId")
+        subject = (
+            f"create **{name}**"
+            if name and app_id in {None, ""}
+            else f"edit Rule Machine appId {app_id}"
+        )
+        details: list[str] = []
+        expressions = payload.get("addRequiredExpression")
+        if isinstance(expressions, dict):
+            conditions = expressions.get("conditions")
+            if isinstance(conditions, list):
+                for condition in conditions:
+                    if not isinstance(condition, dict) or str(
+                        condition.get("capability") or ""
+                    ).casefold() != "between two times":
+                        continue
+                    start = condition.get("start")
+                    end = condition.get("end")
+                    if isinstance(start, dict) and isinstance(end, dict):
+                        start_time = start.get("time") or start.get("type")
+                        end_time = end.get("time") or end.get("type")
+                        details.append(f"required time {start_time}–{end_time}")
+        triggers = _items(payload, "addTrigger", "addTriggers")
+        if triggers:
+            plural = "s" if len(triggers) != 1 else ""
+            details.append(f"{len(triggers)} trigger{plural}")
+        rendered_actions: list[str] = []
+        for action in _items(payload, "addAction", "addActions"):
+            capability = str(action.get("capability") or "")
+            if (
+                capability.casefold() == "delay"
+                and action.get("minutes") is not None
+            ):
+                rendered_actions.append(f"delay {action['minutes']} minutes")
+            elif capability.casefold() == "switch":
+                rendered_actions.append(f"switch {action.get('action')}")
+            elif capability == "runCommand":
+                rendered_actions.append(f"run {action.get('command')}")
+            elif capability:
+                rendered_actions.append(capability)
+        if rendered_actions:
+            details.append("then " + " → ".join(rendered_actions))
+        suffix = " (" + "; ".join(details) + ")" if details else ""
+        summaries.append(subject + suffix)
+    return "Please confirm this Rule Machine change: " + "; ".join(summaries) + "."
+
+
 class ConfirmationAction(str, Enum):
     """Outcome for one proposed sensitive-action group."""
 
@@ -145,6 +223,9 @@ class ConfirmationPolicy:
     ) -> str:
         """Build stable confirmation wording for one validated group."""
 
+        rule_prompt = _rule_confirmation_prompt(actions)
+        if rule_prompt is not None:
+            return rule_prompt
         names = sorted({str(name) for name, _ in actions if str(name)})
         if len(actions) == 1:
             if names == [HUB_UPDATE_FIRMWARE_TOOL]:

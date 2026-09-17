@@ -230,7 +230,8 @@ class UnifiedMCPAgent:
             self.confirmation_policy,
             self.executor,
             self._chat,
-            lambda: self._mutation_call_seen.set(True),
+            self._mark_mutation,
+            rule_create_preflight=self.rule_authoring.duplicate_create_group_error,
         )
         self._rule_proposal_confirmation = RuleProposalConfirmation(
             self.confirmation_policy,
@@ -248,6 +249,16 @@ class UnifiedMCPAgent:
     @property
     def _pending(self) -> dict[str, PendingConfirmation]:
         return self.confirmations.pending
+
+    def _invalidate_app_manifest(self) -> None:
+        """Drop cached app/rule identities whenever the hub may have changed."""
+
+        self._app_manifest = []
+        self._app_manifest_at = 0.0
+
+    def _mark_mutation(self) -> None:
+        self._mutation_call_seen.set(True)
+        self._invalidate_app_manifest()
 
     @property
     def api_key(self) -> str:
@@ -1015,7 +1026,7 @@ class UnifiedMCPAgent:
                 if proposal_error is not None and effect.mutates:
                     proposal_errors.append((name, proposal_error))
                 if effect.mutates:
-                    self._mutation_call_seen.set(True)
+                    self._mark_mutation()
                 if (
                     tool
                     and self.confirmation_policy.requires_confirmation(effect)
@@ -1069,6 +1080,15 @@ class UnifiedMCPAgent:
                         "content": json.dumps({"error": content}),
                     })
                 continue
+            rule_create_error = (
+                await self.rule_authoring.duplicate_create_group_error([
+                    arguments
+                    for name, arguments in round_actions
+                    if name == ConfirmedActionCoordinator.RULE_GATEWAY
+                ])
+            )
+            if rule_create_error is not None:
+                return rule_create_error
             if sensitive:
                 last_proposal_error = None
                 # Confirmation wording and the max-actions bound are judged
@@ -1156,7 +1176,7 @@ class UnifiedMCPAgent:
                         evidence_kind=_EVIDENCE_KINDS.get(name, "tool_result"),
                     )
                     if execution.effect.mutates:
-                        self._mutation_call_seen.set(True)
+                        self._mark_mutation()
                     content = execution.content
                     result = execution.result
                     grounding.record_tool_outcome(
