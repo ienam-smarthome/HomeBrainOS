@@ -17,7 +17,9 @@ from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from reasoning_policy import (
     EVIDENCE_REVIEW_INSTRUCTION,
+    FINAL_SYNTHESIS_INSTRUCTION,
     claim_model_tool_call,
+    register_model_tool_execution,
     should_defer_deterministic_presentation,
 )
 from request_metrics import add_active_metric_ms, increment_active_metric
@@ -79,17 +81,7 @@ class ToolExecutor:
 
     @staticmethod
     def succeeded(result: MCPToolResult) -> bool:
-        """Delegates to the shared mcp_client.tool_succeeded() rather than
-        repeating its own strict `is False` identity check -- this was an
-        independent third copy of the exact same check (alongside
-        device_control_service.py and device_query_service.py's now-shared
-        implementations), and it gates `ToolExecution.success`, which
-        `confirmed_action_coordinator.py` and every other consumer of a
-        `ToolExecution` treats as authoritative. A strict `is False` check
-        never matches a string "false" success flag -- see
-        tool_succeeded()'s own docstring for the fuller history of this bug
-        class across this codebase.
-        """
+        """Delegate to the shared MCP success normalizer."""
 
         return _shared_tool_succeeded(result)
 
@@ -133,8 +125,7 @@ class ToolExecutor:
         # Precise-location attributes (GPS coordinates, street addresses, map
         # tiles, journey logs) are stripped here -- the single point every
         # provider-bound tool message passes through -- before anything is
-        # serialised into the conversation sent to the model. See
-        # location_privacy.py for what is redacted and why.
+        # serialised into the conversation sent to the model.
         safe_data = (
             redact_precise_location(result.data) if result.data is not None else None
         )
@@ -202,9 +193,7 @@ class ToolExecutor:
     async def _backfill_null_generic_value(
         self, name: str, arguments: dict[str, Any], result: MCPToolResult
     ) -> MCPToolResult:
-        """Transparently retry a null 'value' attribute read with 'valueStr'
-        on the same device and merge the reading in. See module docstring
-        above for why this must be deterministic, not prompt-only."""
+        """Retry a null generic value read with valueStr on the same device."""
 
         inner_args = dict(arguments.get("args") or {})
         inner_args["attribute"] = _GENERIC_VALUE_FALLBACK_ATTRIBUTE
@@ -252,6 +241,35 @@ class ToolExecutor:
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)
         remote = handler is None
+
+        # Only exact native model-emitted calls participate in the generic read
+        # budget. Pre-model discovery, deterministic direct reads, confirmations,
+        # and verification calls have reasoning_round_size == 0 and are unchanged.
+        if (
+            reasoning_round_size > 0
+            and not register_model_tool_execution(mutates=effect.mutates)
+        ):
+            logger.info("Skipped model read %s because reasoning budget is exhausted", name)
+            return ToolExecution(
+                name=name,
+                arguments=receipt_arguments,
+                effect=effect,
+                success=True,
+                elapsed_ms=0,
+                content=json.dumps(
+                    {
+                        "note": (
+                            "Not executed: the host read-reasoning budget for this "
+                            "request is exhausted. Synthesize from evidence already "
+                            "gathered."
+                        ),
+                        "host_instruction": FINAL_SYNTHESIS_INSTRUCTION,
+                    },
+                    ensure_ascii=False,
+                ),
+                result=None,
+            )
+
         if effect.mutates:
             self._invalidate_live_device_snapshot()
         started = self._clock()
@@ -272,7 +290,10 @@ class ToolExecutor:
             success = self.succeeded(result)
             if record_evidence:
                 self.evidence.record(
-                    name, receipt_arguments, success=success, elapsed_ms=elapsed_ms,
+                    name,
+                    receipt_arguments,
+                    success=success,
+                    elapsed_ms=elapsed_ms,
                     summary=self.result_summary(result),
                     supports_live_claim=supports_live_claim,
                     evidence_kind=evidence_kind,
@@ -287,10 +308,6 @@ class ToolExecutor:
             # In a multi-tool model round, selected deterministic presenters
             # would otherwise return from the orchestrator after the first call
             # and silently skip every later call in that same native response.
-            # Keep the real result for evidence and provider content, but hide it
-            # only from the legacy presenter branch so the loop can finish the
-            # whole round and then synthesize all gathered evidence. Single-tool
-            # requests retain their direct deterministic fast path.
             presentation_result = (
                 None
                 if should_defer_deterministic_presentation(
@@ -301,8 +318,11 @@ class ToolExecutor:
                 else result
             )
             return ToolExecution(
-                name=name, arguments=receipt_arguments, effect=effect,
-                success=success, elapsed_ms=elapsed_ms,
+                name=name,
+                arguments=receipt_arguments,
+                effect=effect,
+                success=success,
+                elapsed_ms=elapsed_ms,
                 content=self.result_payload(
                     result,
                     reasoning_active=reasoning_round_size > 0,
@@ -314,7 +334,10 @@ class ToolExecutor:
             self._record_execution_metrics(name, elapsed_ms, remote=remote)
             if record_evidence:
                 self.evidence.record(
-                    name, receipt_arguments, success=False, elapsed_ms=elapsed_ms,
+                    name,
+                    receipt_arguments,
+                    success=False,
+                    elapsed_ms=elapsed_ms,
                     summary=f"{type(exc).__name__}: {str(exc)[:140]}",
                     supports_live_claim=supports_live_claim,
                     evidence_kind=evidence_kind,
@@ -325,9 +348,13 @@ class ToolExecutor:
             if effect.mutates:
                 self._invalidate_live_device_snapshot()
             return ToolExecution(
-                name=name, arguments=receipt_arguments, effect=effect,
-                success=False, elapsed_ms=elapsed_ms,
-                content=json.dumps({"error": str(exc)[:1000]}), error=exc,
+                name=name,
+                arguments=receipt_arguments,
+                effect=effect,
+                success=False,
+                elapsed_ms=elapsed_ms,
+                content=json.dumps({"error": str(exc)[:1000]}),
+                error=exc,
             )
 
 
