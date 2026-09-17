@@ -88,6 +88,7 @@ async def test_history_tool_receipt_exposes_temporal_proof() -> None:
         "label": "Big lamp",
         "attribute": "switch",
         "hoursBack": 24,
+        "timeWindow": None,
         "temporalAnalysis": {
             "activeState": "on",
             "inactiveState": "off",
