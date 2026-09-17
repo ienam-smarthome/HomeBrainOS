@@ -243,6 +243,8 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         return None
 
     temporal_keys = (
+        "activeState",
+        "inactiveState",
         "totalActiveDuration",
         "totalActiveSeconds",
         "intervalCount",
