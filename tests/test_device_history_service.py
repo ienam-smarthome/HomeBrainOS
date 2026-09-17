@@ -338,7 +338,7 @@ async def test_short_name_resolves_prefixed_hyphenated_device_before_history():
             self.calls.append((name, arguments))
             operation = arguments.get("tool")
             if operation == "hub_list_devices":
-                assert arguments.get("args") == {}
+                assert arguments["args"]["labelFilter"] == "tab s9"
                 return MCPToolResult(
                     name, arguments, {}, "ok", {"devices": self.devices}
                 )
@@ -372,9 +372,9 @@ async def test_short_name_resolves_prefixed_hyphenated_device_before_history():
         for name, arguments in mcp.calls
         if arguments.get("tool") == "hub_list_devices"
     ]
-    assert inventory_calls == [
-        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
-    ]
+    assert len(inventory_calls) == 1
+    assert inventory_calls[0][0] == "hub_read_devices"
+    assert inventory_calls[0][1]["args"]["labelFilter"] == "tab s9"
     assert mcp.calls[-1][1]["args"]["deviceId"] == "6916"
 
 

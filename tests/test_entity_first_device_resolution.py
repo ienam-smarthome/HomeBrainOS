@@ -30,7 +30,7 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_named_device_resolution_reads_complete_inventory_without_name_filter() -> None:
+def test_named_device_resolution_uses_targeted_label_filter() -> None:
     devices = [
         {
             "id": "101",
@@ -61,13 +61,25 @@ def test_named_device_resolution_reads_complete_inventory_without_name_filter() 
     assert result.data["label"] == "Bathroom Meter"
     assert result.data["target"]["attributes"]["battery"] == 66
     assert mcp.calls == [
-        ("hub_read_devices", {"tool": "hub_list_devices", "args": {}})
+        (
+            "hub_read_devices",
+            {
+                "tool": "hub_list_devices",
+                "args": {
+                    "labelFilter": "Bathroom Meter",
+                    "fields": [
+                        "id", "name", "label", "room", "capabilities",
+                        "attributes", "commands",
+                    ],
+                },
+            },
+        )
     ]
     assert "filter" not in mcp.calls[0][1]["args"]
     assert result.data["attempts"] == [
-        {"source": "complete_inventory", "count": 2}
+        {"source": "label_filter", "count": 2}
     ]
-    assert evidence[0]["evidence_kind"] == "authoritative_state_snapshot"
+    assert evidence[0]["evidence_kind"] == "targeted_device_lookup"
 
 
 def test_missing_named_device_remains_unmatched_after_complete_scan() -> None:
@@ -82,10 +94,10 @@ def test_missing_named_device_remains_unmatched_after_complete_scan() -> None:
     assert result.data["matched"] is False
     assert result.data["deviceId"] is None
     assert result.data["attempts"][0]["count"] == 1
-    assert mcp.calls[0][1] == {"tool": "hub_list_devices", "args": {}}
+    assert mcp.calls[0][1]["args"]["labelFilter"] == "Bathroom Meter"
 
 
-def test_device_name_is_never_forwarded_as_hubitat_filter() -> None:
+def test_device_name_is_forwarded_only_as_label_filter() -> None:
     source = (
         __import__("pathlib").Path(__file__).resolve().parents[1]
         / "hubitat-mcp-ai"
@@ -97,6 +109,7 @@ def test_device_name_is_never_forwarded_as_hubitat_filter() -> None:
     resolve_block = source.split("async def resolve_device", 1)[1].split(
         "async def query_devices", 1
     )[0]
-    assert '"filter": variant' not in resolve_block
+    assert '"labelFilter": requested' in resolve_block
     assert '"args": {"filter"' not in resolve_block
-    assert "_live_devices(enrich_identity=True)" in resolve_block
+    assert "if bare_attribute" in resolve_block
+    assert resolve_block.count("_live_devices(enrich_identity=True)") == 1

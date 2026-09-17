@@ -10,6 +10,7 @@ def test_each_coverage_counter_maps_to_expected_outcome() -> None:
     cases = {
         "grounding_refusals": "refused",
         "mutation_verification_failures": "failed",
+        "proposal_validation_failures": "failed",
         "device_control_failures": "failed",
         "request_cancellations": "cancelled",
         "confirmation_expired": "unresolved",
@@ -29,6 +30,10 @@ def test_device_control_failure_is_not_masked_as_success() -> None:
     next to a message that said the command failed."""
 
     assert classify_completed_request({"device_control_failures": 1}) == "failed"
+
+
+def test_proposal_validation_failure_is_not_masked_as_success() -> None:
+    assert classify_completed_request({"proposal_validation_failures": 1}) == "failed"
 
 
 def test_outcome_precedence_is_stable_when_multiple_counters_exist() -> None:

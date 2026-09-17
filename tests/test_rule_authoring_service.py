@@ -105,7 +105,10 @@ async def test_compiles_daily_block_window_into_two_atomic_rules(prompt):
         for name, arguments in mcp.calls
         if name == "hub_read_devices"
     ]
-    assert inventory_calls == [{"tool": "hub_list_devices", "args": {}}]
+    assert len(inventory_calls) == 1
+    assert inventory_calls[0]["args"]["labelFilter"].casefold() in {
+        "tab s9", "tab-s9-fe"
+    }
 
 
 @pytest.mark.asyncio
@@ -214,7 +217,8 @@ async def test_scheduled_on_off_resolution_is_unaffected_by_capability_scoping()
     resolve_calls = [
         arguments for name, arguments in mcp.calls if name == "hub_read_devices"
     ]
-    assert resolve_calls == [{"tool": "hub_list_devices", "args": {}}]
+    assert len(resolve_calls) == 1
+    assert resolve_calls[0]["args"]["labelFilter"] == "bedroom 1 lamp"
 
 
 @pytest.mark.asyncio

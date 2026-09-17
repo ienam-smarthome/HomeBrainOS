@@ -44,6 +44,10 @@ ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
 HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 WEATHER_SNAPSHOT_TOOL = "homebrain_weather_snapshot"
 
+_TARGET_RESOLUTION_FIELDS = [
+    "id", "name", "label", "room", "capabilities", "attributes", "commands",
+]
+
 _REQUEST_DEVICE_SNAPSHOT: ContextVar[
     tuple[object, MCPToolResult, list[dict[str, Any]]] | None
 ] = ContextVar("homebrain_request_device_snapshot", default=None)
@@ -535,7 +539,38 @@ class DeviceQueryService:
                 is_error=True,
             )
 
-        source, candidates = await self._live_devices(enrich_identity=True)
+        attribute_key = self._normalized_attribute(
+            self._strip_leading_article(requested)
+        )
+        bare_attribute = attribute_key in self._ATTRIBUTE_ALIASES
+        if bare_attribute:
+            source, candidates = await self._live_devices(enrich_identity=True)
+            attempt_source = "complete_inventory"
+        else:
+            source_arguments = {
+                "tool": "hub_list_devices",
+                "args": {
+                    "labelFilter": requested,
+                    "fields": list(_TARGET_RESOLUTION_FIELDS),
+                },
+            }
+            started = time.monotonic()
+            source = await self.mcp.call_tool("hub_read_devices", source_arguments)
+            candidates = [
+                item
+                for item in (HubitatMCPClient._find_device_list(source.data) or [])
+                if isinstance(item, dict)
+            ]
+            self._record_evidence(
+                "hub_read_devices",
+                source_arguments,
+                success=self._tool_succeeded(source),
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{len(candidates)} targeted device candidates",
+                supports_live_claim=False,
+                evidence_kind="targeted_device_lookup",
+            )
+            attempt_source = "label_filter"
         if not self._tool_succeeded(source):
             return self._read_failure(DEVICE_RESOLVE_TOOL, arguments, source)
 
@@ -561,7 +596,6 @@ class DeviceQueryService:
                 scoped_candidates = capable
 
         resolution = resolve_device_candidate(requested, scoped_candidates)
-        attribute_key = self._normalized_attribute(self._strip_leading_article(requested))
         exact_match_reasons = {
             "exact normalized name",
             "exact semantic room and device name",
@@ -611,8 +645,8 @@ class DeviceQueryService:
             "confidence": resolution.confidence,
             "reason": resolution.reason,
             "alternatives": list(resolution.alternatives),
-            "attempts": [{"source": "complete_inventory", "count": len(candidates)}],
-            "complete": True,
+            "attempts": [{"source": attempt_source, "count": len(candidates)}],
+            "complete": bare_attribute or target is not None,
         }
         return MCPToolResult(DEVICE_RESOLVE_TOOL, arguments, {}, json.dumps(data), data)
 
