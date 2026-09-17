@@ -1,26 +1,32 @@
 """Deterministic adapter for bounded Hubitat device-event history reads.
 
 The upstream MCP server exposes event history through ``hub_list_device_events``
-inside the read-only device gateway.  This service keeps that wire contract out
+inside the read-only device gateway. This service keeps that wire contract out
 of model-authored JSON: it resolves one named device with the shared targeted
 resolver, applies conservative bounds, and normalises the newest-first event
 rows for the local presenter.
 
-Event rows prove that a state transition was reported.  They do not, by
+Event rows prove that a state transition was reported. They do not, by
 themselves, prove which automation or person caused it, so this module never
 adds causal conclusions.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import time
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
-from history_temporal_analysis import analyze_state_intervals
+from history_temporal_analysis import (
+    analyze_state_intervals,
+    analyze_state_intervals_in_window,
+)
+from history_time_windows import required_history_hours, resolve_history_window
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
+from natural_datetime import normalize_iso_offset
 
 
 DEVICE_HISTORY_TOOL = "homebrain_device_history"
@@ -36,9 +42,12 @@ class DeviceHistoryService:
         self,
         mcp_client: HubitatMCPClient,
         record_evidence: Callable[..., None],
+        *,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self.mcp = mcp_client
         self._record_evidence = record_evidence
+        self._now = now or (lambda: datetime.now().astimezone())
 
     @staticmethod
     def _integer(
@@ -101,18 +110,39 @@ class DeviceHistoryService:
                 break
         return events
 
-    async def location_events(self, arguments: dict[str, Any]) -> MCPToolResult:
-        """Read the hub's own location-scoped event stream (mode changes,
-        sunrise/sunset, HSM, hub variables) -- confirmed live to be the
-        exact same rows the hub's own Logs > Location events page shows.
+    @staticmethod
+    def _event_datetime(value: Any) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(normalize_iso_offset(text))
+        except (TypeError, ValueError):
+            return None
 
-        This is the same ``hub_list_device_events`` operation ``history()``
-        uses for a single device's events, but called with both
-        ``deviceId`` and ``appId`` omitted, which is the documented
-        upstream contract for location events rather than a device- or
-        app-scoped read. No device resolution is needed since this isn't
-        about any one device.
-        """
+    @classmethod
+    def _source_complete_to_window_start(
+        cls,
+        events: list[dict[str, Any]],
+        *,
+        fetch_limit: int,
+        window_start: datetime,
+    ) -> bool:
+        """Whether the returned newest-first page reaches the window boundary."""
+
+        if len(events) < fetch_limit:
+            return True
+        timestamps = [
+            parsed
+            for parsed in (cls._event_datetime(item.get("date")) for item in events)
+            if parsed is not None
+        ]
+        if not timestamps:
+            return False
+        return min(timestamps) <= window_start
+
+    async def location_events(self, arguments: dict[str, Any]) -> MCPToolResult:
+        """Read the hub's own location-scoped event stream."""
 
         hours_back = self._integer(
             arguments.get("hours_back"),
@@ -211,17 +241,6 @@ class DeviceHistoryService:
             minimum=1,
             maximum=50,
         )
-
-        # 0.10.448: only widen an omitted time window to seven days for an
-        # explicitly point-like lookup (the caller supplied a small 1-3
-        # event limit).  0.10.447 widened *every* attribute-scoped request,
-        # so an analytical question such as "how long was Big lamp on last
-        # night?" silently fetched 168 hours.  One older unmatched OFF row
-        # then made otherwise complete overnight intervals look boundary-
-        # incomplete and the model correctly-but-unhelpfully said "at least".
-        # Broad/analytical history now stays on the normal 24-hour default;
-        # true "when was it last on/open/etc." calls keep the seven-day
-        # protection by following the tool contract and supplying limit 1-3.
         explicit_small_limit = "limit" in arguments and limit <= 3
         default_hours_back = 168 if attribute and explicit_small_limit else 24
         hours_back = self._integer(
@@ -231,11 +250,23 @@ class DeviceHistoryService:
             maximum=168,
         )
 
+        now = self._now()
+        time_window = resolve_history_window(
+            arguments.get("time_window") if isinstance(arguments.get("time_window"), dict) else None,
+            now=now,
+        )
+        if time_window is not None:
+            # Fetch far enough to get at least one hour before the semantic
+            # boundary. The upstream API has no start/end filter, so exact
+            # clipping happens locally after the bounded read.
+            hours_back = max(
+                hours_back,
+                required_history_hours(time_window, now=now),
+            )
+
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
         resolution = await resolver.resolve_device({"name": requested})
-        resolution_data = (
-            resolution.data if isinstance(resolution.data, dict) else {}
-        )
+        resolution_data = resolution.data if isinstance(resolution.data, dict) else {}
         target = (
             resolution_data.get("target")
             if isinstance(resolution_data.get("target"), dict)
@@ -288,10 +319,7 @@ class DeviceHistoryService:
             "hoursBack": hours_back,
             "limit": fetch_limit,
         }
-        source_arguments = {
-            "tool": EVENT_OPERATION,
-            "args": event_args,
-        }
+        source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
         started = time.monotonic()
         try:
             source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
@@ -323,19 +351,22 @@ class DeviceHistoryService:
             )
 
         success = _shared_tool_succeeded(source)
-        events = self._events(source.data, limit=fetch_limit) if success else []
+        source_events = self._events(source.data, limit=fetch_limit) if success else []
+        filtered_events = source_events
         if attribute:
             attribute_cf = attribute.casefold()
-            events = [
-                event for event in events
+            filtered_events = [
+                event
+                for event in source_events
                 if str(event.get("name") or "").casefold() == attribute_cf
-            ][:limit]
+            ]
+        events = filtered_events[:limit]
         self._record_evidence(
             DEVICE_GATEWAY,
             source_arguments,
             success=success,
             elapsed_ms=round((time.monotonic() - started) * 1000),
-            summary=f"{len(events)} device events for {label!r}",
+            summary=f"{len(filtered_events)} device events for {label!r}",
             supports_live_claim=True,
             evidence_kind="authoritative_device_event_history",
         )
@@ -356,9 +387,29 @@ class DeviceHistoryService:
                 is_error=True,
             )
 
-        temporal_analysis = (
-            analyze_state_intervals(attribute, events) if attribute else None
-        )
+        source_complete_to_start = False
+        if time_window is not None:
+            source_complete_to_start = self._source_complete_to_window_start(
+                source_events,
+                fetch_limit=fetch_limit,
+                window_start=time_window.start,
+            )
+
+        temporal_analysis = None
+        if attribute:
+            if time_window is not None:
+                temporal_analysis = analyze_state_intervals_in_window(
+                    attribute,
+                    filtered_events,
+                    start=time_window.start,
+                    end=time_window.end,
+                    window_label=time_window.label,
+                    source_complete_to_start=source_complete_to_start,
+                    window_ongoing=time_window.ongoing,
+                )
+            else:
+                temporal_analysis = analyze_state_intervals(attribute, events)
+
         data = {
             "success": True,
             "requested": requested,
@@ -367,10 +418,16 @@ class DeviceHistoryService:
             "hoursBack": hours_back,
             "attribute": attribute or None,
             "count": len(events),
+            "analysisEventCount": len(filtered_events) if attribute else len(events),
             "events": events,
             "newestFirst": True,
             "causationAvailable": False,
         }
+        if time_window is not None:
+            data["timeWindow"] = {
+                **time_window.as_dict(),
+                "sourceCompleteToStart": source_complete_to_start,
+            }
         if temporal_analysis is not None:
             data["temporalAnalysis"] = temporal_analysis
         return MCPToolResult(
