@@ -39,6 +39,9 @@ DEVICE_HISTORY_TOOL = "homebrain_device_history"
 LOCATION_EVENTS_TOOL = "homebrain_location_events"
 DEVICE_GATEWAY = "hub_read_devices"
 EVENT_OPERATION = "hub_list_device_events"
+_TARGET_RESOLUTION_FIELDS = [
+    "id", "name", "label", "room", "capabilities", "attributes", "commands",
+]
 
 
 class DeviceHistoryService:
@@ -179,6 +182,65 @@ class DeviceHistoryService:
             if token != "".join(tokens):
                 return token
         return None
+
+    async def _fallback_candidates(self, fallback_name: str) -> list[str]:
+        """Return up to three labels from one broader targeted Hubitat lookup.
+
+        Deliberately do not run the fuzzy resolver over the broader token: a
+        generic token such as ``fan`` can have several legitimate matches and the
+        resolver may pick one semantically. This recovery path exists to expose
+        those candidates for clarification, not to choose among them.
+        """
+
+        source_arguments = {
+            "tool": "hub_list_devices",
+            "args": {
+                "labelFilter": fallback_name,
+                "fields": list(_TARGET_RESOLUTION_FIELDS),
+                "detailed": True,
+            },
+        }
+        started = time.monotonic()
+        try:
+            source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
+        except Exception as exc:
+            self._record_evidence(
+                DEVICE_GATEWAY,
+                source_arguments,
+                success=False,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                supports_live_claim=False,
+                evidence_kind="targeted_device_lookup",
+            )
+            return []
+        success = _shared_tool_succeeded(source)
+        candidates = (
+            [
+                item
+                for item in (HubitatMCPClient._find_device_list(source.data) or [])
+                if isinstance(item, dict)
+            ]
+            if success
+            else []
+        )
+        self._record_evidence(
+            DEVICE_GATEWAY,
+            source_arguments,
+            success=success,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=f"{len(candidates)} broader targeted device candidates",
+            supports_live_claim=False,
+            evidence_kind="targeted_device_lookup",
+        )
+        labels: list[str] = []
+        for candidate in candidates:
+            label = str(candidate.get("label") or candidate.get("name") or "").strip()
+            if label and label not in labels:
+                labels.append(label)
+            if len(labels) >= 3:
+                break
+        return labels
 
     async def location_events(self, arguments: dict[str, Any]) -> MCPToolResult:
         """Read the hub's own location-scoped event stream."""
@@ -336,33 +398,12 @@ class DeviceHistoryService:
             fallback_name = None
             # An exact label-filter miss can be too strict when the spoken name
             # contains a room/qualifier absent from the actual device label. Do
-            # one smaller targeted lookup and surface what it finds as choices;
+            # one smaller targeted lookup and surface all of its bounded choices;
             # never auto-select the broader match.
             if not alternatives:
                 fallback_name = self._fallback_resolution_name(requested)
                 if fallback_name:
-                    fallback = await resolver.resolve_device({"name": fallback_name})
-                    fallback_data = (
-                        fallback.data if isinstance(fallback.data, dict) else {}
-                    )
-                    fallback_target = (
-                        fallback_data.get("target")
-                        if isinstance(fallback_data.get("target"), dict)
-                        else None
-                    )
-                    if fallback_target is not None:
-                        fallback_label = str(
-                            fallback_target.get("label")
-                            or fallback_target.get("name")
-                            or ""
-                        ).strip()
-                        if fallback_label:
-                            alternatives.append(fallback_label)
-                    alternatives.extend(
-                        str(item)
-                        for item in fallback_data.get("alternatives") or []
-                        if str(item).strip()
-                    )
+                    alternatives.extend(await self._fallback_candidates(fallback_name))
             alternatives = list(dict.fromkeys(alternatives))[:3]
             error = "device is ambiguous" if alternatives else "device not found"
             data = {
