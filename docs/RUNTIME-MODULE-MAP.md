@@ -32,6 +32,7 @@ The repository drift test compares this table directly with the live directory. 
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
+| `history_temporal_analysis.py` | Derives bounded state intervals and deterministic duration totals from authoritative device events. |
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
 | `live_evidence_authority.py` | Combines live evidence receipts with grounding decisions. |
