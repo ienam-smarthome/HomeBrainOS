@@ -87,6 +87,9 @@ class HubTimezoneResolver:
         """
 
         runtime_now = now_factory()
+        if runtime_now.tzinfo is None:
+            runtime_now = runtime_now.astimezone()
+
         cached = self._cached_zone()
         if cached is not None:
             return runtime_now.astimezone(cached), self._cached_name, "hub_get_info_cache"
@@ -122,8 +125,12 @@ class HubTimezoneResolver:
         # Timezone absence is not allowed to make the entire history read fail.
         # Keep the fallback explicit in evidence so technical output never
         # suggests the semantic calendar boundary was authoritative when it was
-        # actually derived from the container/runtime timezone.
-        fallback_name = getattr(runtime_now.tzinfo, "key", None) or str(runtime_now.tzinfo or "") or None
+        # actually derived from the supplied runtime clock.
+        fallback_name = (
+            getattr(runtime_now.tzinfo, "key", None)
+            or str(runtime_now.tzinfo or "")
+            or None
+        )
         summary = "Hub timezone unavailable; using runtime timezone"
         if error is not None:
             summary += f" ({type(error).__name__})"
@@ -136,7 +143,7 @@ class HubTimezoneResolver:
             supports_live_claim=False,
             evidence_kind="authoritative_hub_timezone",
         )
-        return runtime_now.astimezone(), fallback_name, "runtime_fallback"
+        return runtime_now, fallback_name, "runtime_fallback"
 
 
 def required_history_hours_absolute(window_start: datetime, *, now: datetime) -> int:
