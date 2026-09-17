@@ -423,6 +423,7 @@ class UnifiedMCPAgent:
 
     def _include_identity_manifest(self, prompt: str) -> bool:
         tokens = set(re.findall(r"[a-z0-9]+", prompt.casefold()))
+        rule_authoring = bool(tokens & {"automation", "rule", "schedule"})
         routine_control = (
             _requests_mutation(prompt)
             and bool(tokens & {"on", "off", "toggle"})
@@ -432,6 +433,7 @@ class UnifiedMCPAgent:
             self._needs_device_manifest(prompt)
             and _requests_mutation(prompt)
             and not routine_control
+            and not rule_authoring
         )
 
     @staticmethod
