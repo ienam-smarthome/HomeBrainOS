@@ -19,6 +19,8 @@ _COUNTER_LABELS = (
     ("request_cancellations", "Cancellations"),
     ("device_resolution_ambiguous", "Ambiguous resolutions"),
     ("device_resolution_missing", "Missing-device resolutions"),
+    ("resolution_cache_hit", "Resolution cache hits"),
+    ("evidence_sufficiency_stop", "Evidence sufficiency stops"),
 )
 
 _DURATION_LABELS = (
