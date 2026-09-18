@@ -21,6 +21,7 @@ _COUNTER_LABELS = (
     ("device_resolution_missing", "Missing-device resolutions"),
     ("resolution_cache_hit", "Resolution cache hits"),
     ("evidence_sufficiency_stop", "Evidence sufficiency stops"),
+    ("tool_schema_rejections", "Schema-rejected tool calls"),
 )
 
 _DURATION_LABELS = (
