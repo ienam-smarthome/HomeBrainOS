@@ -420,12 +420,15 @@ def render_command_source_followup(evidence: list[dict[str, Any]]) -> str | None
         "HOST CAUSAL COMPLETENESS REQUIREMENT\n"
         "Current-turn subject history contains command events close to observed "
         f"interval boundaries ({shown}), but their issuing app/rule/source has not "
-        "been checked. Before final synthesis, make one bounded attempt to obtain "
-        "stronger downstream provenance using relevant rule/app configuration, "
-        "execution evidence, or native logs. If the needed gateway is not declared, "
-        "use hub_search_tools for that evidence class. Do not revisit controller or "
+        "been checked. Before final synthesis, make one bounded provenance "
+        "round using relevant rule/app configuration, execution evidence, or native "
+        "logs. You may issue up to two complementary read calls in that single "
+        "round when both materially test the same command source (for example logs "
+        "plus the most relevant app/rule configuration). Known read-only provenance "
+        "gateways are exposed directly; use hub_search_tools only if the needed "
+        "evidence class is still absent. Do not revisit controller, location, or "
         "environmental-sensor history. If no stronger source can be obtained in this "
-        "attempt, leave the command source explicitly unresolved rather than guessing."
+        "round, leave the command source explicitly unresolved rather than guessing."
     )
 
 
