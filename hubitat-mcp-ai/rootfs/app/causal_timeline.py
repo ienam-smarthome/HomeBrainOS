@@ -426,9 +426,10 @@ def render_command_source_followup(evidence: list[dict[str, Any]]) -> str | None
         "round when both materially test the same command source (for example logs "
         "plus the most relevant app/rule configuration). Known read-only provenance "
         "gateways are exposed directly; use hub_search_tools only if the needed "
-        "evidence class is still absent. Do not revisit controller, location, or "
-        "environmental-sensor history. If no stronger source can be obtained in this "
-        "round, leave the command source explicitly unresolved rather than guessing."
+        "evidence class is still absent. Do not revisit controller or "
+        "environmental-sensor history. Do not revisit location history either. "
+        "If no stronger source can be obtained in this round, leave the command "
+        "source explicitly unresolved rather than guessing."
     )
 
 
