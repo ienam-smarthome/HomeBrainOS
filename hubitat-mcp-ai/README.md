@@ -62,6 +62,13 @@ compatibility before execution, so an operation discovered under one gateway can
 be guessed through another. This is driven by structured evidence shape and broad
 request intent, not by a device-name or question-specific answer parser.
 
+The current-turn evidence ledger also ranks location/mode events by temporal
+proximity to observed subject-history interval boundaries before filling its
+bounded hint budget with newer events. A narrow final serialization guard corrects
+only categorical no-correlation claims when current-turn evidence contains a
+location event within 15 seconds of an observed subject transition; the correction
+states the timing relationship and explicitly preserves correlation-versus-causation.
+
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
 before the model can expand a generic noun into one particular device. Exact
