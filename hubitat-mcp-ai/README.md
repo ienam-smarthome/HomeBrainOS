@@ -160,6 +160,22 @@ small purpose-specific registry (search plus up to four app/rule/log/diagnostic 
 gateways) and allows up to two complementary provenance reads in that single model
 round before final synthesis. Routine requests keep the lean initial registry.
 
+0.13.3 tightens the evidence boundary itself. Conversation history remains available
+during normal reasoning/tool selection so follow-up wording can be understood, but
+investigative final synthesis now receives only the system prompt plus messages from
+the latest real user turn onward. Prior user/assistant conclusions are deliberately
+excluded from the final no-tools reasoning pass because conversation is context, not
+current-turn evidence.
+
+For causal requests, the resolved subject history is also a hard prerequisite for
+provenance expansion. If the current-turn subject temporal analysis establishes no
+bounded active interval in the requested window, HomeBrain stops before same-room
+controller/sensor/location/app/log expansion, records `causal_subject_empty_stop`,
+and finalizes from the current-turn subject evidence. An unverified zero does not
+prove the device stayed inactive, but historical controller events from another
+period can no longer resurrect a causal timeline that the subject history did not
+establish in this request.
+
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
 applied locally. If the model draft conflicts with one of those invariants, HomeBrain
