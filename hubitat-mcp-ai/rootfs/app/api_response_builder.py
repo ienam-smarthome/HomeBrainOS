@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from evidence_source_guard import guard_checked_source_absence_claim
+from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from technical_metrics_presenter import (
     present_request_metrics,
@@ -290,6 +291,11 @@ def _guard_history_message(
 
     corrected, partial_zero_applied = _guard_partial_zero_claims(message, evidence)
     corrected, absence_applied = _guard_history_absence_claims(corrected, evidence)
+    corrected, cardinality_receipts = guard_history_interval_cardinality(
+        corrected, evidence
+    )
+    for receipt in cardinality_receipts:
+        _mark_history_correction(receipt)
     corrected, duration_applied = guard_history_duration_claim(corrected, evidence)
     if duration_applied:
         for receipt in evidence:
@@ -302,7 +308,12 @@ def _guard_history_message(
                 break
     # Keep the local variable explicit so future guards can share this boundary
     # without losing whether any serializer-side correction happened.
-    _ = partial_zero_applied or absence_applied or duration_applied
+    _ = (
+        partial_zero_applied
+        or absence_applied
+        or bool(cardinality_receipts)
+        or duration_applied
+    )
     return corrected
 
 
