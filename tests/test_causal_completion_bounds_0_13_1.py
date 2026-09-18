@@ -202,7 +202,7 @@ def test_causal_completion_tool_view_excludes_device_and_mutation_tools() -> Non
 
     names = set(catalog.causal_provenance_names())
 
-    assert SEARCH_TOOL in names
+    assert SEARCH_TOOL not in names
     assert "hub_read_diagnostics" in names
     assert "hub_read_apps_code" in names
     assert "hub_read_rules" in names
@@ -216,3 +216,13 @@ def test_causal_completion_tool_view_excludes_device_and_mutation_tools() -> Non
         for item in catalog.causal_provenance_schemas()
     }
     assert schema_names == names
+
+
+def test_causal_completion_uses_search_only_when_no_provenance_reader_exists() -> None:
+    catalog = ToolDiscoveryCatalog([
+        _tool(SEARCH_TOOL, "Search Hubitat MCP tools"),
+        _tool("hub_read_devices", "Read devices and event history"),
+        _tool("hub_manage_rule_machine", "Create and edit rules"),
+    ])
+
+    assert catalog.causal_provenance_names() == (SEARCH_TOOL,)
