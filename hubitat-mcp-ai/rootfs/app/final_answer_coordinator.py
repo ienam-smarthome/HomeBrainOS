@@ -130,7 +130,11 @@ class FinalAnswerCoordinator:
             # behavior; API serialization still applies local safety guards.
             return draft
 
-        corrected, issues = validate_synthesis(draft, evidence)
+        corrected, issues = validate_synthesis(
+            draft,
+            evidence,
+            causal=causal,
+        )
         if not issues:
             return draft
 
