@@ -39,7 +39,6 @@ from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
 from device_target_resolver import resolve_capable_device_candidate
 from direct_outcome_context import DirectOutcomeContext
-from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
 from live_evidence_authority import LiveEvidenceAuthority
 from location_event_queries import (
@@ -151,10 +150,6 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self.max_history_chars = self.context_policy.max_history_chars
         self.max_tool_context_chars = self.context_policy.max_tool_context_chars
         self.compacted_tool_result_chars = self.context_policy.compacted_tool_result_chars
-        self.final_answers = FinalAnswerCoordinator(
-            self._chat,
-            evidence_supplier=self.evidence.receipts,
-        )
         self.request_metrics = RequestMetrics()
         self.request_observation = RequestObservationCoordinator(self.request_metrics)
         self.direct_outcomes = DirectOutcomeContext(
@@ -174,9 +169,6 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             return await super()._chat(messages, tools)
         finally:
             self.request_metrics.observe_ms("provider", (time.monotonic() - started) * 1000)
-
-    async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
-        return await self.final_answers.answer(messages)
 
     def _create_grounding_policy(self, *, logs_requested: bool, conversational: bool) -> LiveEvidenceAuthority:
         return LiveEvidenceAuthority(
