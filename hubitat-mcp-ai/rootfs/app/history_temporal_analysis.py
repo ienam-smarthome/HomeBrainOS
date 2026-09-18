@@ -37,7 +37,8 @@ _STATE_PAIRS: dict[str, tuple[str, str]] = {
 
 _TOTALISH_DURATION_CLAIM = re.compile(
     r"\b(?:total(?:ly)?|altogether|in all)\b|"
-    r"\b(?:was|were)\b.{0,50}\b(?:on|open|active|unlocked)\b.{0,20}\bfor\b",
+    r"\b(?:was|were)\b.{0,50}\b(?:on|open|active|unlocked)\b.{0,20}\bfor\b|"
+    r"\b(?:continuously|throughout|all\s+night|entire\s+night)\b",
     re.I | re.S,
 )
 _HOURS_DURATION = re.compile(
@@ -535,10 +536,6 @@ def guard_history_duration_claim(
     if not total_duration or interval_count < 0:
         return text, False
 
-    mentions = _duration_mentions_seconds(text)
-    if not mentions:
-        return text, False
-
     source_integrity_verified = temporal.get("sourceIntegrityVerified")
     if source_integrity_verified is None:
         source_integrity_verified = details.get("historySourceIntegrityVerified")
@@ -580,6 +577,9 @@ def guard_history_duration_claim(
             )
         return corrected, True
 
+    mentions = _duration_mentions_seconds(text)
+    if not mentions:
+        return text, False
     expected = _display_duration_seconds(total_seconds)
     if expected in mentions:
         return text, False
