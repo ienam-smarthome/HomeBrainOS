@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from evidence_source_guard import guard_checked_source_absence_claim
+from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from technical_metrics_presenter import (
     present_request_metrics,
@@ -195,11 +196,22 @@ def _guard_partial_zero_claims(
             details = receipt.get("details") or {}
             temporal = details.get("temporalAnalysis") or {}
             label = str(details.get("label") or "").strip()
+            attribute = str(details.get("attribute") or "").strip()
             active = str(temporal.get("activeState") or "active").strip()
             inactive = str(temporal.get("inactiveState") or "inactive").strip()
-            if not label or label.casefold() not in comparable:
+            label_matches = bool(label and label.casefold() in comparable)
+            attribute_data_absence = bool(
+                attribute
+                and re.search(
+                    rf"\bno\s+(?:recorded\s+)?{re.escape(attribute.casefold())}"
+                    r"\s+(?:data|history)\b",
+                    comparable,
+                    re.I,
+                )
+            )
+            if not label_matches and not attribute_data_absence:
                 continue
-            unsupported_zero = bool(_NO_HISTORY_DATA.search(sentence))
+            unsupported_zero = attribute_data_absence or bool(_NO_HISTORY_DATA.search(sentence))
             unsupported_zero = unsupported_zero or bool(
                 re.search(
                     rf"\b(?:was|is|were|are)\s+(?:not|never)\s+{re.escape(active)}\b",
@@ -290,6 +302,11 @@ def _guard_history_message(
 
     corrected, partial_zero_applied = _guard_partial_zero_claims(message, evidence)
     corrected, absence_applied = _guard_history_absence_claims(corrected, evidence)
+    corrected, cardinality_receipts = guard_history_interval_cardinality(
+        corrected, evidence
+    )
+    for receipt in cardinality_receipts:
+        _mark_history_correction(receipt)
     corrected, duration_applied = guard_history_duration_claim(corrected, evidence)
     if duration_applied:
         for receipt in evidence:
@@ -302,7 +319,12 @@ def _guard_history_message(
                 break
     # Keep the local variable explicit so future guards can share this boundary
     # without losing whether any serializer-side correction happened.
-    _ = partial_zero_applied or absence_applied or duration_applied
+    _ = (
+        partial_zero_applied
+        or absence_applied
+        or bool(cardinality_receipts)
+        or duration_applied
+    )
     return corrected
 
 

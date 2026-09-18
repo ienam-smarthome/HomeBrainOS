@@ -8,6 +8,7 @@ does not decide when discovery, confirmation, or execution should occur.
 from __future__ import annotations
 
 from collections.abc import Iterable
+import re
 from typing import Any
 
 from mcp_client import MCPTool, MCPToolResult
@@ -96,6 +97,7 @@ class ToolDiscoveryCatalog:
             if tool.name:
                 self._available[tool.name] = tool
         self._declared: dict[str, MCPTool] = {}
+        self._operation_gateways: dict[str, set[str]] = {}
         self.replace_declared(initial_order)
 
     @staticmethod
@@ -140,6 +142,97 @@ class ToolDiscoveryCatalog:
                         item for item in candidates if isinstance(item, dict)
                     ]
         return []
+
+    @classmethod
+    def _result_operation_gateways(
+        cls,
+        result: MCPToolResult,
+    ) -> dict[str, set[str]]:
+        mapping: dict[str, set[str]] = {}
+        if result.is_error:
+            return mapping
+        for item in cls._match_items(result.data):
+            operation = item.get("tool")
+            gateway = item.get("gateway")
+            if not isinstance(operation, str) or not isinstance(gateway, str):
+                continue
+            op = operation.strip()
+            gw = gateway.strip()
+            if op and gw:
+                mapping.setdefault(op, set()).add(gw)
+        return mapping
+
+    @staticmethod
+    def _schema_operations(tool: MCPTool) -> set[str]:
+        schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
+        props = schema.get("properties")
+        if not isinstance(props, dict):
+            return set()
+        tool_prop = props.get("tool")
+        if not isinstance(tool_prop, dict):
+            return set()
+        values = tool_prop.get("enum")
+        if not isinstance(values, list):
+            return set()
+        return {str(value).strip() for value in values if str(value).strip()}
+
+    @staticmethod
+    def _description_operations(tool: MCPTool) -> set[str]:
+        # Upstream gateway descriptions commonly list operation names verbatim.
+        # Treat them as a compatibility catalog only when at least two distinct
+        # sub-operations are present, avoiding false constraints from incidental
+        # examples in ordinary non-gateway tool descriptions.
+        names = set(re.findall(r"\bhub_[a-z0-9_]+\b", tool.description or ""))
+        names.discard(tool.name)
+        return names if len(names) >= 2 else set()
+
+    def gateway_operation_error(
+        self,
+        gateway: str,
+        arguments: dict[str, Any],
+    ) -> str | None:
+        """Reject a sub-operation that is provably incompatible with a gateway.
+
+        Compatibility comes from the live tool schema/description and successful
+        hub_search_tools mappings learned in this request. Unknown combinations
+        are left alone rather than guessed.
+        """
+
+        operation = arguments.get("tool")
+        if not isinstance(operation, str) or not operation.strip():
+            return None
+        operation = operation.strip()
+        tool = self.available_tool(gateway)
+        if tool is None:
+            return None
+
+        schema_ops = self._schema_operations(tool)
+        if schema_ops and operation not in schema_ops:
+            return (
+                f"Operation {operation!r} is not allowed by gateway {gateway!r}; "
+                f"allowed operations include {sorted(schema_ops)}."
+            )
+
+        description_ops = self._description_operations(tool)
+        if description_ops and operation not in description_ops:
+            known = self._operation_gateways.get(operation)
+            if known and gateway not in known:
+                return (
+                    f"Operation {operation!r} belongs to discovered gateway(s) "
+                    f"{sorted(known)}, not {gateway!r}."
+                )
+            return (
+                f"Operation {operation!r} is not listed by gateway {gateway!r}. "
+                "Use hub_search_tools for that operation before calling a gateway."
+            )
+
+        known = self._operation_gateways.get(operation)
+        if known and gateway not in known:
+            return (
+                f"Operation {operation!r} belongs to discovered gateway(s) "
+                f"{sorted(known)}, not {gateway!r}."
+            )
+        return None
 
     @classmethod
     def discovered_tools(
@@ -209,6 +302,10 @@ class ToolDiscoveryCatalog:
 
     def expand(self, result: MCPToolResult) -> list[MCPTool]:
         """Add newly discovered known gateways, preserving result order."""
+
+        learned = self._result_operation_gateways(result)
+        for operation, gateways in learned.items():
+            self._operation_gateways.setdefault(operation, set()).update(gateways)
 
         additions = [
             tool
