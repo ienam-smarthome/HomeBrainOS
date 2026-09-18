@@ -19,13 +19,16 @@ from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirmation
 from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
 from causal_evidence_planner import (
+    controller_boundary_alignments,
     controller_history_arguments,
-    controller_transition_alignments,
     render_controller_alignment_instruction,
     subject_has_observed_intervals,
     subject_room_filter_arguments,
 )
-from causal_timeline import render_command_source_followup
+from causal_timeline import (
+    render_command_source_followup,
+    unresolved_material_timeline_rows,
+)
 from deterministic_tool_presenter import present_tool_result
 from device_claim_grounding import (
     DeviceClaimAction,
@@ -518,7 +521,7 @@ class UnifiedMCPAgent:
                     and isinstance(controller_execution.result.data, dict)
                     else {}
                 )
-                alignments = controller_transition_alignments(
+                alignments = controller_boundary_alignments(
                     subject_history, controller_data
                 )
                 alignment_instruction = render_controller_alignment_instruction(
@@ -539,8 +542,8 @@ class UnifiedMCPAgent:
                             "HOST CONTROLLER CORRELATION RESULT\n"
                             "The highest-ranked same-room controller was checked, "
                             "but no controller event aligned within two seconds of "
-                            "an observed subject active-transition start. Treat that "
-                            "as a negative correlation result, not proof that the "
+                            "any observed subject interval boundary. Treat that as "
+                            "a negative correlation result, not proof that the "
                             "controller was uninvolved in every transition."
                         ),
                     })
@@ -587,6 +590,36 @@ class UnifiedMCPAgent:
             ))
             expanded = True
 
+        # If material turn-on transitions remain unresolved, give the bounded
+        # provenance round app/rule identity context up front. This is navigation
+        # only, not causal proof, but it lets the model inspect a relevant app
+        # configuration in the SAME provenance round as logs rather than spending
+        # a later round listing apps first.
+        unresolved_material = unresolved_material_timeline_rows(
+            self.evidence.receipts()
+        )
+        if (
+            unresolved_material
+            and "hub_read_apps_code" in catalog.available_names
+        ):
+            apps = await self._cached_app_manifest()
+            if apps:
+                increment_active_metric("causal_app_navigation")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "HOST CAUSAL APP/RULE NAVIGATION\n"
+                        + render_app_manifest(apps)
+                        + "\nThis installed-app manifest is navigation context, "
+                        "not evidence that any app caused the subject transition. "
+                        "During the single bounded provenance round, prefer a "
+                        "relevant app/rule DETAIL read (for example app config or "
+                        "rule execution/config) alongside logs when both materially "
+                        "test the unresolved transition. Do not spend the round "
+                        "listing apps again."
+                    ),
+                })
+
         messages.append({
             "role": "user",
             "content": (
@@ -597,7 +630,10 @@ class UnifiedMCPAgent:
                 "Do not request more device, sensor, controller, room, or "
                 "location histories merely to be thorough. The next step is one "
                 "bounded provenance selection from installed read-only log/rule/"
-                "app gateways, followed immediately by synthesis."
+                "app gateways. When unresolved material transitions remain and "
+                "app/rule identities were supplied above, issue up to two "
+                "complementary reads in this SAME model round (for example logs "
+                "plus one relevant app/rule detail), then synthesize."
             ),
         })
         return expanded
