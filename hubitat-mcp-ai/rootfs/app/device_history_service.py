@@ -33,6 +33,7 @@ from hub_timezone import HubTimezoneResolver, required_history_hours_absolute
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from natural_datetime import normalize_iso_offset
+from request_metrics import increment_active_metric
 
 
 DEVICE_HISTORY_TOOL = "homebrain_device_history"
@@ -42,6 +43,24 @@ EVENT_OPERATION = "hub_list_device_events"
 _TARGET_RESOLUTION_FIELDS = [
     "id", "name", "label", "room", "capabilities", "attributes", "commands",
 ]
+
+# Only reject well-known attributes when the resolved target positively exposes
+# enough metadata to prove that the requested history dimension does not belong
+# to that device. Unknown/custom driver attributes remain allowed.
+_HISTORY_ATTRIBUTE_CAPABILITIES: dict[str, tuple[str, ...]] = {
+    "motion": ("motionsensor",),
+    "illuminance": ("illuminancemeasurement",),
+    "contact": ("contactsensor",),
+    "presence": ("presencesensor",),
+    "switch": ("switch",),
+    "temperature": ("temperaturemeasurement",),
+    "humidity": ("relativehumiditymeasurement",),
+    "power": ("powermeter",),
+    "battery": ("battery",),
+    "level": ("switchlevel",),
+    "lock": ("lock",),
+    "valve": ("valve",),
+}
 
 
 class DeviceHistoryService:
@@ -75,6 +94,78 @@ class DeviceHistoryService:
         except (TypeError, ValueError):
             parsed = default
         return min(maximum, max(minimum, parsed))
+
+    @staticmethod
+    def _metadata_name(value: Any) -> str:
+        if isinstance(value, dict):
+            value = value.get("name") or value.get("attribute") or value.get("capability")
+        return str(value or "").strip()
+
+    @classmethod
+    def _advertised_attribute_names(cls, target: dict[str, Any]) -> set[str]:
+        raw = target.get("attributes")
+        if isinstance(raw, dict):
+            values = raw.keys()
+        elif isinstance(raw, list):
+            values = raw
+        else:
+            values = ()
+        return {
+            name.casefold()
+            for item in values
+            if (name := cls._metadata_name(item))
+        }
+
+    @classmethod
+    def _advertised_capability_names(cls, target: dict[str, Any]) -> set[str]:
+        raw = target.get("capabilities")
+        values = raw if isinstance(raw, list) else ()
+        names: set[str] = set()
+        for item in values:
+            name = cls._metadata_name(item)
+            if not name:
+                continue
+            names.add(re.sub(r"[^a-z0-9]", "", name.casefold()))
+        return names
+
+    @classmethod
+    def _unsupported_history_attribute(
+        cls,
+        target: dict[str, Any],
+        attribute: str,
+    ) -> dict[str, Any] | None:
+        """Return proof that a well-known requested attribute is not advertised."""
+
+        wanted = str(attribute or "").strip().casefold()
+        required_capabilities = _HISTORY_ATTRIBUTE_CAPABILITIES.get(wanted)
+        if not wanted or required_capabilities is None:
+            return None
+
+        attributes = cls._advertised_attribute_names(target)
+        capabilities = cls._advertised_capability_names(target)
+        if wanted in attributes:
+            return None
+        if any(capability in capabilities for capability in required_capabilities):
+            return None
+
+        # Capability lists are frequently incomplete for bridged/community
+        # devices and cannot prove that an event attribute is impossible. Only
+        # an explicit advertised attribute map gives us a safe negative scope:
+        # T1, for example, exposes illuminance/temperature, so motion is a
+        # provable mismatch; a legacy device exposing only capabilities remains
+        # eligible for the established unfiltered-fetch + client-side filter.
+        if not attributes:
+            return None
+
+        return {
+            "unsupportedAttribute": attribute,
+            "availableAttributes": sorted(attributes),
+            "capabilities": sorted(
+                cls._metadata_name(item)
+                for item in (target.get("capabilities") or [])
+                if cls._metadata_name(item)
+            ),
+        }
 
     @staticmethod
     def _payload(value: Any) -> dict[str, Any]:
@@ -419,6 +510,34 @@ class DeviceHistoryService:
 
         device_id = target.get("id") or target.get("deviceId")
         label = str(target.get("label") or target.get("name") or requested)
+
+        unsupported = self._unsupported_history_attribute(target, attribute)
+        if unsupported is not None:
+            increment_active_metric("history_attribute_rejected")
+            available = unsupported.get("availableAttributes") or []
+            available_text = ", ".join(map(str, available[:12])) or "not exposed"
+            data = {
+                "success": False,
+                "requested": requested,
+                "deviceId": str(device_id) if device_id not in {None, ""} else None,
+                "label": label,
+                **unsupported,
+                "error": (
+                    f"{label!r} does not advertise history attribute {attribute!r}. "
+                    f"Available attributes include: {available_text}. "
+                    "Choose an attribute actually exposed by this device and retry; "
+                    "do not use an unsupported attribute to infer absence."
+                ),
+            }
+            return MCPToolResult(
+                DEVICE_HISTORY_TOOL,
+                arguments,
+                {},
+                json.dumps(data, ensure_ascii=False, default=str),
+                data,
+                is_error=True,
+            )
+
         if device_id in {None, ""}:
             data = {
                 "success": False,
