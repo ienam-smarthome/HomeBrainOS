@@ -89,6 +89,18 @@ def test_motion_capability_allows_motion_even_without_current_attribute_key() ->
     assert DeviceHistoryService._unsupported_history_attribute(target, "motion") is None
 
 
+def test_capability_only_sparse_target_does_not_prove_attribute_absence() -> None:
+    target = {
+        "label": "Legacy Light",
+        "capabilities": ["Switch"],
+    }
+
+    # Existing DeviceHistoryService behavior deliberately fetches an unfiltered
+    # event window and applies attribute filtering locally. A sparse capability
+    # list is not sufficient evidence to block that path.
+    assert DeviceHistoryService._unsupported_history_attribute(target, "contact") is None
+
+
 def test_unknown_custom_history_attribute_is_not_rejected() -> None:
     target = {
         "label": "Custom Device",
