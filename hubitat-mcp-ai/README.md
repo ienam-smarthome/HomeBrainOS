@@ -242,22 +242,27 @@ stable, auditable definition: 18:00 on the previous local calendar day through
 still in progress. An explicit clock range overrides that default. The
 authoritative local timezone is read from the Hubitat MCP Rule Server's
 `hub_get_info.timeZone` IANA identifier and cached briefly; container UTC is never
-preferred when Hubitat reports its own timezone. The upstream Hubitat API still
+preferred when Hubitat reports its own timezone. Device resolution now happens
+before that timezone read, so an ambiguous or missing history target can return its
+clarification without paying for `hub_get_info`. The upstream Hubitat API still
 receives one bounded `hoursBack` read; HomeBrain widens it only far enough to reach
 the requested start plus a boundary buffer, using absolute UTC elapsed time for
 the fetch bound so autumn DST fallback cannot under-fetch, then clips interval
 arithmetic locally to the requested start/end.
 
 Window coverage is conservative. A state event before the requested start proves
-the boundary state. If no predecessor is present but the returned event page is
-known complete back to the start, the first binary state transition can establish
-the state immediately before it. If a full 50-event source page does not reach the
-requested start, the boundary remains unknown and the result is marked partial/
-lower-bound rather than inventing missing time. Exact window start/end, Hubitat
-IANA timezone, UTC offsets, timezone source, boundary basis, coverage, and
-deterministic totals are included in bounded evidence details. Reported transitions
-are still treated as evidence of what changed, never as proof of who or what caused
-the change.
+the boundary state. If no predecessor is present, HomeBrain may infer the state
+immediately before the first in-window binary transition only when that event is
+explicitly marked `isStateChange=true`; an ordinary state report with the flag
+missing is not treated as transition proof. The same rule applies when a first
+post-window transition is used to close an otherwise empty window. If transition
+proof or source coverage is incomplete, the result remains partial/lower-bound
+rather than inventing missing time. Exact window start/end, Hubitat IANA timezone,
+UTC offsets, timezone source, boundary basis, coverage, source/analysis event
+counts, inferred-attribute status, first-window state evidence, and deterministic
+totals are included in bounded evidence details. Reported transitions are still
+treated as evidence of what changed, never as proof of who or what caused the
+change.
 
 Final device-claim grounding is deliberately non-blocking with respect to the
 Hubitat inventory. After synthesis, the agent validates named-device claims using
