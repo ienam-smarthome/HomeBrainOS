@@ -97,17 +97,39 @@ being forced into binary temporal analysis. For ordinary temporal device histori
 0.12.0 also preserves command/state events that fall within eight seconds of an
 observed interval boundary, so evidence such as `command-setLevel`, `command-off`,
 and the associated state transition remains available to distinguish initial
-provenance from downstream automation effects. The synthesis contract keeps the
-original user objective primary, asks for a chronological multi-source explanation,
-and separates trigger/provenance, downstream automation effects, weaker
-correlations, and unresolved gaps.
+provenance from downstream automation effects.
+
+0.13.0 closes the remaining finalization split: when an investigative model turn
+voluntarily stops requesting tools, the orchestrator no longer returns that draft
+directly. Every investigative completion now goes through the same shared
+`FinalAnswerCoordinator` used by budget/evidence stop paths, so the evidence brief,
+bounded tool packet, causal timeline, and synthesis validators always run in
+production.
+
+Causal synthesis also receives a structured timeline that joins every observed
+subject interval with nearby controller provenance, boundary commands, and mode/
+location context. Intervals are marked MATERIAL when they are long enough or carry
+direct provenance/command evidence. Final synthesis must account for every MATERIAL
+row; short adjacent unresolved flickers may be grouped. A coverage validator detects
+when a material row has been silently omitted and asks the model for one no-tools
+repair rather than authoring the answer itself.
+
+When boundary-adjacent device commands exist but no command-source evidence has been
+checked, the tool loop gets one bounded causal-completeness retry before finalization.
+That retry asks for a stronger rule/app/log source and explicitly forbids revisiting
+controller or environmental-sensor history. If no stronger source is available, the
+final answer keeps the command source unresolved instead of guessing. The synthesis
+contract keeps the original user objective primary, asks for a chronological
+multi-source explanation, and separates trigger/provenance, downstream automation
+effects, weaker correlations, and unresolved gaps.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
-checked-source, and close mode-correlation checks are applied locally. If the model
-draft conflicts with one of those invariants, HomeBrain gives the model one no-tools
-repair pass with the evidence brief and localized correction baseline. Whole-answer
-history fallback is reserved for genuinely single-source simple history queries;
-multi-source investigative answers are never replaced by a duration sentence.
+checked-source, close mode-correlation, and causal-timeline coverage checks are
+applied locally. If the model draft conflicts with one of those invariants, HomeBrain
+gives the model one no-tools repair pass with the evidence brief/timeline and
+localized correction baseline. Whole-answer history fallback is reserved for
+genuinely single-source simple history queries; multi-source investigative answers
+are never replaced by a duration sentence.
 
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
