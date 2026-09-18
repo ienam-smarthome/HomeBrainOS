@@ -906,7 +906,8 @@ class UnifiedMCPAgent:
         causal_completion_mode = False
         for _ in range(self.max_tool_rounds):
             if causal_completion_mode:
-                tools = catalog.causal_provenance_schemas()
+                catalog.activate_causal_provenance_view()
+                tools = catalog.schemas()
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:

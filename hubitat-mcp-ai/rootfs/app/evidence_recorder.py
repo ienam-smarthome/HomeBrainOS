@@ -13,6 +13,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
+from gateway_argument_view import gateway_operation
 from mcp_client import MCPTool
 from tool_registry import ToolEffect, classify_tool_effect
 
@@ -105,7 +106,7 @@ class EvidenceRecorder:
         )
         receipt = {
             "tool": gateway,
-            "sub_tool": arguments.get("tool"),
+            "sub_tool": gateway_operation(arguments),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "elapsed_ms": elapsed_ms,
             "success": success,
