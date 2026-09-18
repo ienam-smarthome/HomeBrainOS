@@ -241,9 +241,9 @@ def render_controller_alignment_instruction(
     guidance: list[str] = []
     if has_start:
         guidance.append(
-            "START-boundary controller events are stronger provenance timing "
-            "evidence for a turn-on than environmental motion/illuminance "
-            "correlation, although timing alone does not identify the person."
+            "START-boundary controller events are stronger provenance evidence "
+            "than environmental motion/illuminance correlation for a turn-on, "
+            "although timing alone does not identify the person."
         )
     if has_end:
         guidance.append(
