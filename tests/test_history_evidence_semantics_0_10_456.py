@@ -93,11 +93,13 @@ def test_attribute_less_semantic_history_infers_one_binary_attribute() -> None:
     assert enriched.data["attributeInferred"] is True
     assert temporal["intervalCount"] == 2
     assert temporal["totalActiveSeconds"] == 7200
-    assert temporal["coverage"] == "complete"
+    assert temporal["coverage"] == "partial"
     assert temporal["totalIsLowerBound"] is False
+    assert temporal["sourceIntegrityVerified"] is False
+    assert temporal["durationReliability"] == "unverified-event-stream"
 
 
-def test_first_transition_after_empty_window_can_prove_complete_zero() -> None:
+def test_post_window_transition_does_not_prove_empty_window_zero() -> None:
     data = {
         "success": True,
         "label": "Hallway Light 1",
@@ -147,11 +149,11 @@ def test_first_transition_after_empty_window_can_prove_complete_zero() -> None:
 
     assert temporal["intervalCount"] == 0
     assert temporal["totalActiveSeconds"] == 0
-    assert temporal["coverage"] == "complete"
-    assert temporal["totalIsLowerBound"] is False
-    assert temporal["boundaryStateKnown"] is True
-    assert temporal["boundaryBasis"] == "first-transition-after-window-inference"
-    assert temporal["postWindowStateEvidence"]["inferredWindowState"] == "off"
+    assert temporal["coverage"] == "partial"
+    assert temporal["totalIsLowerBound"] is True
+    assert temporal["boundaryStateKnown"] is False
+    assert temporal["boundaryBasis"] == "unknown"
+    assert "postWindowStateEvidence" not in temporal
 
 
 def test_partial_zero_history_cannot_be_serialized_as_proven_off() -> None:

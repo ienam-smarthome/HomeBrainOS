@@ -38,6 +38,7 @@ def test_predecessor_active_state_is_clipped_at_window_start() -> None:
         end=END,
         window_label="last night",
         source_complete_to_start=True,
+        source_integrity_verified=True,
     )
 
     assert analysis is not None
@@ -64,6 +65,7 @@ def test_active_state_at_window_end_is_clipped_without_becoming_lower_bound() ->
         end=END,
         window_label="last night",
         source_complete_to_start=True,
+        source_integrity_verified=True,
     )
 
     assert analysis is not None
@@ -85,6 +87,7 @@ def test_complete_source_can_infer_boundary_state_from_first_transition() -> Non
         end=END,
         window_label="last night",
         source_complete_to_start=True,
+        source_integrity_verified=True,
     )
 
     assert analysis is not None
@@ -104,6 +107,7 @@ def test_truncated_source_does_not_invent_unknown_boundary_state() -> None:
         end=END,
         window_label="last night",
         source_complete_to_start=False,
+        source_integrity_verified=True,
     )
 
     assert analysis is not None
@@ -136,6 +140,7 @@ def test_big_lamp_style_window_keeps_only_requested_overnight_intervals() -> Non
         end=END,
         window_label="last night",
         source_complete_to_start=True,
+        source_integrity_verified=True,
     )
 
     assert analysis is not None

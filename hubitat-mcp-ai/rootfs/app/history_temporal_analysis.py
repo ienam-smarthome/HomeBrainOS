@@ -2,14 +2,15 @@
 
 The language model should decide *what the user is asking*, but timestamp
 arithmetic should not be delegated to free-form model reasoning. This module
-turns authoritative state-change rows into complete observed intervals and
-pre-computed totals that the model can safely synthesize into a natural answer.
+pairs recorded state rows and pre-computes duration evidence that the model can
+safely synthesize into a natural answer.
 
-Only state pairs with unambiguous active/inactive semantics are analysed. A
-partial boundary is never guessed. Window-aware analysis additionally clips
-intervals to an explicit requested start/end and records whether the state at
-the window start is known from a predecessor event or can be inferred from the
-first complete state transition in the window.
+Only state pairs with unambiguous active/inactive semantics are analysed.
+Pagination completeness is deliberately kept separate from event-stream
+integrity: a Hubitat page can reach the requested boundary while still omitting
+physical transitions recorded elsewhere. Window-aware analysis therefore refuses
+to turn missing rows into exact boundary state or exact duration unless source
+integrity has been independently verified.
 
 The module also owns the narrow final-answer consistency guard for temporal
 history claims. When one authoritative history receipt proves a total duration
@@ -37,7 +38,8 @@ _STATE_PAIRS: dict[str, tuple[str, str]] = {
 
 _TOTALISH_DURATION_CLAIM = re.compile(
     r"\b(?:total(?:ly)?|altogether|in all)\b|"
-    r"\b(?:was|were)\b.{0,50}\b(?:on|open|active|unlocked)\b.{0,20}\bfor\b",
+    r"\b(?:was|were)\b.{0,50}\b(?:on|open|active|unlocked)\b.{0,20}\bfor\b|"
+    r"\b(?:continuously|throughout|all\s+night|entire\s+night)\b",
     re.I | re.S,
 )
 _HOURS_DURATION = re.compile(
@@ -271,14 +273,22 @@ def analyze_state_intervals_in_window(
     window_label: str,
     source_complete_to_start: bool,
     window_ongoing: bool = False,
+    source_integrity_verified: bool = False,
 ) -> dict[str, Any] | None:
-    """Measure active time strictly inside ``[start, end)``.
+    """Measure state intervals observed inside the requested window.
 
-    A predecessor event before ``start`` establishes the boundary state. If no
-    predecessor is present but the upstream event feed is known complete back to
-    the window start, the first state-change event inside the window establishes
-    the opposite state immediately before that transition. Otherwise the total
-    remains a lower bound rather than inventing the missing boundary state.
+    source_complete_to_start is only a pagination/coverage fact: it means the
+    returned page reaches the requested start. It does not prove the device-event
+    stream contains every physical transition. Unless an independent source has
+    verified event-stream integrity, HomeBrain must not extend a predecessor state
+    to the window start, infer a missing boundary from the first row, or extend an
+    open interval to the window end. Those operations can turn omitted transitions
+    into many hours of invented activity.
+
+    With unverified source integrity this function therefore reports only intervals
+    bounded by observed active/inactive rows and marks the duration as an
+    unverified-event-stream estimate rather than an exact total or mathematical
+    lower bound.
     """
 
     if start.tzinfo is None or end.tzinfo is None or end <= start:
@@ -294,26 +304,36 @@ def analyze_state_intervals_in_window(
 
     current_state: str | None = None
     boundary_known = False
-    boundary_basis = "unknown"
-    if predecessor is not None:
+    boundary_basis = (
+        "unknown" if source_integrity_verified else "source-integrity-unverified"
+    )
+    inferred_boundary_state: str | None = None
+
+    if source_integrity_verified and predecessor is not None:
         current_state = predecessor[2]
         boundary_known = True
         boundary_basis = "predecessor-event"
-    elif inside and source_complete_to_start:
-        # A reported binary value is not automatically proof that a transition
-        # occurred. Some Hubitat/community drivers emit ordinary state reports
-        # with isStateChange omitted. Inferring the opposite state all the way
-        # back to the window boundary from such a row can invert almost the
-        # entire requested duration. Only an explicitly marked state change is
-        # strong enough for this boundary inference.
+    elif (
+        source_integrity_verified
+        and inside
+        and source_complete_to_start
+        and _explicit_true(inside[0][3].get("isStateChange"))
+    ):
         first_value = inside[0][2]
-        first_event = inside[0][3]
-        if _explicit_true(first_event.get("isStateChange")):
-            current_state = inactive_state if first_value == active_state else active_state
-            boundary_known = True
-            boundary_basis = "first-transition-inference"
-        else:
-            boundary_basis = "first-event-not-proven-transition"
+        inferred_boundary_state = (
+            inactive_state if first_value == active_state else active_state
+        )
+        current_state = inferred_boundary_state
+        boundary_known = True
+        boundary_basis = "first-transition-inference"
+    elif inside and source_complete_to_start and _explicit_true(
+        inside[0][3].get("isStateChange")
+    ):
+        first_value = inside[0][2]
+        inferred_boundary_state = (
+            inactive_state if first_value == active_state else active_state
+        )
+        boundary_basis = "first-transition-inference-untrusted"
 
     intervals: list[dict[str, Any]] = []
     duplicate_state_rows = 0
@@ -353,7 +373,8 @@ def analyze_state_intervals_in_window(
         active_start_raw = None
         active_start_clipped = False
 
-    if current_state == active_state and active_start is not None:
+    open_active_interval = bool(current_state == active_state and active_start is not None)
+    if source_integrity_verified and open_active_interval:
         intervals.append(
             _interval(
                 active_start,
@@ -369,7 +390,8 @@ def analyze_state_intervals_in_window(
         (int(item.get("durationSeconds") or 0) for item in intervals),
         default=0,
     )
-    coverage_complete = boundary_known
+    coverage_complete = bool(source_integrity_verified and boundary_known)
+    reliability = "exact" if coverage_complete else "unverified-event-stream"
 
     return {
         "attribute": attribute_name,
@@ -383,8 +405,13 @@ def analyze_state_intervals_in_window(
         "longestActiveDuration": _duration_text(longest_seconds),
         "continuous": len(intervals) == 1 and coverage_complete,
         "coverage": "complete" if coverage_complete else "partial",
-        "totalIsLowerBound": not coverage_complete,
-        "openActiveInterval": bool(window_ongoing and current_state == active_state),
+        "totalIsLowerBound": False if not source_integrity_verified else not coverage_complete,
+        "durationReliability": reliability,
+        "sourceIntegrity": "verified" if source_integrity_verified else "unverified",
+        "sourceIntegrityVerified": bool(source_integrity_verified),
+        "pageCompleteToWindowStart": bool(source_complete_to_start),
+        "observedBoundedIntervalsOnly": not bool(source_integrity_verified),
+        "openActiveInterval": bool(window_ongoing and open_active_interval),
         "unmatchedInactiveRows": 0,
         "duplicateStateRowsIgnored": duplicate_state_rows,
         "ignoredRows": ignored_rows,
@@ -407,6 +434,7 @@ def analyze_state_intervals_in_window(
             if predecessor is not None
             else None
         ),
+        "inferredBoundaryState": inferred_boundary_state,
         "windowed": True,
         "windowLabel": str(window_label),
         "windowStart": start.isoformat(),
@@ -416,8 +444,6 @@ def analyze_state_intervals_in_window(
         "boundaryBasis": boundary_basis,
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
-
-
 def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None:
     """Return the small, privacy-safe temporal proof subset for evidence output."""
 
@@ -446,6 +472,12 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "boundaryStateKnown",
         "boundaryBasis",
         "sourceCompleteToWindowStart",
+        "pageCompleteToWindowStart",
+        "sourceIntegrity",
+        "sourceIntegrityVerified",
+        "durationReliability",
+        "observedBoundedIntervalsOnly",
+        "inferredBoundaryState",
         "analyzedStateEventCount",
         "firstWindowStateEvent",
         "predecessorStateEvent",
@@ -461,7 +493,12 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             if key in temporal
         },
     }
-    for key in ("analysisEventCount", "sourceEventCount"):
+    for key in (
+        "analysisEventCount",
+        "sourceEventCount",
+        "historySourceIntegrity",
+        "historySourceIntegrityVerified",
+    ):
         if key in result_data:
             details[key] = result_data.get(key)
     if "attributeInferred" in result_data:
@@ -473,7 +510,7 @@ def guard_history_duration_claim(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Correct an explicit total-duration claim that conflicts with one proof."""
+    """Keep explicit duration wording within the reliability of current evidence."""
 
     text = str(message or "")
     if not _TOTALISH_DURATION_CLAIM.search(text):
@@ -502,6 +539,47 @@ def guard_history_duration_claim(
     if not total_duration or interval_count < 0:
         return text, False
 
+    source_integrity_verified = temporal.get("sourceIntegrityVerified")
+    if source_integrity_verified is None:
+        source_integrity_verified = details.get("historySourceIntegrityVerified")
+    reliability = str(temporal.get("durationReliability") or "").strip().casefold()
+    source_integrity = str(
+        temporal.get("sourceIntegrity")
+        or details.get("historySourceIntegrity")
+        or ""
+    ).strip().casefold()
+    unverified_stream = (
+        source_integrity_verified is False
+        or reliability == "unverified-event-stream"
+        or source_integrity == "unverified"
+    )
+
+    label = str(details.get("label") or "The device").strip() or "The device"
+    active_state = str(temporal.get("activeState") or "active").strip() or "active"
+    inactive_state = str(temporal.get("inactiveState") or "inactive").strip() or "inactive"
+    window_label = str(temporal.get("windowLabel") or "").strip()
+    window_suffix = f" {window_label}" if window_label else ""
+
+    if unverified_stream:
+        if interval_count == 0:
+            corrected = (
+                f"No bounded {active_state} interval was established for {label}"
+                f"{window_suffix} by the recorded device-event rows. The event "
+                f"stream has not been independently verified as complete, so "
+                f"this does not prove it stayed {inactive_state} or establish an "
+                "exact total."
+            )
+        else:
+            interval_word = "interval" if interval_count == 1 else "intervals"
+            corrected = (
+                f"Pairing the recorded state rows gives an {active_state}-time "
+                f"estimate of {total_duration} for {label}{window_suffix} across "
+                f"{interval_count} observed {interval_word}. The device-event "
+                "stream has not been independently verified as complete, so this "
+                "is not an exact total or a mathematical lower bound."
+            )
+        return corrected, True
+
     mentions = _duration_mentions_seconds(text)
     if not mentions:
         return text, False
@@ -509,12 +587,8 @@ def guard_history_duration_claim(
     if expected in mentions:
         return text, False
 
-    label = str(details.get("label") or "The device").strip() or "The device"
-    active_state = str(temporal.get("activeState") or "active").strip() or "active"
     lower_bound = bool(temporal.get("totalIsLowerBound"))
     qualifier = "at least " if lower_bound else ""
-    window_label = str(temporal.get("windowLabel") or "").strip()
-    window_suffix = f" {window_label}" if window_label else ""
     if interval_count == 0:
         corrected = (
             f"{label} had a total of {qualifier}{total_duration} in the "
@@ -535,7 +609,6 @@ def guard_history_duration_claim(
             "a lower bound."
         )
     return corrected, True
-
 
 __all__ = [
     "analyze_state_intervals",

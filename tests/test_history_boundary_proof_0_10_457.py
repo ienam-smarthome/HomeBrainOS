@@ -73,9 +73,11 @@ def test_unmarked_first_state_report_cannot_infer_whole_window_boundary() -> Non
 
     assert temporal is not None
     assert temporal["boundaryStateKnown"] is False
-    assert temporal["boundaryBasis"] == "first-event-not-proven-transition"
+    assert temporal["boundaryBasis"] == "source-integrity-unverified"
     assert temporal["coverage"] == "partial"
-    assert temporal["totalIsLowerBound"] is True
+    assert temporal["totalIsLowerBound"] is False
+    assert temporal["sourceIntegrityVerified"] is False
+    assert temporal["durationReliability"] == "unverified-event-stream"
     # Only the observed on periods after a known row may contribute.
     assert temporal["totalActiveSeconds"] == 240
     assert temporal["longestActiveSeconds"] == 180
@@ -84,7 +86,7 @@ def test_unmarked_first_state_report_cannot_infer_whole_window_boundary() -> Non
     assert temporal["firstWindowStateEvent"]["isStateChange"] is None
 
 
-def test_explicit_string_true_can_still_prove_first_transition_boundary() -> None:
+def test_explicit_transition_is_diagnostic_but_not_exact_without_integrity() -> None:
     events = [
         _event("off", "2026-09-18T07:55:00+01:00", state_change=True),
         _event("on", "2026-09-18T07:54:00+01:00", state_change=True),
@@ -101,10 +103,36 @@ def test_explicit_string_true_can_still_prove_first_transition_boundary() -> Non
     )
 
     assert temporal is not None
+    assert temporal["boundaryStateKnown"] is False
+    assert temporal["boundaryBasis"] == "first-transition-inference-untrusted"
+    assert temporal["inferredBoundaryState"] == "on"
+    assert temporal["coverage"] == "partial"
+    assert temporal["sourceIntegrityVerified"] is False
+    assert temporal["firstWindowStateEvent"]["isStateChange"] == "true"
+
+
+def test_verified_event_stream_can_use_first_transition_boundary() -> None:
+    events = [
+        _event("off", "2026-09-18T07:55:00+01:00", state_change=True),
+        _event("on", "2026-09-18T07:54:00+01:00", state_change=True),
+        _event("off", "2026-09-18T07:39:00+01:00", state_change="true"),
+    ]
+
+    temporal = analyze_state_intervals_in_window(
+        "switch",
+        events,
+        start=START,
+        end=END,
+        window_label="last night",
+        source_complete_to_start=True,
+        source_integrity_verified=True,
+    )
+
+    assert temporal is not None
     assert temporal["boundaryStateKnown"] is True
     assert temporal["boundaryBasis"] == "first-transition-inference"
     assert temporal["coverage"] == "complete"
-    assert temporal["firstWindowStateEvent"]["isStateChange"] == "true"
+    assert temporal["durationReliability"] == "exact"
 
 
 def test_unmarked_post_window_report_cannot_close_unknown_zero() -> None:

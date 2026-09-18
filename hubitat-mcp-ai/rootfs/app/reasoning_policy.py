@@ -39,7 +39,10 @@ EVIDENCE_REVIEW_INSTRUCTION = (
     "the evidence is sufficient, synthesize it instead of dumping raw fields. "
     "Distinguish direct observations and deterministic calculations from "
     "inference, state material uncertainty or incomplete coverage, and never "
-    "present correlation as proven causation. Do not reveal hidden reasoning."
+    "present correlation as proven causation. For device history, page/source "
+    "coverage does not prove the event stream contains every physical transition; "
+    "when history source integrity is unverified, do not claim an exact duration, "
+    "continuity, or absence from missing rows. Do not reveal hidden reasoning."
 )
 
 FINAL_SYNTHESIS_INSTRUCTION = (
@@ -52,8 +55,10 @@ FINAL_SYNTHESIS_INSTRUCTION = (
     "assistant claim. Synthesize the evidence instead of repeating raw tool "
     "output; distinguish direct observations and deterministic calculations from "
     "inference, state material uncertainty or incomplete coverage, and never "
-    "present correlation as proven causation. Be concise and do not reveal hidden "
-    "reasoning."
+    "present correlation as proven causation. For device history, treat page "
+    "completeness separately from event-stream integrity; if integrity is "
+    "unverified, describe recorded-event estimates without claiming exact totals, "
+    "continuity, or absence. Be concise and do not reveal hidden reasoning."
 )
 
 # 0.10.453 proved that open-ended read investigations can become materially more

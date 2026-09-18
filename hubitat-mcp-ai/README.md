@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.457**.
+Current add-on version: **0.10.458**.
 
 ## Architecture
 
@@ -250,19 +250,27 @@ the requested start plus a boundary buffer, using absolute UTC elapsed time for
 the fetch bound so autumn DST fallback cannot under-fetch, then clips interval
 arithmetic locally to the requested start/end.
 
-Window coverage is conservative. A state event before the requested start proves
-the boundary state. If no predecessor is present, HomeBrain may infer the state
-immediately before the first in-window binary transition only when that event is
-explicitly marked `isStateChange=true`; an ordinary state report with the flag
-missing is not treated as transition proof. The same rule applies when a first
-post-window transition is used to close an otherwise empty window. If transition
-proof or source coverage is incomplete, the result remains partial/lower-bound
-rather than inventing missing time. Exact window start/end, Hubitat IANA timezone,
-UTC offsets, timezone source, boundary basis, coverage, source/analysis event
-counts, inferred-attribute status, first-window state evidence, and deterministic
-totals are included in bounded evidence details. Reported transitions are still
-treated as evidence of what changed, never as proof of who or what caused the
-change.
+History page coverage and history-source integrity are separate concepts.
+`sourceCompleteToStart` / `sourcePageCompleteToStart` mean only that the returned
+Hubitat page reaches the requested boundary; they do not prove that every physical
+device transition was persisted in `hub_list_device_events`. Until an independent
+cross-source check verifies that event stream for a request/device, HomeBrain marks
+its integrity as `unverified`. It does not extend a predecessor state to the
+window start, does not synthesize a predecessor from a later transition, and does
+not extend an unclosed active state to the window end. Explicit first-transition
+inference may be retained as diagnostic context, but it cannot upgrade coverage to
+complete while source integrity is unverified.
+
+Accordingly, paired state rows are exposed as an `unverified-event-stream`
+estimate, not as an exact total and not as a mathematical lower bound: omitted
+off/on transitions can make a paired span either too large or too small. Exact
+window start/end, Hubitat IANA timezone, UTC offsets, timezone source, page coverage,
+source-integrity status, source/analysis event counts, inferred-attribute status,
+first-window/predecessor state evidence, and deterministic row-pair calculations
+are included in bounded evidence details. The final serialization guard rewrites
+unsupported exact-duration, continuity, and absence claims to match that evidence.
+Reported transitions remain evidence of what the event source recorded, never proof
+of who or what caused the change.
 
 Final device-claim grounding is deliberately non-blocking with respect to the
 Hubitat inventory. After synthesis, the agent validates named-device claims using
