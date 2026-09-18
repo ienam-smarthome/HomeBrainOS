@@ -30,7 +30,7 @@ from device_target_resolver import (
 )
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
-from request_metrics import active_request_identity
+from request_metrics import active_request_identity, increment_active_metric
 
 
 logger = logging.getLogger("HomeBrainOS.DeviceQuery")
@@ -52,6 +52,15 @@ _REQUEST_DEVICE_SNAPSHOT: ContextVar[
     tuple[object, MCPToolResult, list[dict[str, Any]]] | None
 ] = ContextVar("homebrain_request_device_snapshot", default=None)
 
+# Request-local target reuse. A model commonly resolves a named device first and
+# then calls another local tool (history/control/query) that resolves the same
+# label again. Keep only successful target identities under the opaque active
+# request identity so later service instances can reuse them without another
+# Hubitat labelFilter read. The identity guard prevents cross-request leakage.
+_REQUEST_DEVICE_RESOLUTIONS: ContextVar[
+    tuple[object, dict[str, dict[str, Any]]] | None
+] = ContextVar("homebrain_request_device_resolutions", default=None)
+
 _CONTEXT_ATTRIBUTE_BY_NORMALIZED = {
     re.sub(r"[^a-z0-9]", "", name.casefold()): name
     for name in LIVE_CONTEXT_ATTRIBUTES
@@ -72,6 +81,59 @@ class DeviceQueryService:
     @staticmethod
     def _tool_succeeded(result: MCPToolResult) -> bool:
         return _shared_tool_succeeded(result)
+
+    @staticmethod
+    def _resolution_cache_key(value: Any) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+
+    @classmethod
+    def _cached_resolution_target(
+        cls,
+        requested: str,
+        *,
+        required_command: str = "",
+    ) -> dict[str, Any] | None:
+        request_identity = active_request_identity()
+        cached = _REQUEST_DEVICE_RESOLUTIONS.get()
+        if (
+            request_identity is None
+            or cached is None
+            or cached[0] is not request_identity
+        ):
+            return None
+        target = cached[1].get(cls._resolution_cache_key(requested))
+        if not isinstance(target, dict):
+            return None
+        if required_command and required_command.casefold() not in device_commands(target):
+            return None
+        return dict(target)
+
+    @classmethod
+    def _cache_resolution_target(
+        cls,
+        requested: str,
+        target: dict[str, Any],
+    ) -> None:
+        request_identity = active_request_identity()
+        if request_identity is None:
+            return
+        cached = _REQUEST_DEVICE_RESOLUTIONS.get()
+        values = (
+            dict(cached[1])
+            if cached is not None and cached[0] is request_identity
+            else {}
+        )
+        for alias in (
+            requested,
+            target.get("label"),
+            target.get("name"),
+            target.get("id"),
+            target.get("deviceId"),
+        ):
+            key = cls._resolution_cache_key(alias)
+            if key:
+                values[key] = dict(target)
+        _REQUEST_DEVICE_RESOLUTIONS.set((request_identity, values))
 
     @staticmethod
     def _normalized_attribute(value: str) -> str:
@@ -539,6 +601,36 @@ class DeviceQueryService:
                 is_error=True,
             )
 
+        required_command = str(arguments.get("required_command") or "").strip()
+        cached_target = self._cached_resolution_target(
+            requested,
+            required_command=required_command,
+        )
+        if cached_target is not None:
+            increment_active_metric("resolution_cache_hit")
+            label = cached_target.get("label") or cached_target.get("name")
+            device_id = cached_target.get("id") or cached_target.get("deviceId")
+            data = {
+                "requested": requested,
+                "matched": True,
+                "target": cached_target,
+                "deviceId": device_id,
+                "label": label,
+                "confidence": 1.0,
+                "reason": "request-local resolved device cache",
+                "alternatives": [],
+                "attempts": [{"source": "request_cache", "count": 1}],
+                "complete": True,
+                "requestCacheHit": True,
+            }
+            return MCPToolResult(
+                DEVICE_RESOLVE_TOOL,
+                arguments,
+                {},
+                json.dumps(data),
+                data,
+            )
+
         attribute_key = self._normalized_attribute(
             self._strip_leading_article(requested)
         )
@@ -585,7 +677,6 @@ class DeviceQueryService:
             if kind_filtered:
                 scoped_candidates = kind_filtered
 
-        required_command = str(arguments.get("required_command") or "").strip()
         if required_command:
             capable = [
                 device
@@ -647,7 +738,10 @@ class DeviceQueryService:
             "alternatives": list(resolution.alternatives),
             "attempts": [{"source": attempt_source, "count": len(candidates)}],
             "complete": bare_attribute or target is not None,
+            "requestCacheHit": False,
         }
+        if isinstance(target, dict):
+            self._cache_resolution_target(requested, target)
         return MCPToolResult(DEVICE_RESOLVE_TOOL, arguments, {}, json.dumps(data), data)
 
     async def query_devices(self, arguments: dict[str, Any]) -> MCPToolResult:

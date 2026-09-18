@@ -40,6 +40,7 @@ class RequestMetrics:
         "proposal_validation_failures",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
+        "resolution_cache_hit", "evidence_sufficiency_stop",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait", "mcp_http",

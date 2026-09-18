@@ -82,15 +82,18 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
-# History reads are evidence, not an answer template.  0.10.410 first opened
-# a second reasoning round only for causal "why" questions.  Live comparison
-# in 0.10.446 showed the same early-return still blocked analytical questions
-# such as "how long was Big lamp on last night?": the tool had all ten switch
-# transitions, but the request ended as a generic event dump before the model
-# could pair intervals or answer the question.  0.10.447 therefore lets every
-# successful homebrain_device_history result continue to synthesis.  Causal
-# questions additionally keep the stronger investigation hint below.
-_CAUSAL_QUESTION = re.compile(r"\bwhy\b", re.I)
+# Successful temporal history is strong structured evidence. Non-causal history
+# requests can move directly to synthesis once the complete native tool round has
+# executed; causal questions remain eligible for another evidence-gathering round.
+# This is a generic intent boundary, not a device/question-specific route.
+_HISTORY_INVESTIGATION = re.compile(
+    r"\bwhy\b|"
+    r"\b(?:cause|caused|causing|trigger|triggered|reason)\b|"
+    r"\bwhat\s+(?:caused|triggered|made)\b|"
+    r"\b(?:normal|normally|abnormal|unusual|expected|unexpected)\b|"
+    r"\b(?:compare|comparison|versus|vs\.?|correlat(?:e|ed|ion))\b",
+    re.I,
+)
 
 # Live-observed, safety-relevant gap: a write-classified turn ("enable it",
 # right after "disable humidity controller app" -> confirm -> disabled)
@@ -934,6 +937,7 @@ class UnifiedMCPAgent:
             sensitive: list[tuple[str, dict[str, Any]]] = []
             round_actions: list[tuple[str, dict[str, Any]]] = []
             proposal_errors: list[tuple[str, str]] = []
+            round_has_mutation = False
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -951,6 +955,7 @@ class UnifiedMCPAgent:
                 if proposal_error is not None and effect.mutates:
                     proposal_errors.append((name, proposal_error))
                 if effect.mutates:
+                    round_has_mutation = True
                     self._mark_mutation()
                 if (
                     tool
@@ -1028,6 +1033,8 @@ class UnifiedMCPAgent:
                 return str(decision.message)
             messages.append(assistant)
             duplicate_signature_seen = False
+            round_history_evidence_sufficient = False
+            round_tool_failure = False
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -1056,6 +1063,7 @@ class UnifiedMCPAgent:
                 causal_history_bypass = False
                 tool = catalog.declared_tool(name)
                 if not tool:
+                    round_tool_failure = True
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
                 else:
                     execution = await self.executor.execute(
@@ -1074,6 +1082,8 @@ class UnifiedMCPAgent:
                         dict(arguments),
                         success=execution.success,
                     )
+                    if not execution.success:
+                        round_tool_failure = True
                     if result is not None:
                         if name == "hub_search_tools":
                             additions = catalog.expand(result)
@@ -1107,9 +1117,14 @@ class UnifiedMCPAgent:
                             name == _LOCAL_DEVICE_HISTORY_TOOL
                             and self._tool_succeeded(result)
                         )
+                        temporal_history_answer_ready = (
+                            history_reasoning_bypass
+                            and isinstance(result.data, dict)
+                            and isinstance(result.data.get("temporalAnalysis"), dict)
+                        )
                         causal_history_bypass = (
                             history_reasoning_bypass
-                            and _CAUSAL_QUESTION.search(user_prompt) is not None
+                            and _HISTORY_INVESTIGATION.search(user_prompt) is not None
                         )
                         if (
                             deterministic_message is not None
@@ -1125,40 +1140,23 @@ class UnifiedMCPAgent:
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
                 if history_reasoning_bypass and not causal_history_bypass:
+                    if temporal_history_answer_ready:
+                        round_history_evidence_sufficient = True
                     messages.append({
                         "role": "user",
                         "content": (
                             "HOST HISTORY-SYNTHESIS HINT\n"
                             "The successful device-history result is evidence, not the "
                             "finished answer. Answer the user's original question "
-                            "directly. When temporalAnalysis is present, use its "
-                            "pre-computed intervals, totalActiveDuration, intervalCount, "
-                            "longestActiveDuration, continuous, coverage, and "
-                            "totalIsLowerBound fields instead of redoing timestamp "
-                            "arithmetic yourself. If coverage is partial or "
-                            "totalIsLowerBound is true, describe the computed total as "
-                            "a lower bound rather than inventing a missing boundary. "
-                            "Do not turn the answer into a generic event dump unless "
-                            "the user asked for the event list. State changes do not "
-                            "prove which automation or person caused them."
-                        ),
-                    })
-                if causal_history_bypass:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "HOST CAUSAL-INVESTIGATION HINT\n"
-                            "The user asked why this happened, not just what happened. "
-                            "The event history above only proves the state changed, not "
-                            "what caused it. Before answering, consider calling "
-                            "homebrain_device_history again for a plausible related "
-                            "sensor in the same room (e.g. a motion sensor, contact "
-                            "sensor, or button) to check whether its timestamps line up "
-                            "with this change -- a close time match is suggestive of an "
-                            "automation, not proof of one. If no related sensor data "
-                            "supports a specific cause, say so plainly rather than "
-                            "inventing one; do not just restate the same event list you "
-                            "already have."
+                            "directly from the current-turn history evidence. When "
+                            "temporalAnalysis is present, use its pre-computed interval "
+                            "and reliability fields instead of redoing timestamp "
+                            "arithmetic yourself. Treat durationReliability="
+                            "unverified-event-stream or sourceIntegrityVerified=false "
+                            "as an estimate only: do not call it exact, continuous, or "
+                            "a mathematical lower bound. Do not call unrelated context "
+                            "tools merely to be thorough. State changes do not prove "
+                            "which automation or person caused them."
                         ),
                     })
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
@@ -1176,6 +1174,19 @@ class UnifiedMCPAgent:
                             ),
                         })
             if duplicate_signature_seen:
+                return await self._final_answer(messages)
+            if (
+                round_history_evidence_sufficient
+                and not round_has_mutation
+                and not round_tool_failure
+            ):
+                # The model already chose the complete native tool round for this
+                # step. If that round produced a successful deterministic temporal
+                # history and the request is not causal, the history evidence is
+                # sufficient for synthesis. Execute every call the model requested
+                # in the round, then stop tool expansion instead of letting a later
+                # round wander into location/motion/rule reads merely for context.
+                increment_active_metric("evidence_sufficiency_stop")
                 return await self._final_answer(messages)
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         if ungrounded_confirmation_claim_seen:
