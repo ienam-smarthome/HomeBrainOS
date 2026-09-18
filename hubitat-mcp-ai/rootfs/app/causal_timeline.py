@@ -487,6 +487,19 @@ def _time_tokens(value: str) -> set[str]:
     }
 
 
+def unresolved_material_timeline_rows(
+    evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return material rows whose turn-on/start provenance remains unresolved."""
+
+    return [
+        row
+        for row in build_causal_timeline_rows(evidence)
+        if row.get("material")
+        and row.get("triggerStatus") == "unresolved"
+    ]
+
+
 def missing_material_timeline_rows(
     message: str,
     evidence: list[dict[str, Any]],
@@ -561,6 +574,7 @@ __all__ = [
     "build_causal_timeline_rows",
     "command_source_followup_needed",
     "missing_material_timeline_rows",
+    "unresolved_material_timeline_rows",
     "render_causal_timeline",
     "render_command_source_followup",
 ]
