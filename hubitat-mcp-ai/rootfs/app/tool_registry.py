@@ -797,25 +797,14 @@ def device_history_tool() -> MCPTool:
     return MCPTool(
         LOCAL_DEVICE_HISTORY_TOOL,
         (
-            "Read authoritative recent event history for one named Hubitat "
-            "device. The host resolves the name with targeted fuzzy-safe "
-            "lookups and calls hub_list_device_events with bounded arguments. "
-            "Use this for when, what changed, last on/off, repeated changes, "
-            "or why questions about a device. Events prove reported state "
-            "transitions but do not by themselves prove what caused them. "
-            "For a 'when was X last opened/closed/on/off' point question, "
-            "always pass the specific attribute (e.g. 'contact', 'switch') "
-            "and a small limit (1-3) so the result is the answer itself, "
-            "not an unfiltered dump mixed with unrelated housekeeping "
-            "events like ipAddress or networkStatus. For investigative "
-            "correlation on a related device/sensor, also set the exact attribute "
-            "you want to compare (for example motion or illuminance); generic "
-            "multi-attribute history cannot establish that a particular attribute "
-            "had no activity. When attribute is set and hours_back is left unset, "
-            "the host widens the search "
-            "window to the full seven days automatically, because a 'last "
-            "X' question has no natural cutoff -- it wants the most recent "
-            "matching event whenever it happened, not only within one day."
+            "Read bounded authoritative event history for one named Hubitat device. "
+            "Use for when/what changed, last state, repeated changes, or device-history "
+            "investigation. Events prove reported changes, not their cause. Set "
+            "attribute for point lookups and for any related-device correlation "
+            "(e.g. switch, contact, motion, illuminance); generic multi-attribute "
+            "history cannot prove attribute absence. For last-state lookups use "
+            "limit 1-3. With attribute set and hours_back omitted, the host widens "
+            "the search to seven days."
         ),
         {
             "type": "object",
@@ -831,22 +820,16 @@ def device_history_tool() -> MCPTool:
                     "maximum": 168,
                     "default": 24,
                     "description": (
-                        "Relative history window in hours, up to seven days. "
-                        "Default is 24 for a broad 'what happened' review; "
-                        "when attribute is set and this is left unset, the "
-                        "host uses 168 instead so a 'last <state>' question "
-                        "is never falsely answered 'no events' just because "
-                        "the real last event was more than a day ago."
+                        "Relative history window, 1-168 hours. Default 24; when "
+                        "attribute is set and omitted here, the host may widen to 168."
                     ),
                 },
                 "attribute": {
                     "type": "string",
                     "description": (
-                        "Event attribute filter such as switch, motion, contact, "
-                        "or temperature. Always set this for a 'when was X last "
-                        "<state>' question and when correlating a related sensor in "
-                        "an investigation, so the result is not mixed with unrelated "
-                        "attributes and cannot be misread as proof of attribute absence."
+                        "Exact event attribute such as switch, motion, contact, "
+                        "illuminance, or temperature. Required for point lookups and "
+                        "related-sensor correlation."
                     ),
                 },
                 "limit": {
@@ -854,11 +837,7 @@ def device_history_tool() -> MCPTool:
                     "minimum": 1,
                     "maximum": 50,
                     "default": 20,
-                    "description": (
-                        "Max events to return. Use 1-3 for a 'last/most recent' "
-                        "question instead of the default -- the default is sized "
-                        "for a broader 'what happened' history review."
-                    ),
+                    "description": "Max events; use 1-3 for last/most-recent lookups.",
                 },
             },
             "required": ["name"],
@@ -866,7 +845,6 @@ def device_history_tool() -> MCPTool:
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
     )
-
 
 def weather_snapshot_tool() -> MCPTool:
     return MCPTool(
