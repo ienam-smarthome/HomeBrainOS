@@ -502,6 +502,53 @@ def analyze_state_intervals_in_window(
         "boundaryBasis": boundary_basis,
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
+def window_event_evidence(
+    events: list[dict[str, Any]],
+    time_window: dict[str, Any] | None,
+    *,
+    limit: int = 24,
+) -> list[dict[str, Any]]:
+    """Return bounded source rows that actually fall inside the requested window.
+
+    This evidence channel is independent of interval construction. It remains
+    useful when an unverified stream establishes no bounded active interval but
+    still contains commands or other device rows inside the requested period.
+    """
+
+    if not isinstance(time_window, dict):
+        return []
+    start = _parse_timestamp(time_window.get("start"))
+    end = _parse_timestamp(time_window.get("end"))
+    if start is None or end is None or end <= start:
+        return []
+
+    selected: list[tuple[datetime, int, dict[str, Any]]] = []
+    for index, item in enumerate(events):
+        if not isinstance(item, dict):
+            continue
+        event_time = _parse_timestamp(item.get("date") or item.get("timestamp"))
+        if event_time is None or event_time < start or event_time > end:
+            continue
+        row = {
+            key: item.get(key)
+            for key in (
+                "name",
+                "value",
+                "unit",
+                "description",
+                "date",
+                "isStateChange",
+            )
+            if key in item
+        }
+        selected.append((event_time, index, row))
+
+    # Render a causal/temporal window chronologically even when the upstream
+    # device page is newest-first. Preserve source-order as the stable tiebreaker.
+    selected.sort(key=lambda item: (item[0], item[1]))
+    return [row for _time, _index, row in selected[: max(1, int(limit))]]
+
+
 def boundary_event_evidence(
     events: list[dict[str, Any]],
     temporal_analysis: dict[str, Any] | None,
@@ -653,6 +700,35 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         details["temporalAnalysis"] = temporal_details
 
     events = result_data.get("events")
+    window_events = result_data.get("windowEvents")
+    if not isinstance(window_events, list) and isinstance(events, list):
+        window_events = window_event_evidence(
+            events,
+            result_data.get("timeWindow")
+            if isinstance(result_data.get("timeWindow"), dict)
+            else None,
+        )
+    if isinstance(window_events, list):
+        bounded_window_events = [
+            {
+                key: item.get(key)
+                for key in (
+                    "name",
+                    "value",
+                    "unit",
+                    "description",
+                    "date",
+                    "isStateChange",
+                )
+                if key in item
+            }
+            for item in window_events[:24]
+            if isinstance(item, dict)
+        ]
+        if bounded_window_events:
+            details["windowEvents"] = bounded_window_events
+            details["windowEventsTruncated"] = len(window_events) > 24
+
     boundary_events = result_data.get("boundaryEvents")
     if isinstance(boundary_events, list):
         bounded_boundary_events = [
@@ -709,6 +785,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
     meaningful = (
         bool(temporal_details)
         or bool(details.get("observedEvents"))
+        or bool(details.get("windowEvents"))
         or bool(details.get("boundaryEvents"))
         or any(
             key in result_data
@@ -861,6 +938,7 @@ __all__ = [
     "analyze_state_intervals",
     "analyze_state_intervals_in_window",
     "boundary_event_evidence",
+    "window_event_evidence",
     "guard_history_duration_claim",
     "history_temporal_evidence_details",
 ]
