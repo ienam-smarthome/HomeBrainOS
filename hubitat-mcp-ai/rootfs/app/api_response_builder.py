@@ -5,6 +5,10 @@ import re
 from typing import Any
 
 from evidence_source_guard import guard_checked_source_absence_claim
+from history_claim_guard import (
+    guard_history_attribute_absence_claim,
+    guard_history_interval_count_claim,
+)
 from history_temporal_analysis import guard_history_duration_claim
 from technical_metrics_presenter import (
     present_request_metrics,
@@ -300,9 +304,30 @@ def _guard_history_message(
             if isinstance(receipt.get("details"), dict):
                 _mark_history_correction(receipt)
                 break
+
+    corrected, interval_receipts = guard_history_interval_count_claim(
+        corrected,
+        evidence,
+    )
+    for receipt in interval_receipts:
+        _mark_history_correction(receipt)
+
+    corrected, attribute_receipts = guard_history_attribute_absence_claim(
+        corrected,
+        evidence,
+    )
+    for receipt in attribute_receipts:
+        _mark_history_correction(receipt)
+
     # Keep the local variable explicit so future guards can share this boundary
     # without losing whether any serializer-side correction happened.
-    _ = partial_zero_applied or absence_applied or duration_applied
+    _ = (
+        partial_zero_applied
+        or absence_applied
+        or duration_applied
+        or bool(interval_receipts)
+        or bool(attribute_receipts)
+    )
     return corrected
 
 
