@@ -304,7 +304,11 @@ def arm_controller_followup_budget(candidates: list[dict[str, Any]]) -> bool:
             allowed.append((label, attrs))
     if not allowed:
         return False
-    _CONTROLLER_FOLLOWUP.set((identity, tuple(allowed[:8]), False))
+    # Preserve only the highest-ranked candidate from structured room discovery.
+    # The caller already orders exact-room matches before label-affinity matches.
+    # Keeping one target makes the follow-up truly bounded instead of allowing
+    # the model to fan out across every controller in the room.
+    _CONTROLLER_FOLLOWUP.set((identity, tuple(allowed[:1]), False))
     return True
 
 
@@ -370,12 +374,21 @@ def register_model_tool_execution(
         return True
     if mutation_seen:
         return True
-    if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
+
+    # Once a controller follow-up has been armed, the next model-directed read is
+    # the reserved slot regardless of how many generic reads have already run.
+    # This prevents the pending reservation from disabling the normal round cap
+    # while the model spends several extra rounds on multiple controllers/sensors.
+    if controller_followup_pending():
         if _consume_controller_followup(name, dict(arguments or {})):
             _REASONING_BUDGET.set(
                 (identity, rounds, reads + 1, mutation_seen, skipped)
             )
             return True
+        _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
+        return False
+
+    if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
         return False
     _REASONING_BUDGET.set((identity, rounds, reads + 1, mutation_seen, skipped))
@@ -390,6 +403,14 @@ def reasoning_budget_exhausted() -> bool:
         return False
     if controller_followup_pending():
         return False
+
+    state = _controller_followup_state()
+    if state is not None and state[1]:
+        # The single reserved controller attempt has completed (or an invalid
+        # competing read consumed it). Force synthesis immediately rather than
+        # reopening the ordinary generic budget for more fourth/fifth rounds.
+        return True
+
     return (
         reads >= DEFAULT_MAX_READ_TOOL_CALLS
         or rounds >= DEFAULT_MAX_READ_TOOL_ROUNDS
