@@ -86,7 +86,14 @@ _HOME_STATE_PATTERNS = (
 # requests can move directly to synthesis once the complete native tool round has
 # executed; causal questions remain eligible for another evidence-gathering round.
 # This is a generic intent boundary, not a device/question-specific route.
-_CAUSAL_QUESTION = re.compile(r"\bwhy\b", re.I)
+_HISTORY_INVESTIGATION = re.compile(
+    r"\bwhy\b|"
+    r"\b(?:cause|caused|causing|trigger|triggered|reason)\b|"
+    r"\bwhat\s+(?:caused|triggered|made)\b|"
+    r"\b(?:normal|normally|abnormal|unusual|expected|unexpected)\b|"
+    r"\b(?:compare|comparison|versus|vs\.?|correlat(?:e|ed|ion))\b",
+    re.I,
+)
 
 # Live-observed, safety-relevant gap: a write-classified turn ("enable it",
 # right after "disable humidity controller app" -> confirm -> disabled)
@@ -1027,6 +1034,7 @@ class UnifiedMCPAgent:
             messages.append(assistant)
             duplicate_signature_seen = False
             round_history_evidence_sufficient = False
+            round_tool_failure = False
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -1055,6 +1063,7 @@ class UnifiedMCPAgent:
                 causal_history_bypass = False
                 tool = catalog.declared_tool(name)
                 if not tool:
+                    round_tool_failure = True
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
                 else:
                     execution = await self.executor.execute(
@@ -1073,6 +1082,8 @@ class UnifiedMCPAgent:
                         dict(arguments),
                         success=execution.success,
                     )
+                    if not execution.success:
+                        round_tool_failure = True
                     if result is not None:
                         if name == "hub_search_tools":
                             additions = catalog.expand(result)
@@ -1113,7 +1124,7 @@ class UnifiedMCPAgent:
                         )
                         causal_history_bypass = (
                             history_reasoning_bypass
-                            and _CAUSAL_QUESTION.search(user_prompt) is not None
+                            and _HISTORY_INVESTIGATION.search(user_prompt) is not None
                         )
                         if (
                             deterministic_message is not None
@@ -1164,7 +1175,11 @@ class UnifiedMCPAgent:
                         })
             if duplicate_signature_seen:
                 return await self._final_answer(messages)
-            if round_history_evidence_sufficient and not round_has_mutation:
+            if (
+                round_history_evidence_sufficient
+                and not round_has_mutation
+                and not round_tool_failure
+            ):
                 # The model already chose the complete native tool round for this
                 # step. If that round produced a successful deterministic temporal
                 # history and the request is not causal, the history evidence is
