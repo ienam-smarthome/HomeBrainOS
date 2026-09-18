@@ -207,6 +207,61 @@ class DeviceQueryService:
                 return "value", combined["value"]
         return None, None
 
+    @classmethod
+    def _room_controller_candidates(
+        cls,
+        devices: list[dict[str, Any]],
+        room_value: Any,
+    ) -> list[dict[str, Any]]:
+        """Rank button-capable candidates by room metadata, then label affinity."""
+
+        wanted_room = " ".join(str(room_value or "").strip().casefold().split())
+        if not wanted_room:
+            return []
+
+        exact: list[dict[str, Any]] = []
+        label_affinity: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        for device in devices:
+            capabilities = sorted(cls._capability_names(device))
+            normalized_caps = {
+                re.sub(r"[^a-z0-9]", "", value.casefold())
+                for value in capabilities
+            }
+            if not any("button" in value for value in normalized_caps):
+                continue
+
+            device_id = str(device.get("id") or device.get("deviceId") or "").strip()
+            label = str(device.get("label") or device.get("name") or "").strip()
+            room = str(device.get("room") or device.get("roomName") or "").strip()
+            normalized_room = " ".join(room.casefold().split())
+            normalized_label = " ".join(label.casefold().split())
+
+            basis = ""
+            if normalized_room == wanted_room:
+                basis = "room"
+            elif wanted_room in normalized_label:
+                basis = "label-affinity"
+            else:
+                continue
+
+            dedupe = device_id or normalized_label
+            if not dedupe or dedupe in seen_ids:
+                continue
+            seen_ids.add(dedupe)
+
+            item = {
+                "id": device.get("id") or device.get("deviceId"),
+                "label": label or None,
+                "room": room or None,
+                "capabilities": capabilities,
+                "matchBasis": basis,
+            }
+            (exact if basis == "room" else label_affinity).append(item)
+
+        return [*exact, *label_affinity][:12]
+
     @staticmethod
     def _controller_event_source_hints(
         matches: list[dict[str, Any]],
@@ -251,6 +306,8 @@ class DeviceQueryService:
             hints.append({
                 "id": item.get("id"),
                 "label": item.get("label"),
+                "room": item.get("room"),
+                "matchBasis": item.get("matchBasis"),
                 "capabilities": capabilities,
                 "suggestedHistoryAttributes": list(dict.fromkeys(suggested)),
             })
@@ -636,7 +693,8 @@ class DeviceQueryService:
             "complete": True,
         }
         if normalized_attribute == "room" and operator == "eq":
-            controller_hints = self._controller_event_source_hints(matches)
+            controller_candidates = self._room_controller_candidates(devices, expected)
+            controller_hints = self._controller_event_source_hints(controller_candidates)
             if controller_hints:
                 data["eventSourceHints"] = {
                     "controllerCandidates": controller_hints,
