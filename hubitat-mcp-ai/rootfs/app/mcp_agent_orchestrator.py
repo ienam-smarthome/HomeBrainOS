@@ -29,10 +29,11 @@ from device_claim_grounding import (
 from device_control_service import DeviceControlService
 from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
-from evidence_ledger import build_current_turn_evidence_ledger
 from evidence_recorder import EvidenceRecorder
+from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
+from investigation_policy import is_causal_investigation, is_history_investigation
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from request_classification import (
@@ -43,8 +44,6 @@ from request_classification import (
 from reasoning_policy import set_reasoning_profile
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
-from synthesis_context import build_tool_evidence_packet
-from synthesis_validator import validate_synthesis
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
@@ -109,21 +108,9 @@ _HOME_STATE_PATTERNS = (
 )
 # Successful temporal history is strong structured evidence. Straight factual
 # history requests can move directly to synthesis once the complete native tool
-# round has executed. Investigative requests (cause, normality/expectation,
-# comparison/correlation) remain eligible for additional evidence gathering.
-# This is a generic intent boundary, not a device/question-specific route.
-_CAUSAL_INVESTIGATION = re.compile(
-    r"\bwhy\b|"
-    r"\b(?:cause|caused|causing|trigger|triggered|reason)\b|"
-    r"\bwhat\s+(?:caused|triggered|made)\b",
-    re.I,
-)
-_HISTORY_INVESTIGATION = re.compile(
-    _CAUSAL_INVESTIGATION.pattern
-    + r"|\b(?:normal|normally|abnormal|unusual|expected|unexpected)\b"
-    + r"|\b(?:compare|comparison|versus|vs\.?|correlat(?:e|ed|ion))\b",
-    re.I,
-)
+# round has executed. Investigative requests remain eligible for broader evidence
+# gathering; classification lives in investigation_policy.py so the final
+# coordinator and orchestrator cannot diverge.
 
 # Live-observed, safety-relevant gap: a write-classified turn ("enable it",
 # right after "disable humidity controller app" -> confirm -> disabled)
@@ -245,6 +232,10 @@ class UnifiedMCPAgent:
                 _LOCAL_HUB_INFO_TOOL: self._hub_info_snapshot,
             },
             max_tool_result_chars=self.max_tool_result_chars,
+        )
+        self.final_answers = FinalAnswerCoordinator(
+            self._chat,
+            evidence_supplier=self.evidence.receipts,
         )
         self._request_class: ContextVar[str] = ContextVar(
             "hubitat_request_class", default="live-read"
@@ -549,7 +540,7 @@ class UnifiedMCPAgent:
         if (
             _matches(user_prompt, _APP_TERMS)
             or _matches(previous_user_prompt, _APP_TERMS)
-            or _HISTORY_INVESTIGATION.search(user_prompt) is not None
+            or is_history_investigation(user_prompt)
         ):
             # Investigative questions often need automation identity even when
             # the user never says "app", "rule", or "automation". The manifest
@@ -594,98 +585,7 @@ class UnifiedMCPAgent:
         return content
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
-        evidence_brief = build_current_turn_evidence_ledger(self.evidence.receipts())
-        original_user = next(
-            (
-                str(message.get("content") or "")
-                for message in reversed(messages)
-                if message.get("role") == "user"
-                and not str(message.get("content") or "").lstrip().startswith("HOST ")
-            ),
-            "",
-        )
-        causal = _CAUSAL_INVESTIGATION.search(original_user) is not None
-        investigative = _HISTORY_INVESTIGATION.search(original_user) is not None
-        synthesis = (
-            "Answer the ORIGINAL user request now using the CURRENT-TURN evidence. "
-            "Do not request another tool and do not answer a narrower substitute "
-            "question merely because one source is easy to summarize. "
-        )
-        if causal:
-            synthesis += (
-                "This is a causal investigation. Reason across the evidence: lead "
-                "with the best-supported explanation and calibrate confidence; "
-                "reconstruct the important timeline by correlating timestamps across "
-                "sources; separate a trigger/provenance event from downstream "
-                "automation effects; explain what remains unproven or unexplained; "
-                "and only suggest a configuration change when the evidence makes it "
-                "relevant. A device state transition or close timestamp alone is "
-                "correlation, not proof of a person or automation causing it. "
-            )
-        elif investigative:
-            synthesis += (
-                "This is an analytical history request. Compare the relevant evidence "
-                "classes directly, preserve objective patterns and uncertainty, and "
-                "do not invent a causal explanation or a normality baseline that the "
-                "current-turn evidence does not establish. "
-            )
-        synthesis += (
-            "For unverified device-event streams, describe durations/counts as "
-            "recorded-event estimates rather than exact physical history. Preserve "
-            "useful supported analysis instead of reducing the answer to a duration "
-            "or raw event dump. Be concise but complete."
-        )
-
-        final_messages = [*messages]
-        if evidence_brief:
-            final_messages.append({"role": "user", "content": evidence_brief})
-        tool_packet = build_tool_evidence_packet(messages)
-        if tool_packet:
-            final_messages.append({"role": "user", "content": tool_packet})
-        final_messages.append({"role": "user", "content": synthesis})
-        response = await self._chat(final_messages, [])
-        content = str(
-            response.get("content")
-            or "The MCP request completed without a written answer."
-        )
-
-        corrected, issues = validate_synthesis(content, self.evidence.receipts())
-        if issues:
-            # Validators identify factual conflicts; the model remains responsible
-            # for authorship. Give it one no-tools repair pass so supported causal
-            # analysis, timelines, and caveats survive instead of being replaced by
-            # a deterministic sentence.
-            repair_messages = [
-                *final_messages,
-                {"role": "assistant", "content": content},
-                {
-                    "role": "user",
-                    "content": (
-                        "HOST SYNTHESIS VALIDATION REPAIR\n"
-                        f"Detected deterministic issues: {', '.join(issues)}.\n"
-                        "Rewrite the draft answer, preserving every supported useful "
-                        "explanation, timeline, and uncertainty statement while fixing "
-                        "only the factual conflicts. Do not request tools. The following "
-                        "is a deterministic localized baseline showing the corrections "
-                        "that must be respected; it is NOT a replacement answer:\n"
-                        + corrected
-                    ),
-                },
-            ]
-            repaired = await self._chat(repair_messages, [])
-            repaired_content = str(repaired.get("content") or "").strip()
-            if repaired_content:
-                repaired_corrected, remaining = validate_synthesis(
-                    repaired_content, self.evidence.receipts()
-                )
-                content = (
-                    repaired_content
-                    if not remaining
-                    else repaired_corrected
-                )
-            else:
-                content = corrected
-
+        content = await self.final_answers.answer(messages)
         return self._unverified_mutation_guard(content)
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
@@ -879,8 +779,8 @@ class UnifiedMCPAgent:
         capability_grounding = CapabilityGroundingPolicy()
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
-        causal_request = _CAUSAL_INVESTIGATION.search(user_prompt) is not None
-        investigative_request = _HISTORY_INVESTIGATION.search(user_prompt) is not None
+        causal_request = is_causal_investigation(user_prompt)
+        investigative_request = is_history_investigation(user_prompt)
         set_reasoning_profile(
             "investigative" if investigative_request else "standard"
         )
