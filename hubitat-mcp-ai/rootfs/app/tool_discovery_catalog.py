@@ -349,19 +349,15 @@ class ToolDiscoveryCatalog:
         installed. Keep the view small and read-only.
         """
 
-        names: list[str] = []
-        search = self._available.get(SEARCH_TOOL)
-        if search is not None:
-            names.append(SEARCH_TOOL)
-
         candidates = [
             (name, tool)
             for name, tool in self._available.items()
             if name != SEARCH_TOOL and self._causal_provenance_read_tool(tool)
         ]
         # Prefer explicit provenance gateway names, then preserve MCP registry
-        # order as the tiebreaker. Four read gateways plus search is a deliberately
-        # small completion registry.
+        # order as the tiebreaker. Installed read gateways are already known from
+        # MCP list_tools, so do not offer fuzzy search alongside them: doing so
+        # adds a model/tool round without improving the evidence choice.
         priorities = {
             "hub_read_diagnostics": 0,
             "hub_read_apps_code": 1,
@@ -374,8 +370,13 @@ class ToolDiscoveryCatalog:
                 indexed.get(item[0], 0),
             )
         )
-        names.extend(name for name, _tool in candidates[:4])
-        return tuple(names)
+        if candidates:
+            return tuple(name for name, _tool in candidates[:4])
+
+        # Compatibility fallback for unusually sparse/limited MCP registries:
+        # search is exposed only when no installed provenance read gateway is
+        # available at all.
+        return (SEARCH_TOOL,) if SEARCH_TOOL in self._available else ()
 
     def activate_causal_provenance_view(self) -> tuple[str, ...]:
         """Replace the declared registry with the bounded provenance view."""
