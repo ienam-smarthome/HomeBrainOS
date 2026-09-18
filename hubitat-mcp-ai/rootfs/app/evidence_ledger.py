@@ -452,6 +452,42 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
     return lines[:_MAX_LEDGER_LINES]
 
 
+def _single_history_window_audit_needed(
+    receipts: list[dict[str, Any]],
+) -> bool:
+    """Whether one history source still needs a compact audit ledger.
+
+    A zero-interval semantic window can still contain command/custom rows. Those
+    facts are easy to lose behind the normal newest-first tool excerpt, so retain
+    a compact ledger even though only one evidence class was checked.
+    """
+
+    histories = [
+        receipt
+        for receipt in receipts
+        if isinstance(receipt, dict)
+        and receipt.get("success") is True
+        and receipt.get("tool") == "homebrain_device_history"
+        and isinstance(receipt.get("details"), dict)
+    ]
+    if len(histories) != 1:
+        return False
+    details = histories[0]["details"]
+    temporal = details.get("temporalAnalysis")
+    if not isinstance(temporal, dict):
+        return False
+    try:
+        interval_count = int(temporal.get("intervalCount"))
+    except (TypeError, ValueError):
+        return False
+    window_events = details.get("windowEvents")
+    return (
+        interval_count == 0
+        and isinstance(window_events, list)
+        and any(isinstance(item, dict) for item in window_events)
+    )
+
+
 def build_current_turn_evidence_ledger(
     receipts: list[dict[str, Any]],
 ) -> str | None:
@@ -469,8 +505,15 @@ def build_current_turn_evidence_ledger(
     }
     # A single ordinary device-history answer already has a strong direct
     # synthesis path. Avoid adding prompt overhead unless the request gathered
-    # multiple evidence classes or related-device histories.
-    if len(material) < 2 and "related_device_history" not in material:
+    # multiple evidence classes/related histories, or the sole history source
+    # established zero intervals but retained in-window rows that still need an
+    # auditable compact proof for final synthesis.
+    single_window_audit = _single_history_window_audit_needed(receipts)
+    if (
+        len(material) < 2
+        and "related_device_history" not in material
+        and not single_window_audit
+    ):
         return None
 
     lines = _ledger_lines(receipts)
