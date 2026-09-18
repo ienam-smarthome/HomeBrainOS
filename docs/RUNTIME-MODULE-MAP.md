@@ -13,6 +13,7 @@ The repository drift test compares this table directly with the live directory. 
 | `automation_ideas_service.py` | Asks the model for grounded, creative new-automation suggestions (never factual claims). |
 | `automation_status_service.py` | Reads and normalises Hubitat automation status. |
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
+| `causal_evidence_planner.py` | Derives exact subject-room provenance discovery, one ranked controller history read, and deterministic controller-to-subject transition alignments for causal investigations without authoring the causal answer. |
 | `chat_transport.py` | Owns provider HTTP, streaming, and response assembly. |
 | `chatgpt_mcp.py` | Exposes the opt-in ChatGPT-facing Streamable HTTP MCP transport and high-level HomeBrainOS tools. |
 | `confirmation_policy.py` | Decides whether structured actions require confirmation. |
