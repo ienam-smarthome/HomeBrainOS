@@ -540,7 +540,15 @@ class UnifiedMCPAgent:
                 continue
             previous_user_prompt = content
             break
-        if _matches(user_prompt, _APP_TERMS) or _matches(previous_user_prompt, _APP_TERMS):
+        if (
+            _matches(user_prompt, _APP_TERMS)
+            or _matches(previous_user_prompt, _APP_TERMS)
+            or _HISTORY_INVESTIGATION.search(user_prompt) is not None
+        ):
+            # Investigative questions often need automation identity even when
+            # the user never says "app", "rule", or "automation". The manifest
+            # remains identity/navigation context only; live tool reads are still
+            # required before making claims about configuration or execution.
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
         return build_system_prompt(manifest, app_section)
@@ -584,7 +592,7 @@ class UnifiedMCPAgent:
         original_user = next(
             (
                 str(message.get("content") or "")
-                for message in messages
+                for message in reversed(messages)
                 if message.get("role") == "user"
                 and not str(message.get("content") or "").lstrip().startswith("HOST ")
             ),
