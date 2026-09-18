@@ -934,6 +934,7 @@ class UnifiedMCPAgent:
             sensitive: list[tuple[str, dict[str, Any]]] = []
             round_actions: list[tuple[str, dict[str, Any]]] = []
             proposal_errors: list[tuple[str, str]] = []
+            round_has_mutation = False
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -951,6 +952,7 @@ class UnifiedMCPAgent:
                 if proposal_error is not None and effect.mutates:
                     proposal_errors.append((name, proposal_error))
                 if effect.mutates:
+                    round_has_mutation = True
                     self._mark_mutation()
                 if (
                     tool
@@ -1028,6 +1030,7 @@ class UnifiedMCPAgent:
                 return str(decision.message)
             messages.append(assistant)
             duplicate_signature_seen = False
+            round_history_evidence_sufficient = False
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -1125,22 +1128,22 @@ class UnifiedMCPAgent:
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
                 if history_reasoning_bypass and not causal_history_bypass:
+                    round_history_evidence_sufficient = True
                     messages.append({
                         "role": "user",
                         "content": (
                             "HOST HISTORY-SYNTHESIS HINT\n"
                             "The successful device-history result is evidence, not the "
                             "finished answer. Answer the user's original question "
-                            "directly. When temporalAnalysis is present, use its "
-                            "pre-computed intervals, totalActiveDuration, intervalCount, "
-                            "longestActiveDuration, continuous, coverage, and "
-                            "totalIsLowerBound fields instead of redoing timestamp "
-                            "arithmetic yourself. If coverage is partial or "
-                            "totalIsLowerBound is true, describe the computed total as "
-                            "a lower bound rather than inventing a missing boundary. "
-                            "Do not turn the answer into a generic event dump unless "
-                            "the user asked for the event list. State changes do not "
-                            "prove which automation or person caused them."
+                            "directly from the current-turn history evidence. When "
+                            "temporalAnalysis is present, use its pre-computed interval "
+                            "and reliability fields instead of redoing timestamp "
+                            "arithmetic yourself. Treat durationReliability="
+                            "unverified-event-stream or sourceIntegrityVerified=false "
+                            "as an estimate only: do not call it exact, continuous, or "
+                            "a mathematical lower bound. Do not call unrelated context "
+                            "tools merely to be thorough. State changes do not prove "
+                            "which automation or person caused them."
                         ),
                     })
                 if causal_history_bypass:
@@ -1176,6 +1179,15 @@ class UnifiedMCPAgent:
                             ),
                         })
             if duplicate_signature_seen:
+                return await self._final_answer(messages)
+            if round_history_evidence_sufficient and not round_has_mutation:
+                # The model already chose the complete native tool round for this
+                # step. If that round produced a successful deterministic temporal
+                # history and the request is not causal, the history evidence is
+                # sufficient for synthesis. Execute every call the model requested
+                # in the round, then stop tool expansion instead of letting a later
+                # round wander into location/motion/rule reads merely for context.
+                increment_active_metric("evidence_sufficiency_stop")
                 return await self._final_answer(messages)
         logger.warning("Agent reached tool-round limit after %.3fs", time.monotonic() - request_started)
         if ungrounded_confirmation_claim_seen:
