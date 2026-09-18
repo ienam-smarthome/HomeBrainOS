@@ -69,6 +69,35 @@ FINAL_SYNTHESIS_INSTRUCTION = (
 DEFAULT_MAX_READ_TOOL_CALLS = 8
 DEFAULT_MAX_READ_TOOL_ROUNDS = 3
 
+# Investigative questions need enough room to connect heterogeneous evidence
+# classes (subject history, provenance/controller events, rules/apps/logs, mode
+# context) before synthesis. This is deliberately larger than the everyday read
+# budget but still far below the outer agent limit.
+INVESTIGATIVE_MAX_READ_TOOL_CALLS = 12
+INVESTIGATIVE_MAX_READ_TOOL_ROUNDS = 5
+_REASONING_PROFILE: ContextVar[str] = ContextVar(
+    "homebrain_reasoning_profile", default="standard"
+)
+
+
+def set_reasoning_profile(profile: str) -> None:
+    """Select the request-local evidence budget profile."""
+
+    normalized = str(profile or "standard").strip().casefold()
+    _REASONING_PROFILE.set(
+        "investigative" if normalized == "investigative" else "standard"
+    )
+
+
+def reasoning_profile() -> str:
+    return _REASONING_PROFILE.get()
+
+
+def _budget_limits() -> tuple[int, int]:
+    if reasoning_profile() == "investigative":
+        return INVESTIGATIVE_MAX_READ_TOOL_ROUNDS, INVESTIGATIVE_MAX_READ_TOOL_CALLS
+    return DEFAULT_MAX_READ_TOOL_ROUNDS, DEFAULT_MAX_READ_TOOL_CALLS
+
 # Legacy 0.10.447 causal prompting told the model to hunt related room sensors.
 # The 0.10.453 generic evidence contract supersedes it. Transport normalization
 # removes this old message if an older orchestrator path still appends it, so
@@ -396,7 +425,8 @@ def register_model_tool_execution(
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
         return False
 
-    if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
+    _max_rounds, max_reads = _budget_limits()
+    if reads >= max_reads:
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
         return False
     _REASONING_BUDGET.set((identity, rounds, reads + 1, mutation_seen, skipped))
@@ -421,23 +451,23 @@ def reasoning_budget_exhausted() -> bool:
     if reads <= 0:
         return False
 
-    return (
-        reads >= DEFAULT_MAX_READ_TOOL_CALLS
-        or rounds >= DEFAULT_MAX_READ_TOOL_ROUNDS
-    )
+    max_rounds, max_reads = _budget_limits()
+    return reads >= max_reads or rounds >= max_rounds
 
 
 def reasoning_budget_status() -> dict[str, Any]:
     """Privacy-safe budget state for tests/logging and host instructions."""
 
     _identity, rounds, reads, mutation_seen, skipped = _budget_state()
+    max_rounds, max_reads = _budget_limits()
     return {
         "toolRounds": rounds,
         "readCalls": reads,
         "mutationSeen": mutation_seen,
         "skippedReadCalls": skipped,
-        "maxToolRounds": DEFAULT_MAX_READ_TOOL_ROUNDS,
-        "maxReadCalls": DEFAULT_MAX_READ_TOOL_CALLS,
+        "profile": reasoning_profile(),
+        "maxToolRounds": max_rounds,
+        "maxReadCalls": max_reads,
         "controllerFollowupPending": controller_followup_pending(),
         "exhausted": reasoning_budget_exhausted(),
     }
@@ -574,6 +604,8 @@ __all__ = [
     "CURRENT_TURN_EVIDENCE_RULE",
     "DEFAULT_MAX_READ_TOOL_CALLS",
     "DEFAULT_MAX_READ_TOOL_ROUNDS",
+    "INVESTIGATIVE_MAX_READ_TOOL_CALLS",
+    "INVESTIGATIVE_MAX_READ_TOOL_ROUNDS",
     "EVIDENCE_REVIEW_INSTRUCTION",
     "FINAL_SYNTHESIS_INSTRUCTION",
     "active_tool_round_size",
@@ -586,6 +618,8 @@ __all__ = [
     "prepare_reasoning_turn",
     "reasoning_budget_exhausted",
     "reasoning_budget_status",
+    "reasoning_profile",
+    "set_reasoning_profile",
     "register_model_tool_execution",
     "reset_reasoning_budget",
     "selected_reasoning_target",
