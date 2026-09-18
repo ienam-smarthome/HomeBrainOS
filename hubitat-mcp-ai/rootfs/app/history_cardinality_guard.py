@@ -110,7 +110,20 @@ def guard_history_interval_cardinality(
                 expected = int(temporal.get("intervalCount"))
             except (TypeError, ValueError):
                 expected = claimed
-            if expected != claimed:
+            # "N periods/intervals" naturally refers to temporal history even
+            # when the subject is carried by a pronoun. "N times" is much more
+            # ambiguous in investigative answers: it can count mode changes,
+            # log hits, sensor events, or other corroborating evidence. Only
+            # bind a label-less "times" claim to this history receipt when the
+            # sentence also names the receipt's active state (for example,
+            # "it was on two times" or "motion was active three times").
+            noun = str(match.group("noun") or "").casefold()
+            active = str(temporal.get("activeState") or "").strip().casefold()
+            active_is_named = bool(
+                active and re.search(rf"\\b{re.escape(active)}\\b", comparable)
+            )
+            ambiguous_times = noun.startswith("time") and not active_is_named
+            if expected != claimed and not ambiguous_times:
                 candidates = [receipts[0]]
         if len(candidates) != 1:
             continue
