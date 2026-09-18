@@ -582,6 +582,9 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "hoursBack": result_data.get("hoursBack"),
         "timeWindow": result_data.get("timeWindow"),
     }
+    room = str(result_data.get("room") or "").strip()
+    if room:
+        details["room"] = room
     if temporal_details:
         details["temporalAnalysis"] = temporal_details
 

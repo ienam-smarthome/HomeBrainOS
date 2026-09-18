@@ -18,6 +18,12 @@ from confirmed_action_coordinator import ConfirmedActionCoordinator
 from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirmation
 from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
+from causal_evidence_planner import (
+    controller_history_arguments,
+    controller_transition_alignments,
+    render_controller_alignment_instruction,
+    subject_room_filter_arguments,
+)
 from deterministic_tool_presenter import present_tool_result
 from device_claim_grounding import (
     DeviceClaimAction,
@@ -74,22 +80,12 @@ logger = logging.getLogger("HomeBrainOS.Orchestrator")
 def _controller_followup_arguments(
     candidates: list[dict[str, Any]],
 ) -> dict[str, str] | None:
-    """Return one deterministic top-ranked controller history request."""
+    """Compatibility adapter for the pre-0.12 controller-selection contract."""
 
-    if not candidates:
-        return None
-    candidate = candidates[0]
-    if not isinstance(candidate, dict):
-        return None
-    label = str(candidate.get("label") or "").strip()
-    suggested = [
-        str(value).strip()
-        for value in (candidate.get("suggestedHistoryAttributes") or [])
-        if str(value).strip()
-    ]
-    if not label or not suggested:
-        return None
-    return {"name": label, "attribute": suggested[0]}
+    return controller_history_arguments({
+        "eventSourceHints": {"controllerCandidates": candidates}
+    })
+
 
 _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
@@ -407,6 +403,122 @@ class UnifiedMCPAgent:
         arguments: dict[str, Any],
     ) -> MCPToolResult:
         return await HubInfoService(self.mcp).snapshot(arguments)
+    async def _expand_causal_subject_evidence(
+        self,
+        subject_history: dict[str, Any],
+        *,
+        catalog: ToolDiscoveryCatalog,
+        completed_calls: set[str],
+        messages: list[dict[str, Any]],
+    ) -> bool:
+        """Acquire one exact-room provenance path independently of model syntax.
+
+        The model still reasons over the evidence. The host only guarantees that a
+        causal investigation cannot lose the strongest same-room controller source
+        because it chose `contains` instead of `eq` or stopped after a generic
+        room scan.
+        """
+
+        room_arguments = subject_room_filter_arguments(subject_history)
+        if room_arguments is None:
+            return False
+        filter_tool = catalog.declared_tool(_LOCAL_FILTER_TOOL)
+        if filter_tool is None:
+            return False
+
+        increment_active_metric("causal_room_plan")
+        filter_execution = await self.executor.execute(
+            _LOCAL_FILTER_TOOL,
+            room_arguments,
+            tool=filter_tool,
+            supports_live_claim=True,
+            evidence_kind=_EVIDENCE_KINDS[_LOCAL_FILTER_TOOL],
+        )
+        messages.append({
+            "role": "tool",
+            "tool_name": _LOCAL_FILTER_TOOL,
+            "content": filter_execution.content,
+        })
+        completed_calls.add(json.dumps(
+            [_LOCAL_FILTER_TOOL, room_arguments],
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        ))
+        filter_data = (
+            filter_execution.result.data
+            if filter_execution.result is not None
+            and isinstance(filter_execution.result.data, dict)
+            else {}
+        )
+
+        controller_arguments = controller_history_arguments(filter_data)
+        if controller_arguments is None:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST CAUSAL EVIDENCE PLAN\n"
+                    "The host completed exact-room provenance discovery for the "
+                    "resolved subject but found no ranked button/controller history "
+                    "candidate. Do not repeat the same room scan. Continue with the "
+                    "next strongest evidence class, such as direct logs or relevant "
+                    "rule/app configuration, before weaker environmental correlation."
+                ),
+            })
+            return True
+
+        controller_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
+        if controller_tool is None:
+            return True
+        increment_active_metric("causal_provenance_read")
+        controller_execution = await self.executor.execute(
+            _LOCAL_DEVICE_HISTORY_TOOL,
+            controller_arguments,
+            tool=controller_tool,
+            supports_live_claim=True,
+            evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_HISTORY_TOOL],
+        )
+        messages.append({
+            "role": "tool",
+            "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
+            "content": controller_execution.content,
+        })
+        completed_calls.add(json.dumps(
+            [_LOCAL_DEVICE_HISTORY_TOOL, controller_arguments],
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        ))
+
+        controller_data = (
+            controller_execution.result.data
+            if controller_execution.result is not None
+            and isinstance(controller_execution.result.data, dict)
+            else {}
+        )
+        alignments = controller_transition_alignments(
+            subject_history, controller_data
+        )
+        alignment_instruction = render_controller_alignment_instruction(alignments)
+        if alignment_instruction:
+            increment_active_metric("causal_provenance_aligned", len(alignments))
+            messages.append({"role": "user", "content": alignment_instruction})
+        else:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST CAUSAL EVIDENCE PLAN\n"
+                    "The host checked the highest-ranked same-room controller "
+                    f"{controller_arguments.get('name')!r} using "
+                    f"attribute={controller_arguments.get('attribute')!r}, but no "
+                    "controller event aligned within two seconds of the subject's "
+                    "observed active-transition starts. Do not repeat that controller "
+                    "read. Continue with rule/app/log evidence or investigate only "
+                    "transitions that remain unexplained."
+                ),
+            })
+        return True
+
     async def _filter_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.filter_devices(arguments)
@@ -785,6 +897,7 @@ class UnifiedMCPAgent:
             "investigative" if investigative_request else "standard"
         )
         investigative_subject_history_key: str | None = None
+        causal_subject_evidence_expanded = False
         ungrounded_confirmation_claim_seen = False
         last_proposal_error: tuple[str, dict[str, Any], str] | None = None
         proposal_error_retries = 0
@@ -1059,6 +1172,7 @@ class UnifiedMCPAgent:
             duplicate_signature_seen = False
             round_history_evidence_sufficient = False
             round_tool_failure = False
+            causal_subject_to_expand: dict[str, Any] | None = None
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -1090,6 +1204,12 @@ class UnifiedMCPAgent:
                 requested_history_key = re.sub(
                     r"[^a-z0-9]", "", requested_history_name.casefold()
                 )
+                redundant_causal_room_filter = bool(
+                    causal_request
+                    and causal_subject_evidence_expanded
+                    and name == _LOCAL_FILTER_TOOL
+                    and str(arguments.get("attribute") or "").strip().casefold() == "room"
+                )
                 missing_related_attribute = bool(
                     investigative_request
                     and name == _LOCAL_DEVICE_HISTORY_TOOL
@@ -1106,6 +1226,15 @@ class UnifiedMCPAgent:
                 if not tool:
                     round_tool_failure = True
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
+                elif redundant_causal_room_filter:
+                    content = json.dumps({
+                        "note": (
+                            "Skipped: exact-room causal evidence discovery was already "
+                            "completed host-side from the resolved subject metadata. "
+                            "Use the gathered controller/provenance evidence and move "
+                            "to a different evidence class."
+                        )
+                    })
                 elif missing_related_attribute:
                     round_tool_failure = True
                     increment_active_metric("investigative_attribute_required")
@@ -1187,10 +1316,11 @@ class UnifiedMCPAgent:
                         investigative_history_bypass = (
                             history_reasoning_bypass and investigative_request
                         )
-                        if (
+                        first_investigative_subject = bool(
                             investigative_history_bypass
                             and investigative_subject_history_key is None
-                        ):
+                        )
+                        if first_investigative_subject:
                             resolved_subject = str(
                                 result.data.get("label")
                                 or result.data.get("requested")
@@ -1200,6 +1330,8 @@ class UnifiedMCPAgent:
                             investigative_subject_history_key = re.sub(
                                 r"[^a-z0-9]", "", resolved_subject.casefold()
                             ) or None
+                            if causal_request and isinstance(result.data, dict):
+                                causal_subject_to_expand = dict(result.data)
                         if (
                             deterministic_message is not None
                             and not history_reasoning_bypass
@@ -1275,72 +1407,6 @@ class UnifiedMCPAgent:
                             "estimate, not an exact total or proof of continuity."
                         ),
                     })
-                if (
-                    name == _LOCAL_FILTER_TOOL
-                    and causal_request
-                    and result is not None
-                    and isinstance(result.data, dict)
-                    and isinstance(result.data.get("eventSourceHints"), dict)
-                ):
-                    controller_candidates = result.data["eventSourceHints"].get(
-                        "controllerCandidates"
-                    )
-                    if isinstance(controller_candidates, list) and controller_candidates:
-                        # Controller discovery is already deterministic and ranked.
-                        # Execute exactly one strongest controller-history follow-up
-                        # host-side instead of relying on another model round, which
-                        # live tests showed could either skip the read entirely or
-                        # fan out across every controller in the room.
-                        controller_arguments = _controller_followup_arguments(
-                            controller_candidates
-                        )
-                        if controller_arguments is not None:
-                            controller_tool = catalog.declared_tool(
-                                _LOCAL_DEVICE_HISTORY_TOOL
-                            )
-                            controller_execution = await self.executor.execute(
-                                _LOCAL_DEVICE_HISTORY_TOOL,
-                                controller_arguments,
-                                tool=controller_tool,
-                                supports_live_claim=True,
-                                evidence_kind=_EVIDENCE_KINDS[
-                                    _LOCAL_DEVICE_HISTORY_TOOL
-                                ],
-                            )
-                            messages.append({
-                                "role": "tool",
-                                "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
-                                "content": controller_execution.content,
-                            })
-                            # Prevent the model from needlessly repeating the exact
-                            # host-owned provenance read in a later round.
-                            controller_signature = json.dumps(
-                                [_LOCAL_DEVICE_HISTORY_TOOL, controller_arguments],
-                                sort_keys=True,
-                                ensure_ascii=False,
-                                default=str,
-                            )
-                            completed_calls.add(controller_signature)
-                            messages.append({
-                                "role": "user",
-                                "content": (
-                                    "HOST CONTROLLER-EVIDENCE FOLLOW-UP COMPLETE\n"
-                                    "The host checked one highest-ranked same-room "
-                                    "controller candidate using "
-                                    f"attribute={controller_arguments['attribute']!r}. "
-                                    "Use that event history as provenance evidence. Do "
-                                    "not re-read the same controller or fan out across "
-                                    "other controllers merely to be thorough. If the "
-                                    "original why/cause question still needs explanation "
-                                    "of downstream dimming, off timing, schedules, or "
-                                    "automation behavior, use the remaining investigative "
-                                    "budget on a DIFFERENT evidence class such as relevant "
-                                    "rule/app configuration, app/rule events, or native "
-                                    "logs. Otherwise synthesize. Treat close timing as "
-                                    "corroborating evidence, not automatic proof of who "
-                                    "physically operated a control."
-                                ),
-                            })
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
@@ -1355,6 +1421,18 @@ class UnifiedMCPAgent:
                                 "gateway needed to finish the original task."
                             ),
                         })
+            if (
+                causal_subject_to_expand is not None
+                and not causal_subject_evidence_expanded
+            ):
+                causal_subject_evidence_expanded = (
+                    await self._expand_causal_subject_evidence(
+                        causal_subject_to_expand,
+                        catalog=catalog,
+                        completed_calls=completed_calls,
+                        messages=messages,
+                    )
+                )
             if duplicate_signature_seen:
                 return await self._final_answer(messages)
             if (

@@ -239,6 +239,12 @@ def _guard_partial_zero_claims(
                         comparable,
                         re.I,
                     )
+                    or re.search(
+                        rf"\bno\s+{re.escape(attribute.casefold())}"
+                        r"\s+(?:was|were)\s+(?:recorded|found|observed)\b",
+                        comparable,
+                        re.I,
+                    )
                 )
             )
             if not label_matches and not attribute_data_absence:

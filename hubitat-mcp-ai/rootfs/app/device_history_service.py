@@ -467,7 +467,20 @@ class DeviceHistoryService:
         # An ambiguous/missing target cannot produce history anyway, so reading
         # hub_get_info first only adds latency to a clarification response.
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
-        resolution = await resolver.resolve_device({"name": requested})
+        normalized_attribute = str(attribute or "").strip().casefold()
+        required_fields = (
+            {"attributes", "capabilities"}
+            if normalized_attribute in _HISTORY_ATTRIBUTE_CAPABILITIES
+            else set()
+        )
+        required_capabilities = set(
+            _HISTORY_ATTRIBUTE_CAPABILITIES.get(normalized_attribute, ())
+        )
+        resolution = await resolver.resolve_device(
+            {"name": requested},
+            required_fields=required_fields,
+            required_capabilities=required_capabilities,
+        )
         resolution_data = resolution.data if isinstance(resolution.data, dict) else {}
         target = (
             resolution_data.get("target")
@@ -679,6 +692,12 @@ class DeviceHistoryService:
             "requested": requested,
             "deviceId": str(device_id),
             "label": label,
+            "room": target.get("room") or target.get("roomName"),
+            "capabilities": [
+                self._metadata_name(item)
+                for item in (target.get("capabilities") or [])
+                if self._metadata_name(item)
+            ],
             "hoursBack": hours_back,
             "attribute": attribute or None,
             "count": len(events),

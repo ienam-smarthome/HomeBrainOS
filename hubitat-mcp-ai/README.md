@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.11.0**.
+Current add-on version: **0.12.0**.
 
 ## Architecture
 
@@ -67,22 +67,37 @@ unsupported attribute is returned to the reasoning loop with the device's availa
 attributes instead of being used to manufacture an absence claim. Sparse/custom
 driver metadata remains permissive. Gateway/sub-tool calls are also checked against live schema/discovery
 compatibility before execution, so an operation discovered under one gateway cannot
-be guessed through another. For actual why/cause/trigger requests, same-room controller discovery can add
-exactly one host-owned provenance history read: HomeBrain selects the highest-ranked
-structured candidate and its first suggested controller attribute and reads it in
-the active history window. That guarantees one strong controller check without
-letting the model sweep every remote. Crucially, 0.11.0 no longer treats that read
-as the end of the investigation: if the causal chain still needs downstream
-automation, schedule, or log evidence, the model can spend the remaining
-investigative budget on a different evidence class such as rule/app configuration
-or native logs.
+be guessed through another.
+
+For actual why/cause/trigger requests, 0.12.0 adds a host-owned causal evidence
+planner. After the subject history resolves, the planner derives the subject's exact
+room from structured target metadata, performs one exact-room provenance discovery,
+selects the highest-ranked same-room button/controller candidate, and reads only that
+candidate's strongest advertised event attribute. This planning step no longer
+depends on the model choosing a particular room-filter operator. The planner then
+compares controller event timestamps with subject active-transition starts and
+surfaces alignments within two seconds as high-value provenance evidence. Alignment
+does not identify the person who operated a control; it only raises that controller
+event above weaker environmental correlation.
+
+Once aligned controller provenance exists, the model is told not to spend remaining
+budget on motion/illuminance merely to re-explain that same turn-on transition.
+Remaining investigative reads should instead test downstream rule/app/log behavior
+or genuinely unexplained transitions. If no controller candidate or no alignment is
+found, the model can continue to the next strongest evidence class. This keeps the
+model responsible for causal interpretation while making evidence acquisition
+structurally reliable.
 
 Final synthesis is a separate reasoning phase. HomeBrain builds a structured
 current-turn evidence brief plus bounded excerpts of the actual privacy-redacted
 tool results and places both at the end of the final no-tools context so normal
 message compaction cannot hide the strongest evidence. Event-style histories such
 as pushed/held/released are preserved with timestamps and descriptions instead of
-being forced into binary temporal analysis. The synthesis contract keeps the
+being forced into binary temporal analysis. For ordinary temporal device histories,
+0.12.0 also preserves command/state events that fall within eight seconds of an
+observed interval boundary, so evidence such as `command-setLevel`, `command-off`,
+and the associated state transition remains available to distinguish initial
+provenance from downstream automation effects. The synthesis contract keeps the
 original user objective primary, asks for a chronological multi-source explanation,
 and separates trigger/provenance, downstream automation effects, weaker
 correlations, and unresolved gaps.
@@ -136,10 +151,20 @@ successfully resolves a device, HomeBrain caches that exact target under the act
 request identity and indexes it by the successful user wording plus its id/name/
 label. A later adapter in the same request can reuse the target without repeating a
 targeted `hub_list_devices` lookup; successful reuse increments
-`resolution_cache_hit`. Complete device-filter results now seed the same cache by
-their exact returned labels/ids, so an investigative room scan can hand a related
-sensor directly to device history without another label lookup. The cache never
-crosses request boundaries and still checks required command capability before reuse.
+`resolution_cache_hit`. Complete device-filter results seed the same cache by their
+exact returned labels/ids.
+
+0.12.0 makes that cache metadata-aware. For a typed history read, a sparse
+context target can still be reused immediately when its advertised capabilities
+positively authorize the requested history dimension—for example `MotionSensor`
+authorizes `motion`. When the sparse target does not positively advertise the
+required capability and lacks current attribute metadata, history deliberately
+misses that cache entry, refreshes the detailed target, and only then decides
+whether the requested attribute is supported. This prevents a sparse illuminance/
+temperature record from bypassing the unsupported-motion guard without adding an
+extra lookup to already-proven MotionSensor targets. The refresh is exposed as
+`resolution_cache_metadata_miss`. The cache never crosses request boundaries and
+still checks required command capability before reuse.
 
 The live device layer separates common state from richer device metadata. On MCP
 servers that expose `hubitat://context`, `HubitatMCPClient` reads that resource as
