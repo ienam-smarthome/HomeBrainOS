@@ -92,6 +92,39 @@ class ToolExecutor:
         return _shared_tool_succeeded(result)
 
     @staticmethod
+    def _declared_subtool_error(
+        tool: MCPTool,
+        arguments: dict[str, Any],
+    ) -> str | None:
+        """Reject a gateway sub-tool that contradicts its declared JSON schema."""
+
+        selected = str(arguments.get("tool") or "").strip()
+        if not selected:
+            return None
+        schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            return None
+        tool_schema = properties.get("tool")
+        if not isinstance(tool_schema, dict):
+            return None
+
+        allowed: list[str] = []
+        enum = tool_schema.get("enum")
+        if isinstance(enum, list):
+            allowed.extend(str(item) for item in enum if str(item).strip())
+        const = tool_schema.get("const")
+        if const is not None and str(const).strip():
+            allowed.append(str(const))
+        allowed = list(dict.fromkeys(allowed))
+        if not allowed or selected in allowed:
+            return None
+        return (
+            f"Invalid sub-tool {selected!r} for gateway {tool.name!r}. "
+            f"Allowed by the declared schema: {', '.join(allowed)}"
+        )
+
+    @staticmethod
     def result_details(result: MCPToolResult) -> dict[str, Any] | None:
         """Return bounded structured proof that is useful in technical receipts."""
 
@@ -331,6 +364,45 @@ class ToolExecutor:
                             "gathered."
                         ),
                         "host_instruction": FINAL_SYNTHESIS_INSTRUCTION,
+                    },
+                    ensure_ascii=False,
+                ),
+                result=None,
+            )
+
+        schema_error = self._declared_subtool_error(
+            declared_tool,
+            safe_arguments,
+        )
+        if schema_error is not None:
+            logger.info("Rejected invalid gateway call %s: %s", name, schema_error)
+            increment_active_metric("tool_schema_rejections")
+            if record_evidence:
+                self.evidence.record(
+                    name,
+                    receipt_arguments,
+                    success=False,
+                    elapsed_ms=0,
+                    summary=schema_error[:180],
+                    supports_live_claim=supports_live_claim,
+                    evidence_kind=evidence_kind,
+                    mutates=effect.mutates if mutates is None else bool(mutates),
+                    effect=effect,
+                )
+            return ToolExecution(
+                name=name,
+                arguments=receipt_arguments,
+                effect=effect,
+                success=False,
+                elapsed_ms=0,
+                content=json.dumps(
+                    {
+                        "error": schema_error,
+                        "host_instruction": (
+                            "Choose a sub-tool allowed by this gateway's declared "
+                            "schema or use a different declared gateway. No MCP "
+                            "command was sent."
+                        ),
                     },
                     ensure_ascii=False,
                 ),
