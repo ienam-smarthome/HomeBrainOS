@@ -271,14 +271,22 @@ def analyze_state_intervals_in_window(
     window_label: str,
     source_complete_to_start: bool,
     window_ongoing: bool = False,
+    source_integrity_verified: bool = False,
 ) -> dict[str, Any] | None:
-    """Measure active time strictly inside ``[start, end)``.
+    """Measure state intervals observed inside the requested window.
 
-    A predecessor event before ``start`` establishes the boundary state. If no
-    predecessor is present but the upstream event feed is known complete back to
-    the window start, the first state-change event inside the window establishes
-    the opposite state immediately before that transition. Otherwise the total
-    remains a lower bound rather than inventing the missing boundary state.
+    source_complete_to_start is only a pagination/coverage fact: it means the
+    returned page reaches the requested start. It does not prove the device-event
+    stream contains every physical transition. Unless an independent source has
+    verified event-stream integrity, HomeBrain must not extend a predecessor state
+    to the window start, infer a missing boundary from the first row, or extend an
+    open interval to the window end. Those operations can turn omitted transitions
+    into many hours of invented activity.
+
+    With unverified source integrity this function therefore reports only intervals
+    bounded by observed active/inactive rows and marks the duration as an
+    unverified-event-stream estimate rather than an exact total or mathematical
+    lower bound.
     """
 
     if start.tzinfo is None or end.tzinfo is None or end <= start:
@@ -294,26 +302,34 @@ def analyze_state_intervals_in_window(
 
     current_state: str | None = None
     boundary_known = False
-    boundary_basis = "unknown"
-    if predecessor is not None:
+    boundary_basis = "source-integrity-unverified"
+    inferred_boundary_state: str | None = None
+
+    if source_integrity_verified and predecessor is not None:
         current_state = predecessor[2]
         boundary_known = True
         boundary_basis = "predecessor-event"
-    elif inside and source_complete_to_start:
-        # A reported binary value is not automatically proof that a transition
-        # occurred. Some Hubitat/community drivers emit ordinary state reports
-        # with isStateChange omitted. Inferring the opposite state all the way
-        # back to the window boundary from such a row can invert almost the
-        # entire requested duration. Only an explicitly marked state change is
-        # strong enough for this boundary inference.
+    elif (
+        source_integrity_verified
+        and inside
+        and source_complete_to_start
+        and _explicit_true(inside[0][3].get("isStateChange"))
+    ):
         first_value = inside[0][2]
-        first_event = inside[0][3]
-        if _explicit_true(first_event.get("isStateChange")):
-            current_state = inactive_state if first_value == active_state else active_state
-            boundary_known = True
-            boundary_basis = "first-transition-inference"
-        else:
-            boundary_basis = "first-event-not-proven-transition"
+        inferred_boundary_state = (
+            inactive_state if first_value == active_state else active_state
+        )
+        current_state = inferred_boundary_state
+        boundary_known = True
+        boundary_basis = "first-transition-inference"
+    elif inside and source_complete_to_start and _explicit_true(
+        inside[0][3].get("isStateChange")
+    ):
+        first_value = inside[0][2]
+        inferred_boundary_state = (
+            inactive_state if first_value == active_state else active_state
+        )
+        boundary_basis = "first-transition-inference-untrusted"
 
     intervals: list[dict[str, Any]] = []
     duplicate_state_rows = 0
@@ -353,7 +369,8 @@ def analyze_state_intervals_in_window(
         active_start_raw = None
         active_start_clipped = False
 
-    if current_state == active_state and active_start is not None:
+    open_active_interval = bool(current_state == active_state and active_start is not None)
+    if source_integrity_verified and open_active_interval:
         intervals.append(
             _interval(
                 active_start,
@@ -369,7 +386,8 @@ def analyze_state_intervals_in_window(
         (int(item.get("durationSeconds") or 0) for item in intervals),
         default=0,
     )
-    coverage_complete = boundary_known
+    coverage_complete = bool(source_integrity_verified and boundary_known)
+    reliability = "exact" if coverage_complete else "unverified-event-stream"
 
     return {
         "attribute": attribute_name,
@@ -383,8 +401,13 @@ def analyze_state_intervals_in_window(
         "longestActiveDuration": _duration_text(longest_seconds),
         "continuous": len(intervals) == 1 and coverage_complete,
         "coverage": "complete" if coverage_complete else "partial",
-        "totalIsLowerBound": not coverage_complete,
-        "openActiveInterval": bool(window_ongoing and current_state == active_state),
+        "totalIsLowerBound": False if not source_integrity_verified else not coverage_complete,
+        "durationReliability": reliability,
+        "sourceIntegrity": "verified" if source_integrity_verified else "unverified",
+        "sourceIntegrityVerified": bool(source_integrity_verified),
+        "pageCompleteToWindowStart": bool(source_complete_to_start),
+        "observedBoundedIntervalsOnly": not bool(source_integrity_verified),
+        "openActiveInterval": bool(window_ongoing and open_active_interval),
         "unmatchedInactiveRows": 0,
         "duplicateStateRowsIgnored": duplicate_state_rows,
         "ignoredRows": ignored_rows,
@@ -407,6 +430,7 @@ def analyze_state_intervals_in_window(
             if predecessor is not None
             else None
         ),
+        "inferredBoundaryState": inferred_boundary_state,
         "windowed": True,
         "windowLabel": str(window_label),
         "windowStart": start.isoformat(),
@@ -416,8 +440,6 @@ def analyze_state_intervals_in_window(
         "boundaryBasis": boundary_basis,
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
-
-
 def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None:
     """Return the small, privacy-safe temporal proof subset for evidence output."""
 
