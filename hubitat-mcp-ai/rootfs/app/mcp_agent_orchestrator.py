@@ -29,6 +29,7 @@ from device_claim_grounding import (
 from device_control_service import DeviceControlService
 from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
+from evidence_ledger import build_current_turn_evidence_ledger
 from evidence_recorder import EvidenceRecorder
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
@@ -39,6 +40,7 @@ from request_classification import (
     requests_mutation as _requests_mutation,
     routine_control_arguments as _routine_control_arguments,
 )
+from reasoning_policy import set_reasoning_profile
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
@@ -578,18 +580,49 @@ class UnifiedMCPAgent:
         return content
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
-        final_messages = [
-            *messages,
-            {
-                "role": "user",
-                "content": (
-                    "Answer the original request now using only the MCP results already "
-                    "provided. Do not request another tool. Be concise and factual."
-                ),
-            },
-        ]
+        evidence_brief = build_current_turn_evidence_ledger(self.evidence.receipts())
+        original_user = next(
+            (
+                str(message.get("content") or "")
+                for message in messages
+                if message.get("role") == "user"
+                and not str(message.get("content") or "").lstrip().startswith("HOST ")
+            ),
+            "",
+        )
+        investigative = _HISTORY_INVESTIGATION.search(original_user) is not None
+        synthesis = (
+            "Answer the ORIGINAL user request now using the CURRENT-TURN evidence. "
+            "Do not request another tool and do not answer a narrower substitute "
+            "question merely because one source is easy to summarize. "
+        )
+        if investigative:
+            synthesis += (
+                "This is an investigation. Reason across the evidence: lead with the "
+                "best-supported explanation and calibrate confidence; reconstruct the "
+                "important timeline by correlating timestamps across sources; separate "
+                "a trigger/provenance event from downstream automation effects; explain "
+                "what remains unproven or unexplained; and only suggest a configuration "
+                "change when the evidence makes it relevant. A device state transition "
+                "or close timestamp alone is correlation, not proof of a person or "
+                "automation causing it. "
+            )
+        synthesis += (
+            "For unverified device-event streams, describe durations/counts as "
+            "recorded-event estimates rather than exact physical history. Preserve "
+            "useful supported analysis instead of reducing the answer to a duration "
+            "or raw event dump. Be concise but complete."
+        )
+
+        final_messages = [*messages]
+        if evidence_brief:
+            final_messages.append({"role": "user", "content": evidence_brief})
+        final_messages.append({"role": "user", "content": synthesis})
         response = await self._chat(final_messages, [])
-        content = str(response.get("content") or "The MCP request completed without a written answer.")
+        content = str(
+            response.get("content")
+            or "The MCP request completed without a written answer."
+        )
         return self._unverified_mutation_guard(content)
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
@@ -784,6 +817,9 @@ class UnifiedMCPAgent:
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
         investigative_request = _HISTORY_INVESTIGATION.search(user_prompt) is not None
+        set_reasoning_profile(
+            "investigative" if investigative_request else "standard"
+        )
         investigative_subject_history_key: str | None = None
         ungrounded_confirmation_claim_seen = False
         last_proposal_error: tuple[str, dict[str, Any], str] | None = None
@@ -1312,20 +1348,35 @@ class UnifiedMCPAgent:
                                 "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
                                 "content": controller_execution.content,
                             })
+                            # Prevent the model from needlessly repeating the exact
+                            # host-owned provenance read in a later round.
+                            controller_signature = json.dumps(
+                                [_LOCAL_DEVICE_HISTORY_TOOL, controller_arguments],
+                                sort_keys=True,
+                                ensure_ascii=False,
+                                default=str,
+                            )
+                            completed_calls.add(controller_signature)
                             messages.append({
                                 "role": "user",
                                 "content": (
                                     "HOST CONTROLLER-EVIDENCE FOLLOW-UP COMPLETE\n"
-                                    "The host deterministically checked exactly one "
-                                    "highest-ranked same-room controller candidate using "
-                                    f"attribute={controller_arguments['attribute']!r}. Synthesize the original "
-                                    "cause/trigger question from the current-turn evidence "
-                                    "now. Treat close timing as corroborating evidence, not "
-                                    "automatic proof of who physically pressed a control. "
-                                    "Do not request another controller or sensor history."
+                                    "The host checked one highest-ranked same-room "
+                                    "controller candidate using "
+                                    f"attribute={controller_arguments['attribute']!r}. "
+                                    "Use that event history as provenance evidence. Do "
+                                    "not re-read the same controller or fan out across "
+                                    "other controllers merely to be thorough. If the "
+                                    "original why/cause question still needs explanation "
+                                    "of downstream dimming, off timing, schedules, or "
+                                    "automation behavior, use the remaining investigative "
+                                    "budget on a DIFFERENT evidence class such as relevant "
+                                    "rule/app configuration, app/rule events, or native "
+                                    "logs. Otherwise synthesize. Treat close timing as "
+                                    "corroborating evidence, not automatic proof of who "
+                                    "physically operated a control."
                                 ),
                             })
-                            return await self._final_answer(messages)
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
