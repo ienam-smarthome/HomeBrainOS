@@ -1587,29 +1587,36 @@ class UnifiedMCPAgent:
                         messages=messages,
                     )
                 )
-                if (
-                    causal_subject_evidence_expanded
-                    and not causal_completion_retry_used
-                ):
+                if not causal_completion_retry_used:
+                    # Once the subject has real transitions, all stable
+                    # subject-adjacent evidence is gathered host-side. Never
+                    # reopen the unrestricted general tool loop: move directly
+                    # into one constrained provenance-selection round.
                     followup = render_command_source_followup(
                         self.evidence.receipts()
+                    ) or (
+                        "HOST BOUNDED CAUSAL PROVENANCE PHASE\n"
+                        "Observed subject transitions are established and the "
+                        "fixed controller/location evidence layer is complete. "
+                        "Choose only the materially strongest installed read-only "
+                        "log/rule/app provenance source(s) from the tools now "
+                        "declared. Do not search for device/sensor context and do "
+                        "not request mutations. After this one tool round, the "
+                        "host will synthesize from the complete current-turn "
+                        "evidence."
                     )
-                    if followup:
-                        # Once the host has strong controller evidence and the
-                        # subject exposes boundary commands, do not give the
-                        # general model another unrestricted room/device round.
-                        # Move directly into one bounded provenance phase.
-                        causal_completion_retry_used = True
-                        causal_completion_mode = True
-                        increment_active_metric("causal_completion_retry")
-                        messages.append({"role": "user", "content": followup})
-                        continue
+                    causal_completion_retry_used = True
+                    causal_completion_mode = True
+                    increment_active_metric("causal_completion_retry")
+                    messages.append({"role": "user", "content": followup})
+                    continue
 
             if causal_completion_mode:
-                # Search may be needed once to expose the correct read gateway.
-                # As soon as the bounded completion round actually attempts a
-                # non-search provenance read, synthesize from what it returned
-                # rather than opening another exploratory round.
+                # Installed provenance gateways are offered directly. As soon as
+                # the bounded completion round attempts a provenance read,
+                # synthesize from what it returned instead of opening another
+                # exploratory round. Search remains only a sparse-registry
+                # compatibility fallback.
                 completion_read_attempted = any(
                     name != SEARCH_TOOL
                     for name, _arguments in round_actions
