@@ -102,7 +102,7 @@ def _source_category(receipt: dict[str, Any]) -> str | None:
         return "raw_device_history"
     if tool == "homebrain_location_events" or kind == "authoritative_location_event_history":
         return "location_history"
-    if sub_tool == "hub_get_logs" or tool in {"hub_get_logs", "hub_read_diagnostics"}:
+    if sub_tool == "hub_get_logs" or tool == "hub_get_logs":
         return "logs"
     if (
         "rule" in sub_tool.casefold()
