@@ -69,6 +69,35 @@ FINAL_SYNTHESIS_INSTRUCTION = (
 DEFAULT_MAX_READ_TOOL_CALLS = 8
 DEFAULT_MAX_READ_TOOL_ROUNDS = 3
 
+# Investigative questions need enough room to connect heterogeneous evidence
+# classes (subject history, provenance/controller events, rules/apps/logs, mode
+# context) before synthesis. This is deliberately larger than the everyday read
+# budget but still far below the outer agent limit.
+INVESTIGATIVE_MAX_READ_TOOL_CALLS = 12
+INVESTIGATIVE_MAX_READ_TOOL_ROUNDS = 5
+_REASONING_PROFILE: ContextVar[str] = ContextVar(
+    "homebrain_reasoning_profile", default="standard"
+)
+
+
+def set_reasoning_profile(profile: str) -> None:
+    """Select the request-local evidence budget profile."""
+
+    normalized = str(profile or "standard").strip().casefold()
+    _REASONING_PROFILE.set(
+        "investigative" if normalized == "investigative" else "standard"
+    )
+
+
+def reasoning_profile() -> str:
+    return _REASONING_PROFILE.get()
+
+
+def _budget_limits() -> tuple[int, int]:
+    if reasoning_profile() == "investigative":
+        return INVESTIGATIVE_MAX_READ_TOOL_ROUNDS, INVESTIGATIVE_MAX_READ_TOOL_CALLS
+    return DEFAULT_MAX_READ_TOOL_ROUNDS, DEFAULT_MAX_READ_TOOL_CALLS
+
 # Legacy 0.10.447 causal prompting told the model to hunt related room sensors.
 # The 0.10.453 generic evidence contract supersedes it. Transport normalization
 # removes this old message if an older orchestrator path still appends it, so
@@ -108,14 +137,6 @@ _ACTIVE_TOOL_ROUND: ContextVar[tuple[int, tuple[str, ...]]] = ContextVar(
 _REASONING_BUDGET: ContextVar[tuple[object | None, int, int, bool, int]] = ContextVar(
     "homebrain_reasoning_budget", default=(None, 0, 0, False, 0)
 )
-
-# A cause/trigger investigation may discover controller candidates only on the
-# third (normally final) read round. Preserve exactly one bounded opportunity to
-# inspect one of those controller histories rather than forcing synthesis before
-# the newly discovered stronger evidence can be read.
-_CONTROLLER_FOLLOWUP: ContextVar[
-    tuple[object | None, tuple[tuple[str, tuple[str, ...]], ...], bool] | None
-] = ContextVar("homebrain_controller_followup", default=None)
 
 # These tools have deterministic presenters that can return directly from the
 # middle of the orchestrator's per-call loop. When the model intentionally asks
@@ -207,18 +228,19 @@ def blocked_selected_target(name: str, arguments: dict[str, Any]) -> str | None:
     )
 
 
-def reset_reasoning_budget() -> None:
-    """Reset request reasoning counters.
+def reset_reasoning_budget(*, preserve_profile: bool = False) -> None:
+    """Reset request reasoning counters and request-local selection state.
 
-    Production requests normally reset implicitly from RequestMetrics identity.
-    The explicit reset also protects direct/base-agent callers that do not install
-    metrics and therefore have no identity token to distinguish consecutive turns.
+    Ordinary/direct callers also return the evidence budget profile to standard.
+    The transport first provider turn preserves the profile because the
+    orchestrator has already classified the request immediately before the loop.
     """
 
     _REASONING_BUDGET.set((active_request_identity(), 0, 0, False, 0))
     _ACTIVE_TOOL_ROUND.set((0, ()))
     _SELECTED_TARGET.set(None)
-    _CONTROLLER_FOLLOWUP.set(None)
+    if not preserve_profile:
+        set_reasoning_profile("standard")
 
 
 def observe_assistant_message(message: dict[str, Any]) -> int:
@@ -279,81 +301,6 @@ def claim_model_tool_call(name: str, arguments: dict[str, Any]) -> int:
     return max(0, int(total))
 
 
-def arm_controller_followup_budget(candidates: list[dict[str, Any]]) -> bool:
-    """Reserve one extra read opportunity for a newly discovered controller.
-
-    Candidate identity and allowed history attributes are derived from structured
-    room-filter output. The reservation is request-local and can be consumed only
-    once.
-    """
-
-    identity = active_request_identity()
-    allowed: list[tuple[str, tuple[str, ...]]] = []
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        label = _normalized_target(candidate.get("label"))
-        attrs = tuple(
-            sorted({
-                _normalized_target(value)
-                for value in (candidate.get("suggestedHistoryAttributes") or [])
-                if _normalized_target(value)
-            })
-        )
-        if label and attrs:
-            allowed.append((label, attrs))
-    if not allowed:
-        return False
-    # Preserve only the highest-ranked candidate from structured room discovery.
-    # The caller already orders exact-room matches before label-affinity matches.
-    # Keeping one target makes the follow-up truly bounded instead of allowing
-    # the model to fan out across every controller in the room.
-    _CONTROLLER_FOLLOWUP.set((identity, tuple(allowed[:1]), False))
-    return True
-
-
-def _controller_followup_state() -> tuple[
-    tuple[tuple[str, tuple[str, ...]], ...], bool
-] | None:
-    state = _CONTROLLER_FOLLOWUP.get()
-    if state is None:
-        return None
-    identity, allowed, consumed = state
-    current_identity = active_request_identity()
-    if identity is not current_identity:
-        _CONTROLLER_FOLLOWUP.set(None)
-        return None
-    return allowed, consumed
-
-
-def controller_followup_pending() -> bool:
-    state = _controller_followup_state()
-    return bool(state is not None and not state[1])
-
-
-def _consume_controller_followup(
-    name: str,
-    arguments: dict[str, Any],
-) -> bool:
-    state = _controller_followup_state()
-    if state is None or state[1]:
-        return False
-    allowed, _consumed = state
-    identity = active_request_identity()
-    _CONTROLLER_FOLLOWUP.set((identity, allowed, True))
-
-    if name != "homebrain_device_history":
-        return False
-    requested = _normalized_target(arguments.get("name"))
-    attribute = _normalized_target(arguments.get("attribute"))
-    if not requested or not attribute:
-        return False
-    return any(
-        requested == label and attribute in attrs
-        for label, attrs in allowed
-    )
-
-
 def register_model_tool_execution(
     *,
     name: str = "",
@@ -375,28 +322,8 @@ def register_model_tool_execution(
     if mutation_seen:
         return True
 
-    # Once a controller follow-up has been armed, exactly one subsequent
-    # model-directed read may run. After that attempt, reject every further read
-    # in the same native round as well as later rounds until synthesis. This is
-    # important because the provider may emit several controller histories in one
-    # response before the host gets another chance to remove tools.
-    followup_state = _controller_followup_state()
-    if followup_state is not None:
-        _allowed, consumed = followup_state
-        if consumed:
-            _REASONING_BUDGET.set(
-                (identity, rounds, reads, mutation_seen, skipped + 1)
-            )
-            return False
-        if _consume_controller_followup(name, dict(arguments or {})):
-            _REASONING_BUDGET.set(
-                (identity, rounds, reads + 1, mutation_seen, skipped)
-            )
-            return True
-        _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
-        return False
-
-    if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
+    _max_rounds, max_reads = _budget_limits()
+    if reads >= max_reads:
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
         return False
     _REASONING_BUDGET.set((identity, rounds, reads + 1, mutation_seen, skipped))
@@ -410,35 +337,26 @@ def reasoning_budget_exhausted() -> bool:
     if mutation_seen:
         return False
 
-    state = _controller_followup_state()
-    if state is not None and state[1]:
-        # The single reserved controller attempt has completed (or an invalid
-        # competing read consumed it). Force synthesis immediately even when the
-        # rejected attempt did not increment the normal read counter.
-        return True
-    if controller_followup_pending():
-        return False
     if reads <= 0:
         return False
 
-    return (
-        reads >= DEFAULT_MAX_READ_TOOL_CALLS
-        or rounds >= DEFAULT_MAX_READ_TOOL_ROUNDS
-    )
+    max_rounds, max_reads = _budget_limits()
+    return reads >= max_reads or rounds >= max_rounds
 
 
 def reasoning_budget_status() -> dict[str, Any]:
     """Privacy-safe budget state for tests/logging and host instructions."""
 
     _identity, rounds, reads, mutation_seen, skipped = _budget_state()
+    max_rounds, max_reads = _budget_limits()
     return {
         "toolRounds": rounds,
         "readCalls": reads,
         "mutationSeen": mutation_seen,
         "skippedReadCalls": skipped,
-        "maxToolRounds": DEFAULT_MAX_READ_TOOL_ROUNDS,
-        "maxReadCalls": DEFAULT_MAX_READ_TOOL_CALLS,
-        "controllerFollowupPending": controller_followup_pending(),
+        "profile": reasoning_profile(),
+        "maxToolRounds": max_rounds,
+        "maxReadCalls": max_reads,
         "exhausted": reasoning_budget_exhausted(),
     }
 
@@ -514,7 +432,7 @@ def prepare_reasoning_turn(
     # and no current-turn tool result exists yet. Reset here so a prior direct
     # request cannot spend the next request's ContextVar budget.
     if tools and not has_tool_message:
-        reset_reasoning_budget()
+        reset_reasoning_budget(preserve_profile=True)
         _bind_selected_target(prepared)
 
     selected = selected_reasoning_target()
@@ -574,18 +492,20 @@ __all__ = [
     "CURRENT_TURN_EVIDENCE_RULE",
     "DEFAULT_MAX_READ_TOOL_CALLS",
     "DEFAULT_MAX_READ_TOOL_ROUNDS",
+    "INVESTIGATIVE_MAX_READ_TOOL_CALLS",
+    "INVESTIGATIVE_MAX_READ_TOOL_ROUNDS",
     "EVIDENCE_REVIEW_INSTRUCTION",
     "FINAL_SYNTHESIS_INSTRUCTION",
     "active_tool_round_size",
-    "arm_controller_followup_budget",
     "blocked_selected_target",
-    "controller_followup_pending",
     "claim_model_tool_call",
     "model_evidence_review_active",
     "observe_assistant_message",
     "prepare_reasoning_turn",
     "reasoning_budget_exhausted",
     "reasoning_budget_status",
+    "reasoning_profile",
+    "set_reasoning_profile",
     "register_model_tool_execution",
     "reset_reasoning_budget",
     "selected_reasoning_target",

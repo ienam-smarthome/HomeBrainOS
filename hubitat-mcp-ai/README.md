@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.470**.
+Current add-on version: **0.11.0**.
 
 ## Architecture
 
@@ -26,14 +26,15 @@ prompt-keyword tool gate controls read-versus-write behaviour.
 
 Model-driven reads use a generic evidence-reasoning contract. Current-turn tool
 results are the only evidence allowed to support live or historical factual
-claims; prior assistant messages remain conversation context only. Native read
-investigations have a soft generic budget of three model tool rounds and eight
-model-directed read executions. Once that budget is spent, callable read tools
-are removed for the next provider turn and the model must synthesize from the
-evidence already gathered. Mutation executions are not rejected by this read
-budget. The older causal sensor-hunting hint is filtered before provider calls,
-so causal questions use the same bounded evidence-sufficiency policy as every
-other read and correlation is never promoted to proof of causation.
+claims; prior assistant messages remain conversation context only. Ordinary native reads have a soft budget of three model tool rounds and eight
+model-directed read executions. Analytical/causal history requests use a separate
+request-local investigative profile of five rounds and twelve reads so the model
+can connect heterogeneous evidence classes instead of stopping after the first
+timeline. Once the active profile is spent, callable read tools are removed for
+the next provider turn and the model must synthesize from the evidence already
+gathered. Mutation executions are never rejected by this read budget. The older
+causal sensor-hunting hint remains filtered; the larger investigative budget is
+for evidence diversity, not room-wide fan-out.
 
 A successful non-investigative device-history call that contains deterministic
 `temporalAnalysis` is also an explicit evidence-sufficiency boundary. HomeBrain
@@ -66,22 +67,32 @@ unsupported attribute is returned to the reasoning loop with the device's availa
 attributes instead of being used to manufacture an absence claim. Sparse/custom
 driver metadata remains permissive. Gateway/sub-tool calls are also checked against live schema/discovery
 compatibility before execution, so an operation discovered under one gateway cannot
-be guessed through another. When same-room controller candidates are discovered during a cause/trigger
-investigation, HomeBrain performs exactly one host-owned controller-history
-follow-up before synthesis: it selects the highest-ranked structured candidate and
-that candidate's first suggested controller attribute, executes one
-`homebrain_device_history` read in the active history window, appends the result to
-current-turn evidence, and then stops further controller/sensor expansion. The
-model therefore cannot skip the strongest controller read or fan out across several
-controllers. This is driven by structured evidence shape and broad request intent,
-not by a device-name or question-specific answer parser.
+be guessed through another. For actual why/cause/trigger requests, same-room controller discovery can add
+exactly one host-owned provenance history read: HomeBrain selects the highest-ranked
+structured candidate and its first suggested controller attribute and reads it in
+the active history window. That guarantees one strong controller check without
+letting the model sweep every remote. Crucially, 0.11.0 no longer treats that read
+as the end of the investigation: if the causal chain still needs downstream
+automation, schedule, or log evidence, the model can spend the remaining
+investigative budget on a different evidence class such as rule/app configuration
+or native logs.
 
-The current-turn evidence ledger also ranks location/mode events by temporal
-proximity to observed subject-history interval boundaries before filling its
-bounded hint budget with newer events. A narrow final serialization guard corrects
-only categorical no-correlation claims when current-turn evidence contains a
-location event within 15 seconds of an observed subject transition; the correction
-states the timing relationship and explicitly preserves correlation-versus-causation.
+Final synthesis is a separate reasoning phase. HomeBrain builds a structured
+current-turn evidence brief plus bounded excerpts of the actual privacy-redacted
+tool results and places both at the end of the final no-tools context so normal
+message compaction cannot hide the strongest evidence. Event-style histories such
+as pushed/held/released are preserved with timestamps and descriptions instead of
+being forced into binary temporal analysis. The synthesis contract keeps the
+original user objective primary, asks for a chronological multi-source explanation,
+and separates trigger/provenance, downstream automation effects, weaker
+correlations, and unresolved gaps.
+
+Deterministic safeguards are validators, not answer authors. Duration/cardinality,
+checked-source, and close mode-correlation checks are applied locally. If the model
+draft conflicts with one of those invariants, HomeBrain gives the model one no-tools
+repair pass with the evidence brief and localized correction baseline. Whole-answer
+history fallback is reserved for genuinely single-source simple history queries;
+multi-source investigative answers are never replaced by a duration sentence.
 
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter

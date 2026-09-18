@@ -39,6 +39,7 @@ The repository drift test compares this table directly with the live directory. 
 | `history_cardinality_guard.py` | Corrects exhaustive interval-count claims that contradict deterministic temporal evidence. |
 | `history_temporal_analysis.py` | Derives bounded state intervals, deterministic duration totals, and bounded interval proof from authoritative device events. |
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
+| `investigation_policy.py` | Central shared classification for causal and analytical history requests so orchestration and final synthesis use the same request intent. |
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
 | `hub_timezone.py` | Resolves and briefly caches the authoritative Hubitat IANA timezone for semantic history windows. |
@@ -62,6 +63,8 @@ The repository drift test compares this table directly with the live directory. 
 | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
 | `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
+| `synthesis_context.py` | Preserves bounded privacy-redacted current-turn tool-result excerpts for the final no-tools reasoning synthesis pass. |
+| `synthesis_validator.py` | Detects deterministic factual conflicts in model synthesis and supplies a localized repair baseline without replacing supported analysis. |
 | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
 | `tool_discovery_catalog.py` | Owns prompt-independent tool visibility and expansion. |
 | `tool_catalog_assembly.py` | Combines a request's already-fetched remote tools with the fixed local tool set into a ready `ToolDiscoveryCatalog`. |

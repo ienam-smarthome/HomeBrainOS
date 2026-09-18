@@ -30,8 +30,10 @@ from device_control_service import DeviceControlService
 from device_history_service import DeviceHistoryService
 from device_query_service import DeviceQueryService
 from evidence_recorder import EvidenceRecorder
+from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
+from investigation_policy import is_causal_investigation, is_history_investigation
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from request_classification import (
@@ -39,6 +41,7 @@ from request_classification import (
     requests_mutation as _requests_mutation,
     routine_control_arguments as _routine_control_arguments,
 )
+from reasoning_policy import set_reasoning_profile
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
@@ -105,17 +108,9 @@ _HOME_STATE_PATTERNS = (
 )
 # Successful temporal history is strong structured evidence. Straight factual
 # history requests can move directly to synthesis once the complete native tool
-# round has executed. Investigative requests (cause, normality/expectation,
-# comparison/correlation) remain eligible for additional evidence gathering.
-# This is a generic intent boundary, not a device/question-specific route.
-_HISTORY_INVESTIGATION = re.compile(
-    r"\bwhy\b|"
-    r"\b(?:cause|caused|causing|trigger|triggered|reason)\b|"
-    r"\bwhat\s+(?:caused|triggered|made)\b|"
-    r"\b(?:normal|normally|abnormal|unusual|expected|unexpected)\b|"
-    r"\b(?:compare|comparison|versus|vs\.?|correlat(?:e|ed|ion))\b",
-    re.I,
-)
+# round has executed. Investigative requests remain eligible for broader evidence
+# gathering; classification lives in investigation_policy.py so the final
+# coordinator and orchestrator cannot diverge.
 
 # Live-observed, safety-relevant gap: a write-classified turn ("enable it",
 # right after "disable humidity controller app" -> confirm -> disabled)
@@ -237,6 +232,10 @@ class UnifiedMCPAgent:
                 _LOCAL_HUB_INFO_TOOL: self._hub_info_snapshot,
             },
             max_tool_result_chars=self.max_tool_result_chars,
+        )
+        self.final_answers = FinalAnswerCoordinator(
+            self._chat,
+            evidence_supplier=self.evidence.receipts,
         )
         self._request_class: ContextVar[str] = ContextVar(
             "hubitat_request_class", default="live-read"
@@ -538,7 +537,15 @@ class UnifiedMCPAgent:
                 continue
             previous_user_prompt = content
             break
-        if _matches(user_prompt, _APP_TERMS) or _matches(previous_user_prompt, _APP_TERMS):
+        if (
+            _matches(user_prompt, _APP_TERMS)
+            or _matches(previous_user_prompt, _APP_TERMS)
+            or is_history_investigation(user_prompt)
+        ):
+            # Investigative questions often need automation identity even when
+            # the user never says "app", "rule", or "automation". The manifest
+            # remains identity/navigation context only; live tool reads are still
+            # required before making claims about configuration or execution.
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
         return build_system_prompt(manifest, app_section)
@@ -578,18 +585,7 @@ class UnifiedMCPAgent:
         return content
 
     async def _final_answer(self, messages: list[dict[str, Any]]) -> str:
-        final_messages = [
-            *messages,
-            {
-                "role": "user",
-                "content": (
-                    "Answer the original request now using only the MCP results already "
-                    "provided. Do not request another tool. Be concise and factual."
-                ),
-            },
-        ]
-        response = await self._chat(final_messages, [])
-        content = str(response.get("content") or "The MCP request completed without a written answer.")
+        content = await self.final_answers.answer(messages)
         return self._unverified_mutation_guard(content)
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
@@ -783,7 +779,11 @@ class UnifiedMCPAgent:
         capability_grounding = CapabilityGroundingPolicy()
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
-        investigative_request = _HISTORY_INVESTIGATION.search(user_prompt) is not None
+        causal_request = is_causal_investigation(user_prompt)
+        investigative_request = is_history_investigation(user_prompt)
+        set_reasoning_profile(
+            "investigative" if investigative_request else "standard"
+        )
         investigative_subject_history_key: str | None = None
         ungrounded_confirmation_claim_seen = False
         last_proposal_error: tuple[str, dict[str, Any], str] | None = None
@@ -1277,7 +1277,7 @@ class UnifiedMCPAgent:
                     })
                 if (
                     name == _LOCAL_FILTER_TOOL
-                    and investigative_request
+                    and causal_request
                     and result is not None
                     and isinstance(result.data, dict)
                     and isinstance(result.data.get("eventSourceHints"), dict)
@@ -1312,20 +1312,35 @@ class UnifiedMCPAgent:
                                 "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
                                 "content": controller_execution.content,
                             })
+                            # Prevent the model from needlessly repeating the exact
+                            # host-owned provenance read in a later round.
+                            controller_signature = json.dumps(
+                                [_LOCAL_DEVICE_HISTORY_TOOL, controller_arguments],
+                                sort_keys=True,
+                                ensure_ascii=False,
+                                default=str,
+                            )
+                            completed_calls.add(controller_signature)
                             messages.append({
                                 "role": "user",
                                 "content": (
                                     "HOST CONTROLLER-EVIDENCE FOLLOW-UP COMPLETE\n"
-                                    "The host deterministically checked exactly one "
-                                    "highest-ranked same-room controller candidate using "
-                                    f"attribute={controller_arguments['attribute']!r}. Synthesize the original "
-                                    "cause/trigger question from the current-turn evidence "
-                                    "now. Treat close timing as corroborating evidence, not "
-                                    "automatic proof of who physically pressed a control. "
-                                    "Do not request another controller or sensor history."
+                                    "The host checked one highest-ranked same-room "
+                                    "controller candidate using "
+                                    f"attribute={controller_arguments['attribute']!r}. "
+                                    "Use that event history as provenance evidence. Do "
+                                    "not re-read the same controller or fan out across "
+                                    "other controllers merely to be thorough. If the "
+                                    "original why/cause question still needs explanation "
+                                    "of downstream dimming, off timing, schedules, or "
+                                    "automation behavior, use the remaining investigative "
+                                    "budget on a DIFFERENT evidence class such as relevant "
+                                    "rule/app configuration, app/rule events, or native "
+                                    "logs. Otherwise synthesize. Treat close timing as "
+                                    "corroborating evidence, not automatic proof of who "
+                                    "physically operated a control."
                                 ),
                             })
-                            return await self._final_answer(messages)
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
