@@ -77,6 +77,16 @@ from tool_registry import (
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
 
 
+def _controller_followup_arguments(
+    candidates: list[dict[str, Any]],
+) -> dict[str, str] | None:
+    """Compatibility adapter for the pre-0.12 controller-selection contract."""
+
+    return controller_history_arguments({
+        "eventSourceHints": {"controllerCandidates": candidates}
+    })
+
+
 _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
     "rule", "rules",
@@ -1462,4 +1472,4 @@ class UnifiedMCPAgent:
         return await self._final_answer(messages)
 
 
-__all__ = ["AgentOutcome", "UnifiedMCPAgent"]
+__all__ = ["AgentOutcome", "UnifiedMCPAgent", "_controller_followup_arguments"]
