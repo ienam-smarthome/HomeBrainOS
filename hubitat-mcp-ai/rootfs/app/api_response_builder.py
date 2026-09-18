@@ -77,13 +77,31 @@ def _partial_zero_replacement(receipt: dict[str, Any]) -> str | None:
         interval_count = int(temporal.get("intervalCount") or 0)
     except (TypeError, ValueError):
         return None
-    if interval_count != 0 or not bool(temporal.get("totalIsLowerBound")):
+    source_integrity_verified = temporal.get("sourceIntegrityVerified")
+    if source_integrity_verified is None:
+        source_integrity_verified = details.get("historySourceIntegrityVerified")
+    unverified_stream = (
+        source_integrity_verified is False
+        or str(temporal.get("durationReliability") or "").casefold()
+        == "unverified-event-stream"
+        or str(temporal.get("sourceIntegrity") or "").casefold() == "unverified"
+        or str(details.get("historySourceIntegrity") or "").casefold() == "unverified"
+    )
+    incomplete_boundary = bool(temporal.get("totalIsLowerBound"))
+    if interval_count != 0 or not (incomplete_boundary or unverified_stream):
         return None
 
     label = str(details.get("label") or "The device").strip() or "The device"
     active = str(temporal.get("activeState") or "active").strip() or "active"
     inactive = str(temporal.get("inactiveState") or "inactive").strip() or "inactive"
     window = str(temporal.get("windowLabel") or "the requested window").strip()
+    if unverified_stream:
+        return (
+            f"No bounded {active} interval was established for {label} during {window} "
+            f"from the recorded device-event rows. The event stream has not been "
+            f"independently verified as complete, so this does not prove it stayed "
+            f"{inactive} throughout that window."
+        )
     return (
         f"No {active} interval was established for {label} during {window}, but the "
         f"history boundary is incomplete, so this does not prove it stayed "
