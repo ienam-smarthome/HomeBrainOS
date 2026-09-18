@@ -641,6 +641,16 @@ def guard_history_duration_claim(
     window_suffix = f" {window_label}" if window_label else ""
 
     if unverified_stream:
+        # Interval-count prose such as "five observed intervals in total" is
+        # cardinality, not a duration claim. Do not let the duration guard erase
+        # it merely because the word "total" appears. Continuity/exactness claims
+        # remain guarded even when they contain no numeric duration.
+        duration_mentions = _duration_mentions_seconds(text)
+        if (
+            not duration_mentions
+            and _UNVERIFIED_EXACTNESS_CLAIM.search(text) is None
+        ):
+            return text, False
         if interval_count == 0:
             corrected = (
                 f"No bounded {active_state} interval was established for {label}"
