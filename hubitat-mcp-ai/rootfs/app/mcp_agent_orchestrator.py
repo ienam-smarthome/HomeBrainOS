@@ -43,6 +43,7 @@ from request_classification import (
 from reasoning_policy import set_reasoning_profile
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
+from synthesis_context import build_tool_evidence_packet
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
@@ -625,6 +626,9 @@ class UnifiedMCPAgent:
         final_messages = [*messages]
         if evidence_brief:
             final_messages.append({"role": "user", "content": evidence_brief})
+        tool_packet = build_tool_evidence_packet(messages)
+        if tool_packet:
+            final_messages.append({"role": "user", "content": tool_packet})
         final_messages.append({"role": "user", "content": synthesis})
         response = await self._chat(final_messages, [])
         content = str(
