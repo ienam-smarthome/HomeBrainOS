@@ -25,6 +25,7 @@ _COUNTER_LABELS = (
     ("causal_provenance_read", "Causal provenance reads"),
     ("causal_provenance_aligned", "Aligned provenance events"),
     ("causal_completion_retry", "Causal completion retries"),
+    ("causal_subject_empty_stop", "Empty-subject causal stops"),
     ("investigative_finalization", "Investigative finalizations"),
     ("evidence_sufficiency_stop", "Evidence sufficiency stops"),
     ("investigative_attribute_required", "Investigative attribute retries"),
