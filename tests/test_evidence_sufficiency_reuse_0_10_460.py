@@ -285,8 +285,8 @@ async def test_investigative_history_is_not_hard_stopped_by_sufficiency_gate(
                 "message": {
                     "role": "assistant",
                     "content": (
-                        "The recorded history establishes the switch event, but the "
-                        "current-turn evidence does not establish its cause."
+                        "At 7:00 am the recorded history establishes the switch-on "
+                        "event, but the current-turn evidence does not establish its cause."
                     ),
                 }
             },
