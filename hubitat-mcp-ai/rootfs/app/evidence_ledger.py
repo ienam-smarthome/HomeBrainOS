@@ -149,6 +149,23 @@ def _temporal_suffix(receipt: dict[str, Any]) -> str:
         if boundary_events:
             bits.append("boundaryEvents=[" + "; ".join(boundary_events) + "]")
 
+        if temporal.get("unboundedActiveInterval"):
+            open_start = str(
+                temporal.get("openActiveStartNatural")
+                or temporal.get("openActiveStart")
+                or "unknown start"
+            ).strip()
+            state = str(temporal.get("activeState") or "active").strip() or "active"
+            qualifier = (
+                "ongoing-window open interval"
+                if temporal.get("openActiveInterval")
+                else "unbounded interval at window end"
+            )
+            bits.append(
+                f"{qualifier}: recorded {state} transition at {open_start} has no "
+                "observed closing transition; do not infer its duration"
+            )
+
         # When no bounded active interval exists, boundary evidence is naturally
         # empty. Preserve the actual rows that fell inside the requested window so
         # synthesis can still distinguish commands from state transitions without
@@ -480,6 +497,13 @@ def _single_history_window_audit_needed(
         interval_count = int(temporal.get("intervalCount"))
     except (TypeError, ValueError):
         return False
+    # An unbounded active transition is itself an auditable temporal fact:
+    # a recorded active row exists but no observed closing row does. Preserve a
+    # single-source ledger for it even if the compact windowEvents channel is
+    # absent, because the open-start metadata is carried in temporalAnalysis.
+    if temporal.get("unboundedActiveInterval"):
+        return True
+
     window_events = details.get("windowEvents")
     return (
         interval_count == 0

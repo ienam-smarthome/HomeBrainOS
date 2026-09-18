@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from causal_timeline import missing_material_timeline_rows
+from controller_correlation_guard import guard_controller_boundary_claim
 from evidence_source_guard import (
     guard_checked_source_absence_claim,
     guard_positive_source_attribution,
@@ -55,6 +56,14 @@ def validate_synthesis(
     )
     if positive_source_changed:
         issues.append("positive_source_attribution")
+
+    if causal:
+        corrected, controller_boundary_changed = guard_controller_boundary_claim(
+            corrected,
+            evidence,
+        )
+        if controller_boundary_changed:
+            issues.append("controller_boundary_direction")
 
     missing_rows = (
         missing_material_timeline_rows(corrected, evidence)

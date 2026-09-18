@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.13.5**.
+Current add-on version: **0.13.6**.
 
 ## Architecture
 
@@ -206,6 +206,21 @@ Write semantics are also separated from fail-closed unknown-tool safety. An
 undeclared model function remains non-executable, but it no longer marks an
 otherwise read-only request as a write. Explicit user mutations and real declared
 mutating tool selections still activate the unverified-mutation guard.
+
+0.13.6 makes causal correlation boundary-directional. Controller/button events
+are classified against the nearest observed START or END boundary; an END-aligned
+physical event can support turn-off/end provenance but is never exposed as the
+cause of the earlier turn-on. The causal timeline renders START provenance and
+END-controller evidence separately, and a deterministic synthesis validator repairs
+drafts that cross those roles.
+
+Unverified histories also retain unbounded/open active transitions explicitly.
+An active transition with no observed closing transition becomes a material OPEN
+timeline row with its recorded start time and no invented duration. When material
+turn-on rows remain unresolved, HomeBrain loads installed app identities as
+navigation context before the single provenance round so the model can inspect
+logs and one relevant app/rule detail in the same round instead of spending a
+later round listing apps.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are

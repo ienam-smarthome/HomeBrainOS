@@ -89,10 +89,15 @@ def _synthesis_instruction(original_user: str) -> str:
             "MATERIAL row in the HOST CAUSAL TIMELINE; adjacent short minor "
             "unresolved rows may be grouped, but do not omit a material interval "
             "with aligned provenance. Separate a likely trigger/provenance event "
-            "from downstream automation effects. Explain what remains unproven or "
-            "unexplained. Only suggest a configuration change when the evidence "
-            "makes it relevant. A device state transition or close timestamp alone "
-            "is correlation, not proof of a person or automation causing it. "
+            "from downstream automation effects. A controller event aligned to an "
+            "interval END is end/turn-off-adjacent evidence and must not be cited "
+            "as the cause of that interval's earlier turn-on. If an OPEN timeline "
+            "row exists, mention the recorded active transition and that no closing "
+            "transition was observed; do not infer a duration from it. Explain what "
+            "remains unproven or unexplained. Only suggest a configuration change "
+            "when the evidence makes it relevant. A device state transition or "
+            "close timestamp alone is correlation, not proof of a person or "
+            "automation causing it. "
         )
     elif investigative:
         text += (
