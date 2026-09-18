@@ -1158,6 +1158,7 @@ class UnifiedMCPAgent:
             duplicate_signature_seen = False
             round_history_evidence_sufficient = False
             round_tool_failure = False
+            causal_subject_to_expand: dict[str, Any] | None = None
             for call in calls:
                 function = call.get("function") or {}
                 name = str(function.get("name") or "")
@@ -1316,14 +1317,7 @@ class UnifiedMCPAgent:
                                 r"[^a-z0-9]", "", resolved_subject.casefold()
                             ) or None
                             if causal_request and isinstance(result.data, dict):
-                                causal_subject_evidence_expanded = (
-                                    await self._expand_causal_subject_evidence(
-                                        result.data,
-                                        catalog=catalog,
-                                        completed_calls=completed_calls,
-                                        messages=messages,
-                                    )
-                                )
+                                causal_subject_to_expand = dict(result.data)
                         if (
                             deterministic_message is not None
                             and not history_reasoning_bypass
@@ -1399,70 +1393,6 @@ class UnifiedMCPAgent:
                             "estimate, not an exact total or proof of continuity."
                         ),
                     })
-                if (
-                    name == _LOCAL_FILTER_TOOL
-                    and causal_request
-                    and result is not None
-                    and isinstance(result.data, dict)
-                    and isinstance(result.data.get("eventSourceHints"), dict)
-                ):
-                    controller_candidates = result.data["eventSourceHints"].get(
-                        "controllerCandidates"
-                    )
-                    if isinstance(controller_candidates, list) and controller_candidates:
-                        # Controller discovery is already deterministic and ranked.
-                        # Execute exactly one strongest controller-history follow-up
-                        # host-side instead of relying on another model round, which
-                        # live tests showed could either skip the read entirely or
-                        # fan out across every controller in the room.
-                        controller_arguments = controller_history_arguments(result.data)
-                        if controller_arguments is not None:
-                            controller_tool = catalog.declared_tool(
-                                _LOCAL_DEVICE_HISTORY_TOOL
-                            )
-                            controller_execution = await self.executor.execute(
-                                _LOCAL_DEVICE_HISTORY_TOOL,
-                                controller_arguments,
-                                tool=controller_tool,
-                                supports_live_claim=True,
-                                evidence_kind=_EVIDENCE_KINDS[
-                                    _LOCAL_DEVICE_HISTORY_TOOL
-                                ],
-                            )
-                            messages.append({
-                                "role": "tool",
-                                "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
-                                "content": controller_execution.content,
-                            })
-                            # Prevent the model from needlessly repeating the exact
-                            # host-owned provenance read in a later round.
-                            controller_signature = json.dumps(
-                                [_LOCAL_DEVICE_HISTORY_TOOL, controller_arguments],
-                                sort_keys=True,
-                                ensure_ascii=False,
-                                default=str,
-                            )
-                            completed_calls.add(controller_signature)
-                            messages.append({
-                                "role": "user",
-                                "content": (
-                                    "HOST CONTROLLER-EVIDENCE FOLLOW-UP COMPLETE\n"
-                                    "The host checked one highest-ranked same-room "
-                                    "controller candidate using "
-                                    f"attribute={controller_arguments['attribute']!r}. "
-                                    "Use that event history as provenance evidence. Do "
-                                    "not re-read the same controller or fan out across "
-                                    "other controllers merely to be thorough. If the "
-                                    "original why/cause question still needs explanation "
-                                    "of downstream dimming, off timing, schedules, or "
-                                    "automation behavior, use the remaining investigative "
-                                    "budget on a DIFFERENT evidence class such as relevant "
-                                    "rule/app configuration, app/rule events, or native "
-                                    "logs. Otherwise synthesize. Treat close timing as "
-                                    "corroborating evidence, not automatic proof of who "
-                                    "physically operated a control."
-                                ),
-                            })
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
@@ -1477,6 +1407,18 @@ class UnifiedMCPAgent:
                                 "gateway needed to finish the original task."
                             ),
                         })
+            if (
+                causal_subject_to_expand is not None
+                and not causal_subject_evidence_expanded
+            ):
+                causal_subject_evidence_expanded = (
+                    await self._expand_causal_subject_evidence(
+                        causal_subject_to_expand,
+                        catalog=catalog,
+                        completed_calls=completed_calls,
+                        messages=messages,
+                    )
+                )
             if duplicate_signature_seen:
                 return await self._final_answer(messages)
             if (
