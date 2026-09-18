@@ -68,15 +68,16 @@ on the provider choosing the same filter operator as a regression test.
 
 ### Metadata-aware request-local target cache
 
-Typed history reads for known attributes now require a cached target to contain both
-`attributes` and `capabilities`.
+Typed history reads for known attributes now make request-cache reuse depend on
+what the sparse target can actually establish.
 
-A structural room/context scan may legitimately seed a sparse target containing only
-identity, room, and capability fields. That sparse record is still useful for room
-discovery, but it is no longer sufficient for a typed history absence/capability
-decision.
+A structural room/context scan may seed a target containing only identity, room, and
+capabilities. That sparse record remains sufficient when it positively advertises
+the requested capability—for example `MotionSensor` authorizes a `motion` history
+read with no extra device lookup.
 
-When metadata is insufficient:
+When the sparse record does **not** positively advertise the required capability and
+also lacks current attribute metadata:
 
 - request-local resolution deliberately misses the cache;
 - a detailed targeted device lookup refreshes the target;
@@ -84,8 +85,9 @@ When metadata is insufficient:
   attributes/capabilities; and
 - provably unsupported history is rejected before event-history execution.
 
-This closes the 0.11.0 path that allowed an illuminance sensor to be queried as a
-motion sensor after room discovery.
+This preserves the low-latency Soft Sensor path while closing the 0.11.0 path that
+allowed an illuminance/temperature sensor to be queried as a motion sensor after
+room discovery.
 
 Metric: `resolution_cache_metadata_miss`.
 
