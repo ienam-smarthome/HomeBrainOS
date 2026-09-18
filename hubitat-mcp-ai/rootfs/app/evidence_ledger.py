@@ -62,6 +62,22 @@ def _temporal_suffix(receipt: dict[str, Any]) -> str:
     reliability = str(temporal.get("durationReliability") or "").strip()
     if reliability:
         bits.append(f"reliability={reliability}")
+    intervals = temporal.get("observedIntervals")
+    if isinstance(intervals, list) and intervals:
+        rendered: list[str] = []
+        for item in intervals[:8]:
+            if not isinstance(item, dict):
+                continue
+            start = str(item.get("startNatural") or item.get("start") or "?")
+            end = str(item.get("endNatural") or item.get("end") or "?")
+            duration_text = str(item.get("duration") or "").strip()
+            span = f"{start} -> {end}"
+            if duration_text:
+                span += f" ({duration_text})"
+            rendered.append(span)
+        if rendered:
+            suffix = " + more" if temporal.get("observedIntervalsTruncated") else ""
+            bits.append("observed=[" + "; ".join(rendered) + "]" + suffix)
     return "; ".join(bits)
 
 
