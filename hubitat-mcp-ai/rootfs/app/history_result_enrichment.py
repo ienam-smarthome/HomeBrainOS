@@ -56,6 +56,12 @@ def prepare_history_arguments(name: str, arguments: dict[str, Any]) -> dict[str,
     return prepared
 
 
+def _explicit_true(value: Any) -> bool:
+    if value is True:
+        return True
+    return isinstance(value, str) and value.strip().casefold() == "true"
+
+
 def _event_datetime(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -171,7 +177,10 @@ def _post_window_boundary(
         return temporal
 
     _timestamp, first_after = after[0]
-    if first_after.get("isStateChange") is False:
+    # As with an in-window boundary, a later state report only proves the
+    # preceding state when the source explicitly marks it as a transition.
+    # Missing isStateChange is not enough to close an otherwise unknown window.
+    if not _explicit_true(first_after.get("isStateChange")):
         return temporal
     pair = _STATE_PAIRS.get(attribute.casefold())
     if pair is None:
