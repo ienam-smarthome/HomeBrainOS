@@ -12,9 +12,11 @@ does not imply that the source established causation.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 from location_correlation import nearest_location_correlations, render_location_correlation
+from natural_datetime import normalize_iso_offset
 
 
 _MAX_LEDGER_LINES = 12
@@ -45,6 +47,65 @@ def _history_identity(receipt: dict[str, Any]) -> tuple[str, str]:
         or ""
     ).strip()
     return label, attribute
+
+
+def _parsed_time(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(normalize_iso_offset(text))
+    except (TypeError, ValueError):
+        return None
+
+
+def _boundary_event_hints(details: dict[str, Any], temporal: dict[str, Any]) -> list[str]:
+    """Return concrete subject events close to observed interval boundaries."""
+
+    intervals = temporal.get("observedIntervals")
+    events = details.get("observedEvents")
+    if not isinstance(intervals, list) or not isinstance(events, list):
+        return []
+
+    boundaries: list[datetime] = []
+    for interval in intervals:
+        if not isinstance(interval, dict):
+            continue
+        for key in ("start", "end"):
+            parsed = _parsed_time(interval.get(key))
+            if parsed is not None:
+                boundaries.append(parsed)
+    if not boundaries:
+        return []
+
+    hints: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_time = _parsed_time(event.get("date"))
+        if event_time is None:
+            continue
+        nearest = min(abs((event_time - boundary).total_seconds()) for boundary in boundaries)
+        if nearest > 8.0:
+            continue
+        name = str(event.get("name") or "").strip()
+        value = str(event.get("value") or "").strip()
+        description = str(event.get("description") or "").strip()
+        key = (event_time.isoformat(), name, value)
+        if key in seen:
+            continue
+        seen.add(key)
+        rendered = f"{event.get('date')}: " + (
+            "=".join(part for part in (name, value) if part) or "event"
+        )
+        if description and description.casefold() not in rendered.casefold():
+            rendered += f" [{description}]"
+        rendered += f" (boundary delta {nearest:.3f}s)"
+        hints.append(rendered)
+        if len(hints) >= 10:
+            break
+    return hints
 
 
 def _temporal_suffix(receipt: dict[str, Any]) -> str:
@@ -82,6 +143,9 @@ def _temporal_suffix(receipt: dict[str, Any]) -> str:
             if rendered:
                 suffix = " + more" if temporal.get("observedIntervalsTruncated") else ""
                 bits.append("observed=[" + "; ".join(rendered) + "]" + suffix)
+        boundary_events = _boundary_event_hints(details, temporal)
+        if boundary_events:
+            bits.append("boundaryEvents=[" + "; ".join(boundary_events) + "]")
 
     # Event-style histories such as pushed/held/released do not have binary
     # temporalAnalysis. Keep their concrete timestamp/value/description rows in
