@@ -242,8 +242,18 @@ async def test_successful_noncausal_history_forces_synthesis_before_unrelated_re
     )
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Why was Lounge Lamp on earlier?",
+        "What caused Lounge Lamp to turn on earlier?",
+        "Was Lounge Lamp behaving normally earlier?",
+    ],
+)
 @pytest.mark.asyncio
-async def test_causal_history_is_not_hard_stopped_by_sufficiency_gate() -> None:
+async def test_investigative_history_is_not_hard_stopped_by_sufficiency_gate(
+    prompt: str,
+) -> None:
     mcp = HistoryOnlyMCP()
     ai = FakeAI(
         [
@@ -275,12 +285,10 @@ async def test_causal_history_is_not_hard_stopped_by_sufficiency_gate() -> None:
     )
     agent = UnifiedMCPAgent(mcp, "key", "gemma4:31b", ai_client=ai)
 
-    outcome = await agent.process_user_request_result(
-        "Why was Lounge Lamp on earlier?"
-    )
+    outcome = await agent.process_user_request_result(prompt)
 
     assert outcome.metrics["counters"].get("evidence_sufficiency_stop", 0) == 0
     assert len(ai.requests) == 2
-    # Because the request is causal, the second ordinary reasoning turn keeps
-    # callable tools available instead of being forced straight to synthesis.
+    # Because the request is investigative, the second ordinary reasoning turn
+    # keeps callable tools available instead of being forced straight to synthesis.
     assert ai.requests[1][1]["json"]["tools"]
