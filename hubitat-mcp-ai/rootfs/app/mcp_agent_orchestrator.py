@@ -82,14 +82,10 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
-# History reads are evidence, not an answer template.  0.10.410 first opened
-# a second reasoning round only for causal "why" questions.  Live comparison
-# in 0.10.446 showed the same early-return still blocked analytical questions
-# such as "how long was Big lamp on last night?": the tool had all ten switch
-# transitions, but the request ended as a generic event dump before the model
-# could pair intervals or answer the question.  0.10.447 therefore lets every
-# successful homebrain_device_history result continue to synthesis.  Causal
-# questions additionally keep the stronger investigation hint below.
+# Successful temporal history is strong structured evidence. Non-causal history
+# requests can move directly to synthesis once the complete native tool round has
+# executed; causal questions remain eligible for another evidence-gathering round.
+# This is a generic intent boundary, not a device/question-specific route.
 _CAUSAL_QUESTION = re.compile(r"\bwhy\b", re.I)
 
 # Live-observed, safety-relevant gap: a write-classified turn ("enable it",
@@ -1110,6 +1106,11 @@ class UnifiedMCPAgent:
                             name == _LOCAL_DEVICE_HISTORY_TOOL
                             and self._tool_succeeded(result)
                         )
+                        temporal_history_answer_ready = (
+                            history_reasoning_bypass
+                            and isinstance(result.data, dict)
+                            and isinstance(result.data.get("temporalAnalysis"), dict)
+                        )
                         causal_history_bypass = (
                             history_reasoning_bypass
                             and _CAUSAL_QUESTION.search(user_prompt) is not None
@@ -1128,7 +1129,8 @@ class UnifiedMCPAgent:
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
                 if history_reasoning_bypass and not causal_history_bypass:
-                    round_history_evidence_sufficient = True
+                    if temporal_history_answer_ready:
+                        round_history_evidence_sufficient = True
                     messages.append({
                         "role": "user",
                         "content": (
@@ -1144,24 +1146,6 @@ class UnifiedMCPAgent:
                             "a mathematical lower bound. Do not call unrelated context "
                             "tools merely to be thorough. State changes do not prove "
                             "which automation or person caused them."
-                        ),
-                    })
-                if causal_history_bypass:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "HOST CAUSAL-INVESTIGATION HINT\n"
-                            "The user asked why this happened, not just what happened. "
-                            "The event history above only proves the state changed, not "
-                            "what caused it. Before answering, consider calling "
-                            "homebrain_device_history again for a plausible related "
-                            "sensor in the same room (e.g. a motion sensor, contact "
-                            "sensor, or button) to check whether its timestamps line up "
-                            "with this change -- a close time match is suggestive of an "
-                            "automation, not proof of one. If no related sensor data "
-                            "supports a specific cause, say so plainly rather than "
-                            "inventing one; do not just restate the same event list you "
-                            "already have."
                         ),
                     })
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
