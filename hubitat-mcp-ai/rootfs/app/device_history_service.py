@@ -23,6 +23,7 @@ from device_query_service import DeviceQueryService
 from history_temporal_analysis import (
     analyze_state_intervals,
     analyze_state_intervals_in_window,
+    boundary_event_evidence,
 )
 from history_time_windows import (
     active_history_window_request,
@@ -687,6 +688,14 @@ class DeviceHistoryService:
             else:
                 temporal_analysis = analyze_state_intervals(attribute, events)
 
+        # Preserve event rows close to deterministic interval boundaries from
+        # the full fetched source page, even when attribute filtering or the
+        # ordinary newest-first presentation cap would otherwise hide them.
+        boundary_events = boundary_event_evidence(
+            source_events,
+            temporal_analysis,
+        )
+
         data = {
             "success": True,
             "requested": requested,
@@ -721,6 +730,8 @@ class DeviceHistoryService:
             }
         if temporal_analysis is not None:
             data["temporalAnalysis"] = temporal_analysis
+        if boundary_events:
+            data["boundaryEvents"] = boundary_events
         return MCPToolResult(
             DEVICE_HISTORY_TOOL,
             arguments,
