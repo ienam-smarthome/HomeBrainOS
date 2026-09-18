@@ -39,9 +39,10 @@ A successful non-causal device-history call that contains deterministic
 `temporalAnalysis` is also an explicit evidence-sufficiency boundary. HomeBrain
 finishes every call the model already emitted in that native round, then moves
 directly to no-more-tools synthesis instead of opening a later round for unrelated
-location, motion, rule, or diagnostics reads. Causal `why` requests remain free
-to gather additional current-turn evidence. This is driven by structured evidence
-shape and request intent, not by a device-name or question-specific answer parser.
+location, motion, rule, or diagnostics reads. Investigative history requests remain free to gather additional current-turn
+evidence, including causal, normality/expectation, comparison, and correlation
+questions. This is driven by structured evidence shape and broad request intent,
+not by a device-name or question-specific answer parser.
 
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
