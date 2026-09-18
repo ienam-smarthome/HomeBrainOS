@@ -62,6 +62,7 @@ The repository drift test compares this table directly with the live directory. 
 | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
 | `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
+| `synthesis_context.py` | Preserves bounded privacy-redacted current-turn tool-result excerpts for the final no-tools reasoning synthesis pass. |
 | `token_aware_context_policy.py` | Applies stricter model-aware context ceilings. |
 | `tool_discovery_catalog.py` | Owns prompt-independent tool visibility and expansion. |
 | `tool_catalog_assembly.py` | Combines a request's already-fetched remote tools with the fixed local tool set into a ready `ToolDiscoveryCatalog`. |
