@@ -24,6 +24,8 @@ _COUNTER_LABELS = (
     ("causal_room_plan", "Causal room plans"),
     ("causal_provenance_read", "Causal provenance reads"),
     ("causal_provenance_aligned", "Aligned provenance events"),
+    ("causal_completion_retry", "Causal completion retries"),
+    ("investigative_finalization", "Investigative finalizations"),
     ("evidence_sufficiency_stop", "Evidence sufficiency stops"),
     ("investigative_attribute_required", "Investigative attribute retries"),
     ("gateway_operation_rejected", "Gateway operation rejections"),
