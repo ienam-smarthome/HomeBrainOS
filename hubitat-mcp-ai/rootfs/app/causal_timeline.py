@@ -136,12 +136,22 @@ def _nearby_events(
     return [row for _delta, row in ranked[:6]]
 
 
-def _controller_matches(
+def _controller_boundary_matches(
     receipts: list[dict[str, Any]],
     *,
     start: datetime,
-) -> list[dict[str, Any]]:
-    matches: list[tuple[float, dict[str, Any]]] = []
+    end: datetime | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Classify controller events by their nearest subject interval boundary.
+
+    A button event nearest the end of an interval is evidence about the
+    turn-off/end boundary, not provenance for the earlier turn-on.  This
+    directional distinction prevents an absolute timestamp delta from being
+    misread as a causal trigger when an event occurs at the opposite boundary.
+    """
+
+    start_matches: list[tuple[float, dict[str, Any]]] = []
+    end_matches: list[tuple[float, dict[str, Any]]] = []
     for receipt in receipts:
         details = _details(receipt)
         label = str(details.get("label") or "controller").strip()
@@ -152,21 +162,70 @@ def _controller_matches(
         for event in events:
             if not isinstance(event, dict):
                 continue
-            row = _event_row(event, boundary=start)
-            if row is None:
+            event_time = _parse_time(event.get("date") or event.get("timestamp"))
+            if event_time is None:
                 continue
-            delta = float(row["deltaSeconds"])
-            if delta > _CONTROLLER_DELTA_SECONDS:
+            start_delta = abs((event_time - start).total_seconds())
+            end_delta = (
+                abs((event_time - end).total_seconds())
+                if end is not None
+                else float("inf")
+            )
+            boundary_role = "start" if start_delta <= end_delta else "end"
+            boundary = start if boundary_role == "start" else end
+            delta = start_delta if boundary_role == "start" else end_delta
+            if boundary is None or delta > _CONTROLLER_DELTA_SECONDS:
                 continue
-            description = str(row.get("description") or "")
-            row.update({
+
+            description = str(
+                event.get("description") or event.get("descriptionText") or ""
+            )
+            signed_delta = (event_time - boundary).total_seconds()
+            row = {
+                "date": str(event.get("date") or event.get("timestamp") or ""),
+                "name": event.get("name") or event.get("attribute"),
+                "value": event.get("value"),
+                "description": (
+                    event.get("description") or event.get("descriptionText")
+                ),
+                "deltaSeconds": round(delta, 3),
+                "signedDeltaSeconds": round(signed_delta, 3),
+                "boundaryRole": boundary_role,
                 "sourceLabel": label,
                 "attribute": attribute,
                 "physicalMetadata": "[physical]" in description.casefold(),
-            })
-            matches.append((delta, row))
-    matches.sort(key=lambda item: item[0])
-    return [row for _delta, row in matches[:4]]
+            }
+            target = start_matches if boundary_role == "start" else end_matches
+            target.append((delta, row))
+
+    start_matches.sort(key=lambda item: item[0])
+    end_matches.sort(key=lambda item: item[0])
+    return (
+        [row for _delta, row in start_matches[:4]],
+        [row for _delta, row in end_matches[:4]],
+    )
+
+
+def _start_context_matches(
+    events: list[dict[str, Any]],
+    *,
+    start: datetime,
+) -> list[dict[str, Any]]:
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for event in events:
+        row = _event_row(event, boundary=start)
+        if row is None:
+            continue
+        delta = float(row["deltaSeconds"])
+        if delta > _CONTEXT_DELTA_SECONDS:
+            continue
+        name = str(row.get("name") or "").casefold()
+        if name not in {"mode", "sunrise", "sunset"}:
+            continue
+        row["boundary"] = "start"
+        ranked.append((delta, row))
+    ranked.sort(key=lambda item: item[0])
+    return [row for _delta, row in ranked[:6]]
 
 
 def _context_matches(
@@ -244,7 +303,11 @@ def build_causal_timeline_rows(
         if start is None or end is None:
             continue
 
-        trigger_evidence = _controller_matches(controllers, start=start)
+        trigger_evidence, end_controller_evidence = _controller_boundary_matches(
+            controllers,
+            start=start,
+            end=end,
+        )
         start_commands = _nearby_events(
             subject_events,
             boundary=start,
@@ -267,6 +330,7 @@ def build_causal_timeline_rows(
         material = bool(
             duration_value >= _MATERIAL_DURATION_SECONDS
             or trigger_evidence
+            or end_controller_evidence
             or start_commands
             or end_commands
         )
@@ -286,10 +350,55 @@ def build_causal_timeline_rows(
                 else "unresolved"
             ),
             "triggerEvidence": trigger_evidence,
+            "endControllerEvidence": end_controller_evidence,
             "startCommands": start_commands,
             "endCommands": end_commands,
             "contextEvents": context,
         })
+
+    # For an unverified stream, a final active transition with no observed closing
+    # transition is deliberately excluded from bounded-duration arithmetic. It is
+    # still material causal evidence and must not disappear from final synthesis.
+    if temporal.get("unboundedActiveInterval") and len(rows) < max(1, int(max_intervals)):
+        open_start_text = str(temporal.get("openActiveStart") or "").strip()
+        open_start = _parse_time(open_start_text)
+        if open_start is not None:
+            trigger_evidence, _ignored_end = _controller_boundary_matches(
+                controllers,
+                start=open_start,
+                end=None,
+            )
+            start_commands = _nearby_events(
+                subject_events,
+                boundary=open_start,
+                max_delta_seconds=_BOUNDARY_EVENT_DELTA_SECONDS,
+                command_only=True,
+            )
+            rows.append({
+                "id": f"T{len(rows) + 1}",
+                "subject": subject_details.get("label"),
+                "start": open_start_text,
+                "end": "",
+                "startNatural": temporal.get("openActiveStartNatural"),
+                "endNatural": None,
+                "duration": None,
+                "durationSeconds": None,
+                "open": True,
+                "material": True,
+                "triggerStatus": (
+                    "aligned-controller-provenance"
+                    if trigger_evidence
+                    else "unresolved"
+                ),
+                "triggerEvidence": trigger_evidence,
+                "endControllerEvidence": [],
+                "startCommands": start_commands,
+                "endCommands": [],
+                "contextEvents": _start_context_matches(
+                    location_events,
+                    start=open_start,
+                ),
+            })
     return rows
 
 
@@ -322,20 +431,35 @@ def render_causal_timeline(evidence: list[dict[str, Any]]) -> str | None:
             "conclusion. The final answer must account for every MATERIAL row. "
             "Adjacent short non-material unresolved rows may be grouped as brief "
             "unexplained activity, but a material interval with aligned provenance "
-            "must not be omitted. A controller alignment supports provenance timing; "
-            "it does not identify the person unless event metadata says so."
+            "must not be omitted. A controller event aligned to an interval START "
+            "can support turn-on provenance timing. A controller event aligned to an "
+            "interval END is end/turn-off-adjacent evidence and must never be used as "
+            "the cause of the earlier turn-on. Controller timing does not identify "
+            "the person unless event metadata says so. OPEN rows have a recorded "
+            "active transition but no observed closing transition, so their duration "
+            "must not be inferred."
         ),
     ]
     for row in rows:
         prefix = "MATERIAL" if row.get("material") else "minor"
-        rendered.append(
-            f"- {row['id']} [{prefix}] {row.get('startNatural') or row['start']} -> "
-            f"{row.get('endNatural') or row['end']} "
-            f"({row.get('duration') or str(row.get('durationSeconds')) + 's'}); "
-            f"trigger={row.get('triggerStatus')}"
-        )
+        if row.get("open"):
+            rendered.append(
+                f"- {row['id']} [{prefix} OPEN] "
+                f"{row.get('startNatural') or row['start']} -> "
+                "no observed closing transition; duration=not established; "
+                f"trigger={row.get('triggerStatus')}"
+            )
+        else:
+            rendered.append(
+                f"- {row['id']} [{prefix}] {row.get('startNatural') or row['start']} -> "
+                f"{row.get('endNatural') or row['end']} "
+                f"({row.get('duration') or str(row.get('durationSeconds')) + 's'}); "
+                f"trigger={row.get('triggerStatus')}"
+            )
         for event in row.get("triggerEvidence") or []:
-            rendered.append(f"  provenance: {_render_event(event)}")
+            rendered.append(f"  start-provenance: {_render_event(event)}")
+        for event in row.get("endControllerEvidence") or []:
+            rendered.append(f"  end-controller: {_render_event(event)}")
         for event in row.get("startCommands") or []:
             rendered.append(f"  subject-start-command: {_render_event(event)}")
         for event in row.get("endCommands") or []:
