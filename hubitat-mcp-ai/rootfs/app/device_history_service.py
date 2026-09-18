@@ -148,8 +148,13 @@ class DeviceHistoryService:
         if any(capability in capabilities for capability in required_capabilities):
             return None
 
-        # Sparse/legacy target metadata cannot safely prove unsupported history.
-        if not attributes and not capabilities:
+        # Capability lists are frequently incomplete for bridged/community
+        # devices and cannot prove that an event attribute is impossible. Only
+        # an explicit advertised attribute map gives us a safe negative scope:
+        # T1, for example, exposes illuminance/temperature, so motion is a
+        # provable mismatch; a legacy device exposing only capabilities remains
+        # eligible for the established unfiltered-fetch + client-side filter.
+        if not attributes:
             return None
 
         return {
