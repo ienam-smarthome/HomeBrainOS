@@ -12,6 +12,7 @@ sys.path.insert(0, str(APP_DIR))
 from device_history_service import DeviceHistoryService  # noqa: E402
 from device_query_service import DeviceQueryService  # noqa: E402
 from homebrain_agent import UnifiedMCPAgent  # noqa: E402
+from investigation_policy import is_causal_investigation  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 from request_metrics import RequestMetrics  # noqa: E402
 
@@ -299,8 +300,12 @@ async def test_investigative_history_is_not_hard_stopped_by_sufficiency_gate(
     assert outcome.metrics["counters"].get("evidence_sufficiency_stop", 0) == 0
     assert outcome.metrics["counters"].get("investigative_finalization", 0) == 1
     assert len(ai.requests) == 3
-    # Because the request is investigative, the second ordinary reasoning turn
-    # keeps callable tools available. Its no-tool draft is then routed through
-    # the shared no-tools final synthesis coordinator.
-    assert ai.requests[1][1]["json"]["tools"]
+    # Non-causal investigations still retain the ordinary tool registry. Causal
+    # questions now leave that unrestricted loop immediately; this sparse fake has
+    # no installed provenance reader, so its bounded completion step may have no
+    # callable tools before shared final synthesis.
+    if is_causal_investigation(prompt):
+        assert ai.requests[1][1]["json"].get("tools") in (None, [])
+    else:
+        assert ai.requests[1][1]["json"]["tools"]
     assert ai.requests[2][1]["json"].get("tools") in (None, [])
