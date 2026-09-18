@@ -342,6 +342,15 @@ async def test_normality_history_turn_receives_investigative_evidence_contract()
                     ),
                 }
             },
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": (
+                        "The recorded rows show a switch interval, but a single "
+                        "night does not establish what is normal for this device."
+                    ),
+                }
+            },
         ]
     )
     agent = UnifiedMCPAgent(mcp, "key", "gemma4:31b", ai_client=ai)
@@ -350,7 +359,7 @@ async def test_normality_history_turn_receives_investigative_evidence_contract()
         "Was Lounge Lamp behaving normally last night?"
     )
 
-    assert len(ai.requests) == 2
+    assert len(ai.requests) == 3
     second_payload = ai.requests[1][1]["json"]
     assert second_payload.get("tools")
     rendered = "\n".join(
@@ -363,3 +372,5 @@ async def test_normality_history_turn_receives_investigative_evidence_contract()
     assert "do not invent a generic notion of normality" in rendered
     assert "baseline or explicit expected rule" in rendered
     assert outcome.metrics["counters"].get("evidence_sufficiency_stop", 0) == 0
+    assert outcome.metrics["counters"].get("investigative_finalization", 0) == 1
+    assert ai.requests[2][1]["json"].get("tools") in (None, [])

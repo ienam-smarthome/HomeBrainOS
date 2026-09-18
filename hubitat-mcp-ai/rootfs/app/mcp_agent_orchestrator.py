@@ -24,6 +24,7 @@ from causal_evidence_planner import (
     render_controller_alignment_instruction,
     subject_room_filter_arguments,
 )
+from causal_timeline import render_command_source_followup
 from deterministic_tool_presenter import present_tool_result
 from device_claim_grounding import (
     DeviceClaimAction,
@@ -901,6 +902,7 @@ class UnifiedMCPAgent:
         ungrounded_confirmation_claim_seen = False
         last_proposal_error: tuple[str, dict[str, Any], str] | None = None
         proposal_error_retries = 0
+        causal_completion_retry_used = False
         for _ in range(self.max_tool_rounds):
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
@@ -1068,6 +1070,33 @@ class UnifiedMCPAgent:
                     continue
                 if decision.action is GroundingAction.REFUSE:
                     return str(decision.message)
+
+                # A causal investigation with observed boundary commands still has
+                # one unresolved provenance slot until an app/rule/log source is
+                # checked. Give the tool loop one bounded chance to fill that slot.
+                # If the model declines or no stronger source exists, final
+                # synthesis will explicitly preserve the gap instead of guessing.
+                if causal_request and not causal_completion_retry_used:
+                    followup = render_command_source_followup(
+                        self.evidence.receipts()
+                    )
+                    if followup:
+                        causal_completion_retry_used = True
+                        increment_active_metric("causal_completion_retry")
+                        messages.extend([
+                            assistant,
+                            {"role": "user", "content": followup},
+                        ])
+                        continue
+
+                # All investigative completions go through the shared final
+                # coordinator. Previously a voluntary no-tool model response
+                # bypassed the evidence brief, causal timeline, and validators,
+                # so production could gather strong evidence and still omit it.
+                if investigative_request:
+                    increment_active_metric("investigative_finalization")
+                    return await self._final_answer(messages)
+
                 return self._unverified_mutation_guard(
                     str(assistant.get("content") or "Done.")
                 )
