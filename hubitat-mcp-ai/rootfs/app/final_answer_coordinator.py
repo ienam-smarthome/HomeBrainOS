@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from causal_timeline import render_causal_timeline
 from evidence_ledger import build_current_turn_evidence_ledger
 from investigation_policy import (
     is_causal_investigation,
@@ -47,12 +48,14 @@ def _synthesis_instruction(original_user: str) -> str:
         text += (
             "This is a causal investigation. Lead with the best-supported "
             "explanation and calibrate confidence. Reconstruct the important "
-            "timeline by correlating timestamps across sources. Separate a likely "
-            "trigger/provenance event from downstream automation effects. Explain "
-            "what remains unproven or unexplained. Only suggest a configuration "
-            "change when the evidence makes it relevant. A device state transition "
-            "or close timestamp alone is correlation, not proof of a person or "
-            "automation causing it. "
+            "timeline by correlating timestamps across sources. Account for every "
+            "MATERIAL row in the HOST CAUSAL TIMELINE; adjacent short minor "
+            "unresolved rows may be grouped, but do not omit a material interval "
+            "with aligned provenance. Separate a likely trigger/provenance event "
+            "from downstream automation effects. Explain what remains unproven or "
+            "unexplained. Only suggest a configuration change when the evidence "
+            "makes it relevant. A device state transition or close timestamp alone "
+            "is correlation, not proof of a person or automation causing it. "
         )
     elif investigative:
         text += (
@@ -98,8 +101,10 @@ class FinalAnswerCoordinator:
             else []
         )
         original_user = _original_user_request(messages)
+        causal = is_causal_investigation(original_user)
         investigative = is_history_investigation(original_user)
         brief = build_current_turn_evidence_ledger(evidence)
+        causal_timeline = render_causal_timeline(evidence) if causal else None
         tool_packet = (
             build_tool_evidence_packet(messages)
             if investigative
@@ -109,6 +114,8 @@ class FinalAnswerCoordinator:
         final_messages = [*messages]
         if brief:
             final_messages.append({"role": "user", "content": brief})
+        if causal_timeline:
+            final_messages.append({"role": "user", "content": causal_timeline})
         if tool_packet:
             final_messages.append({"role": "user", "content": tool_packet})
         final_messages.append({
