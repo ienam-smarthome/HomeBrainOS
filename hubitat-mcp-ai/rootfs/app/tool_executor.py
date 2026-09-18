@@ -313,7 +313,11 @@ class ToolExecutor:
         # and verification calls have reasoning_round_size == 0 and are unchanged.
         if (
             reasoning_round_size > 0
-            and not register_model_tool_execution(mutates=effect.mutates)
+            and not register_model_tool_execution(
+                name=name,
+                arguments=safe_arguments,
+                mutates=effect.mutates,
+            )
         ):
             logger.info("Skipped model read %s because reasoning budget is exhausted", name)
             return ToolExecution(

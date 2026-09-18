@@ -39,6 +39,7 @@ from request_classification import (
     requests_mutation as _requests_mutation,
     routine_control_arguments as _routine_control_arguments,
 )
+from reasoning_policy import arm_controller_followup_budget
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
@@ -1265,6 +1266,7 @@ class UnifiedMCPAgent:
                         "controllerCandidates"
                     )
                     if isinstance(controller_candidates, list) and controller_candidates:
+                        arm_controller_followup_budget(controller_candidates)
                         messages.append({
                             "role": "user",
                             "content": (

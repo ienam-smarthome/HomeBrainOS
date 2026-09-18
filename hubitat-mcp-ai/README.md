@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.466**.
+Current add-on version: **0.10.467**.
 
 ## Architecture
 
@@ -62,8 +62,12 @@ unsupported attribute is returned to the reasoning loop with the device's availa
 attributes instead of being used to manufacture an absence claim. Sparse/custom
 driver metadata remains permissive. Gateway/sub-tool calls are also checked against live schema/discovery
 compatibility before execution, so an operation discovered under one gateway cannot
-be guessed through another. This is driven by structured evidence shape and broad
-request intent, not by a device-name or question-specific answer parser.
+be guessed through another. If same-room controller candidates are discovered only
+at the normal read-budget boundary, the request receives one tightly scoped
+controller-history follow-up opportunity: exactly one matching candidate/attribute
+read may exceed the ordinary 3-round / 8-read ceiling, and the reservation is then
+consumed. This is driven by structured evidence shape and broad request intent, not
+by a device-name or question-specific answer parser.
 
 The current-turn evidence ledger also ranks location/mode events by temporal
 proximity to observed subject-history interval boundaries before filling its
