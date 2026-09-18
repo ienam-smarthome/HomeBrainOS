@@ -67,6 +67,27 @@ from tool_registry import (
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
 
+
+def _controller_followup_arguments(
+    candidates: list[dict[str, Any]],
+) -> dict[str, str] | None:
+    """Return one deterministic top-ranked controller history request."""
+
+    if not candidates:
+        return None
+    candidate = candidates[0]
+    if not isinstance(candidate, dict):
+        return None
+    label = str(candidate.get("label") or "").strip()
+    suggested = [
+        str(value).strip()
+        for value in (candidate.get("suggestedHistoryAttributes") or [])
+        if str(value).strip()
+    ]
+    if not label or not suggested:
+        return None
+    return {"name": label, "attribute": suggested[0]}
+
 _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
     "rule", "rules",
@@ -1270,18 +1291,10 @@ class UnifiedMCPAgent:
                         # host-side instead of relying on another model round, which
                         # live tests showed could either skip the read entirely or
                         # fan out across every controller in the room.
-                        candidate = controller_candidates[0]
-                        controller_label = str(candidate.get("label") or "").strip()
-                        suggested = [
-                            str(value).strip()
-                            for value in (candidate.get("suggestedHistoryAttributes") or [])
-                            if str(value).strip()
-                        ]
-                        if controller_label and suggested:
-                            controller_arguments = {
-                                "name": controller_label,
-                                "attribute": suggested[0],
-                            }
+                        controller_arguments = _controller_followup_arguments(
+                            controller_candidates
+                        )
+                        if controller_arguments is not None:
                             controller_tool = catalog.declared_tool(
                                 _LOCAL_DEVICE_HISTORY_TOOL
                             )
@@ -1305,7 +1318,7 @@ class UnifiedMCPAgent:
                                     "HOST CONTROLLER-EVIDENCE FOLLOW-UP COMPLETE\n"
                                     "The host deterministically checked exactly one "
                                     "highest-ranked same-room controller candidate using "
-                                    f"attribute={suggested[0]!r}. Synthesize the original "
+                                    f"attribute={controller_arguments['attribute']!r}. Synthesize the original "
                                     "cause/trigger question from the current-turn evidence "
                                     "now. Treat close timing as corroborating evidence, not "
                                     "automatic proof of who physically pressed a control. "
@@ -1366,4 +1379,4 @@ class UnifiedMCPAgent:
         return await self._final_answer(messages)
 
 
-__all__ = ["AgentOutcome", "UnifiedMCPAgent"]
+__all__ = ["AgentOutcome", "UnifiedMCPAgent", "_controller_followup_arguments"]
