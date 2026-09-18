@@ -24,6 +24,7 @@ from history_temporal_analysis import (
     analyze_state_intervals,
     analyze_state_intervals_in_window,
     boundary_event_evidence,
+    window_event_evidence,
 )
 from history_time_windows import active_history_window_request
 from mcp_client import MCPToolResult
@@ -142,6 +143,16 @@ def enrich_history_result(name: str, result: MCPToolResult) -> MCPToolResult:
             temporal = _analysis_for(attribute, filtered, data)
             if temporal is not None:
                 data["temporalAnalysis"] = temporal
+
+    # Preserve every bounded source row that actually falls inside the requested
+    # temporal window independently of interval construction. This remains useful
+    # when an unverified stream yields zero bounded intervals but still contains
+    # command/state rows the final answer may reference.
+    time_window = data.get("timeWindow")
+    if isinstance(time_window, dict):
+        window_rows = window_event_evidence(events, time_window)
+        if window_rows:
+            data["windowEvents"] = window_rows
 
     # Boundary evidence must be derived after every deterministic history
     # enrichment step. Attribute-less semantic history is common; in that path
