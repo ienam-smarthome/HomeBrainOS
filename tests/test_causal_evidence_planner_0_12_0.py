@@ -33,7 +33,7 @@ def _subject_history() -> dict[str, Any]:
         "attribute": "switch",
         "temporalAnalysis": {
             "activeState": "on",
-            "intervals": [
+            "observedIntervals": [
                 {
                     "start": "2026-09-18T00:02:53.713+01:00",
                     "end": "2026-09-18T01:30:07.971+01:00",
