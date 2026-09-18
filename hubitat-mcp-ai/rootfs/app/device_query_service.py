@@ -65,6 +65,13 @@ _CONTEXT_ATTRIBUTE_BY_NORMALIZED = {
     re.sub(r"[^a-z0-9]", "", name.casefold()): name
     for name in LIVE_CONTEXT_ATTRIBUTES
 }
+# These identity/structure fields are always part of hubitat://context and do
+# not require a detailed full-inventory read. Keeping this separate from
+# LIVE_CONTEXT_ATTRIBUTES matters: room/label/capabilities are metadata, not
+# live state attributes requested from Hubitat.
+_CONTEXT_STRUCTURAL_FIELDS = frozenset({
+    "id", "deviceid", "name", "label", "room", "roomname", "capabilities",
+})
 
 
 class DeviceQueryService:
@@ -505,9 +512,15 @@ class DeviceQueryService:
                 is_error=True,
             )
 
+        normalized_attribute = self._normalized_attribute(attribute)
         context_attribute = self._context_attribute_name(attribute)
         if context_attribute is not None:
             source, devices = await self._bulk_live_devices({context_attribute})
+        elif normalized_attribute in _CONTEXT_STRUCTURAL_FIELDS:
+            # hubitat://context already carries stable identity, room and
+            # capabilities for every device. Structural filters therefore do not
+            # need the much slower detailed hub_list_devices inventory.
+            source, devices = await self._bulk_live_devices(set())
         else:
             source, devices = await self._live_devices(enrich_identity=False)
         if not self._tool_succeeded(source):
@@ -541,15 +554,26 @@ class DeviceQueryService:
                 comparison_errors += 1
                 continue
             if matched:
+                label = device.get("label") or device.get("name")
+                capabilities = sorted(self._capability_names(device))
                 matches.append(
                     {
                         "id": device.get("id") or device.get("deviceId"),
-                        "label": device.get("label") or device.get("name"),
+                        "label": label,
                         "room": device.get("room") or device.get("roomName"),
+                        "capabilities": capabilities,
                         "attribute": attribute,
                         "value": actual,
                     }
                 )
+                # A complete filter result already establishes stable device
+                # identity. Seed the same request-local resolution cache used by
+                # the named resolver so a later history read on one of these
+                # exact labels can go straight to deviceId instead of paying for
+                # another targeted labelFilter call. Required-command checks still
+                # fail closed when this compact identity lacks command metadata.
+                if label:
+                    self._cache_resolution_target(str(label), device)
         data = {
             "attribute": attribute,
             "operator": operator,

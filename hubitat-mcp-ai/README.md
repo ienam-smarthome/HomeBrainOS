@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.460**.
+Current add-on version: **0.10.461**.
 
 ## Architecture
 
@@ -35,14 +35,18 @@ budget. The older causal sensor-hunting hint is filtered before provider calls,
 so causal questions use the same bounded evidence-sufficiency policy as every
 other read and correlation is never promoted to proof of causation.
 
-A successful non-causal device-history call that contains deterministic
+A successful non-investigative device-history call that contains deterministic
 `temporalAnalysis` is also an explicit evidence-sufficiency boundary. HomeBrain
 finishes every call the model already emitted in that native round, then moves
 directly to no-more-tools synthesis instead of opening a later round for unrelated
-location, motion, rule, or diagnostics reads. Investigative history requests remain free to gather additional current-turn
-evidence, including causal, normality/expectation, comparison, and correlation
-questions. This is driven by structured evidence shape and broad request intent,
-not by a device-name or question-specific answer parser.
+location, motion, rule, or diagnostics reads. Investigative history requests remain
+free to gather additional current-turn evidence, including causal,
+normality/expectation, comparison, and correlation questions. Those turns receive a
+separate host contract: history establishes what happened, not what caused it; a
+normality claim needs either an explicit baseline/expected rule or suitably cautious
+wording; comparisons need the other side of the comparison; and unrelated exhaustive
+reads are discouraged. This is driven by structured evidence shape and broad request
+intent, not by a device-name or question-specific answer parser.
 
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
@@ -86,8 +90,10 @@ successfully resolves a device, HomeBrain caches that exact target under the act
 request identity and indexes it by the successful user wording plus its id/name/
 label. A later adapter in the same request can reuse the target without repeating a
 targeted `hub_list_devices` lookup; successful reuse increments
-`resolution_cache_hit`. The cache never crosses request boundaries and still
-checks required command capability before reuse.
+`resolution_cache_hit`. Complete device-filter results now seed the same cache by
+their exact returned labels/ids, so an investigative room scan can hand a related
+sensor directly to device history without another label lookup. The cache never
+crosses request boundaries and still checks required command capability before reuse.
 
 The live device layer separates common state from richer device metadata. On MCP
 servers that expose `hubitat://context`, `HubitatMCPClient` reads that resource as
@@ -102,8 +108,11 @@ inventory path instead of weakening an exhaustive claim.
 
 This bulk path is selected from structured data requirements, not prompt wording.
 Active rooms require `motion` and `switch`; active lights and non-light switches
-require `switch`; deterministic attribute filters use the resource only when the
-requested attribute is one of the resource's declared live-state fields. Numeric
+require `switch`; deterministic attribute filters use the resource when the
+requested value is a declared live-state field or a structural identity field such
+as room, label, id, or capabilities. This lets investigative same-room discovery
+avoid a detailed whole-hub inventory read. Filter matches expose compact capabilities
+and seed request-local target identity for later exact history reads. Numeric
 aggregate queries such as top/highest/lowest/count power, battery, temperature,
 and humidity use the same complete bulk live-context path when the requested
 attribute is covered, avoiding an unnecessary full detailed inventory read. An
@@ -118,6 +127,15 @@ active-room definition is unchanged: `motion=active OR light switch=on`. The
 resource's compact `attributes` map is normalized to `currentStates` so richer
 typed/unit-bearing metadata can still be merged by device id without stale
 metadata overwriting fresh live values.
+
+Final history serialization keeps deterministic duration safety without erasing
+unrelated analysis. For unverified event streams, a correctly rounded duration is
+left alone when the model explicitly presents it as an estimate/recorded observation.
+If the model states a wrong or exact-looking total, only the unsafe duration/
+continuity sentence is replaced with the deterministic recorded-row estimate; other
+current-turn observations and carefully hedged correlations remain intact. Zero
+unverified histories retain the stricter deterministic serializer because missing
+transitions can otherwise turn an apparent zero into a false absence claim.
 
 The WebUI dashboard uses the same bulk live-context snapshot for its 30-second
 state poll rather than forcing a detailed device-manifest refresh each time. Rich

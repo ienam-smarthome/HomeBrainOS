@@ -56,6 +56,15 @@ _SECONDS_DURATION = re.compile(
     r"(?P<seconds>\d+)\s*(?:s(?:ec(?:ond)?s?)?)\b",
     re.I,
 )
+_UNVERIFIED_ESTIMATE_QUALIFIER = re.compile(
+    r"\b(?:estimate|estimated|approximately|approx\.?|about|observed|recorded|pairing)\b",
+    re.I,
+)
+_UNVERIFIED_EXACTNESS_CLAIM = re.compile(
+    r"\b(?:exact|exactly|definitely|genuinely|continuous|continuously|"
+    r"throughout|all\s+night|entire\s+night)\b",
+    re.I,
+)
 
 
 def _explicit_false(value: Any) -> bool:
@@ -135,6 +144,51 @@ def _duration_mentions_seconds(text: str) -> list[int]:
         values.append(int(match.group("seconds") or 0))
 
     return values
+
+
+def _replace_unverified_totalish_sentences(
+    text: str,
+    *,
+    replacement: str,
+    expected_seconds: int,
+) -> tuple[str, bool]:
+    """Correct only unsafe duration sentences and preserve other analysis.
+
+    0.10.458 deliberately failed closed for unverified event streams by replacing
+    the entire model answer whenever it mentioned a total duration. Live
+    investigative queries later showed the cost: a useful normality/causal
+    analysis could be erased just because one sentence said "1h 43m" instead of
+    the deterministic recorded-row estimate. Keep the safety property, but make
+    the correction local to the duration/continuity claim.
+
+    A correctly rounded duration can remain untouched when the same sentence
+    explicitly frames it as an estimate/recorded observation and makes no exact
+    continuity claim.
+    """
+
+    pieces = re.split(r"(?<=[.!?])(?P<space>\s+)", str(text or ""))
+    changed = False
+    replacement_used = False
+    for index in range(0, len(pieces), 2):
+        sentence = pieces[index]
+        if not _TOTALISH_DURATION_CLAIM.search(sentence):
+            continue
+        mentions = _duration_mentions_seconds(sentence)
+        has_expected = expected_seconds in mentions
+        qualified = _UNVERIFIED_ESTIMATE_QUALIFIER.search(sentence) is not None
+        exactness = _UNVERIFIED_EXACTNESS_CLAIM.search(sentence) is not None
+        if has_expected and qualified and not exactness:
+            continue
+        if not replacement_used:
+            pieces[index] = replacement
+            replacement_used = True
+        else:
+            pieces[index] = ""
+        changed = True
+
+    if changed:
+        return "".join(pieces), True
+    return str(text or ""), False
 
 
 def _parsed_state_rows(
@@ -569,16 +623,33 @@ def guard_history_duration_claim(
                 f"this does not prove it stayed {inactive_state} or establish an "
                 "exact total."
             )
-        else:
-            interval_word = "interval" if interval_count == 1 else "intervals"
-            corrected = (
-                f"Pairing the recorded state rows gives an {active_state}-time "
-                f"estimate of {total_duration} for {label}{window_suffix} across "
-                f"{interval_count} observed {interval_word}. The device-event "
-                "stream has not been independently verified as complete, so this "
-                "is not an exact total or a mathematical lower bound."
-            )
-        return corrected, True
+            return corrected, True
+
+        interval_word = "interval" if interval_count == 1 else "intervals"
+        corrected = (
+            f"Pairing the recorded state rows gives an {active_state}-time "
+            f"estimate of {total_duration} for {label}{window_suffix} across "
+            f"{interval_count} observed {interval_word}. The device-event "
+            "stream has not been independently verified as complete, so this "
+            "is not an exact total or a mathematical lower bound."
+        )
+        expected = _display_duration_seconds(total_seconds)
+        mentions = _duration_mentions_seconds(text)
+        if (
+            expected in mentions
+            and _UNVERIFIED_ESTIMATE_QUALIFIER.search(text) is not None
+            and _UNVERIFIED_EXACTNESS_CLAIM.search(text) is None
+        ):
+            return text, False
+        localized, changed = _replace_unverified_totalish_sentences(
+            text,
+            replacement=corrected,
+            expected_seconds=expected,
+        )
+        # A totalish claim was detected at function entry. If sentence
+        # segmentation somehow could not isolate it, retain the original
+        # fail-closed behaviour rather than leaking an unsafe exact claim.
+        return (localized, True) if changed else (corrected, True)
 
     mentions = _duration_mentions_seconds(text)
     if not mentions:

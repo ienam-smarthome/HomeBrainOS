@@ -608,9 +608,11 @@ def device_filter_tool() -> MCPTool:
         LOCAL_FILTER_TOOL,
         (
             "Fetch all live Hubitat devices and return only devices whose "
-            "attribute satisfies a comparison. Use this for exhaustive lists, "
-            "thresholds, counts, or comparisons instead of scanning the device "
-            "manifest yourself."
+            "attribute or structural field satisfies a comparison. Use this for "
+            "exhaustive lists, thresholds, counts, room membership, or comparisons "
+            "instead of scanning the device manifest yourself. Returned matches "
+            "include compact capabilities when available so a reasoning turn can "
+            "choose a relevant related sensor without probing every candidate."
         ),
         {
             "type": "object",
@@ -618,8 +620,9 @@ def device_filter_tool() -> MCPTool:
                 "attribute": {
                     "type": "string",
                     "description": (
-                        "Hubitat attribute name, for example battery, temperature, "
-                        "humidity, power, switch, or motion. Some community/bridge "
+                        "Hubitat attribute or structural field, for example battery, "
+                        "temperature, humidity, power, switch, motion, or room. Some "
+                        "community/bridge "
                         "meter drivers (e.g. energy-provider integrations) report "
                         "their reading only as 'value' or 'valueStr', with no "
                         "attribute literally named 'power' -- if a power/energy "

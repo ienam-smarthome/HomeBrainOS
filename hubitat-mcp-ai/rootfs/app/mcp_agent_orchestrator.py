@@ -82,9 +82,10 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
-# Successful temporal history is strong structured evidence. Non-causal history
-# requests can move directly to synthesis once the complete native tool round has
-# executed; causal questions remain eligible for another evidence-gathering round.
+# Successful temporal history is strong structured evidence. Straight factual
+# history requests can move directly to synthesis once the complete native tool
+# round has executed. Investigative requests (cause, normality/expectation,
+# comparison/correlation) remain eligible for additional evidence gathering.
 # This is a generic intent boundary, not a device/question-specific route.
 _HISTORY_INVESTIGATION = re.compile(
     r"\bwhy\b|"
@@ -1060,7 +1061,7 @@ class UnifiedMCPAgent:
                 # these per call avoids state leaking from a prior tool in a
                 # mixed round or an undeclared-tool branch.
                 history_reasoning_bypass = False
-                causal_history_bypass = False
+                investigative_history_bypass = False
                 tool = catalog.declared_tool(name)
                 if not tool:
                     round_tool_failure = True
@@ -1122,7 +1123,7 @@ class UnifiedMCPAgent:
                             and isinstance(result.data, dict)
                             and isinstance(result.data.get("temporalAnalysis"), dict)
                         )
-                        causal_history_bypass = (
+                        investigative_history_bypass = (
                             history_reasoning_bypass
                             and _HISTORY_INVESTIGATION.search(user_prompt) is not None
                         )
@@ -1139,7 +1140,7 @@ class UnifiedMCPAgent:
                         ):
                             return deterministic_message
                 messages.append({"role": "tool", "tool_name": name, "content": content})
-                if history_reasoning_bypass and not causal_history_bypass:
+                if history_reasoning_bypass and not investigative_history_bypass:
                     if temporal_history_answer_ready:
                         round_history_evidence_sufficient = True
                     messages.append({
@@ -1157,6 +1158,29 @@ class UnifiedMCPAgent:
                             "a mathematical lower bound. Do not call unrelated context "
                             "tools merely to be thorough. State changes do not prove "
                             "which automation or person caused them."
+                        ),
+                    })
+                elif history_reasoning_bypass and investigative_history_bypass:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST INVESTIGATIVE-HISTORY REQUIREMENT\n"
+                            "The user asked for analysis beyond a duration/event list. "
+                            "Use the recorded rows to identify concrete patterns, but "
+                            "keep observation separate from interpretation. For a why/"
+                            "cause/trigger question, device history proves what changed "
+                            "but not the cause; gather a materially relevant independent "
+                            "current-turn source when available (for example related "
+                            "sensor history, location/mode history, rule/app state, or "
+                            "logs) before attributing a cause. For normal/abnormal/"
+                            "expected/unusual wording, do not invent a generic notion "
+                            "of normality: describe objective patterns that stand out, "
+                            "and say a baseline or explicit expected rule is needed for "
+                            "a stronger normality judgement. For comparison/correlation, "
+                            "obtain the other requested side of the comparison. Avoid "
+                            "exhaustive unrelated reads. Any unverified-event-stream "
+                            "duration remains an estimate, not an exact total or proof "
+                            "of continuity."
                         ),
                     })
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
@@ -1182,7 +1206,7 @@ class UnifiedMCPAgent:
             ):
                 # The model already chose the complete native tool round for this
                 # step. If that round produced a successful deterministic temporal
-                # history and the request is not causal, the history evidence is
+                # history and the request is not investigative, the history evidence is
                 # sufficient for synthesis. Execute every call the model requested
                 # in the round, then stop tool expansion instead of letting a later
                 # round wander into location/motion/rule reads merely for context.
