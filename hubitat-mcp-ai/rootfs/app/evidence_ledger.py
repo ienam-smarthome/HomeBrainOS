@@ -497,6 +497,13 @@ def _single_history_window_audit_needed(
         interval_count = int(temporal.get("intervalCount"))
     except (TypeError, ValueError):
         return False
+    # An unbounded active transition is itself an auditable temporal fact:
+    # a recorded active row exists but no observed closing row does. Preserve a
+    # single-source ledger for it even if the compact windowEvents channel is
+    # absent, because the open-start metadata is carried in temporalAnalysis.
+    if temporal.get("unboundedActiveInterval"):
+        return True
+
     window_events = details.get("windowEvents")
     return (
         interval_count == 0
