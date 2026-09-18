@@ -141,6 +141,25 @@ to final synthesis. This prevents auxiliary controller/device guesses from addin
 latency or turning an otherwise answered investigation into an unresolved
 missing-device outcome.
 
+0.13.2 fixes two generic live-soak gaps found in the first 0.13.1 run. Semantic
+history requests commonly omit an explicit state attribute; in that path the binary
+attribute and interval analysis are inferred only after the local history service
+returns. Boundary-event selection now runs again after deterministic enrichment, so
+`boundaryEvents` is populated for inferred histories as well as explicit
+`attribute=switch`/contact/motion reads.
+
+Gateway argument inspection is also canonicalized. Evidence, grounding, and
+gateway-operation validation now recognize both direct envelopes
+(`{"tool":"hub_get_logs","args":{...}}`) and one-level-wrapped envelopes
+(`{"args":{"tool":"hub_get_logs","args":{...}}}`) without rewriting the payload.
+This keeps provenance receipts and log checks aligned with the live MCP schema.
+
+Finally, causal completion no longer pays for fuzzy discovery merely to expose
+read-only provenance gateways already returned by MCP `list_tools`. It activates a
+small purpose-specific registry (search plus up to four app/rule/log/diagnostic read
+gateways) and allows up to two complementary provenance reads in that single model
+round before final synthesis. Routine requests keep the lean initial registry.
+
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
 applied locally. If the model draft conflicts with one of those invariants, HomeBrain
