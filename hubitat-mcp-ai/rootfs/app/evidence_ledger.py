@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from location_correlation import nearest_location_correlations, render_location_correlation
+
 
 _MAX_LEDGER_LINES = 12
 _MAX_EVENT_HINTS = 6
@@ -81,7 +83,10 @@ def _temporal_suffix(receipt: dict[str, Any]) -> str:
     return "; ".join(bits)
 
 
-def _location_event_hints(receipt: dict[str, Any]) -> str:
+def _location_event_hints(
+    receipt: dict[str, Any],
+    evidence: list[dict[str, Any]],
+) -> str:
     details = receipt.get("details")
     if not isinstance(details, dict):
         return ""
@@ -89,20 +94,40 @@ def _location_event_hints(receipt: dict[str, Any]) -> str:
     if not isinstance(rows, list):
         return ""
     hints: list[str] = []
+
+    # Final synthesis cares more about location events temporally adjacent to the
+    # subject's observed transitions than simply the newest location events.
+    # Preserve those correlations first, then fill any remaining hint slots in
+    # the upstream newest-first order.
+    correlations = nearest_location_correlations(
+        evidence,
+        max_delta_seconds=15.0,
+        limit=_MAX_EVENT_HINTS,
+    )
+    correlated_dates = {
+        str(item.get("eventDate") or "").strip()
+        for item in correlations
+        if str(item.get("eventDate") or "").strip()
+    }
+    for item in correlations:
+        hints.append("NEAR SUBJECT TRANSITION: " + render_location_correlation(item))
+
     for row in rows:
+        if len(hints) >= _MAX_EVENT_HINTS:
+            break
         if not isinstance(row, dict):
             continue
         name = str(row.get("name") or "").strip()
         value = str(row.get("value") or "").strip()
         date = str(row.get("date") or "").strip()
+        if date and date in correlated_dates:
+            continue
         if not (name or value):
             continue
         label = "=".join(part for part in (name, value) if part)
         if date:
             label += f" @ {date}"
         hints.append(label)
-        if len(hints) >= _MAX_EVENT_HINTS:
-            break
     return "; ".join(hints)
 
 
@@ -216,7 +241,7 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
             if key in seen:
                 # Prefer the raw receipt carrying bounded event details. If the
                 # first line came from the wrapper, replace it when details arrive.
-                hints = _location_event_hints(receipt)
+                hints = _location_event_hints(receipt, receipts)
                 if hints:
                     for idx, line in enumerate(lines):
                         if line.startswith("- CHECKED location/mode history:"):
@@ -237,7 +262,7 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
                 f"{count} events" if count is not None
                 else str(receipt.get("summary") or "successful read")
             )
-            hints = _location_event_hints(receipt)
+            hints = _location_event_hints(receipt, receipts)
             if hints:
                 summary += f"; examples: {hints}"
             lines.append(f"- CHECKED location/mode history: {summary}")
