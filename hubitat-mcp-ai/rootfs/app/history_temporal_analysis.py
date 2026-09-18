@@ -2,14 +2,15 @@
 
 The language model should decide *what the user is asking*, but timestamp
 arithmetic should not be delegated to free-form model reasoning. This module
-turns authoritative state-change rows into complete observed intervals and
-pre-computed totals that the model can safely synthesize into a natural answer.
+pairs recorded state rows and pre-computes duration evidence that the model can
+safely synthesize into a natural answer.
 
-Only state pairs with unambiguous active/inactive semantics are analysed. A
-partial boundary is never guessed. Window-aware analysis additionally clips
-intervals to an explicit requested start/end and records whether the state at
-the window start is known from a predecessor event or can be inferred from the
-first complete state transition in the window.
+Only state pairs with unambiguous active/inactive semantics are analysed.
+Pagination completeness is deliberately kept separate from event-stream
+integrity: a Hubitat page can reach the requested boundary while still omitting
+physical transitions recorded elsewhere. Window-aware analysis therefore refuses
+to turn missing rows into exact boundary state or exact duration unless source
+integrity has been independently verified.
 
 The module also owns the narrow final-answer consistency guard for temporal
 history claims. When one authoritative history receipt proves a total duration
