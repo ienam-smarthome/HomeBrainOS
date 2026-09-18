@@ -192,7 +192,7 @@ def test_coverage_validator_detects_current_live_answer_shape_missing_long_inter
     missing = missing_material_timeline_rows(draft, _evidence())
 
     assert [row["id"] for row in missing] == ["T3"]
-    _corrected, issues = validate_synthesis(draft, _evidence())
+    _corrected, issues = validate_synthesis(draft, _evidence(), causal=True)
     assert any(issue.startswith("causal_timeline_coverage:T3:") for issue in issues)
 
 
