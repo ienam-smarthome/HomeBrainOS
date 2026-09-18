@@ -100,6 +100,7 @@ class DeviceQueryService:
         *,
         required_command: str = "",
         required_fields: set[str] | frozenset[str] | None = None,
+        required_capabilities: set[str] | frozenset[str] | None = None,
     ) -> dict[str, Any] | None:
         request_identity = active_request_identity()
         cached = _REQUEST_DEVICE_RESOLUTIONS.get()
@@ -115,6 +116,21 @@ class DeviceQueryService:
         if required_command and required_command.casefold() not in device_commands(target):
             return None
         required = {str(field) for field in (required_fields or set()) if str(field)}
+        wanted_capabilities = {
+            re.sub(r"[^a-z0-9]", "", str(value).casefold())
+            for value in (required_capabilities or set())
+            if str(value).strip()
+        }
+        if wanted_capabilities:
+            advertised = {
+                re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                for value in cls._capability_names(target)
+            }
+            if advertised & wanted_capabilities:
+                # A positive advertised capability is enough to authorize the
+                # corresponding typed history read. Current attribute state can
+                # legitimately be absent from the compact context snapshot.
+                required.discard("attributes")
         if required and not required.issubset(target.keys()):
             increment_active_metric("resolution_cache_metadata_miss")
             return None
@@ -747,6 +763,7 @@ class DeviceQueryService:
         arguments: dict[str, Any],
         *,
         required_fields: set[str] | frozenset[str] | None = None,
+        required_capabilities: set[str] | frozenset[str] | None = None,
     ) -> MCPToolResult:
         requested = str(arguments.get("name") or "").strip()
         if not requested:
@@ -764,6 +781,7 @@ class DeviceQueryService:
             requested,
             required_command=required_command,
             required_fields=required_fields,
+            required_capabilities=required_capabilities,
         )
         if cached_target is not None:
             increment_active_metric("resolution_cache_hit")
