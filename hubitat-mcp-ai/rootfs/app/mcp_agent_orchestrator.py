@@ -22,6 +22,7 @@ from causal_evidence_planner import (
     controller_history_arguments,
     controller_transition_alignments,
     render_controller_alignment_instruction,
+    subject_has_observed_intervals,
     subject_room_filter_arguments,
 )
 from causal_timeline import render_command_source_followup
@@ -899,6 +900,7 @@ class UnifiedMCPAgent:
         )
         investigative_subject_history_key: str | None = None
         causal_subject_evidence_expanded = False
+        causal_subject_no_intervals = False
         ungrounded_confirmation_claim_seen = False
         last_proposal_error: tuple[str, dict[str, Any], str] | None = None
         proposal_error_retries = 0
@@ -1394,6 +1396,8 @@ class UnifiedMCPAgent:
                             ) or None
                             if causal_request and isinstance(result.data, dict):
                                 causal_subject_to_expand = dict(result.data)
+                                if not subject_has_observed_intervals(result.data):
+                                    causal_subject_no_intervals = True
                         if (
                             deterministic_message is not None
                             and not history_reasoning_bypass
@@ -1483,6 +1487,24 @@ class UnifiedMCPAgent:
                                 "gateway needed to finish the original task."
                             ),
                         })
+            if causal_subject_no_intervals:
+                increment_active_metric("causal_subject_empty_stop")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "HOST CAUSAL SUBJECT EVIDENCE STOP\n"
+                        "The current-turn subject history did not establish any "
+                        "bounded active interval in the requested window. Do not "
+                        "expand to controller, sensor, location, app, rule, or log "
+                        "evidence to reconstruct an older or hypothetical causal "
+                        "timeline. Finalize from CURRENT-TURN evidence only. State "
+                        "that no bounded subject interval was established and that "
+                        "an unverified/incomplete event stream does not prove the "
+                        "device stayed inactive."
+                    ),
+                })
+                return await self._final_answer(messages)
+
             if (
                 causal_subject_to_expand is not None
                 and not causal_subject_evidence_expanded
