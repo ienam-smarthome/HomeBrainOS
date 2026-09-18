@@ -807,8 +807,12 @@ def device_history_tool() -> MCPTool:
             "always pass the specific attribute (e.g. 'contact', 'switch') "
             "and a small limit (1-3) so the result is the answer itself, "
             "not an unfiltered dump mixed with unrelated housekeeping "
-            "events like ipAddress or networkStatus. When attribute is set "
-            "and hours_back is left unset, the host widens the search "
+            "events like ipAddress or networkStatus. For investigative "
+            "correlation on a related device/sensor, also set the exact attribute "
+            "you want to compare (for example motion or illuminance); generic "
+            "multi-attribute history cannot establish that a particular attribute "
+            "had no activity. When attribute is set and hours_back is left unset, "
+            "the host widens the search "
             "window to the full seven days automatically, because a 'last "
             "X' question has no natural cutoff -- it wants the most recent "
             "matching event whenever it happened, not only within one day."
@@ -840,8 +844,9 @@ def device_history_tool() -> MCPTool:
                     "description": (
                         "Event attribute filter such as switch, motion, contact, "
                         "or temperature. Always set this for a 'when was X last "
-                        "<state>' question so the result is not mixed with "
-                        "unrelated attributes."
+                        "<state>' question and when correlating a related sensor in "
+                        "an investigation, so the result is not mixed with unrelated "
+                        "attributes and cannot be misread as proof of attribute absence."
                     ),
                 },
                 "limit": {
