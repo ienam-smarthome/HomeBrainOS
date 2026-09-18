@@ -149,6 +149,40 @@ def _temporal_suffix(receipt: dict[str, Any]) -> str:
         if boundary_events:
             bits.append("boundaryEvents=[" + "; ".join(boundary_events) + "]")
 
+        # When no bounded active interval exists, boundary evidence is naturally
+        # empty. Preserve the actual rows that fell inside the requested window so
+        # synthesis can still distinguish commands from state transitions without
+        # reaching back into conversation history or an unbounded latest-N list.
+        if not (isinstance(intervals, list) and intervals):
+            window_events = details.get("windowEvents")
+            if isinstance(window_events, list) and window_events:
+                rendered_window: list[str] = []
+                for item in window_events[:10]:
+                    if not isinstance(item, dict):
+                        continue
+                    date = str(item.get("date") or "?").strip()
+                    name = str(item.get("name") or "").strip()
+                    value = str(item.get("value") or "").strip()
+                    description = str(item.get("description") or "").strip()
+                    event = "=".join(
+                        part for part in (name, value) if part
+                    ) or "event"
+                    if description and description.casefold() not in event.casefold():
+                        event += f" [{description}]"
+                    rendered_window.append(f"{date}: {event}")
+                if rendered_window:
+                    suffix = (
+                        " + more"
+                        if details.get("windowEventsTruncated")
+                        else ""
+                    )
+                    bits.append(
+                        "windowEvents=["
+                        + "; ".join(rendered_window)
+                        + "]"
+                        + suffix
+                    )
+
     # Event-style histories such as pushed/held/released do not have binary
     # temporalAnalysis. Keep their concrete timestamp/value/description rows in
     # the final synthesis brief instead of reducing them to "object fields".
