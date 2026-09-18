@@ -14,6 +14,8 @@ from location_correlation_guard import guard_location_correlation_claim
 def validate_synthesis(
     message: str,
     evidence: list[dict[str, Any]],
+    *,
+    causal: bool = False,
 ) -> tuple[str, list[str]]:
     """Return a localized deterministic baseline plus issue labels.
 
@@ -45,7 +47,11 @@ def validate_synthesis(
     if source_changed:
         issues.append("checked_source_consistency")
 
-    missing_rows = missing_material_timeline_rows(corrected, evidence)
+    missing_rows = (
+        missing_material_timeline_rows(corrected, evidence)
+        if causal
+        else []
+    )
     if missing_rows:
         missing_ids = ",".join(
             str(row.get("id") or "?") for row in missing_rows[:8]
