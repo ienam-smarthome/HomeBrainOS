@@ -422,6 +422,16 @@ async def test_investigative_related_history_requires_explicit_attribute_before_
                     ),
                 }
             },
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": (
+                        "At 1:32 am the light history shows the recorded transition; "
+                        "illuminance was checked separately, but it does not establish "
+                        "the cause."
+                    ),
+                }
+            },
         ]
     )
     agent = UnifiedMCPAgent(mcp, "key", "gemma4:31b", ai_client=ai)
@@ -445,3 +455,5 @@ async def test_investigative_related_history_requires_explicit_attribute_before_
     )
     assert "requires an explicit attribute" in retry_prompt
     assert "attribute=..." in retry_prompt
+    assert outcome.metrics["counters"].get("investigative_finalization", 0) == 1
+    assert ai.requests[-1][1]["json"].get("tools") in (None, [])
