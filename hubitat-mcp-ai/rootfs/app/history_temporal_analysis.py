@@ -295,6 +295,12 @@ def analyze_state_intervals(
         active_start = None
 
     open_interval = active_start is not None
+    open_start = active_start[0] if active_start is not None else None
+    open_start_raw = (
+        active_start[1].get("date")
+        if active_start is not None and isinstance(active_start[1], dict)
+        else None
+    )
     total_seconds = sum(int(item.get("durationSeconds") or 0) for item in intervals)
     longest_seconds = max(
         (int(item.get("durationSeconds") or 0) for item in intervals),
@@ -316,6 +322,17 @@ def analyze_state_intervals(
         "coverage": "complete" if coverage_complete else "partial",
         "totalIsLowerBound": not coverage_complete,
         "openActiveInterval": open_interval,
+        "unboundedActiveInterval": open_interval,
+        "openActiveStart": (
+            str(open_start_raw or open_start.isoformat())
+            if open_start is not None
+            else None
+        ),
+        "openActiveStartNatural": (
+            format_natural_datetime(str(open_start_raw or open_start.isoformat()))
+            if open_start is not None
+            else None
+        ),
         "unmatchedInactiveRows": unmatched_inactive_rows,
         "duplicateStateRowsIgnored": duplicate_state_rows,
         "ignoredRows": ignored_rows,
@@ -432,6 +449,11 @@ def analyze_state_intervals_in_window(
         active_start_clipped = False
 
     open_active_interval = bool(current_state == active_state and active_start is not None)
+    open_active_start_text = (
+        str(active_start_raw or active_start.isoformat())
+        if open_active_interval and active_start is not None
+        else None
+    )
     if source_integrity_verified and open_active_interval:
         intervals.append(
             _interval(
@@ -469,7 +491,18 @@ def analyze_state_intervals_in_window(
         "sourceIntegrityVerified": bool(source_integrity_verified),
         "pageCompleteToWindowStart": bool(source_complete_to_start),
         "observedBoundedIntervalsOnly": not bool(source_integrity_verified),
+        # An unbounded active interval means a recorded active transition had no
+        # observed closing transition before the analysed window ended. It is
+        # useful evidence even for a historical/closed window, but it is not a
+        # duration claim. openActiveInterval is the stronger ongoing-window form.
+        "unboundedActiveInterval": open_active_interval,
         "openActiveInterval": bool(window_ongoing and open_active_interval),
+        "openActiveStart": open_active_start_text,
+        "openActiveStartNatural": (
+            format_natural_datetime(open_active_start_text)
+            if open_active_start_text
+            else None
+        ),
         "unmatchedInactiveRows": 0,
         "duplicateStateRowsIgnored": duplicate_state_rows,
         "ignoredRows": ignored_rows,
@@ -650,6 +683,10 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "sourceIntegrityVerified",
         "durationReliability",
         "observedBoundedIntervalsOnly",
+        "unboundedActiveInterval",
+        "openActiveInterval",
+        "openActiveStart",
+        "openActiveStartNatural",
         "inferredBoundaryState",
         "analyzedStateEventCount",
         "firstWindowStateEvent",
