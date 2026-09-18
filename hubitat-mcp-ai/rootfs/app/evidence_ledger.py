@@ -377,6 +377,7 @@ def build_current_turn_evidence_ledger(
     if not lines:
         return None
     return (
+        "HOST CURRENT-TURN EVIDENCE LEDGER\n"
         "HOST CURRENT-TURN EVIDENCE BRIEF\n"
         "The following sources were successfully checked in THIS request. "
         "CHECKED means the data was provided to you; it does not mean the source "
