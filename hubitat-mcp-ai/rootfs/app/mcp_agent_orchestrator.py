@@ -416,6 +416,7 @@ class UnifiedMCPAgent:
         if filter_tool is None:
             return False
 
+        increment_active_metric("causal_room_plan")
         filter_execution = await self.executor.execute(
             _LOCAL_FILTER_TOOL,
             room_arguments,
@@ -459,6 +460,7 @@ class UnifiedMCPAgent:
         controller_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
         if controller_tool is None:
             return True
+        increment_active_metric("causal_provenance_read")
         controller_execution = await self.executor.execute(
             _LOCAL_DEVICE_HISTORY_TOOL,
             controller_arguments,
@@ -484,10 +486,12 @@ class UnifiedMCPAgent:
             and isinstance(controller_execution.result.data, dict)
             else {}
         )
-        alignment_instruction = render_controller_alignment_instruction(
-            controller_transition_alignments(subject_history, controller_data)
+        alignments = controller_transition_alignments(
+            subject_history, controller_data
         )
+        alignment_instruction = render_controller_alignment_instruction(alignments)
         if alignment_instruction:
+            increment_active_metric("causal_provenance_aligned", len(alignments))
             messages.append({"role": "user", "content": alignment_instruction})
         else:
             messages.append({
