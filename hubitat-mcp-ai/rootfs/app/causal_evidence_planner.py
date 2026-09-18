@@ -71,7 +71,9 @@ def _subject_active_starts(subject_history: dict[str, Any]) -> list[datetime]:
     temporal = subject_history.get("temporalAnalysis")
     if not isinstance(temporal, dict):
         return []
-    intervals = temporal.get("intervals")
+    intervals = temporal.get("observedIntervals")
+    if not isinstance(intervals, list):
+        intervals = temporal.get("intervals")
     if not isinstance(intervals, list):
         return []
     starts: list[datetime] = []
