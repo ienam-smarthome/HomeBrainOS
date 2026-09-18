@@ -49,9 +49,14 @@ reads are discouraged. Investigative reads are ordered by evidence quality rathe
 than fan-out: direct provenance/log evidence first when available, then subject-linked
 rule/app evidence, then mode/location correlation, then a small number of materially
 relevant related-device histories. A stronger direct source should replace several
-weaker temporal correlations, not be added after an exhaustive room sweep. This is
-driven by structured evidence shape and broad request intent, not by a device-name or
-question-specific answer parser.
+weaker temporal correlations, not be added after an exhaustive room sweep. Related-
+device history used for investigative absence/correlation claims must name the
+specific attribute being checked (for example motion or illuminance); generic
+attribute-less history is not treated as proof that an omitted capability had no
+events. Gateway/sub-tool calls are also checked against live schema/discovery
+compatibility before execution, so an operation discovered under one gateway cannot
+be guessed through another. This is driven by structured evidence shape and broad
+request intent, not by a device-name or question-specific answer parser.
 
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
@@ -142,7 +147,10 @@ strength: a source can be present without proving causation. The final prompt th
 cannot legitimately say that a checked sensor/location/log/rule source was "not
 provided" merely because the turn was long or context was compacted. Location-event
 receipts expose bounded event details as well as their count, making mode correlations
-used by the final answer auditable in the API evidence.
+used by the final answer auditable in the API evidence. Temporal history receipts now
+also expose the bounded observed interval list (start/end/duration, capped for output),
+so final synthesis can distinguish an exhaustive interval count from a summary of only
+the longest or most notable periods.
 
 At the serialization boundary, a narrow source-consistency guard backs up the ledger:
 if the final prose explicitly says a sensor/related-device, location/mode, log, rule/app,
@@ -158,9 +166,14 @@ unrelated analysis. For unverified event streams, a correctly rounded duration i
 left alone when the model explicitly presents it as an estimate/recorded observation.
 If the model states a wrong or exact-looking total, only the unsafe duration/
 continuity sentence is replaced with the deterministic recorded-row estimate; other
-current-turn observations and carefully hedged correlations remain intact. Zero
-unverified histories retain the stricter deterministic serializer because missing
-transitions can otherwise turn an apparent zero into a false absence claim.
+current-turn observations and carefully hedged correlations remain intact. A separate
+interval-cardinality guard prevents exhaustive wording such as "two separate periods"
+when deterministic evidence contains five observed bounded intervals, while allowing
+explicit subsets such as "the two longest periods". Zero unverified histories retain
+the stricter deterministic serializer because missing transitions can otherwise turn
+an apparent zero into a false absence claim. Attribute-level source-absence wording
+such as "no recorded motion data" is likewise rewritten to the bounded zero-history
+statement when the corresponding unverified motion history cannot prove absence.
 
 The WebUI dashboard uses the same bulk live-context snapshot for its 30-second
 state poll rather than forcing a detailed device-manifest refresh each time. Rich
