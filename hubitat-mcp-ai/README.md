@@ -35,6 +35,14 @@ budget. The older causal sensor-hunting hint is filtered before provider calls,
 so causal questions use the same bounded evidence-sufficiency policy as every
 other read and correlation is never promoted to proof of causation.
 
+A successful non-causal device-history call that contains deterministic
+`temporalAnalysis` is also an explicit evidence-sufficiency boundary. HomeBrain
+finishes every call the model already emitted in that native round, then moves
+directly to no-more-tools synthesis instead of opening a later round for unrelated
+location, motion, rule, or diagnostics reads. Causal `why` requests remain free
+to gather additional current-turn evidence. This is driven by structured evidence
+shape and request intent, not by a device-name or question-specific answer parser.
+
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
 before the model can expand a generic noun into one particular device. Exact
@@ -71,6 +79,14 @@ history/reasoning questions, the WebUI now preserves the entire original questio
 and appends the exact selected device, so phrases such as `last night` and `during
 the night` survive clarification instead of degrading into an unbounded 24-hour
 follow-up.
+
+Resolved target identity is also request-local. When one deterministic adapter
+successfully resolves a device, HomeBrain caches that exact target under the active
+request identity and indexes it by the successful user wording plus its id/name/
+label. A later adapter in the same request can reuse the target without repeating a
+targeted `hub_list_devices` lookup; successful reuse increments
+`resolution_cache_hit`. The cache never crosses request boundaries and still
+checks required command capability before reuse.
 
 The live device layer separates common state from richer device metadata. On MCP
 servers that expose `hubitat://context`, `HubitatMCPClient` reads that resource as
