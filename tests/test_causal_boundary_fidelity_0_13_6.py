@@ -100,7 +100,7 @@ def test_controller_event_near_interval_end_is_not_turn_on_alignment() -> None:
     instruction = render_controller_alignment_instruction(boundary)
     assert instruction is not None
     assert "END boundary" in instruction
-    assert "must not be used as evidence that it caused the earlier turn-on" in instruction
+    assert "Never cite an END-boundary controller event" in instruction
 
 
 def test_causal_timeline_keeps_end_controller_evidence_separate_from_trigger() -> None:
@@ -197,6 +197,7 @@ def test_open_active_interval_is_preserved_without_inventing_duration() -> None:
     evidence = [{
         "tool": "homebrain_device_history",
         "success": True,
+        "evidence_kind": "deterministic_device_event_history",
         "details": details,
     }]
     timeline = build_causal_timeline_rows(evidence)
