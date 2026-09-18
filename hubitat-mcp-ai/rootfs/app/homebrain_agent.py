@@ -151,7 +151,10 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self.max_history_chars = self.context_policy.max_history_chars
         self.max_tool_context_chars = self.context_policy.max_tool_context_chars
         self.compacted_tool_result_chars = self.context_policy.compacted_tool_result_chars
-        self.final_answers = FinalAnswerCoordinator(self._chat)
+        self.final_answers = FinalAnswerCoordinator(
+            self._chat,
+            evidence_supplier=self.evidence.receipts,
+        )
         self.request_metrics = RequestMetrics()
         self.request_observation = RequestObservationCoordinator(self.request_metrics)
         self.direct_outcomes = DirectOutcomeContext(
