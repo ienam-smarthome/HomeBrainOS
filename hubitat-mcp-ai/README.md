@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.469**.
+Current add-on version: **0.10.470**.
 
 ## Architecture
 
@@ -66,15 +66,15 @@ unsupported attribute is returned to the reasoning loop with the device's availa
 attributes instead of being used to manufacture an absence claim. Sparse/custom
 driver metadata remains permissive. Gateway/sub-tool calls are also checked against live schema/discovery
 compatibility before execution, so an operation discovered under one gateway cannot
-be guessed through another. When same-room controller candidates are discovered, the request receives one
-tightly scoped controller-history follow-up opportunity immediately: only the
-highest-ranked structured candidate is eligible, the next model-directed read must
-use one of that candidate's suggested controller attributes, and after that one
-attempt further reads are blocked so synthesis follows. This applies even when the
-ordinary 3-round / 8-read ceiling has not yet been spent, preventing controller
-discovery from opening several extra rounds. This is driven by structured evidence
-shape and broad request intent, not by a device-name or question-specific answer
-parser.
+be guessed through another. When same-room controller candidates are discovered during a cause/trigger
+investigation, HomeBrain performs exactly one host-owned controller-history
+follow-up before synthesis: it selects the highest-ranked structured candidate and
+that candidate's first suggested controller attribute, executes one
+`homebrain_device_history` read in the active history window, appends the result to
+current-turn evidence, and then stops further controller/sensor expansion. The
+model therefore cannot skip the strongest controller read or fan out across several
+controllers. This is driven by structured evidence shape and broad request intent,
+not by a device-name or question-specific answer parser.
 
 The current-turn evidence ledger also ranks location/mode events by temporal
 proximity to observed subject-history interval boundaries before filling its

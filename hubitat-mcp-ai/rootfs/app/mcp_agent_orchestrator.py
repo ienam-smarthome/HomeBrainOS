@@ -39,7 +39,6 @@ from request_classification import (
     requests_mutation as _requests_mutation,
     routine_control_arguments as _routine_control_arguments,
 )
-from reasoning_policy import arm_controller_followup_budget
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
 from rule_proposal_confirmation import RuleProposalConfirmation
@@ -67,6 +66,27 @@ from tool_registry import (
 )
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
+
+
+def _controller_followup_arguments(
+    candidates: list[dict[str, Any]],
+) -> dict[str, str] | None:
+    """Return one deterministic top-ranked controller history request."""
+
+    if not candidates:
+        return None
+    candidate = candidates[0]
+    if not isinstance(candidate, dict):
+        return None
+    label = str(candidate.get("label") or "").strip()
+    suggested = [
+        str(value).strip()
+        for value in (candidate.get("suggestedHistoryAttributes") or [])
+        if str(value).strip()
+    ]
+    if not label or not suggested:
+        return None
+    return {"name": label, "attribute": suggested[0]}
 
 _APP_TERMS = {
     "app", "apps", "automation", "automations", "pause", "paused", "resume",
@@ -1266,23 +1286,46 @@ class UnifiedMCPAgent:
                         "controllerCandidates"
                     )
                     if isinstance(controller_candidates, list) and controller_candidates:
-                        arm_controller_followup_budget(controller_candidates)
-                        messages.append({
-                            "role": "user",
-                            "content": (
-                                "HOST CONTROLLER-EVIDENCE PRIORITY\n"
-                                "The room discovery result identified same-room button/"
-                                "controller candidates. For this cause/trigger investigation, "
-                                "check the smallest materially relevant controller history "
-                                "before weaker environmental sensor correlations. Use the "
-                                "candidate's suggestedHistoryAttributes (for example pushed, "
-                                "held, released, doubleTapped) as explicit "
-                                "homebrain_device_history attributes, and compare event "
-                                "timestamps with the subject's observed transition times. "
-                                "A close controller event is corroborating evidence, not "
-                                "automatic proof of who physically pressed it."
-                            ),
-                        })
+                        # Controller discovery is already deterministic and ranked.
+                        # Execute exactly one strongest controller-history follow-up
+                        # host-side instead of relying on another model round, which
+                        # live tests showed could either skip the read entirely or
+                        # fan out across every controller in the room.
+                        controller_arguments = _controller_followup_arguments(
+                            controller_candidates
+                        )
+                        if controller_arguments is not None:
+                            controller_tool = catalog.declared_tool(
+                                _LOCAL_DEVICE_HISTORY_TOOL
+                            )
+                            controller_execution = await self.executor.execute(
+                                _LOCAL_DEVICE_HISTORY_TOOL,
+                                controller_arguments,
+                                tool=controller_tool,
+                                supports_live_claim=True,
+                                evidence_kind=_EVIDENCE_KINDS[
+                                    _LOCAL_DEVICE_HISTORY_TOOL
+                                ],
+                            )
+                            messages.append({
+                                "role": "tool",
+                                "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
+                                "content": controller_execution.content,
+                            })
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "HOST CONTROLLER-EVIDENCE FOLLOW-UP COMPLETE\n"
+                                    "The host deterministically checked exactly one "
+                                    "highest-ranked same-room controller candidate using "
+                                    f"attribute={controller_arguments['attribute']!r}. Synthesize the original "
+                                    "cause/trigger question from the current-turn evidence "
+                                    "now. Treat close timing as corroborating evidence, not "
+                                    "automatic proof of who physically pressed a control. "
+                                    "Do not request another controller or sensor history."
+                                ),
+                            })
+                            return await self._final_answer(messages)
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
@@ -1336,4 +1379,4 @@ class UnifiedMCPAgent:
         return await self._final_answer(messages)
 
 
-__all__ = ["AgentOutcome", "UnifiedMCPAgent"]
+__all__ = ["AgentOutcome", "UnifiedMCPAgent", "_controller_followup_arguments"]
