@@ -202,11 +202,26 @@ def _guard_partial_zero_claims(
             label_matches = bool(label and label.casefold() in comparable)
             attribute_data_absence = bool(
                 attribute
-                and re.search(
-                    rf"\bno\s+(?:recorded\s+)?{re.escape(attribute.casefold())}"
-                    r"\s+(?:data|history)\b",
-                    comparable,
-                    re.I,
+                and (
+                    re.search(
+                        rf"\bno\s+(?:recorded\s+)?{re.escape(attribute.casefold())}"
+                        r"\s+(?:data|history)\b",
+                        comparable,
+                        re.I,
+                    )
+                    or re.search(
+                        rf"\bno\s+(?:recorded\s+)?{re.escape(attribute.casefold())}"
+                        r"\s+(?:events?|activity|readings?)\b",
+                        comparable,
+                        re.I,
+                    )
+                    or re.search(
+                        rf"\bno\s+{re.escape(attribute.casefold())}"
+                        r"\s+(?:events?|activity|readings?)\s+"
+                        r"(?:were\s+)?(?:recorded|found|observed)\b",
+                        comparable,
+                        re.I,
+                    )
                 )
             )
             if not label_matches and not attribute_data_absence:
