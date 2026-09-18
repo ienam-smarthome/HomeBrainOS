@@ -108,6 +108,31 @@ _HOME_STATE_PATTERNS = (
     r"\bwhat(?:'s| is) happening\b",
     r"\bhome (?:status|summary|overview)\b",
 )
+
+_READ_QUERY_PREFIX = re.compile(
+    r"^\s*(?:why|when|what|which|where|how|is|are|was|were|did|does|do|"
+    r"has|have|had)\b",
+    re.I,
+)
+
+
+def _explicit_mutation_request(prompt: str) -> bool:
+    """Return user write intent without treating diagnostic wording as a write.
+
+    requests_mutation() is deliberately broad for routing/control detection and
+    therefore matches phrases such as "why did the light turn off?" merely
+    because they contain a control verb. Request semantics need a narrower
+    contract: ordinary interrogatives remain reads, while imperative and polite
+    action forms continue to use the established mutation parser.
+    """
+
+    text = str(prompt or "").strip()
+    if not text:
+        return False
+    if _READ_QUERY_PREFIX.search(text):
+        return False
+    return _requests_mutation(text)
+
 # Successful temporal history is strong structured evidence. Straight factual
 # history requests can move directly to synthesis once the complete native tool
 # round has executed. Investigative requests remain eligible for broader evidence
@@ -801,7 +826,7 @@ class UnifiedMCPAgent:
         choices_token = self._choices.set([])
         mutation_token = self._mutation_call_seen.set(False)
         mutation_request_token = self._mutation_requested_by_user.set(
-            _requests_mutation(user_prompt)
+            _explicit_mutation_request(user_prompt)
         )
         class_token = self._request_class.set("tool-driven")
         try:
