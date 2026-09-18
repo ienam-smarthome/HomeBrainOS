@@ -502,6 +502,70 @@ def analyze_state_intervals_in_window(
         "boundaryBasis": boundary_basis,
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
+def boundary_event_evidence(
+    events: list[dict[str, Any]],
+    temporal_analysis: dict[str, Any] | None,
+    *,
+    max_delta_seconds: float = 8.0,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Keep source rows close to observed interval boundaries.
+
+    This selection is independent of the ordinary newest-first presentation cap.
+    A long history can therefore accumulate newer daytime events without pushing
+    materially relevant command/state rows near an earlier investigated boundary
+    out of the evidence receipt.
+    """
+
+    if not isinstance(temporal_analysis, dict):
+        return []
+    intervals = temporal_analysis.get("intervals")
+    if not isinstance(intervals, list):
+        return []
+
+    boundaries: list[datetime] = []
+    for interval in intervals:
+        if not isinstance(interval, dict):
+            continue
+        for key in ("start", "end"):
+            parsed = _parse_timestamp(interval.get(key))
+            if parsed is not None:
+                boundaries.append(parsed)
+    if not boundaries:
+        return []
+
+    ranked: list[tuple[float, int, dict[str, Any]]] = []
+    for index, item in enumerate(events):
+        if not isinstance(item, dict):
+            continue
+        event_time = _parse_timestamp(item.get("date") or item.get("timestamp"))
+        if event_time is None:
+            continue
+        nearest = min(
+            abs((event_time - boundary).total_seconds())
+            for boundary in boundaries
+        )
+        if nearest > max(0.0, float(max_delta_seconds)):
+            continue
+        row = {
+            key: item.get(key)
+            for key in (
+                "name",
+                "value",
+                "unit",
+                "description",
+                "date",
+                "isStateChange",
+            )
+            if key in item
+        }
+        row["boundaryDeltaSeconds"] = round(nearest, 3)
+        ranked.append((nearest, index, row))
+
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    return [row for _delta, _index, row in ranked[: max(1, int(limit))]]
+
+
 def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None:
     """Return bounded history proof for evidence output.
 
@@ -589,6 +653,29 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         details["temporalAnalysis"] = temporal_details
 
     events = result_data.get("events")
+    boundary_events = result_data.get("boundaryEvents")
+    if isinstance(boundary_events, list):
+        bounded_boundary_events = [
+            {
+                key: item.get(key)
+                for key in (
+                    "name",
+                    "value",
+                    "unit",
+                    "description",
+                    "date",
+                    "isStateChange",
+                    "boundaryDeltaSeconds",
+                )
+                if key in item
+            }
+            for item in boundary_events[:20]
+            if isinstance(item, dict)
+        ]
+        if bounded_boundary_events:
+            details["boundaryEvents"] = bounded_boundary_events
+            details["boundaryEventsTruncated"] = len(boundary_events) > 20
+
     if isinstance(events, list):
         observed_events: list[dict[str, Any]] = []
         for item in events[:16]:
@@ -622,6 +709,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
     meaningful = (
         bool(temporal_details)
         or bool(details.get("observedEvents"))
+        or bool(details.get("boundaryEvents"))
         or any(
             key in result_data
             for key in (
@@ -772,6 +860,7 @@ def guard_history_duration_claim(
 __all__ = [
     "analyze_state_intervals",
     "analyze_state_intervals_in_window",
+    "boundary_event_evidence",
     "guard_history_duration_claim",
     "history_temporal_evidence_details",
 ]

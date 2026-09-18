@@ -903,7 +903,10 @@ class UnifiedMCPAgent:
         last_proposal_error: tuple[str, dict[str, Any], str] | None = None
         proposal_error_retries = 0
         causal_completion_retry_used = False
+        causal_completion_mode = False
         for _ in range(self.max_tool_rounds):
+            if causal_completion_mode:
+                tools = catalog.causal_provenance_schemas()
             assistant = await self._chat(messages, tools)
             calls = assistant.get("tool_calls") or []
             if not calls:
@@ -1082,6 +1085,7 @@ class UnifiedMCPAgent:
                     )
                     if followup:
                         causal_completion_retry_used = True
+                        causal_completion_mode = True
                         increment_active_metric("causal_completion_retry")
                         messages.extend([
                             assistant,
@@ -1100,6 +1104,34 @@ class UnifiedMCPAgent:
                 return self._unverified_mutation_guard(
                     str(assistant.get("content") or "Done.")
                 )
+            if causal_completion_mode:
+                allowed_completion_tools = set(catalog.causal_provenance_names())
+                disallowed_completion_calls = [
+                    call
+                    for call in calls
+                    if str((call.get("function") or {}).get("name") or "")
+                    not in allowed_completion_tools
+                ]
+                if disallowed_completion_calls:
+                    messages.append(assistant)
+                    for call in calls:
+                        function = call.get("function") or {}
+                        name = str(function.get("name") or "")
+                        messages.append({
+                            "role": "tool",
+                            "tool_name": name,
+                            "content": json.dumps({
+                                "error": (
+                                    "Causal completion is restricted to read-only "
+                                    "app/rule/log provenance tools. Device, sensor, "
+                                    "location, and mutation tools are not available "
+                                    "in this bounded phase."
+                                ),
+                            }),
+                        })
+                    increment_active_metric("investigative_finalization")
+                    return await self._final_answer(messages)
+
             sensitive: list[tuple[str, dict[str, Any]]] = []
             round_actions: list[tuple[str, dict[str, Any]]] = []
             proposal_errors: list[tuple[str, str]] = []
@@ -1462,6 +1494,37 @@ class UnifiedMCPAgent:
                         messages=messages,
                     )
                 )
+                if (
+                    causal_subject_evidence_expanded
+                    and not causal_completion_retry_used
+                ):
+                    followup = render_command_source_followup(
+                        self.evidence.receipts()
+                    )
+                    if followup:
+                        # Once the host has strong controller evidence and the
+                        # subject exposes boundary commands, do not give the
+                        # general model another unrestricted room/device round.
+                        # Move directly into one bounded provenance phase.
+                        causal_completion_retry_used = True
+                        causal_completion_mode = True
+                        increment_active_metric("causal_completion_retry")
+                        messages.append({"role": "user", "content": followup})
+                        continue
+
+            if causal_completion_mode:
+                # Search may be needed once to expose the correct read gateway.
+                # As soon as the bounded completion round actually attempts a
+                # non-search provenance read, synthesize from what it returned
+                # rather than opening another exploratory round.
+                completion_read_attempted = any(
+                    name != SEARCH_TOOL
+                    for name, _arguments in round_actions
+                )
+                if completion_read_attempted:
+                    increment_active_metric("investigative_finalization")
+                    return await self._final_answer(messages)
+
             if duplicate_signature_seen:
                 return await self._final_answer(messages)
             if (

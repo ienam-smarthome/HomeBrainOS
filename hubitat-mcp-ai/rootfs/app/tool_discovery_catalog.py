@@ -315,6 +315,46 @@ class ToolDiscoveryCatalog:
         self._declared.update({tool.name: tool for tool in additions})
         return additions
 
+    @staticmethod
+    def _causal_provenance_read_tool(tool: MCPTool) -> bool:
+        """Return True for read-only gateways useful for command provenance."""
+
+        name = str(tool.name or "").casefold()
+        if name == SEARCH_TOOL:
+            return True
+        # Completion must never reopen device/sensor exploration or expose
+        # mutating Rule Machine gateways. Upstream read gateways consistently use
+        # hub_read_*; keep the allow-list semantic rather than tied to one install.
+        if not name.startswith("hub_read_"):
+            return False
+
+        schema_text = str(tool.input_schema or {}).casefold()
+        haystack = " ".join((name, str(tool.description or "").casefold(), schema_text))
+        return any(
+            token in haystack
+            for token in (
+                "app",
+                "rule",
+                "log",
+                "diagnostic",
+            )
+        )
+
+    def causal_provenance_names(self) -> tuple[str, ...]:
+        """Visible read tools allowed during bounded causal completion."""
+
+        return tuple(
+            name
+            for name, tool in self._declared.items()
+            if self._causal_provenance_read_tool(tool)
+        )
+
+    def causal_provenance_schemas(self) -> list[dict[str, Any]]:
+        return [
+            self.tool_schema(self._declared[name])
+            for name in self.causal_provenance_names()
+        ]
+
     def schemas(self) -> list[dict[str, Any]]:
         return [self.tool_schema(tool) for tool in self._declared.values()]
 

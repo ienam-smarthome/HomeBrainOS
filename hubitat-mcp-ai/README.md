@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.13.0**.
+Current add-on version: **0.13.1**.
 
 ## Architecture
 
@@ -122,6 +122,24 @@ final answer keeps the command source unresolved instead of guessing. The synthe
 contract keeps the original user objective primary, asks for a chronological
 multi-source explanation, and separates trigger/provenance, downstream automation
 effects, weaker correlations, and unresolved gaps.
+
+0.13.1 tightens that completion phase after live 0.13.0 validation. Boundary-near
+source rows are now selected from the full fetched event page before the ordinary
+newest-first evidence cap is applied, so later daytime activity cannot push an
+earlier investigated `command-off` or `command-setLevel` row out of causal
+synthesis. The causal timeline and evidence ledger prefer these preserved boundary
+rows.
+
+When the host has already completed exact-room controller provenance and the subject
+contains boundary commands, it now enters causal completion immediately instead of
+giving the provider another unrestricted device/history round. During that bounded
+phase the model sees only read-only app/rule/log provenance gateways plus
+`hub_search_tools`. Device history, location reads, generic target resolution, and
+mutation gateways are withheld. A discovery-only round may expose one needed read
+gateway; after the first non-search provenance read attempt HomeBrain moves directly
+to final synthesis. This prevents auxiliary controller/device guesses from adding
+latency or turning an otherwise answered investigation into an unresolved
+missing-device outcome.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are

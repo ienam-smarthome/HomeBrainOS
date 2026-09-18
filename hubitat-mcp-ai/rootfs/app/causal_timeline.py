@@ -211,11 +211,27 @@ def build_causal_timeline_rows(
     if not isinstance(intervals, list):
         return []
 
-    subject_events = [
-        row
-        for row in (subject_details.get("observedEvents") or [])
-        if isinstance(row, dict)
-    ]
+    # Boundary-near rows are preserved independently of the generic
+    # newest-first event cap. Prefer them, then supplement with ordinary observed
+    # rows while de-duplicating by timestamp/name/value.
+    subject_events: list[dict[str, Any]] = []
+    seen_subject_events: set[tuple[str, str, str]] = set()
+    for field in ("boundaryEvents", "observedEvents"):
+        source_rows = subject_details.get(field)
+        if not isinstance(source_rows, list):
+            continue
+        for row in source_rows:
+            if not isinstance(row, dict):
+                continue
+            key = (
+                str(row.get("date") or row.get("timestamp") or ""),
+                str(row.get("name") or row.get("attribute") or ""),
+                str(row.get("value") or ""),
+            )
+            if key in seen_subject_events:
+                continue
+            seen_subject_events.add(key)
+            subject_events.append(row)
     controllers = _controller_receipts(evidence, subject=subject)
     location_events = _location_rows(evidence)
     rows: list[dict[str, Any]] = []

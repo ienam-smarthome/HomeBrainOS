@@ -63,7 +63,9 @@ def _boundary_event_hints(details: dict[str, Any], temporal: dict[str, Any]) -> 
     """Return concrete subject events close to observed interval boundaries."""
 
     intervals = temporal.get("observedIntervals")
-    events = details.get("observedEvents")
+    events = details.get("boundaryEvents")
+    if not isinstance(events, list):
+        events = details.get("observedEvents")
     if not isinstance(intervals, list) or not isinstance(events, list):
         return []
 
