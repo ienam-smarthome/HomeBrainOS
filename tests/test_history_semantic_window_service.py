@@ -119,13 +119,18 @@ async def test_prompt_scoped_last_night_window_widens_fetch_and_clips_locally() 
     assert data["timeWindow"]["start"] == "2026-09-16T18:00:00+01:00"
     assert data["timeWindow"]["end"] == "2026-09-17T08:00:00+01:00"
     assert data["timeWindow"]["sourceCompleteToStart"] is True
+    assert data["timeWindow"]["sourcePageCompleteToStart"] is True
+    assert data["historySourceIntegrity"] == "unverified"
+    assert data["historySourceIntegrityVerified"] is False
     analysis = data["temporalAnalysis"]
     assert analysis["windowed"] is True
     assert analysis["totalActiveSeconds"] == 16260
     assert analysis["totalActiveDuration"] == "4h 31m"
     assert analysis["intervalCount"] == 5
-    assert analysis["coverage"] == "complete"
+    assert analysis["coverage"] == "partial"
     assert analysis["totalIsLowerBound"] is False
+    assert analysis["durationReliability"] == "unverified-event-stream"
+    assert analysis["sourceIntegrityVerified"] is False
 
 
 @pytest.mark.asyncio
@@ -180,7 +185,10 @@ async def test_full_event_page_that_does_not_reach_window_start_stays_partial() 
     assert result.is_error is False
     assert isinstance(result.data, dict)
     assert result.data["timeWindow"]["sourceCompleteToStart"] is False
+    assert result.data["timeWindow"]["sourcePageCompleteToStart"] is False
     analysis = result.data["temporalAnalysis"]
     assert analysis["boundaryStateKnown"] is False
     assert analysis["coverage"] == "partial"
-    assert analysis["totalIsLowerBound"] is True
+    assert analysis["totalIsLowerBound"] is False
+    assert analysis["durationReliability"] == "unverified-event-stream"
+    assert analysis["sourceIntegrityVerified"] is False
