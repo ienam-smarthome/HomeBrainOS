@@ -34,9 +34,12 @@ non-causal `homebrain_device_history` result with deterministic
 does not open another tool-selection round merely to gather unrelated location,
 motion, rule, or diagnostic context.
 
-Causal `why` requests remain eligible for further evidence gathering. The stop
-also happens only after the complete native round executes, so independent tools
-the model requested alongside history are not dropped.
+Investigative history requests remain eligible for further evidence gathering,
+including causal, normality/expectation, comparison, and correlation questions.
+The stop also happens only after the complete native round executes, so independent
+tools the model requested alongside history are not dropped. If another tool in
+that round fails, HomeBrain does not force sufficiency; the model can use a later
+round to recover the missing material evidence.
 
 The history synthesis hint now follows the 0.10.458+ source-integrity contract:
 `unverified-event-stream` durations are estimates, not exact totals, continuity
