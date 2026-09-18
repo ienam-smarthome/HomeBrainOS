@@ -540,6 +540,7 @@ class DeviceHistoryService:
                     window_label=time_window.label,
                     source_complete_to_start=source_complete_to_start,
                     window_ongoing=time_window.ongoing,
+                    source_integrity_verified=False,
                 )
             else:
                 temporal_analysis = analyze_state_intervals(attribute, events)
@@ -557,6 +558,8 @@ class DeviceHistoryService:
             "events": events,
             "newestFirst": True,
             "causationAvailable": False,
+            "historySourceIntegrity": "unverified",
+            "historySourceIntegrityVerified": False,
         }
         if time_window is not None:
             data["timeWindow"] = {
@@ -566,6 +569,7 @@ class DeviceHistoryService:
                 "startUtcOffset": self._utc_offset_text(time_window.start),
                 "endUtcOffset": self._utc_offset_text(time_window.end),
                 "sourceCompleteToStart": source_complete_to_start,
+                "sourcePageCompleteToStart": source_complete_to_start,
             }
         if temporal_analysis is not None:
             data["temporalAnalysis"] = temporal_analysis
