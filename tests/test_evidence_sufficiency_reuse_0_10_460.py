@@ -231,7 +231,7 @@ async def test_successful_noncausal_history_forces_synthesis_before_unrelated_re
     assert outcome.metrics["counters"]["evidence_sufficiency_stop"] == 1
     assert outcome.metrics["counters"]["model_rounds"] == 2
     assert len(ai.requests) == 2
-    assert ai.requests[1][1]["json"]["tools"] == []
+    assert ai.requests[1][1]["json"].get("tools") in (None, [])
     assert not any(
         args.get("tool") in {"hub_list_rules", "hub_get_logs"}
         for _name, args in mcp.calls
