@@ -7,6 +7,7 @@ from typing import Any
 from evidence_source_guard import guard_checked_source_absence_claim
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
+from location_correlation_guard import guard_location_correlation_claim
 from technical_metrics_presenter import (
     present_request_metrics,
     present_request_outcome,
@@ -361,6 +362,7 @@ def build_agent_response(
         str(getattr(outcome, "message", "")),
         evidence,
     )
+    message, _ = guard_location_correlation_claim(message, evidence)
     message, _ = guard_checked_source_absence_claim(message, evidence)
 
     return {

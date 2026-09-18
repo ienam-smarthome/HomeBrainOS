@@ -43,6 +43,8 @@ The repository drift test compares this table directly with the live directory. 
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
 | `hub_timezone.py` | Resolves and briefly caches the authoritative Hubitat IANA timezone for semantic history windows. |
 | `live_evidence_authority.py` | Combines live evidence receipts with grounding decisions. |
+| `location_correlation.py` | Computes deterministic tight temporal proximity between observed device-history interval boundaries and current-turn location/mode events. |
+| `location_correlation_guard.py` | Corrects categorical final no-correlation claims when current-turn location evidence contains a tightly adjacent subject transition, while preserving correlation-versus-causation. |
 | `location_event_queries.py` | Parses and presents bounded hub location-event (mode change) follow-ups. |
 | `location_privacy.py` | Redacts precise-location device attributes (GPS, address, map tiles, journey logs) from provider-bound tool results. |
 | `mcp_agent_orchestrator.py` | Coordinates the native tool-calling agent loop. |
