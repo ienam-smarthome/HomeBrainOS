@@ -43,7 +43,7 @@ class RequestMetrics:
         "resolution_cache_hit", "resolution_cache_metadata_miss", "evidence_sufficiency_stop",
         "causal_room_plan", "causal_provenance_read", "causal_provenance_aligned", "causal_completion_retry", "causal_subject_empty_stop", "investigative_finalization",
         "investigative_attribute_required", "gateway_operation_rejected",
-        "history_attribute_rejected",
+        "history_attribute_rejected", "history_known_tool_fastpath",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait", "mcp_http",
