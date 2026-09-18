@@ -44,6 +44,7 @@ from reasoning_policy import set_reasoning_profile
 from request_metrics import increment_active_metric
 from rule_authoring_service import RuleAuthoringService
 from synthesis_context import build_tool_evidence_packet
+from synthesis_validator import validate_synthesis
 from rule_proposal_confirmation import RuleProposalConfirmation
 from tool_executor import ToolExecutor
 from tool_discovery_catalog import SEARCH_TOOL, ToolDiscoveryCatalog
@@ -635,6 +636,44 @@ class UnifiedMCPAgent:
             response.get("content")
             or "The MCP request completed without a written answer."
         )
+
+        corrected, issues = validate_synthesis(content, self.evidence.receipts())
+        if issues:
+            # Validators identify factual conflicts; the model remains responsible
+            # for authorship. Give it one no-tools repair pass so supported causal
+            # analysis, timelines, and caveats survive instead of being replaced by
+            # a deterministic sentence.
+            repair_messages = [
+                *final_messages,
+                {"role": "assistant", "content": content},
+                {
+                    "role": "user",
+                    "content": (
+                        "HOST SYNTHESIS VALIDATION REPAIR\n"
+                        f"Detected deterministic issues: {', '.join(issues)}.\n"
+                        "Rewrite the draft answer, preserving every supported useful "
+                        "explanation, timeline, and uncertainty statement while fixing "
+                        "only the factual conflicts. Do not request tools. The following "
+                        "is a deterministic localized baseline showing the corrections "
+                        "that must be respected; it is NOT a replacement answer:\n"
+                        + corrected
+                    ),
+                },
+            ]
+            repaired = await self._chat(repair_messages, [])
+            repaired_content = str(repaired.get("content") or "").strip()
+            if repaired_content:
+                repaired_corrected, remaining = validate_synthesis(
+                    repaired_content, self.evidence.receipts()
+                )
+                content = (
+                    repaired_content
+                    if not remaining
+                    else repaired_corrected
+                )
+            else:
+                content = corrected
+
         return self._unverified_mutation_guard(content)
 
     def _take_confirmation(self, session_id: str, prompt: str) -> PendingConfirmation | None:
