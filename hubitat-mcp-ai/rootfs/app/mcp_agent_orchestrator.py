@@ -248,6 +248,9 @@ class UnifiedMCPAgent:
         self._mutation_call_seen: ContextVar[bool] = ContextVar(
             "hubitat_mutation_call_seen", default=False
         )
+        self._mutation_requested_by_user: ContextVar[bool] = ContextVar(
+            "hubitat_mutation_requested_by_user", default=False
+        )
         self.confirmed_actions = ConfirmedActionCoordinator(
             self.confirmation_policy,
             self.executor,
@@ -694,7 +697,11 @@ class UnifiedMCPAgent:
         return await self.transport.chat(self._bounded_messages(messages), tools)
 
     def _unverified_mutation_guard(self, content: str) -> str:
-        if self._mutation_call_seen.get() and not any(
+        mutation_expected = (
+            self._mutation_requested_by_user.get()
+            or self._mutation_call_seen.get()
+        )
+        if mutation_expected and not any(
             receipt.get("success") and receipt.get("mutates")
             for receipt in self.evidence.receipts()
         ):
@@ -744,6 +751,9 @@ class UnifiedMCPAgent:
         evidence_token = self.evidence.begin()
         choices_token = self._choices.set([])
         mutation_token = self._mutation_call_seen.set(False)
+        mutation_request_token = self._mutation_requested_by_user.set(
+            _requests_mutation(user_prompt)
+        )
         class_token = self._request_class.set("tool-driven")
         try:
             message = await self._process_user_request(
@@ -752,7 +762,10 @@ class UnifiedMCPAgent:
                 session_id=session_id,
             )
             evidence = self.evidence.receipts()
-            if self._mutation_call_seen.get():
+            if (
+                self._mutation_requested_by_user.get()
+                or self._mutation_call_seen.get()
+            ):
                 request_class = "write"
             elif self._is_conversational_prompt(user_prompt) and not evidence:
                 request_class = "conversational"
@@ -769,6 +782,7 @@ class UnifiedMCPAgent:
             )
         finally:
             self._request_class.reset(class_token)
+            self._mutation_requested_by_user.reset(mutation_request_token)
             self._mutation_call_seen.reset(mutation_token)
             self.evidence.reset(evidence_token)
             self._choices.reset(choices_token)
@@ -1162,7 +1176,7 @@ class UnifiedMCPAgent:
                 )
                 if proposal_error is not None and effect.mutates:
                     proposal_errors.append((name, proposal_error))
-                if effect.mutates:
+                if tool is not None and effect.mutates:
                     round_has_mutation = True
                     self._mark_mutation()
                 if (
