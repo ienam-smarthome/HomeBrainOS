@@ -53,7 +53,11 @@ weaker temporal correlations, not be added after an exhaustive room sweep. Relat
 device history used for investigative absence/correlation claims must name the
 specific attribute being checked (for example motion or illuminance); generic
 attribute-less history is not treated as proof that an omitted capability had no
-events. Gateway/sub-tool calls are also checked against live schema/discovery
+events. For well-known history attributes, the resolved device's advertised
+attributes/capabilities are also checked before event-history execution: a provably
+unsupported attribute is returned to the reasoning loop with the device's available
+attributes instead of being used to manufacture an absence claim. Sparse/custom
+driver metadata remains permissive. Gateway/sub-tool calls are also checked against live schema/discovery
 compatibility before execution, so an operation discovered under one gateway cannot
 be guessed through another. This is driven by structured evidence shape and broad
 request intent, not by a device-name or question-specific answer parser.
