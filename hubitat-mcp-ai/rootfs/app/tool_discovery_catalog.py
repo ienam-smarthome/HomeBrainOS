@@ -11,6 +11,7 @@ from collections.abc import Iterable
 import re
 from typing import Any
 
+from gateway_argument_view import gateway_operation
 from mcp_client import MCPTool, MCPToolResult
 from tool_registry import (
     LOCAL_ACTIVE_LIGHTS_TOOL,
@@ -198,10 +199,9 @@ class ToolDiscoveryCatalog:
         are left alone rather than guessed.
         """
 
-        operation = arguments.get("tool")
-        if not isinstance(operation, str) or not operation.strip():
+        operation = gateway_operation(arguments)
+        if not operation:
             return None
-        operation = operation.strip()
         tool = self.available_tool(gateway)
         if tool is None:
             return None
