@@ -157,7 +157,7 @@ def test_api_guard_corrects_claim_that_checked_sensor_and_location_sources_were_
     )
 
 
-def test_api_guard_does_not_turn_no_recorded_motion_into_source_absence() -> None:
+def test_api_guard_corrects_motion_absence_when_motion_temporal_proof_is_nonzero() -> None:
     message = (
         "Related sensor history was checked. "
         "No motion events were recorded during the light's longest interval."
@@ -172,10 +172,11 @@ def test_api_guard_does_not_turn_no_recorded_motion_into_source_absence() -> Non
         ),
         model="gemma4:31b",
         elapsed_ms=10,
-        version="0.10.462",
+        version="0.10.463",
     )
 
-    assert response["message"] == message
+    assert "No motion events were recorded" not in response["message"]
+    assert "motion history was checked and contains 2 observed bounded intervals" in response["message"]
 
 
 class LocationMCP:
