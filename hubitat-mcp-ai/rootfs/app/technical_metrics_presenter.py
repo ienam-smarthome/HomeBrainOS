@@ -23,6 +23,7 @@ _COUNTER_LABELS = (
     ("evidence_sufficiency_stop", "Evidence sufficiency stops"),
     ("investigative_attribute_required", "Investigative attribute retries"),
     ("gateway_operation_rejected", "Gateway operation rejections"),
+    ("history_attribute_rejected", "History attribute rejections"),
 )
 
 _DURATION_LABELS = (
