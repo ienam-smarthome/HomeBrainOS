@@ -20,6 +20,7 @@ _COUNTER_LABELS = (
     ("device_resolution_ambiguous", "Ambiguous resolutions"),
     ("device_resolution_missing", "Missing-device resolutions"),
     ("resolution_cache_hit", "Resolution cache hits"),
+    ("resolution_cache_metadata_miss", "Resolution cache metadata misses"),
     ("evidence_sufficiency_stop", "Evidence sufficiency stops"),
     ("investigative_attribute_required", "Investigative attribute retries"),
     ("gateway_operation_rejected", "Gateway operation rejections"),
