@@ -536,16 +536,42 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "firstWindowStateEvent",
         "predecessorStateEvent",
     )
+    temporal_details = {
+        key: temporal.get(key)
+        for key in temporal_keys
+        if key in temporal
+    }
+    intervals = temporal.get("intervals")
+    if isinstance(intervals, list):
+        # Keep the deterministic bounded interval proof visible to final
+        # synthesis without copying raw Hubitat rows. Twelve intervals is enough
+        # for auditability while keeping evidence receipts compact.
+        temporal_details["observedIntervals"] = [
+            {
+                key: item.get(key)
+                for key in (
+                    "start",
+                    "end",
+                    "startNatural",
+                    "endNatural",
+                    "durationSeconds",
+                    "duration",
+                    "clippedAtWindowStart",
+                    "clippedAtWindowEnd",
+                )
+                if key in item
+            }
+            for item in intervals[:12]
+            if isinstance(item, dict)
+        ]
+        temporal_details["observedIntervalsTruncated"] = len(intervals) > 12
+
     details = {
         "label": result_data.get("label"),
         "attribute": result_data.get("attribute"),
         "hoursBack": result_data.get("hoursBack"),
         "timeWindow": result_data.get("timeWindow"),
-        "temporalAnalysis": {
-            key: temporal.get(key)
-            for key in temporal_keys
-            if key in temporal
-        },
+        "temporalAnalysis": temporal_details,
     }
     for key in (
         "analysisEventCount",
