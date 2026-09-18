@@ -112,12 +112,16 @@ _HOME_STATE_PATTERNS = (
 # round has executed. Investigative requests (cause, normality/expectation,
 # comparison/correlation) remain eligible for additional evidence gathering.
 # This is a generic intent boundary, not a device/question-specific route.
-_HISTORY_INVESTIGATION = re.compile(
+_CAUSAL_INVESTIGATION = re.compile(
     r"\bwhy\b|"
     r"\b(?:cause|caused|causing|trigger|triggered|reason)\b|"
-    r"\bwhat\s+(?:caused|triggered|made)\b|"
-    r"\b(?:normal|normally|abnormal|unusual|expected|unexpected)\b|"
-    r"\b(?:compare|comparison|versus|vs\.?|correlat(?:e|ed|ion))\b",
+    r"\bwhat\s+(?:caused|triggered|made)\b",
+    re.I,
+)
+_HISTORY_INVESTIGATION = re.compile(
+    _CAUSAL_INVESTIGATION.pattern
+    + r"|\b(?:normal|normally|abnormal|unusual|expected|unexpected)\b"
+    + r"|\b(?:compare|comparison|versus|vs\.?|correlat(?:e|ed|ion))\b",
     re.I,
 )
 
@@ -600,22 +604,30 @@ class UnifiedMCPAgent:
             ),
             "",
         )
+        causal = _CAUSAL_INVESTIGATION.search(original_user) is not None
         investigative = _HISTORY_INVESTIGATION.search(original_user) is not None
         synthesis = (
             "Answer the ORIGINAL user request now using the CURRENT-TURN evidence. "
             "Do not request another tool and do not answer a narrower substitute "
             "question merely because one source is easy to summarize. "
         )
-        if investigative:
+        if causal:
             synthesis += (
-                "This is an investigation. Reason across the evidence: lead with the "
-                "best-supported explanation and calibrate confidence; reconstruct the "
-                "important timeline by correlating timestamps across sources; separate "
-                "a trigger/provenance event from downstream automation effects; explain "
-                "what remains unproven or unexplained; and only suggest a configuration "
-                "change when the evidence makes it relevant. A device state transition "
-                "or close timestamp alone is correlation, not proof of a person or "
-                "automation causing it. "
+                "This is a causal investigation. Reason across the evidence: lead "
+                "with the best-supported explanation and calibrate confidence; "
+                "reconstruct the important timeline by correlating timestamps across "
+                "sources; separate a trigger/provenance event from downstream "
+                "automation effects; explain what remains unproven or unexplained; "
+                "and only suggest a configuration change when the evidence makes it "
+                "relevant. A device state transition or close timestamp alone is "
+                "correlation, not proof of a person or automation causing it. "
+            )
+        elif investigative:
+            synthesis += (
+                "This is an analytical history request. Compare the relevant evidence "
+                "classes directly, preserve objective patterns and uncertainty, and "
+                "do not invent a causal explanation or a normality baseline that the "
+                "current-turn evidence does not establish. "
             )
         synthesis += (
             "For unverified device-event streams, describe durations/counts as "
@@ -867,6 +879,7 @@ class UnifiedMCPAgent:
         capability_grounding = CapabilityGroundingPolicy()
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
+        causal_request = _CAUSAL_INVESTIGATION.search(user_prompt) is not None
         investigative_request = _HISTORY_INVESTIGATION.search(user_prompt) is not None
         set_reasoning_profile(
             "investigative" if investigative_request else "standard"
@@ -1364,7 +1377,7 @@ class UnifiedMCPAgent:
                     })
                 if (
                     name == _LOCAL_FILTER_TOOL
-                    and investigative_request
+                    and causal_request
                     and result is not None
                     and isinstance(result.data, dict)
                     and isinstance(result.data.get("eventSourceHints"), dict)
