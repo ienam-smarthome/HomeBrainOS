@@ -16,6 +16,7 @@ from causal_evidence_planner import (  # noqa: E402
     subject_room_filter_arguments,
 )
 from device_query_service import DeviceQueryService  # noqa: E402
+from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
 from request_metrics import RequestMetrics  # noqa: E402
 
@@ -178,3 +179,59 @@ def test_sparse_request_cache_is_not_reused_when_history_needs_attributes() -> N
         assert "illuminance" in resolved["attributes"]
     finally:
         metrics.reset(token)
+
+
+
+def test_evidence_brief_preserves_subject_commands_near_interval_boundaries() -> None:
+    receipt = {
+        "tool": "homebrain_device_history",
+        "success": True,
+        "details": {
+            "label": "Bedroom 3 Light",
+            "attribute": "switch",
+            "temporalAnalysis": {
+                "intervalCount": 1,
+                "totalActiveDuration": "1h 27m",
+                "durationReliability": "unverified-event-stream",
+                "observedIntervals": [{
+                    "start": "2026-09-18T00:02:53.713+01:00",
+                    "end": "2026-09-18T01:30:07.971+01:00",
+                    "duration": "1h 27m",
+                }],
+            },
+            "observedEvents": [
+                {
+                    "name": "command-setLevel",
+                    "value": None,
+                    "description": "Command called: setLevel(15)",
+                    "date": "2026-09-18T01:30:04.695+01:00",
+                },
+                {
+                    "name": "command-off",
+                    "value": None,
+                    "description": "Command called: off()",
+                    "date": "2026-09-18T01:30:07.775+01:00",
+                },
+                {
+                    "name": "level",
+                    "value": "80",
+                    "description": "Unrelated daytime change",
+                    "date": "2026-09-18T19:41:48.300+01:00",
+                },
+            ],
+        },
+    }
+    other = {
+        "tool": "homebrain_location_events",
+        "success": True,
+        "details": {"events": [{"name": "mode", "value": "Late Night", "date": "2026-09-18T01:30:02+01:00"}]},
+    }
+
+    brief = build_current_turn_evidence_ledger([receipt, other])
+
+    assert brief is not None
+    assert "command-setLevel" in brief
+    assert "Command called: setLevel(15)" in brief
+    assert "command-off" in brief
+    assert "Command called: off()" in brief
+    assert "Unrelated daytime change" not in brief
