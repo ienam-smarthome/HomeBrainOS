@@ -24,6 +24,7 @@ from history_temporal_analysis import (
     analyze_state_intervals,
     analyze_state_intervals_in_window,
     boundary_event_evidence,
+    window_event_evidence,
 )
 from history_time_windows import (
     active_history_window_request,
@@ -695,6 +696,11 @@ class DeviceHistoryService:
             source_events,
             temporal_analysis,
         )
+        window_events = (
+            window_event_evidence(source_events, time_window.as_dict())
+            if time_window is not None
+            else []
+        )
 
         data = {
             "success": True,
@@ -730,6 +736,8 @@ class DeviceHistoryService:
             }
         if temporal_analysis is not None:
             data["temporalAnalysis"] = temporal_analysis
+        if window_events:
+            data["windowEvents"] = window_events
         if boundary_events:
             data["boundaryEvents"] = boundary_events
         return MCPToolResult(
