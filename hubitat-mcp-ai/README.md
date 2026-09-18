@@ -51,7 +51,11 @@ rule/app evidence, then mode/location correlation, then same-room button/control
 event history when room discovery exposes it, then a small number of materially
 relevant environmental-sensor histories. Room-filter results surface bounded
 controller candidates from advertised button capabilities and suggest explicit
-history attributes such as pushed, held, released, and doubleTapped. A stronger
+history attributes such as pushed, held, released, and doubleTapped. Exact room
+metadata is preferred, with a conservative label-affinity fallback for button-capable
+devices whose room metadata is missing or incomplete (for example a controller named
+after the requested room); environmental sensors are not pulled in by that fallback.
+A stronger
 direct source should replace several weaker temporal correlations, not be added
 after an exhaustive room sweep. Related-device history used for investigative
 absence/correlation claims must name the specific attribute being checked; generic
