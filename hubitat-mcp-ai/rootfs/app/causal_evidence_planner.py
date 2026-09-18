@@ -134,11 +134,17 @@ def subject_has_observed_intervals(
     intervals = temporal.get("observedIntervals")
     if not isinstance(intervals, list):
         intervals = temporal.get("intervals")
-    return isinstance(intervals, list) and any(
+    bounded = isinstance(intervals, list) and any(
         isinstance(item, dict)
         and str(item.get("start") or "").strip()
         and str(item.get("end") or "").strip()
         for item in intervals
+    )
+    if bounded:
+        return True
+    return bool(
+        temporal.get("unboundedActiveInterval")
+        and str(temporal.get("openActiveStart") or "").strip()
     )
 
 
