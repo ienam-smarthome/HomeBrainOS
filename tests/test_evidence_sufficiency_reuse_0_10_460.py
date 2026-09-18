@@ -281,6 +281,15 @@ async def test_investigative_history_is_not_hard_stopped_by_sufficiency_gate(
                     ),
                 }
             },
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": (
+                        "The recorded history establishes the switch event, but the "
+                        "current-turn evidence does not establish its cause."
+                    ),
+                }
+            },
         ]
     )
     agent = UnifiedMCPAgent(mcp, "key", "gemma4:31b", ai_client=ai)
@@ -288,7 +297,10 @@ async def test_investigative_history_is_not_hard_stopped_by_sufficiency_gate(
     outcome = await agent.process_user_request_result(prompt)
 
     assert outcome.metrics["counters"].get("evidence_sufficiency_stop", 0) == 0
-    assert len(ai.requests) == 2
+    assert outcome.metrics["counters"].get("investigative_finalization", 0) == 1
+    assert len(ai.requests) == 3
     # Because the request is investigative, the second ordinary reasoning turn
-    # keeps callable tools available instead of being forced straight to synthesis.
+    # keeps callable tools available. Its no-tool draft is then routed through
+    # the shared no-tools final synthesis coordinator.
     assert ai.requests[1][1]["json"]["tools"]
+    assert ai.requests[2][1]["json"].get("tools") in (None, [])
