@@ -31,6 +31,7 @@ _COUNTER_LABELS = (
     ("investigative_attribute_required", "Investigative attribute retries"),
     ("gateway_operation_rejected", "Gateway operation rejections"),
     ("history_attribute_rejected", "History attribute rejections"),
+    ("history_known_tool_fastpath", "Known-history fast paths"),
 )
 
 _DURATION_LABELS = (

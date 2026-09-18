@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from causal_timeline import missing_material_timeline_rows
-from evidence_source_guard import guard_checked_source_absence_claim
+from evidence_source_guard import (
+    guard_checked_source_absence_claim,
+    guard_positive_source_attribution,
+)
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from location_correlation_guard import guard_location_correlation_claim
@@ -46,6 +49,12 @@ def validate_synthesis(
     )
     if source_changed:
         issues.append("checked_source_consistency")
+
+    corrected, positive_source_changed = guard_positive_source_attribution(
+        corrected, evidence
+    )
+    if positive_source_changed:
+        issues.append("positive_source_attribution")
 
     missing_rows = (
         missing_material_timeline_rows(corrected, evidence)

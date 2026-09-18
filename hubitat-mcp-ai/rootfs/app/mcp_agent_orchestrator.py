@@ -41,7 +41,11 @@ from evidence_recorder import EvidenceRecorder
 from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
-from investigation_policy import is_causal_investigation, is_history_investigation
+from investigation_policy import (
+    is_causal_investigation,
+    is_history_investigation,
+    uses_known_history_evidence_path,
+)
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from request_classification import (
@@ -654,12 +658,11 @@ class UnifiedMCPAgent:
         if (
             _matches(user_prompt, _APP_TERMS)
             or _matches(previous_user_prompt, _APP_TERMS)
-            or is_history_investigation(user_prompt)
         ):
-            # Investigative questions often need automation identity even when
-            # the user never says "app", "rule", or "automation". The manifest
-            # remains identity/navigation context only; live tool reads are still
-            # required before making claims about configuration or execution.
+            # App/rule identity context is loaded only when the conversation
+            # actually asks for that evidence class. Generic investigations begin
+            # from the fixed local history registry and activate the bounded
+            # provenance registry later only when subject evidence warrants it.
             apps = await self._cached_app_manifest()
             app_section = render_app_manifest(apps)
         return build_system_prompt(manifest, app_section)
@@ -813,9 +816,13 @@ class UnifiedMCPAgent:
         capability_discovery = ""
         capability_additions: list[MCPTool] = []
         search_tool = catalog.declared_tool(SEARCH_TOOL)
+        known_history_path = uses_known_history_evidence_path(user_prompt)
+        if known_history_path:
+            increment_active_metric("history_known_tool_fastpath")
         if (
             search_tool is not None
             and not self._is_conversational_prompt(user_prompt)
+            and not known_history_path
         ):
             discovery = await self.executor.execute(
                 SEARCH_TOOL,
