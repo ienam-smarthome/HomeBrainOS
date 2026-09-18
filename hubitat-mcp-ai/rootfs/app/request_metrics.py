@@ -41,7 +41,7 @@ class RequestMetrics:
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
         "resolution_cache_hit", "resolution_cache_metadata_miss", "evidence_sufficiency_stop",
-        "causal_room_plan", "causal_provenance_read", "causal_location_read", "causal_provenance_aligned", "causal_completion_retry", "causal_subject_empty_stop", "investigative_finalization",
+        "causal_room_plan", "causal_provenance_read", "causal_location_read", "causal_app_navigation", "causal_provenance_aligned", "causal_completion_retry", "causal_subject_empty_stop", "investigative_finalization",
         "investigative_attribute_required", "gateway_operation_rejected",
         "history_attribute_rejected", "history_known_tool_fastpath",
     })
