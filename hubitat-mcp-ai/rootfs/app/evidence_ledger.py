@@ -62,6 +62,26 @@ def _temporal_suffix(receipt: dict[str, Any]) -> str:
     reliability = str(temporal.get("durationReliability") or "").strip()
     if reliability:
         bits.append(f"reliability={reliability}")
+
+    intervals = temporal.get("boundedIntervals")
+    if isinstance(intervals, list) and intervals:
+        interval_hints: list[str] = []
+        for interval in intervals[:6]:
+            if not isinstance(interval, dict):
+                continue
+            start = str(interval.get("startNatural") or interval.get("start") or "").strip()
+            end = str(interval.get("endNatural") or interval.get("end") or "").strip()
+            span = str(interval.get("duration") or "").strip()
+            if start and end:
+                hint = f"{start} -> {end}"
+                if span:
+                    hint += f" ({span})"
+                interval_hints.append(hint)
+        if interval_hints:
+            suffix = "; ".join(interval_hints)
+            if len(intervals) > 6 or temporal.get("boundedIntervalsTruncated"):
+                suffix += f"; +{max(0, len(intervals) - 6)} more"
+            bits.append(f"bounded intervals: {suffix}")
     return "; ".join(bits)
 
 
@@ -188,10 +208,22 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
                 continue
             seen.add(key)
             suffix = _temporal_suffix(receipt)
-            summary = suffix or str(receipt.get("summary") or "successful history read")
+            details = receipt.get("details") or {}
+            observed = details.get("observedEventNames")
+            if suffix:
+                summary = suffix
+            elif isinstance(observed, list) and observed:
+                summary = (
+                    "generic history read; observed event names="
+                    + ", ".join(str(name) for name in observed[:8])
+                )
+            else:
+                summary = str(receipt.get("summary") or "successful history read")
             subject = label or "named device"
             if attribute:
                 subject += f" ({attribute})"
+            else:
+                subject += " (attribute not explicitly selected)"
             lines.append(f"- CHECKED device history: {subject}: {summary}")
             continue
 
