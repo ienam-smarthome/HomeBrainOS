@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.10.461**.
+Current add-on version: **0.10.462**.
 
 ## Architecture
 
@@ -45,8 +45,13 @@ normality/expectation, comparison, and correlation questions. Those turns receiv
 separate host contract: history establishes what happened, not what caused it; a
 normality claim needs either an explicit baseline/expected rule or suitably cautious
 wording; comparisons need the other side of the comparison; and unrelated exhaustive
-reads are discouraged. This is driven by structured evidence shape and broad request
-intent, not by a device-name or question-specific answer parser.
+reads are discouraged. Investigative reads are ordered by evidence quality rather
+than fan-out: direct provenance/log evidence first when available, then subject-linked
+rule/app evidence, then mode/location correlation, then a small number of materially
+relevant related-device histories. A stronger direct source should replace several
+weaker temporal correlations, not be added after an exhaustive room sweep. This is
+driven by structured evidence shape and broad request intent, not by a device-name or
+question-specific answer parser.
 
 The production wrapper also owns deterministic live-soak safeguards. Common
 routine light/switch commands are sent through the bounded local control adapter
@@ -127,6 +132,26 @@ active-room definition is unchanged: `motion=active OR light switch=on`. The
 resource's compact `attributes` map is normalized to `currentStates` so richer
 typed/unit-bearing metadata can still be merged by device id without stale
 metadata overwriting fresh live values.
+
+Final synthesis also receives a compact current-turn evidence ledger whenever a
+request gathered multiple material evidence classes. The ledger is built from the
+request-scoped evidence receipts rather than conversation memory and states which
+device histories, location/mode history, logs, rule/app reads, filters, and live
+context were actually checked. Checked source presence is separate from evidentiary
+strength: a source can be present without proving causation. The final prompt therefore
+cannot legitimately say that a checked sensor/location/log/rule source was "not
+provided" merely because the turn was long or context was compacted. Location-event
+receipts expose bounded event details as well as their count, making mode correlations
+used by the final answer auditable in the API evidence.
+
+At the serialization boundary, a narrow source-consistency guard backs up the ledger:
+if the final prose explicitly says a sensor/related-device, location/mode, log, rule/app,
+or device-history source was not provided/checked while successful current-turn
+receipts prove otherwise, only that contradictory sentence is replaced. The
+replacement says the source was checked but did not by itself establish a cause; it
+does not manufacture a causal conclusion. Claims such as "no motion events were
+recorded" remain untouched because they describe the contents of a checked source,
+not the absence of the source itself.
 
 Final history serialization keeps deterministic duration safety without erasing
 unrelated analysis. For unverified event streams, a correctly rounded duration is

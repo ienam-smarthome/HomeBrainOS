@@ -293,6 +293,16 @@ class DeviceHistoryService:
             summary=f"{len(events)} location events",
             supports_live_claim=True,
             evidence_kind="authoritative_location_event_history",
+            details=(
+                {
+                    "count": len(events),
+                    # Bounded by the local tool's hard max of 50. EvidenceRecorder
+                    # further caps/redacts nested lists for API output.
+                    "events": events,
+                }
+                if success
+                else None
+            ),
         )
         if not success:
             data = {

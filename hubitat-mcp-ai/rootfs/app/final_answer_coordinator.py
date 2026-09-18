@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from evidence_ledger import build_current_turn_evidence_ledger
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
 
 
@@ -24,14 +25,23 @@ class FinalAnswerCoordinator:
             [list[dict[str, Any]], list[dict[str, Any]]],
             Awaitable[dict[str, Any]],
         ],
+        evidence_supplier: Callable[[], list[dict[str, Any]]] | None = None,
     ) -> None:
         self._chat = chat
+        self._evidence_supplier = evidence_supplier
 
     async def answer(self, messages: list[dict[str, Any]]) -> str:
-        final_messages = [
-            *messages,
-            {"role": "user", "content": FINAL_ANSWER_INSTRUCTION},
-        ]
+        ledger = None
+        if self._evidence_supplier is not None:
+            ledger = build_current_turn_evidence_ledger(
+                list(self._evidence_supplier() or [])
+            )
+        final_messages = [*messages]
+        if ledger:
+            final_messages.append({"role": "user", "content": ledger})
+        final_messages.append(
+            {"role": "user", "content": FINAL_ANSWER_INSTRUCTION}
+        )
         response = await self._chat(final_messages, [])
         return str(response.get("content") or DEFAULT_FINAL_ANSWER)
 

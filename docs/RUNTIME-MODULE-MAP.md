@@ -30,8 +30,10 @@ The repository drift test compares this table directly with the live directory. 
 | `device_target_resolver.py` | Resolves natural-language targets to concrete devices. |
 | `time_expressions.py` | Shared deterministic clock-time recognition (parsing an isolated "at &lt;time&gt;" token, never scanning free text for meaning); used by `rule_authoring_service.py` and `device_control_service.py`. |
 | `direct_outcome_context.py` | Owns request-local evidence, choice, request-class, and mutation context. |
+| `evidence_ledger.py` | Builds a compact current-turn checked-source ledger for final synthesis. |
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
-| `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round. |
+| `evidence_source_guard.py` | Corrects final claims that contradict successful current-turn source availability. |
+| `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round and injects the current-turn evidence ledger. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
 | `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
 | `history_temporal_analysis.py` | Derives bounded state intervals and deterministic duration totals from authoritative device events. |
