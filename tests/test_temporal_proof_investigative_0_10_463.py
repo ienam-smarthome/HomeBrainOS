@@ -231,3 +231,201 @@ def test_gateway_operation_guard_uses_live_discovery_mapping() -> None:
     )
     assert error is not None
     assert "hub_read_apps_code" in error
+
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.payload
+
+
+class _FakeAI:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.requests = []
+
+    async def post(self, url, **kwargs):
+        self.requests.append((url, kwargs))
+        return _FakeResponse(next(self.responses))
+
+    async def aclose(self):
+        return None
+
+
+class _InvestigativeMCP:
+    def __init__(self):
+        self.devices = [
+            {
+                "id": "1",
+                "name": "Bedroom 3 Light",
+                "label": "Bedroom 3 Light",
+                "room": "Bedroom 3",
+                "capabilities": ["Switch", "Light"],
+                "attributes": {"switch": "off"},
+                "commands": ["on", "off"],
+            },
+            {
+                "id": "2",
+                "name": "Bedroom 3 Sensor T1",
+                "label": "Bedroom 3 Sensor T1",
+                "room": "Bedroom 3",
+                "capabilities": ["IlluminanceMeasurement", "TemperatureMeasurement"],
+                "attributes": {"illuminance": 124, "temperature": 22.0},
+                "commands": [],
+            },
+        ]
+        self.calls = []
+
+    async def list_tools(self):
+        return []
+
+    async def get_cached_devices(self):
+        return list(self.devices)
+
+    def peek_cached_devices(self):
+        return list(self.devices)
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        if name == "hub_read_devices" and operation == "hub_list_devices":
+            needle = str((arguments.get("args") or {}).get("labelFilter") or "").casefold()
+            matches = [
+                device for device in self.devices
+                if needle in str(device["label"]).casefold()
+            ]
+            return MCPToolResult(name, arguments, {}, "ok", {"devices": matches})
+        if name == "hub_read_devices" and operation == "hub_list_device_events":
+            device_id = str((arguments.get("args") or {}).get("deviceId") or "")
+            if device_id == "1":
+                events = [
+                    {
+                        "name": "switch",
+                        "value": "off",
+                        "date": "2026-09-18T01:45:02+01:00",
+                        "isStateChange": True,
+                    },
+                    {
+                        "name": "switch",
+                        "value": "on",
+                        "date": "2026-09-18T01:32:51+01:00",
+                        "isStateChange": True,
+                    },
+                ]
+            else:
+                events = [
+                    {
+                        "name": "illuminance",
+                        "value": "124",
+                        "date": "2026-09-18T01:33:00+01:00",
+                        "isStateChange": True,
+                    }
+                ]
+            return MCPToolResult(name, arguments, {}, "ok", {"events": events})
+        raise AssertionError((name, arguments))
+
+
+def _fc(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    return {"function": {"name": name, "arguments": arguments}}
+
+
+def test_placeholder_for_async_import():
+    # Keeps imports local to this release test and avoids changing older fixtures.
+    from homebrain_agent import UnifiedMCPAgent  # noqa: F401
+
+
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_investigative_related_history_requires_explicit_attribute_before_execution() -> None:
+    from homebrain_agent import UnifiedMCPAgent
+
+    mcp = _InvestigativeMCP()
+    ai = _FakeAI(
+        [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        _fc(
+                            "homebrain_device_history",
+                            {
+                                "name": "Bedroom 3 Light",
+                                "attribute": "switch",
+                                "hours_back": 24,
+                            },
+                        )
+                    ],
+                }
+            },
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        _fc(
+                            "homebrain_device_history",
+                            {
+                                "name": "Bedroom 3 Sensor T1",
+                                "hours_back": 24,
+                            },
+                        )
+                    ],
+                }
+            },
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        _fc(
+                            "homebrain_device_history",
+                            {
+                                "name": "Bedroom 3 Sensor T1",
+                                "attribute": "illuminance",
+                                "hours_back": 24,
+                            },
+                        )
+                    ],
+                }
+            },
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": (
+                        "The light history is established; illuminance was checked "
+                        "separately, but it does not establish the cause."
+                    ),
+                }
+            },
+        ]
+    )
+    agent = UnifiedMCPAgent(mcp, "key", "gemma4:31b", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "Why was Bedroom 3 Light on last night?"
+    )
+
+    assert outcome.metrics["counters"]["investigative_attribute_required"] == 1
+    sensor_event_calls = [
+        arguments
+        for name, arguments in mcp.calls
+        if name == "hub_read_devices"
+        and arguments.get("tool") == "hub_list_device_events"
+        and str((arguments.get("args") or {}).get("deviceId")) == "2"
+    ]
+    assert len(sensor_event_calls) == 1
+    retry_prompt = "\n".join(
+        str(message.get("content") or "")
+        for message in ai.requests[2][1]["json"]["messages"]
+    )
+    assert "requires an explicit attribute" in retry_prompt
+    assert "attribute=..." in retry_prompt
