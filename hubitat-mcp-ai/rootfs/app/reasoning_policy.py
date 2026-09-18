@@ -407,17 +407,19 @@ def reasoning_budget_exhausted() -> bool:
     """Whether a read-only model investigation should synthesize now."""
 
     _identity, rounds, reads, mutation_seen, _skipped = _budget_state()
-    if mutation_seen or reads <= 0:
-        return False
-    if controller_followup_pending():
+    if mutation_seen:
         return False
 
     state = _controller_followup_state()
     if state is not None and state[1]:
         # The single reserved controller attempt has completed (or an invalid
-        # competing read consumed it). Force synthesis immediately rather than
-        # reopening the ordinary generic budget for more fourth/fifth rounds.
+        # competing read consumed it). Force synthesis immediately even when the
+        # rejected attempt did not increment the normal read counter.
         return True
+    if controller_followup_pending():
+        return False
+    if reads <= 0:
+        return False
 
     return (
         reads >= DEFAULT_MAX_READ_TOOL_CALLS
