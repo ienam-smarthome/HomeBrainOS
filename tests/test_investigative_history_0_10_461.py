@@ -360,6 +360,8 @@ async def test_normality_history_turn_receives_investigative_evidence_contract()
     assert "HOST INVESTIGATIVE-HISTORY REQUIREMENT" in rendered
     assert "direct provenance/log evidence" in rendered
     assert "Prefer a stronger source over several weaker correlations" in rendered
+    assert "set the exact attribute you intend to correlate" in rendered
+    assert "do not present a smaller subset as the complete set" in rendered
     assert "do not invent a generic notion of normality" in rendered
     assert "baseline or explicit expected rule" in rendered
     assert outcome.metrics["counters"].get("evidence_sufficiency_stop", 0) == 0
