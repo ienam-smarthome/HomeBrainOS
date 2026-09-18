@@ -166,6 +166,7 @@ class FinalAnswerCoordinator:
         repaired_corrected, remaining = validate_synthesis(
             repaired_content,
             evidence,
+            causal=causal,
         )
         return repaired_content if not remaining else repaired_corrected
 
