@@ -31,6 +31,43 @@ def _original_user_request(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
+def _current_turn_messages(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return system context plus messages from the latest real user turn onward.
+
+    Conversation history remains useful during tool selection, especially for
+    follow-up requests. It is not evidence. Final investigative synthesis must not
+    see a previous assistant conclusion as if it were a current-turn observation.
+    """
+
+    current_user_index: int | None = None
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = str(message.get("content") or "").strip()
+        if not content or content.lstrip().startswith("HOST "):
+            continue
+        current_user_index = index
+        break
+
+    if current_user_index is None:
+        return [dict(message) for message in messages if isinstance(message, dict)]
+
+    system_messages = [
+        dict(message)
+        for message in messages[:current_user_index]
+        if isinstance(message, dict) and message.get("role") == "system"
+    ]
+    current = [
+        dict(message)
+        for message in messages[current_user_index:]
+        if isinstance(message, dict)
+    ]
+    return [*system_messages, *current]
+
+
 def _synthesis_instruction(original_user: str) -> str:
     """Build the shared final reasoning contract from request class."""
 
@@ -103,15 +140,20 @@ class FinalAnswerCoordinator:
         original_user = _original_user_request(messages)
         causal = is_causal_investigation(original_user)
         investigative = is_history_investigation(original_user)
+        current_turn = _current_turn_messages(messages)
         brief = build_current_turn_evidence_ledger(evidence)
         causal_timeline = render_causal_timeline(evidence) if causal else None
         tool_packet = (
-            build_tool_evidence_packet(messages)
+            build_tool_evidence_packet(current_turn)
             if investigative
             else None
         )
 
-        final_messages = [*messages]
+        # Final investigative synthesis is evidence-scoped to this request. Prior
+        # user/assistant conversation remains available to earlier reasoning/tool
+        # selection but is intentionally excluded here so an old conclusion cannot
+        # resurrect facts absent from current-turn MCP evidence.
+        final_messages = [*current_turn] if investigative else [*messages]
         if brief:
             final_messages.append({"role": "user", "content": brief})
         if causal_timeline:
@@ -175,6 +217,7 @@ __all__ = [
     "DEFAULT_FINAL_ANSWER",
     "FINAL_ANSWER_INSTRUCTION",
     "FinalAnswerCoordinator",
+    "_current_turn_messages",
     "_original_user_request",
     "_synthesis_instruction",
 ]
