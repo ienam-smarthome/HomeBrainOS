@@ -48,57 +48,63 @@ def _history_identity(receipt: dict[str, Any]) -> tuple[str, str]:
 
 
 def _temporal_suffix(receipt: dict[str, Any]) -> str:
+    """Render bounded state intervals or event-style provenance rows."""
+
     details = receipt.get("details")
     if not isinstance(details, dict):
         return ""
-    temporal = details.get("temporalAnalysis")
-    if not isinstance(temporal, dict):
-        return ""
-    bits: list[str] = []
-    count = temporal.get("intervalCount")
-    duration = temporal.get("totalActiveDuration")
-    if count is not None:
-        bits.append(f"{count} interval{'s' if count != 1 else ''}")
-    if duration:
-        bits.append(f"total {duration}")
-    reliability = str(temporal.get("durationReliability") or "").strip()
-    if reliability:
-        bits.append(f"reliability={reliability}")
-    intervals = temporal.get("observedIntervals")
-    if isinstance(intervals, list) and intervals:
-        rendered: list[str] = []
-        for item in intervals[:8]:
-            if not isinstance(item, dict):
-                continue
-            start = str(item.get("startNatural") or item.get("start") or "?")
-            end = str(item.get("endNatural") or item.get("end") or "?")
-            duration_text = str(item.get("duration") or "").strip()
-            span = f"{start} -> {end}"
-            if duration_text:
-                span += f" ({duration_text})"
-            rendered.append(span)
-        if rendered:
-            suffix = " + more" if temporal.get("observedIntervalsTruncated") else ""
-            bits.append("observed=[" + "; ".join(rendered) + "]" + suffix)
-    events = details.get("observedEvents")
-    if isinstance(events, list) and events:
-        rendered_events: list[str] = []
-        for item in events[:8]:
-            if not isinstance(item, dict):
-                continue
-            date = str(item.get("date") or "?").strip()
-            name = str(item.get("name") or "").strip()
-            value = str(item.get("value") or "").strip()
-            description = str(item.get("description") or "").strip()
-            event = "=".join(part for part in (name, value) if part) or "event"
-            if description and description.casefold() not in event.casefold():
-                event += f" [{description}]"
-            rendered_events.append(f"{date}: {event}")
-        if rendered_events:
-            suffix = " + more" if details.get("observedEventsTruncated") else ""
-            bits.append("events=[" + "; ".join(rendered_events) + "]" + suffix)
-    return "; ".join(bits)
 
+    bits: list[str] = []
+    temporal = details.get("temporalAnalysis")
+    if isinstance(temporal, dict):
+        count = temporal.get("intervalCount")
+        duration = temporal.get("totalActiveDuration")
+        if count is not None:
+            bits.append(f"{count} interval{'s' if count != 1 else ''}")
+        if duration:
+            bits.append(f"total {duration}")
+        reliability = str(temporal.get("durationReliability") or "").strip()
+        if reliability:
+            bits.append(f"reliability={reliability}")
+        intervals = temporal.get("observedIntervals")
+        if isinstance(intervals, list) and intervals:
+            rendered: list[str] = []
+            for item in intervals[:8]:
+                if not isinstance(item, dict):
+                    continue
+                start = str(item.get("startNatural") or item.get("start") or "?")
+                end = str(item.get("endNatural") or item.get("end") or "?")
+                duration_text = str(item.get("duration") or "").strip()
+                span = f"{start} -> {end}"
+                if duration_text:
+                    span += f" ({duration_text})"
+                rendered.append(span)
+            if rendered:
+                suffix = " + more" if temporal.get("observedIntervalsTruncated") else ""
+                bits.append("observed=[" + "; ".join(rendered) + "]" + suffix)
+
+    # Event-style histories such as pushed/held/released do not have binary
+    # temporalAnalysis. Keep their concrete timestamp/value/description rows in
+    # the final synthesis brief instead of reducing them to "object fields".
+    if not isinstance(temporal, dict):
+        events = details.get("observedEvents")
+        if isinstance(events, list) and events:
+            rendered_events: list[str] = []
+            for item in events[:8]:
+                if not isinstance(item, dict):
+                    continue
+                date = str(item.get("date") or "?").strip()
+                name = str(item.get("name") or "").strip()
+                value = str(item.get("value") or "").strip()
+                description = str(item.get("description") or "").strip()
+                event = "=".join(part for part in (name, value) if part) or "event"
+                if description and description.casefold() not in event.casefold():
+                    event += f" [{description}]"
+                rendered_events.append(f"{date}: {event}")
+            if rendered_events:
+                suffix = " + more" if details.get("observedEventsTruncated") else ""
+                bits.append("events=[" + "; ".join(rendered_events) + "]" + suffix)
+    return "; ".join(bits)
 
 def _location_event_hints(
     receipt: dict[str, Any],
