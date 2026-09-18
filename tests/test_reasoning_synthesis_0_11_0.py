@@ -7,6 +7,9 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
+from final_answer_coordinator import FinalAnswerCoordinator  # noqa: E402
+from homebrain_agent import UnifiedMCPAgent as ProductionAgent  # noqa: E402
+from mcp_agent_orchestrator import UnifiedMCPAgent as BaseAgent  # noqa: E402
 from history_temporal_analysis import (  # noqa: E402
     guard_history_duration_claim,
     history_temporal_evidence_details,
@@ -171,3 +174,71 @@ def test_tool_packet_keeps_recent_concrete_results_and_skips_discovery() -> None
     assert "discovery noise" not in packet
     assert "Bedroom 3 dimmer - 1" in packet
     assert "Lighting: Auto OFF" in packet
+
+
+
+def test_production_agent_inherits_the_shared_final_answer_path() -> None:
+    assert ProductionAgent._final_answer is BaseAgent._final_answer
+
+
+async def _coordinator_messages() -> tuple[str, list[list[dict]]]:
+    calls: list[list[dict]] = []
+
+    async def chat(messages, tools):
+        assert tools == []
+        calls.append(messages)
+        return {
+            "content": (
+                "The strongest evidence points to the Bedroom 3 dimmer as a "
+                "controller trigger. The recorded duration is an estimate."
+            )
+        }
+
+    evidence = [
+        _subject_receipt(),
+        {
+            "tool": "homebrain_device_history",
+            "success": True,
+            "evidence_kind": "deterministic_device_event_history",
+            "summary": "event history",
+            "details": {
+                "label": "Bedroom 3 dimmer - 1",
+                "attribute": "pushed",
+                "observedEvents": [{
+                    "name": "pushed",
+                    "value": "1",
+                    "description": "button 1 pushed [physical]",
+                    "date": "2026-09-18T00:02:53.800+01:00",
+                }],
+            },
+        },
+    ]
+    coordinator = FinalAnswerCoordinator(chat, evidence_supplier=lambda: evidence)
+    answer = await coordinator.answer([
+        {"role": "user", "content": "Why was Bedroom 3 Light on during the night?"},
+        {
+            "role": "tool",
+            "tool_name": "homebrain_device_history",
+            "content": (
+                '{"result":{"label":"Bedroom 3 dimmer - 1","attribute":"pushed",'
+                '"events":[{"date":"2026-09-18T00:02:53.800+01:00",'
+                '"description":"button 1 pushed [physical]"}]}}'
+            ),
+        },
+    ])
+    return answer, calls
+
+
+def test_shared_final_coordinator_uses_causal_brief_and_tool_packet() -> None:
+    import asyncio
+
+    answer, calls = asyncio.run(_coordinator_messages())
+
+    assert "strongest evidence" in answer
+    assert len(calls) == 1
+    final_messages = calls[0]
+    joined = "\n".join(str(item.get("content") or "") for item in final_messages)
+    assert "HOST CURRENT-TURN EVIDENCE BRIEF" in joined
+    assert "HOST CURRENT-TURN TOOL EVIDENCE EXCERPTS" in joined
+    assert "This is a causal investigation" in joined
+    assert "button 1 pushed [physical]" in joined
