@@ -38,6 +38,7 @@ The repository drift test compares this table directly with the live directory. 
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round and injects the current-turn evidence ledger. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
 | `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
+| `gateway_argument_view.py` | Canonical read-only view of direct or one-level-wrapped MCP gateway operation envelopes so evidence, grounding, and gateway compatibility checks agree on the same sub-tool without rewriting provider payloads. |
 | `history_cardinality_guard.py` | Corrects exhaustive interval-count claims that contradict deterministic temporal evidence. |
 | `history_temporal_analysis.py` | Derives bounded state intervals, deterministic duration totals, and bounded interval proof from authoritative device events. |
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
