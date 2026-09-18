@@ -176,6 +176,23 @@ prove the device stayed inactive, but historical controller events from another
 period can no longer resurrect a causal timeline that the subject history did not
 establish in this request.
 
+0.13.4 makes empty/partial history answers auditable rather than merely safe.
+`windowEvents` now preserves bounded source rows that actually fall inside the
+requested semantic time window independently of interval construction and the
+ordinary newest-first event cap. This means an unverified zero-interval history can
+still retain commands such as `command-setLevel` and `command-off` that occurred
+inside the window without pretending they prove an active state interval. The final
+evidence ledger renders those rows when no bounded interval exists.
+
+Source attribution is also validated: a draft that says "the logs show..." is
+repaired when no native log source was checked and the claim actually comes from
+device-event history. Finally, generic investigative history requests begin from the
+fixed local history registry without fuzzy `hub_search_tools` discovery or an
+upfront app manifest. Explicit requests for logs/rules/apps/automation still keep
+normal discovery, and later causal completion can activate the bounded provenance
+registry if subject evidence warrants it. Successful use of this path increments
+`history_known_tool_fastpath`.
+
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
 applied locally. If the model draft conflicts with one of those invariants, HomeBrain
