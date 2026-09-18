@@ -47,11 +47,14 @@ normality claim needs either an explicit baseline/expected rule or suitably caut
 wording; comparisons need the other side of the comparison; and unrelated exhaustive
 reads are discouraged. Investigative reads are ordered by evidence quality rather
 than fan-out: direct provenance/log evidence first when available, then subject-linked
-rule/app evidence, then mode/location correlation, then a small number of materially
-relevant related-device histories. A stronger direct source should replace several
-weaker temporal correlations, not be added after an exhaustive room sweep. Related-
-device history used for investigative absence/correlation claims must name the
-specific attribute being checked (for example motion or illuminance); generic
+rule/app evidence, then mode/location correlation, then same-room button/controller
+event history when room discovery exposes it, then a small number of materially
+relevant environmental-sensor histories. Room-filter results surface bounded
+controller candidates from advertised button capabilities and suggest explicit
+history attributes such as pushed, held, released, and doubleTapped. A stronger
+direct source should replace several weaker temporal correlations, not be added
+after an exhaustive room sweep. Related-device history used for investigative
+absence/correlation claims must name the specific attribute being checked; generic
 attribute-less history is not treated as proof that an omitted capability had no
 events. For well-known history attributes, the resolved device's advertised
 attributes/capabilities are also checked before event-history execution: a provably
