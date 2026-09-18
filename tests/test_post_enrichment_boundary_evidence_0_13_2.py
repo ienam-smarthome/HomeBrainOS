@@ -243,7 +243,7 @@ def test_causal_completion_activates_known_provenance_gateways_without_search() 
 
     names = catalog.activate_causal_provenance_view()
 
-    assert SEARCH_TOOL in names
+    assert SEARCH_TOOL not in names
     assert "hub_read_diagnostics" in names
     assert "hub_read_apps_code" in names
     assert "hub_read_rules" in names
