@@ -1224,11 +1224,16 @@ class UnifiedMCPAgent:
                             "(1) direct provenance/log evidence, when available; "
                             "(2) rule/app state or app event history tied to the subject; "
                             "(3) location/mode events close to the subject transition; "
-                            "(4) a small number of materially relevant related-device/"
-                            "sensor histories. When checking a related device with "
-                            "multiple capabilities, request the specific history "
-                            "attribute you intend to reason about (for example motion "
-                            "or illuminance); generic device history is not evidence "
+                            "(4) same-room controller/button/remote event history when "
+                            "the room discovery result exposes controller candidates; "
+                            "(5) a small number of materially relevant environmental "
+                            "sensor histories. For why/cause/trigger questions, prefer "
+                            "controller events such as pushed, held, released, or "
+                            "doubleTapped over motion/illuminance when both are available, "
+                            "because an aligned control event is closer to direct provenance. "
+                            "When checking any related device with multiple capabilities, "
+                            "request the specific history attribute you intend to reason "
+                            "about; generic device history is not evidence "
                             "that an omitted attribute had no events. Prefer a stronger "
                             "source over several weaker correlations and stop once the "
                             "available evidence "
@@ -1249,6 +1254,33 @@ class UnifiedMCPAgent:
                             "estimate, not an exact total or proof of continuity."
                         ),
                     })
+                if (
+                    name == _LOCAL_FILTER_TOOL
+                    and investigative_request
+                    and result is not None
+                    and isinstance(result.data, dict)
+                    and isinstance(result.data.get("eventSourceHints"), dict)
+                ):
+                    controller_candidates = result.data["eventSourceHints"].get(
+                        "controllerCandidates"
+                    )
+                    if isinstance(controller_candidates, list) and controller_candidates:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "HOST CONTROLLER-EVIDENCE PRIORITY\n"
+                                "The room discovery result identified same-room button/"
+                                "controller candidates. For this cause/trigger investigation, "
+                                "check the smallest materially relevant controller history "
+                                "before weaker environmental sensor correlations. Use the "
+                                "candidate's suggestedHistoryAttributes (for example pushed, "
+                                "held, released, doubleTapped) as explicit "
+                                "homebrain_device_history attributes, and compare event "
+                                "timestamps with the subject's observed transition times. "
+                                "A close controller event is corroborating evidence, not "
+                                "automatic proof of who physically pressed it."
+                            ),
+                        })
                 if name == _LOCAL_FILTER_TOOL and not post_filter_discovery_used:
                     search_tool = catalog.declared_tool(SEARCH_TOOL)
                     if search_tool is not None:
