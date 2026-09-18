@@ -35,8 +35,9 @@ The repository drift test compares this table directly with the live directory. 
 | `evidence_source_guard.py` | Corrects final claims that contradict successful current-turn source availability. |
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round and injects the current-turn evidence ledger. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
+| `history_claim_guard.py` | Cross-checks final interval cardinality and attribute-absence claims against current-turn history proof. |
 | `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
-| `history_temporal_analysis.py` | Derives bounded state intervals and deterministic duration totals from authoritative device events. |
+| `history_temporal_analysis.py` | Derives bounded state intervals, exposes bounded interval proof, and audits deterministic duration totals from authoritative device events. |
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
