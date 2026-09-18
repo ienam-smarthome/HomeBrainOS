@@ -55,12 +55,6 @@ def prepare_history_arguments(name: str, arguments: dict[str, Any]) -> dict[str,
     return prepared
 
 
-def _explicit_true(value: Any) -> bool:
-    if value is True:
-        return True
-    return isinstance(value, str) and value.strip().casefold() == "true"
-
-
 def _event_datetime(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -123,6 +117,7 @@ def _analysis_for(
         window_label=str(window.get("label") or "requested window"),
         source_complete_to_start=bool(window.get("sourceCompleteToStart")),
         window_ongoing=bool(window.get("ongoing")),
+        source_integrity_verified=bool(data.get("historySourceIntegrityVerified")),
     )
 
 
