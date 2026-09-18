@@ -35,6 +35,9 @@ def _synthesis_instruction(original_user: str) -> str:
 
     causal = is_causal_investigation(original_user)
     investigative = is_history_investigation(original_user)
+    if not investigative:
+        return FINAL_SYNTHESIS_INSTRUCTION
+
     text = (
         "Answer the ORIGINAL user request now using only CURRENT-TURN MCP evidence. "
         "Do not request another tool and do not answer a narrower substitute "
@@ -95,8 +98,13 @@ class FinalAnswerCoordinator:
             else []
         )
         original_user = _original_user_request(messages)
+        investigative = is_history_investigation(original_user)
         brief = build_current_turn_evidence_ledger(evidence)
-        tool_packet = build_tool_evidence_packet(messages)
+        tool_packet = (
+            build_tool_evidence_packet(messages)
+            if investigative
+            else None
+        )
 
         final_messages = [*messages]
         if brief:
@@ -110,6 +118,11 @@ class FinalAnswerCoordinator:
 
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
+        if not investigative:
+            # Simple factual/history answers keep their established one-pass
+            # behavior; API serialization still applies local safety guards.
+            return draft
+
         corrected, issues = validate_synthesis(draft, evidence)
         if not issues:
             return draft
