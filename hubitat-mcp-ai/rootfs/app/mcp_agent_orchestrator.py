@@ -420,113 +420,162 @@ class UnifiedMCPAgent:
         completed_calls: set[str],
         messages: list[dict[str, Any]],
     ) -> bool:
-        """Acquire one exact-room provenance path independently of model syntax.
+        """Gather the fixed non-provenance causal evidence layer host-side.
 
-        The model still reasons over the evidence. The host only guarantees that a
-        causal investigation cannot lose the strongest same-room controller source
-        because it chose `contains` instead of `eq` or stopped after a generic
-        room scan.
+        Causal reasoning should not spend separate model rounds rediscovering the
+        same room/controller/location evidence classes. The host deterministically
+        gathers one highest-ranked same-room controller history when available and
+        one location/mode history clipped to the active semantic window. The model
+        then gets one bounded provenance round for logs/rules/apps before final
+        synthesis.
         """
 
+        expanded = False
+        controller_checked = False
         room_arguments = subject_room_filter_arguments(subject_history)
-        if room_arguments is None:
-            return False
         filter_tool = catalog.declared_tool(_LOCAL_FILTER_TOOL)
-        if filter_tool is None:
-            return False
 
-        increment_active_metric("causal_room_plan")
-        filter_execution = await self.executor.execute(
-            _LOCAL_FILTER_TOOL,
-            room_arguments,
-            tool=filter_tool,
-            supports_live_claim=True,
-            evidence_kind=_EVIDENCE_KINDS[_LOCAL_FILTER_TOOL],
-        )
-        messages.append({
-            "role": "tool",
-            "tool_name": _LOCAL_FILTER_TOOL,
-            "content": filter_execution.content,
-        })
-        completed_calls.add(json.dumps(
-            [_LOCAL_FILTER_TOOL, room_arguments],
-            sort_keys=True,
-            ensure_ascii=False,
-            default=str,
-        ))
-        filter_data = (
-            filter_execution.result.data
-            if filter_execution.result is not None
-            and isinstance(filter_execution.result.data, dict)
-            else {}
-        )
-
-        controller_arguments = controller_history_arguments(filter_data)
-        if controller_arguments is None:
+        if room_arguments is not None and filter_tool is not None:
+            increment_active_metric("causal_room_plan")
+            filter_execution = await self.executor.execute(
+                _LOCAL_FILTER_TOOL,
+                room_arguments,
+                tool=filter_tool,
+                supports_live_claim=True,
+                evidence_kind=_EVIDENCE_KINDS[_LOCAL_FILTER_TOOL],
+            )
             messages.append({
-                "role": "user",
-                "content": (
-                    "HOST CAUSAL EVIDENCE PLAN\n"
-                    "The host completed exact-room provenance discovery for the "
-                    "resolved subject but found no ranked button/controller history "
-                    "candidate. Do not repeat the same room scan. Continue with the "
-                    "next strongest evidence class, such as direct logs or relevant "
-                    "rule/app configuration, before weaker environmental correlation."
-                ),
+                "role": "tool",
+                "tool_name": _LOCAL_FILTER_TOOL,
+                "content": filter_execution.content,
             })
-            return True
+            completed_calls.add(json.dumps(
+                [_LOCAL_FILTER_TOOL, room_arguments],
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            ))
+            expanded = True
+            filter_data = (
+                filter_execution.result.data
+                if filter_execution.result is not None
+                and isinstance(filter_execution.result.data, dict)
+                else {}
+            )
 
-        controller_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
-        if controller_tool is None:
-            return True
-        increment_active_metric("causal_provenance_read")
-        controller_execution = await self.executor.execute(
-            _LOCAL_DEVICE_HISTORY_TOOL,
-            controller_arguments,
-            tool=controller_tool,
-            supports_live_claim=True,
-            evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_HISTORY_TOOL],
-        )
-        messages.append({
-            "role": "tool",
-            "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
-            "content": controller_execution.content,
-        })
-        completed_calls.add(json.dumps(
-            [_LOCAL_DEVICE_HISTORY_TOOL, controller_arguments],
-            sort_keys=True,
-            ensure_ascii=False,
-            default=str,
-        ))
+            controller_arguments = controller_history_arguments(filter_data)
+            controller_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
+            if controller_arguments is not None and controller_tool is not None:
+                controller_checked = True
+                increment_active_metric("causal_provenance_read")
+                controller_execution = await self.executor.execute(
+                    _LOCAL_DEVICE_HISTORY_TOOL,
+                    controller_arguments,
+                    tool=controller_tool,
+                    supports_live_claim=True,
+                    evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_HISTORY_TOOL],
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
+                    "content": controller_execution.content,
+                })
+                completed_calls.add(json.dumps(
+                    [_LOCAL_DEVICE_HISTORY_TOOL, controller_arguments],
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    default=str,
+                ))
 
-        controller_data = (
-            controller_execution.result.data
-            if controller_execution.result is not None
-            and isinstance(controller_execution.result.data, dict)
-            else {}
-        )
-        alignments = controller_transition_alignments(
-            subject_history, controller_data
-        )
-        alignment_instruction = render_controller_alignment_instruction(alignments)
-        if alignment_instruction:
-            increment_active_metric("causal_provenance_aligned", len(alignments))
-            messages.append({"role": "user", "content": alignment_instruction})
-        else:
+                controller_data = (
+                    controller_execution.result.data
+                    if controller_execution.result is not None
+                    and isinstance(controller_execution.result.data, dict)
+                    else {}
+                )
+                alignments = controller_transition_alignments(
+                    subject_history, controller_data
+                )
+                alignment_instruction = render_controller_alignment_instruction(
+                    alignments
+                )
+                if alignment_instruction:
+                    increment_active_metric(
+                        "causal_provenance_aligned", len(alignments)
+                    )
+                    messages.append({
+                        "role": "user",
+                        "content": alignment_instruction,
+                    })
+                else:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST CONTROLLER CORRELATION RESULT\n"
+                            "The highest-ranked same-room controller was checked, "
+                            "but no controller event aligned within two seconds of "
+                            "an observed subject active-transition start. Treat that "
+                            "as a negative correlation result, not proof that the "
+                            "controller was uninvolved in every transition."
+                        ),
+                    })
+            else:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "HOST CONTROLLER CORRELATION RESULT\n"
+                        "Exact-room discovery found no ranked button/controller "
+                        "history candidate. Do not repeat the room scan."
+                    ),
+                })
+
+        # Location/mode correlation is a stable evidence class for causal
+        # investigations and does not require model-authored tool selection.
+        location_tool = catalog.declared_tool(_LOCAL_LOCATION_EVENTS_TOOL)
+        if location_tool is not None:
+            try:
+                history_hours = int(subject_history.get("hoursBack") or 24)
+            except (TypeError, ValueError):
+                history_hours = 24
+            location_arguments = {
+                "hours_back": min(168, max(1, history_hours)),
+                "limit": 50,
+            }
+            increment_active_metric("causal_location_read")
+            location_execution = await self.executor.execute(
+                _LOCAL_LOCATION_EVENTS_TOOL,
+                location_arguments,
+                tool=location_tool,
+                supports_live_claim=True,
+                evidence_kind=_EVIDENCE_KINDS[_LOCAL_LOCATION_EVENTS_TOOL],
+            )
             messages.append({
-                "role": "user",
-                "content": (
-                    "HOST CAUSAL EVIDENCE PLAN\n"
-                    "The host checked the highest-ranked same-room controller "
-                    f"{controller_arguments.get('name')!r} using "
-                    f"attribute={controller_arguments.get('attribute')!r}, but no "
-                    "controller event aligned within two seconds of the subject's "
-                    "observed active-transition starts. Do not repeat that controller "
-                    "read. Continue with rule/app/log evidence or investigate only "
-                    "transitions that remain unexplained."
-                ),
+                "role": "tool",
+                "tool_name": _LOCAL_LOCATION_EVENTS_TOOL,
+                "content": location_execution.content,
             })
-        return True
+            completed_calls.add(json.dumps(
+                [_LOCAL_LOCATION_EVENTS_TOOL, location_arguments],
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            ))
+            expanded = True
+
+        messages.append({
+            "role": "user",
+            "content": (
+                "HOST CAUSAL EVIDENCE LAYER COMPLETE\n"
+                "The host has completed the fixed subject-adjacent evidence "
+                "layer: exact-room controller evidence when available, plus "
+                "location/mode history clipped to the active history window. "
+                "Do not request more device, sensor, controller, room, or "
+                "location histories merely to be thorough. The next step is one "
+                "bounded provenance selection from installed read-only log/rule/"
+                "app gateways, followed immediately by synthesis."
+            ),
+        })
+        return expanded
 
     async def _filter_devices(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
