@@ -236,18 +236,20 @@ def blocked_selected_target(name: str, arguments: dict[str, Any]) -> str | None:
     )
 
 
-def reset_reasoning_budget() -> None:
-    """Reset request reasoning counters.
+def reset_reasoning_budget(*, preserve_profile: bool = False) -> None:
+    """Reset request reasoning counters and request-local selection state.
 
-    Production requests normally reset implicitly from RequestMetrics identity.
-    The explicit reset also protects direct/base-agent callers that do not install
-    metrics and therefore have no identity token to distinguish consecutive turns.
+    Ordinary/direct callers also return the evidence budget profile to standard.
+    The transport first provider turn preserves the profile because the
+    orchestrator has already classified the request immediately before the loop.
     """
 
     _REASONING_BUDGET.set((active_request_identity(), 0, 0, False, 0))
     _ACTIVE_TOOL_ROUND.set((0, ()))
     _SELECTED_TARGET.set(None)
     _CONTROLLER_FOLLOWUP.set(None)
+    if not preserve_profile:
+        set_reasoning_profile("standard")
 
 
 def observe_assistant_message(message: dict[str, Any]) -> int:
@@ -544,7 +546,7 @@ def prepare_reasoning_turn(
     # and no current-turn tool result exists yet. Reset here so a prior direct
     # request cannot spend the next request's ContextVar budget.
     if tools and not has_tool_message:
-        reset_reasoning_budget()
+        reset_reasoning_budget(preserve_profile=True)
         _bind_selected_target(prepared)
 
     selected = selected_reasoning_target()
