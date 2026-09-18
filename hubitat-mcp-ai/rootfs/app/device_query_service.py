@@ -208,6 +208,57 @@ class DeviceQueryService:
         return None, None
 
     @staticmethod
+    def _controller_event_source_hints(
+        matches: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return bounded same-room controller candidates from capabilities.
+
+        These are only hints for later evidence selection. They do not assert
+        that a controller caused anything and they do not trigger history reads.
+        """
+
+        hints: list[dict[str, Any]] = []
+        for item in matches:
+            capabilities = [
+                str(value).strip()
+                for value in (item.get("capabilities") or [])
+                if str(value).strip()
+            ]
+            normalized = {
+                re.sub(r"[^a-z0-9]", "", value.casefold())
+                for value in capabilities
+            }
+            if not any("button" in value for value in normalized):
+                continue
+
+            suggested: list[str] = []
+            if any("pushablebutton" in value or value == "button" for value in normalized):
+                suggested.append("pushed")
+            if any("holdablebutton" in value for value in normalized):
+                suggested.append("held")
+            if any("releasablebutton" in value for value in normalized):
+                suggested.append("released")
+            if any(
+                "doubletapablebutton" in value
+                or "doubletappablebutton" in value
+                or "doubletapbutton" in value
+                for value in normalized
+            ):
+                suggested.append("doubleTapped")
+            if not suggested:
+                suggested.append("pushed")
+
+            hints.append({
+                "id": item.get("id"),
+                "label": item.get("label"),
+                "capabilities": capabilities,
+                "suggestedHistoryAttributes": list(dict.fromkeys(suggested)),
+            })
+            if len(hints) >= 8:
+                break
+        return hints
+
+    @staticmethod
     def _capability_names(device: dict[str, Any]) -> set[str]:
         return capability_names(device)
 
@@ -584,6 +635,18 @@ class DeviceQueryService:
             "comparison_errors": comparison_errors,
             "complete": True,
         }
+        if normalized_attribute == "room" and operator == "eq":
+            controller_hints = self._controller_event_source_hints(matches)
+            if controller_hints:
+                data["eventSourceHints"] = {
+                    "controllerCandidates": controller_hints,
+                    "note": (
+                        "These same-room devices advertise button capabilities. "
+                        "For cause/trigger investigations, their pushed/held/released/"
+                        "doubleTapped history can be stronger evidence than environmental "
+                        "sensor correlation when timing aligns with the subject transition."
+                    ),
+                }
         return MCPToolResult(DEVICE_FILTER_TOOL, arguments, {}, json.dumps(data), data)
 
     @staticmethod
