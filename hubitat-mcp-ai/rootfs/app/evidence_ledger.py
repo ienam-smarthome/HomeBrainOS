@@ -352,8 +352,12 @@ def build_current_turn_evidence_ledger(
         "or not checked. Distinguish: (1) what the subject history recorded, "
         "(2) direct provenance/log or rule/app evidence when present, "
         "(3) mode/location correlation, (4) related-device/sensor correlation, "
-        "and (5) what remains unproven. Prefer direct provenance over temporal "
-        "correlation and do not turn correlation into causation.\n"
+        "and (5) what remains unproven. Deterministic intervalCount and bounded "
+        "intervals are authoritative for the recorded-row timeline: a smaller list "
+        "must be described as a subset, not the complete set. A history line marked "
+        "attribute not explicitly selected cannot support an attribute-specific "
+        "absence claim. Prefer direct provenance over temporal correlation and do "
+        "not turn correlation into causation.\n"
         + "\n".join(lines)
     )
 
