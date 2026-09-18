@@ -468,6 +468,12 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "boundaryStateKnown",
         "boundaryBasis",
         "sourceCompleteToWindowStart",
+        "pageCompleteToWindowStart",
+        "sourceIntegrity",
+        "sourceIntegrityVerified",
+        "durationReliability",
+        "observedBoundedIntervalsOnly",
+        "inferredBoundaryState",
         "analyzedStateEventCount",
         "firstWindowStateEvent",
         "predecessorStateEvent",
@@ -483,7 +489,12 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             if key in temporal
         },
     }
-    for key in ("analysisEventCount", "sourceEventCount"):
+    for key in (
+        "analysisEventCount",
+        "sourceEventCount",
+        "historySourceIntegrity",
+        "historySourceIntegrityVerified",
+    ):
         if key in result_data:
             details[key] = result_data.get(key)
     if "attributeInferred" in result_data:
