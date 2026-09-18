@@ -48,8 +48,13 @@ wording; comparisons need the other side of the comparison; and unrelated exhaus
 reads are discouraged. Investigative reads are ordered by evidence quality rather
 than fan-out: direct provenance/log evidence first when available, then subject-linked
 rule/app evidence, then mode/location correlation, then a small number of materially
-relevant related-device histories. A stronger direct source should replace several
-weaker temporal correlations, not be added after an exhaustive room sweep. This is
+relevant related-device histories. Related-device history must name the exact
+attribute being correlated (for example motion or illuminance); a generic
+multi-attribute history read cannot support an attribute-specific absence claim.
+Deterministic intervalCount and bounded interval rows are authoritative for the
+recorded-row timeline, so a shorter narrative list must be labelled as a subset.
+A stronger direct source should replace several weaker temporal correlations, not be
+added after an exhaustive room sweep. This is
 driven by structured evidence shape and broad request intent, not by a device-name or
 question-specific answer parser.
 
@@ -149,9 +154,18 @@ if the final prose explicitly says a sensor/related-device, location/mode, log, 
 or device-history source was not provided/checked while successful current-turn
 receipts prove otherwise, only that contradictory sentence is replaced. The
 replacement says the source was checked but did not by itself establish a cause; it
-does not manufacture a causal conclusion. Claims such as "no motion events were
-recorded" remain untouched because they describe the contents of a checked source,
-not the absence of the source itself.
+does not manufacture a causal conclusion.
+
+Temporal-proof guards add two further checks. An exhaustive narrative count such as
+"two separate periods" is cross-checked against deterministic intervalCount; when the
+model lists only a subset, the wording is rewritten to say exactly that without
+deleting the listed examples. History receipts now expose a bounded interval list
+(start/end/duration) so the final evidence ledger can carry the timeline proof
+directly. Attribute-specific absence wording is also checked against what was
+actually analysed: zero/unverified motion history cannot prove physical absence, and
+generic history that merely contains illuminance rows cannot be described as an
+explicit illuminance correlation. The final answer must distinguish "no bounded
+interval established", "attribute not explicitly analysed", and verified absence.
 
 Final history serialization keeps deterministic duration safety without erasing
 unrelated analysis. For unverified event streams, a correctly rounded duration is
@@ -188,8 +202,9 @@ rounds, provider time, evidence-backed tool calls, exact tool-discovery calls an
 cumulative discovery duration, cumulative remote MCP duration, actual MCP retry
 attempts, grounding retries and refusals, confirmation queuing and expiry,
 confirmed Rule Machine verification duration, verification failures, ambiguous
-and missing device resolutions, cancellation, total duration, and the final
-request outcome. It also exposes MCP lock-wait, MCP HTTP, and MCP shared-read-wait
+and missing device resolutions, cancellation, total duration, schema-rejected
+gateway/sub-tool calls, and the final request outcome. It also exposes MCP lock-wait,
+MCP HTTP, and MCP shared-read-wait
 durations, so time spent awaiting another already-running manifest/snapshot is no
 longer hidden inside a local tool's elapsed time. Completed-request classification
 is delegated to the pure `request_outcome_policy` module, which applies an explicit
@@ -201,6 +216,13 @@ inspects user or model text. Local adapters are excluded from MCP timing. Its fi
 metric vocabulary rejects dynamic labels so device names, prompts, credentials,
 and tool arguments cannot become metric dimensions. Metrics are returned on the
 production `ObservedAgentOutcome` without changing the original result fields.
+
+Declared gateway schemas are enforced locally before MCP transport. When a model
+pairs a gateway with a nested sub-tool that is outside the gateway's declared
+tool enum/const, HomeBrain returns a structured failure to the reasoning loop and
+does not send the invalid MCP command. The rejection increments
+`tool_schema_rejections`, allowing the model to recover through a valid declared
+gateway without wasting a network round trip.
 
 MCP retries are counted at the transport loop immediately before an actual retry
 POST begins. Transport failures and retryable HTTP 5xx responses share the same
