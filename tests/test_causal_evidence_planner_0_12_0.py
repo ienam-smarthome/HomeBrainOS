@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -9,12 +11,14 @@ import pytest
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
+from api_response_builder import build_agent_response  # noqa: E402
 from causal_evidence_planner import (  # noqa: E402
     controller_history_arguments,
     controller_transition_alignments,
     render_controller_alignment_instruction,
     subject_room_filter_arguments,
 )
+from device_history_service import DeviceHistoryService  # noqa: E402
 from device_query_service import DeviceQueryService  # noqa: E402
 from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
@@ -235,3 +239,115 @@ def test_evidence_brief_preserves_subject_commands_near_interval_boundaries() ->
     assert "command-off" in brief
     assert "Command called: off()" in brief
     assert "Unrelated daytime change" not in brief
+
+
+
+class _DetailedHistoryMCP:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        if name != "hub_read_devices":
+            raise AssertionError(f"unexpected tool: {name}")
+        target = {
+            "id": "7745",
+            "name": "Bedroom 3 Sensor T1",
+            "label": "Bedroom 3 Sensor T1",
+            "room": "Bedroom 3",
+            "capabilities": [
+                "IlluminanceMeasurement",
+                "TemperatureMeasurement",
+            ],
+            "attributes": {
+                "illuminance": 22,
+                "temperature": 21.0,
+            },
+            "commands": [],
+        }
+        data = {"devices": [target]}
+        return MCPToolResult(name, arguments, {}, json.dumps(data), data)
+
+
+@pytest.mark.asyncio
+async def test_typed_history_rehydrates_sparse_cache_before_capability_validation() -> None:
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        DeviceQueryService._cache_resolution_target(
+            "Bedroom 3 Sensor T1",
+            {
+                "id": "7745",
+                "label": "Bedroom 3 Sensor T1",
+                "room": "Bedroom 3",
+                "capabilities": [
+                    "IlluminanceMeasurement",
+                    "TemperatureMeasurement",
+                ],
+            },
+        )
+        mcp = _DetailedHistoryMCP()
+        service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+        result = await service.history({
+            "name": "Bedroom 3 Sensor T1",
+            "attribute": "motion",
+        })
+
+        assert result.is_error is True
+        assert result.data["unsupportedAttribute"] == "motion"
+        assert result.data["availableAttributes"] == ["illuminance", "temperature"]
+        assert len(mcp.calls) == 1
+        assert mcp.calls[0][0] == "hub_read_devices"
+        assert metrics.snapshot()["counters"]["resolution_cache_metadata_miss"] == 1
+    finally:
+        metrics.reset(token)
+
+
+def test_generic_no_motion_recorded_wording_is_hedged_for_unverified_zero() -> None:
+    receipt = {
+        "tool": "homebrain_device_history",
+        "success": True,
+        "details": {
+            "label": "Bedroom 3 Soft Sensor",
+            "attribute": "motion",
+            "historySourceIntegrity": "unverified",
+            "historySourceIntegrityVerified": False,
+            "temporalAnalysis": {
+                "activeState": "active",
+                "inactiveState": "inactive",
+                "intervalCount": 0,
+                "totalActiveDuration": "0s",
+                "totalActiveSeconds": 0,
+                "coverage": "partial",
+                "durationReliability": "unverified-event-stream",
+                "sourceIntegrity": "unverified",
+                "sourceIntegrityVerified": False,
+                "windowLabel": "last night",
+            },
+        },
+    }
+    outcome = SimpleNamespace(
+        message=(
+            "No motion was recorded by either the Bedroom 3 Soft Sensor "
+            "during these transitions."
+        ),
+        evidence=[receipt],
+        metrics={"outcome": "success", "counters": {"model_rounds": 2}, "timings_ms": {}},
+        request_class="live-read",
+        choices=[],
+        confirmation_required=False,
+        confirmation_count=0,
+        automation_items=[],
+    )
+
+    response = build_agent_response(
+        outcome,
+        model="gemma4:31b",
+        elapsed_ms=1,
+        version="0.12.0",
+    )
+
+    assert "No bounded active interval was established for Bedroom 3 Soft Sensor" in response["message"]
+    assert "does not prove it stayed inactive" in response["message"]
+    assert "No motion was recorded" not in response["message"]
