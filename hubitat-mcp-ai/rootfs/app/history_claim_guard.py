@@ -135,16 +135,17 @@ def guard_history_interval_count_claim(
         window_label = str(temporal.get("windowLabel") or "").strip()
         window_suffix = f" {window_label}" if window_label else ""
         if claimed < expected:
-            pieces[index] = (
-                f"The response below highlights {claimed} of the {expected} observed "
-                f"bounded {active_state} intervals for {label}{window_suffix}; it is "
-                "not an exhaustive interval list."
+            replacement = (
+                f"during {claimed} highlighted periods out of {expected} observed "
+                f"bounded {active_state} intervals"
             )
         else:
-            pieces[index] = (
-                f"The recorded device-event rows contain {expected} observed bounded "
-                f"{active_state} intervals for {label}{window_suffix}."
-            )
+            replacement = f"during {expected} observed bounded {active_state} intervals"
+        pieces[index] = (
+            sentence[: match.start()]
+            + replacement
+            + sentence[match.end() :]
+        )
         if receipt not in changed_receipts:
             changed_receipts.append(receipt)
 
