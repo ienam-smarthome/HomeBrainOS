@@ -12,6 +12,7 @@ from causal_evidence_planner import (  # noqa: E402
     controller_boundary_alignments,
     controller_transition_alignments,
     render_controller_alignment_instruction,
+    subject_has_observed_intervals,
 )
 from causal_timeline import build_causal_timeline_rows, render_causal_timeline  # noqa: E402
 from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
@@ -168,6 +169,10 @@ def test_open_active_interval_is_preserved_without_inventing_duration() -> None:
     assert temporal["openActiveInterval"] is True
     assert temporal["openActiveStart"].startswith("2026-09-19T00:01:59")
     assert temporal["openActiveStartNatural"].startswith("12:01 am")
+
+    assert subject_has_observed_intervals({
+        "temporalAnalysis": temporal,
+    }) is True
 
     details = history_temporal_evidence_details({
         "label": "Bedroom 3 Light",
