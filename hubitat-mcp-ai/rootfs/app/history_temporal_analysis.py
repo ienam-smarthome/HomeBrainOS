@@ -634,6 +634,13 @@ def guard_history_duration_claim(
             "is not an exact total or a mathematical lower bound."
         )
         expected = _display_duration_seconds(total_seconds)
+        mentions = _duration_mentions_seconds(text)
+        if (
+            expected in mentions
+            and _UNVERIFIED_ESTIMATE_QUALIFIER.search(text) is not None
+            and _UNVERIFIED_EXACTNESS_CLAIM.search(text) is None
+        ):
+            return text, False
         localized, changed = _replace_unverified_totalish_sentences(
             text,
             replacement=corrected,
