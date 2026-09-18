@@ -166,7 +166,11 @@ def _replace_unverified_totalish_sentences(
     continuity claim.
     """
 
-    pieces = re.split(r"(?<=[.!?])(?P<space>\s+)", str(text or ""))
+    # Treat line breaks as claim boundaries too. Investigative answers commonly
+    # use bullets/tables where a duration claim has no terminal punctuation; the
+    # old sentence-only splitter could therefore treat an entire rich answer as
+    # one sentence and replace all of it with the deterministic duration fallback.
+    pieces = re.split(r"(?P<space>(?<=[.!?])\s+|\n+)", str(text or ""))
     changed = False
     replacement_used = False
     for index in range(0, len(pieces), 2):
@@ -499,13 +503,17 @@ def analyze_state_intervals_in_window(
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
 def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None:
-    """Return the small, privacy-safe temporal proof subset for evidence output."""
+    """Return bounded history proof for evidence output.
+
+    Temporal state histories retain their interval analysis, while event-style
+    histories (buttons, remotes, custom events) retain a small set of timestamped
+    rows. This lets final synthesis reason across heterogeneous evidence instead
+    of losing controller provenance merely because it is not a binary state pair.
+    """
 
     if not isinstance(result_data, dict):
         return None
     temporal = result_data.get("temporalAnalysis")
-    if not isinstance(temporal, dict):
-        return None
 
     temporal_keys = (
         "activeState",
@@ -536,12 +544,14 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "firstWindowStateEvent",
         "predecessorStateEvent",
     )
-    temporal_details = {
-        key: temporal.get(key)
-        for key in temporal_keys
-        if key in temporal
-    }
-    intervals = temporal.get("intervals")
+    temporal_details: dict[str, Any] = {}
+    if isinstance(temporal, dict):
+        temporal_details = {
+            key: temporal.get(key)
+            for key in temporal_keys
+            if key in temporal
+        }
+    intervals = temporal.get("intervals") if isinstance(temporal, dict) else None
     if isinstance(intervals, list):
         # Keep the deterministic bounded interval proof visible to final
         # synthesis without copying raw Hubitat rows. Twelve intervals is enough
@@ -571,8 +581,31 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "attribute": result_data.get("attribute"),
         "hoursBack": result_data.get("hoursBack"),
         "timeWindow": result_data.get("timeWindow"),
-        "temporalAnalysis": temporal_details,
     }
+    if temporal_details:
+        details["temporalAnalysis"] = temporal_details
+
+    events = result_data.get("events")
+    if isinstance(events, list):
+        observed_events: list[dict[str, Any]] = []
+        for item in events[:16]:
+            if not isinstance(item, dict):
+                continue
+            observed_events.append({
+                key: item.get(key)
+                for key in (
+                    "name",
+                    "value",
+                    "unit",
+                    "description",
+                    "date",
+                    "isStateChange",
+                )
+                if key in item
+            })
+        if observed_events:
+            details["observedEvents"] = observed_events
+            details["observedEventsTruncated"] = len(events) > 16
     for key in (
         "analysisEventCount",
         "sourceEventCount",
@@ -583,7 +616,20 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             details[key] = result_data.get(key)
     if "attributeInferred" in result_data:
         details["attributeInferred"] = bool(result_data.get("attributeInferred"))
-    return details
+    meaningful = (
+        bool(temporal_details)
+        or bool(details.get("observedEvents"))
+        or any(
+            key in result_data
+            for key in (
+                "analysisEventCount",
+                "sourceEventCount",
+                "historySourceIntegrity",
+                "historySourceIntegrityVerified",
+            )
+        )
+    )
+    return details if meaningful else None
 
 
 def guard_history_duration_claim(
@@ -685,7 +731,10 @@ def guard_history_duration_claim(
         # A totalish claim was detected at function entry. If sentence
         # segmentation somehow could not isolate it, retain the original
         # fail-closed behaviour rather than leaking an unsafe exact claim.
-        return (localized, True) if changed else (corrected, True)
+        # Never replace the whole synthesis merely because a local claim could
+        # not be isolated. Final safety correction is clause/line-scoped; the
+        # model's supported causal analysis must survive serialization.
+        return (localized, True) if changed else (text, False)
 
     mentions = _duration_mentions_seconds(text)
     if not mentions:
