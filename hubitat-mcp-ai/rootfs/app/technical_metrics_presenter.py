@@ -23,6 +23,7 @@ _COUNTER_LABELS = (
     ("resolution_cache_metadata_miss", "Resolution cache metadata misses"),
     ("causal_room_plan", "Causal room plans"),
     ("causal_provenance_read", "Causal provenance reads"),
+    ("causal_location_read", "Causal location reads"),
     ("causal_provenance_aligned", "Aligned provenance events"),
     ("causal_completion_retry", "Causal completion retries"),
     ("causal_subject_empty_stop", "Empty-subject causal stops"),
