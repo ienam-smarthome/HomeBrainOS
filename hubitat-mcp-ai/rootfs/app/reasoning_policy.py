@@ -109,6 +109,14 @@ _REASONING_BUDGET: ContextVar[tuple[object | None, int, int, bool, int]] = Conte
     "homebrain_reasoning_budget", default=(None, 0, 0, False, 0)
 )
 
+# A cause/trigger investigation may discover controller candidates only on the
+# third (normally final) read round. Preserve exactly one bounded opportunity to
+# inspect one of those controller histories rather than forcing synthesis before
+# the newly discovered stronger evidence can be read.
+_CONTROLLER_FOLLOWUP: ContextVar[
+    tuple[object | None, tuple[tuple[str, tuple[str, ...]], ...], bool] | None
+] = ContextVar("homebrain_controller_followup", default=None)
+
 # These tools have deterministic presenters that can return directly from the
 # middle of the orchestrator's per-call loop. When the model intentionally asks
 # for more than one tool in the same round, that early return would prevent the
@@ -210,6 +218,7 @@ def reset_reasoning_budget() -> None:
     _REASONING_BUDGET.set((active_request_identity(), 0, 0, False, 0))
     _ACTIVE_TOOL_ROUND.set((0, ()))
     _SELECTED_TARGET.set(None)
+    _CONTROLLER_FOLLOWUP.set(None)
 
 
 def observe_assistant_message(message: dict[str, Any]) -> int:
@@ -270,7 +279,83 @@ def claim_model_tool_call(name: str, arguments: dict[str, Any]) -> int:
     return max(0, int(total))
 
 
-def register_model_tool_execution(*, mutates: bool) -> bool:
+def arm_controller_followup_budget(candidates: list[dict[str, Any]]) -> bool:
+    """Reserve one extra read opportunity for a newly discovered controller.
+
+    Candidate identity and allowed history attributes are derived from structured
+    room-filter output. The reservation is request-local and can be consumed only
+    once.
+    """
+
+    identity = active_request_identity()
+    allowed: list[tuple[str, tuple[str, ...]]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        label = _normalized_target(candidate.get("label"))
+        attrs = tuple(
+            sorted({
+                _normalized_target(value)
+                for value in (candidate.get("suggestedHistoryAttributes") or [])
+                if _normalized_target(value)
+            })
+        )
+        if label and attrs:
+            allowed.append((label, attrs))
+    if not allowed:
+        return False
+    _CONTROLLER_FOLLOWUP.set((identity, tuple(allowed[:8]), False))
+    return True
+
+
+def _controller_followup_state() -> tuple[
+    tuple[tuple[str, tuple[str, ...]], ...], bool
+] | None:
+    state = _CONTROLLER_FOLLOWUP.get()
+    if state is None:
+        return None
+    identity, allowed, consumed = state
+    current_identity = active_request_identity()
+    if identity is not current_identity:
+        _CONTROLLER_FOLLOWUP.set(None)
+        return None
+    return allowed, consumed
+
+
+def controller_followup_pending() -> bool:
+    state = _controller_followup_state()
+    return bool(state is not None and not state[1])
+
+
+def _consume_controller_followup(
+    name: str,
+    arguments: dict[str, Any],
+) -> bool:
+    state = _controller_followup_state()
+    if state is None or state[1]:
+        return False
+    allowed, _consumed = state
+    identity = active_request_identity()
+    _CONTROLLER_FOLLOWUP.set((identity, allowed, True))
+
+    if name != "homebrain_device_history":
+        return False
+    requested = _normalized_target(arguments.get("name"))
+    attribute = _normalized_target(arguments.get("attribute"))
+    if not requested or not attribute:
+        return False
+    return any(
+        requested == label and attribute in attrs
+        for label, attrs in allowed
+    )
+
+
+def register_model_tool_execution(
+    *,
+    name: str = "",
+    arguments: dict[str, Any] | None = None,
+    mutates: bool,
+) -> bool:
     """Reserve one model-directed tool execution under the read budget.
 
     Returns ``False`` only when a read should be skipped because the current
@@ -286,6 +371,11 @@ def register_model_tool_execution(*, mutates: bool) -> bool:
     if mutation_seen:
         return True
     if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
+        if _consume_controller_followup(name, dict(arguments or {})):
+            _REASONING_BUDGET.set(
+                (identity, rounds, reads + 1, mutation_seen, skipped)
+            )
+            return True
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
         return False
     _REASONING_BUDGET.set((identity, rounds, reads + 1, mutation_seen, skipped))
@@ -297,6 +387,8 @@ def reasoning_budget_exhausted() -> bool:
 
     _identity, rounds, reads, mutation_seen, _skipped = _budget_state()
     if mutation_seen or reads <= 0:
+        return False
+    if controller_followup_pending():
         return False
     return (
         reads >= DEFAULT_MAX_READ_TOOL_CALLS
@@ -315,6 +407,7 @@ def reasoning_budget_status() -> dict[str, Any]:
         "skippedReadCalls": skipped,
         "maxToolRounds": DEFAULT_MAX_READ_TOOL_ROUNDS,
         "maxReadCalls": DEFAULT_MAX_READ_TOOL_CALLS,
+        "controllerFollowupPending": controller_followup_pending(),
         "exhausted": reasoning_budget_exhausted(),
     }
 
@@ -453,7 +546,9 @@ __all__ = [
     "EVIDENCE_REVIEW_INSTRUCTION",
     "FINAL_SYNTHESIS_INSTRUCTION",
     "active_tool_round_size",
+    "arm_controller_followup_budget",
     "blocked_selected_target",
+    "controller_followup_pending",
     "claim_model_tool_call",
     "model_evidence_review_active",
     "observe_assistant_message",
