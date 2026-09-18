@@ -762,6 +762,8 @@ class UnifiedMCPAgent:
         capability_grounding = CapabilityGroundingPolicy()
         device_claim_grounding = DeviceClaimGroundingPolicy()
         post_filter_discovery_used = False
+        investigative_request = _HISTORY_INVESTIGATION.search(user_prompt) is not None
+        investigative_subject_history_key: str | None = None
         ungrounded_confirmation_claim_seen = False
         last_proposal_error: tuple[str, dict[str, Any], str] | None = None
         proposal_error_retries = 0
@@ -1063,9 +1065,47 @@ class UnifiedMCPAgent:
                 history_reasoning_bypass = False
                 investigative_history_bypass = False
                 tool = catalog.declared_tool(name)
+                requested_history_name = str(arguments.get("name") or "").strip()
+                requested_history_key = re.sub(
+                    r"[^a-z0-9]", "", requested_history_name.casefold()
+                )
+                missing_related_attribute = bool(
+                    investigative_request
+                    and name == _LOCAL_DEVICE_HISTORY_TOOL
+                    and investigative_subject_history_key
+                    and requested_history_key
+                    and requested_history_key != investigative_subject_history_key
+                    and not str(arguments.get("attribute") or "").strip()
+                )
+                gateway_error = (
+                    catalog.gateway_operation_error(name, arguments)
+                    if tool is not None
+                    else None
+                )
                 if not tool:
                     round_tool_failure = True
                     content = json.dumps({"error": f"Undeclared MCP tool: {name}"})
+                elif missing_related_attribute:
+                    round_tool_failure = True
+                    increment_active_metric("investigative_attribute_required")
+                    content = json.dumps({
+                        "error": (
+                            "Investigative related-device history requires an explicit "
+                            "attribute. Choose the material capability you intend to "
+                            "compare (for example motion, illuminance, contact, switch) "
+                            "and retry homebrain_device_history with attribute=... . "
+                            "Do not infer absence of an attribute from generic history."
+                        )
+                    })
+                elif gateway_error is not None:
+                    round_tool_failure = True
+                    increment_active_metric("gateway_operation_rejected")
+                    content = json.dumps({
+                        "error": (
+                            f"Gateway/sub-tool compatibility check rejected this call: "
+                            f"{gateway_error}"
+                        )
+                    })
                 else:
                     execution = await self.executor.execute(
                         name,
@@ -1124,9 +1164,21 @@ class UnifiedMCPAgent:
                             and isinstance(result.data.get("temporalAnalysis"), dict)
                         )
                         investigative_history_bypass = (
-                            history_reasoning_bypass
-                            and _HISTORY_INVESTIGATION.search(user_prompt) is not None
+                            history_reasoning_bypass and investigative_request
                         )
+                        if (
+                            investigative_history_bypass
+                            and investigative_subject_history_key is None
+                        ):
+                            resolved_subject = str(
+                                result.data.get("label")
+                                or result.data.get("requested")
+                                or requested_history_name
+                                or ""
+                            ).strip()
+                            investigative_subject_history_key = re.sub(
+                                r"[^a-z0-9]", "", resolved_subject.casefold()
+                            ) or None
                         if (
                             deterministic_message is not None
                             and not history_reasoning_bypass
@@ -1173,9 +1225,17 @@ class UnifiedMCPAgent:
                             "(2) rule/app state or app event history tied to the subject; "
                             "(3) location/mode events close to the subject transition; "
                             "(4) a small number of materially relevant related-device/"
-                            "sensor histories. Prefer a stronger source over several "
-                            "weaker correlations and stop once the available evidence "
-                            "can support a bounded conclusion. For a why/cause/trigger "
+                            "sensor histories. When checking a related device with "
+                            "multiple capabilities, request the specific history "
+                            "attribute you intend to reason about (for example motion "
+                            "or illuminance); generic device history is not evidence "
+                            "that an omitted attribute had no events. Prefer a stronger "
+                            "source over several weaker correlations and stop once the "
+                            "available evidence "
+                            "can support a bounded conclusion. If a needed gateway "
+                            "sub-tool is not already established by the declared schema "
+                            "or discovery result, use hub_search_tools for that exact "
+                            "operation instead of guessing a gateway. For a why/cause/trigger "
                             "question, device history proves what changed but not the "
                             "cause; do not attribute a cause without direct or materially "
                             "corroborating current-turn evidence. For normal/abnormal/"
