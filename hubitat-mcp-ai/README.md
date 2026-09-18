@@ -154,15 +154,17 @@ targeted `hub_list_devices` lookup; successful reuse increments
 `resolution_cache_hit`. Complete device-filter results seed the same cache by their
 exact returned labels/ids.
 
-0.12.0 makes that cache metadata-aware. A typed history read for a known attribute
-such as motion, illuminance, contact, temperature, switch, power, or battery requires
-the cached target to include both capability and attribute metadata before reuse.
-If a room/context scan seeded only a sparse structural record, history deliberately
-misses that cache entry, refreshes the detailed target, and then performs capability
-validation. This prevents a sparse room record from bypassing the unsupported-history-
-attribute guard; the miss is exposed as `resolution_cache_metadata_miss`. The cache
-never crosses request boundaries and still checks required command capability before
-reuse.
+0.12.0 makes that cache metadata-aware. For a typed history read, a sparse
+context target can still be reused immediately when its advertised capabilities
+positively authorize the requested history dimension—for example `MotionSensor`
+authorizes `motion`. When the sparse target does not positively advertise the
+required capability and lacks current attribute metadata, history deliberately
+misses that cache entry, refreshes the detailed target, and only then decides
+whether the requested attribute is supported. This prevents a sparse illuminance/
+temperature record from bypassing the unsupported-motion guard without adding an
+extra lookup to already-proven MotionSensor targets. The refresh is exposed as
+`resolution_cache_metadata_miss`. The cache never crosses request boundaries and
+still checks required command capability before reuse.
 
 The live device layer separates common state from richer device metadata. On MCP
 servers that expose `hubitat://context`, `HubitatMCPClient` reads that resource as
