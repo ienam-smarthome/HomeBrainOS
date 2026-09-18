@@ -101,21 +101,30 @@ class ToolExecutor:
     def result_summary(result: MCPToolResult) -> str:
         details = ToolExecutor.result_details(result)
         if details is not None:
-            temporal = details.get("temporalAnalysis") or {}
-            interval_count = temporal.get("intervalCount")
-            total_duration = temporal.get("totalActiveDuration")
-            total_seconds = temporal.get("totalActiveSeconds")
-            longest = temporal.get("longestActiveDuration")
-            coverage = temporal.get("coverage")
-            reliability = str(temporal.get("durationReliability") or "").strip()
-            qualifier = " lower-bound" if temporal.get("totalIsLowerBound") else ""
-            reliability_suffix = f", reliability={reliability}" if reliability else ""
-            return (
-                "temporal history: "
-                f"intervals={interval_count}, total={total_duration} "
-                f"({total_seconds}s), longest={longest}, coverage={coverage}{qualifier}"
-                f"{reliability_suffix}"
-            )
+            temporal = details.get("temporalAnalysis")
+            if isinstance(temporal, dict):
+                interval_count = temporal.get("intervalCount")
+                total_duration = temporal.get("totalActiveDuration")
+                total_seconds = temporal.get("totalActiveSeconds")
+                longest = temporal.get("longestActiveDuration")
+                coverage = temporal.get("coverage")
+                reliability = str(temporal.get("durationReliability") or "").strip()
+                qualifier = " lower-bound" if temporal.get("totalIsLowerBound") else ""
+                reliability_suffix = f", reliability={reliability}" if reliability else ""
+                return (
+                    "temporal history: "
+                    f"intervals={interval_count}, total={total_duration} "
+                    f"({total_seconds}s), longest={longest}, coverage={coverage}{qualifier}"
+                    f"{reliability_suffix}"
+                )
+            observed = details.get("observedEvents")
+            if isinstance(observed, list):
+                attribute = str(details.get("attribute") or "events").strip()
+                return (
+                    f"event history: attribute={attribute}, "
+                    f"observed_rows={len(observed)}, "
+                    f"source_rows={details.get('sourceEventCount')}"
+                )
         data = result.data
         if isinstance(data, dict):
             keys = ", ".join(map(str, list(data)[:10]))
