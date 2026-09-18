@@ -15,6 +15,7 @@ from aggregate_fallback_policy import (
     observe_aggregate_result,
 )
 from evidence_recorder import EvidenceRecorder
+from history_result_enrichment import enrich_history_result, prepare_history_arguments
 from history_temporal_analysis import history_temporal_evidence_details
 from location_privacy import redact_precise_location
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
@@ -22,6 +23,7 @@ from mcp_client import tool_succeeded as _shared_tool_succeeded
 from reasoning_policy import (
     EVIDENCE_REVIEW_INSTRUCTION,
     FINAL_SYNTHESIS_INSTRUCTION,
+    blocked_selected_target,
     claim_model_tool_call,
     register_model_tool_execution,
     should_defer_deterministic_presentation,
@@ -238,13 +240,41 @@ class ToolExecutor:
         mutates: bool | None = None,
         record_evidence: bool = True,
     ) -> ToolExecution:
-        safe_arguments = deepcopy(arguments)
-        receipt_arguments = deepcopy(arguments)
-        reasoning_round_size = claim_model_tool_call(name, safe_arguments)
+        # Claim the exact model-emitted signature before applying deterministic
+        # execution-time normalization. Otherwise adding a 50-row semantic-history
+        # bound would make the call look non-model-authored and bypass the reasoning
+        # budget/evidence-review contracts.
+        model_arguments = deepcopy(arguments)
+        reasoning_round_size = claim_model_tool_call(name, model_arguments)
+        safe_arguments = prepare_history_arguments(name, model_arguments)
+        receipt_arguments = deepcopy(safe_arguments)
         declared_tool = tool or MCPTool(name, name, {})
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)
         remote = handler is None
+
+        selection_reason = (
+            blocked_selected_target(name, safe_arguments)
+            if reasoning_round_size > 0 and not effect.mutates
+            else None
+        )
+        if selection_reason is not None:
+            logger.info("Skipped read %s that contradicted the selected device", name)
+            return ToolExecution(
+                name=name,
+                arguments=receipt_arguments,
+                effect=effect,
+                success=True,
+                elapsed_ms=0,
+                content=json.dumps(
+                    {
+                        "note": selection_reason,
+                        "host_instruction": EVIDENCE_REVIEW_INSTRUCTION,
+                    },
+                    ensure_ascii=False,
+                ),
+                result=None,
+            )
 
         # A generic value/valueStr aggregate is an expensive fallback path because
         # those fields are not part of hubitat://context and therefore require the
@@ -312,6 +342,12 @@ class ToolExecutor:
                 if handler is not None
                 else await self.mcp.call_tool(name, safe_arguments)
             )
+            # Semantic history may be requested without an explicit binary state
+            # attribute. Derive one only when the returned rows make exactly one
+            # supported state-pair attribute unambiguous, and close an otherwise
+            # unknown empty-window boundary from the first later transition when
+            # the complete-page invariants prove that inference.
+            result = enrich_history_result(name, result)
             if remote and self._wants_generic_value_backfill(
                 safe_arguments, result
             ):

@@ -11,6 +11,7 @@ current-turn evidence is sufficient to answer it.
 from __future__ import annotations
 
 import json
+import re
 from contextvars import ContextVar
 from typing import Any
 
@@ -33,8 +34,10 @@ EVIDENCE_REVIEW_INSTRUCTION = (
     "claim. Check that every material part is supported. If material evidence is "
     "still missing, call the most relevant declared read tool; do not call extra "
     "tools merely to be thorough and do not re-read the same fact in a different "
-    "form. When the evidence is sufficient, synthesize it instead of dumping raw "
-    "fields. Distinguish direct observations and deterministic calculations from "
+    "form. Do not investigate a cause for an event until current-turn evidence "
+    "establishes that the event actually occurred in the requested window. When "
+    "the evidence is sufficient, synthesize it instead of dumping raw fields. "
+    "Distinguish direct observations and deterministic calculations from "
     "inference, state material uncertainty or incomplete coverage, and never "
     "present correlation as proven causation. Do not reveal hidden reasoning."
 )
@@ -66,6 +69,24 @@ DEFAULT_MAX_READ_TOOL_ROUNDS = 3
 # removes this old message if an older orchestrator path still appends it, so
 # causal investigation is governed by the same bounded policy as every other read.
 LEGACY_CAUSAL_HINT_PREFIX = "HOST CAUSAL-INVESTIGATION HINT"
+
+# The WebUI's clarification follow-up is explicit host metadata, not natural
+# language intent: ``Device clarification: use exactly <label>.``. Preserve that
+# choice as a request-local hard constraint so a model cannot fan back out across
+# the alternatives the user just resolved. Only named local resolution/history
+# reads are constrained; unrelated evidence such as location events or rule lists
+# remains available when it is genuinely needed.
+_SELECTION_MARKER = re.compile(
+    r"^\s*Device clarification:\s*use exactly\s+(?P<label>.+?)\s*[.!]?\s*$",
+    re.I | re.M,
+)
+_BOUND_SELECTED_TOOLS = frozenset({
+    "homebrain_device_history",
+    "homebrain_resolve_device",
+})
+_SELECTED_TARGET: ContextVar[str | None] = ContextVar(
+    "homebrain_selected_reasoning_target", default=None
+)
 
 # The transport sees the complete native function-calling response before the
 # orchestrator executes it. Keep an immutable request-local snapshot containing
@@ -133,6 +154,46 @@ def _budget_state() -> tuple[object | None, int, int, bool, int]:
     return identity, rounds, reads, mutation, skipped
 
 
+def _normalized_target(value: Any) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+def _bind_selected_target(messages: list[dict[str, Any]]) -> None:
+    """Bind only the current request's explicit clarification marker."""
+
+    target: str | None = None
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        content = str(message.get("content") or "")
+        match = _SELECTION_MARKER.search(content)
+        if match is not None:
+            candidate = match.group("label").strip()
+            target = candidate or None
+        break
+    _SELECTED_TARGET.set(target)
+
+
+def selected_reasoning_target() -> str | None:
+    return _SELECTED_TARGET.get()
+
+
+def blocked_selected_target(name: str, arguments: dict[str, Any]) -> str | None:
+    """Reject a model read that contradicts an explicit clarification choice."""
+
+    selected = selected_reasoning_target()
+    if not selected or name not in _BOUND_SELECTED_TOOLS:
+        return None
+    requested = str(arguments.get("name") or "").strip()
+    if not requested or _normalized_target(requested) == _normalized_target(selected):
+        return None
+    return (
+        f"Not executed: this request explicitly selected {selected!r}. "
+        f"Use exactly that device for named history/resolution reads; do not inspect "
+        f"the other clarification candidates."
+    )
+
+
 def reset_reasoning_budget() -> None:
     """Reset request reasoning counters.
 
@@ -143,6 +204,7 @@ def reset_reasoning_budget() -> None:
 
     _REASONING_BUDGET.set((active_request_identity(), 0, 0, False, 0))
     _ACTIVE_TOOL_ROUND.set((0, ()))
+    _SELECTED_TARGET.set(None)
 
 
 def observe_assistant_message(message: dict[str, Any]) -> int:
@@ -299,11 +361,11 @@ def prepare_reasoning_turn(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Normalize provider input around current-turn evidence and read budgets.
 
-    This is intentionally generic. It does not inspect the user's wording or
-    choose domain tools. It removes only the obsolete causal sensor-hunting host
-    hint, reinforces that prior conversation is not evidence, and when the soft
-    read budget is spent it removes callable tools and requests synthesis from the
-    evidence already collected.
+    This is intentionally generic. It does not choose domain tools. It removes
+    only the obsolete causal sensor-hunting host hint, reinforces that prior
+    conversation is not evidence, binds an explicit host clarification selection,
+    and when the soft read budget is spent removes callable tools and requests
+    synthesis from the evidence already collected.
     """
 
     prepared: list[dict[str, Any]] = []
@@ -324,6 +386,17 @@ def prepare_reasoning_turn(
     # request cannot spend the next request's ContextVar budget.
     if tools and not has_tool_message:
         reset_reasoning_budget()
+        _bind_selected_target(prepared)
+
+    selected = selected_reasoning_target()
+    if selected:
+        prepared = _add_system_boundary(
+            prepared,
+            "BOUND DEVICE CLARIFICATION: The user already resolved the device "
+            f"ambiguity. Use exactly {selected!r} for named device history or "
+            "resolution reads in this request. Do not inspect the other prior "
+            "clarification candidates unless the user explicitly asks to compare them.",
+        )
 
     status = reasoning_budget_status()
     has_current_tool_evidence = has_tool_message or status["readCalls"] > 0
@@ -375,6 +448,7 @@ __all__ = [
     "EVIDENCE_REVIEW_INSTRUCTION",
     "FINAL_SYNTHESIS_INSTRUCTION",
     "active_tool_round_size",
+    "blocked_selected_target",
     "claim_model_tool_call",
     "model_evidence_review_active",
     "observe_assistant_message",
@@ -383,5 +457,6 @@ __all__ = [
     "reasoning_budget_status",
     "register_model_tool_execution",
     "reset_reasoning_budget",
+    "selected_reasoning_target",
     "should_defer_deterministic_presentation",
 ]

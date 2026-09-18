@@ -64,6 +64,95 @@ def _history_absence_replacement(receipt: dict[str, Any]) -> str | None:
     return f"{label} has recorded history in this evidence: {interval_count} active {noun}."
 
 
+def _partial_zero_replacement(receipt: dict[str, Any]) -> str | None:
+    """Describe zero observed active time without turning a lower bound into zero."""
+
+    details = receipt.get("details")
+    if not isinstance(details, dict):
+        return None
+    temporal = details.get("temporalAnalysis")
+    if not isinstance(temporal, dict):
+        return None
+    try:
+        interval_count = int(temporal.get("intervalCount") or 0)
+    except (TypeError, ValueError):
+        return None
+    if interval_count != 0 or not bool(temporal.get("totalIsLowerBound")):
+        return None
+
+    label = str(details.get("label") or "The device").strip() or "The device"
+    active = str(temporal.get("activeState") or "active").strip() or "active"
+    inactive = str(temporal.get("inactiveState") or "inactive").strip() or "inactive"
+    window = str(temporal.get("windowLabel") or "the requested window").strip()
+    return (
+        f"No {active} interval was established for {label} during {window}, but the "
+        f"history boundary is incomplete, so this does not prove it stayed "
+        f"{inactive} throughout that window."
+    )
+
+
+def _sentence_pieces(text: str) -> list[str]:
+    return re.split(r"(?<=[.!?])(?P<space>\s+)", text)
+
+
+def _guard_partial_zero_claims(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Reject model wording that upgrades a partial zero lower bound to proof."""
+
+    text = str(message or "")
+    receipts = [
+        receipt
+        for receipt in evidence
+        if isinstance(receipt, dict)
+        and receipt.get("tool") == "homebrain_device_history"
+        and receipt.get("success") is True
+        and _partial_zero_replacement(receipt) is not None
+    ]
+    if not receipts:
+        return text, False
+
+    pieces = _sentence_pieces(text)
+    changed = False
+    for index in range(0, len(pieces), 2):
+        sentence = pieces[index]
+        comparable = re.sub(r"[*_`]", "", sentence).casefold()
+        for receipt in receipts:
+            details = receipt.get("details") or {}
+            temporal = details.get("temporalAnalysis") or {}
+            label = str(details.get("label") or "").strip()
+            active = str(temporal.get("activeState") or "active").strip()
+            inactive = str(temporal.get("inactiveState") or "inactive").strip()
+            if not label or label.casefold() not in comparable:
+                continue
+            unsupported_zero = bool(_NO_HISTORY_DATA.search(sentence))
+            unsupported_zero = unsupported_zero or bool(
+                re.search(
+                    rf"\b(?:was|is|were|are)\s+(?:not|never)\s+{re.escape(active)}\b",
+                    comparable,
+                    re.I,
+                )
+            )
+            unsupported_zero = unsupported_zero or bool(
+                re.search(
+                    rf"\b(?:stayed|remained|was|is)\s+{re.escape(inactive)}\b.*\b(?:throughout|all)\b",
+                    comparable,
+                    re.I,
+                )
+            )
+            if not unsupported_zero:
+                continue
+            replacement = _partial_zero_replacement(receipt)
+            if replacement is None:
+                continue
+            pieces[index] = replacement
+            _mark_history_correction(receipt)
+            changed = True
+            break
+    return "".join(pieces), changed
+
+
 def _guard_history_absence_claims(
     message: str,
     evidence: list[dict[str, Any]],
@@ -91,7 +180,7 @@ def _guard_history_absence_claims(
 
     # Split only on sentence whitespace so formatting/newlines are preserved well
     # enough for the WebUI while keeping the replacement local to the contradiction.
-    pieces = re.split(r"(?<=[.!?])(?P<space>\s+)", text)
+    pieces = _sentence_pieces(text)
     changed = False
     for index in range(0, len(pieces), 2):
         sentence = pieces[index]
@@ -119,7 +208,8 @@ def _guard_history_message(
 ) -> str:
     """Keep the serialized answer consistent with deterministic history proof."""
 
-    corrected, absence_applied = _guard_history_absence_claims(message, evidence)
+    corrected, partial_zero_applied = _guard_partial_zero_claims(message, evidence)
+    corrected, absence_applied = _guard_history_absence_claims(corrected, evidence)
     corrected, duration_applied = guard_history_duration_claim(corrected, evidence)
     if duration_applied:
         for receipt in evidence:
@@ -132,7 +222,7 @@ def _guard_history_message(
                 break
     # Keep the local variable explicit so future guards can share this boundary
     # without losing whether any serializer-side correction happened.
-    _ = absence_applied or duration_applied
+    _ = partial_zero_applied or absence_applied or duration_applied
     return corrected
 
 

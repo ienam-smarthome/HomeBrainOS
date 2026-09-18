@@ -33,6 +33,7 @@ The repository drift test compares this table directly with the live directory. 
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
 | `final_answer_coordinator.py` | Owns the final no-more-tools synthesis round. |
 | `grounding_policy.py` | Applies deterministic grounding retry and refusal policy. |
+| `history_result_enrichment.py` | Enriches bounded model-driven history reads with uniquely inferable binary attributes and safe post-window boundary evidence. |
 | `history_temporal_analysis.py` | Derives bounded state intervals and deterministic duration totals from authoritative device events. |
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
@@ -48,7 +49,7 @@ The repository drift test compares this table directly with the live directory. 
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `provider_token_estimator.py` | Estimates provider token usage conservatively. |
-| `reasoning_policy.py` | Tracks native tool-round shape and supplies generic evidence-review and synthesis contracts without question-specific routing. |
+| `reasoning_policy.py` | Tracks native tool-round shape, selected-device clarification constraints, and generic evidence-review/synthesis contracts without question-specific routing. |
 | `request_classification.py` | Provides non-authoritative presentation and manifest hints. |
 | `request_metrics.py` | Collects fixed privacy-safe counters and timings. |
 | `request_observation.py` | Owns request metrics lifecycle, cancellation/failure classification, and observed-outcome construction. |
