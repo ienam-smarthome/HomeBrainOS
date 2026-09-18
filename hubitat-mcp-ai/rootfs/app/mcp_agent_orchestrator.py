@@ -1516,4 +1516,4 @@ class UnifiedMCPAgent:
         return await self._final_answer(messages)
 
 
-__all__ = ["AgentOutcome", "UnifiedMCPAgent", "_controller_followup_arguments"]
+__all__ = ["AgentOutcome", "UnifiedMCPAgent"]
