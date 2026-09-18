@@ -62,6 +62,14 @@ def _explicit_false(value: Any) -> bool:
     return isinstance(value, str) and value.strip().casefold() == "false"
 
 
+def _explicit_true(value: Any) -> bool:
+    """Return True only when the source explicitly marks a state change."""
+
+    if value is True:
+        return True
+    return isinstance(value, str) and value.strip().casefold() == "true"
+
+
 def _parse_timestamp(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -292,10 +300,20 @@ def analyze_state_intervals_in_window(
         boundary_known = True
         boundary_basis = "predecessor-event"
     elif inside and source_complete_to_start:
+        # A reported binary value is not automatically proof that a transition
+        # occurred. Some Hubitat/community drivers emit ordinary state reports
+        # with isStateChange omitted. Inferring the opposite state all the way
+        # back to the window boundary from such a row can invert almost the
+        # entire requested duration. Only an explicitly marked state change is
+        # strong enough for this boundary inference.
         first_value = inside[0][2]
-        current_state = inactive_state if first_value == active_state else active_state
-        boundary_known = True
-        boundary_basis = "first-transition-inference"
+        first_event = inside[0][3]
+        if _explicit_true(first_event.get("isStateChange")):
+            current_state = inactive_state if first_value == active_state else active_state
+            boundary_known = True
+            boundary_basis = "first-transition-inference"
+        else:
+            boundary_basis = "first-event-not-proven-transition"
 
     intervals: list[dict[str, Any]] = []
     duplicate_state_rows = 0
@@ -370,6 +388,25 @@ def analyze_state_intervals_in_window(
         "unmatchedInactiveRows": 0,
         "duplicateStateRowsIgnored": duplicate_state_rows,
         "ignoredRows": ignored_rows,
+        "analyzedStateEventCount": len(parsed),
+        "firstWindowStateEvent": (
+            {
+                "timestamp": inside[0][0].isoformat(),
+                "state": inside[0][2],
+                "isStateChange": inside[0][3].get("isStateChange"),
+            }
+            if inside
+            else None
+        ),
+        "predecessorStateEvent": (
+            {
+                "timestamp": predecessor[0].isoformat(),
+                "state": predecessor[2],
+                "isStateChange": predecessor[3].get("isStateChange"),
+            }
+            if predecessor is not None
+            else None
+        ),
         "windowed": True,
         "windowLabel": str(window_label),
         "windowStart": start.isoformat(),
@@ -409,6 +446,9 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "boundaryStateKnown",
         "boundaryBasis",
         "sourceCompleteToWindowStart",
+        "analyzedStateEventCount",
+        "firstWindowStateEvent",
+        "predecessorStateEvent",
     )
     details = {
         "label": result_data.get("label"),
@@ -421,6 +461,11 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             if key in temporal
         },
     }
+    for key in ("analysisEventCount", "sourceEventCount"):
+        if key in result_data:
+            details[key] = result_data.get(key)
+    if "attributeInferred" in result_data:
+        details["attributeInferred"] = bool(result_data.get("attributeInferred"))
     return details
 
 

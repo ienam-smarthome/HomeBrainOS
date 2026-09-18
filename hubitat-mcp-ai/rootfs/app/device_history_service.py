@@ -360,27 +360,11 @@ class DeviceHistoryService:
         now = self._now()
         hub_timezone_name: str | None = None
         timezone_source = "runtime"
-        if window_request is not None:
-            now, hub_timezone_name, timezone_source = (
-                await self._hub_timezone.now_in_hub_timezone(self._now)
-            )
+        time_window = None
 
-        time_window = resolve_history_window(
-            window_request,
-            now=now,
-        )
-        if time_window is not None:
-            # The upstream API has no start/end filter. Fetch enough history to
-            # reach at least one hour before the semantic boundary, then clip
-            # exactly in local deterministic arithmetic. The absolute-time
-            # variant keeps this safe across DST fallback nights, where Python
-            # wall-clock subtraction can otherwise under-count by one hour.
-            hours_back = max(
-                hours_back,
-                required_history_hours(time_window, now=now),
-                required_history_hours_absolute(time_window.start, now=now),
-            )
-
+        # Resolve the device before paying for the authoritative timezone read.
+        # An ambiguous/missing target cannot produce history anyway, so reading
+        # hub_get_info first only adds latency to a clarification response.
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
         resolution = await resolver.resolve_device({"name": requested})
         resolution_data = resolution.data if isinstance(resolution.data, dict) else {}
@@ -439,6 +423,26 @@ class DeviceHistoryService:
                 json.dumps(data),
                 data,
                 is_error=True,
+            )
+
+        if window_request is not None:
+            now, hub_timezone_name, timezone_source = (
+                await self._hub_timezone.now_in_hub_timezone(self._now)
+            )
+        time_window = resolve_history_window(
+            window_request,
+            now=now,
+        )
+        if time_window is not None:
+            # The upstream API has no start/end filter. Fetch enough history to
+            # reach at least one hour before the semantic boundary, then clip
+            # exactly in local deterministic arithmetic. The absolute-time
+            # variant keeps this safe across DST fallback nights, where Python
+            # wall-clock subtraction can otherwise under-count by one hour.
+            hours_back = max(
+                hours_back,
+                required_history_hours(time_window, now=now),
+                required_history_hours_absolute(time_window.start, now=now),
             )
 
         # The upstream attribute filter is not reliable for every driver, so
@@ -548,6 +552,7 @@ class DeviceHistoryService:
             "hoursBack": hours_back,
             "attribute": attribute or None,
             "count": len(events),
+            "sourceEventCount": len(source_events),
             "analysisEventCount": len(filtered_events) if attribute else len(events),
             "events": events,
             "newestFirst": True,
