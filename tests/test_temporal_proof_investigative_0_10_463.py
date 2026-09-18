@@ -148,6 +148,22 @@ def test_interval_cardinality_guard_allows_nonexhaustive_longest_subset() -> Non
     assert response["message"] == message
 
 
+def test_interval_cardinality_guard_does_not_rewrite_unrelated_times_count() -> None:
+    message = (
+        "Late Night mode changed two times during the investigation. "
+        "Bedroom 3 Light had five observed intervals in total."
+    )
+    response = build_agent_response(
+        FakeOutcome(message=message, evidence=[_history_receipt()]),
+        model="gemma4:31b",
+        elapsed_ms=10,
+        version="0.10.463",
+    )
+
+    assert response["message"] == message
+    assert response["evidence"][0]["details"].get("finalAnswerCorrectionApplied") is not True
+
+
 def test_unverified_zero_motion_data_claim_is_rewritten_without_erasing_subject_history() -> None:
     response = build_agent_response(
         FakeOutcome(
