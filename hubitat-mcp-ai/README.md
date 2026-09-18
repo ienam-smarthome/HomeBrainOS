@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.13.4**.
+Current add-on version: **0.13.5**.
 
 ## Architecture
 
@@ -192,6 +192,20 @@ upfront app manifest. Explicit requests for logs/rules/apps/automation still kee
 normal discovery, and later causal completion can activate the bounded provenance
 registry if subject evidence warrants it. Successful use of this path increments
 `history_known_tool_fastpath`.
+
+0.13.5 turns that bounded completion into a fixed causal evidence pipeline. Once
+the subject history establishes real transitions, HomeBrain gathers the
+highest-ranked same-room controller evidence and the hub location/mode stream
+host-side, with location events clipped to the same semantic history window. It
+then switches immediately to one read-only provenance round for installed
+log/rule/app gateways before final synthesis. Installed provenance readers are
+offered directly; `hub_search_tools` is a fallback only when no suitable reader
+exists.
+
+Write semantics are also separated from fail-closed unknown-tool safety. An
+undeclared model function remains non-executable, but it no longer marks an
+otherwise read-only request as a write. Explicit user mutations and real declared
+mutating tool selections still activate the unverified-mutation guard.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are

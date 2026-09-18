@@ -437,7 +437,7 @@ async def test_investigative_related_history_requires_explicit_attribute_before_
     agent = UnifiedMCPAgent(mcp, "key", "gemma4:31b", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
-        "Why was Bedroom 3 Light on last night?"
+        "Was Bedroom 3 Light behaving normally last night?"
     )
 
     assert outcome.metrics["counters"]["investigative_attribute_required"] == 1
