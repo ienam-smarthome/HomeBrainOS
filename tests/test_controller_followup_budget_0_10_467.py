@@ -100,3 +100,74 @@ def test_wrong_controller_attribute_is_not_allowed_as_extension() -> None:
 
     assert allowed is False
     assert reasoning_budget_exhausted() is True
+
+
+def test_controller_followup_is_immediate_even_before_generic_budget_is_spent() -> None:
+    reset_reasoning_budget()
+    assert register_model_tool_execution(
+        name="homebrain_device_history",
+        arguments={"name": "Bedroom 3 Light", "attribute": "switch"},
+        mutates=False,
+    )
+
+    arm_controller_followup_budget([
+        {
+            "label": "Bedroom 3 dimmer - 1",
+            "suggestedHistoryAttributes": ["pushed"],
+        },
+        {
+            "label": "Bedroom 3 dimmer - 2",
+            "suggestedHistoryAttributes": ["pushed"],
+        },
+    ])
+
+    assert register_model_tool_execution(
+        name="homebrain_device_history",
+        arguments={"name": "Bedroom 3 dimmer - 1", "attribute": "pushed"},
+        mutates=False,
+    ) is True
+    assert reasoning_budget_exhausted() is True
+
+
+def test_only_highest_ranked_controller_candidate_is_reserved() -> None:
+    reset_reasoning_budget()
+    arm_controller_followup_budget([
+        {
+            "label": "Bedroom 3 dimmer - 1",
+            "suggestedHistoryAttributes": ["pushed"],
+        },
+        {
+            "label": "Bedroom 3 dimmer - 2",
+            "suggestedHistoryAttributes": ["pushed"],
+        },
+    ])
+
+    assert register_model_tool_execution(
+        name="homebrain_device_history",
+        arguments={"name": "Bedroom 3 dimmer - 2", "attribute": "pushed"},
+        mutates=False,
+    ) is False
+    assert reasoning_budget_exhausted() is True
+
+
+def test_second_controller_read_in_same_round_is_blocked_after_reserved_read() -> None:
+    reset_reasoning_budget()
+    arm_controller_followup_budget([
+        {
+            "label": "Bedroom 3 dimmer - 1",
+            "suggestedHistoryAttributes": ["pushed"],
+        }
+    ])
+
+    assert register_model_tool_execution(
+        name="homebrain_device_history",
+        arguments={"name": "Bedroom 3 dimmer - 1", "attribute": "pushed"},
+        mutates=False,
+    ) is True
+
+    assert register_model_tool_execution(
+        name="homebrain_device_history",
+        arguments={"name": "Bedroom 3 dimmer - 2", "attribute": "pushed"},
+        mutates=False,
+    ) is False
+    assert reasoning_budget_status()["skippedReadCalls"] == 1

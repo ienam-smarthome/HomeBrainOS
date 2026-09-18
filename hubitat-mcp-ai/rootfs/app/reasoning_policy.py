@@ -304,7 +304,11 @@ def arm_controller_followup_budget(candidates: list[dict[str, Any]]) -> bool:
             allowed.append((label, attrs))
     if not allowed:
         return False
-    _CONTROLLER_FOLLOWUP.set((identity, tuple(allowed[:8]), False))
+    # Preserve only the highest-ranked candidate from structured room discovery.
+    # The caller already orders exact-room matches before label-affinity matches.
+    # Keeping one target makes the follow-up truly bounded instead of allowing
+    # the model to fan out across every controller in the room.
+    _CONTROLLER_FOLLOWUP.set((identity, tuple(allowed[:1]), False))
     return True
 
 
@@ -370,12 +374,29 @@ def register_model_tool_execution(
         return True
     if mutation_seen:
         return True
-    if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
+
+    # Once a controller follow-up has been armed, exactly one subsequent
+    # model-directed read may run. After that attempt, reject every further read
+    # in the same native round as well as later rounds until synthesis. This is
+    # important because the provider may emit several controller histories in one
+    # response before the host gets another chance to remove tools.
+    followup_state = _controller_followup_state()
+    if followup_state is not None:
+        _allowed, consumed = followup_state
+        if consumed:
+            _REASONING_BUDGET.set(
+                (identity, rounds, reads, mutation_seen, skipped + 1)
+            )
+            return False
         if _consume_controller_followup(name, dict(arguments or {})):
             _REASONING_BUDGET.set(
                 (identity, rounds, reads + 1, mutation_seen, skipped)
             )
             return True
+        _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
+        return False
+
+    if reads >= DEFAULT_MAX_READ_TOOL_CALLS:
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
         return False
     _REASONING_BUDGET.set((identity, rounds, reads + 1, mutation_seen, skipped))
@@ -386,10 +407,20 @@ def reasoning_budget_exhausted() -> bool:
     """Whether a read-only model investigation should synthesize now."""
 
     _identity, rounds, reads, mutation_seen, _skipped = _budget_state()
-    if mutation_seen or reads <= 0:
+    if mutation_seen:
         return False
+
+    state = _controller_followup_state()
+    if state is not None and state[1]:
+        # The single reserved controller attempt has completed (or an invalid
+        # competing read consumed it). Force synthesis immediately even when the
+        # rejected attempt did not increment the normal read counter.
+        return True
     if controller_followup_pending():
         return False
+    if reads <= 0:
+        return False
+
     return (
         reads >= DEFAULT_MAX_READ_TOOL_CALLS
         or rounds >= DEFAULT_MAX_READ_TOOL_ROUNDS
