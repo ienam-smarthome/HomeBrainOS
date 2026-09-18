@@ -80,6 +80,23 @@ def _temporal_suffix(receipt: dict[str, Any]) -> str:
         if rendered:
             suffix = " + more" if temporal.get("observedIntervalsTruncated") else ""
             bits.append("observed=[" + "; ".join(rendered) + "]" + suffix)
+    events = details.get("observedEvents")
+    if isinstance(events, list) and events:
+        rendered_events: list[str] = []
+        for item in events[:8]:
+            if not isinstance(item, dict):
+                continue
+            date = str(item.get("date") or "?").strip()
+            name = str(item.get("name") or "").strip()
+            value = str(item.get("value") or "").strip()
+            description = str(item.get("description") or "").strip()
+            event = "=".join(part for part in (name, value) if part) or "event"
+            if description and description.casefold() not in event.casefold():
+                event += f" [{description}]"
+            rendered_events.append(f"{date}: {event}")
+        if rendered_events:
+            suffix = " + more" if details.get("observedEventsTruncated") else ""
+            bits.append("events=[" + "; ".join(rendered_events) + "]" + suffix)
     return "; ".join(bits)
 
 
@@ -354,15 +371,20 @@ def build_current_turn_evidence_ledger(
     if not lines:
         return None
     return (
-        "HOST CURRENT-TURN EVIDENCE LEDGER\n"
+        "HOST CURRENT-TURN EVIDENCE BRIEF\n"
         "The following sources were successfully checked in THIS request. "
         "CHECKED means the data was provided to you; it does not mean the source "
-        "proved causation. Never say a CHECKED source was not provided, unavailable, "
-        "or not checked. Distinguish: (1) what the subject history recorded, "
-        "(2) direct provenance/log or rule/app evidence when present, "
-        "(3) mode/location correlation, (4) related-device/sensor correlation, "
-        "and (5) what remains unproven. Prefer direct provenance over temporal "
-        "correlation and do not turn correlation into causation.\n"
+        "proved causation. Never say a CHECKED source was unavailable or not checked. "
+        "Use this brief as the factual spine of the answer rather than letting one "
+        "source (for example a duration calculation) displace the user's actual "
+        "question. For a why/cause investigation: lead with the best-supported "
+        "explanation and its confidence; reconstruct a chronological timeline by "
+        "correlating timestamps across sources; distinguish direct provenance from "
+        "automation effects and from weaker temporal correlation; identify any "
+        "remaining unexplained transitions; and state uncertainty where evidence "
+        "coverage is incomplete. Do not infer a person's identity or a physical "
+        "press unless event metadata supports that wording. Prefer direct provenance "
+        "over temporal correlation and never turn correlation into causation.\n"
         + "\n".join(lines)
     )
 
