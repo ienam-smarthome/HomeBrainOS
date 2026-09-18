@@ -189,8 +189,8 @@ async def _coordinator_messages() -> tuple[str, list[list[dict]]]:
         calls.append(messages)
         return {
             "content": (
-                "The strongest evidence points to the Bedroom 3 dimmer as a "
-                "controller trigger. The recorded duration is an estimate."
+                "At 12:02 am the strongest evidence points to the Bedroom 3 "
+                "dimmer as a controller trigger. The recorded duration is an estimate."
             )
         }
 
