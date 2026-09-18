@@ -269,8 +269,12 @@ source-integrity status, source/analysis event counts, inferred-attribute status
 first-window/predecessor state evidence, and deterministic row-pair calculations
 are included in bounded evidence details. The final serialization guard rewrites
 unsupported exact-duration, continuity, and absence claims to match that evidence.
-Reported transitions remain evidence of what the event source recorded, never proof
-of who or what caused the change.
+For a single successful history receipt with zero bounded intervals and an
+unverified event stream, the serializer no longer relies on English phrase
+detection at all: it emits the deterministic uncertainty statement directly, so
+wording such as "no record of it being on" or "all activity happened later" cannot
+bypass the evidence boundary. Reported transitions remain evidence of what the
+event source recorded, never proof of who or what caused the change.
 
 Final device-claim grounding is deliberately non-blocking with respect to the
 Hubitat inventory. After synthesis, the agent validates named-device claims using
