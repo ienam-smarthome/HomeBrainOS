@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from gateway_argument_view import gateway_operation
+
 
 LOG_RETRY_INSTRUCTION = (
     "Do not answer yet. Fetch the actual logs now by calling "
@@ -118,7 +120,7 @@ class GroundingPolicy:
 
         return (
             name == "hub_read_diagnostics"
-            and str(arguments.get("tool") or "") == "hub_get_logs"
+            and gateway_operation(arguments) == "hub_get_logs"
         )
 
     def record_tool_outcome(
