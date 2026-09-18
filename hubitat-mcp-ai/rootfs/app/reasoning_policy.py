@@ -138,14 +138,6 @@ _REASONING_BUDGET: ContextVar[tuple[object | None, int, int, bool, int]] = Conte
     "homebrain_reasoning_budget", default=(None, 0, 0, False, 0)
 )
 
-# A cause/trigger investigation may discover controller candidates only on the
-# third (normally final) read round. Preserve exactly one bounded opportunity to
-# inspect one of those controller histories rather than forcing synthesis before
-# the newly discovered stronger evidence can be read.
-_CONTROLLER_FOLLOWUP: ContextVar[
-    tuple[object | None, tuple[tuple[str, tuple[str, ...]], ...], bool] | None
-] = ContextVar("homebrain_controller_followup", default=None)
-
 # These tools have deterministic presenters that can return directly from the
 # middle of the orchestrator's per-call loop. When the model intentionally asks
 # for more than one tool in the same round, that early return would prevent the
@@ -247,7 +239,6 @@ def reset_reasoning_budget(*, preserve_profile: bool = False) -> None:
     _REASONING_BUDGET.set((active_request_identity(), 0, 0, False, 0))
     _ACTIVE_TOOL_ROUND.set((0, ()))
     _SELECTED_TARGET.set(None)
-    _CONTROLLER_FOLLOWUP.set(None)
     if not preserve_profile:
         set_reasoning_profile("standard")
 
@@ -310,81 +301,6 @@ def claim_model_tool_call(name: str, arguments: dict[str, Any]) -> int:
     return max(0, int(total))
 
 
-def arm_controller_followup_budget(candidates: list[dict[str, Any]]) -> bool:
-    """Reserve one extra read opportunity for a newly discovered controller.
-
-    Candidate identity and allowed history attributes are derived from structured
-    room-filter output. The reservation is request-local and can be consumed only
-    once.
-    """
-
-    identity = active_request_identity()
-    allowed: list[tuple[str, tuple[str, ...]]] = []
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        label = _normalized_target(candidate.get("label"))
-        attrs = tuple(
-            sorted({
-                _normalized_target(value)
-                for value in (candidate.get("suggestedHistoryAttributes") or [])
-                if _normalized_target(value)
-            })
-        )
-        if label and attrs:
-            allowed.append((label, attrs))
-    if not allowed:
-        return False
-    # Preserve only the highest-ranked candidate from structured room discovery.
-    # The caller already orders exact-room matches before label-affinity matches.
-    # Keeping one target makes the follow-up truly bounded instead of allowing
-    # the model to fan out across every controller in the room.
-    _CONTROLLER_FOLLOWUP.set((identity, tuple(allowed[:1]), False))
-    return True
-
-
-def _controller_followup_state() -> tuple[
-    tuple[tuple[str, tuple[str, ...]], ...], bool
-] | None:
-    state = _CONTROLLER_FOLLOWUP.get()
-    if state is None:
-        return None
-    identity, allowed, consumed = state
-    current_identity = active_request_identity()
-    if identity is not current_identity:
-        _CONTROLLER_FOLLOWUP.set(None)
-        return None
-    return allowed, consumed
-
-
-def controller_followup_pending() -> bool:
-    state = _controller_followup_state()
-    return bool(state is not None and not state[1])
-
-
-def _consume_controller_followup(
-    name: str,
-    arguments: dict[str, Any],
-) -> bool:
-    state = _controller_followup_state()
-    if state is None or state[1]:
-        return False
-    allowed, _consumed = state
-    identity = active_request_identity()
-    _CONTROLLER_FOLLOWUP.set((identity, allowed, True))
-
-    if name != "homebrain_device_history":
-        return False
-    requested = _normalized_target(arguments.get("name"))
-    attribute = _normalized_target(arguments.get("attribute"))
-    if not requested or not attribute:
-        return False
-    return any(
-        requested == label and attribute in attrs
-        for label, attrs in allowed
-    )
-
-
 def register_model_tool_execution(
     *,
     name: str = "",
@@ -406,27 +322,6 @@ def register_model_tool_execution(
     if mutation_seen:
         return True
 
-    # Once a controller follow-up has been armed, exactly one subsequent
-    # model-directed read may run. After that attempt, reject every further read
-    # in the same native round as well as later rounds until synthesis. This is
-    # important because the provider may emit several controller histories in one
-    # response before the host gets another chance to remove tools.
-    followup_state = _controller_followup_state()
-    if followup_state is not None:
-        _allowed, consumed = followup_state
-        if consumed:
-            _REASONING_BUDGET.set(
-                (identity, rounds, reads, mutation_seen, skipped + 1)
-            )
-            return False
-        if _consume_controller_followup(name, dict(arguments or {})):
-            _REASONING_BUDGET.set(
-                (identity, rounds, reads + 1, mutation_seen, skipped)
-            )
-            return True
-        _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
-        return False
-
     _max_rounds, max_reads = _budget_limits()
     if reads >= max_reads:
         _REASONING_BUDGET.set((identity, rounds, reads, mutation_seen, skipped + 1))
@@ -442,14 +337,6 @@ def reasoning_budget_exhausted() -> bool:
     if mutation_seen:
         return False
 
-    state = _controller_followup_state()
-    if state is not None and state[1]:
-        # The single reserved controller attempt has completed (or an invalid
-        # competing read consumed it). Force synthesis immediately even when the
-        # rejected attempt did not increment the normal read counter.
-        return True
-    if controller_followup_pending():
-        return False
     if reads <= 0:
         return False
 
@@ -470,7 +357,6 @@ def reasoning_budget_status() -> dict[str, Any]:
         "profile": reasoning_profile(),
         "maxToolRounds": max_rounds,
         "maxReadCalls": max_reads,
-        "controllerFollowupPending": controller_followup_pending(),
         "exhausted": reasoning_budget_exhausted(),
     }
 
@@ -611,9 +497,7 @@ __all__ = [
     "EVIDENCE_REVIEW_INSTRUCTION",
     "FINAL_SYNTHESIS_INSTRUCTION",
     "active_tool_round_size",
-    "arm_controller_followup_budget",
     "blocked_selected_target",
-    "controller_followup_pending",
     "claim_model_tool_call",
     "model_evidence_review_active",
     "observe_assistant_message",
