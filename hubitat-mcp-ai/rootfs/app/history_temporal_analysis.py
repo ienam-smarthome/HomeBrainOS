@@ -523,6 +523,15 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             if len(observed_event_names) >= 12:
                 break
 
+    temporal = result_data.get("temporalAnalysis")
+    history_shape = (
+        "events" in result_data
+        and "hoursBack" in result_data
+        and ("deviceId" in result_data or "label" in result_data)
+    )
+    if not isinstance(temporal, dict) and not history_shape:
+        return None
+
     details: dict[str, Any] = {
         "label": result_data.get("label"),
         "attribute": result_data.get("attribute"),
@@ -532,7 +541,6 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
     if observed_event_names:
         details["observedEventNames"] = observed_event_names
 
-    temporal = result_data.get("temporalAnalysis")
     if isinstance(temporal, dict):
         temporal_keys = (
             "activeState",
@@ -603,16 +611,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
     if "attributeInferred" in result_data:
         details["attributeInferred"] = bool(result_data.get("attributeInferred"))
 
-    useful = any(
-        key in details
-        for key in (
-            "temporalAnalysis",
-            "observedEventNames",
-            "label",
-            "attribute",
-        )
-    )
-    return details if useful else None
+    return details
 
 def guard_history_duration_claim(
     message: str,
