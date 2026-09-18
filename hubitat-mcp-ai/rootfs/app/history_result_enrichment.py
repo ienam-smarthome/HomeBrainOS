@@ -149,7 +149,11 @@ def enrich_history_result(name: str, result: MCPToolResult) -> MCPToolResult:
     # when an unverified stream yields zero bounded intervals but still contains
     # command/state rows the final answer may reference.
     time_window = data.get("timeWindow")
-    if isinstance(time_window, dict):
+    existing_window_rows = data.get("windowEvents")
+    if (
+        isinstance(time_window, dict)
+        and not isinstance(existing_window_rows, list)
+    ):
         window_rows = window_event_evidence(events, time_window)
         if window_rows:
             data["windowEvents"] = window_rows
