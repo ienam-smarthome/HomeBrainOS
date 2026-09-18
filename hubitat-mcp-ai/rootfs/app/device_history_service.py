@@ -336,7 +336,7 @@ class DeviceHistoryService:
         return labels
 
     async def location_events(self, arguments: dict[str, Any]) -> MCPToolResult:
-        """Read the hub's own location-scoped event stream."""
+        """Read location/mode events, clipped to the active semantic window."""
 
         hours_back = self._integer(
             arguments.get("hours_back"),
@@ -350,7 +350,36 @@ class DeviceHistoryService:
             minimum=1,
             maximum=50,
         )
-        event_args: dict[str, Any] = {"hoursBack": hours_back, "limit": limit}
+        explicit_window = (
+            arguments.get("time_window")
+            if isinstance(arguments.get("time_window"), dict)
+            else None
+        )
+        window_request = explicit_window or active_history_window_request()
+        now = self._now()
+        hub_timezone_name: str | None = None
+        timezone_source = "runtime"
+        time_window = None
+        if window_request is not None:
+            now, hub_timezone_name, timezone_source = (
+                await self._hub_timezone.now_in_hub_timezone(self._now)
+            )
+            time_window = resolve_history_window(window_request, now=now)
+            if time_window is not None:
+                hours_back = max(
+                    hours_back,
+                    required_history_hours(time_window, now=now),
+                    required_history_hours_absolute(time_window.start, now=now),
+                )
+
+        # Location history is a low-cardinality stream. During a semantic
+        # investigation fetch the bounded local maximum before clipping so an
+        # older in-window mode event cannot be pushed out by newer updates.
+        fetch_limit = 50 if time_window is not None else limit
+        event_args: dict[str, Any] = {
+            "hoursBack": hours_back,
+            "limit": fetch_limit,
+        }
         source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
         started = time.monotonic()
         try:
@@ -377,21 +406,47 @@ class DeviceHistoryService:
             )
 
         success = _shared_tool_succeeded(source)
-        events = self._events(source.data, limit=limit) if success else []
+        source_events = (
+            self._events(source.data, limit=fetch_limit)
+            if success
+            else []
+        )
+        filtered_events = source_events
+        if time_window is not None:
+            filtered_events = []
+            for event in source_events:
+                event_time = self._event_datetime(event.get("date"))
+                if event_time is None:
+                    continue
+                if time_window.start <= event_time <= time_window.end:
+                    filtered_events.append(event)
+        events = filtered_events[:limit]
+
+        window_label = time_window.label if time_window is not None else ""
+        summary = f"{len(events)} location events"
+        if window_label:
+            summary += f" in {window_label}"
         self._record_evidence(
             DEVICE_GATEWAY,
             source_arguments,
             success=success,
             elapsed_ms=round((time.monotonic() - started) * 1000),
-            summary=f"{len(events)} location events",
+            summary=summary,
             supports_live_claim=True,
             evidence_kind="authoritative_location_event_history",
             details=(
                 {
                     "count": len(events),
-                    # Bounded by the local tool's hard max of 50. EvidenceRecorder
-                    # further caps/redacts nested lists for API output.
                     "events": events,
+                    "timeWindow": (
+                        {
+                            **time_window.as_dict(),
+                            "timeZone": hub_timezone_name,
+                            "timeZoneSource": timezone_source,
+                        }
+                        if time_window is not None
+                        else None
+                    ),
                 }
                 if success
                 else None
@@ -415,9 +470,16 @@ class DeviceHistoryService:
             "success": True,
             "hoursBack": hours_back,
             "count": len(events),
+            "sourceEventCount": len(source_events),
             "events": events,
             "newestFirst": True,
         }
+        if time_window is not None:
+            data["timeWindow"] = {
+                **time_window.as_dict(),
+                "timeZone": hub_timezone_name,
+                "timeZoneSource": timezone_source,
+            }
         return MCPToolResult(
             LOCATION_EVENTS_TOOL,
             arguments,
