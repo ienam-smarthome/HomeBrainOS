@@ -173,6 +173,16 @@ async def test_causal_why_question_is_not_cut_off_by_the_device_history_template
                 ),
             }
         },
+        {
+            "message": {
+                "role": "assistant",
+                "content": (
+                    "The recorded interval ran from 7:08 am to 7:09 am. Its short "
+                    "duration is consistent with a motion-timeout automation, but "
+                    "the event history alone does not prove which automation caused it."
+                ),
+            }
+        },
     ])
     agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
 
@@ -181,7 +191,9 @@ async def test_causal_why_question_is_not_cut_off_by_the_device_history_template
         session_id="reasoning-mode-causal-why",
     )
 
-    assert len(ai.requests) >= 2
+    assert len(ai.requests) >= 3
+    assert ai.requests[-1][1]["json"].get("tools") in (None, [])
+    assert outcome.metrics["counters"].get("investigative_finalization", 0) == 1
     assert "do not by themselves identify" not in outcome.message
     assert "motion-timeout" in outcome.message
 
@@ -247,6 +259,7 @@ async def test_causal_history_uses_generic_evidence_contract_not_sensor_hunt() -
     ai = FakeAI([
         {"message": {"role": "assistant", "tool_calls": [_device_history_call()]}},
         {"message": {"role": "assistant", "content": "The event history alone does not prove the cause."}},
+        {"message": {"role": "assistant", "content": "The event history alone does not prove the cause."}},
     ])
     agent = UnifiedMCPAgent(mcp, "key", ai_client=ai)
 
@@ -255,7 +268,8 @@ async def test_causal_history_uses_generic_evidence_contract_not_sensor_hunt() -
         session_id="reasoning-mode-causal-generic",
     )
 
-    assert len(ai.requests) >= 2
+    assert len(ai.requests) >= 3
+    assert ai.requests[-1][1]["json"].get("tools") in (None, [])
     second_round_messages = ai.requests[1][1]["json"]["messages"]
     rendered = "\n".join(
         str(message.get("content") or "") for message in second_round_messages
