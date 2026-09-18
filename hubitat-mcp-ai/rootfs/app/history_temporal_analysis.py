@@ -454,8 +454,6 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "label": result_data.get("label"),
         "attribute": result_data.get("attribute"),
         "hoursBack": result_data.get("hoursBack"),
-        "analysisEventCount": result_data.get("analysisEventCount"),
-        "sourceEventCount": result_data.get("sourceEventCount"),
         "timeWindow": result_data.get("timeWindow"),
         "temporalAnalysis": {
             key: temporal.get(key)
@@ -463,6 +461,9 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             if key in temporal
         },
     }
+    for key in ("analysisEventCount", "sourceEventCount"):
+        if key in result_data:
+            details[key] = result_data.get(key)
     if "attributeInferred" in result_data:
         details["attributeInferred"] = bool(result_data.get("attributeInferred"))
     return details
