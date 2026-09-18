@@ -109,6 +109,60 @@ def _partial_zero_replacement(receipt: dict[str, Any]) -> str | None:
     )
 
 
+def _deterministic_unverified_zero_history_response(
+    evidence: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any]] | None:
+    """Return the safe final answer for one zero/unverified history result.
+
+    This is intentionally not wording-sensitive. When the current turn has one
+    successful device-history receipt, zero bounded intervals, and an explicitly
+    unverified event stream, the model cannot safely conclude that the device was
+    inactive, that there was "no record", or that all activity happened later.
+    Serialize the deterministic evidence statement directly instead of trying to
+    enumerate every English absence phrase.
+    """
+
+    receipts = [
+        receipt
+        for receipt in evidence
+        if isinstance(receipt, dict)
+        and receipt.get("tool") == "homebrain_device_history"
+        and receipt.get("success") is True
+        and isinstance(receipt.get("details"), dict)
+        and isinstance(receipt["details"].get("temporalAnalysis"), dict)
+    ]
+    if len(receipts) != 1:
+        return None
+
+    receipt = receipts[0]
+    details = receipt["details"]
+    temporal = details["temporalAnalysis"]
+    try:
+        interval_count = int(temporal.get("intervalCount") or 0)
+    except (TypeError, ValueError):
+        return None
+    if interval_count != 0:
+        return None
+
+    source_integrity_verified = temporal.get("sourceIntegrityVerified")
+    if source_integrity_verified is None:
+        source_integrity_verified = details.get("historySourceIntegrityVerified")
+    unverified_stream = (
+        source_integrity_verified is False
+        or str(temporal.get("durationReliability") or "").casefold()
+        == "unverified-event-stream"
+        or str(temporal.get("sourceIntegrity") or "").casefold() == "unverified"
+        or str(details.get("historySourceIntegrity") or "").casefold() == "unverified"
+    )
+    if not unverified_stream:
+        return None
+
+    replacement = _partial_zero_replacement(receipt)
+    if replacement is None:
+        return None
+    return replacement, receipt
+
+
 def _sentence_pieces(text: str) -> list[str]:
     return re.split(r"(?<=[.!?])(?P<space>\s+)", text)
 
@@ -225,6 +279,13 @@ def _guard_history_message(
     evidence: list[dict[str, Any]],
 ) -> str:
     """Keep the serialized answer consistent with deterministic history proof."""
+
+    deterministic_zero = _deterministic_unverified_zero_history_response(evidence)
+    if deterministic_zero is not None:
+        replacement, receipt = deterministic_zero
+        if str(message or "").strip() != replacement.strip():
+            _mark_history_correction(receipt)
+        return replacement
 
     corrected, partial_zero_applied = _guard_partial_zero_claims(message, evidence)
     corrected, absence_applied = _guard_history_absence_claims(corrected, evidence)
