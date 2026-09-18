@@ -15,7 +15,6 @@ from device_history_service import DeviceHistoryService  # noqa: E402
 from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
 from final_answer_coordinator import FinalAnswerCoordinator  # noqa: E402
 from mcp_client import MCPToolResult  # noqa: E402
-from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION  # noqa: E402
 
 
 def _history_receipt(label: str, attribute: str = "switch") -> dict[str, Any]:
@@ -107,8 +106,11 @@ async def test_final_answer_coordinator_injects_ledger_before_no_tools_instructi
     assert len(calls) == 1
     messages, tools = calls[0]
     assert tools == []
-    assert "HOST CURRENT-TURN EVIDENCE LEDGER" in messages[-2]["content"]
-    assert messages[-1]["content"] == FINAL_SYNTHESIS_INSTRUCTION
+    joined = "\n".join(str(item.get("content") or "") for item in messages)
+    assert "HOST CURRENT-TURN EVIDENCE LEDGER" in joined
+    assert "HOST CURRENT-TURN EVIDENCE BRIEF" in joined
+    assert "This is a causal investigation" in messages[-1]["content"]
+    assert "Do not request another tool" in messages[-1]["content"]
 
 
 @dataclass
