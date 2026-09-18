@@ -506,7 +506,7 @@ def guard_history_duration_claim(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Correct an explicit total-duration claim that conflicts with one proof."""
+    """Keep explicit duration wording within the reliability of current evidence."""
 
     text = str(message or "")
     if not _TOTALISH_DURATION_CLAIM.search(text):
@@ -538,16 +538,54 @@ def guard_history_duration_claim(
     mentions = _duration_mentions_seconds(text)
     if not mentions:
         return text, False
+
+    source_integrity_verified = temporal.get("sourceIntegrityVerified")
+    if source_integrity_verified is None:
+        source_integrity_verified = details.get("historySourceIntegrityVerified")
+    reliability = str(temporal.get("durationReliability") or "").strip().casefold()
+    source_integrity = str(
+        temporal.get("sourceIntegrity")
+        or details.get("historySourceIntegrity")
+        or ""
+    ).strip().casefold()
+    unverified_stream = (
+        source_integrity_verified is False
+        or reliability == "unverified-event-stream"
+        or source_integrity == "unverified"
+    )
+
+    label = str(details.get("label") or "The device").strip() or "The device"
+    active_state = str(temporal.get("activeState") or "active").strip() or "active"
+    inactive_state = str(temporal.get("inactiveState") or "inactive").strip() or "inactive"
+    window_label = str(temporal.get("windowLabel") or "").strip()
+    window_suffix = f" {window_label}" if window_label else ""
+
+    if unverified_stream:
+        if interval_count == 0:
+            corrected = (
+                f"No bounded {active_state} interval is established for {label}"
+                f"{window_suffix} by the recorded device-event rows. The event "
+                f"stream has not been independently verified as complete, so "
+                f"this does not prove it stayed {inactive_state} or establish an "
+                "exact total."
+            )
+        else:
+            interval_word = "interval" if interval_count == 1 else "intervals"
+            corrected = (
+                f"Pairing the recorded state rows gives an {active_state}-time "
+                f"estimate of {total_duration} for {label}{window_suffix} across "
+                f"{interval_count} observed {interval_word}. The device-event "
+                "stream has not been independently verified as complete, so this "
+                "is not an exact total or a mathematical lower bound."
+            )
+        return corrected, True
+
     expected = _display_duration_seconds(total_seconds)
     if expected in mentions:
         return text, False
 
-    label = str(details.get("label") or "The device").strip() or "The device"
-    active_state = str(temporal.get("activeState") or "active").strip() or "active"
     lower_bound = bool(temporal.get("totalIsLowerBound"))
     qualifier = "at least " if lower_bound else ""
-    window_label = str(temporal.get("windowLabel") or "").strip()
-    window_suffix = f" {window_label}" if window_label else ""
     if interval_count == 0:
         corrected = (
             f"{label} had a total of {qualifier}{total_duration} in the "
@@ -568,7 +606,6 @@ def guard_history_duration_claim(
             "a lower bound."
         )
     return corrected, True
-
 
 __all__ = [
     "analyze_state_intervals",
