@@ -304,7 +304,9 @@ def analyze_state_intervals_in_window(
 
     current_state: str | None = None
     boundary_known = False
-    boundary_basis = "source-integrity-unverified"
+    boundary_basis = (
+        "unknown" if source_integrity_verified else "source-integrity-unverified"
+    )
     inferred_boundary_state: str | None = None
 
     if source_integrity_verified and predecessor is not None:
@@ -561,7 +563,7 @@ def guard_history_duration_claim(
     if unverified_stream:
         if interval_count == 0:
             corrected = (
-                f"No bounded {active_state} interval is established for {label}"
+                f"No bounded {active_state} interval was established for {label}"
                 f"{window_suffix} by the recorded device-event rows. The event "
                 f"stream has not been independently verified as complete, so "
                 f"this does not prove it stayed {inactive_state} or establish an "
