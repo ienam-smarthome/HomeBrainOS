@@ -44,6 +44,13 @@ _SOURCE_LABELS = {
 }
 
 
+_POSITIVE_LOG_ATTRIBUTION = re.compile(
+    r"\b(?P<article>the\s+)?logs?\s+"
+    r"(?P<verb>show(?:s|ed)?|indicat(?:e|es|ed)|record(?:s|ed)?|contain(?:s|ed)?)\b",
+    re.I,
+)
+
+
 def _sentence_pieces(text: str) -> list[str]:
     return re.split(r"(?<=[.!?])(?P<space>\s+)", str(text or ""))
 
@@ -85,4 +92,35 @@ def guard_checked_source_absence_claim(
     return "".join(pieces), changed
 
 
-__all__ = ["guard_checked_source_absence_claim"]
+def guard_positive_source_attribution(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Correct positive claims that name a source not checked this turn.
+
+    This is intentionally narrow: a device-event history may contain rows whose
+    descriptions look log-like, but that does not make native Hubitat logs a
+    checked source. Preserve the factual claim while correcting only the source
+    label when current-turn device history exists.
+    """
+
+    text = str(message or "")
+    categories = checked_source_categories(evidence)
+    if "logs" in categories or not _POSITIVE_LOG_ATTRIBUTION.search(text):
+        return text, False
+    if not ({"device_history", "raw_device_history"} & categories):
+        return text, False
+
+    def _replacement(match: re.Match[str]) -> str:
+        article = "the " if match.group("article") else ""
+        verb = match.group("verb")
+        return f"{article}recorded device-event rows {verb}"
+
+    corrected, count = _POSITIVE_LOG_ATTRIBUTION.subn(_replacement, text)
+    return corrected, count > 0
+
+
+__all__ = [
+    "guard_checked_source_absence_claim",
+    "guard_positive_source_attribution",
+]
