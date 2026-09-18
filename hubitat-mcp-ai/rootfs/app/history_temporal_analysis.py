@@ -499,54 +499,99 @@ def analyze_state_intervals_in_window(
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
 def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None:
-    """Return the small, privacy-safe temporal proof subset for evidence output."""
+    """Return a bounded, privacy-safe history proof subset for evidence output.
+
+    Temporal analyses expose their bounded interval list so final synthesis does
+    not have to reconstruct interval cardinality from raw events. Generic history
+    reads without temporal analysis still expose the resolved label, requested/
+    inferred attribute state, and observed event names so an investigative answer
+    cannot treat an unspecified attribute as if it had been explicitly checked.
+    """
 
     if not isinstance(result_data, dict):
         return None
-    temporal = result_data.get("temporalAnalysis")
-    if not isinstance(temporal, dict):
-        return None
 
-    temporal_keys = (
-        "activeState",
-        "inactiveState",
-        "totalActiveDuration",
-        "totalActiveSeconds",
-        "intervalCount",
-        "longestActiveDuration",
-        "longestActiveSeconds",
-        "continuous",
-        "coverage",
-        "totalIsLowerBound",
-        "windowed",
-        "windowLabel",
-        "windowStart",
-        "windowEnd",
-        "windowOngoing",
-        "boundaryStateKnown",
-        "boundaryBasis",
-        "sourceCompleteToWindowStart",
-        "pageCompleteToWindowStart",
-        "sourceIntegrity",
-        "sourceIntegrityVerified",
-        "durationReliability",
-        "observedBoundedIntervalsOnly",
-        "inferredBoundaryState",
-        "analyzedStateEventCount",
-        "firstWindowStateEvent",
-        "predecessorStateEvent",
-    )
-    details = {
+    events = result_data.get("events")
+    observed_event_names: list[str] = []
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            name = str(event.get("name") or event.get("attribute") or "").strip()
+            if name and name not in observed_event_names:
+                observed_event_names.append(name)
+            if len(observed_event_names) >= 12:
+                break
+
+    details: dict[str, Any] = {
         "label": result_data.get("label"),
         "attribute": result_data.get("attribute"),
         "hoursBack": result_data.get("hoursBack"),
         "timeWindow": result_data.get("timeWindow"),
-        "temporalAnalysis": {
+    }
+    if observed_event_names:
+        details["observedEventNames"] = observed_event_names
+
+    temporal = result_data.get("temporalAnalysis")
+    if isinstance(temporal, dict):
+        temporal_keys = (
+            "activeState",
+            "inactiveState",
+            "totalActiveDuration",
+            "totalActiveSeconds",
+            "intervalCount",
+            "longestActiveDuration",
+            "longestActiveSeconds",
+            "continuous",
+            "coverage",
+            "totalIsLowerBound",
+            "windowed",
+            "windowLabel",
+            "windowStart",
+            "windowEnd",
+            "windowOngoing",
+            "boundaryStateKnown",
+            "boundaryBasis",
+            "sourceCompleteToWindowStart",
+            "pageCompleteToWindowStart",
+            "sourceIntegrity",
+            "sourceIntegrityVerified",
+            "durationReliability",
+            "observedBoundedIntervalsOnly",
+            "inferredBoundaryState",
+            "analyzedStateEventCount",
+            "firstWindowStateEvent",
+            "predecessorStateEvent",
+        )
+        temporal_proof = {
             key: temporal.get(key)
             for key in temporal_keys
             if key in temporal
-        },
-    }
+        }
+        intervals = temporal.get("intervals")
+        if isinstance(intervals, list):
+            bounded_intervals: list[dict[str, Any]] = []
+            for interval in intervals[:12]:
+                if not isinstance(interval, dict):
+                    continue
+                bounded_intervals.append({
+                    key: interval.get(key)
+                    for key in (
+                        "start",
+                        "end",
+                        "startNatural",
+                        "endNatural",
+                        "duration",
+                        "durationSeconds",
+                        "clippedAtWindowStart",
+                        "clippedAtWindowEnd",
+                    )
+                    if key in interval
+                })
+            temporal_proof["boundedIntervals"] = bounded_intervals
+            temporal_proof["boundedIntervalsTruncated"] = len(intervals) > 12
+        details["temporalAnalysis"] = temporal_proof
+
     for key in (
         "analysisEventCount",
         "sourceEventCount",
@@ -557,8 +602,17 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             details[key] = result_data.get(key)
     if "attributeInferred" in result_data:
         details["attributeInferred"] = bool(result_data.get("attributeInferred"))
-    return details
 
+    useful = any(
+        key in details
+        for key in (
+            "temporalAnalysis",
+            "observedEventNames",
+            "label",
+            "attribute",
+        )
+    )
+    return details if useful else None
 
 def guard_history_duration_claim(
     message: str,
