@@ -196,11 +196,22 @@ def _guard_partial_zero_claims(
             details = receipt.get("details") or {}
             temporal = details.get("temporalAnalysis") or {}
             label = str(details.get("label") or "").strip()
+            attribute = str(details.get("attribute") or "").strip()
             active = str(temporal.get("activeState") or "active").strip()
             inactive = str(temporal.get("inactiveState") or "inactive").strip()
-            if not label or label.casefold() not in comparable:
+            label_matches = bool(label and label.casefold() in comparable)
+            attribute_data_absence = bool(
+                attribute
+                and re.search(
+                    rf"\bno\s+(?:recorded\s+)?{re.escape(attribute.casefold())}"
+                    r"\s+(?:data|history)\b",
+                    comparable,
+                    re.I,
+                )
+            )
+            if not label_matches and not attribute_data_absence:
                 continue
-            unsupported_zero = bool(_NO_HISTORY_DATA.search(sentence))
+            unsupported_zero = attribute_data_absence or bool(_NO_HISTORY_DATA.search(sentence))
             unsupported_zero = unsupported_zero or bool(
                 re.search(
                     rf"\b(?:was|is|were|are)\s+(?:not|never)\s+{re.escape(active)}\b",
