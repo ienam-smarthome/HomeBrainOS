@@ -23,6 +23,7 @@ from typing import Any
 from history_temporal_analysis import (
     analyze_state_intervals,
     analyze_state_intervals_in_window,
+    boundary_event_evidence,
 )
 from history_time_windows import active_history_window_request
 from mcp_client import MCPToolResult
@@ -141,6 +142,18 @@ def enrich_history_result(name: str, result: MCPToolResult) -> MCPToolResult:
             temporal = _analysis_for(attribute, filtered, data)
             if temporal is not None:
                 data["temporalAnalysis"] = temporal
+
+    # Boundary evidence must be derived after every deterministic history
+    # enrichment step. Attribute-less semantic history is common; in that path
+    # DeviceHistoryService cannot know the interval boundaries yet because the
+    # binary state attribute is inferred here. Selecting boundary rows only in
+    # the service therefore silently misses exactly the histories that rely on
+    # post-fetch inference.
+    temporal = data.get("temporalAnalysis")
+    if isinstance(temporal, dict):
+        boundary_rows = boundary_event_evidence(events, temporal)
+        if boundary_rows:
+            data["boundaryEvents"] = boundary_rows
 
     if data == result.data:
         return result
