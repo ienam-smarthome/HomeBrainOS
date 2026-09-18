@@ -375,11 +375,19 @@ def register_model_tool_execution(
     if mutation_seen:
         return True
 
-    # Once a controller follow-up has been armed, the next model-directed read is
-    # the reserved slot regardless of how many generic reads have already run.
-    # This prevents the pending reservation from disabling the normal round cap
-    # while the model spends several extra rounds on multiple controllers/sensors.
-    if controller_followup_pending():
+    # Once a controller follow-up has been armed, exactly one subsequent
+    # model-directed read may run. After that attempt, reject every further read
+    # in the same native round as well as later rounds until synthesis. This is
+    # important because the provider may emit several controller histories in one
+    # response before the host gets another chance to remove tools.
+    followup_state = _controller_followup_state()
+    if followup_state is not None:
+        _allowed, consumed = followup_state
+        if consumed:
+            _REASONING_BUDGET.set(
+                (identity, rounds, reads, mutation_seen, skipped + 1)
+            )
+            return False
         if _consume_controller_followup(name, dict(arguments or {})):
             _REASONING_BUDGET.set(
                 (identity, rounds, reads + 1, mutation_seen, skipped)
