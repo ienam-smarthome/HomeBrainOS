@@ -341,18 +341,54 @@ class ToolDiscoveryCatalog:
         )
 
     def causal_provenance_names(self) -> tuple[str, ...]:
-        """Visible read tools allowed during bounded causal completion."""
+        """Known read tools allowed during bounded causal completion.
 
-        return tuple(
-            name
-            for name, tool in self._declared.items()
-            if self._causal_provenance_read_tool(tool)
+        Completion is already a narrow evidence phase, so it can use the schemas
+        returned by MCP list_tools directly instead of paying for fuzzy discovery
+        merely to expose an app/rule/log gateway that HomeBrain already knows is
+        installed. Keep the view small and read-only.
+        """
+
+        names: list[str] = []
+        search = self._available.get(SEARCH_TOOL)
+        if search is not None:
+            names.append(SEARCH_TOOL)
+
+        candidates = [
+            (name, tool)
+            for name, tool in self._available.items()
+            if name != SEARCH_TOOL and self._causal_provenance_read_tool(tool)
+        ]
+        # Prefer explicit provenance gateway names, then preserve MCP registry
+        # order as the tiebreaker. Four read gateways plus search is a deliberately
+        # small completion registry.
+        priorities = {
+            "hub_read_diagnostics": 0,
+            "hub_read_apps_code": 1,
+            "hub_read_rules": 2,
+        }
+        indexed = {name: index for index, (name, _tool) in enumerate(candidates)}
+        candidates.sort(
+            key=lambda item: (
+                priorities.get(item[0], 10),
+                indexed.get(item[0], 0),
+            )
         )
+        names.extend(name for name, _tool in candidates[:4])
+        return tuple(names)
+
+    def activate_causal_provenance_view(self) -> tuple[str, ...]:
+        """Replace the declared registry with the bounded provenance view."""
+
+        names = self.causal_provenance_names()
+        self.replace_declared(names)
+        return names
 
     def causal_provenance_schemas(self) -> list[dict[str, Any]]:
         return [
-            self.tool_schema(self._declared[name])
+            self.tool_schema(self._available[name])
             for name in self.causal_provenance_names()
+            if name in self._available
         ]
 
     def schemas(self) -> list[dict[str, Any]]:
