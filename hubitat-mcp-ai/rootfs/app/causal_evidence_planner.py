@@ -100,6 +100,27 @@ def _controller_events(controller_history: dict[str, Any]) -> list[tuple[datetim
     return result
 
 
+def subject_has_observed_intervals(
+    subject_history: dict[str, Any],
+) -> bool:
+    """Return whether the current-turn subject history established any interval."""
+
+    if not isinstance(subject_history, dict):
+        return False
+    temporal = subject_history.get("temporalAnalysis")
+    if not isinstance(temporal, dict):
+        return False
+    intervals = temporal.get("observedIntervals")
+    if not isinstance(intervals, list):
+        intervals = temporal.get("intervals")
+    return isinstance(intervals, list) and any(
+        isinstance(item, dict)
+        and str(item.get("start") or "").strip()
+        and str(item.get("end") or "").strip()
+        for item in intervals
+    )
+
+
 def controller_transition_alignments(
     subject_history: dict[str, Any],
     controller_history: dict[str, Any],
@@ -171,5 +192,6 @@ __all__ = [
     "controller_history_arguments",
     "controller_transition_alignments",
     "render_controller_alignment_instruction",
+    "subject_has_observed_intervals",
     "subject_room_filter_arguments",
 ]
