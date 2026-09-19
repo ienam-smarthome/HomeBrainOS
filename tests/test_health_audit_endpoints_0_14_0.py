@@ -31,6 +31,9 @@ def test_health_audit_dashboard_card_is_present(monkeypatch, tmp_path) -> None:
     assert response.status_code == 200
     assert 'id="systemHealthCard"' in response.text
     assert 'id="healthAuditStatus"' in response.text
+    assert 'class="health-heading"' in response.text
+    assert '<strong>System check</strong>' in response.text
+    assert "audit.message" not in response.text
     assert 'id="runHealthAudit"' in response.text
     assert "api/health-audit" in response.text
     assert "Run system check now" in response.text
