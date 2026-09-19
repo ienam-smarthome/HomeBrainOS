@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.5**.
+Current add-on version: **0.14.6**.
 
 ## Architecture
 
@@ -707,11 +707,14 @@ network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
 
 The WebUI includes live dashboard tiles, a persistent System Health card with a
-manual **Run system check now** button, smart-home shortcuts, typed and spoken
+compact status badge, a manual **Run system check now** button, and a manual
+**Send report to Pushover** button, plus smart-home shortcuts, typed and spoken
 queries, optional read-aloud answers, outcome badges, response metadata, copy,
 and expandable technical details. System Health separates Hub, Devices,
 Automations, and Logs, groups recurring log signatures, and shows correlated
-stale-device clusters. The scheduled morning health check is read-only and uses
+stale-device clusters. Pushover reports include named offline devices, low
+batteries, broken automations, log findings, and resolved findings within the
+service message limit. The scheduled morning health check is read-only and uses
 the Hubitat timezone; its stored snapshot is reused by the dashboard.
 
 ## API
