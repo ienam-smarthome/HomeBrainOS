@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
 from health_audit_service import HealthAuditService
+from pushover_notifier import PushoverNotifier
 
 
 logger = logging.getLogger("HomeBrainOS.HealthScheduler")
@@ -71,6 +72,7 @@ class MorningHealthScheduler:
         enabled: bool,
         daily_time: str,
         local_now: Callable[[], Awaitable[datetime]],
+        notifier: PushoverNotifier | None = None,
         startup_delay_seconds: float = 30.0,
         catchup_minutes: int = 60,
     ) -> None:
@@ -87,11 +89,14 @@ class MorningHealthScheduler:
                 f"Invalid morning_health_check_time {requested_time!r}; using 07:00"
             )
         self._local_now = local_now
+        self.notifier = notifier
         self.startup_delay_seconds = max(0.0, float(startup_delay_seconds))
         self.catchup_minutes = max(0, int(catchup_minutes))
         self._task: asyncio.Task[Any] | None = None
         self.next_run: str | None = None
         self.last_error: str | None = invalid_time_error
+        self.last_notification_at: str | None = None
+        self.last_notification_error: str | None = None
 
     def status(self) -> dict[str, Any]:
         return {
@@ -99,6 +104,9 @@ class MorningHealthScheduler:
             "time": self.daily_time,
             "next_run": self.next_run,
             "last_error": self.last_error,
+            "pushover_enabled": bool(self.notifier and self.notifier.enabled),
+            "last_notification_at": self.last_notification_at,
+            "last_notification_error": self.last_notification_error,
         }
 
     def start(self) -> None:
@@ -120,8 +128,26 @@ class MorningHealthScheduler:
 
     async def _run_once(self) -> None:
         try:
-            await self.service.run(reason="scheduled")
+            result = await self.service.run(reason="scheduled")
             self.last_error = None
+            if self.notifier and self.notifier.enabled:
+                try:
+                    await self.notifier.send(result)
+                    self.last_notification_at = str(
+                        result.get("checked_at")
+                        or datetime.now().astimezone().isoformat()
+                    )
+                    self.last_notification_error = None
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.last_notification_error = (
+                        f"{type(exc).__name__}: {str(exc)[:300]}"
+                    )
+                    logger.warning(
+                        "Scheduled System Check completed but Pushover delivery failed: %s",
+                        exc,
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

@@ -350,3 +350,110 @@ def test_log_fingerprint_removes_volatile_ids_and_groups_vrb_warning() -> None:
     assert group["last_seen"] == "2026-09-19T08:05:00+00:00"
     assert issues[0]["title"] == "MCP Rule Server"
     assert issues[0]["count"] == 2
+
+
+def test_long_term_stale_is_separate_and_new_staleness_waits_for_confirmation() -> None:
+    now = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
+    devices = [
+        {
+            "id": "recent-stale",
+            "label": "Fridge Meter",
+            "capabilities": ["PowerMeter"],
+            "lastActivity": "2026-09-17T21:00:00+00:00",
+        },
+        {
+            "id": "long-stale",
+            "label": "Weather (system)",
+            "capabilities": ["TemperatureMeasurement"],
+            "lastActivity": "2026-08-01T09:00:00+00:00",
+        },
+    ]
+
+    section, issues = _device_findings(
+        devices,
+        low_battery_threshold=20,
+        stale_hours=24,
+        long_stale_hours=168,
+        previously_stale_ids=set(),
+        now=now,
+    )
+
+    assert section["stale_candidate_count"] == 1
+    assert section["suspicious_stale_count"] == 0
+    assert section["long_term_stale_count"] == 1
+    assert not any("Fridge Meter" in item["title"] for item in issues)
+    assert any(item["category"] == "device-long-stale" for item in issues)
+    assert "possibly" not in issues[-1]["detail"].casefold()
+    assert "may be unused" in issues[-1]["detail"].casefold()
+
+    confirmed, confirmed_issues = _device_findings(
+        devices[:1],
+        low_battery_threshold=20,
+        stale_hours=24,
+        long_stale_hours=168,
+        previously_stale_ids={"recent-stale"},
+        now=now,
+    )
+    assert confirmed["suspicious_stale_count"] == 1
+    assert any(item["category"] == "device-stale" for item in confirmed_issues)
+
+
+def test_google_tv_adb_timeout_is_normalised_and_grouped() -> None:
+    section, issues = _log_findings(
+        [
+            {
+                "level": "WARN",
+                "message": (
+                    "dev|7309|Google TV Streamer (ADB)|FireTV Shell timeout — "
+                    "fechando canal shell (TCP mantido)"
+                ),
+            },
+            {
+                "level": "WARN",
+                "message": (
+                    "dev|8812|Google TV Streamer (ADB)|FireTV Shell timeout — "
+                    "fechando canal shell (TCP mantido)"
+                ),
+            },
+        ]
+    )
+
+    assert section["warning_group_count"] == 1
+    assert section["warning_groups"][0]["count"] == 2
+    assert issues[0]["title"] == "Google TV Streamer (ADB)"
+    assert issues[0]["detail"] == (
+        "ADB shell connection timed out; the retained TCP shell channel was closed."
+    )
+
+
+@pytest.mark.asyncio
+async def test_snapshot_schema_change_resets_new_resolved_baseline(tmp_path) -> None:
+    path = tmp_path / "health.json"
+    path.write_text(
+        json.dumps(
+            {
+                "latest": {
+                    "issues": [
+                        {
+                            "id": "legacy-id",
+                            "severity": "warning",
+                            "title": "Legacy warning",
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = HealthAuditService(
+        _MCP(),
+        _AutomationStatus(),
+        snapshot_path=path,
+    )
+
+    result = await service.run(reason="scheduled")
+
+    assert result["change_tracking_state"] == "baseline-reset"
+    assert result["new_count"] == 0
+    assert result["resolved_count"] == 0
+    assert result["snapshot_schema_version"] == 2

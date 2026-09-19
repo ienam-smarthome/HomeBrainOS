@@ -220,6 +220,68 @@ class AutomationStatusService:
         )
         return "active" if has_state_signal else "unknown"
 
+    @classmethod
+    def _status_evidence(
+        cls,
+        item: dict[str, Any],
+        signals: dict[str, bool],
+    ) -> tuple[dict[str, Any], str | None]:
+        """Keep bounded source evidence so diagnostics can explain a status."""
+
+        evidence: dict[str, Any] = {}
+        for key in (
+            "broken",
+            "paused",
+            "disabled",
+            "enabled",
+            "active",
+            "status",
+            "state",
+            "healthStatus",
+            "reason",
+            "statusReason",
+            "statusMessage",
+            "message",
+            "error",
+        ):
+            value = item.get(key)
+            if value in (None, ""):
+                continue
+            if isinstance(value, (str, int, float, bool)):
+                evidence[key] = " ".join(str(value).split())[:240]
+
+        for key in ("reason", "statusReason", "statusMessage", "message", "error"):
+            value = evidence.get(key)
+            if value:
+                return evidence, str(value)
+
+        for key in ("healthStatus", "status", "state"):
+            value = evidence.get(key)
+            if value and str(value).casefold() not in {
+                "active",
+                "enabled",
+                "running",
+                "disabled",
+                "paused",
+                "broken",
+                "error",
+                "failed",
+            }:
+                return evidence, str(value)
+
+        name_text = cls._name(item).casefold()
+        if signals.get("broken"):
+            if cls._bool(item.get("broken")) is True:
+                return evidence, "Hubitat reports broken=true."
+            if "*broken*" in name_text:
+                return evidence, "Hubitat marked the automation name *BROKEN*."
+            return evidence, "Hubitat status reports an error, failure, or broken state."
+        if signals.get("paused"):
+            if cls._bool(item.get("paused")) is True:
+                return evidence, "Hubitat reports paused=true."
+            return evidence, "Hubitat reports the automation as paused."
+        return evidence, None
+
     @staticmethod
     def _candidate_lists(value: Any) -> list[list[dict[str, Any]]]:
         found: list[list[dict[str, Any]]] = []
@@ -258,6 +320,7 @@ class AutomationStatusService:
                 continue
             signals = cls._status_signals(row)
             conflicts = cls.conflicting_statuses(signals)
+            status_evidence, status_reason = cls._status_evidence(row, signals)
             identifier = row.get("id") or row.get("appId") or row.get("ruleId")
             items.append(
                 {
@@ -272,6 +335,8 @@ class AutomationStatusService:
                     "active": signals["active"],
                     "status_conflict": bool(conflicts),
                     "conflicting_statuses": conflicts,
+                    "status_reason": status_reason,
+                    "status_evidence": status_evidence,
                     "source": source,
                 }
             )

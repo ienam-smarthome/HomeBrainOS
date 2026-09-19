@@ -38,6 +38,7 @@ from history_time_windows import (
 from homebrain_agent import UnifiedMCPAgent
 from hub_timezone import HubTimezoneResolver
 from mcp_client import HubitatMCPClient
+from pushover_notifier import PushoverNotifier
 from webui import render_page
 
 logging.basicConfig(level=logging.INFO)
@@ -97,8 +98,13 @@ def load_options() -> dict[str, Any]:
         "health_check_log_hours": 24,
         "health_check_low_battery": 20,
         "health_check_stale_hours": 24,
+        "health_check_long_stale_hours": 168,
         "health_check_cluster_minutes": 15,
         "health_check_motion_active_hours": 2,
+        "pushover_enabled": False,
+        "pushover_app_token": "",
+        "pushover_user_key": "",
+        "pushover_device": "",
         "web_title": "Hubitat MCP AI",
     }
     if OPTIONS_PATH.exists():
@@ -136,8 +142,15 @@ health_audit = HealthAuditService(
     low_battery_threshold=int(OPTIONS.get("health_check_low_battery") or 20),
     log_hours=int(OPTIONS.get("health_check_log_hours") or 24),
     stale_hours=int(OPTIONS.get("health_check_stale_hours") or 24),
+    long_stale_hours=int(OPTIONS.get("health_check_long_stale_hours") or 168),
     cluster_minutes=int(OPTIONS.get("health_check_cluster_minutes") or 15),
     motion_active_hours=int(OPTIONS.get("health_check_motion_active_hours") or 2),
+)
+pushover_notifier = PushoverNotifier(
+    enabled=_bool(OPTIONS.get("pushover_enabled"), False),
+    app_token=str(OPTIONS.get("pushover_app_token") or ""),
+    user_key=str(OPTIONS.get("pushover_user_key") or ""),
+    device=str(OPTIONS.get("pushover_device") or ""),
 )
 
 
@@ -163,6 +176,7 @@ health_scheduler = MorningHealthScheduler(
     enabled=_bool(OPTIONS.get("morning_health_check_enabled"), True),
     daily_time=str(OPTIONS.get("morning_health_check_time") or "07:00"),
     local_now=_health_scheduler_now,
+    notifier=pushover_notifier,
 )
 
 agent = UnifiedMCPAgent(

@@ -26,6 +26,12 @@ _VOLATILE_LOG_FIELDS = re.compile(
     r"(?i)(\b(?:request|correlation|trace|event|device|app|job)[_-]?id\b\s*[:=]\s*)"
     r"(?:\"[^\"]+\"|'[^']+'|[a-z0-9_.:-]+)"
 )
+_ADB_TIMEOUT = re.compile(
+    r"(?:(?:^|\s)dev\|(?:\d+|#)\|(?P<label>[^|]{2,80})\|)?"
+    r".{0,180}?\b(?:firetv\s+shell\s+timeout|adb(?:\s+shell)?\s+timeout|"
+    r"shell\s+(?:connection\s+)?timeout)\b",
+    re.I,
+)
 _PASSIVE_CAPABILITIES = {
     "button",
     "pushablebutton",
@@ -109,6 +115,7 @@ _HEALTH_STATE_KEYS = (
     "DeviceWatch-DeviceStatus",
 )
 _BOOL_ONLINE_KEYS = ("online", "reachable", "connected")
+_SNAPSHOT_SCHEMA_VERSION = 2
 
 
 def _utc_now() -> datetime:
@@ -339,6 +346,7 @@ def _issue_priority(item: dict[str, Any]) -> int:
         "device-offline": 20,
         "device-motion-active": 25,
         "automation": 30,
+        "device-long-stale": 32,
         "device-stale": 35,
         "device-battery": 40,
         "log-error": 50,
@@ -379,14 +387,18 @@ def _device_findings(
     *,
     low_battery_threshold: int,
     stale_hours: int = 24,
+    long_stale_hours: int = 24 * 7,
     cluster_minutes: int = 15,
     motion_active_hours: int = 2,
+    previously_stale_ids: set[str] | None = None,
     now: datetime | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     checked_at = (now or _utc_now()).astimezone(timezone.utc)
     low_batteries: list[dict[str, Any]] = []
     offline: list[dict[str, Any]] = []
     suspicious_stale: list[dict[str, Any]] = []
+    stale_candidates: list[dict[str, Any]] = []
+    long_term_stale: list[dict[str, Any]] = []
     passive_quiet: list[dict[str, Any]] = []
     never_reported: list[dict[str, Any]] = []
     motion_active_too_long: list[dict[str, Any]] = []
@@ -488,7 +500,15 @@ def _device_findings(
         if age < stale_hours:
             continue
         if profile == "periodic" and not (explicitly_offline or explicitly_unreachable):
-            suspicious_stale.append(dict(activity_row))
+            if age >= long_stale_hours:
+                long_term_stale.append(dict(activity_row))
+            elif (
+                previously_stale_ids is not None
+                and identifier not in previously_stale_ids
+            ):
+                stale_candidates.append(dict(activity_row))
+            else:
+                suspicious_stale.append(dict(activity_row))
         else:
             passive_quiet.append(dict(activity_row))
 
@@ -540,10 +560,24 @@ def _device_findings(
             )
         )
 
+    for row in long_term_stale:
+        issues.append(
+            _issue(
+                "device-long-stale",
+                "warning",
+                f"Long-term stale: {row['label']}",
+                f"No periodic telemetry for {_format_age(float(row['age_hours']))}; "
+                "the device may be unused, disconnected, or obsolete.",
+                key=str(row["id"]),
+            )
+        )
+
     low_batteries.sort(key=lambda row: (row["battery"], row["label"].casefold()))
     offline.sort(key=lambda row: row["label"].casefold())
     for rows in (
         suspicious_stale,
+        stale_candidates,
+        long_term_stale,
         passive_quiet,
         never_reported,
         motion_active_too_long,
@@ -558,6 +592,8 @@ def _device_findings(
         "low_battery_count": len(low_batteries),
         "offline_count": len(offline),
         "suspicious_stale_count": len(suspicious_stale),
+        "stale_candidate_count": len(stale_candidates),
+        "long_term_stale_count": len(long_term_stale),
         "passive_quiet_count": len(passive_quiet),
         "never_reported_count": len(never_reported),
         "motion_active_too_long_count": len(motion_active_too_long),
@@ -566,6 +602,8 @@ def _device_findings(
         "low_batteries": low_batteries,
         "offline": offline,
         "suspicious_stale": suspicious_stale,
+        "stale_candidates": stale_candidates,
+        "long_term_stale": long_term_stale,
         "passive_quiet": passive_quiet,
         "never_reported": never_reported,
         "motion_active_too_long": motion_active_too_long,
@@ -654,6 +692,10 @@ def _log_message(row: dict[str, Any]) -> str:
 
 
 def _log_group_key(message: str) -> str:
+    adb_timeout = _ADB_TIMEOUT.search(str(message or ""))
+    if adb_timeout:
+        label = " ".join(str(adb_timeout.group("label") or "ADB device").split())
+        return f"adb|{label.casefold()}|shell connection timed out"
     normalized = str(message or "").casefold()
     normalized = _VOLATILE_LOG_FIELDS.sub(r"\1#", normalized)
     normalized = _VOLATILE_LOG_TOKENS.sub("#", normalized)
@@ -683,6 +725,9 @@ def _log_source(row: dict[str, Any], message: str) -> str | None:
     lowered = message.casefold()
     if "mcp rule server" in lowered:
         return "MCP Rule Server"
+    adb_timeout = _ADB_TIMEOUT.search(message)
+    if adb_timeout and adb_timeout.group("label"):
+        return " ".join(adb_timeout.group("label").split())[:120]
     for separator in (" — ", " - ", ": "):
         if separator in message:
             candidate = message.split(separator, 1)[0].strip()
@@ -705,9 +750,30 @@ def _log_summary(message: str, fingerprint: str) -> str:
     if fingerprint.startswith("mcp rule server|vrb feed missing "):
         summary = fingerprint.split("|", 1)[1]
         return f"VRB{summary[3:]}."
+    if fingerprint.startswith("adb|") and fingerprint.endswith(
+        "|shell connection timed out"
+    ):
+        return "ADB shell connection timed out; the retained TCP shell channel was closed."
     summary = _VOLATILE_LOG_FIELDS.sub(r"\1#", str(message or ""))
     summary = _VOLATILE_LOG_TOKENS.sub("#", summary)
     return " ".join(summary.split())[:500]
+
+
+def _previous_stale_ids(previous: dict[str, Any] | None) -> set[str]:
+    devices = (previous or {}).get("sections", {}).get("devices", {})
+    if not isinstance(devices, dict):
+        return set()
+    identifiers: set[str] = set()
+    for field in ("suspicious_stale", "stale_candidates", "long_term_stale"):
+        rows = devices.get(field, [])
+        if not isinstance(rows, list):
+            continue
+        identifiers.update(
+            str(row.get("id"))
+            for row in rows
+            if isinstance(row, dict) and row.get("id") not in (None, "")
+        )
+    return identifiers
 
 
 def _log_findings(rows: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -796,6 +862,7 @@ class HealthAuditService:
         low_battery_threshold: int = 20,
         log_hours: int = 24,
         stale_hours: int = 24,
+        long_stale_hours: int = 24 * 7,
         cluster_minutes: int = 15,
         motion_active_hours: int = 2,
         now_factory=_utc_now,
@@ -806,6 +873,10 @@ class HealthAuditService:
         self.low_battery_threshold = max(1, min(100, int(low_battery_threshold)))
         self.log_hours = max(1, min(168, int(log_hours)))
         self.stale_hours = max(1, min(24 * 30, int(stale_hours)))
+        self.long_stale_hours = max(
+            self.stale_hours + 1,
+            min(24 * 365, int(long_stale_hours)),
+        )
         self.cluster_minutes = max(1, min(120, int(cluster_minutes)))
         self.motion_active_hours = max(1, min(24, int(motion_active_hours)))
         self._now = now_factory
@@ -834,6 +905,7 @@ class HealthAuditService:
     def _persist(self, latest: dict[str, Any], previous: dict[str, Any] | None) -> None:
         self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "schema_version": _SNAPSHOT_SCHEMA_VERSION,
             "latest": latest,
             "previous": previous,
         }
@@ -972,8 +1044,10 @@ class HealthAuditService:
                         devices,
                         low_battery_threshold=self.low_battery_threshold,
                         stale_hours=self.stale_hours,
+                        long_stale_hours=self.long_stale_hours,
                         cluster_minutes=self.cluster_minutes,
                         motion_active_hours=self.motion_active_hours,
+                        previously_stale_ids=_previous_stale_ids(previous),
                         now=checked_at,
                     )
                     sections["devices"] = device_section
@@ -1037,12 +1111,18 @@ class HealthAuditService:
                         status = str(item.get("status") or "unknown")
                         name = str(item.get("display_name") or item.get("name") or "Unnamed automation")
                         identifier = str(item.get("id") or name)
+                        reason_detail = str(item.get("status_reason") or "").strip()
+                        detail = (
+                            reason_detail
+                            if reason_detail
+                            else f"{item.get('type') or 'automation'} reports {status}."
+                        )
                         issues.append(
                             _issue(
                                 "automation",
                                 "warning",
                                 f"Automation {status}: {name}",
-                                f"{item.get('type') or 'automation'} reports {status}.",
+                                detail,
                                 key=f"{item.get('type')}:{identifier}:{status}",
                             )
                         )
@@ -1086,9 +1166,20 @@ class HealthAuditService:
                 for item in issues
                 if item.get("severity") in {"critical", "warning"}
             }
+            previous_schema = int(
+                _safe_float((previous or {}).get("snapshot_schema_version")) or 0
+            )
+            change_tracking_ready = (
+                isinstance(previous, dict)
+                and previous_schema == _SNAPSHOT_SCHEMA_VERSION
+            )
             previous_attention = {
                 str(item.get("id")): item
-                for item in (previous or {}).get("issues", [])
+                for item in (
+                    (previous or {}).get("issues", [])
+                    if change_tracking_ready
+                    else []
+                )
                 if isinstance(item, dict)
                 and item.get("severity") in {"critical", "warning"}
                 and item.get("id")
@@ -1112,12 +1203,12 @@ class HealthAuditService:
                 for item in issues
                 if item.get("severity") in {"critical", "warning"}
                 and str(item.get("id")) not in previous_attention
-            ]
+            ] if change_tracking_ready else []
             resolved = [
                 item
                 for issue_id, item in previous_attention.items()
                 if issue_id not in current_attention_ids
-            ]
+            ] if change_tracking_ready else []
 
             attention_count = severities["critical"] + severities["warning"]
             hierarchy: dict[str, dict[str, Any]] = {}
@@ -1182,6 +1273,14 @@ class HealthAuditService:
                 )
 
             result = {
+                "snapshot_schema_version": _SNAPSHOT_SCHEMA_VERSION,
+                "change_tracking_state": (
+                    "compared"
+                    if change_tracking_ready
+                    else "baseline-reset"
+                    if isinstance(previous, dict)
+                    else "baseline-created"
+                ),
                 "status": status,
                 "message": message,
                 "reason": str(reason),
@@ -1201,6 +1300,7 @@ class HealthAuditService:
                     "low_battery": self.low_battery_threshold,
                     "log_hours": self.log_hours,
                     "stale_hours": self.stale_hours,
+                    "long_stale_hours": self.long_stale_hours,
                     "cluster_minutes": self.cluster_minutes,
                     "motion_active_hours": self.motion_active_hours,
                 },
