@@ -31,14 +31,35 @@ def _audit() -> dict:
         "issues": [
             {
                 "severity": "warning",
+                "domain": "devices",
                 "title": "Device unavailable: Roborock Q7 Max",
+                "detail": "offline",
                 "count": 1,
             },
             {
                 "severity": "warning",
+                "domain": "devices",
+                "title": "Low battery: Livingroom TRV",
+                "detail": "2% (threshold 20%).",
+                "count": 1,
+            },
+            {
+                "severity": "warning",
+                "domain": "automations",
+                "title": "Automation broken: Lighting: bedroom 3 low light",
+                "detail": "Hubitat marked the automation name *BROKEN*.",
+                "count": 1,
+            },
+            {
+                "severity": "warning",
+                "domain": "logs",
                 "title": "MCP Rule Server",
+                "detail": "VRB feed missing 1/358 devices.",
                 "count": 4,
             },
+        ],
+        "resolved_issues": [
+            {"title": "Motion active too long: Bedroom 3 Soft Sensor"}
         ],
     }
 
@@ -49,7 +70,34 @@ def test_pushover_summary_is_bounded_and_problem_first() -> None:
     assert title == "HomeBrain System Check: Attention"
     assert "✅ Hub: healthy" in message
     assert "⚠️ Devices: 2 need attention" in message
-    assert "MCP Rule Server ×4" in message
+    assert "Offline:\n• Roborock Q7 Max" in message
+    assert "Low battery:\n• Livingroom TRV — 2% (threshold 20%)." in message
+    assert "Broken automations:\n• Lighting: bedroom 3 low light" in message
+    assert "Logs:\n• MCP Rule Server — VRB feed missing 1/358 devices. ×4" in message
+    assert "Resolved:\n• Motion active too long: Bedroom 3 Soft Sensor" in message
+    assert len(message) <= 1024
+
+
+@pytest.mark.asyncio
+def test_pushover_named_sections_are_bounded_with_more_marker() -> None:
+    audit = _audit()
+    audit["issues"] = [
+        {
+            "severity": "warning",
+            "domain": "devices",
+            "title": f"Device unavailable: Offline device {index}",
+            "detail": "offline",
+            "count": 1,
+        }
+        for index in range(10)
+    ]
+
+    _, message = format_health_audit(audit)
+
+    assert "• Offline device 0" in message
+    assert "• Offline device 7" in message
+    assert "• +2 more" in message
+    assert "• Offline device 8" not in message
     assert len(message) <= 1024
 
 
