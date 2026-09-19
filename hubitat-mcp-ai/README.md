@@ -236,6 +236,24 @@ evidence against a Hubitat automation reacting to that recorded edge and as supp
 for a possible upstream/outside-Hubitat trigger. It must not name a specific
 external hub or automation without independent topology/configuration evidence.
 
+0.14.0 adds a deterministic operational health layer independent of the
+conversation/model loop. `HealthAuditService` checks MCP/hub reachability, the
+detailed device inventory, explicit offline/unreachable device states, low
+batteries, normalized automation status, firmware-update status from the Hub Info
+device, and native diagnostic logs from the previous configurable number of hours.
+Recurring log warnings/errors are grouped so repeated copies become one finding
+with an occurrence count. Disabled automations are reported in counts but are not
+treated as faults; broken, paused, and unknown automations are attention items.
+
+Every audit is persisted under `/data` with the previous snapshot so the dashboard
+can show new and resolved findings without rerunning the audit on page load. The
+same service backs a manual **Run system check now** button and
+`/api/health-audit` endpoints. `MorningHealthScheduler` runs the read-only audit
+daily at the configured local time using the Hubitat timezone, with a bounded
+post-start catch-up window. The WebUI shows health status, attention/new/resolved
+counts, device count, last-check time, next scheduled run, and expandable findings.
+No health check performs a device, rule, firmware, or hub mutation.
+
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
 applied locally. If the model draft conflicts with one of those invariants, HomeBrain
