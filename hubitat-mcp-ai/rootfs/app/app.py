@@ -592,6 +592,30 @@ async def run_health_audit() -> dict[str, Any]:
     }
 
 
+@app.post("/api/pushover/test")
+async def send_pushover_test() -> dict[str, Any]:
+    if not pushover_notifier.enabled:
+        raise HTTPException(status_code=409, detail="Pushover notifications are disabled")
+    if not pushover_notifier.configured:
+        raise HTTPException(
+            status_code=409,
+            detail="Pushover application token or user/group key is missing",
+        )
+    try:
+        delivery = await pushover_notifier.send_test()
+    except Exception as exc:
+        logger.warning("Manual Pushover test failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Pushover delivery failed: {str(exc)[:240]}",
+        ) from exc
+    return {
+        "success": True,
+        "message": "Pushover test notification sent.",
+        "request": str(delivery.get("request") or ""),
+    }
+
+
 @app.get("/api/tools")
 async def tools() -> dict[str, Any]:
     values = await mcp.list_tools(refresh=True)
