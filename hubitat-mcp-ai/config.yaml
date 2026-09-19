@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.13.7"
+version: "0.14.0"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -50,6 +50,10 @@ options:
   rule_write_enabled: true
   rule_create_paused_required: true
   deterministic_reads_enabled: false
+  morning_health_check_enabled: true
+  morning_health_check_time: "07:00"
+  health_check_log_hours: 24
+  health_check_low_battery: 20
   chatgpt_mcp_enabled: false
   chatgpt_mcp_require_bearer_auth: true
   chatgpt_mcp_token: ""
@@ -84,6 +88,10 @@ schema:
   rule_write_enabled: bool
   rule_create_paused_required: bool
   deterministic_reads_enabled: bool
+  morning_health_check_enabled: bool
+  morning_health_check_time: str
+  health_check_log_hours: int
+  health_check_low_battery: int
   chatgpt_mcp_enabled: bool
   chatgpt_mcp_require_bearer_auth: bool
   chatgpt_mcp_token: password

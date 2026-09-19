@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.13.7**.
+Current add-on version: **0.14.0**.
 
 ## Architecture
 
@@ -235,6 +235,24 @@ Hubitat records the sensor active edge, synthesis may treat that ordering as
 evidence against a Hubitat automation reacting to that recorded edge and as support
 for a possible upstream/outside-Hubitat trigger. It must not name a specific
 external hub or automation without independent topology/configuration evidence.
+
+0.14.0 adds a deterministic operational health layer independent of the
+conversation/model loop. `HealthAuditService` checks MCP/hub reachability, the
+detailed device inventory, explicit offline/unreachable device states, low
+batteries, normalized automation status, firmware-update status from the Hub Info
+device, and native diagnostic logs from the previous configurable number of hours.
+Recurring log warnings/errors are grouped so repeated copies become one finding
+with an occurrence count. Disabled automations are reported in counts but are not
+treated as faults; broken, paused, and unknown automations are attention items.
+
+Every audit is persisted under `/data` with the previous snapshot so the dashboard
+can show new and resolved findings without rerunning the audit on page load. The
+same service backs a manual **Run system check now** button and
+`/api/health-audit` endpoints. `MorningHealthScheduler` runs the read-only audit
+daily at the configured local time using the Hubitat timezone, with a bounded
+post-start catch-up window. The WebUI shows health status, attention/new/resolved
+counts, device count, last-check time, next scheduled run, and expandable findings.
+No health check performs a device, rule, firmware, or hub mutation.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
@@ -574,6 +592,10 @@ explicit evidence rather than model inference.
    ollama_direct_cloud_api_key: YOUR_OLLAMA_API_KEY
    ollama_direct_cloud_model: gemma4:31b-cloud
    require_sensitive_confirmation: true
+   morning_health_check_enabled: true
+   morning_health_check_time: "07:00"
+   health_check_log_hours: 24
+   health_check_low_battery: 20
    ```
 
 5. Start the add-on and open its Home Assistant sidebar panel.
@@ -625,9 +647,11 @@ mapping is disabled by default so the control API is not exposed to the local
 network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
 
-The WebUI includes live dashboard tiles, smart-home shortcuts, typed and spoken
+The WebUI includes live dashboard tiles, a persistent System Health card with a
+manual **Run system check now** button, smart-home shortcuts, typed and spoken
 queries, optional read-aloud answers, outcome badges, response metadata, copy,
-and expandable technical details.
+and expandable technical details. The scheduled morning health check is read-only
+and uses the Hubitat timezone; its stored snapshot is reused by the dashboard.
 
 ## API
 
@@ -635,6 +659,8 @@ These endpoints are intended to be reached through Home Assistant ingress:
 
 - `GET /api/status` — MCP and Ollama Online readiness
 - `GET /api/dashboard` — cached live-state dashboard counts
+- `GET /api/health-audit` — latest stored system-health audit and schedule status
+- `POST /api/health-audit/run` — run the same read-only audit immediately
 - `POST /api/ask` — process a request through the unified MCP agent
 - `POST /api/chat` — compatibility alias for `/api/ask`
 - `POST /api/refresh` — refresh MCP tools and device manifest
