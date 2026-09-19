@@ -164,6 +164,25 @@ def parse_firmware_status_intent(prompt: str) -> bool:
     return _FIRMWARE_STATUS.fullmatch(str(prompt).strip()) is not None
 
 
+_CURRENT_TIME = re.compile(
+    r"^\s*(?:please\s+)?(?:what(?:'s|s|\s+is)\s+(?:the\s+)?time|"
+    r"what\s+time\s+is\s+it|tell\s+me\s+(?:the\s+)?(?:current\s+)?time|"
+    r"(?:the\s+)?current\s+time|time\s+please)\s*[?.!]*\s*$",
+    re.I,
+)
+
+
+def parse_current_time_intent(prompt: str) -> bool:
+    """True only for a direct request for the current local time.
+
+    Current time must never be left to a language model to infer from its
+    training context or container timezone. The production agent handles this
+    intent deterministically using the Hubitat location timezone.
+    """
+
+    return _CURRENT_TIME.fullmatch(str(prompt).strip()) is not None
+
+
 _HUB_HEALTH_STATUS = re.compile(
     r"^\s*(?:please\s+)?check\s+(?:the\s+)?hub\s+health(?:\s+status)?\s*[?.!]*\s*$"
     r"|^\s*(?:please\s+)?(?:what(?:'s|s|\s+is)|how(?:'s|s|\s+is))\s+(?:the\s+)?"
