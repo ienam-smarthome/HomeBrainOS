@@ -78,6 +78,45 @@ async def test_single_mobile_service_is_auto_discovered() -> None:
 
 
 @pytest.mark.asyncio
+async def test_s25_user_agent_selects_matching_mobile_service() -> None:
+    calls = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, str(request.url)))
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "domain": "notify",
+                        "services": {
+                            "mobile_app_sm_s938b": {},
+                            "mobile_app_tablet": {},
+                        },
+                    }
+                ],
+            )
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        tts = HomeAssistantTTS(
+            enabled=True,
+            supervisor_token="token",
+            client=client,
+        )
+        result = await tts.speak(
+            "Hello",
+            device_hint=(
+                "Mozilla/5.0 (Linux; Android 16; SM-S938B Build/...) "
+                "AppleWebKit/537.36 Version/4.0 Chrome/143 Mobile Safari/537.36 wv"
+            ),
+        )
+
+    assert calls[1][1].endswith("/services/notify/mobile_app_sm_s938b")
+    assert result["service"] == "notify.mobile_app_sm_s938b"
+
+
+@pytest.mark.asyncio
 async def test_multiple_mobile_services_require_explicit_target() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
