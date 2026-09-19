@@ -592,8 +592,8 @@ async def run_health_audit() -> dict[str, Any]:
     }
 
 
-@app.post("/api/pushover/test")
-async def send_pushover_test() -> dict[str, Any]:
+@app.post("/api/pushover/report")
+async def send_pushover_report() -> dict[str, Any]:
     if not pushover_notifier.enabled:
         raise HTTPException(status_code=409, detail="Pushover notifications are disabled")
     if not pushover_notifier.configured:
@@ -602,16 +602,24 @@ async def send_pushover_test() -> dict[str, Any]:
             detail="Pushover application token or user/group key is missing",
         )
     try:
-        delivery = await pushover_notifier.send_test()
+        latest = health_audit.latest()
+        if not isinstance(latest, dict):
+            raise HTTPException(
+                status_code=409,
+                detail="No System Check report is available. Run system check first.",
+            )
+        delivery = await pushover_notifier.send(latest)
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.warning("Manual Pushover test failed: %s", exc)
+        logger.warning("Manual Pushover report delivery failed: %s", exc)
         raise HTTPException(
             status_code=502,
             detail=f"Pushover delivery failed: {str(exc)[:240]}",
         ) from exc
     return {
         "success": True,
-        "message": "Pushover test notification sent.",
+        "message": "Latest System Check report sent to Pushover.",
         "request": str(delivery.get("request") or ""),
     }
 

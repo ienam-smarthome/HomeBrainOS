@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.4**.
+Current add-on version: **0.14.5**.
 
 ## Architecture
 
@@ -295,6 +295,11 @@ the completed audit.
 Check button. It sends a clearly labelled test notification using the stored
 add-on credentials without running or changing the health audit. Success and
 failure are shown directly on the System Check card.
+
+0.14.5 changes that manual action from a placeholder test into **Send report to
+Pushover**. It delivers the latest stored System Check using the same hierarchy,
+totals, and leading findings as the scheduled morning notification. If no report
+exists yet, HomeBrain asks the user to run System Check first.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
