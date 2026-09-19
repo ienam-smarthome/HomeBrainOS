@@ -23,6 +23,22 @@ def _load_app(monkeypatch, tmp_path):
     return importlib.import_module("app")
 
 
+def test_legacy_hassio_token_is_accepted_when_supervisor_token_is_absent(monkeypatch, tmp_path) -> None:
+    options = tmp_path / "options.json"
+    options.write_text(
+        '{"morning_health_check_enabled": false, "ha_tts_enabled": true}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CONFIG_PATH", str(options))
+    monkeypatch.setenv("HEALTH_AUDIT_PATH", str(tmp_path / "health.json"))
+    monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
+    monkeypatch.setenv("HASSIO_TOKEN", "legacy-test-token")
+    sys.modules.pop("app", None)
+    module = importlib.import_module("app")
+
+    assert module.home_assistant_tts.supervisor_token == "legacy-test-token"
+
+
 def test_native_tts_endpoint_sends_text(monkeypatch, tmp_path) -> None:
     module = _load_app(monkeypatch, tmp_path)
     captured = {}
