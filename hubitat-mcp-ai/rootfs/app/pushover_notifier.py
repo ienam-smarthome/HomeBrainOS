@@ -132,14 +132,5 @@ class PushoverNotifier:
         title, message = format_health_audit(audit)
         return await self._send_message(title=title, message=message)
 
-    async def send_test(self) -> dict[str, Any]:
-        return await self._send_message(
-            title="HomeBrain Pushover Test",
-            message=(
-                "Test notification sent manually from HomeBrain. "
-                "Scheduled morning System Check notifications are configured."
-            ),
-        )
-
 
 __all__ = ["PushoverNotifier", "format_health_audit"]

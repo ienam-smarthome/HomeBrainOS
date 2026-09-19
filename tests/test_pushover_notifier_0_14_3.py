@@ -85,25 +85,3 @@ async def test_enabled_pushover_requires_credentials() -> None:
 
     with pytest.raises(RuntimeError, match="token or user/group key is missing"):
         await notifier.send(_audit())
-
-
-@pytest.mark.asyncio
-async def test_manual_test_uses_clear_test_title_and_message() -> None:
-    captured = {}
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        captured["body"] = request.content.decode()
-        return httpx.Response(200, json={"status": 1, "request": "test-request"})
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        notifier = PushoverNotifier(
-            enabled=True,
-            app_token="app-token",
-            user_key="user-key",
-            client=client,
-        )
-        result = await notifier.send_test()
-
-    assert "title=HomeBrain+Pushover+Test" in captured["body"]
-    assert "Test+notification+sent+manually+from+HomeBrain" in captured["body"]
-    assert result["request"] == "test-request"
