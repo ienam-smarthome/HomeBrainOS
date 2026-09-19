@@ -31,7 +31,7 @@ class HomeAssistantTTS:
         self.notify_service = str(notify_service or "").strip()
         self.media_stream = str(media_stream or "").strip()
         self.base_url = str(base_url or HOME_ASSISTANT_CORE_API).rstrip("/")
-        self._client = client or httpx.AsyncClient(timeout=10.0)
+        self._client = client
         self._owns_client = client is None
         self._resolved_service: str | None = None
 
@@ -56,6 +56,11 @@ class HomeAssistantTTS:
             "can_attempt": self.can_attempt,
         }
 
+    def _http(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=10.0)
+        return self._client
+
     def _headers(self) -> dict[str, str]:
         if not self.supervisor_token:
             raise HomeAssistantTTSConfigurationError(
@@ -78,7 +83,7 @@ class HomeAssistantTTS:
         return service
 
     async def _discover_mobile_services(self) -> list[str]:
-        response = await self._client.get(
+        response = await self._http().get(
             f"{self.base_url}/services",
             headers=self._headers(),
         )
@@ -136,7 +141,7 @@ class HomeAssistantTTS:
         data: dict[str, Any] = {"tts_text": spoken}
         if self.media_stream:
             data["media_stream"] = self.media_stream
-        response = await self._client.post(
+        response = await self._http().post(
             f"{self.base_url}/services/notify/{service}",
             headers=self._headers(),
             json={"message": "TTS", "data": data},
@@ -150,7 +155,7 @@ class HomeAssistantTTS:
 
     async def stop(self) -> dict[str, Any]:
         service = await self.resolve_notify_service()
-        response = await self._client.post(
+        response = await self._http().post(
             f"{self.base_url}/services/notify/{service}",
             headers=self._headers(),
             json={"message": "command_stop_tts"},
@@ -163,8 +168,9 @@ class HomeAssistantTTS:
         }
 
     async def close(self) -> None:
-        if self._owns_client:
+        if self._owns_client and self._client is not None:
             await self._client.aclose()
+            self._client = None
 
 
 __all__ = [
