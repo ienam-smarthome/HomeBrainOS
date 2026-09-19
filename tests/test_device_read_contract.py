@@ -41,6 +41,17 @@ def test_detailed_state_plan_uses_attributes() -> None:
     )
 
 
+def test_health_manifest_can_request_last_activity() -> None:
+    plan = device_read_plan(
+        include_states=True,
+        include_capabilities=True,
+        include_commands=True,
+        include_last_activity=True,
+    )
+
+    assert plan.fields[-1] == "lastActivity"
+
+
 def test_normalizer_repairs_the_010433_mixed_projection() -> None:
     arguments = {
         "tool": "hub_list_devices",

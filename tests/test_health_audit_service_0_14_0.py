@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from health_audit_service import (  # noqa: E402
     HealthAuditService,
+    _device_findings,
     _gateway_arguments,
     _log_findings,
 )
@@ -168,6 +170,11 @@ async def test_health_audit_is_deterministic_persistent_and_problem_first(tmp_pa
     assert first["sections"]["logs"]["error_group_count"] == 1
     assert first["sections"]["logs"]["warning_group_count"] == 1
     assert first["sections"]["logs"]["warning_groups"][0]["count"] == 2
+    assert first["health_hierarchy"]["hub"]["status"] == "healthy"
+    assert first["health_hierarchy"]["devices"]["attention_count"] == 2
+    assert first["health_hierarchy"]["automations"]["attention_count"] == 1
+    assert first["health_hierarchy"]["logs"]["attention_count"] == 2
+    assert "Hub healthy" in first["message"]
     assert all(
         "Disabled Rule" not in item["title"]
         for item in first["issues"]
@@ -233,4 +240,113 @@ def test_log_findings_group_recurring_warnings() -> None:
     assert section["warning_group_count"] == 1
     assert section["warning_groups"][0]["count"] == 2
     assert len(issues) == 1
+    assert issues[0]["count"] == 2
+
+
+def test_stale_analysis_is_conservative_and_clusters_mqtt_telemetry() -> None:
+    now = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
+    devices = [
+        *[
+            {
+                "id": f"mqtt-{index}",
+                "label": f"Bedroom {index} (MQTT)",
+                "deviceType": "Tasmota MQTT power meter",
+                "capabilities": ["PowerMeter", "EnergyMeter", "Switch"],
+                "attributes": {"power": 0, "switch": "on"},
+                "lastActivity": f"2026-09-17T08:0{index}:00+00:00",
+            }
+            for index in range(1, 4)
+        ],
+        {
+            "id": "button",
+            "label": "Aqara Mini Switch",
+            "capabilities": ["PushableButton"],
+            "attributes": {"pushed": 1},
+            "lastActivity": "2026-09-10T08:00:00+00:00",
+        },
+        {
+            "id": "battery-meter",
+            "label": "Bedroom Battery Meter",
+            "capabilities": ["TemperatureMeasurement", "Battery"],
+            "attributes": {"temperature": 21.5, "battery": 82},
+            "lastActivity": "2026-09-10T08:00:00+00:00",
+        },
+        {
+            "id": "motion",
+            "label": "Hallway Motion",
+            "capabilities": ["MotionSensor"],
+            "attributes": {"motion": "active"},
+            "lastActivity": "2026-09-19T04:00:00+00:00",
+        },
+        {
+            "id": "presence",
+            "label": "Bedroom 1 FP300",
+            "capabilities": ["PresenceSensor"],
+            "attributes": {"presence": "present"},
+            "lastActivity": "2026-09-10T08:00:00+00:00",
+        },
+        {
+            "id": "never",
+            "label": "New temperature sensor",
+            "capabilities": ["TemperatureMeasurement"],
+            "attributes": {},
+            "lastActivity": None,
+        },
+    ]
+
+    section, issues = _device_findings(
+        devices,
+        low_battery_threshold=20,
+        stale_hours=24,
+        cluster_minutes=15,
+        motion_active_hours=2,
+        now=now,
+    )
+
+    assert section["suspicious_stale_count"] == 3
+    assert section["stale_cluster_count"] == 1
+    assert section["stale_clusters"][0]["subsystem"] == "MQTT"
+    assert section["stale_clusters"][0]["count"] == 3
+    assert section["motion_active_too_long"][0]["label"] == "Hallway Motion"
+    assert section["occupied_long"][0]["label"] == "Bedroom 1 FP300"
+    assert section["never_reported"][0]["label"] == "New temperature sensor"
+    assert any(row["label"] == "Aqara Mini Switch" for row in section["passive_quiet"])
+    assert any(row["label"] == "Bedroom Battery Meter" for row in section["passive_quiet"])
+    assert any(item["category"] == "device-stale-cluster" for item in issues)
+    assert not any(item["category"] == "device-stale" for item in issues)
+    assert any(item["category"] == "device-motion-active" for item in issues)
+    assert not any(item["category"] == "device-never-reported" for item in issues)
+    assert not any("FP300" in item["title"] and item["severity"] == "warning" for item in issues)
+
+
+def test_log_fingerprint_removes_volatile_ids_and_groups_vrb_warning() -> None:
+    section, issues = _log_findings(
+        [
+            {
+                "level": "WARN",
+                "timestamp": "2026-09-19T08:00:00Z",
+                "message": (
+                    "MCP Rule Server - Visual Rule Builder feed missing 1/358 devices "
+                    "requestId=ffbd1db2-54e0-4a4f-9df8-b389bb392f65"
+                ),
+            },
+            {
+                "level": "WARN",
+                "timestamp": "2026-09-19T08:05:00Z",
+                "message": (
+                    "MCP Rule Server - Visual Rule Builder feed missing 1/358 devices "
+                    "requestId=8ccbe3d8-35a3-48d0-b052-d5dd027e41a1"
+                ),
+            },
+        ]
+    )
+
+    assert section["warning_group_count"] == 1
+    group = section["warning_groups"][0]
+    assert group["count"] == 2
+    assert group["source"] == "MCP Rule Server"
+    assert group["summary"] == "VRB feed missing 1/358 devices."
+    assert group["first_seen"] == "2026-09-19T08:00:00+00:00"
+    assert group["last_seen"] == "2026-09-19T08:05:00+00:00"
+    assert issues[0]["title"] == "MCP Rule Server"
     assert issues[0]["count"] == 2

@@ -34,6 +34,8 @@ def test_health_audit_dashboard_card_is_present(monkeypatch, tmp_path) -> None:
     assert 'id="runHealthAudit"' in response.text
     assert "api/health-audit" in response.text
     assert "Run system check now" in response.text
+    assert "health-domain-grid" in response.text
+    assert "renderHealthAuditV2" in response.text
 
 
 def test_health_audit_status_and_manual_run_endpoints(monkeypatch, tmp_path) -> None:
