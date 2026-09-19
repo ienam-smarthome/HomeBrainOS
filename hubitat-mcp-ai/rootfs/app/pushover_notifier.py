@@ -9,12 +9,28 @@ PUSHOVER_MESSAGES_URL = "https://api.pushover.net/1/messages.json"
 PUSHOVER_MESSAGE_LIMIT = 1024
 
 
+def _clean_named_finding(title: str, prefix: str) -> str:
+    value = title[len(prefix):].strip() if title.lower().startswith(prefix.lower()) else title.strip()
+    return value or "Unknown"
+
+
+def _append_section(lines: list[str], heading: str, values: list[str], *, limit: int) -> None:
+    if not values:
+        return
+    lines.append(f"{heading}:")
+    for value in values[:limit]:
+        lines.append(f"• {value}")
+    remaining = len(values) - limit
+    if remaining > 0:
+        lines.append(f"• +{remaining} more")
+
+
 def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
     status = str(audit.get("status") or "unknown").strip().title()
     title = f"HomeBrain System Check: {status}"[:250]
     hierarchy = audit.get("health_hierarchy") or {}
 
-    lines = []
+    lines: list[str] = []
     for key in ("hub", "devices", "automations", "logs"):
         item = hierarchy.get(key) if isinstance(hierarchy, dict) else None
         if not isinstance(item, dict):
@@ -39,19 +55,52 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
         f"Total: {attention} attention · {new_count} new · {resolved_count} resolved"
     )
 
-    issues = audit.get("issues") or []
-    actionable = [
+    issues = [
         row
-        for row in issues
+        for row in (audit.get("issues") or [])
         if isinstance(row, dict) and row.get("severity") in {"critical", "warning"}
     ]
-    if actionable:
-        lines.append("Top findings:")
-        for item in actionable[:6]:
-            occurrence = int(item.get("count") or 1)
-            suffix = f" ×{occurrence}" if occurrence > 1 else ""
-            lines.append(f"• {item.get('title') or 'Issue'}{suffix}")
-    else:
+    offline: list[str] = []
+    low_battery: list[str] = []
+    broken_automations: list[str] = []
+    logs: list[str] = []
+    other: list[str] = []
+
+    for item in issues:
+        finding_title = str(item.get("title") or "Issue").strip()
+        detail = str(item.get("detail") or "").strip()
+        domain = str(item.get("domain") or "").strip().lower()
+        occurrence = int(item.get("count") or 1)
+        suffix = f" ×{occurrence}" if occurrence > 1 else ""
+
+        if finding_title.lower().startswith("device unavailable:"):
+            offline.append(_clean_named_finding(finding_title, "Device unavailable:") + suffix)
+        elif finding_title.lower().startswith("low battery:"):
+            name = _clean_named_finding(finding_title, "Low battery:")
+            low_battery.append(f"{name} — {detail}" if detail else name)
+        elif finding_title.lower().startswith("automation broken:"):
+            broken_automations.append(
+                _clean_named_finding(finding_title, "Automation broken:") + suffix
+            )
+        elif domain == "logs":
+            logs.append(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix)
+        else:
+            other.append(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix)
+
+    _append_section(lines, "Offline", offline, limit=8)
+    _append_section(lines, "Low battery", low_battery, limit=6)
+    _append_section(lines, "Broken automations", broken_automations, limit=6)
+    _append_section(lines, "Logs", logs, limit=3)
+    _append_section(lines, "Other findings", other, limit=3)
+
+    resolved = [
+        str(item.get("title") or "Issue").strip()
+        for item in (audit.get("resolved_issues") or [])
+        if isinstance(item, dict)
+    ]
+    _append_section(lines, "Resolved", resolved, limit=3)
+
+    if not issues:
         lines.append("No current findings need attention.")
 
     message = "\n".join(lines)
