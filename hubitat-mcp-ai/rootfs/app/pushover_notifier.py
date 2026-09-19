@@ -80,20 +80,23 @@ class PushoverNotifier:
         self.timeout_seconds = max(1.0, min(30.0, float(timeout_seconds)))
         self._client = client
 
-    async def send(self, audit: dict[str, Any]) -> dict[str, Any]:
+    @property
+    def configured(self) -> bool:
+        return self.enabled and bool(self.app_token and self.user_key)
+
+    async def _send_message(self, *, title: str, message: str) -> dict[str, Any]:
         if not self.enabled:
-            return {"sent": False, "reason": "disabled"}
+            raise RuntimeError("Pushover notifications are disabled")
         if not self.app_token or not self.user_key:
             raise RuntimeError(
                 "Pushover is enabled but the application token or user/group key is missing"
             )
 
-        title, message = format_health_audit(audit)
         form = {
             "token": self.app_token,
             "user": self.user_key,
-            "title": title,
-            "message": message,
+            "title": str(title)[:250],
+            "message": str(message)[:PUSHOVER_MESSAGE_LIMIT],
             "priority": "0",
         }
         if self.device:
@@ -122,8 +125,12 @@ class PushoverNotifier:
         return {
             "sent": True,
             "request": str(payload.get("request") or ""),
-            "title": title,
+            "title": str(title)[:250],
         }
+
+    async def send(self, audit: dict[str, Any]) -> dict[str, Any]:
+        title, message = format_health_audit(audit)
+        return await self._send_message(title=title, message=message)
 
 
 __all__ = ["PushoverNotifier", "format_health_audit"]

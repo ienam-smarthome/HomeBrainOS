@@ -592,6 +592,38 @@ async def run_health_audit() -> dict[str, Any]:
     }
 
 
+@app.post("/api/pushover/report")
+async def send_pushover_report() -> dict[str, Any]:
+    if not pushover_notifier.enabled:
+        raise HTTPException(status_code=409, detail="Pushover notifications are disabled")
+    if not pushover_notifier.configured:
+        raise HTTPException(
+            status_code=409,
+            detail="Pushover application token or user/group key is missing",
+        )
+    try:
+        latest = health_audit.latest()
+        if not isinstance(latest, dict):
+            raise HTTPException(
+                status_code=409,
+                detail="No System Check report is available. Run system check first.",
+            )
+        delivery = await pushover_notifier.send(latest)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Manual Pushover report delivery failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Pushover delivery failed: {str(exc)[:240]}",
+        ) from exc
+    return {
+        "success": True,
+        "message": "Latest System Check report sent to Pushover.",
+        "request": str(delivery.get("request") or ""),
+    }
+
+
 @app.get("/api/tools")
 async def tools() -> dict[str, Any]:
     values = await mcp.list_tools(refresh=True)

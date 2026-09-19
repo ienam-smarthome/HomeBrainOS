@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.3**.
+Current add-on version: **0.14.4**.
 
 ## Architecture
 
@@ -290,6 +290,12 @@ notification contains the Hub/Devices/Automations/Logs hierarchy, totals, and th
 top actionable findings. Delivery is attempted only for scheduled checks; manual
 checks do not notify. A delivery failure is recorded separately and never discards
 the completed audit.
+
+0.14.4 adds a dedicated **Send report to Pushover** button beside the manual
+System Check button. It sends the latest stored System Check report using the
+same hierarchy, totals, and top findings as the scheduled morning notification,
+without rerunning or changing the health audit. Success and failure are shown
+directly on the System Check card.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are

@@ -37,6 +37,8 @@ def test_health_audit_dashboard_card_is_present(monkeypatch, tmp_path) -> None:
     assert "health-domain-grid" in response.text
     assert "renderHealthAuditV2" in response.text
     assert "Pushover delivery failed" in response.text
+    assert 'id="sendPushoverReport"' in response.text
+    assert "api/pushover/report" in response.text
 
 
 def test_health_audit_status_and_manual_run_endpoints(monkeypatch, tmp_path) -> None:
@@ -71,3 +73,58 @@ def test_health_audit_status_and_manual_run_endpoints(monkeypatch, tmp_path) -> 
     assert manual.status_code == 200
     assert manual.json()["latest"]["sections"]["devices"]["total"] == 84
     assert manual.json()["schedule"]["time"] == "07:00"
+
+
+def test_manual_pushover_report_endpoint(monkeypatch, tmp_path) -> None:
+    module = _load_app(monkeypatch, tmp_path)
+    report = {"status": "attention", "attention_count": 2}
+
+    class Notifier:
+        enabled = True
+        configured = True
+
+        async def send(self, audit):
+            assert audit == report
+            return {"sent": True, "request": "pushover-request-id"}
+
+    monkeypatch.setattr(module, "pushover_notifier", Notifier())
+    monkeypatch.setattr(module.health_audit, "latest", lambda: report)
+
+    with TestClient(module.app) as client:
+        response = client.post("/api/pushover/report")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "message": "Latest System Check report sent to Pushover.",
+        "request": "pushover-request-id",
+    }
+
+
+def test_manual_pushover_report_reports_disabled_configuration(monkeypatch, tmp_path) -> None:
+    module = _load_app(monkeypatch, tmp_path)
+
+    with TestClient(module.app) as client:
+        response = client.post("/api/pushover/report")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Pushover notifications are disabled"
+
+
+def test_manual_pushover_report_requires_existing_audit(monkeypatch, tmp_path) -> None:
+    module = _load_app(monkeypatch, tmp_path)
+
+    class Notifier:
+        enabled = True
+        configured = True
+
+    monkeypatch.setattr(module, "pushover_notifier", Notifier())
+    monkeypatch.setattr(module.health_audit, "latest", lambda: None)
+
+    with TestClient(module.app) as client:
+        response = client.post("/api/pushover/report")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "No System Check report is available. Run system check first."
+    )
