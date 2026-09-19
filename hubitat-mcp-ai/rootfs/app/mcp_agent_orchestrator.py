@@ -22,8 +22,11 @@ from causal_evidence_planner import (
     controller_boundary_alignments,
     controller_history_arguments,
     render_controller_alignment_instruction,
+    render_sensor_correlation_instruction,
+    sensor_transition_correlations,
     subject_has_observed_intervals,
     subject_room_filter_arguments,
+    trigger_sensor_history_arguments,
 )
 from causal_timeline import (
     render_command_source_followup,
@@ -557,6 +560,72 @@ class UnifiedMCPAgent:
                     ),
                 })
 
+            # One motion/presence history is justified only when material START
+            # transitions remain unresolved after direct controller evidence.
+            # This is capability-grounded from the same room scan and deliberately
+            # excludes lux/temperature-only sensors.
+            unresolved_after_controller = unresolved_material_timeline_rows(
+                self.evidence.receipts()
+            )
+            sensor_arguments = (
+                trigger_sensor_history_arguments(filter_data)
+                if unresolved_after_controller
+                else None
+            )
+            if sensor_arguments is not None and controller_tool is not None:
+                increment_active_metric("causal_sensor_read")
+                sensor_execution = await self.executor.execute(
+                    _LOCAL_DEVICE_HISTORY_TOOL,
+                    sensor_arguments,
+                    tool=controller_tool,
+                    supports_live_claim=True,
+                    evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_HISTORY_TOOL],
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
+                    "content": sensor_execution.content,
+                })
+                completed_calls.add(json.dumps(
+                    [_LOCAL_DEVICE_HISTORY_TOOL, sensor_arguments],
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    default=str,
+                ))
+                sensor_data = (
+                    sensor_execution.result.data
+                    if sensor_execution.result is not None
+                    and isinstance(sensor_execution.result.data, dict)
+                    else {}
+                )
+                correlations = sensor_transition_correlations(
+                    subject_history,
+                    sensor_data,
+                )
+                correlation_instruction = render_sensor_correlation_instruction(
+                    correlations
+                )
+                if correlation_instruction:
+                    increment_active_metric(
+                        "causal_sensor_aligned",
+                        len(correlations),
+                    )
+                    messages.append({
+                        "role": "user",
+                        "content": correlation_instruction,
+                    })
+                else:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "HOST MOTION/PRESENCE CORRELATION RESULT\n"
+                            "The highest-ranked same-room MotionSensor/PresenceSensor "
+                            "was checked, but no material subject boundary correlation "
+                            "met the deterministic timing windows. Do not fan out to "
+                            "additional environmental sensors."
+                        ),
+                    })
+
         # Location/mode correlation is a stable evidence class for causal
         # investigations and does not require model-authored tool selection.
         location_tool = catalog.declared_tool(_LOCAL_LOCATION_EVENTS_TOOL)
@@ -625,9 +694,11 @@ class UnifiedMCPAgent:
             "content": (
                 "HOST CAUSAL EVIDENCE LAYER COMPLETE\n"
                 "The host has completed the fixed subject-adjacent evidence "
-                "layer: exact-room controller evidence when available, plus "
-                "location/mode history clipped to the active history window. "
-                "Do not request more device, sensor, controller, room, or "
+                "layer: exact-room controller evidence when available; one "
+                "capability-grounded motion/presence sensor when unresolved material "
+                "turn-ons justified it; plus location/mode history clipped to the "
+                "active history window. Do not request more device, sensor, "
+                "controller, room, or "
                 "location histories merely to be thorough. The next step is one "
                 "bounded provenance selection from installed read-only log/rule/"
                 "app gateways. When unresolved material transitions remain and "

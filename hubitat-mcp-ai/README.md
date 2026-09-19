@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.13.6**.
+Current add-on version: **0.13.7**.
 
 ## Architecture
 
@@ -221,6 +221,20 @@ turn-on rows remain unresolved, HomeBrain loads installed app identities as
 navigation context before the single provenance round so the model can inspect
 logs and one relevant app/rule detail in the same round instead of spending a
 later round listing apps.
+
+0.13.7 adds one final bounded evidence-selection step for unresolved causal
+turn-ons. Exact-room discovery now identifies devices that explicitly advertise
+MotionSensor/PresenceSensor capabilities. After controller evidence is checked,
+HomeBrain may read exactly one highest-ranked motion/presence history when material
+START transitions remain unresolved. Lux/temperature-only sensors are not eligible.
+
+The selected sensor is correlated against subject START/END boundaries with signed
+timing. Tight repeated START alignment and bounded delayed-off END alignment are
+surfaced deterministically. When multiple starts show the subject changing before
+Hubitat records the sensor active edge, synthesis may treat that ordering as
+evidence against a Hubitat automation reacting to that recorded edge and as support
+for a possible upstream/outside-Hubitat trigger. It must not name a specific
+external hub or automation without independent topology/configuration evidence.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
