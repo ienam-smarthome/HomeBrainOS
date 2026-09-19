@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.14.13"
+version: "0.14.14"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -13,6 +13,8 @@ boot: auto
 init: false
 ingress: true
 homeassistant_api: true
+hassio_api: true
+hassio_role: default
 ingress_port: 8788
 panel_icon: mdi:home-assistant
 panel_title: "Hubitat MCP AI"

@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.13**.
+Current add-on version: **0.14.14**.
 
 ## Architecture
 
@@ -661,7 +661,12 @@ copy its application token plus your user key (or a delivery-group key) into the
 three `pushover_*` options above, then set `pushover_enabled: true`.
 
 For reliable answer speech inside the Home Assistant Android companion app,
-HomeBrain can send native mobile-app TTS through the Home Assistant Core API.
+HomeBrain can send native mobile-app TTS through the Home Assistant Core API. The
+add-on requests both Home Assistant Core API access and the compatible Supervisor
+API token grant (`hassio_api: true`, `hassio_role: default`) because some
+live Supervisor installations do not inject `SUPERVISOR_TOKEN` with the Core API
+flag alone. HomeBrain also accepts the legacy `HASSIO_TOKEN` environment name as
+a compatibility fallback without exposing either token.
 Leave `ha_tts_notify_service` empty when Home Assistant has exactly one
 `notify.mobile_app_*` service and HomeBrain will auto-discover it. When several
 mobile-app services exist, HomeBrain also tries to match the Android device

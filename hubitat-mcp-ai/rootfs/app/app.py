@@ -158,7 +158,7 @@ pushover_notifier = PushoverNotifier(
 )
 home_assistant_tts = HomeAssistantTTS(
     enabled=_bool(OPTIONS.get("ha_tts_enabled"), True),
-    supervisor_token=str(os.getenv("SUPERVISOR_TOKEN") or ""),
+    supervisor_token=str(os.getenv("SUPERVISOR_TOKEN") or os.getenv("HASSIO_TOKEN") or ""),
     notify_service=str(OPTIONS.get("ha_tts_notify_service") or ""),
     media_stream=str(OPTIONS.get("ha_tts_media_stream") or ""),
 )
