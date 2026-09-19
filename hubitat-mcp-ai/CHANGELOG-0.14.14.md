@@ -5,8 +5,8 @@
 - Request the compatible Supervisor API grant in addition to
   `homeassistant_api: true` so live Home Assistant installations reliably
   inject an API token into the add-on container.
-- Use the limited `homeassistant` Supervisor role rather than a manager/admin
-  role.
+- Use the least-privilege `default` Supervisor role; Home Assistant Core API
+  access remains separately granted by `homeassistant_api: true`.
 - Continue using the Home Assistant Core API proxy at
   `http://supervisor/core/api`.
 - Accept the legacy `HASSIO_TOKEN` environment variable as a compatibility
