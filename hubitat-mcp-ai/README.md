@@ -663,7 +663,7 @@ three `pushover_*` options above, then set `pushover_enabled: true`.
 For reliable answer speech inside the Home Assistant Android companion app,
 HomeBrain can send native mobile-app TTS through the Home Assistant Core API. The
 add-on requests both Home Assistant Core API access and the compatible Supervisor
-API token grant (`hassio_api: true`, `hassio_role: homeassistant`) because some
+API token grant (`hassio_api: true`, `hassio_role: default`) because some
 live Supervisor installations do not inject `SUPERVISOR_TOKEN` with the Core API
 flag alone. HomeBrain also accepts the legacy `HASSIO_TOKEN` environment name as
 a compatibility fallback without exposing either token.
