@@ -14,7 +14,7 @@ init: false
 ingress: true
 homeassistant_api: true
 hassio_api: true
-hassio_role: homeassistant
+hassio_role: default
 ingress_port: 8788
 panel_icon: mdi:home-assistant
 panel_title: "Hubitat MCP AI"
