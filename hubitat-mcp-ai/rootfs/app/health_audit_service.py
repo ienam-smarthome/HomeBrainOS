@@ -547,7 +547,14 @@ class HealthAuditService:
             hub = _hub_device_summary(devices)
             sections["hub"] = hub
             update_status = str(hub.get("update_status") or "").casefold()
-            if "available" in update_status or "update" in update_status and "current" not in update_status:
+            update_available = (
+                ("available" in update_status or "update ready" in update_status)
+                and not any(
+                    phrase in update_status
+                    for phrase in ("no update", "not available", "current", "up to date")
+                )
+            )
+            if update_available:
                 version = str(hub.get("update_version") or "").strip()
                 issues.append(
                     _issue(
