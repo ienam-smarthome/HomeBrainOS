@@ -39,13 +39,17 @@ def test_health_audit_dashboard_card_is_present(monkeypatch, tmp_path) -> None:
     assert "Run system check now" in response.text
     assert "health-domain-grid" in response.text
     assert "renderHealthAuditV2" in response.text
-    assert "healthIssueClass" in response.text
-    assert "health-issue-critical" in response.text
-    assert "health-issue-warning" in response.text
+    assert "renderHealthIssue" in response.text
+    assert "health-target-critical" in response.text
+    assert "health-state-critical" in response.text
+    assert "health-target-warning" in response.text
+    assert "health-state-warning" in response.text
+    assert "healthIssueClass" not in response.text
+    assert "health-issue-critical" not in response.text
     assert "toUpperCase()+': '" not in response.text
-    assert "}\\nfunction healthIssueClass" not in response.text
+    assert "}\\nfunction renderHealthIssue" not in response.text
     assert "function healthTime" in response.text
-    assert "function healthIssueClass" in response.text
+    assert "function renderHealthIssue" in response.text
     assert "Pushover delivery failed" in response.text
     assert 'id="sendPushoverReport"' in response.text
     assert "api/pushover/report" in response.text

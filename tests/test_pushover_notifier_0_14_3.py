@@ -78,7 +78,6 @@ def test_pushover_summary_is_bounded_and_problem_first() -> None:
     assert len(message) <= 1024
 
 
-@pytest.mark.asyncio
 def test_pushover_named_sections_are_bounded_with_more_marker() -> None:
     audit = _audit()
     audit["issues"] = [
