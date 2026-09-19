@@ -167,7 +167,7 @@ def parse_firmware_status_intent(prompt: str) -> bool:
 _CURRENT_TIME = re.compile(
     r"^\s*(?:please\s+)?(?:what(?:'s|s|\s+is)\s+(?:the\s+)?time|"
     r"what\s+time\s+is\s+it|tell\s+me\s+(?:the\s+)?(?:current\s+)?time|"
-    r"(?:the\s+)?current\s+time|time\s+please)\s*[?.!]*\s*$",
+    r"(?:the\s+)?current\s+time|time)(?:\s+please)?\s*[?.!]*\s*$",
     re.I,
 )
 
