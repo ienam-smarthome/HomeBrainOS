@@ -45,6 +45,7 @@ The repository drift test compares this table directly with the live directory. 
 | `history_cardinality_guard.py` | Corrects exhaustive interval-count claims that contradict deterministic temporal evidence. |
 | `history_temporal_analysis.py` | Derives bounded state intervals, deterministic duration totals, and bounded interval proof from authoritative device events. |
 | `history_time_windows.py` | Parses request-scoped calendar phrases and resolves explicit local-time history windows. |
+| `home_assistant_tts.py` | Sends bounded answer speech through Home Assistant mobile-app native TTS, including safe target discovery and stop control. |
 | `investigation_policy.py` | Central shared classification for causal and analytical history requests so orchestration and final synthesis use the same request intent. |
 | `homebrain_agent.py` | Production UnifiedMCPAgent composition and metrics wrapper. |
 | `hub_info_service.py` | Reads refreshed Hub Information Driver state. |
