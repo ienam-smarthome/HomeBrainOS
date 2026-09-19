@@ -37,6 +37,7 @@ from history_time_windows import (
 )
 from homebrain_agent import UnifiedMCPAgent
 from hub_timezone import HubTimezoneResolver
+from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp_client import HubitatMCPClient
 from pushover_notifier import PushoverNotifier
 from webui import render_page
@@ -105,6 +106,9 @@ def load_options() -> dict[str, Any]:
         "pushover_app_token": "",
         "pushover_user_key": "",
         "pushover_device": "",
+        "ha_tts_enabled": True,
+        "ha_tts_notify_service": "",
+        "ha_tts_media_stream": "",
         "web_title": "Hubitat MCP AI",
     }
     if OPTIONS_PATH.exists():
@@ -151,6 +155,12 @@ pushover_notifier = PushoverNotifier(
     app_token=str(OPTIONS.get("pushover_app_token") or ""),
     user_key=str(OPTIONS.get("pushover_user_key") or ""),
     device=str(OPTIONS.get("pushover_device") or ""),
+)
+home_assistant_tts = HomeAssistantTTS(
+    enabled=_bool(OPTIONS.get("ha_tts_enabled"), True),
+    supervisor_token=str(os.getenv("SUPERVISOR_TOKEN") or ""),
+    notify_service=str(OPTIONS.get("ha_tts_notify_service") or ""),
+    media_stream=str(OPTIONS.get("ha_tts_media_stream") or ""),
 )
 
 
@@ -290,6 +300,7 @@ async def lifespan(_: FastAPI):
     finally:
         await health_scheduler.close()
         await request_coordinator.close()
+        await home_assistant_tts.close()
         await agent.close()
         await mcp.close()
 
@@ -335,6 +346,10 @@ class ChatRequest(BaseModel):
     @property
     def coordination_key(self) -> str:
         return self.session_id
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=1500)
 
 
 async def _creative_automation_recommendation() -> Any:
@@ -426,6 +441,7 @@ async def health() -> dict[str, Any]:
             "local_configured": agent.local_configured,
             "local_model": agent.local_model_name or None,
         },
+        "tts": home_assistant_tts.status(),
     }
 
 
@@ -589,6 +605,44 @@ async def run_health_audit() -> dict[str, Any]:
         "success": True,
         "latest": latest,
         "schedule": health_scheduler.status(),
+    }
+
+
+@app.post("/api/tts")
+async def speak_tts(request: TTSRequest) -> dict[str, Any]:
+    try:
+        delivery = await home_assistant_tts.speak(request.text)
+    except HomeAssistantTTSConfigurationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.warning("Home Assistant native TTS delivery failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Home Assistant TTS delivery failed: {str(exc)[:240]}",
+        ) from exc
+    return {
+        "success": True,
+        **delivery,
+    }
+
+
+@app.post("/api/tts/stop")
+async def stop_tts() -> dict[str, Any]:
+    try:
+        delivery = await home_assistant_tts.stop()
+    except HomeAssistantTTSConfigurationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.warning("Home Assistant native TTS stop failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Home Assistant TTS stop failed: {str(exc)[:240]}",
+        ) from exc
+    return {
+        "success": True,
+        **delivery,
     }
 
 

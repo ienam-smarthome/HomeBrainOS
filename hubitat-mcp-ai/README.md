@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.11**.
+Current add-on version: **0.14.12**.
 
 ## Architecture
 
@@ -651,11 +651,24 @@ explicit evidence rather than model inference.
    pushover_app_token: ""
    pushover_user_key: ""
    pushover_device: ""
+   ha_tts_enabled: true
+   ha_tts_notify_service: ""
+   ha_tts_media_stream: ""
    ```
 
 To receive the morning result in Pushover, register a Pushover application and
 copy its application token plus your user key (or a delivery-group key) into the
 three `pushover_*` options above, then set `pushover_enabled: true`.
+
+For reliable answer speech inside the Home Assistant Android companion app,
+HomeBrain can send native mobile-app TTS through the Home Assistant Core API.
+Leave `ha_tts_notify_service` empty when Home Assistant has exactly one
+`notify.mobile_app_*` service and HomeBrain will auto-discover it. If more than
+one mobile-app notify service exists, set this option explicitly, for example
+`notify.mobile_app_s25_ultra`. Leave `ha_tts_media_stream` empty to use the
+companion app default music stream, or set `alarm_stream` / `alarm_stream_max`
+when that behaviour is specifically wanted. Normal browsers continue to use
+browser speech first; Android WebView prefers the Home Assistant native TTS path.
 
 5. Start the add-on and open its Home Assistant sidebar panel.
 
@@ -713,7 +726,9 @@ smaller compact treatment to reduce vertical space. It also includes live
 dashboard tiles, a persistent System Health card with a compact status badge, a
 manual **Run system check now** button, a manual **Send report to Pushover**
 button, smart-home shortcuts, optional read-aloud answers, outcome badges,
-response metadata, copy, and expandable technical details. System Health separates Hub, Devices,
+response metadata, copy, and expandable technical details. Answer speech now
+falls back to Home Assistant companion-app native TTS when browser/WebView speech
+is unavailable, and Android WebView prefers that native path. System Health separates Hub, Devices,
 Automations, and Logs, groups recurring log signatures, and shows correlated
 stale-device clusters. Detailed findings omit redundant WARNING prefixes. To
 reduce visual noise, only device names and their state/value are coloured in the
