@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.10**.
+Current add-on version: **0.14.11**.
 
 ## Architecture
 
@@ -707,7 +707,9 @@ network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
 
 The WebUI puts the Ask/Speak/answer card directly below the page heading so the
-primary interaction is immediately reachable on mobile. It also includes live
+primary interaction is immediately reachable on mobile. Ask and Speak share one
+compact 50/50 action row, and the runtime MCP/Ollama/model status pills use a
+smaller compact treatment to reduce vertical space. It also includes live
 dashboard tiles, a persistent System Health card with a compact status badge, a
 manual **Run system check now** button, a manual **Send report to Pushover**
 button, smart-home shortcuts, optional read-aloud answers, outcome badges,

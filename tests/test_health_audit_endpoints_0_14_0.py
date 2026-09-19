@@ -53,6 +53,10 @@ def test_health_audit_dashboard_card_is_present(monkeypatch, tmp_path) -> None:
     assert "function appendBrokenState" in response.text
     assert "state.textContent='BROKEN'" in response.text
     assert response.text.index('id="query"') < response.text.index('id="mcp"')
+    assert 'class="query-actions"' in response.text
+    assert 'class="card row status-card"' in response.text
+    assert '.query-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))' in response.text
+    assert '.status-card .pill{padding:5px 8px;font-size:11px' in response.text
     assert response.text.index('id="query"') < response.text.index('id="systemHealthCard"')
     assert "Pushover delivery failed" in response.text
     assert 'id="sendPushoverReport"' in response.text
