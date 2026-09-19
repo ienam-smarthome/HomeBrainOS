@@ -592,6 +592,10 @@ explicit evidence rather than model inference.
    ollama_direct_cloud_api_key: YOUR_OLLAMA_API_KEY
    ollama_direct_cloud_model: gemma4:31b-cloud
    require_sensitive_confirmation: true
+   morning_health_check_enabled: true
+   morning_health_check_time: "07:00"
+   health_check_log_hours: 24
+   health_check_low_battery: 20
    ```
 
 5. Start the add-on and open its Home Assistant sidebar panel.
@@ -643,9 +647,11 @@ mapping is disabled by default so the control API is not exposed to the local
 network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
 
-The WebUI includes live dashboard tiles, smart-home shortcuts, typed and spoken
+The WebUI includes live dashboard tiles, a persistent System Health card with a
+manual **Run system check now** button, smart-home shortcuts, typed and spoken
 queries, optional read-aloud answers, outcome badges, response metadata, copy,
-and expandable technical details.
+and expandable technical details. The scheduled morning health check is read-only
+and uses the Hubitat timezone; its stored snapshot is reused by the dashboard.
 
 ## API
 
@@ -653,6 +659,8 @@ These endpoints are intended to be reached through Home Assistant ingress:
 
 - `GET /api/status` — MCP and Ollama Online readiness
 - `GET /api/dashboard` — cached live-state dashboard counts
+- `GET /api/health-audit` — latest stored system-health audit and schedule status
+- `POST /api/health-audit/run` — run the same read-only audit immediately
 - `POST /api/ask` — process a request through the unified MCP agent
 - `POST /api/chat` — compatibility alias for `/api/ask`
 - `POST /api/refresh` — refresh MCP tools and device manifest
