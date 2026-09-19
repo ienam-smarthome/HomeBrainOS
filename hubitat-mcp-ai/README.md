@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.9**.
+Current add-on version: **0.14.10**.
 
 ## Architecture
 
@@ -706,15 +706,18 @@ mapping is disabled by default so the control API is not exposed to the local
 network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
 
-The WebUI includes live dashboard tiles, a persistent System Health card with a
-compact status badge, a manual **Run system check now** button, and a manual
-**Send report to Pushover** button, plus smart-home shortcuts, typed and spoken
-queries, optional read-aloud answers, outcome badges, response metadata, copy,
-and expandable technical details. System Health separates Hub, Devices,
+The WebUI puts the Ask/Speak/answer card directly below the page heading so the
+primary interaction is immediately reachable on mobile. It also includes live
+dashboard tiles, a persistent System Health card with a compact status badge, a
+manual **Run system check now** button, a manual **Send report to Pushover**
+button, smart-home shortcuts, optional read-aloud answers, outcome badges,
+response metadata, copy, and expandable technical details. System Health separates Hub, Devices,
 Automations, and Logs, groups recurring log signatures, and shows correlated
 stale-device clusters. Detailed findings omit redundant WARNING prefixes. To
 reduce visual noise, only device names and their state/value are coloured in the
-Devices section; surrounding labels and other finding text stay neutral. Pushover
+Devices section; surrounding labels and other finding text stay neutral. Broken
+automation descriptions also stay neutral except for the explicit **BROKEN**
+state, which is highlighted red. Pushover
 reports include named offline devices, low
 batteries, broken automations, log findings, and resolved findings within the
 service message limit. The scheduled morning health check is read-only and uses
