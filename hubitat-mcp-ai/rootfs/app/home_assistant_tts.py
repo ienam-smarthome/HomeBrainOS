@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import re
 
 import httpx
 
@@ -104,7 +105,20 @@ class HomeAssistantTTS:
             )
         return []
 
-    async def resolve_notify_service(self) -> str:
+    @staticmethod
+    def _hint_match(services: list[str], device_hint: str) -> str | None:
+        """Return one mobile-app service whose device id appears in the client hint."""
+
+        normalized_hint = re.sub(r"[^a-z0-9]+", "_", str(device_hint or "").casefold())
+        matches = []
+        for service in services:
+            suffix = service.removeprefix("mobile_app_")
+            normalized_suffix = re.sub(r"[^a-z0-9]+", "_", suffix.casefold()).strip("_")
+            if len(normalized_suffix) >= 5 and normalized_suffix in normalized_hint:
+                matches.append(service)
+        return matches[0] if len(matches) == 1 else None
+
+    async def resolve_notify_service(self, *, device_hint: str = "") -> str:
         if not self.enabled:
             raise HomeAssistantTTSConfigurationError(
                 "Home Assistant native TTS is disabled"
@@ -119,6 +133,9 @@ class HomeAssistantTTS:
         if len(services) == 1:
             self._resolved_service = services[0]
             return services[0]
+        hinted = self._hint_match(services, device_hint)
+        if hinted:
+            return hinted
         if not services:
             raise HomeAssistantTTSConfigurationError(
                 "No notify.mobile_app_* service was found in Home Assistant"
@@ -130,14 +147,14 @@ class HomeAssistantTTS:
             f"ha_tts_notify_service to one of: {choices}{suffix}"
         )
 
-    async def speak(self, text: str) -> dict[str, Any]:
+    async def speak(self, text: str, *, device_hint: str = "") -> dict[str, Any]:
         spoken = str(text or "").strip()
         if not spoken:
             raise ValueError("TTS text is empty")
         if len(spoken) > MAX_TTS_CHARS:
             raise ValueError(f"TTS text exceeds {MAX_TTS_CHARS} characters")
 
-        service = await self.resolve_notify_service()
+        service = await self.resolve_notify_service(device_hint=device_hint)
         data: dict[str, Any] = {"tts_text": spoken}
         if self.media_stream:
             data["media_stream"] = self.media_stream

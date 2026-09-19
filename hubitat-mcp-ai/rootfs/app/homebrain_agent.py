@@ -4,7 +4,7 @@ import json
 import re
 import time
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from contact_history_queries import (
@@ -40,6 +40,7 @@ from device_query_service import DeviceQueryService
 from device_target_resolver import resolve_capable_device_candidate
 from direct_outcome_context import DirectOutcomeContext
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
+from hub_timezone import HubTimezoneResolver
 from live_evidence_authority import LiveEvidenceAuthority
 from location_event_queries import (
     find_mode_last_entered,
@@ -54,6 +55,7 @@ from mcp_agent_orchestrator import AgentOutcome, UnifiedMCPAgent as BaseUnifiedM
 from natural_datetime import format_natural_datetime
 from observed_agent_outcome import ObservedAgentOutcome
 from request_classification import (
+    parse_current_time_intent,
     parse_firmware_install_intent,
     parse_firmware_status_intent,
     parse_hub_health_intent,
@@ -158,6 +160,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             self._mutation_call_seen,
             self._request_class,
         )
+        self.hub_timezone = HubTimezoneResolver(self.mcp, self.evidence.record)
         self._clarification_choices: dict[str, list[str]] = {}
         self._selected_devices: dict[str, str] = {}
         self._history_references: dict[str, HistoryReference] = {}
@@ -236,6 +239,19 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
     async def _direct_outcome(self, operation: Callable[[], Awaitable[str]], *, request_class: str) -> AgentOutcome:
         return await self.direct_outcomes.run(operation, request_class=request_class)
+
+    async def _current_time_outcome(self) -> AgentOutcome:
+        async def operation() -> str:
+            now, zone_name, _source = await self.hub_timezone.now_in_hub_timezone(
+                lambda: datetime.now(timezone.utc)
+            )
+            hour = now.hour % 12 or 12
+            suffix = "AM" if now.hour < 12 else "PM"
+            zone = str(now.tzname() or zone_name or "").strip()
+            zone_suffix = f" {zone}" if zone else ""
+            return f"It's {hour}:{now.minute:02d} {suffix}{zone_suffix}."
+
+        return await self._direct_outcome(operation, request_class="live-read")
 
     async def _selection_outcome(self, name: str, *, session_key: str) -> AgentOutcome:
         async def operation() -> str:
@@ -1161,6 +1177,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             )
             if pending_confirmation is not None:
                 return pending_confirmation
+
+            if parse_current_time_intent(user_prompt):
+                return await self._current_time_outcome()
 
             if self.deterministic_reads_enabled:
                 before_that = parse_before_that(user_prompt)

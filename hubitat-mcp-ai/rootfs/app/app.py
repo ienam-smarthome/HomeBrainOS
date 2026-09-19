@@ -609,9 +609,12 @@ async def run_health_audit() -> dict[str, Any]:
 
 
 @app.post("/api/tts")
-async def speak_tts(request: TTSRequest) -> dict[str, Any]:
+async def speak_tts(payload: TTSRequest, request: Request) -> dict[str, Any]:
     try:
-        delivery = await home_assistant_tts.speak(request.text)
+        delivery = await home_assistant_tts.speak(
+            payload.text,
+            device_hint=str(request.headers.get("user-agent") or ""),
+        )
     except HomeAssistantTTSConfigurationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
