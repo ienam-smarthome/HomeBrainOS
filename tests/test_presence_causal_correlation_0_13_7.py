@@ -55,10 +55,15 @@ def test_room_trigger_sensor_candidates_are_capability_grounded() -> None:
     )
 
     labels = [row["label"] for row in candidates]
-    assert labels[0] == "Bedroom 3 Soft Sensor"
+    assert set(labels) == {"Bedroom 3 Soft Sensor", "Bedroom 3 Presence"}
     assert "Bedroom 3 Sensor T1" not in labels
     assert "Hallway Motion" not in labels
-    assert candidates[0]["suggestedHistoryAttributes"] == ["motion"]
+    attributes = {
+        row["label"]: row["suggestedHistoryAttributes"]
+        for row in candidates
+    }
+    assert attributes["Bedroom 3 Soft Sensor"] == ["motion"]
+    assert attributes["Bedroom 3 Presence"] == ["presence"]
 
 
 def test_trigger_sensor_history_arguments_use_declared_capability_hint() -> None:
