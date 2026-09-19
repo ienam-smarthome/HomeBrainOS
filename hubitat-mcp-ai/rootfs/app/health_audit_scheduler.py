@@ -76,14 +76,22 @@ class MorningHealthScheduler:
     ) -> None:
         self.service = service
         self.enabled = bool(enabled)
-        self.daily_time = str(daily_time or "07:00")
-        parse_daily_time(self.daily_time)
+        requested_time = str(daily_time or "07:00")
+        invalid_time_error: str | None = None
+        try:
+            parse_daily_time(requested_time)
+            self.daily_time = requested_time
+        except (TypeError, ValueError):
+            self.daily_time = "07:00"
+            invalid_time_error = (
+                f"Invalid morning_health_check_time {requested_time!r}; using 07:00"
+            )
         self._local_now = local_now
         self.startup_delay_seconds = max(0.0, float(startup_delay_seconds))
         self.catchup_minutes = max(0, int(catchup_minutes))
         self._task: asyncio.Task[Any] | None = None
         self.next_run: str | None = None
-        self.last_error: str | None = None
+        self.last_error: str | None = invalid_time_error
 
     def status(self) -> dict[str, Any]:
         return {
