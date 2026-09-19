@@ -7,6 +7,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from automation_status_service import AutomationStatusService  # noqa: E402
+from mcp_client import MCPToolResult  # noqa: E402
 
 
 def test_display_name_removes_duplicate_problem_markers():
@@ -50,3 +51,32 @@ def test_message_is_problem_first_and_includes_attention_count():
     assert message.index("### Unknown (1)") < message.index("### Active (1)")
     assert "*BROKEN*" not in message
     assert "(Paused)" not in message
+
+
+def test_normalised_item_preserves_broken_status_reason_and_evidence():
+    result = MCPToolResult(
+        "hub_read_apps_code",
+        {},
+        {},
+        "",
+        {
+            "apps": [
+                {
+                    "id": "42",
+                    "name": "Lighting: bedroom 3 low light",
+                    "broken": True,
+                    "statusMessage": "Referenced device no longer exists",
+                }
+            ]
+        },
+    )
+
+    item = AutomationStatusService._items_from_result(
+        result,
+        item_type="app",
+        source="hub_read_apps_code",
+    )[0]
+
+    assert item["status"] == "broken"
+    assert item["status_reason"] == "Referenced device no longer exists"
+    assert item["status_evidence"]["broken"] == "True"

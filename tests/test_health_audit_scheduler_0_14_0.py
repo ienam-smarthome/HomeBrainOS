@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
@@ -66,3 +68,39 @@ def test_invalid_configured_time_falls_back_without_crashing() -> None:
 
     assert scheduler.daily_time == "07:00"
     assert "Invalid morning_health_check_time" in str(scheduler.last_error)
+
+
+@pytest.mark.asyncio
+async def test_scheduled_check_sends_pushover_but_preserves_audit_on_delivery_failure() -> None:
+    class Service:
+        async def run(self, *, reason):
+            assert reason == "scheduled"
+            return {"status": "healthy", "attention_count": 0}
+
+    class Notifier:
+        enabled = True
+
+        def __init__(self):
+            self.results = []
+
+        async def send(self, result):
+            self.results.append(result)
+            raise RuntimeError("network unavailable")
+
+    async def now():
+        return datetime(2026, 9, 19, 6, 0, tzinfo=ZoneInfo("Europe/London"))
+
+    notifier = Notifier()
+    scheduler = MorningHealthScheduler(
+        Service(),  # type: ignore[arg-type]
+        enabled=True,
+        daily_time="07:00",
+        local_now=now,
+        notifier=notifier,  # type: ignore[arg-type]
+    )
+
+    await scheduler._run_once()
+
+    assert notifier.results == [{"status": "healthy", "attention_count": 0}]
+    assert scheduler.last_error is None
+    assert "network unavailable" in str(scheduler.last_notification_error)

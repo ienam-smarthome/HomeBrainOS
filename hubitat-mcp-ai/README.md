@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.2**.
+Current add-on version: **0.14.3**.
 
 ## Architecture
 
@@ -271,6 +271,25 @@ changing fields before grouping. Each group retains occurrence count and first/
 last-seen timestamps. The dashboard presents independent Hub, Devices,
 Automations, and Logs health so peripheral findings do not imply that the hub
 itself is unhealthy.
+
+0.14.3 refines those live results. Periodic telemetry that has only just crossed
+the stale threshold is retained as a candidate and must remain stale on the next
+audit before becoming an individual warning. Telemetry older than the separate
+long-term threshold is labelled as possibly unused, disconnected, or obsolete
+instead of looking like an ordinary delayed check-in. Google TV/FireTV ADB shell
+timeouts receive a stable, readable summary, and automation findings preserve the
+bounded raw status evidence and reason supplied by Hubitat.
+
+Issue snapshots now carry a schema version. After an upgrade that changes issue
+fingerprints, the first check establishes a fresh comparison baseline instead of
+showing false new/resolved changes. The following check resumes normal change
+tracking.
+
+The scheduled morning result can optionally be sent directly to Pushover. The
+notification contains the Hub/Devices/Automations/Logs hierarchy, totals, and the
+top actionable findings. Delivery is attempted only for scheduled checks; manual
+checks do not notify. A delivery failure is recorded separately and never discards
+the completed audit.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
@@ -615,9 +634,18 @@ explicit evidence rather than model inference.
    health_check_log_hours: 24
    health_check_low_battery: 20
    health_check_stale_hours: 24
+   health_check_long_stale_hours: 168
    health_check_cluster_minutes: 15
    health_check_motion_active_hours: 2
+   pushover_enabled: false
+   pushover_app_token: ""
+   pushover_user_key: ""
+   pushover_device: ""
    ```
+
+To receive the morning result in Pushover, register a Pushover application and
+copy its application token plus your user key (or a delivery-group key) into the
+three `pushover_*` options above, then set `pushover_enabled: true`.
 
 5. Start the add-on and open its Home Assistant sidebar panel.
 
