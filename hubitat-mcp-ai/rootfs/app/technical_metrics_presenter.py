@@ -23,6 +23,8 @@ _COUNTER_LABELS = (
     ("resolution_cache_metadata_miss", "Resolution cache metadata misses"),
     ("causal_room_plan", "Causal room plans"),
     ("causal_provenance_read", "Causal provenance reads"),
+    ("causal_sensor_read", "Causal motion/presence reads"),
+    ("causal_sensor_aligned", "Causal sensor boundary alignments"),
     ("causal_location_read", "Causal location reads"),
     ("causal_app_navigation", "Causal app navigation loads"),
     ("causal_provenance_aligned", "Aligned provenance events"),
