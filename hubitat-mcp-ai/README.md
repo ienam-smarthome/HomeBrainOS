@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.1**.
+Current add-on version: **0.14.2**.
 
 ## Architecture
 
@@ -253,6 +253,24 @@ daily at the configured local time using the Hubitat timezone, with a bounded
 post-start catch-up window. The WebUI shows health status, attention/new/resolved
 counts, device count, last-check time, next scheduled run, and expandable findings.
 No health check performs a device, rule, firmware, or hub mutation.
+
+0.14.2 turns that operational monitor into a deterministic diagnostic summary.
+The device inventory now includes `lastActivity` when the MCP server supplies it.
+Explicit offline states remain authoritative and separate from old event times.
+Periodic telemetry older than the configured threshold is suspiciously stale;
+buttons, passive sensors, presence devices, and otherwise static devices are
+classified as quiet rather than offline. Long-active motion, normal long-lived
+occupancy, and devices that have never reported are retained as separate classes.
+
+Stale periodic devices from the same identifiable subsystem are correlated when
+three or more stop reporting within the configured time window. For example,
+several Tasmota/MQTT power devices going quiet together become one possible MQTT
+bridge interruption, with the affected devices listed below it. Log fingerprints
+remove timestamps, UUIDs, request/correlation IDs, volatile numeric IDs, and other
+changing fields before grouping. Each group retains occurrence count and first/
+last-seen timestamps. The dashboard presents independent Hub, Devices,
+Automations, and Logs health so peripheral findings do not imply that the hub
+itself is unhealthy.
 
 Deterministic safeguards are validators, not answer authors. Duration/cardinality,
 checked-source, close mode-correlation, and causal-timeline coverage checks are
@@ -596,6 +614,9 @@ explicit evidence rather than model inference.
    morning_health_check_time: "07:00"
    health_check_log_hours: 24
    health_check_low_battery: 20
+   health_check_stale_hours: 24
+   health_check_cluster_minutes: 15
+   health_check_motion_active_hours: 2
    ```
 
 5. Start the add-on and open its Home Assistant sidebar panel.
@@ -650,8 +671,10 @@ unless an authenticated reverse proxy or equivalent access control protects it.
 The WebUI includes live dashboard tiles, a persistent System Health card with a
 manual **Run system check now** button, smart-home shortcuts, typed and spoken
 queries, optional read-aloud answers, outcome badges, response metadata, copy,
-and expandable technical details. The scheduled morning health check is read-only
-and uses the Hubitat timezone; its stored snapshot is reused by the dashboard.
+and expandable technical details. System Health separates Hub, Devices,
+Automations, and Logs, groups recurring log signatures, and shows correlated
+stale-device clusters. The scheduled morning health check is read-only and uses
+the Hubitat timezone; its stored snapshot is reused by the dashboard.
 
 ## API
 

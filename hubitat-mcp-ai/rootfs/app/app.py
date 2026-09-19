@@ -96,6 +96,9 @@ def load_options() -> dict[str, Any]:
         "morning_health_check_time": "07:00",
         "health_check_log_hours": 24,
         "health_check_low_battery": 20,
+        "health_check_stale_hours": 24,
+        "health_check_cluster_minutes": 15,
+        "health_check_motion_active_hours": 2,
         "web_title": "Hubitat MCP AI",
     }
     if OPTIONS_PATH.exists():
@@ -132,6 +135,9 @@ health_audit = HealthAuditService(
     ),
     low_battery_threshold=int(OPTIONS.get("health_check_low_battery") or 20),
     log_hours=int(OPTIONS.get("health_check_log_hours") or 24),
+    stale_hours=int(OPTIONS.get("health_check_stale_hours") or 24),
+    cluster_minutes=int(OPTIONS.get("health_check_cluster_minutes") or 15),
+    motion_active_hours=int(OPTIONS.get("health_check_motion_active_hours") or 2),
 )
 
 

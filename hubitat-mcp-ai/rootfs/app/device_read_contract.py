@@ -87,6 +87,7 @@ def device_read_plan(
     include_states: bool,
     include_capabilities: bool = False,
     include_commands: bool = False,
+    include_last_activity: bool = False,
 ) -> DeviceReadPlan:
     """Build the correct field projection for the Hubitat MCP list contract."""
 
@@ -100,6 +101,8 @@ def device_read_plan(
         fields.append(state_field)
     if include_commands:
         fields.append("commands")
+    if include_last_activity:
+        fields.append("lastActivity")
     return DeviceReadPlan(
         detailed=detailed,
         fields=tuple(fields),

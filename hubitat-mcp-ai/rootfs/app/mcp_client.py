@@ -301,6 +301,7 @@ class HubitatMCPClient:
                 include_states=True,
                 include_capabilities=True,
                 include_commands=True,
+                include_last_activity=True,
             )
             arguments = {
                 "tool": "hub_list_devices",
