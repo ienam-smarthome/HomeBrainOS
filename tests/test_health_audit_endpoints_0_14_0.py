@@ -37,6 +37,8 @@ def test_health_audit_dashboard_card_is_present(monkeypatch, tmp_path) -> None:
     assert "health-domain-grid" in response.text
     assert "renderHealthAuditV2" in response.text
     assert "Pushover delivery failed" in response.text
+    assert 'id="testPushover"' in response.text
+    assert "api/pushover/test" in response.text
 
 
 def test_health_audit_status_and_manual_run_endpoints(monkeypatch, tmp_path) -> None:
@@ -71,3 +73,36 @@ def test_health_audit_status_and_manual_run_endpoints(monkeypatch, tmp_path) -> 
     assert manual.status_code == 200
     assert manual.json()["latest"]["sections"]["devices"]["total"] == 84
     assert manual.json()["schedule"]["time"] == "07:00"
+
+
+def test_manual_pushover_test_endpoint(monkeypatch, tmp_path) -> None:
+    module = _load_app(monkeypatch, tmp_path)
+
+    class Notifier:
+        enabled = True
+        configured = True
+
+        async def send_test(self):
+            return {"sent": True, "request": "pushover-request-id"}
+
+    monkeypatch.setattr(module, "pushover_notifier", Notifier())
+
+    with TestClient(module.app) as client:
+        response = client.post("/api/pushover/test")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "message": "Pushover test notification sent.",
+        "request": "pushover-request-id",
+    }
+
+
+def test_manual_pushover_test_reports_disabled_configuration(monkeypatch, tmp_path) -> None:
+    module = _load_app(monkeypatch, tmp_path)
+
+    with TestClient(module.app) as client:
+        response = client.post("/api/pushover/test")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Pushover notifications are disabled"
