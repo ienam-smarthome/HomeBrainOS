@@ -136,6 +136,8 @@ def test_root_renders_ollama_dashboard_webui(monkeypatch, tmp_path):
     assert "voice.localService" in response.text
     assert "'response time'" in response.text
     assert "fetch('/api/status')" not in response.text
+    assert "};\\ndocument.getElementById('runHealthAudit')" not in response.text
+    assert "};\ndocument.getElementById('runHealthAudit')" in response.text
 
 
 def test_dashboard_counts_current_states(monkeypatch, tmp_path):
