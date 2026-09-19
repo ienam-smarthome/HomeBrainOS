@@ -31,8 +31,9 @@ def test_native_tts_endpoint_sends_text(monkeypatch, tmp_path) -> None:
         def status(self):
             return {"enabled": True, "can_attempt": True}
 
-        async def speak(self, text):
+        async def speak(self, text, *, device_hint=""):
             captured["text"] = text
+            captured["device_hint"] = device_hint
             return {
                 "sent": True,
                 "service": "notify.mobile_app_s25_ultra",
@@ -52,10 +53,15 @@ def test_native_tts_endpoint_sends_text(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(module, "home_assistant_tts", TTS())
 
     with TestClient(module.app) as client:
-        response = client.post("/api/tts", json={"text": "Bedroom 2 Light is on."})
+        response = client.post(
+            "/api/tts",
+            json={"text": "Bedroom 2 Light is on."},
+            headers={"User-Agent": "Android SM-S938B wv"},
+        )
 
     assert response.status_code == 200
     assert captured["text"] == "Bedroom 2 Light is on."
+    assert "SM-S938B" in captured["device_hint"]
     assert response.json()["method"] == "home-assistant-mobile-app"
 
 
@@ -66,7 +72,7 @@ def test_native_tts_configuration_error_is_visible(monkeypatch, tmp_path) -> Non
         def status(self):
             return {"enabled": True, "can_attempt": True}
 
-        async def speak(self, text):
+        async def speak(self, text, *, device_hint=""):
             raise module.HomeAssistantTTSConfigurationError(
                 "Multiple mobile-app notify services were found"
             )
@@ -127,5 +133,5 @@ def test_webui_contains_native_tts_fallback(monkeypatch, tmp_path) -> None:
     assert "api/tts" in response.text
     assert "api/tts/stop" in response.text
     assert "speakViaHomeAssistant" in response.text
-    assert "TTS setup needed" in response.text
+    assert "const reason=String(error&&error.message||'TTS unavailable')" in response.text
     assert "setTimeout(()=>{if(activeSpeech===utterance&&!browserStarted)" in response.text
