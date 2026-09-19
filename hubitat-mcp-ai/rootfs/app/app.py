@@ -8,6 +8,7 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable
 
@@ -27,12 +28,15 @@ from device_state_summary import (
     is_light_device,
     room_name,
 )
+from health_audit_scheduler import MorningHealthScheduler
+from health_audit_service import HealthAuditService
 from history_time_windows import (
     parse_history_window_request,
     reset_history_window_request,
     set_history_window_request,
 )
 from homebrain_agent import UnifiedMCPAgent
+from hub_timezone import HubTimezoneResolver
 from mcp_client import HubitatMCPClient
 from webui import render_page
 
@@ -88,6 +92,10 @@ def load_options() -> dict[str, Any]:
         # this flag. Set True to restore the exact prior all-deterministic
         # behaviour without a code change.
         "deterministic_reads_enabled": False,
+        "morning_health_check_enabled": True,
+        "morning_health_check_time": "07:00",
+        "health_check_log_hours": 24,
+        "health_check_low_battery": 20,
         "web_title": "Hubitat MCP AI",
     }
     if OPTIONS_PATH.exists():
@@ -116,6 +124,41 @@ mcp = HubitatMCPClient(
     ),
 )
 automation_status = AutomationStatusService(mcp)
+health_audit = HealthAuditService(
+    mcp,
+    automation_status,
+    snapshot_path=Path(
+        os.getenv("HEALTH_AUDIT_PATH", "/data/homebrain-health-audit.json")
+    ),
+    low_battery_threshold=int(OPTIONS.get("health_check_low_battery") or 20),
+    log_hours=int(OPTIONS.get("health_check_log_hours") or 24),
+)
+
+
+def _ignore_scheduler_evidence(*_args: Any, **_kwargs: Any) -> None:
+    return None
+
+
+_health_timezone = HubTimezoneResolver(
+    mcp,
+    _ignore_scheduler_evidence,
+)
+
+
+async def _health_scheduler_now() -> datetime:
+    now, _name, _source = await _health_timezone.now_in_hub_timezone(
+        lambda: datetime.now(timezone.utc)
+    )
+    return now
+
+
+health_scheduler = MorningHealthScheduler(
+    health_audit,
+    enabled=_bool(OPTIONS.get("morning_health_check_enabled"), True),
+    daily_time=str(OPTIONS.get("morning_health_check_time") or "07:00"),
+    local_now=_health_scheduler_now,
+)
+
 agent = UnifiedMCPAgent(
     mcp_client=mcp,
     api_key=str(OPTIONS.get("ollama_direct_cloud_api_key") or ""),
@@ -221,9 +264,11 @@ request_coordinator = RequestCoordinator()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    health_scheduler.start()
     try:
         yield
     finally:
+        await health_scheduler.close()
         await request_coordinator.close()
         await agent.close()
         await mcp.close()
@@ -498,6 +543,32 @@ async def dashboard() -> dict[str, Any]:
         ],
         "active_rooms": active_room_summary(devices),
         "hub_info": _hub_info(hub_info_devices),
+    }
+
+
+@app.get("/api/health-audit")
+async def health_audit_status() -> dict[str, Any]:
+    return {
+        "success": True,
+        "latest": health_audit.latest(),
+        "schedule": health_scheduler.status(),
+    }
+
+
+@app.post("/api/health-audit/run")
+async def run_health_audit() -> dict[str, Any]:
+    try:
+        latest = await request_coordinator.run(
+            "system-health-audit",
+            health_audit.run(reason="manual"),
+        )
+    except Exception as exc:
+        logger.exception("Manual system health audit failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "latest": latest,
+        "schedule": health_scheduler.status(),
     }
 
 
