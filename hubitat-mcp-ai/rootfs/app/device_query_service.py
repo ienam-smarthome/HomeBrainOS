@@ -283,6 +283,74 @@ class DeviceQueryService:
 
         return [*exact, *label_affinity][:12]
 
+    @classmethod
+    def _room_trigger_sensor_candidates(
+        cls,
+        devices: list[dict[str, Any]],
+        room_value: Any,
+    ) -> list[dict[str, Any]]:
+        """Rank same-room motion/presence sensors for causal trigger correlation."""
+
+        wanted_room = " ".join(str(room_value or "").strip().casefold().split())
+        if not wanted_room:
+            return []
+
+        ranked: list[tuple[int, str, dict[str, Any]]] = []
+        seen: set[str] = set()
+        for device in devices:
+            capabilities = sorted(cls._capability_names(device))
+            normalized = {
+                re.sub(r"[^a-z0-9]", "", value.casefold())
+                for value in capabilities
+            }
+            attribute = ""
+            if "motionsensor" in normalized:
+                attribute = "motion"
+            elif "presencesensor" in normalized:
+                attribute = "presence"
+            if not attribute:
+                continue
+
+            label = str(device.get("label") or device.get("name") or "").strip()
+            room = str(device.get("room") or device.get("roomName") or "").strip()
+            normalized_room = " ".join(room.casefold().split())
+            normalized_label = " ".join(label.casefold().split())
+            if normalized_room == wanted_room:
+                score = 0
+                basis = "room"
+            elif wanted_room and wanted_room in normalized_label:
+                score = 1
+                basis = "label-affinity"
+            else:
+                continue
+
+            device_id = str(device.get("id") or device.get("deviceId") or "").strip()
+            key = device_id or normalized_label
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            # Prefer semantic presence/soft-sensor labels only as a stable
+            # tiebreaker after capability + room match; never infer capability
+            # from the label itself.
+            label_score = 0 if any(
+                token in normalized_label for token in ("presence", "soft sensor", "motion")
+            ) else 1
+            ranked.append((
+                score * 10 + label_score,
+                normalized_label,
+                {
+                    "id": device.get("id") or device.get("deviceId"),
+                    "label": label or None,
+                    "room": room or None,
+                    "capabilities": capabilities,
+                    "matchBasis": basis,
+                    "suggestedHistoryAttributes": [attribute],
+                },
+            ))
+
+        ranked.sort(key=lambda item: (item[0], item[1]))
+        return [item[2] for item in ranked[:8]]
+
     @staticmethod
     def _controller_event_source_hints(
         matches: list[dict[str, Any]],
@@ -714,19 +782,21 @@ class DeviceQueryService:
             "complete": True,
         }
         if normalized_attribute == "room" and operator in {"eq", "contains"}:
-            # Room discovery is a semantic operation. Controller evidence hints
-            # must not disappear merely because the caller used a permissive
-            # room-match operator instead of exact equality.
+            # Room discovery is a semantic operation. Preserve bounded event-source
+            # hints for later deterministic causal planning; these are candidates,
+            # not causal claims.
             controller_candidates = self._room_controller_candidates(devices, expected)
             controller_hints = self._controller_event_source_hints(controller_candidates)
-            if controller_hints:
+            trigger_sensor_hints = self._room_trigger_sensor_candidates(devices, expected)
+            if controller_hints or trigger_sensor_hints:
                 data["eventSourceHints"] = {
                     "controllerCandidates": controller_hints,
+                    "triggerSensorCandidates": trigger_sensor_hints,
                     "note": (
-                        "These same-room devices advertise button capabilities. "
-                        "For cause/trigger investigations, their pushed/held/released/"
-                        "doubleTapped history can be stronger evidence than environmental "
-                        "sensor correlation when timing aligns with the subject transition."
+                        "Controller candidates advertise button capabilities. Trigger "
+                        "sensor candidates advertise MotionSensor/PresenceSensor. Use "
+                        "capability-grounded histories and signed transition timing; "
+                        "these hints alone do not establish causation."
                     ),
                 }
         return MCPToolResult(DEVICE_FILTER_TOOL, arguments, {}, json.dumps(data), data)
