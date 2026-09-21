@@ -754,3 +754,44 @@ def test_missing_expression_receipt_does_not_recommend_deleting_rule():
     assert "only partially created" not in report
     assert "Pause or delete" not in report
     assert "did not confirm" in report
+
+
+@pytest.mark.asyncio
+async def test_generic_confirmed_failure_marks_request_outcome_failed():
+    gateway = "hub_manage_devices"
+    arguments = {
+        "tool": "hub_call_device_command",
+        "args": {
+            "commands": [
+                {"deviceId": "7805", "command": "setLevel", "parameters": {"level": 100}},
+            ]
+        },
+    }
+    executor = FakeExecutor([
+        _execution(
+            gateway,
+            arguments,
+            {"success": False, "error": "parameters must be an array"},
+            success=False,
+        )
+    ])
+
+    async def unexpected_chat(messages, tools):
+        raise AssertionError("failed confirmed action must not use model reporting")
+
+    coordinator = ConfirmedActionCoordinator(
+        ConfirmationPolicy(enabled=True), executor, unexpected_chat, lambda: None
+    )
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        report = await coordinator.resume(
+            _pending([(gateway, arguments)]), _catalog(gateway)
+        )
+        snapshot = metrics.finish(metrics.completed_outcome())
+    finally:
+        metrics.reset(token)
+
+    assert "did not succeed" in report
+    assert snapshot["counters"]["mutation_verification_failures"] == 1
+    assert snapshot["outcome"] == "failed"

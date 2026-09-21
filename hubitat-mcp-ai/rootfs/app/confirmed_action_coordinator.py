@@ -375,6 +375,7 @@ class ConfirmedActionCoordinator:
         ]
         if not failures:
             return None
+        increment_active_metric("mutation_verification_failures", len(failures))
         lines: list[str] = []
         for name, execution in failures:
             data = cls.rule_result_data(execution)

@@ -55,6 +55,48 @@ _GENERIC_VALUE_ATTRIBUTE = "value"
 _GENERIC_VALUE_FALLBACK_ATTRIBUTE = "valueStr"
 
 
+def _normalize_device_command_parameters(
+    name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Normalize common model-emitted Hubitat command parameter objects.
+
+    The MCP gateway requires parameters to be an array. Native model output
+    can reasonably infer an object such as {"level": 100} from the semantic
+    command name, but forwarding that object verbatim is rejected by Hubitat
+    before any device command runs. Normalize only shapes whose positional
+    argument contract is unambiguous; unknown commands are left untouched.
+    """
+
+    if name != "hub_manage_devices" or arguments.get("tool") != "hub_call_device_command":
+        return arguments
+
+    normalized = deepcopy(arguments)
+    payload = normalized.get("args")
+    if not isinstance(payload, dict):
+        return normalized
+
+    def normalize_one(command: dict[str, Any]) -> None:
+        parameters = command.get("parameters")
+        if not isinstance(parameters, dict):
+            return
+        operation = str(command.get("command") or "").strip().casefold()
+        if operation == "setlevel" and "level" in parameters:
+            command["parameters"] = [parameters["level"]]
+        elif operation == "setcolortemperature" and "temperature" in parameters:
+            command["parameters"] = [parameters["temperature"]]
+        elif operation == "setcolor":
+            command["parameters"] = [parameters]
+
+    commands = payload.get("commands")
+    if isinstance(commands, list):
+        for item in commands:
+            if isinstance(item, dict):
+                normalize_one(item)
+    else:
+        normalize_one(payload)
+    return normalized
+
+
 @dataclass(slots=True)
 class ToolExecution:
     name: str
@@ -259,6 +301,7 @@ class ToolExecutor:
         model_arguments = deepcopy(arguments)
         reasoning_round_size = claim_model_tool_call(name, model_arguments)
         safe_arguments = prepare_history_arguments(name, model_arguments)
+        safe_arguments = _normalize_device_command_parameters(name, safe_arguments)
         receipt_arguments = deepcopy(safe_arguments)
         declared_tool = tool or MCPTool(name, name, {})
         effect = classify_tool_effect(declared_tool, receipt_arguments)

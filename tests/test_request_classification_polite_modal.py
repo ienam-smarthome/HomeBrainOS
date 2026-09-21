@@ -6,7 +6,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from request_classification import requests_mutation  # noqa: E402
+from request_classification import requests_mutation, routine_control_arguments  # noqa: E402
 
 
 def test_polite_modal_verb_phrasing_without_please_is_recognised_as_mutation():
@@ -32,3 +32,19 @@ def test_polite_modal_verb_phrasing_for_a_read_only_question_is_not_a_mutation()
 
     assert requests_mutation("can you tell me the temperature") is False
     assert requests_mutation("would you check the front door status") is False
+
+
+def test_routine_set_level_is_parsed_without_model_routing():
+    assert routine_control_arguments("set living room lights to 100%") == {
+        "device_names": ["living room lights"],
+        "device_kind": "light",
+        "command": "set_level",
+        "level": 100,
+    }
+    assert routine_control_arguments("dim Bedroom 1 light to 35") == {
+        "device_names": ["Bedroom 1 light"],
+        "device_kind": "light",
+        "command": "set_level",
+        "level": 35,
+    }
+    assert routine_control_arguments("set living room lights to 101%") is None

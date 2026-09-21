@@ -222,9 +222,31 @@ def parse_hub_health_intent(prompt: str) -> bool:
 
 
 def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
-    """Parse generic on/off/toggle control grammar without device-name encoding."""
+    """Parse routine switch/light controls without model-dependent payload shaping."""
 
     value = " ".join(str(prompt).strip().split())
+
+    level_patterns = (
+        r"^(?:please\s+)?(?:set|dim|change)\s+(?P<target>.+?)\s+"
+        r"(?:to|at)\s+(?P<level>\d{1,3})\s*%?\s*[.!?]*$",
+        r"^(?:please\s+)?(?:turn|set)\s+(?P<target>.+?)\s+"
+        r"(?:to|at)\s+(?P<level>\d{1,3})\s*%\s*[.!?]*$",
+    )
+    for pattern in level_patterns:
+        match = re.match(pattern, value, flags=re.IGNORECASE)
+        if not match:
+            continue
+        target = _strip_trailing_please(str(match.group("target") or "").strip())
+        level = int(match.group("level"))
+        if target and 0 <= level <= 100:
+            return {
+                "device_names": [target],
+                "device_kind": "light",
+                "command": "set_level",
+                "level": level,
+            }
+        return None
+
     patterns = (
         r"^(?:please\s+)?(?:turn|switch|power)\s+"
         r"(?P<command>on|off)\s+(?P<target>.+?)\s*[.!?]*$",

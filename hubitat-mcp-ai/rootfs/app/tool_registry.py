@@ -106,21 +106,28 @@ _SENSITIVE_ACTION_PREFIXES = (
 
 
 def _normalized_operation(value: Any) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", str(value or "").casefold()).strip("_")
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(value or ""))
+    return re.sub(r"[^a-z0-9]+", "_", text.casefold()).strip("_")
 
 
 def _structured_operations(arguments: dict[str, Any]) -> list[str]:
     operations: list[str] = []
-    for key in ("tool", "operation", "action", "command"):
-        value = _normalized_operation(arguments.get(key))
-        if value:
-            operations.append(value.removeprefix("hub_"))
-    nested = arguments.get("args")
-    if isinstance(nested, dict):
+
+    def collect(payload: dict[str, Any]) -> None:
         for key in ("tool", "operation", "action", "command"):
-            value = _normalized_operation(nested.get(key))
+            value = _normalized_operation(payload.get(key))
             if value:
                 operations.append(value.removeprefix("hub_"))
+        nested = payload.get("args")
+        if isinstance(nested, dict):
+            collect(nested)
+        commands = payload.get("commands")
+        if isinstance(commands, list):
+            for item in commands:
+                if isinstance(item, dict):
+                    collect(item)
+
+    collect(arguments)
     return operations
 
 
@@ -138,11 +145,10 @@ def _operation_effect(operations: list[str]) -> ToolEffect | None:
         tokens = set(operation.split("_"))
         if operation in _DESTRUCTIVE_ACTIONS or tokens & _DESTRUCTIVE_ACTIONS:
             return ToolEffect.DESTRUCTIVE_WRITE
-    for operation in operations:
-        if operation in _SENSITIVE_DEVICE_COMMANDS:
-            return ToolEffect.SENSITIVE_WRITE
-        if operation in _ROUTINE_DEVICE_COMMANDS:
-            return ToolEffect.ROUTINE_WRITE
+    if any(operation in _SENSITIVE_DEVICE_COMMANDS for operation in operations):
+        return ToolEffect.SENSITIVE_WRITE
+    if any(operation in _ROUTINE_DEVICE_COMMANDS for operation in operations):
+        return ToolEffect.ROUTINE_WRITE
     for operation in operations:
         if operation.startswith(_SENSITIVE_ACTION_PREFIXES):
             return ToolEffect.SENSITIVE_WRITE
@@ -952,37 +958,32 @@ def home_snapshot_tool() -> MCPTool:
 def control_devices_tool() -> MCPTool:
     return MCPTool(
         LOCAL_CONTROL_TOOL,
-        (
-            "Turn one or more Hubitat lights or switches on, off, or toggle them. "
-            "Resolve targets deterministically from either an exact room or one or "
-            "more device labels, then execute every matched command concurrently. "
-            "Use this for routine light and switch control instead of making "
-            "individual hub_manage_devices calls."
-        ),
+        "Routine Hubitat light/switch on, off, toggle, or dimmer-level control.",
         {
             "type": "object",
             "properties": {
                 "room": {
                     "type": "string",
-                    "description": "Exact Hubitat room name. Selects every matching device_kind in that room.",
+                    "description": "Exact room; controls every matching device.",
                 },
                 "device_names": {
                     "type": "array",
                     "items": {"type": "string"},
                     "minItems": 1,
-                    "description": "One or more exact Hubitat device labels. Do not combine with room.",
+                    "description": "Exact device labels; do not combine with room.",
                 },
                 "device_kind": {
                     "type": "string",
                     "enum": ["auto", "light", "switch"],
-                    "description": (
-                        "Use light for lights, switch for non-light switches, "
-                        "or auto when a named target omits its device kind."
-                    ),
                 },
                 "command": {
                     "type": "string",
-                    "enum": ["on", "off", "toggle"],
+                    "enum": ["on", "off", "toggle", "set_level"],
+                },
+                "level": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
                 },
             },
             "required": ["device_kind", "command"],
