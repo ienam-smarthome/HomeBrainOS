@@ -106,21 +106,28 @@ _SENSITIVE_ACTION_PREFIXES = (
 
 
 def _normalized_operation(value: Any) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", str(value or "").casefold()).strip("_")
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(value or ""))
+    return re.sub(r"[^a-z0-9]+", "_", text.casefold()).strip("_")
 
 
 def _structured_operations(arguments: dict[str, Any]) -> list[str]:
     operations: list[str] = []
-    for key in ("tool", "operation", "action", "command"):
-        value = _normalized_operation(arguments.get(key))
-        if value:
-            operations.append(value.removeprefix("hub_"))
-    nested = arguments.get("args")
-    if isinstance(nested, dict):
+
+    def collect(payload: dict[str, Any]) -> None:
         for key in ("tool", "operation", "action", "command"):
-            value = _normalized_operation(nested.get(key))
+            value = _normalized_operation(payload.get(key))
             if value:
                 operations.append(value.removeprefix("hub_"))
+        nested = payload.get("args")
+        if isinstance(nested, dict):
+            collect(nested)
+        commands = payload.get("commands")
+        if isinstance(commands, list):
+            for item in commands:
+                if isinstance(item, dict):
+                    collect(item)
+
+    collect(arguments)
     return operations
 
 
