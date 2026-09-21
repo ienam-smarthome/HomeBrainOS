@@ -60,6 +60,9 @@ def _audit() -> dict:
                 "count": 4,
             },
         ],
+        "new_issues": [
+            {"title": "Telemetry stale: Washer Monitor Status"}
+        ],
         "resolved_issues": [
             {"title": "Motion active too long: Bedroom 3 Soft Sensor"}
         ],
@@ -82,6 +85,7 @@ def test_pushover_summary_is_bounded_and_problem_first() -> None:
     ) in message
     assert "Broken automations:\n• Lighting: bedroom 3 low light" in message
     assert "Logs:\n• MCP Rule Server — VRB feed missing 1/358 devices. ×4" in message
+    assert "New since previous check:\n• Telemetry stale: Washer Monitor Status" in message
     assert "Resolved:\n• Motion active too long: Bedroom 3 Soft Sensor" in message
     assert len(message) <= 1024
 
@@ -179,6 +183,13 @@ def test_large_system_check_is_split_without_losing_later_sections() -> None:
         ],
         {
             "severity": "warning",
+            "domain": "devices",
+            "title": "Telemetry stale: Washer Monitor Status",
+            "detail": "Periodic telemetry last reported 43.9h ago.",
+            "count": 1,
+        },
+        {
+            "severity": "warning",
             "domain": "logs",
             "title": "MCP Rule Server",
             "detail": "VRB feed missing 1/356 devices.",
@@ -191,6 +202,9 @@ def test_large_system_check_is_split_without_losing_later_sections() -> None:
             "detail": "Not triggered after the contact stayed open.",
             "count": 1,
         },
+    ]
+    audit["new_issues"] = [
+        {"title": "Telemetry stale: Washer Monitor Status"}
     ]
     audit["resolved_issues"] = [
         {"title": "Motion active too long: Bedroom 3 Soft Sensor"},
@@ -205,10 +219,13 @@ def test_large_system_check_is_split_without_losing_later_sections() -> None:
     assert all(len(message) <= 1024 for message in messages)
     assert "Offline:" in combined
     assert "Low battery:" in combined
+    assert "Device warnings:" in combined
+    assert "Telemetry stale: Washer Monitor Status" in combined
     assert "Broken automations:" in combined
     assert "Broken automation 5" in combined
     assert "Logs:" in combined
     assert "Fridge door automation" in combined
+    assert "New since previous check:" in combined
     assert "Resolved:" in combined
     assert "Telemetry stale: Fridge Meter" in combined
 
