@@ -1169,3 +1169,47 @@ async def test_cold_identity_lookup_prefers_one_bulk_context_read_over_full_mani
     assert identities[0]["id"] == "7828"
     assert context_reads == 1
     assert manifest_reads == 0
+
+
+@pytest.mark.asyncio
+async def test_room_set_level_uses_verified_setlevel_parameter_array():
+    lights = [
+        {
+            **HALLWAY_LIGHT_1,
+            "attributes": [
+                {"name": "switch", "value": "on"},
+                {"name": "level", "value": 50},
+            ],
+        },
+        {
+            **HALLWAY_LIGHT_2,
+            "attributes": [
+                {"name": "switch", "value": "on"},
+                {"name": "level", "value": 20},
+            ],
+        },
+    ]
+    mcp = ControlMCP(lights)
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "device_names": ["Hallway lights"],
+        "device_kind": "light",
+        "command": "set_level",
+        "level": 100,
+    })
+
+    assert result.data["success"] is True
+    command_calls = [
+        arguments for _gateway, arguments in mcp.calls
+        if arguments.get("tool") == "hub_call_device_command"
+    ]
+    assert len(command_calls) == 2
+    for arguments in command_calls:
+        assert arguments["args"]["command"] == "setLevel"
+        assert arguments["args"]["parameters"] == [100]
+        assert arguments["args"]["waitFor"] == {
+            "attribute": "level",
+            "expectedValue": 100,
+            "timeoutMs": 5000,
+        }
