@@ -14,11 +14,14 @@ from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import increment_active_metric
+from semantic_world_model import device_abilities
 from time_expressions import strip_trailing_time
 
 
 logger = logging.getLogger("HomeBrainOS.DeviceControl")
 DEVICE_CONTROL_TOOL = "homebrain_control_devices"
+_THERMOSTAT_MIN_SETPOINT = 5.0
+_THERMOSTAT_MAX_SETPOINT = 35.0
 
 # hub_list_devices (via the hub_read_devices gateway) only reliably returns
 # capability data -- what _is_switch_device()/is_light_device() key off of
@@ -278,6 +281,8 @@ class DeviceControlService:
             return is_light_device(device)
         if kind == "switch":
             return self._is_switch_device(device) and not is_light_device(device)
+        if kind == "thermostat":
+            return "heating_setpoint" in device_abilities(device)
         return self._is_switch_device(device) or is_light_device(device)
 
     async def execute(
@@ -289,21 +294,31 @@ class DeviceControlService:
         command = str(arguments.get("command") or "").strip()
         if command in {"set_level", "adjust_level"} and kind == "auto":
             kind = "light"
+        if command in {"set_temperature", "adjust_temperature"} and kind == "auto":
+            kind = "thermostat"
         level_raw = arguments.get("level")
+        setpoint_raw = arguments.get("setpoint")
         delta_raw = arguments.get("delta")
         try:
             level = int(level_raw) if level_raw is not None else None
         except (TypeError, ValueError):
             level = None
         try:
-            delta = int(delta_raw) if delta_raw is not None else None
+            setpoint = float(setpoint_raw) if setpoint_raw is not None else None
+        except (TypeError, ValueError):
+            setpoint = None
+        try:
+            delta = float(delta_raw) if delta_raw is not None else None
         except (TypeError, ValueError):
             delta = None
         if (
             bool(room) == bool(names)
             or not isinstance(names, list)
-            or kind not in {"auto", "light", "switch"}
-            or command not in {"on", "off", "toggle", "set_level", "adjust_level"}
+            or kind not in {"auto", "light", "switch", "thermostat"}
+            or command not in {
+                "on", "off", "toggle", "set_level", "adjust_level",
+                "set_temperature", "adjust_temperature",
+            }
             or (
                 command == "set_level"
                 and (
@@ -321,6 +336,23 @@ class DeviceControlService:
                     or not -100 <= delta <= 100
                 )
             )
+            or (
+                command == "set_temperature"
+                and (
+                    kind != "thermostat"
+                    or setpoint is None
+                    or not _THERMOSTAT_MIN_SETPOINT <= setpoint <= _THERMOSTAT_MAX_SETPOINT
+                )
+            )
+            or (
+                command == "adjust_temperature"
+                and (
+                    kind != "thermostat"
+                    or delta is None
+                    or delta == 0
+                    or not -10 <= delta <= 10
+                )
+            )
         ):
             return MCPToolResult(
                 DEVICE_CONTROL_TOOL,
@@ -332,7 +364,9 @@ class DeviceControlService:
                     "error": (
                         "Provide exactly one of room or device_names, plus a valid "
                         "device_kind and command. set_level requires level 0-100; "
-                        "adjust_level requires a non-zero delta from -100 to 100."
+                        "adjust_level requires a non-zero delta from -100 to 100; "
+                        "set_temperature requires a thermostat setpoint from 5-35; "
+                        "adjust_temperature requires a non-zero delta from -10 to 10."
                     ),
                 },
                 is_error=True,
