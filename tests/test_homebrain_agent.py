@@ -1890,3 +1890,193 @@ async def test_immediate_set_level_uses_routine_control_without_confirmation_or_
     assert outcome.metrics["outcome"] == "success"
     assert outcome.metrics["counters"].get("model_rounds", 0) == 0
     assert ai.requests == []
+
+
+
+@pytest.mark.asyncio
+async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "success": True,
+                "command": "adjust_level",
+                "delta": 20,
+                "succeeded": [
+                    {
+                        "id": "7805",
+                        "label": "Livingroom Light 1",
+                        "changed": True,
+                        "previous_level": 80,
+                        "target_level": 100,
+                    },
+                    {
+                        "id": "7828",
+                        "label": "Livingroom Light 2",
+                        "changed": True,
+                        "previous_level": 60,
+                        "target_level": 80,
+                    },
+                ],
+                "failed": [],
+            },
+        )
+
+    async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError("semantic routine control must not enter the general tool loop")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
+
+    ai = FakeAI(
+        '{"version":"1","domain":"device_control","timing":"now",'
+        '"target":{"scope":"room","name":"Living Room","kind":"light"},'
+        '"action":{"operation":"adjust_level","value":null,"delta":null,'
+        '"direction":"increase","magnitude":"default"},'
+        '"needs_clarification":false,"clarification_question":"",'
+        '"confidence":"high","source":"model"}'
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "increase living room brightness",
+        session_id="semantic-relative",
+    )
+
+    assert control_calls == [{
+        "room": "Living Room",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    }]
+    assert outcome.message == (
+        "Brightness increased by 20 points: "
+        "Livingroom Light 1 80% → 100%; Livingroom Light 2 60% → 80%."
+    )
+    assert outcome.request_class == "write"
+    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["counters"]["model_rounds"] == 1
+    assert outcome.metrics["counters"]["semantic_planner_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_relative_controls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_semantic_clarification_is_needs_input_not_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def forbidden_control(*_args: object, **_kwargs: object) -> MCPToolResult:
+        raise AssertionError("clarification must not execute a device command")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", forbidden_control)
+
+    ai = FakeAI(
+        '{"version":"1","domain":"device_control","timing":"now",'
+        '"target":null,"action":null,"needs_clarification":true,'
+        '"clarification_question":"Which room or light should I brighten?",'
+        '"confidence":"low","source":"model"}'
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "make it brighter",
+        session_id="semantic-needs-input",
+    )
+
+    assert outcome.message == "Which room or light should I brighten?"
+    assert outcome.request_class == "write"
+    assert outcome.metrics["outcome"] == "needs_input"
+    assert outcome.metrics["counters"]["semantic_needs_input"] == 1
+
+
+@pytest.mark.asyncio
+async def test_absolute_level_keeps_zero_model_fast_path_inside_semantic_ir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "success": True,
+                "command": "set_level",
+                "level": 100,
+                "succeeded": [
+                    {"id": "7805", "label": "Livingroom Light 1", "changed": True}
+                ],
+                "failed": [],
+            },
+        )
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    ai = FakeAI("must not be called")
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "set living room lights to 100%",
+        session_id="semantic-fastpath",
+    )
+
+    assert control_calls == [{
+        "device_names": ["living room lights"],
+        "device_kind": "light",
+        "command": "set_level",
+        "level": 100,
+    }]
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_semantic_planner_declines_advice_question_without_executing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def forbidden_control(*_args: object, **_kwargs: object) -> MCPToolResult:
+        raise AssertionError("advice question must not execute control")
+
+    base_calls: list[str] = []
+
+    async def fake_base(
+        _self: object,
+        prompt: str,
+        *_args: object,
+        **_kwargs: object,
+    ) -> AgentOutcome:
+        base_calls.append(prompt)
+        return AgentOutcome(
+            message="Use the brightness control.",
+            request_class="conversational",
+            evidence=[],
+            choices=[],
+        )
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", forbidden_control)
+    monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", fake_base)
+
+    ai = FakeAI(
+        '{"version":"1","domain":"other","timing":"unknown","target":null,'
+        '"action":null,"needs_clarification":false,"clarification_question":"",'
+        '"confidence":"high","source":"model"}'
+    )
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "how do I increase living room brightness?",
+        session_id="semantic-advice",
+    )
+
+    assert base_calls == ["how do I increase living room brightness?"]
+    assert outcome.message == "Use the brightness control."
