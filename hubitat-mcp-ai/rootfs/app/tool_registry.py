@@ -960,7 +960,8 @@ def control_devices_tool() -> MCPTool:
     return MCPTool(
         LOCAL_CONTROL_TOOL,
         (
-            "Turn one or more Hubitat lights or switches on, off, or toggle them. "
+            "Turn one or more Hubitat lights or switches on, off, toggle them, "
+            "or set dimmer level. "
             "Resolve targets deterministically from either an exact room or one or "
             "more device labels, then execute every matched command concurrently. "
             "Use this for routine light and switch control instead of making "
@@ -989,7 +990,13 @@ def control_devices_tool() -> MCPTool:
                 },
                 "command": {
                     "type": "string",
-                    "enum": ["on", "off", "toggle"],
+                    "enum": ["on", "off", "toggle", "set_level"],
+                },
+                "level": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Required only for command=set_level.",
                 },
             },
             "required": ["device_kind", "command"],
