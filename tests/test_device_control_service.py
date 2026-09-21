@@ -1012,3 +1012,160 @@ async def test_toggle_falls_back_to_unverified_when_the_pre_read_is_unavailable(
         args for name, args in mcp.calls if args.get("tool") == "hub_call_device_command"
     ]
     assert "waitFor" not in dispatch_calls[0]["args"]
+
+
+@pytest.mark.asyncio
+async def test_exact_cached_target_bypasses_slow_identity_refresh():
+    """A known exact target must go straight from local identity to command.
+
+    This guards a live regression where resolving one already-known light paid
+    for a ~24 second hub_list_devices manifest refresh before a <1 second
+    verified command could run.
+    """
+
+    livingroom_light_2 = {
+        "id": "7828",
+        "label": "Livingroom Light 2",
+        "roomName": "Living Room",
+        "capabilities": ["Actuator", "Light", "Switch"],
+        "attributes": [{"name": "switch", "value": "off"}],
+    }
+
+    class CachedIdentityMCP:
+        def __init__(self):
+            self.calls = []
+            self.refresh_attempts = 0
+
+        def peek_device_identities(self):
+            return [livingroom_light_2]
+
+        async def get_device_identities(self):
+            self.refresh_attempts += 1
+            raise AssertionError("slow identity refresh must not run")
+
+        async def get_cached_devices(self):
+            self.refresh_attempts += 1
+            raise AssertionError("slow manifest refresh must not run")
+
+        async def call_tool(self, gateway, arguments):
+            self.calls.append((gateway, arguments))
+            assert gateway == "hub_manage_devices"
+            assert arguments["tool"] == "hub_call_device_command"
+            assert arguments["args"]["deviceId"] == "7828"
+            return MCPToolResult(
+                gateway,
+                arguments,
+                {},
+                "ok",
+                {"success": True, "waitFor": {"converged": True, "value": "on"}},
+            )
+
+    receipts = []
+    mcp = CachedIdentityMCP()
+    service = DeviceControlService(
+        mcp, lambda *args, **kwargs: receipts.append((args, kwargs))
+    )
+
+    result = await service.execute({
+        "device_names": ["livingroom light 2"],
+        "device_kind": "auto",
+        "command": "on",
+    })
+
+    assert result.data["success"] is True
+    assert result.data["succeeded"][0]["id"] == "7828"
+    assert mcp.refresh_attempts == 0
+    assert len(mcp.calls) == 1
+    identity_receipts = [
+        kwargs for _args, kwargs in receipts
+        if kwargs.get("evidence_kind") == "control_target_resolution"
+    ]
+    assert len(identity_receipts) == 1
+    assert receipts[0][0][1]["source"] == "local_identity_cache"
+
+
+@pytest.mark.asyncio
+async def test_mcp_client_peek_device_identities_can_use_complete_live_context_without_io():
+    """The dashboard's complete live-context snapshot can seed routine control."""
+
+    from mcp_client import HubitatMCPClient
+
+    client = HubitatMCPClient("http://example.invalid/mcp")
+    try:
+        client._live_context_snapshot = (
+            1.0,
+            client._live_device_snapshot_generation,
+            {
+                "devices": [
+                    {
+                        "id": "7828",
+                        "label": "Livingroom Light 2",
+                        "roomName": "Living Room",
+                        "capabilities": ["Light", "Switch"],
+                        "attributes": {"switch": "off"},
+                    }
+                ]
+            },
+        )
+
+        identities = client.peek_device_identities()
+
+        assert identities == [
+            {
+                "id": "7828",
+                "label": "Livingroom Light 2",
+                "roomName": "Living Room",
+                "capabilities": ["Light", "Switch"],
+                "attributes": {"switch": "off"},
+            }
+        ]
+        identities[0]["label"] = "mutated"
+        assert client._live_context_snapshot[2]["devices"][0]["label"] == "Livingroom Light 2"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_cold_identity_lookup_prefers_one_bulk_context_read_over_full_manifest():
+    """A cold cache must not immediately pay for paginated hub_list_devices."""
+
+    from mcp_client import HubitatMCPClient
+
+    client = HubitatMCPClient("http://example.invalid/mcp")
+    context_reads = 0
+    manifest_reads = 0
+
+    async def fake_context(refresh=False):
+        nonlocal context_reads
+        context_reads += 1
+        return {
+            "devices": [
+                {
+                    "id": "7828",
+                    "label": "Livingroom Light 2",
+                    "roomName": "Living Room",
+                    "capabilities": ["Light", "Switch"],
+                    "attributes": {"switch": "off"},
+                }
+            ],
+            "totalDevices": 1,
+            "idsComplete": True,
+            "partial": False,
+            "truncated": False,
+        }
+
+    async def forbidden_manifest(refresh=False):
+        nonlocal manifest_reads
+        manifest_reads += 1
+        raise AssertionError("full device manifest must not run for complete context")
+
+    client.get_live_context = fake_context
+    client.get_cached_devices = forbidden_manifest
+    try:
+        identities = await client.get_device_identities()
+    finally:
+        await client.close()
+
+    assert identities[0]["id"] == "7828"
+    assert context_reads == 1
+    assert manifest_reads == 0

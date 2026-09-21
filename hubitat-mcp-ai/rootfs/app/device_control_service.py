@@ -382,15 +382,28 @@ class DeviceControlService:
 
         identity_started = time.monotonic()
         identity_manifest: list[dict[str, Any]] = []
+        identity_source = "identity_lookup"
         try:
-            identity_reader = getattr(
-                self.mcp, "get_device_identities", self.mcp.get_cached_devices
-            )
-            identity_manifest = [
-                device
-                for device in (await identity_reader() or [])
-                if isinstance(device, dict)
-            ]
+            peek_identity_reader = getattr(self.mcp, "peek_device_identities", None)
+            if callable(peek_identity_reader):
+                identity_manifest = [
+                    device
+                    for device in (peek_identity_reader() or [])
+                    if isinstance(device, dict)
+                ]
+                if identity_manifest:
+                    identity_source = "local_identity_cache"
+                    increment_active_metric("control_local_identity_cache_hit")
+            if not identity_manifest:
+                identity_reader = getattr(
+                    self.mcp, "get_device_identities", self.mcp.get_cached_devices
+                )
+                identity_manifest = [
+                    device
+                    for device in (await identity_reader() or [])
+                    if isinstance(device, dict)
+                ]
+                increment_active_metric("control_identity_lookup")
         except Exception as exc:
             logger.warning("Fast control identity lookup unavailable: %s", exc)
         room_names_present = {
@@ -489,11 +502,26 @@ class DeviceControlService:
             fast_resolution_complete = bool(fast_targets)
         else:
             fast_resolution_complete = True
+            exact_cached_reasons = {
+                "exact normalized name",
+                "exact semantic room and device name",
+                "exact semantic name with device-kind token omitted",
+            }
             for requested in names:
                 resolution = resolve_device_candidate(
                     str(requested), identity_candidates
                 )
-                if resolution.target is None:
+                if (
+                    resolution.target is None
+                    or (
+                        identity_source == "local_identity_cache"
+                        and resolution.reason not in exact_cached_reasons
+                    )
+                ):
+                    # A stale local identity snapshot is safe for a unique exact
+                    # target, but it must not turn a fuzzy historical match into a
+                    # direct mutation. Non-exact cached matches fall back to the
+                    # established targeted live lookup below.
                     fast_resolution_complete = False
                     fast_targets = []
                     break
@@ -505,7 +533,7 @@ class DeviceControlService:
                 "hub_read_devices",
                 {
                     "tool": "hub_list_devices",
-                    "source": "identity_cache",
+                    "source": identity_source,
                 },
                 success=True,
                 elapsed_ms=round(

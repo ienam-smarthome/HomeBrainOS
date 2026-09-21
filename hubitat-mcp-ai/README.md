@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.18**.
+Current add-on version: **0.14.19**.
 
 ## Architecture
 
@@ -725,6 +725,12 @@ The add-on uses authenticated Home Assistant ingress. Its direct host-port
 mapping is disabled by default so the control API is not exposed to the local
 network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
+
+Routine device writes now also use a nonblocking local identity fast path for
+unique exact cached targets. A cold identity lookup prefers the complete bulk
+`hubitat://context` resource before falling back to the heavier detailed device
+manifest, so a simple light command no longer needs to wait for a full
+`hub_list_devices` refresh when sufficient identity is already available.
 
 The WebUI puts the Ask/Speak/answer card directly below the page heading so the
 primary interaction is immediately reachable on mobile. Ask and Speak share one

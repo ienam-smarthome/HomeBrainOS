@@ -246,6 +246,34 @@ class HubitatMCPClient:
 
         return [dict(item) for item in self._cached_devices]
 
+    def peek_device_identities(self) -> list[dict[str, Any]]:
+        """Return the best complete local identity snapshot without I/O.
+
+        Routine device controls only need stable identity/capability metadata to
+        resolve an exact cached target before dispatching the verified command.
+        Prefer the detailed manifest, then a complete full-device snapshot, then
+        the complete live-context snapshot. All of these were already accepted
+        as identity sources elsewhere; this helper simply guarantees that the
+        fast path never refreshes the hub while trying to resolve a known target.
+        """
+
+        if self._cached_devices:
+            return [dict(item) for item in self._cached_devices]
+
+        if self._live_device_snapshot is not None:
+            _cached_at, _generation, cached_result = self._live_device_snapshot
+            devices = self._find_device_list(cached_result.data)
+            if isinstance(devices, list) and devices:
+                return [dict(item) for item in devices if isinstance(item, dict)]
+
+        if self._live_context_snapshot is not None:
+            _cached_at, _generation, cached_context = self._live_context_snapshot
+            devices = self._find_device_list(cached_context)
+            if isinstance(devices, list) and devices:
+                return [dict(item) for item in devices if isinstance(item, dict)]
+
+        return []
+
     async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
         """Return a short-lived detailed device manifest and coalesce refreshes."""
 
@@ -443,8 +471,32 @@ class HubitatMCPClient:
         return value
 
     async def get_device_identities(self) -> list[dict[str, Any]]:
-        if self._cached_devices:
-            return list(self._cached_devices)
+        """Return complete device identity with the cheapest safe source first."""
+
+        cached = self.peek_device_identities()
+        if cached:
+            return cached
+
+        # A cold control request used to jump straight to the detailed paginated
+        # hub_list_devices manifest. On a real ~200-device hub that path took
+        # ~24 seconds before a 733 ms command could even start. The bulk context
+        # resource already carries complete structural identity (id/label/room/
+        # capabilities), which is enough for deterministic routine resolution.
+        # Prefer that one bounded read and only fall back to the detailed manifest
+        # when the context resource is unavailable or explicitly incomplete.
+        try:
+            context = await self.get_live_context()
+        except Exception as exc:
+            logger.debug("Live context unavailable for identity lookup: %s", exc)
+        else:
+            if live_context_is_complete(context):
+                devices = self._find_device_list(context)
+                identities = [
+                    dict(item) for item in (devices or []) if isinstance(item, dict)
+                ]
+                if identities:
+                    return identities
+
         return await self.get_cached_devices()
 
     @classmethod
