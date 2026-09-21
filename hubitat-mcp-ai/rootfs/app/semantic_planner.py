@@ -18,6 +18,11 @@ _CONTROL_CANDIDATE = re.compile(
     r"increase|decrease|raise|lower|adjust|brightness|dimmer)\b",
     re.I,
 )
+_READ_QUESTION_PREFIX = re.compile(
+    r"^\s*(?:why|when|what|which|where|who|how|is|are|was|were|did|does|do|"
+    r"has|have|had)\b",
+    re.I,
+)
 
 
 def is_semantic_control_candidate(prompt: str) -> bool:
@@ -29,7 +34,10 @@ def is_semantic_control_candidate(prompt: str) -> bool:
     asked for an action versus a question/advice request.
     """
 
-    return _CONTROL_CANDIDATE.search(str(prompt or "")) is not None
+    text = str(prompt or "")
+    if _READ_QUESTION_PREFIX.search(text):
+        return False
+    return _CONTROL_CANDIDATE.search(text) is not None
 
 
 def _history_lines(history: Any, *, limit: int = 4) -> list[str]:
