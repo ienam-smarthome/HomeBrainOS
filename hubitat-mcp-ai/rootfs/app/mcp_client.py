@@ -471,8 +471,32 @@ class HubitatMCPClient:
         return value
 
     async def get_device_identities(self) -> list[dict[str, Any]]:
-        if self._cached_devices:
-            return list(self._cached_devices)
+        """Return complete device identity with the cheapest safe source first."""
+
+        cached = self.peek_device_identities()
+        if cached:
+            return cached
+
+        # A cold control request used to jump straight to the detailed paginated
+        # hub_list_devices manifest. On a real ~200-device hub that path took
+        # ~24 seconds before a 733 ms command could even start. The bulk context
+        # resource already carries complete structural identity (id/label/room/
+        # capabilities), which is enough for deterministic routine resolution.
+        # Prefer that one bounded read and only fall back to the detailed manifest
+        # when the context resource is unavailable or explicitly incomplete.
+        try:
+            context = await self.get_live_context()
+        except Exception as exc:
+            logger.debug("Live context unavailable for identity lookup: %s", exc)
+        else:
+            if live_context_is_complete(context):
+                devices = self._find_device_list(context)
+                identities = [
+                    dict(item) for item in (devices or []) if isinstance(item, dict)
+                ]
+                if identities:
+                    return identities
+
         return await self.get_cached_devices()
 
     @classmethod
