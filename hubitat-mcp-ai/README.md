@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.16**.
+Current add-on version: **0.14.17**.
 
 ## Architecture
 
@@ -751,8 +751,11 @@ batteries, broken automations, log findings, and resolved findings within the
 service message limit. In the opened Pushover message, offline device names and
 states are red while low-battery device names and reported battery values are
 amber; surrounding text remains neutral. If HTML colour markup makes the complete
-report exceed Pushover's per-message limit, HomeBrain now splits it into numbered
-parts instead of dropping the later Automation, Logs, Other, or Resolved sections. The scheduled morning health check is read-only and uses
+report exceed Pushover's per-message limit, HomeBrain splits it into numbered
+parts instead of dropping later sections. Pushover now also mirrors the missing
+comparison information from the dashboard: non-offline device warnings remain under
+a dedicated **Device warnings** section, and actual **New since previous check**
+item names are included rather than only the summary count. The scheduled morning health check is read-only and uses
 the Hubitat timezone; its stored snapshot is reused by the dashboard.
 
 ## API
