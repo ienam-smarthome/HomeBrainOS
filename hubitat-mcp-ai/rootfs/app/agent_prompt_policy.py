@@ -275,7 +275,7 @@ def build_system_prompt(
         "absolute light level (set_level + level), and relative brightness "
         "(adjust_level + signed delta). Never emit raw Hubitat setLevel payloads "
         "when this adapter can express the intent. Only call it when the user "
-        "explicitly requests a state change. device_names must contain ONLY actual "
+        "only when the user explicitly requests a state change. device_names must contain ONLY actual "
         "device name fragments that "
         "share the SAME command -- never fold a second, unrelated instruction (a "
         "different command, a different tool's action, or wording like 'and restart "
