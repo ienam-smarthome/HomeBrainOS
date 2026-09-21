@@ -164,6 +164,8 @@ def test_semantic_eval_corpus_covers_paraphrases_safety_and_scheduling() -> None
     expected = [case["expected"] for case in cases]
     assert any(item.get("operation") == "adjust_level" for item in expected)
     assert any(item.get("operation") == "set_level" for item in expected)
+    assert any(item.get("operation") == "adjust_temperature" for item in expected)
+    assert any(item.get("operation") == "set_temperature" for item in expected)
     assert any(item.get("domain") == "other" for item in expected)
     assert any(item.get("timing") == "scheduled" for item in expected)
     assert any(item.get("needs_clarification") is True for item in expected)
