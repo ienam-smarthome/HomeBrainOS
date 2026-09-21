@@ -989,6 +989,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             self.request_metrics.increment("semantic_plan_compile_failures")
             return None
 
+        arguments = self._resolve_pronoun_control_target(
+            arguments, session_key=session_key
+        )
         if arguments.get("command") == "adjust_level":
             self.request_metrics.increment("semantic_relative_controls")
 
