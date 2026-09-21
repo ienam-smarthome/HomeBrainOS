@@ -299,7 +299,6 @@ def _present_control(data: dict[str, Any]) -> str:
         "on": "Turned on",
         "off": "Turned off",
         "toggle": "Toggled",
-        "set_level": f"Set to {data.get('level')}%",
     }.get(command, "Controlled")
     # A command dispatched to several devices at once (a room, or "the
     # lights") is sent to every match regardless of its current state --
@@ -321,7 +320,11 @@ def _present_control(data: dict[str, Any]) -> str:
         if "changed" in x and not _coerce_bool(x.get("changed", True), default=True)
     ]
     if changed:
-        message = f"{verb} {_joined(changed)}."
+        message = (
+            f"Set {_joined(changed)} to {data.get('level')}%."
+            if command == "set_level"
+            else f"{verb} {_joined(changed)}."
+        )
     elif already_in_state:
         state_word = (
             f"at {data.get('level')}%"
@@ -330,7 +333,11 @@ def _present_control(data: dict[str, Any]) -> str:
         )
         message = f"Nothing to do -- every matched device was already {state_word}."
     else:
-        message = f"{verb} {_joined(succeeded) or 'the selected devices'}."
+        message = (
+            f"Set {_joined(succeeded) or 'the selected devices'} to {data.get('level')}%."
+            if command == "set_level"
+            else f"{verb} {_joined(succeeded) or 'the selected devices'}."
+        )
     if already_in_state and changed:
         was_were = "was" if len(already_in_state) == 1 else "were"
         state_word = (
