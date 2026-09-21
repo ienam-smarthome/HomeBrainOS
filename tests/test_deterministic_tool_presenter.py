@@ -605,3 +605,21 @@ def test_control_presenter_without_changed_flags_keeps_prior_wording():
     )
 
     assert message == "Turned off Hallway Light 1 and Hallway Light 2."
+
+
+def test_control_presenter_reports_set_level_naturally():
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": True,
+            "command": "set_level",
+            "level": 100,
+            "succeeded": [
+                {"label": "Livingroom Light 1", "changed": True},
+                {"label": "Livingroom Light 2", "changed": True},
+            ],
+            "failed": [],
+        },
+    )
+
+    assert message == "Set to 100% Livingroom Light 1 and Livingroom Light 2."
