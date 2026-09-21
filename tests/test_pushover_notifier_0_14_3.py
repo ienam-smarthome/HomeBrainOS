@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -70,8 +71,14 @@ def test_pushover_summary_is_bounded_and_problem_first() -> None:
     assert title == "HomeBrain System Check: Attention"
     assert "✅ Hub: healthy" in message
     assert "⚠️ Devices: 2 need attention" in message
-    assert "Offline:\n• Roborock Q7 Max" in message
-    assert "Low battery:\n• Livingroom TRV — 2% (threshold 20%)." in message
+    assert (
+        'Offline:\n• <font color="#ff5c5c">Roborock Q7 Max</font> — '
+        '<font color="#ff5c5c">offline</font>'
+    ) in message
+    assert (
+        'Low battery:\n• <font color="#ffb300">Livingroom TRV</font> — '
+        '<font color="#ffb300">2%</font> (threshold 20%).'
+    ) in message
     assert "Broken automations:\n• Lighting: bedroom 3 low light" in message
     assert "Logs:\n• MCP Rule Server — VRB feed missing 1/358 devices. ×4" in message
     assert "Resolved:\n• Motion active too long: Bedroom 3 Soft Sensor" in message
@@ -93,11 +100,46 @@ def test_pushover_named_sections_are_bounded_with_more_marker() -> None:
 
     _, message = format_health_audit(audit)
 
-    assert "• Offline device 0" in message
-    assert "• Offline device 7" in message
+    assert '<font color="#ff5c5c">Offline device 0</font>' in message
+    assert '<font color="#ff5c5c">Offline device 7</font>' in message
     assert "• +2 more" in message
-    assert "• Offline device 8" not in message
+    assert "Offline device 8" not in message
     assert len(message) <= 1024
+
+
+def test_pushover_html_escapes_device_names_and_keeps_only_targeted_colour() -> None:
+    audit = _audit()
+    audit["issues"][0]["title"] = "Device unavailable: Kitchen <TRV> & sensor"
+    audit["issues"][1]["title"] = "Low battery: Hallway <Meter>"
+
+    _, message = format_health_audit(audit)
+
+    assert '<font color="#ff5c5c">Kitchen &lt;TRV&gt; &amp; sensor</font>' in message
+    assert '<font color="#ff5c5c">offline</font>' in message
+    assert '<font color="#ffb300">Hallway &lt;Meter&gt;</font>' in message
+    assert '<font color="#ffb300">2%</font> (threshold 20%).' in message
+    assert '<font color="#ff5c5c">Device unavailable:' not in message
+    assert '<font color="#ffb300">Low battery:' not in message
+
+
+def test_pushover_html_truncation_keeps_complete_lines() -> None:
+    audit = _audit()
+    audit["issues"] = [
+        {
+            "severity": "warning",
+            "domain": "logs",
+            "title": f"Long log {index}",
+            "detail": "x" * 300,
+            "count": 1,
+        }
+        for index in range(10)
+    ]
+
+    _, message = format_health_audit(audit)
+
+    assert len(message) <= 1024
+    assert not message.endswith("<")
+    assert message.count("<font") == message.count("</font>")
 
 
 @pytest.mark.asyncio
@@ -123,6 +165,9 @@ async def test_pushover_posts_official_message_fields() -> None:
     assert "token=app-token" in captured["body"]
     assert "user=user-key" in captured["body"]
     assert "device=phone" in captured["body"]
+    form = parse_qs(captured["body"])
+    assert form["html"] == ["1"]
+    assert '<font color="#ff5c5c">Roborock Q7 Max</font>' in form["message"][0]
     assert result["sent"] is True
 
 

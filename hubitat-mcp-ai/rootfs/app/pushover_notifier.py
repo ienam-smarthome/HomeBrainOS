@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+import re
 from typing import Any
 
 import httpx
@@ -7,11 +9,45 @@ import httpx
 
 PUSHOVER_MESSAGES_URL = "https://api.pushover.net/1/messages.json"
 PUSHOVER_MESSAGE_LIMIT = 1024
+PUSHOVER_CRITICAL_COLOR = "#ff5c5c"
+PUSHOVER_WARNING_COLOR = "#ffb300"
 
 
 def _clean_named_finding(title: str, prefix: str) -> str:
     value = title[len(prefix):].strip() if title.lower().startswith(prefix.lower()) else title.strip()
     return value or "Unknown"
+
+
+def _html_text(value: Any) -> str:
+    return escape(str(value or ""), quote=False)
+
+
+def _color(value: Any, color: str) -> str:
+    return f'<font color="{color}">{_html_text(value)}</font>'
+
+
+def _split_state_detail(detail: str) -> tuple[str, str]:
+    match = re.match(r"^(\S+)(.*)$", str(detail or "").strip())
+    if not match:
+        return "", ""
+    return match.group(1), match.group(2)
+
+
+def _bounded_message(lines: list[str]) -> str:
+    message = "\n".join(lines)
+    if len(message) <= PUSHOVER_MESSAGE_LIMIT:
+        return message
+
+    kept: list[str] = []
+    for line in lines:
+        candidate = "\n".join([*kept, line])
+        if len(candidate) > PUSHOVER_MESSAGE_LIMIT - 2:
+            break
+        kept.append(line)
+    if not kept:
+        return "…"[:PUSHOVER_MESSAGE_LIMIT]
+    candidate = "\n".join([*kept, "…"])
+    return candidate if len(candidate) <= PUSHOVER_MESSAGE_LIMIT else "\n".join(kept)
 
 
 def _append_section(lines: list[str], heading: str, values: list[str], *, limit: int) -> None:
@@ -46,7 +82,7 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
         )
         count = int(item.get("attention_count") or 0)
         summary = "healthy" if not count else f"{count} need attention"
-        lines.append(f"{icon} {label}: {summary}")
+        lines.append(f"{icon} {_html_text(label)}: {_html_text(summary)}")
 
     attention = int(audit.get("attention_count") or 0)
     new_count = int(audit.get("new_count") or 0)
@@ -74,18 +110,31 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
         suffix = f" ×{occurrence}" if occurrence > 1 else ""
 
         if finding_title.lower().startswith("device unavailable:"):
-            offline.append(_clean_named_finding(finding_title, "Device unavailable:") + suffix)
+            name = _clean_named_finding(finding_title, "Device unavailable:")
+            state = detail or "offline"
+            offline.append(
+                f"{_color(name, PUSHOVER_CRITICAL_COLOR)} — "
+                f"{_color(state, PUSHOVER_CRITICAL_COLOR)}{_html_text(suffix)}"
+            )
         elif finding_title.lower().startswith("low battery:"):
             name = _clean_named_finding(finding_title, "Low battery:")
-            low_battery.append(f"{name} — {detail}" if detail else name)
+            state, remainder = _split_state_detail(detail)
+            if state:
+                low_battery.append(
+                    f"{_color(name, PUSHOVER_WARNING_COLOR)} — "
+                    f"{_color(state, PUSHOVER_WARNING_COLOR)}{_html_text(remainder)}"
+                )
+            else:
+                low_battery.append(_color(name, PUSHOVER_WARNING_COLOR))
         elif finding_title.lower().startswith("automation broken:"):
             broken_automations.append(
-                _clean_named_finding(finding_title, "Automation broken:") + suffix
+                _html_text(_clean_named_finding(finding_title, "Automation broken:"))
+                + _html_text(suffix)
             )
         elif domain == "logs":
-            logs.append(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix)
+            logs.append(_html_text(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix))
         else:
-            other.append(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix)
+            other.append(_html_text(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix))
 
     _append_section(lines, "Offline", offline, limit=8)
     _append_section(lines, "Low battery", low_battery, limit=6)
@@ -94,7 +143,7 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
     _append_section(lines, "Other findings", other, limit=3)
 
     resolved = [
-        str(item.get("title") or "Issue").strip()
+        _html_text(str(item.get("title") or "Issue").strip())
         for item in (audit.get("resolved_issues") or [])
         if isinstance(item, dict)
     ]
@@ -103,10 +152,7 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
     if not issues:
         lines.append("No current findings need attention.")
 
-    message = "\n".join(lines)
-    if len(message) > PUSHOVER_MESSAGE_LIMIT:
-        message = message[: PUSHOVER_MESSAGE_LIMIT - 1].rstrip() + "…"
-    return title, message
+    return title, _bounded_message(lines)
 
 
 class PushoverNotifier:
@@ -146,6 +192,7 @@ class PushoverNotifier:
             "user": self.user_key,
             "title": str(title)[:250],
             "message": str(message)[:PUSHOVER_MESSAGE_LIMIT],
+            "html": "1",
             "priority": "0",
         }
         if self.device:

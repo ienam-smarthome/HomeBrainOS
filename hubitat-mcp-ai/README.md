@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.14**.
+Current add-on version: **0.14.15**.
 
 ## Architecture
 
@@ -748,7 +748,9 @@ automation descriptions also stay neutral except for the explicit **BROKEN**
 state, which is highlighted red. Pushover
 reports include named offline devices, low
 batteries, broken automations, log findings, and resolved findings within the
-service message limit. The scheduled morning health check is read-only and uses
+service message limit. In the opened Pushover message, offline device names and
+states are red while low-battery device names and reported battery values are
+amber; surrounding text remains neutral. The scheduled morning health check is read-only and uses
 the Hubitat timezone; its stored snapshot is reused by the dashboard.
 
 ## API
