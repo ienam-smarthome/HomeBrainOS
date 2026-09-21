@@ -73,6 +73,17 @@ def test_parse_named_attribute_returns_name_and_attribute():
     )
 
 
+def test_parse_named_attribute_accepts_mobile_voice_shorthand():
+    assert parse_named_attribute("bathroom temperature") == (
+        "bathroom",
+        "temperature",
+    )
+    assert parse_named_attribute("Bedroom 1 humidity") == (
+        "Bedroom 1",
+        "humidity",
+    )
+
+
 def test_parse_named_attribute_none_for_bare_qualifier_backtracking():
     """Regression: parse_named_attribute's own regex used to backtrack
     "What's the temperature?" into name="the" and "What is the current
@@ -159,6 +170,14 @@ def test_capability_choice_labels_requires_every_token_present():
         "Front Door Lock",
         "Front Door Sensor",
     ]
+
+
+def test_capability_choice_labels_matches_room_metadata_too():
+    matches = [
+        {"label": "Meter", "room": "Bathroom"},
+        {"label": "Bedroom Meter", "room": "Bedroom 1"},
+    ]
+    assert capability_choice_labels("bathroom", matches) == ["Meter"]
 
 
 def test_capability_choice_labels_dedupes_by_case_insensitive_label():
