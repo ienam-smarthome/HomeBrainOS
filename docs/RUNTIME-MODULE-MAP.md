@@ -70,6 +70,9 @@ The repository drift test compares this table directly with the live directory. 
 | `request_outcome_policy.py` | Classifies completed requests from fixed privacy-safe counters with explicit precedence. |
 | `rule_authoring_service.py` | Compiles supported daily schedules into guarded rule writes. |
 | `rule_proposal_confirmation.py` | Resolves a handled rule-authoring proposal into a response message, running proposed writes through the confirmation policy and queuing them. |
+| `semantic_agent_core.py` | Converts fast or model-derived semantic control plans into deterministic HomeBrain device-control arguments and policy defaults. |
+| `semantic_plan.py` | Defines and validates the typed goal/target/action intermediate representation shared by fast paths and AI planning. |
+| `semantic_planner.py` | Uses the reasoning model only for natural-language meaning, returning strict semantic plans without Hubitat wire details. |
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
 | `synthesis_context.py` | Preserves bounded privacy-redacted current-turn tool-result excerpts for the final no-tools reasoning synthesis pass. |
 | `synthesis_validator.py` | Detects deterministic factual conflicts in model synthesis and supplies a localized repair baseline without replacing supported analysis. |
