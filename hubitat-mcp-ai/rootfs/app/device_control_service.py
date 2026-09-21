@@ -568,6 +568,70 @@ class DeviceControlService:
         identity_candidates = [
             device for device in identity_manifest if self._matches_kind(kind, device)
         ]
+
+        # A thermostat mutation must never widen past an exact known device
+        # whose identity explicitly lacks heating-setpoint ability. Doing a
+        # second network lookup cannot safely turn "generic Thermostat" into
+        # permission to set a temperature, and on a warm complete identity
+        # snapshot it only adds latency before reaching the same conclusion.
+        # Fail closed at the semantic capability boundary.
+        if kind == "thermostat" and not room and names:
+            exact_cached_reasons = {
+                "exact normalized name",
+                "exact semantic room and device name",
+                "exact semantic name with device-kind token omitted",
+            }
+            for requested in names:
+                identity_resolution = resolve_device_candidate(
+                    str(requested), identity_manifest
+                )
+                if (
+                    identity_resolution.target is not None
+                    and identity_resolution.reason in exact_cached_reasons
+                    and not self._matches_kind(
+                        "thermostat", identity_resolution.target
+                    )
+                ):
+                    label = str(
+                        identity_resolution.matched_name
+                        or identity_resolution.target.get("label")
+                        or identity_resolution.target.get("name")
+                        or requested
+                    )
+                    error_message = (
+                        f"{label} does not advertise a controllable heating setpoint; "
+                        "no temperature command was sent."
+                    )
+                    data = {
+                        "success": False,
+                        "error": error_message,
+                        "matched": [],
+                        "executed": 0,
+                        "choices": [],
+                    }
+                    self._record_evidence(
+                        "hub_read_devices",
+                        {
+                            "tool": "hub_list_devices",
+                            "source": identity_source,
+                        },
+                        success=True,
+                        elapsed_ms=round(
+                            (time.monotonic() - identity_started) * 1000
+                        ),
+                        summary="Exact target lacks heating-setpoint ability",
+                        supports_live_claim=False,
+                        evidence_kind="control_target_resolution",
+                    )
+                    return MCPToolResult(
+                        DEVICE_CONTROL_TOOL,
+                        arguments,
+                        {},
+                        error_message,
+                        data,
+                        is_error=True,
+                    )
+
         fast_targets: list[dict[str, Any]] = []
         if room:
             wanted_room = normalized_name(room)
