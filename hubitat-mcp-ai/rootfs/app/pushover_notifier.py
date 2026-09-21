@@ -82,7 +82,7 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
         )
         count = int(item.get("attention_count") or 0)
         summary = "healthy" if not count else f"{count} need attention"
-        lines.append(f"{icon} {label}: {summary}")
+        lines.append(f"{icon} {_html_text(label)}: {_html_text(summary)}")
 
     attention = int(audit.get("attention_count") or 0)
     new_count = int(audit.get("new_count") or 0)
@@ -128,12 +128,13 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
                 low_battery.append(_color(name, PUSHOVER_WARNING_COLOR))
         elif finding_title.lower().startswith("automation broken:"):
             broken_automations.append(
-                _clean_named_finding(finding_title, "Automation broken:") + suffix
+                _html_text(_clean_named_finding(finding_title, "Automation broken:"))
+                + _html_text(suffix)
             )
         elif domain == "logs":
-            logs.append(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix)
+            logs.append(_html_text(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix))
         else:
-            other.append(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix)
+            other.append(_html_text(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix))
 
     _append_section(lines, "Offline", offline, limit=8)
     _append_section(lines, "Low battery", low_battery, limit=6)
@@ -142,7 +143,7 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
     _append_section(lines, "Other findings", other, limit=3)
 
     resolved = [
-        str(item.get("title") or "Issue").strip()
+        _html_text(str(item.get("title") or "Issue").strip())
         for item in (audit.get("resolved_issues") or [])
         if isinstance(item, dict)
     ]
