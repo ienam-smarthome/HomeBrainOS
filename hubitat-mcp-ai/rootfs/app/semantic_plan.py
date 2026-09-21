@@ -38,6 +38,7 @@ class SemanticAction(BaseModel):
     operation: ControlOperation
     value: int | None = Field(default=None, ge=0, le=100)
     delta: int | None = Field(default=None, ge=-100, le=100)
+    direction: Literal["increase", "decrease"] | None = None
     magnitude: Literal["small", "default", "large"] = "default"
 
     @model_validator(mode="after")
@@ -46,10 +47,23 @@ class SemanticAction(BaseModel):
             raise ValueError("set_level requires value")
         if self.operation != "set_level" and self.value is not None:
             raise ValueError("value is only valid for set_level")
-        if self.operation != "adjust_level" and self.delta is not None:
-            raise ValueError("delta is only valid for adjust_level")
-        if self.operation == "adjust_level" and self.delta == 0:
+        if self.operation != "adjust_level":
+            if self.delta is not None:
+                raise ValueError("delta is only valid for adjust_level")
+            if self.direction is not None:
+                raise ValueError("direction is only valid for adjust_level")
+            return self
+        if self.delta == 0:
             raise ValueError("adjust_level delta cannot be zero")
+        if self.direction is None and self.delta is not None:
+            self.direction = "increase" if self.delta > 0 else "decrease"
+        if self.direction is None:
+            raise ValueError("adjust_level requires direction")
+        if self.delta is not None:
+            if self.direction == "increase" and self.delta < 0:
+                raise ValueError("increase direction conflicts with negative delta")
+            if self.direction == "decrease" and self.delta > 0:
+                raise ValueError("decrease direction conflicts with positive delta")
         return self
 
 
