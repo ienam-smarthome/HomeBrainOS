@@ -1084,7 +1084,8 @@ async def test_exact_cached_target_bypasses_slow_identity_refresh():
     assert receipts[0][0][1]["source"] == "local_identity_cache"
 
 
-def test_mcp_client_peek_device_identities_can_use_complete_live_context_without_io():
+@pytest.mark.asyncio
+async def test_mcp_client_peek_device_identities_can_use_complete_live_context_without_io():
     """The dashboard's complete live-context snapshot can seed routine control."""
 
     from mcp_client import HubitatMCPClient
@@ -1121,5 +1122,50 @@ def test_mcp_client_peek_device_identities_can_use_complete_live_context_without
         identities[0]["label"] = "mutated"
         assert client._live_context_snapshot[2]["devices"][0]["label"] == "Livingroom Light 2"
     finally:
-        import asyncio
-        asyncio.run(client.close())
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_cold_identity_lookup_prefers_one_bulk_context_read_over_full_manifest():
+    """A cold cache must not immediately pay for paginated hub_list_devices."""
+
+    from mcp_client import HubitatMCPClient
+
+    client = HubitatMCPClient("http://example.invalid/mcp")
+    context_reads = 0
+    manifest_reads = 0
+
+    async def fake_context(refresh=False):
+        nonlocal context_reads
+        context_reads += 1
+        return {
+            "devices": [
+                {
+                    "id": "7828",
+                    "label": "Livingroom Light 2",
+                    "roomName": "Living Room",
+                    "capabilities": ["Light", "Switch"],
+                    "attributes": {"switch": "off"},
+                }
+            ],
+            "totalDevices": 1,
+            "idsComplete": True,
+            "partial": False,
+            "truncated": False,
+        }
+
+    async def forbidden_manifest(refresh=False):
+        nonlocal manifest_reads
+        manifest_reads += 1
+        raise AssertionError("full device manifest must not run for complete context")
+
+    client.get_live_context = fake_context
+    client.get_cached_devices = forbidden_manifest
+    try:
+        identities = await client.get_device_identities()
+    finally:
+        await client.close()
+
+    assert identities[0]["id"] == "7828"
+    assert context_reads == 1
+    assert manifest_reads == 0
