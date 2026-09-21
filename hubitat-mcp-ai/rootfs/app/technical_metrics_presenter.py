@@ -36,6 +36,12 @@ _COUNTER_LABELS = (
     ("gateway_operation_rejected", "Gateway operation rejections"),
     ("history_attribute_rejected", "History attribute rejections"),
     ("history_known_tool_fastpath", "Known-history fast paths"),
+    ("semantic_fastpath_plans", "Semantic fast-path plans"),
+    ("semantic_planner_plans", "Semantic AI plans"),
+    ("semantic_planner_failures", "Semantic planner failures"),
+    ("semantic_plan_compile_failures", "Semantic compile failures"),
+    ("semantic_relative_controls", "Relative semantic controls"),
+    ("semantic_needs_input", "Semantic clarifications"),
 )
 
 _DURATION_LABELS = (
@@ -52,6 +58,7 @@ _DURATION_LABELS = (
 
 _OUTCOME_PRESENTATION = {
     "success": {"label": "Success", "tone": "positive"},
+    "needs_input": {"label": "Needs input", "tone": "warning"},
     "unresolved": {"label": "Unresolved", "tone": "warning"},
     "refused": {"label": "Refused", "tone": "warning"},
     "cancelled": {"label": "Cancelled", "tone": "neutral"},
