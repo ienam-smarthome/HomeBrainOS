@@ -287,6 +287,8 @@ class DeviceControlService:
         names = arguments.get("device_names") or []
         kind = str(arguments.get("device_kind") or "").strip().lower()
         command = str(arguments.get("command") or "").strip()
+        if command == "set_level" and kind == "auto":
+            kind = "light"
         level_raw = arguments.get("level")
         try:
             level = int(level_raw) if level_raw is not None else None
@@ -299,7 +301,11 @@ class DeviceControlService:
             or command not in {"on", "off", "toggle", "set_level"}
             or (
                 command == "set_level"
-                and (level is None or not 0 <= level <= 100)
+                and (
+                    kind != "light"
+                    or level is None
+                    or not 0 <= level <= 100
+                )
             )
         ):
             return MCPToolResult(
