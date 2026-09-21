@@ -22,7 +22,7 @@ _NAMED_ATTRIBUTE = re.compile(
 # by _NAMED_ATTRIBUTE so its established bare-qualifier safeguards cannot be
 # bypassed by regex backtracking.
 _SHORTHAND_NAMED_ATTRIBUTE = re.compile(
-    r"^\s*(?!(?:what(?:'s|s|\s+is)|show|tell)\b)"
+    r"^\s*(?!(?:what(?:'s|s|\s+is)|how(?:'s|\s+is)|show|tell)\b)"
     r"(?P<name>.+?)\s+(?:current\s+)?"
     r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
     re.I,
