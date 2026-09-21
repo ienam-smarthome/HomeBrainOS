@@ -948,7 +948,11 @@ class DeviceControlService:
             target_attributes = device_attributes(target)
             pre_switch = str(target_attributes.get("switch") or "").casefold()
             pre_level = target_attributes.get("level")
+            pre_setpoint = target_attributes.get("heatingSetpoint")
             target_level: int | None = level if command == "set_level" else None
+            target_setpoint: float | None = (
+                setpoint if command == "set_temperature" else None
+            )
 
             if command == "adjust_level":
                 # Relative brightness is state-dependent. Never calculate it
@@ -1012,19 +1016,93 @@ class DeviceControlService:
                     evidence_kind="control_precondition_state",
                 )
 
+            if command == "adjust_temperature":
+                state_arguments = {
+                    "tool": "hub_get_device_attribute",
+                    "args": {
+                        "deviceId": device_id,
+                        "attribute": "heatingSetpoint",
+                    },
+                }
+                state_started = time.monotonic()
+                try:
+                    async with semaphore:
+                        state_result = await self.mcp.call_tool(
+                            "hub_read_devices", state_arguments
+                        )
+                    current_setpoint = (
+                        state_result.data.get("value")
+                        if self._tool_succeeded(state_result)
+                        and isinstance(state_result.data, dict)
+                        else None
+                    )
+                    numeric_setpoint = float(current_setpoint)
+                    if not _THERMOSTAT_MIN_SETPOINT <= numeric_setpoint <= _THERMOSTAT_MAX_SETPOINT:
+                        raise ValueError("heatingSetpoint outside safe range")
+                    pre_setpoint = numeric_setpoint
+                    target_setpoint = round(
+                        max(
+                            _THERMOSTAT_MIN_SETPOINT,
+                            min(
+                                _THERMOSTAT_MAX_SETPOINT,
+                                numeric_setpoint + float(delta or 0),
+                            ),
+                        ),
+                        2,
+                    )
+                except Exception as exc:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        state_arguments,
+                        success=False,
+                        elapsed_ms=round(
+                            (time.monotonic() - state_started) * 1000
+                        ),
+                        summary=f"heatingSetpoint {label}: unavailable ({exc})",
+                        supports_live_claim=True,
+                        evidence_kind="control_precondition_state",
+                    )
+                    return {
+                        "id": device_id,
+                        "label": label,
+                        "room": room_name(target),
+                        "success": False,
+                        "command_sent": False,
+                        "verified": False,
+                        "message": "Current heating setpoint is unavailable.",
+                        "verification_message": "",
+                        "already_in_state": False,
+                        "changed": False,
+                    }
+                self._record_evidence(
+                    "hub_read_devices",
+                    state_arguments,
+                    success=True,
+                    elapsed_ms=round((time.monotonic() - state_started) * 1000),
+                    summary=f"heatingSetpoint {label}: {pre_setpoint:g}",
+                    supports_live_claim=True,
+                    evidence_kind="control_precondition_state",
+                )
+
             expected_value: Any | None = (
                 command if command in {"on", "off"}
                 else target_level if command in {"set_level", "adjust_level"}
+                else target_setpoint
+                if command in {"set_temperature", "adjust_temperature"}
                 else None
             )
             wait_attribute = (
                 "level"
                 if command in {"set_level", "adjust_level"}
+                else "heatingSetpoint"
+                if command in {"set_temperature", "adjust_temperature"}
                 else "switch"
             )
             hub_command = (
                 "setLevel"
                 if command in {"set_level", "adjust_level"}
+                else "setHeatingSetpoint"
+                if command in {"set_temperature", "adjust_temperature"}
                 else command
             )
             if command == "toggle":
@@ -1070,6 +1148,8 @@ class DeviceControlService:
                     **(
                         {"parameters": [target_level]}
                         if command in {"set_level", "adjust_level"}
+                        else {"parameters": [target_setpoint]}
+                        if command in {"set_temperature", "adjust_temperature"}
                         else {}
                     ),
                     **(
@@ -1147,6 +1227,14 @@ class DeviceControlService:
                     )
                 except (TypeError, ValueError):
                     already_in_state = False
+            elif command in {"set_temperature", "adjust_temperature"} and target_setpoint is not None:
+                try:
+                    already_in_state = (
+                        pre_setpoint is not None
+                        and float(pre_setpoint) == float(target_setpoint)
+                    )
+                except (TypeError, ValueError):
+                    already_in_state = False
             else:
                 already_in_state = (
                     expected_value is not None and pre_switch == expected_value
@@ -1175,6 +1263,19 @@ class DeviceControlService:
                     if command in {"set_level", "adjust_level"}
                     else {}
                 ),
+                **(
+                    {
+                        "previous_setpoint": pre_setpoint,
+                        "target_setpoint": target_setpoint,
+                        "delta_applied": (
+                            float(target_setpoint) - float(pre_setpoint)
+                            if pre_setpoint is not None and target_setpoint is not None
+                            else None
+                        ),
+                    }
+                    if command in {"set_temperature", "adjust_temperature"}
+                    else {}
+                ),
             }
 
         results = await asyncio.gather(*(execute(target) for target in unique_targets))
@@ -1200,7 +1301,12 @@ class DeviceControlService:
             "success": not failed and bool(succeeded),
             "command": command,
             **({"level": level} if command == "set_level" else {}),
-            **({"delta": delta} if command == "adjust_level" else {}),
+            **({"setpoint": setpoint} if command == "set_temperature" else {}),
+            **(
+                {"delta": delta}
+                if command in {"adjust_level", "adjust_temperature"}
+                else {}
+            ),
             "device_kind": kind,
             "matched": len(unique_targets),
             "executed": len(results),
