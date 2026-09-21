@@ -1840,3 +1840,53 @@ async def test_bathroom_temperature_shorthand_is_deterministic_and_filter_first(
     assert outcome.metrics["counters"].get("model_rounds", 0) == 0
     assert outcome.metrics["counters"].get("device_resolution_missing", 0) == 0
     assert outcome.metrics["counters"].get("device_resolution_ambiguous", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_immediate_set_level_uses_routine_control_without_confirmation_or_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "success": True,
+                "command": "set_level",
+                "level": 100,
+                "succeeded": [
+                    {"id": "7805", "label": "Livingroom Light 1", "changed": True},
+                    {"id": "7828", "label": "Livingroom Light 2", "changed": True},
+                ],
+                "failed": [],
+            },
+        )
+
+    async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError("routine set-level must not enter model tool loop")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
+    ai = FakeAI("unused -- model must not be reached")
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "set living room lights to 100%", session_id="set-level-test"
+    )
+
+    assert control_calls == [{
+        "device_names": ["living room lights"],
+        "device_kind": "light",
+        "command": "set_level",
+        "level": 100,
+    }]
+    assert outcome.message == "Set Livingroom Light 1 and Livingroom Light 2 to 100%."
+    assert outcome.confirmation_required is False
+    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert ai.requests == []
