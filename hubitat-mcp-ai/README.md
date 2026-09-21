@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.20**.
+Current add-on version: **0.14.21**.
 
 ## Architecture
 
@@ -732,6 +732,14 @@ reads the live measurement snapshot, matches both device label and room metadata
 and only falls back to device-name resolution if no capable reporter matches. This
 removes client-to-client model variance and avoids a false unresolved outcome when
 a valid room sensor is already present.
+
+Immediate dimmer-level requests such as **set living room lights to 100%** now
+use the deterministic routine-control path, send Hubitat `setLevel` parameters in
+the required positional array, and retain live level verification. Batched raw
+`hub_call_device_command` proposals are also classified from every contained
+command, so routine `setLevel` batches no longer inherit the gateway's destructive
+hint and ask for an unnecessary confirmation. Failed confirmed writes now mark the
+request outcome **failed** instead of leaving a contradictory green Success badge.
 
 Routine device writes now also use a nonblocking local identity fast path for
 unique exact cached targets. A cold identity lookup prefers the complete bulk
