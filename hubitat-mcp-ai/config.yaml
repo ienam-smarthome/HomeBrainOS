@@ -55,6 +55,7 @@ options:
   deterministic_reads_enabled: false
   semantic_agent_enabled: true
   semantic_default_brightness_step: 20
+  semantic_default_temperature_step: 1.0
   morning_health_check_enabled: true
   morning_health_check_time: "07:00"
   health_check_log_hours: 24
@@ -106,6 +107,7 @@ schema:
   deterministic_reads_enabled: bool
   semantic_agent_enabled: bool
   semantic_default_brightness_step: int
+  semantic_default_temperature_step: float
   morning_health_check_enabled: bool
   morning_health_check_time: str
   health_check_log_hours: int
