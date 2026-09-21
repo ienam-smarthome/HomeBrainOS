@@ -19,6 +19,7 @@ from technical_metrics_presenter import (  # noqa: E402
     ("outcome", "label", "tone"),
     [
         ("success", "Success", "positive"),
+        ("needs_input", "Needs input", "warning"),
         ("unresolved", "Unresolved", "warning"),
         ("refused", "Refused", "warning"),
         ("cancelled", "Cancelled", "neutral"),
