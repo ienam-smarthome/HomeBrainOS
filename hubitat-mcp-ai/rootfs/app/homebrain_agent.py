@@ -64,7 +64,7 @@ from request_classification import (
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
-from semantic_planner import SemanticPlanner
+from semantic_planner import SemanticPlanner, is_semantic_control_candidate
 from semantic_world_model import build_semantic_world, render_semantic_world
 from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
@@ -977,7 +977,10 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         selected_device = self._selected_devices.get(session_key, "")
         world_context = ""
-        if self._routine_control_arguments(user_prompt) is None:
+        if (
+            self._routine_control_arguments(user_prompt) is None
+            and is_semantic_control_candidate(user_prompt)
+        ):
             world_context = await self._semantic_world_context()
         try:
             plan = await self.semantic_core.plan_control(
