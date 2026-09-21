@@ -287,24 +287,38 @@ class DeviceControlService:
         names = arguments.get("device_names") or []
         kind = str(arguments.get("device_kind") or "").strip().lower()
         command = str(arguments.get("command") or "").strip()
-        if command == "set_level" and kind == "auto":
+        if command in {"set_level", "adjust_level"} and kind == "auto":
             kind = "light"
         level_raw = arguments.get("level")
+        delta_raw = arguments.get("delta")
         try:
             level = int(level_raw) if level_raw is not None else None
         except (TypeError, ValueError):
             level = None
+        try:
+            delta = int(delta_raw) if delta_raw is not None else None
+        except (TypeError, ValueError):
+            delta = None
         if (
             bool(room) == bool(names)
             or not isinstance(names, list)
             or kind not in {"auto", "light", "switch"}
-            or command not in {"on", "off", "toggle", "set_level"}
+            or command not in {"on", "off", "toggle", "set_level", "adjust_level"}
             or (
                 command == "set_level"
                 and (
                     kind != "light"
                     or level is None
                     or not 0 <= level <= 100
+                )
+            )
+            or (
+                command == "adjust_level"
+                and (
+                    kind != "light"
+                    or delta is None
+                    or delta == 0
+                    or not -100 <= delta <= 100
                 )
             )
         ):
@@ -317,7 +331,8 @@ class DeviceControlService:
                     "success": False,
                     "error": (
                         "Provide exactly one of room or device_names, plus a valid "
-                        "device_kind and command. set_level also requires level 0-100."
+                        "device_kind and command. set_level requires level 0-100; "
+                        "adjust_level requires a non-zero delta from -100 to 100."
                     ),
                 },
                 is_error=True,
@@ -899,13 +914,85 @@ class DeviceControlService:
             target_attributes = device_attributes(target)
             pre_switch = str(target_attributes.get("switch") or "").casefold()
             pre_level = target_attributes.get("level")
+            target_level: int | None = level if command == "set_level" else None
+
+            if command == "adjust_level":
+                # Relative brightness is state-dependent. Never calculate it
+                # from a cached identity snapshot: read the authoritative live
+                # level immediately before compiling the absolute setLevel call.
+                state_arguments = {
+                    "tool": "hub_get_device_attribute",
+                    "args": {"deviceId": device_id, "attribute": "level"},
+                }
+                state_started = time.monotonic()
+                try:
+                    async with semaphore:
+                        state_result = await self.mcp.call_tool(
+                            "hub_read_devices", state_arguments
+                        )
+                    current_level = (
+                        state_result.data.get("value")
+                        if self._tool_succeeded(state_result)
+                        and isinstance(state_result.data, dict)
+                        else None
+                    )
+                    numeric_level = float(current_level)
+                    if not 0 <= numeric_level <= 100:
+                        raise ValueError("level outside 0-100")
+                    pre_level = numeric_level
+                    target_level = max(
+                        0,
+                        min(100, round(numeric_level + int(delta or 0))),
+                    )
+                except Exception as exc:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        state_arguments,
+                        success=False,
+                        elapsed_ms=round(
+                            (time.monotonic() - state_started) * 1000
+                        ),
+                        summary=f"level {label}: unavailable ({exc})",
+                        supports_live_claim=True,
+                        evidence_kind="control_precondition_state",
+                    )
+                    return {
+                        "id": device_id,
+                        "label": label,
+                        "room": room_name(target),
+                        "success": False,
+                        "command_sent": False,
+                        "verified": False,
+                        "message": "Current brightness level is unavailable.",
+                        "verification_message": "",
+                        "already_in_state": False,
+                        "changed": False,
+                    }
+                self._record_evidence(
+                    "hub_read_devices",
+                    state_arguments,
+                    success=True,
+                    elapsed_ms=round((time.monotonic() - state_started) * 1000),
+                    summary=f"level {label}: {pre_level:g}",
+                    supports_live_claim=True,
+                    evidence_kind="control_precondition_state",
+                )
+
             expected_value: Any | None = (
                 command if command in {"on", "off"}
-                else level if command == "set_level"
+                else target_level if command in {"set_level", "adjust_level"}
                 else None
             )
-            wait_attribute = "level" if command == "set_level" else "switch"
-            hub_command = "setLevel" if command == "set_level" else command
+            wait_attribute = (
+                "level"
+                if command in {"set_level", "adjust_level"}
+                else "switch"
+            )
+            hub_command = (
+                "setLevel"
+                if command in {"set_level", "adjust_level"}
+                else command
+            )
             if command == "toggle":
                 # "on"/"off" have a known target state up front, so they can
                 # ask the hub to waitFor convergence on it directly. "toggle"
@@ -947,8 +1034,8 @@ class DeviceControlService:
                     "deviceId": device_id,
                     "command": hub_command,
                     **(
-                        {"parameters": [level]}
-                        if command == "set_level"
+                        {"parameters": [target_level]}
+                        if command in {"set_level", "adjust_level"}
                         else {}
                     ),
                     **(
@@ -1018,11 +1105,11 @@ class DeviceControlService:
             # prior reading defaults to "changed" (already_in_state False),
             # so a device with no cached state still gets reported as acted
             # upon rather than silently dropped from the summary.
-            if command == "set_level" and level is not None:
+            if command in {"set_level", "adjust_level"} and target_level is not None:
                 try:
                     already_in_state = (
                         pre_level is not None
-                        and float(pre_level) == float(level)
+                        and float(pre_level) == float(target_level)
                     )
                 except (TypeError, ValueError):
                     already_in_state = False
@@ -1041,6 +1128,19 @@ class DeviceControlService:
                 "verification_message": verification_message,
                 "already_in_state": already_in_state,
                 "changed": success and not already_in_state,
+                **(
+                    {
+                        "previous_level": pre_level,
+                        "target_level": target_level,
+                        "delta_applied": (
+                            float(target_level) - float(pre_level)
+                            if pre_level is not None and target_level is not None
+                            else None
+                        ),
+                    }
+                    if command in {"set_level", "adjust_level"}
+                    else {}
+                ),
             }
 
         results = await asyncio.gather(*(execute(target) for target in unique_targets))
@@ -1066,6 +1166,7 @@ class DeviceControlService:
             "success": not failed and bool(succeeded),
             "command": command,
             **({"level": level} if command == "set_level" else {}),
+            **({"delta": delta} if command == "adjust_level" else {}),
             "device_kind": kind,
             "matched": len(unique_targets),
             "executed": len(results),
