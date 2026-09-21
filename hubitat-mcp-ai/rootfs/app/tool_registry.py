@@ -958,7 +958,7 @@ def home_snapshot_tool() -> MCPTool:
 def control_devices_tool() -> MCPTool:
     return MCPTool(
         LOCAL_CONTROL_TOOL,
-        "Routine Hubitat light/switch on, off, toggle, or dimmer-level control.",
+        "Routine Hubitat light/switch on, off, toggle, absolute level, or relative brightness control.",
         {
             "type": "object",
             "properties": {
@@ -978,12 +978,18 @@ def control_devices_tool() -> MCPTool:
                 },
                 "command": {
                     "type": "string",
-                    "enum": ["on", "off", "toggle", "set_level"],
+                    "enum": ["on", "off", "toggle", "set_level", "adjust_level"],
                 },
                 "level": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 100,
+                },
+                "delta": {
+                    "type": "integer",
+                    "minimum": -100,
+                    "maximum": 100,
+                    "description": "Required for adjust_level; non-zero relative brightness change.",
                 },
             },
             "required": ["device_kind", "command"],
