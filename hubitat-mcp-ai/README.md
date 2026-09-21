@@ -3,11 +3,30 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.15.0**.
+Current add-on version: **0.16.0**.
 
 ## Architecture
 
-0.15.0 introduces a meaning-first `SemanticAgentCore` for routine device
+0.16.0 adds a capability-grounded semantic world model. Before a non-trivial
+semantic control turn, HomeBrain projects the real Hubitat identity snapshot into
+bounded room/device context containing canonical names, semantic kinds, and
+abilities such as `brightness`, `heating_setpoint`, `temperature`, and
+`color_temperature`. This projection deliberately excludes device IDs, raw
+Hubitat command names, command parameters, and current state values. The planner
+therefore knows what kinds of things actually exist without being allowed to
+treat cached identity metadata as live-state evidence or author protocol payloads.
+
+The same semantic architecture now covers heating-setpoint intent. Natural
+requests such as "make Bedroom 1 warmer", "lower the living room temperature a
+little", or "set Bedroom 1 to 20.5 degrees" become typed
+`adjust_temperature`/`set_temperature` actions. The host then resolves only
+devices that explicitly advertise a heating-setpoint ability, reads the live
+`heatingSetpoint` before relative changes, clamps to the guarded setpoint range,
+compiles `setHeatingSetpoint`, and verifies convergence. The default relative
+temperature step is configured independently with
+`semantic_default_temperature_step` (1.0 by default).
+
+0.15.0 introduced the meaning-first `SemanticAgentCore` for routine device
 control. Natural language is translated into a strict typed
 goal/target/action plan before execution. Simple unambiguous commands can produce
 the same semantic plan through a zero-model fast path, while freer paraphrases
