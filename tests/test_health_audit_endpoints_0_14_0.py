@@ -107,7 +107,11 @@ def test_manual_pushover_report_endpoint(monkeypatch, tmp_path) -> None:
 
         async def send(self, audit):
             assert audit == report
-            return {"sent": True, "request": "pushover-request-id"}
+            return {
+                "sent": True,
+                "request": "pushover-request-id",
+                "messages_sent": 2,
+            }
 
     monkeypatch.setattr(module, "pushover_notifier", Notifier())
     monkeypatch.setattr(module.health_audit, "latest", lambda: report)
@@ -118,8 +122,9 @@ def test_manual_pushover_report_endpoint(monkeypatch, tmp_path) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "success": True,
-        "message": "Latest System Check report sent to Pushover.",
+        "message": "Latest System Check report sent to Pushover in 2 messages.",
         "request": "pushover-request-id",
+        "messages_sent": 2,
     }
 
 
