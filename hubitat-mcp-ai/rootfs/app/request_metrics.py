@@ -44,13 +44,16 @@ class RequestMetrics:
         "causal_room_plan", "causal_provenance_read", "causal_sensor_read", "causal_sensor_aligned", "causal_location_read", "causal_app_navigation", "causal_provenance_aligned", "causal_completion_retry", "causal_subject_empty_stop", "investigative_finalization",
         "investigative_attribute_required", "gateway_operation_rejected",
         "history_attribute_rejected", "history_known_tool_fastpath",
+        "semantic_fastpath_plans", "semantic_planner_plans",
+        "semantic_planner_failures", "semantic_plan_compile_failures",
+        "semantic_relative_controls", "semantic_needs_input",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait", "mcp_http",
         "mcp_shared_wait", "local_tool", "verification", "total",
     })
     ALLOWED_OUTCOMES = frozenset({
-        "success", "refused", "unresolved", "cancelled", "failed",
+        "success", "needs_input", "refused", "unresolved", "cancelled", "failed",
     })
 
     def __init__(self) -> None:

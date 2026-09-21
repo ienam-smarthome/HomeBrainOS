@@ -94,6 +94,8 @@ def load_options() -> dict[str, Any]:
         # this flag. Set True to restore the exact prior all-deterministic
         # behaviour without a code change.
         "deterministic_reads_enabled": False,
+        "semantic_agent_enabled": True,
+        "semantic_default_brightness_step": 20,
         "morning_health_check_enabled": True,
         "morning_health_check_time": "07:00",
         "health_check_log_hours": 24,
@@ -228,6 +230,12 @@ agent = UnifiedMCPAgent(
     confirmation_ttl_seconds=float(OPTIONS.get("confirmation_ttl_seconds") or 120),
     deterministic_reads_enabled=_bool(
         OPTIONS.get("deterministic_reads_enabled"), False
+    ),
+    semantic_agent_enabled=_bool(
+        OPTIONS.get("semantic_agent_enabled"), True
+    ),
+    semantic_default_brightness_step=int(
+        OPTIONS.get("semantic_default_brightness_step") or 20
     ),
 )
 

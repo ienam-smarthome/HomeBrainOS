@@ -623,3 +623,35 @@ def test_control_presenter_reports_set_level_naturally():
     )
 
     assert message == "Set Livingroom Light 1 and Livingroom Light 2 to 100%."
+
+
+
+def test_control_presenter_reports_relative_brightness_transitions() -> None:
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": True,
+            "command": "adjust_level",
+            "delta": 20,
+            "succeeded": [
+                {
+                    "label": "Livingroom Light 1",
+                    "changed": True,
+                    "previous_level": 80,
+                    "target_level": 100,
+                },
+                {
+                    "label": "Livingroom Light 2",
+                    "changed": True,
+                    "previous_level": 60,
+                    "target_level": 80,
+                },
+            ],
+            "failed": [],
+        },
+    )
+
+    assert message == (
+        "Brightness increased by 20 points: "
+        "Livingroom Light 1 80% → 100%; Livingroom Light 2 60% → 80%."
+    )

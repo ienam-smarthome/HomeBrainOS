@@ -3,13 +3,41 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.21**.
+Current add-on version: **0.15.0**.
 
 ## Architecture
 
-FastAPI sends requests to the production `homebrain_agent.UnifiedMCPAgent`,
-which preserves the established unified tool loop while delegating no-more-tools
-final synthesis to `FinalAnswerCoordinator`. A `ToolDiscoveryCatalog` supplies
+0.15.0 introduces a meaning-first `SemanticAgentCore` for routine device
+control. Natural language is translated into a strict typed
+goal/target/action plan before execution. Simple unambiguous commands can produce
+the same semantic plan through a zero-model fast path, while freer paraphrases
+use `SemanticPlanner`; both paths converge on the same deterministic
+`DeviceControlService`. The model never authors Hubitat gateway names, device
+IDs, positional command parameters, or verification payloads. Safety, target
+resolution, state reads, command compilation, and post-command verification stay
+host-owned.
+
+Relative light changes are therefore state-dependent operations rather than
+phrase patches. For example, "increase living room brightness", "make the living
+room brighter", and equivalent paraphrases plan an `adjust_level` action. The
+executor reads each matched light's live level, applies the configured brightness
+step, clamps to 0-100, compiles the resulting absolute `setLevel` commands, and
+verifies each final level. `semantic_default_brightness_step` defaults to 20
+percentage points; the semantic planner can also express explicit, small, or large
+relative changes. When genuine information is missing, the request outcome is
+`needs_input` rather than incorrectly reporting Success.
+
+Semantic-language quality is evaluated separately from ordinary unit tests.
+`tests/fixtures/semantic_control_eval.json` contains paraphrase, safety,
+scheduling, and clarification cases; `scripts/run_semantic_planner_eval.py`
+runs those cases directly against the configured reasoning model without
+executing any Hubitat action. This gives model/intent regressions an explicit
+evaluation target instead of waiting for another live phrase to fail.
+
+Requests outside the currently supported routine semantic domain continue into
+the established unified tool loop. FastAPI sends those requests to the production
+`homebrain_agent.UnifiedMCPAgent`, which delegates no-more-tools final synthesis
+to `FinalAnswerCoordinator`. A `ToolDiscoveryCatalog` supplies
 a fixed initial registry and expands it only from explicit structured gateway
 matches. Deterministic device resolution and history are always present in that
 registry; discovery cannot replace a local bounded adapter with the broader

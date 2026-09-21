@@ -1213,3 +1213,172 @@ async def test_room_set_level_uses_verified_setlevel_parameter_array():
             "expectedValue": 100,
             "timeoutMs": 5000,
         }
+
+
+
+class RelativeLevelMCP:
+    def __init__(self) -> None:
+        self.devices = [
+            {
+                "id": "7805",
+                "label": "Livingroom Light 1",
+                "roomName": "Living Room",
+                "capabilities": ["Light", "Switch", "SwitchLevel"],
+                "attributes": [
+                    {"name": "switch", "value": "on"},
+                    {"name": "level", "value": 5},
+                ],
+            },
+            {
+                "id": "7828",
+                "label": "Livingroom Light 2",
+                "roomName": "Living Room",
+                "capabilities": ["Light", "Switch", "SwitchLevel"],
+                "attributes": [
+                    {"name": "switch", "value": "on"},
+                    {"name": "level", "value": 5},
+                ],
+            },
+            {
+                "id": "9999",
+                "label": "Livingroom TRV",
+                "roomName": "Living Room",
+                "capabilities": ["Switch", "Thermostat"],
+                "attributes": [{"name": "switch", "value": "on"}],
+            },
+        ]
+        self.live_levels = {"7805": 80, "7828": 60}
+        self.calls: list[tuple[str, dict]] = []
+
+    def peek_device_identities(self):
+        return list(self.devices)
+
+    async def get_device_identities(self):
+        raise AssertionError("warm identity cache should avoid refresh")
+
+    async def get_cached_devices(self):
+        return list(self.devices)
+
+    async def call_tool(self, gateway, arguments):
+        self.calls.append((gateway, arguments))
+        if arguments.get("tool") == "hub_get_device_attribute":
+            device_id = str(arguments["args"]["deviceId"])
+            return MCPToolResult(
+                "hub_read_devices",
+                arguments,
+                {},
+                "ok",
+                {"success": True, "value": self.live_levels[device_id]},
+            )
+        if arguments.get("tool") == "hub_call_device_command":
+            expected = arguments["args"]["waitFor"]["expectedValue"]
+            return MCPToolResult(
+                "hub_manage_devices",
+                arguments,
+                {},
+                "ok",
+                {
+                    "success": True,
+                    "waitFor": {
+                        "converged": True,
+                        "value": expected,
+                    },
+                },
+            )
+        raise AssertionError(("unexpected tool call", gateway, arguments))
+
+
+@pytest.mark.asyncio
+async def test_adjust_level_reads_live_state_then_compiles_per_device_absolute_levels():
+    mcp = RelativeLevelMCP()
+    receipts: list[tuple[tuple, dict]] = []
+
+    def capture(*args, **kwargs):
+        receipts.append((args, kwargs))
+
+    service = DeviceControlService(mcp, capture)
+    result = await service.execute({
+        "room": "Living Room",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["success"] is True
+    assert result.data["matched"] == 2
+    assert result.data["delta"] == 20
+
+    succeeded = {item["id"]: item for item in result.data["succeeded"]}
+    assert succeeded["7805"]["previous_level"] == 80
+    assert succeeded["7805"]["target_level"] == 100
+    assert succeeded["7805"]["delta_applied"] == 20
+    assert succeeded["7828"]["previous_level"] == 60
+    assert succeeded["7828"]["target_level"] == 80
+    assert succeeded["7828"]["delta_applied"] == 20
+
+    state_reads = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_read_devices"
+        and args.get("tool") == "hub_get_device_attribute"
+    ]
+    assert {item["args"]["deviceId"] for item in state_reads} == {"7805", "7828"}
+
+    commands = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+        and args.get("tool") == "hub_call_device_command"
+    ]
+    by_id = {item["args"]["deviceId"]: item["args"] for item in commands}
+    assert by_id["7805"]["command"] == "setLevel"
+    assert by_id["7805"]["parameters"] == [100]
+    assert by_id["7805"]["waitFor"] == {
+        "attribute": "level",
+        "expectedValue": 100,
+        "timeoutMs": 5000,
+    }
+    assert by_id["7828"]["parameters"] == [80]
+    assert by_id["7828"]["waitFor"]["expectedValue"] == 80
+
+    precondition_receipts = [
+        kwargs for _args, kwargs in receipts
+        if kwargs.get("evidence_kind") == "control_precondition_state"
+    ]
+    assert len(precondition_receipts) == 2
+
+
+@pytest.mark.asyncio
+async def test_adjust_level_clamps_at_device_bounds():
+    mcp = RelativeLevelMCP()
+    mcp.live_levels = {"7805": 95, "7828": 5}
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Living Room",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    succeeded = {item["id"]: item for item in result.data["succeeded"]}
+    assert succeeded["7805"]["target_level"] == 100
+    assert succeeded["7805"]["delta_applied"] == 5
+    assert succeeded["7828"]["target_level"] == 25
+
+
+@pytest.mark.asyncio
+async def test_adjust_level_fails_closed_when_live_level_is_unavailable():
+    mcp = RelativeLevelMCP()
+    del mcp.live_levels["7828"]
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Living Room",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["success"] is False
+    failed = {item["id"]: item for item in result.data["failed"]}
+    assert failed["7828"]["command_sent"] is False
+    assert "brightness" in failed["7828"]["message"].lower()

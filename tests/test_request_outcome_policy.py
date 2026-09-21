@@ -13,6 +13,7 @@ def test_each_coverage_counter_maps_to_expected_outcome() -> None:
         "proposal_validation_failures": "failed",
         "device_control_failures": "failed",
         "request_cancellations": "cancelled",
+        "semantic_needs_input": "needs_input",
         "confirmation_expired": "unresolved",
         "device_resolution_ambiguous": "unresolved",
         "device_resolution_missing": "unresolved",
