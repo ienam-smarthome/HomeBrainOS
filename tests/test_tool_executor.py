@@ -452,3 +452,47 @@ async def test_generic_value_backfill_swallows_followup_failure_gracefully():
     payload = json.loads(execution.content)
     assert payload["result"]["value"] is None
     assert "valueStr" not in payload["result"]
+
+
+@pytest.mark.asyncio
+async def test_setlevel_parameter_object_is_normalized_to_gateway_array():
+    result = MCPToolResult(
+        "hub_manage_devices", {}, {}, "ok", {"success": True}
+    )
+    mcp = FakeMCP(result=result)
+    evidence = EvidenceRecorder()
+    executor = ToolExecutor(mcp, evidence, clock=clock(1.0, 1.01))
+    arguments = {
+        "tool": "hub_call_device_command",
+        "args": {
+            "commands": [
+                {
+                    "command": "setLevel",
+                    "deviceId": "7805",
+                    "parameters": {"level": 100},
+                },
+                {
+                    "command": "setLevel",
+                    "deviceId": "7828",
+                    "parameters": {"level": 100},
+                },
+            ]
+        },
+    }
+    token = evidence.begin()
+    try:
+        await executor.execute(
+            "hub_manage_devices",
+            arguments,
+            tool=MCPTool(
+                "hub_manage_devices", "Manage devices", {},
+                annotations={"destructiveHint": True},
+            ),
+        )
+    finally:
+        evidence.reset(token)
+
+    sent = mcp.calls[0][1]["args"]["commands"]
+    assert sent[0]["parameters"] == [100]
+    assert sent[1]["parameters"] == [100]
+    assert arguments["args"]["commands"][0]["parameters"] == {"level": 100}
