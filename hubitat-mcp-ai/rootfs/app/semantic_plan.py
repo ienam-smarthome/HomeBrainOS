@@ -7,13 +7,15 @@ from pydantic import BaseModel, Field, model_validator
 
 
 TargetScope = Literal["room", "device", "home", "selection", "unknown"]
-DeviceKind = Literal["light", "switch", "auto"]
+DeviceKind = Literal["light", "switch", "thermostat", "auto"]
 ControlOperation = Literal[
     "turn_on",
     "turn_off",
     "toggle",
     "set_level",
     "adjust_level",
+    "set_temperature",
+    "adjust_temperature",
 ]
 PlanDomain = Literal["device_control", "other"]
 PlanTiming = Literal["now", "scheduled", "unknown"]
@@ -36,29 +38,31 @@ class SemanticTarget(BaseModel):
 
 class SemanticAction(BaseModel):
     operation: ControlOperation
-    value: int | None = Field(default=None, ge=0, le=100)
-    delta: int | None = Field(default=None, ge=-100, le=100)
+    value: float | None = Field(default=None, ge=0, le=100)
+    delta: float | None = Field(default=None, ge=-100, le=100)
     direction: Literal["increase", "decrease"] | None = None
     magnitude: Literal["small", "default", "large"] = "default"
 
     @model_validator(mode="after")
     def validate_operation_payload(self) -> "SemanticAction":
-        if self.operation == "set_level" and self.value is None:
-            raise ValueError("set_level requires value")
-        if self.operation != "set_level" and self.value is not None:
-            raise ValueError("value is only valid for set_level")
-        if self.operation != "adjust_level":
+        absolute_operations = {"set_level", "set_temperature"}
+        relative_operations = {"adjust_level", "adjust_temperature"}
+        if self.operation in absolute_operations and self.value is None:
+            raise ValueError(f"{self.operation} requires value")
+        if self.operation not in absolute_operations and self.value is not None:
+            raise ValueError("value is only valid for absolute set operations")
+        if self.operation not in relative_operations:
             if self.delta is not None:
-                raise ValueError("delta is only valid for adjust_level")
+                raise ValueError("delta is only valid for relative adjust operations")
             if self.direction is not None:
-                raise ValueError("direction is only valid for adjust_level")
+                raise ValueError("direction is only valid for relative adjust operations")
             return self
         if self.delta == 0:
-            raise ValueError("adjust_level delta cannot be zero")
+            raise ValueError(f"{self.operation} delta cannot be zero")
         if self.direction is None and self.delta is not None:
             self.direction = "increase" if self.delta > 0 else "decrease"
         if self.direction is None:
-            raise ValueError("adjust_level requires direction")
+            raise ValueError(f"{self.operation} requires direction")
         if self.delta is not None:
             if self.direction == "increase" and self.delta < 0:
                 raise ValueError("increase direction conflicts with negative delta")
@@ -102,7 +106,7 @@ class SemanticPlan(BaseModel):
             and self.target is not None
             and self.action is not None
             and self.target.scope in {"room", "device", "selection"}
-            and self.target.kind in {"light", "switch", "auto"}
+            and self.target.kind in {"light", "switch", "thermostat", "auto"}
         )
 
 
