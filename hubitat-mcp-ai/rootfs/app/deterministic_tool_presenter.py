@@ -295,6 +295,37 @@ def _present_control(data: dict[str, Any]) -> str:
             return " ".join(parts)
         return _error(data, "The Hubitat device command failed.")
     command = str(data.get("command") or "")
+    if command == "adjust_level":
+        try:
+            delta = int(data.get("delta") or 0)
+        except (TypeError, ValueError):
+            delta = 0
+
+        def level_text(value: Any) -> str:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return "?"
+            return str(int(number)) if number.is_integer() else f"{number:g}"
+
+        transitions = []
+        for item in succeeded_items:
+            transitions.append(
+                f"{item['label']} {level_text(item.get('previous_level'))}% "
+                f"→ {level_text(item.get('target_level'))}%"
+            )
+        direction = "increased" if delta > 0 else "decreased"
+        step = abs(delta)
+        message = (
+            f"Brightness {direction} by {step} points: "
+            + "; ".join(transitions)
+            + "."
+        )
+        note = data.get("note")
+        if note:
+            message = f"{message} {note}"
+        return message
+
     verb = {
         "on": "Turned on",
         "off": "Turned off",
