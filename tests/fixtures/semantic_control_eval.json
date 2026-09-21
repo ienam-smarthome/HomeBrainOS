@@ -1,0 +1,203 @@
+[
+  {
+    "prompt": "increase living room brightness",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "living room",
+      "operation": "adjust_level",
+      "direction": "increase",
+      "delta": null,
+      "magnitude": "default",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "make the living room brighter",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "living room",
+      "operation": "adjust_level",
+      "direction": "increase",
+      "magnitude": "default",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "turn the living room lights up",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "living room",
+      "operation": "adjust_level",
+      "direction": "increase",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "raise bedroom 1 brightness by 15%",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "bedroom 1",
+      "operation": "adjust_level",
+      "direction": "increase",
+      "delta": 15,
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "dim bedroom 1 by 10%",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "bedroom 1",
+      "operation": "adjust_level",
+      "direction": "decrease",
+      "delta": -10,
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "lower hallway brightness a little",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "hallway",
+      "operation": "adjust_level",
+      "direction": "decrease",
+      "magnitude": "small",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "make kitchen much brighter",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "kitchen",
+      "operation": "adjust_level",
+      "direction": "increase",
+      "magnitude": "large",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "set living room lights to 40%",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "living room",
+      "operation": "set_level",
+      "value": 40,
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "turn off the hallway lights",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "hallway",
+      "operation": "turn_off",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "switch on Bedroom 2 light",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "device",
+      "operation": "turn_on",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "toggle Toilet Light",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "device",
+      "operation": "toggle",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "how do I increase living room brightness?",
+    "expected": {
+      "domain": "other"
+    }
+  },
+  {
+    "prompt": "why did the bedroom light turn off?",
+    "expected": {
+      "domain": "other"
+    }
+  },
+  {
+    "prompt": "unlock the front door",
+    "expected": {
+      "domain": "other"
+    }
+  },
+  {
+    "prompt": "block the TV internet",
+    "expected": {
+      "domain": "other"
+    }
+  },
+  {
+    "prompt": "update the hub firmware",
+    "expected": {
+      "domain": "other"
+    }
+  },
+  {
+    "prompt": "turn the hallway lights off at 10pm",
+    "expected": {
+      "domain": "device_control",
+      "timing": "scheduled",
+      "target_scope": "room",
+      "target_name": "hallway",
+      "operation": "turn_off"
+    }
+  },
+  {
+    "prompt": "set living room lights to 60% every evening",
+    "expected": {
+      "domain": "device_control",
+      "timing": "scheduled",
+      "target_scope": "room",
+      "target_name": "living room",
+      "operation": "set_level",
+      "value": 60
+    }
+  },
+  {
+    "prompt": "make it brighter",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "needs_clarification": true
+    }
+  },
+  {
+    "prompt": "increase brightness by 10%",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "needs_clarification": true
+    }
+  }
+]
