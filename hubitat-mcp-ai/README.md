@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.17**.
+Current add-on version: **0.14.18**.
 
 ## Architecture
 
@@ -737,7 +737,11 @@ response metadata, copy, and expandable technical details. Answer speech now
 falls back to Home Assistant companion-app native TTS when browser/WebView speech
 is unavailable, and Android WebView prefers that native path. TTS failures now
 show the backend reason directly on the Read answer button instead of only a
-generic setup warning. Direct current-time questions are answered
+generic setup warning. Because browser speech is more reliable than Android
+WebView speech on some phones, the Home Assistant Android view also shows a compact
+**Open in browser** shortcut beside the read-aloud option. It launches the current
+HomeBrain Home Assistant panel in the device's external/default browser using the
+Android intent path, while normal browsers keep their existing behaviour. Direct current-time questions are answered
 algorithmically from the Hubitat location timezone rather than delegated to the
 language model. System Health separates Hub, Devices,
 Automations, and Logs, groups recurring log signatures, and shows correlated
