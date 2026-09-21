@@ -958,34 +958,23 @@ def home_snapshot_tool() -> MCPTool:
 def control_devices_tool() -> MCPTool:
     return MCPTool(
         LOCAL_CONTROL_TOOL,
-        (
-            "Turn one or more Hubitat lights or switches on, off, toggle them, "
-            "or set dimmer level. "
-            "Resolve targets deterministically from either an exact room or one or "
-            "more device labels, then execute every matched command concurrently. "
-            "Use this for routine light and switch control instead of making "
-            "individual hub_manage_devices calls."
-        ),
+        "Routine Hubitat light/switch on, off, toggle, or dimmer-level control.",
         {
             "type": "object",
             "properties": {
                 "room": {
                     "type": "string",
-                    "description": "Exact Hubitat room name. Selects every matching device_kind in that room.",
+                    "description": "Exact room; controls every matching device.",
                 },
                 "device_names": {
                     "type": "array",
                     "items": {"type": "string"},
                     "minItems": 1,
-                    "description": "One or more exact Hubitat device labels. Do not combine with room.",
+                    "description": "Exact device labels; do not combine with room.",
                 },
                 "device_kind": {
                     "type": "string",
                     "enum": ["auto", "light", "switch"],
-                    "description": (
-                        "Use light for lights, switch for non-light switches, "
-                        "or auto when a named target omits its device kind."
-                    ),
                 },
                 "command": {
                     "type": "string",
@@ -995,7 +984,6 @@ def control_devices_tool() -> MCPTool:
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 100,
-                    "description": "Required only for command=set_level.",
                 },
             },
             "required": ["device_kind", "command"],
