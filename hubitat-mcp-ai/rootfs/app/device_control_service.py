@@ -382,15 +382,28 @@ class DeviceControlService:
 
         identity_started = time.monotonic()
         identity_manifest: list[dict[str, Any]] = []
+        identity_source = "identity_cache_refresh"
         try:
-            identity_reader = getattr(
-                self.mcp, "get_device_identities", self.mcp.get_cached_devices
-            )
-            identity_manifest = [
-                device
-                for device in (await identity_reader() or [])
-                if isinstance(device, dict)
-            ]
+            peek_identity_reader = getattr(self.mcp, "peek_device_identities", None)
+            if callable(peek_identity_reader):
+                identity_manifest = [
+                    device
+                    for device in (peek_identity_reader() or [])
+                    if isinstance(device, dict)
+                ]
+                if identity_manifest:
+                    identity_source = "local_identity_cache"
+                    increment_active_metric("control_local_identity_cache_hit")
+            if not identity_manifest:
+                identity_reader = getattr(
+                    self.mcp, "get_device_identities", self.mcp.get_cached_devices
+                )
+                identity_manifest = [
+                    device
+                    for device in (await identity_reader() or [])
+                    if isinstance(device, dict)
+                ]
+                increment_active_metric("control_identity_cache_refresh")
         except Exception as exc:
             logger.warning("Fast control identity lookup unavailable: %s", exc)
         room_names_present = {
@@ -505,7 +518,7 @@ class DeviceControlService:
                 "hub_read_devices",
                 {
                     "tool": "hub_list_devices",
-                    "source": "identity_cache",
+                    "source": identity_source,
                 },
                 success=True,
                 elapsed_ms=round(
