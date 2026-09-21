@@ -14,6 +14,7 @@ from pushover_notifier import (  # noqa: E402
     PUSHOVER_MESSAGES_URL,
     PushoverNotifier,
     format_health_audit,
+    format_health_audit_messages,
 )
 
 
@@ -98,13 +99,14 @@ def test_pushover_named_sections_are_bounded_with_more_marker() -> None:
         for index in range(10)
     ]
 
-    _, message = format_health_audit(audit)
+    _, messages = format_health_audit_messages(audit)
+    message = "\n".join(messages)
 
     assert '<font color="#ff5c5c">Offline device 0</font>' in message
     assert '<font color="#ff5c5c">Offline device 7</font>' in message
     assert "• +2 more" in message
     assert "Offline device 8" not in message
-    assert len(message) <= 1024
+    assert all(len(part) <= 1024 for part in messages)
 
 
 def test_pushover_html_escapes_device_names_and_keeps_only_targeted_colour() -> None:
@@ -135,11 +137,80 @@ def test_pushover_html_truncation_keeps_complete_lines() -> None:
         for index in range(10)
     ]
 
-    _, message = format_health_audit(audit)
+    _, messages = format_health_audit_messages(audit)
 
-    assert len(message) <= 1024
-    assert not message.endswith("<")
-    assert message.count("<font") == message.count("</font>")
+    assert all(len(message) <= 1024 for message in messages)
+    assert all(not message.endswith("<") for message in messages)
+    assert all(message.count("<font") == message.count("</font>") for message in messages)
+
+
+def test_large_system_check_is_split_without_losing_later_sections() -> None:
+    audit = _audit()
+    audit["issues"] = [
+        *[
+            {
+                "severity": "warning",
+                "domain": "devices",
+                "title": f"Device unavailable: Offline device {index}",
+                "detail": "offline",
+                "count": 1,
+            }
+            for index in range(5)
+        ],
+        *[
+            {
+                "severity": "warning",
+                "domain": "devices",
+                "title": f"Low battery: Battery device {index}",
+                "detail": f"{index + 1}% (threshold 20%).",
+                "count": 1,
+            }
+            for index in range(3)
+        ],
+        *[
+            {
+                "severity": "warning",
+                "domain": "automations",
+                "title": f"Automation broken: Broken automation {index}",
+                "detail": "Hubitat marked the automation name *BROKEN*.",
+                "count": 1,
+            }
+            for index in range(6)
+        ],
+        {
+            "severity": "warning",
+            "domain": "logs",
+            "title": "MCP Rule Server",
+            "detail": "VRB feed missing 1/356 devices.",
+            "count": 6,
+        },
+        {
+            "severity": "warning",
+            "domain": "logs",
+            "title": "Fridge door automation",
+            "detail": "Not triggered after the contact stayed open.",
+            "count": 1,
+        },
+    ]
+    audit["resolved_issues"] = [
+        {"title": "Motion active too long: Bedroom 3 Soft Sensor"},
+        {"title": "Telemetry stale: Fridge Meter"},
+    ]
+
+    title, messages = format_health_audit_messages(audit)
+    combined = "\n".join(messages)
+
+    assert title == "HomeBrain System Check: Attention"
+    assert len(messages) >= 2
+    assert all(len(message) <= 1024 for message in messages)
+    assert "Offline:" in combined
+    assert "Low battery:" in combined
+    assert "Broken automations:" in combined
+    assert "Broken automation 5" in combined
+    assert "Logs:" in combined
+    assert "Fridge door automation" in combined
+    assert "Resolved:" in combined
+    assert "Telemetry stale: Fridge Meter" in combined
 
 
 @pytest.mark.asyncio
@@ -169,6 +240,78 @@ async def test_pushover_posts_official_message_fields() -> None:
     assert form["html"] == ["1"]
     assert '<font color="#ff5c5c">Roborock Q7 Max</font>' in form["message"][0]
     assert result["sent"] is True
+
+
+@pytest.mark.asyncio
+async def test_pushover_sends_all_parts_of_large_report() -> None:
+    audit = _audit()
+    audit["issues"] = [
+        *[
+            {
+                "severity": "warning",
+                "domain": "devices",
+                "title": f"Device unavailable: Long offline device {index}",
+                "detail": "offline",
+                "count": 1,
+            }
+            for index in range(8)
+        ],
+        *[
+            {
+                "severity": "warning",
+                "domain": "devices",
+                "title": f"Low battery: Long battery device {index}",
+                "detail": f"{index + 1}% (threshold 20%).",
+                "count": 1,
+            }
+            for index in range(6)
+        ],
+        *[
+            {
+                "severity": "warning",
+                "domain": "automations",
+                "title": f"Automation broken: Long automation {index}",
+                "detail": "Hubitat marked the automation name *BROKEN*.",
+                "count": 1,
+            }
+            for index in range(6)
+        ],
+        {
+            "severity": "warning",
+            "domain": "logs",
+            "title": "Final log finding",
+            "detail": "This must still be delivered after device sections.",
+            "count": 1,
+        },
+    ]
+    sent_forms = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        sent_forms.append(parse_qs(request.content.decode()))
+        return httpx.Response(
+            200,
+            json={"status": 1, "request": f"request-{len(sent_forms)}"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        notifier = PushoverNotifier(
+            enabled=True,
+            app_token="app-token",
+            user_key="user-key",
+            client=client,
+        )
+        result = await notifier.send(audit)
+
+    assert result["sent"] is True
+    assert result["messages_sent"] == len(sent_forms)
+    assert len(sent_forms) >= 2
+    assert all(len(form["message"][0]) <= 1024 for form in sent_forms)
+    assert sent_forms[0]["title"][0].endswith(f"(1/{len(sent_forms)})")
+    assert sent_forms[-1]["title"][0].endswith(
+        f"({len(sent_forms)}/{len(sent_forms)})"
+    )
+    combined = "\n".join(form["message"][0] for form in sent_forms)
+    assert "Final log finding" in combined
 
 
 @pytest.mark.asyncio
