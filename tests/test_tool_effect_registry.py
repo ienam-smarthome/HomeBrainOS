@@ -794,3 +794,33 @@ def test_evidence_receipt_records_structured_effect():
 
     assert receipt["effect"] == ToolEffect.ROUTINE_WRITE.value
     assert receipt["mutates"] is True
+
+
+def test_batched_setlevel_device_commands_are_routine_not_destructive():
+    tool = gateway("hub_manage_devices", destructiveHint=True)
+    arguments = {
+        "tool": "hub_call_device_command",
+        "args": {
+            "commands": [
+                {"deviceId": "7805", "command": "setLevel", "parameters": {"level": 100}},
+                {"deviceId": "7828", "command": "setLevel", "parameters": {"level": 100}},
+            ]
+        },
+    }
+
+    assert classify_tool_effect(tool, arguments) is ToolEffect.ROUTINE_WRITE
+
+
+def test_batched_device_commands_fail_closed_when_any_command_is_sensitive():
+    tool = gateway("hub_manage_devices", destructiveHint=True)
+    arguments = {
+        "tool": "hub_call_device_command",
+        "args": {
+            "commands": [
+                {"deviceId": "7805", "command": "setLevel", "parameters": {"level": 50}},
+                {"deviceId": "99", "command": "unlock"},
+            ]
+        },
+    }
+
+    assert classify_tool_effect(tool, arguments) is ToolEffect.SENSITIVE_WRITE
