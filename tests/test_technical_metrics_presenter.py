@@ -91,3 +91,22 @@ def test_refused_outcome_and_production_counter_names_are_supported() -> None:
         {"label": "Discovery", "value": "250 ms"},
         {"label": "Outcome", "value": "refused"},
     ]
+
+
+def test_semantic_metrics_are_presented_without_dynamic_plan_content() -> None:
+    rows = present_request_metrics({
+        "outcome": "needs_input",
+        "counters": {
+            "semantic_planner_plans": 1,
+            "semantic_relative_controls": 1,
+            "semantic_needs_input": 1,
+        },
+        "timings_ms": {},
+    })
+
+    assert rows == [
+        {"label": "Semantic AI plans", "value": "1"},
+        {"label": "Relative semantic controls", "value": "1"},
+        {"label": "Semantic clarifications", "value": "1"},
+        {"label": "Outcome", "value": "needs_input"},
+    ]
