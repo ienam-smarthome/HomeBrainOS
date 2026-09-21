@@ -16,6 +16,17 @@ _NAMED_ATTRIBUTE = re.compile(
     r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
     re.I,
 )
+# Mobile voice input commonly arrives as terse noun phrases with no question
+# prefix at all ("bathroom temperature", "bedroom 1 humidity"). Keep that
+# shape deterministic too, but explicitly exclude the question starters owned
+# by _NAMED_ATTRIBUTE so its established bare-qualifier safeguards cannot be
+# bypassed by regex backtracking.
+_SHORTHAND_NAMED_ATTRIBUTE = re.compile(
+    r"^\s*(?!(?:what(?:'s|s|\s+is)|show|tell)\b)"
+    r"(?P<name>.+?)\s+(?:current\s+)?"
+    r"(?P<attribute>temperature|humidity|battery|power)\s*[?.!]*\s*$",
+    re.I,
+)
 _BARE_ATTRIBUTE = re.compile(
     r"^\s*(?:(?:what(?:'s|s|\s+is)|show(?:\s+me)?|tell\s+me)\s+(?:me\s+)?)?"
     r"(?:the\s+)?(?:current\s+)?"
@@ -125,6 +136,8 @@ def parse_named_attribute(prompt: str) -> tuple[str, str] | None:
         return None
     match = _NAMED_ATTRIBUTE.fullmatch(prompt)
     if match is None:
+        match = _SHORTHAND_NAMED_ATTRIBUTE.fullmatch(prompt)
+    if match is None:
         return None
     name = clean_choice_label(match.group("name")).strip()
     if not name or is_pronoun_reference(name):
@@ -177,15 +190,24 @@ def capability_choice_labels(
     requested: str,
     matches: list[dict[str, Any]],
 ) -> list[str]:
-    """Return attribute-capable labels matching every meaningful request token."""
+    """Return attribute-capable labels matching the requested device or room.
+
+    A spoken target such as "bathroom" is often a room name rather than part of
+    the sensor's label. Match meaningful tokens against both label/name and room
+    metadata so "bathroom temperature" can select a temperature-capable device
+    assigned to Bathroom even when the device itself is simply called "Meter".
+    """
 
     tokens = re.findall(r"[a-z0-9]+", requested.casefold())
     labels: list[str] = []
     seen: set[str] = set()
     for item in matches:
         label = str(item.get("label") or item.get("name") or "").strip()
-        normalized = " ".join(re.findall(r"[a-z0-9]+", label.casefold()))
-        if not label or not all(token in normalized.split() for token in tokens):
+        room = str(item.get("room") or item.get("roomName") or "").strip()
+        label_tokens = set(re.findall(r"[a-z0-9]+", label.casefold()))
+        room_tokens = set(re.findall(r"[a-z0-9]+", room.casefold()))
+        searchable = label_tokens | room_tokens
+        if not label or not all(token in searchable for token in tokens):
             continue
         key = label.casefold()
         if key not in seen:
