@@ -947,9 +947,11 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         """Return bounded capability identity for planning, never current-state truth."""
 
         try:
-            identity_reader = getattr(
-                self.mcp, "get_device_identities", self.mcp.get_cached_devices
-            )
+            identity_reader = getattr(self.mcp, "get_device_identities", None)
+            if not callable(identity_reader):
+                identity_reader = getattr(self.mcp, "get_cached_devices", None)
+            if not callable(identity_reader):
+                return ""
             devices = await identity_reader()
         except Exception:
             return ""
