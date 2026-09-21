@@ -246,6 +246,34 @@ class HubitatMCPClient:
 
         return [dict(item) for item in self._cached_devices]
 
+    def peek_device_identities(self) -> list[dict[str, Any]]:
+        """Return the best complete local identity snapshot without I/O.
+
+        Routine device controls only need stable identity/capability metadata to
+        resolve an exact cached target before dispatching the verified command.
+        Prefer the detailed manifest, then a complete full-device snapshot, then
+        the complete live-context snapshot. All of these were already accepted
+        as identity sources elsewhere; this helper simply guarantees that the
+        fast path never refreshes the hub while trying to resolve a known target.
+        """
+
+        if self._cached_devices:
+            return [dict(item) for item in self._cached_devices]
+
+        if self._live_device_snapshot is not None:
+            _cached_at, _generation, cached_result = self._live_device_snapshot
+            devices = self._find_device_list(cached_result.data)
+            if isinstance(devices, list) and devices:
+                return [dict(item) for item in devices if isinstance(item, dict)]
+
+        if self._live_context_snapshot is not None:
+            _cached_at, _generation, cached_context = self._live_context_snapshot
+            devices = self._find_device_list(cached_context)
+            if isinstance(devices, list) and devices:
+                return [dict(item) for item in devices if isinstance(item, dict)]
+
+        return []
+
     async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
         """Return a short-lived detailed device manifest and coalesce refreshes."""
 
