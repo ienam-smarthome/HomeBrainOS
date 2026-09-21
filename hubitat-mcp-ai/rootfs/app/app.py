@@ -96,6 +96,7 @@ def load_options() -> dict[str, Any]:
         "deterministic_reads_enabled": False,
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
+        "semantic_default_temperature_step": 1.0,
         "morning_health_check_enabled": True,
         "morning_health_check_time": "07:00",
         "health_check_log_hours": 24,
@@ -236,6 +237,9 @@ agent = UnifiedMCPAgent(
     ),
     semantic_default_brightness_step=int(
         OPTIONS.get("semantic_default_brightness_step") or 20
+    ),
+    semantic_default_temperature_step=float(
+        OPTIONS.get("semantic_default_temperature_step") or 1.0
     ),
 )
 
