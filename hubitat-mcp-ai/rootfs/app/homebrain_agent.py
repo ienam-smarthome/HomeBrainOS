@@ -63,6 +63,8 @@ from request_classification import (
 )
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
+from semantic_agent_core import SemanticAgentCore
+from semantic_planner import SemanticPlanner
 from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
 from tool_catalog_assembly import build_request_tool_catalog
@@ -115,6 +117,8 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self,
         *args: Any,
         deterministic_reads_enabled: bool = False,
+        semantic_agent_enabled: bool = True,
+        semantic_default_brightness_step: int = 20,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -141,6 +145,11 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         # all-deterministic-reads behaviour without a code change, in case
         # reasoning-mode answers prove worse in practice for a given model.
         self.deterministic_reads_enabled = bool(deterministic_reads_enabled)
+        self.semantic_agent_enabled = bool(semantic_agent_enabled)
+        self.semantic_core = SemanticAgentCore(
+            SemanticPlanner(self._chat),
+            default_brightness_step=semantic_default_brightness_step,
+        )
         self.context_policy = TokenAwareModelContextPolicy(
             model_name=self.model_name,
             max_history_messages=self.context_policy.max_history_messages,
@@ -931,6 +940,63 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         substituted["device_names"] = [last_device]
         return substituted
 
+    async def _semantic_control_outcome(
+        self,
+        user_prompt: str,
+        conversation_history: Any,
+        *,
+        session_key: str,
+    ) -> AgentOutcome | None:
+        """Plan routine device control semantically, then execute deterministically."""
+
+        if not self.semantic_agent_enabled or AT_TIME.search(user_prompt) is not None:
+            return None
+
+        selected_device = self._selected_devices.get(session_key, "")
+        try:
+            plan = await self.semantic_core.plan_control(
+                user_prompt,
+                history=conversation_history,
+                selected_device=selected_device,
+            )
+        except Exception:
+            self.request_metrics.increment("semantic_planner_failures")
+            return None
+
+        if plan is None:
+            return None
+
+        if plan.source == "model":
+            self.request_metrics.increment("semantic_planner_plans")
+        else:
+            self.request_metrics.increment("semantic_fastpath_plans")
+
+        if plan.timing != "now":
+            return None
+
+        if plan.needs_clarification:
+            self.request_metrics.increment("semantic_needs_input")
+            return AgentOutcome(
+                message=plan.clarification_question,
+                request_class="write",
+                evidence=[],
+                choices=[],
+            )
+
+        try:
+            arguments = self.semantic_core.compile_control(plan)
+        except Exception:
+            self.request_metrics.increment("semantic_plan_compile_failures")
+            return None
+
+        if arguments.get("command") == "adjust_level":
+            self.request_metrics.increment("semantic_relative_controls")
+
+        return await self._routine_control_outcome(
+            arguments,
+            session_key=session_key,
+        )
+
     async def _routine_control_outcome(
         self, arguments: dict[str, Any], *, session_key: str
     ) -> AgentOutcome:
@@ -1305,15 +1371,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     internet_access[0], internet_access[1], session_key=session_key
                 )
 
-            # A prompt carrying an "at <time>" clause (e.g. "turn on X at
-            # 10am", "turn on X every day at 10am") must reach
-            # RuleAuthoringService via base_process() below, not this
-            # instant fast path -- routine_control_arguments() has no
-            # concept of scheduling and would otherwise silently execute
-            # the command right now (a "daily"/"every day" request) or hand
-            # a mangled device name into DeviceControlService's own
-            # smuggled-time refusal (a one-time request), preempting the
-            # rule-authoring grammar that can actually honour either one.
+            # 0.15 semantic core: routine controls are first expressed as a
+            # typed goal/target/action plan. Exact trivial grammar is translated
+            # into that IR without a model round; natural paraphrases fall to the
+            # semantic planner. In both cases the model never authors Hubitat wire
+            # payloads -- DeviceControlService remains the deterministic executor.
+            semantic_control = await self._semantic_control_outcome(
+                user_prompt,
+                conversation_history,
+                session_key=session_key,
+            )
+            if semantic_control is not None:
+                return semantic_control
+
+            # Compatibility fallback if semantic planning is disabled, fails
+            # validation, or intentionally declines the request.
             control_arguments = self._routine_control_arguments(user_prompt)
             if control_arguments is not None and AT_TIME.search(user_prompt) is None:
                 control_arguments = self._resolve_pronoun_control_target(
