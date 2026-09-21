@@ -87,8 +87,9 @@ _SENSITIVE_GATEWAYS = {HUB_UPDATE_FIRMWARE_TOOL}
 # confirmation) instead of being waved through as a safe read.
 _DIRECT_MANAGE_TOOLS = {"hub_manage_virtual_device", "hub_manage_mode"}
 _ROUTINE_DEVICE_COMMANDS = {
-    "off", "on", "ping", "refresh", "set_color", "set_color_temperature",
-    "set_level", "set_heating_setpoint", "toggle", "update_check",
+    "adjust_level", "adjust_temperature", "off", "on", "ping", "refresh",
+    "set_color", "set_color_temperature", "set_heating_setpoint", "set_level",
+    "set_temperature", "toggle", "update_check",
 }
 _SENSITIVE_DEVICE_COMMANDS = {
     "close", "lock", "open", "unlock",
