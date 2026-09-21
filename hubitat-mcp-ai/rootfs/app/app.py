@@ -674,10 +674,17 @@ async def send_pushover_report() -> dict[str, Any]:
             status_code=502,
             detail=f"Pushover delivery failed: {str(exc)[:240]}",
         ) from exc
+    messages_sent = max(1, int(delivery.get("messages_sent") or 1))
+    delivery_message = (
+        "Latest System Check report sent to Pushover."
+        if messages_sent == 1
+        else f"Latest System Check report sent to Pushover in {messages_sent} messages."
+    )
     return {
         "success": True,
-        "message": "Latest System Check report sent to Pushover.",
+        "message": delivery_message,
         "request": str(delivery.get("request") or ""),
+        "messages_sent": messages_sent,
     }
 
 
