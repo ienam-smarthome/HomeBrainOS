@@ -78,3 +78,6 @@ Regression coverage includes:
 - before/after result presentation
 - `needs_input` outcome classification/presentation
 - end-to-end semantic control routing without entering the general tool loop
+- a checked-in semantic paraphrase/safety evaluation corpus plus
+  `scripts/run_semantic_planner_eval.py`, which evaluates the configured model
+  without executing device actions
