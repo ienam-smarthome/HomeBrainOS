@@ -1382,3 +1382,242 @@ async def test_adjust_level_fails_closed_when_live_level_is_unavailable():
     failed = {item["id"]: item for item in result.data["failed"]}
     assert failed["7828"]["command_sent"] is False
     assert "brightness" in failed["7828"]["message"].lower()
+
+
+
+class ThermostatMCP:
+    def __init__(self) -> None:
+        self.devices = [
+            {
+                "id": "7331",
+                "label": "Bedroom 1 TRV",
+                "roomName": "Bedroom 1",
+                "capabilities": [
+                    "Thermostat",
+                    "ThermostatHeatingSetpoint",
+                    "TemperatureMeasurement",
+                    "Switch",
+                ],
+                "commands": ["setHeatingSetpoint", "on", "off"],
+                "attributes": [
+                    {"name": "heatingSetpoint", "value": 20.0, "unit": "°C"},
+                    {"name": "temperature", "value": 19.4, "unit": "°C"},
+                    {"name": "switch", "value": "on"},
+                ],
+            },
+            {
+                "id": "7057",
+                "label": "Bedroom 1 Light",
+                "roomName": "Bedroom 1",
+                "capabilities": ["Light", "Switch", "SwitchLevel"],
+                "commands": ["setLevel", "on", "off"],
+                "attributes": [
+                    {"name": "level", "value": 50},
+                    {"name": "switch", "value": "on"},
+                ],
+            },
+        ]
+        self.live_setpoints = {"7331": 20.0}
+        self.calls: list[tuple[str, dict]] = []
+
+    def peek_device_identities(self):
+        return list(self.devices)
+
+    async def get_device_identities(self):
+        raise AssertionError("warm thermostat identity cache should avoid refresh")
+
+    async def get_cached_devices(self):
+        return list(self.devices)
+
+    async def call_tool(self, gateway, arguments):
+        self.calls.append((gateway, arguments))
+        if arguments.get("tool") == "hub_get_device_attribute":
+            device_id = str(arguments["args"]["deviceId"])
+            if device_id not in self.live_setpoints:
+                return MCPToolResult(
+                    "hub_read_devices",
+                    arguments,
+                    {},
+                    "missing",
+                    {"success": False},
+                    is_error=True,
+                )
+            return MCPToolResult(
+                "hub_read_devices",
+                arguments,
+                {},
+                "ok",
+                {"success": True, "value": self.live_setpoints[device_id]},
+            )
+        if arguments.get("tool") == "hub_call_device_command":
+            expected = arguments["args"]["waitFor"]["expectedValue"]
+            return MCPToolResult(
+                "hub_manage_devices",
+                arguments,
+                {},
+                "ok",
+                {
+                    "success": True,
+                    "waitFor": {
+                        "converged": True,
+                        "value": expected,
+                    },
+                },
+            )
+        raise AssertionError(("unexpected tool call", gateway, arguments))
+
+
+@pytest.mark.asyncio
+async def test_adjust_temperature_reads_live_setpoint_then_compiles_verified_command():
+    mcp = ThermostatMCP()
+    receipts: list[tuple[tuple, dict]] = []
+
+    def capture(*args, **kwargs):
+        receipts.append((args, kwargs))
+
+    service = DeviceControlService(mcp, capture)
+    result = await service.execute({
+        "room": "Bedroom 1",
+        "device_kind": "thermostat",
+        "command": "adjust_temperature",
+        "delta": 1.0,
+    })
+
+    assert result.data["success"] is True
+    assert result.data["matched"] == 1
+    assert result.data["delta"] == 1.0
+    item = result.data["succeeded"][0]
+    assert item["id"] == "7331"
+    assert item["previous_setpoint"] == 20.0
+    assert item["target_setpoint"] == 21.0
+    assert item["delta_applied"] == 1.0
+    assert item["temperature_unit"] == "°C"
+
+    reads = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_read_devices"
+        and args.get("tool") == "hub_get_device_attribute"
+    ]
+    assert reads == [{
+        "tool": "hub_get_device_attribute",
+        "args": {"deviceId": "7331", "attribute": "heatingSetpoint"},
+    }]
+
+    commands = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+        and args.get("tool") == "hub_call_device_command"
+    ]
+    assert commands == [{
+        "tool": "hub_call_device_command",
+        "args": {
+            "deviceId": "7331",
+            "command": "setHeatingSetpoint",
+            "parameters": [21.0],
+            "waitFor": {
+                "attribute": "heatingSetpoint",
+                "expectedValue": 21.0,
+                "timeoutMs": 5000,
+            },
+        },
+    }]
+
+    precondition_receipts = [
+        kwargs for _args, kwargs in receipts
+        if kwargs.get("evidence_kind") == "control_precondition_state"
+    ]
+    assert len(precondition_receipts) == 1
+
+
+@pytest.mark.asyncio
+async def test_set_temperature_filters_room_to_heating_setpoint_capable_devices_only():
+    mcp = ThermostatMCP()
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Bedroom 1",
+        "device_kind": "thermostat",
+        "command": "set_temperature",
+        "setpoint": 20.5,
+    })
+
+    assert result.data["success"] is True
+    assert result.data["matched"] == 1
+    assert result.data["succeeded"][0]["label"] == "Bedroom 1 TRV"
+    command = next(
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+    )
+    assert command["args"]["command"] == "setHeatingSetpoint"
+    assert command["args"]["parameters"] == [20.5]
+    assert command["args"]["waitFor"]["expectedValue"] == 20.5
+
+
+@pytest.mark.asyncio
+async def test_adjust_temperature_clamps_to_safe_setpoint_range():
+    mcp = ThermostatMCP()
+    mcp.live_setpoints["7331"] = 34.5
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Bedroom 1",
+        "device_kind": "thermostat",
+        "command": "adjust_temperature",
+        "delta": 2.0,
+    })
+
+    item = result.data["succeeded"][0]
+    assert item["target_setpoint"] == 35.0
+    assert item["delta_applied"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_adjust_temperature_fails_closed_without_live_setpoint():
+    mcp = ThermostatMCP()
+    mcp.live_setpoints.clear()
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Bedroom 1",
+        "device_kind": "thermostat",
+        "command": "adjust_temperature",
+        "delta": 1.0,
+    })
+
+    assert result.data["success"] is False
+    failed = result.data["failed"][0]
+    assert failed["command_sent"] is False
+    assert "setpoint" in failed["message"].lower()
+    assert not any(
+        gateway == "hub_manage_devices"
+        for gateway, _args in mcp.calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_temperature_control_rejects_device_without_explicit_heating_setpoint_ability():
+    generic_thermostat = {
+        "id": "t1",
+        "label": "Generic Thermostat",
+        "roomName": "Office",
+        "capabilities": ["Thermostat", "Switch"],
+        "attributes": [{"name": "switch", "value": "on"}],
+    }
+
+    class GenericMCP(ThermostatMCP):
+        def __init__(self):
+            super().__init__()
+            self.devices = [generic_thermostat]
+
+    mcp = GenericMCP()
+    service = DeviceControlService(mcp, recorder)
+    result = await service.execute({
+        "device_names": ["Generic Thermostat"],
+        "device_kind": "thermostat",
+        "command": "set_temperature",
+        "setpoint": 20,
+    })
+
+    assert result.data["success"] is False
+    assert result.data["executed"] == 0
+    assert mcp.calls == []
