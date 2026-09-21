@@ -145,11 +145,10 @@ def _operation_effect(operations: list[str]) -> ToolEffect | None:
         tokens = set(operation.split("_"))
         if operation in _DESTRUCTIVE_ACTIONS or tokens & _DESTRUCTIVE_ACTIONS:
             return ToolEffect.DESTRUCTIVE_WRITE
-    for operation in operations:
-        if operation in _SENSITIVE_DEVICE_COMMANDS:
-            return ToolEffect.SENSITIVE_WRITE
-        if operation in _ROUTINE_DEVICE_COMMANDS:
-            return ToolEffect.ROUTINE_WRITE
+    if any(operation in _SENSITIVE_DEVICE_COMMANDS for operation in operations):
+        return ToolEffect.SENSITIVE_WRITE
+    if any(operation in _ROUTINE_DEVICE_COMMANDS for operation in operations):
+        return ToolEffect.ROUTINE_WRITE
     for operation in operations:
         if operation.startswith(_SENSITIVE_ACTION_PREFIXES):
             return ToolEffect.SENSITIVE_WRITE
