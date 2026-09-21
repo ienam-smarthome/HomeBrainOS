@@ -289,30 +289,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         session_key: str,
     ) -> AgentOutcome:
         async def operation() -> str:
-            result = await self._resolve_device({"name": name})
-            data = result.data if isinstance(result.data, dict) else {}
-            if not self._tool_succeeded(result):
-                return present_tool_result(
-                    "homebrain_resolve_device", data, failed=True, fallback_error=result.text
-                ) or "I could not read the current device state."
-            target = data.get("target") if isinstance(data.get("target"), dict) else None
-            label = str(data.get("label") or name)
-            if target is not None:
-                source_attribute, value = DeviceQueryService._attribute_value(
-                    target, attribute, allow_generic_value_fallback=True
-                )
-                if value is not None:
-                    self._selected_devices[session_key] = label
-                    # valueStr is already a human-formatted reading with its
-                    # own unit baked in ("231 W") -- appending _unit_for's
-                    # unit on top would double it up ("231 WW").
-                    unit = (
-                        None
-                        if source_attribute == "valueStr"
-                        else DeviceQueryService._unit_for(target, attribute, source_attribute)
-                    )
-                    return present_attribute(label, attribute, value, unit)
-
+            # Read the requested live attribute first. For room-style shorthand
+            # such as "bathroom temperature", the complete bulk context already
+            # contains both the measurement and room metadata, so this can answer
+            # deterministically in one read without first guessing that
+            # "bathroom temperature" is a literal device label. Live 0.14.19
+            # showed why this matters: identical requests took divergent model
+            # paths on mobile vs PC; one incorrectly concluded the Bathroom only
+            # had a motion sensor, while the other eventually found Bathroom
+            # Meter after four model rounds.
             filtered = await self._filter_devices({
                 "attribute": attribute,
                 "operator": "exists",
@@ -330,23 +315,9 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             ]
             if name.casefold() == attribute.casefold():
                 # Bare-attribute query ("what's the current temperature")
-                # with no real device/room qualifier -- name is literally
-                # the attribute word here, not a device name to filter by.
-                # `matches` is already correctly scoped to devices that
-                # report this attribute by homebrain_filter_devices, so
-                # every one of them is a legitimate choice.
-                # capability_choice_labels's token filter requires the
-                # device's own label to literally contain the attribute
-                # word ("temperature"), which essentially no real device
-                # label does ("Hallway Meter", "Bedroom 1 TRV",
-                # "Thermostat" -- none say "temperature"). Live-
-                # reproduced: this silently discarded 9 of 12 real
-                # temperature reporters and fell through to unrelated
-                # name-similarity alternatives instead, offering an
-                # incomplete and effectively arbitrary choice list
-                # ("Livingroom temp & humidity, Bedroom 1 Meter, or
-                # Thermostat") instead of every device that actually
-                # reports temperature.
+                # with no real device/room qualifier: every current reporter is
+                # a legitimate choice and none may be silently dropped just
+                # because its label does not contain the attribute word.
                 alternatives: list[str] = []
                 seen_labels: set[str] = set()
                 for item in matches:
@@ -357,6 +328,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                         seen_labels.add(key)
             else:
                 alternatives = capability_choice_labels(name, matches)
+
             if len(alternatives) > 1:
                 self._choices.set(alternatives)
                 self.request_metrics.increment("device_resolution_ambiguous")
@@ -364,7 +336,12 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             if len(alternatives) == 1:
                 selected_label = alternatives[0]
                 selected = next(
-                    (item for item in matches if str(item.get("label") or "").casefold() == selected_label.casefold()),
+                    (
+                        item
+                        for item in matches
+                        if str(item.get("label") or item.get("name") or "").casefold()
+                        == selected_label.casefold()
+                    ),
                     None,
                 )
                 if selected is not None:
@@ -375,18 +352,46 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                         selected.get("value"),
                         DeviceQueryService._unit_for(selected, attribute),
                     )
+
+            # No live attribute reporter matched the requested label/room. Only
+            # now pay for targeted device-name resolution. This preserves
+            # generic value/valueStr devices (for example some power meters)
+            # and gives a precise "device exists but does not report X" answer
+            # without making the common room-reading path depend on the model.
+            result = await self._resolve_device({"name": name})
+            data = result.data if isinstance(result.data, dict) else {}
+            if not self._tool_succeeded(result):
+                return present_tool_result(
+                    "homebrain_resolve_device", data, failed=True, fallback_error=result.text
+                ) or "I could not read the current device state."
+            target = data.get("target") if isinstance(data.get("target"), dict) else None
+            label = str(data.get("label") or name)
             if target is not None:
+                source_attribute, value = DeviceQueryService._attribute_value(
+                    target, attribute, allow_generic_value_fallback=True
+                )
+                if value is not None:
+                    self._selected_devices[session_key] = label
+                    unit = (
+                        None
+                        if source_attribute == "valueStr"
+                        else DeviceQueryService._unit_for(
+                            target, attribute, source_attribute
+                        )
+                    )
+                    return present_attribute(label, attribute, value, unit)
                 self._selected_devices[session_key] = label
                 return f"{label} does not report a current {attribute} value."
-            alternatives = [
+
+            resolution_alternatives = [
                 clean_choice_label(str(item))
                 for item in data.get("alternatives") or []
                 if str(item).strip()
             ]
-            if alternatives:
-                self._choices.set(alternatives)
+            if resolution_alternatives:
+                self._choices.set(resolution_alternatives)
                 self.request_metrics.increment("device_resolution_ambiguous")
-                return self._choice_message(alternatives)
+                return self._choice_message(resolution_alternatives)
             self.request_metrics.increment("device_resolution_missing")
             return f'I could not find a device named "{name}".'
 

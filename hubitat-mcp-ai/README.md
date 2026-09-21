@@ -3,7 +3,7 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.14.19**.
+Current add-on version: **0.14.20**.
 
 ## Architecture
 
@@ -725,6 +725,13 @@ The add-on uses authenticated Home Assistant ingress. Its direct host-port
 mapping is disabled by default so the control API is not exposed to the local
 network independently of Home Assistant. Do not enable a direct port mapping
 unless an authenticated reverse proxy or equivalent access control protects it.
+
+Short room/device measurement phrases such as **bathroom temperature** and
+**Bedroom 1 humidity** now use a deterministic attribute-first path. HomeBrain
+reads the live measurement snapshot, matches both device label and room metadata,
+and only falls back to device-name resolution if no capable reporter matches. This
+removes client-to-client model variance and avoids a false unresolved outcome when
+a valid room sensor is already present.
 
 Routine device writes now also use a nonblocking local identity fast path for
 unique exact cached targets. A cold identity lookup prefers the complete bulk

@@ -1777,3 +1777,66 @@ async def test_why_contact_phrasing_is_not_hijacked_by_the_new_statement_pattern
     )
 
     assert "does not identify which person or automation caused it" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_bathroom_temperature_shorthand_is_deterministic_and_filter_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same terse prompt must not depend on model/tool-choice randomness.
+
+    Live 0.14.19 produced two different answers for "bathroom temperature":
+    mobile incorrectly concluded only a motion sensor existed, while PC later
+    found Bathroom Meter. The shorthand should be parsed before the model and
+    answered from the temperature-capable live snapshot directly.
+    """
+
+    filter_calls: list[dict[str, object]] = []
+    resolve_calls: list[dict[str, object]] = []
+
+    async def fake_filter(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        filter_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_filter_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "matches": [
+                    {
+                        "id": "1234",
+                        "label": "Bathroom Meter",
+                        "room": "Bathroom",
+                        "capabilities": ["TemperatureMeasurement"],
+                        "attribute": "temperature",
+                        "value": 25.6,
+                    }
+                ],
+                "count": 1,
+                "complete": True,
+            },
+        )
+
+    async def forbidden_resolve(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        resolve_calls.append(arguments)
+        raise AssertionError("room attribute hit must not resolve a device label first")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_filter_devices", fake_filter)
+    monkeypatch.setattr(UnifiedMCPAgent, "_resolve_device", forbidden_resolve)
+
+    ai = FakeAI("unused -- model must not be reached")
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "bathroom temperature",
+        session_id="bathroom-temperature-shorthand",
+    )
+
+    assert outcome.message == "Bathroom Meter temperature is 25.6°C."
+    assert filter_calls == [{"attribute": "temperature", "operator": "exists"}]
+    assert resolve_calls == []
+    assert ai.requests == []
+    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert outcome.metrics["counters"].get("device_resolution_missing", 0) == 0
+    assert outcome.metrics["counters"].get("device_resolution_ambiguous", 0) == 0
