@@ -959,19 +959,19 @@ def home_snapshot_tool() -> MCPTool:
 def control_devices_tool() -> MCPTool:
     return MCPTool(
         LOCAL_CONTROL_TOOL,
-        "Routine capability-grounded Hubitat light/switch/thermostat control: on/off/toggle, light level changes, or heating-setpoint changes.",
+        "Routine light, switch, brightness, and heating-setpoint control.",
         {
             "type": "object",
             "properties": {
                 "room": {
                     "type": "string",
-                    "description": "Exact room; controls every matching device.",
+                    "description": "Exact room name.",
                 },
                 "device_names": {
                     "type": "array",
                     "items": {"type": "string"},
                     "minItems": 1,
-                    "description": "Exact device labels; do not combine with room.",
+                    "description": "Exact device labels.",
                 },
                 "device_kind": {
                     "type": "string",
@@ -993,13 +993,13 @@ def control_devices_tool() -> MCPTool:
                     "type": "number",
                     "minimum": 5,
                     "maximum": 35,
-                    "description": "Required for set_temperature; heating setpoint in the hub/device temperature scale.",
+                    "description": "Heating setpoint for set_temperature.",
                 },
                 "delta": {
                     "type": "number",
                     "minimum": -100,
                     "maximum": 100,
-                    "description": "Relative amount for adjust_level or adjust_temperature; service applies operation-specific safety bounds.",
+                    "description": "Signed relative adjustment.",
                 },
             },
             "required": ["device_kind", "command"],
