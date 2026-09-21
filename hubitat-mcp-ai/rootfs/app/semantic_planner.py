@@ -144,7 +144,10 @@ class SemanticPlanner:
             ],
             [],
         )
-        return semantic_plan_from_model_text(str(response.get("content") or ""))
+        plan = semantic_plan_from_model_text(str(response.get("content") or ""))
+        # Source is host metadata, never a field the model gets to choose.
+        plan.source = "model"
+        return plan
 
 
 __all__ = [
