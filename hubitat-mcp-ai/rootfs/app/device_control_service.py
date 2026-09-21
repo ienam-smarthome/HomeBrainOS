@@ -382,7 +382,7 @@ class DeviceControlService:
 
         identity_started = time.monotonic()
         identity_manifest: list[dict[str, Any]] = []
-        identity_source = "identity_cache_refresh"
+        identity_source = "identity_lookup"
         try:
             peek_identity_reader = getattr(self.mcp, "peek_device_identities", None)
             if callable(peek_identity_reader):
@@ -403,7 +403,7 @@ class DeviceControlService:
                     for device in (await identity_reader() or [])
                     if isinstance(device, dict)
                 ]
-                increment_active_metric("control_identity_cache_refresh")
+                increment_active_metric("control_identity_lookup")
         except Exception as exc:
             logger.warning("Fast control identity lookup unavailable: %s", exc)
         room_names_present = {
@@ -502,11 +502,26 @@ class DeviceControlService:
             fast_resolution_complete = bool(fast_targets)
         else:
             fast_resolution_complete = True
+            exact_cached_reasons = {
+                "exact normalized name",
+                "exact semantic room and device name",
+                "exact semantic name with device-kind token omitted",
+            }
             for requested in names:
                 resolution = resolve_device_candidate(
                     str(requested), identity_candidates
                 )
-                if resolution.target is None:
+                if (
+                    resolution.target is None
+                    or (
+                        identity_source == "local_identity_cache"
+                        and resolution.reason not in exact_cached_reasons
+                    )
+                ):
+                    # A stale local identity snapshot is safe for a unique exact
+                    # target, but it must not turn a fuzzy historical match into a
+                    # direct mutation. Non-exact cached matches fall back to the
+                    # established targeted live lookup below.
                     fast_resolution_complete = False
                     fast_targets = []
                     break
