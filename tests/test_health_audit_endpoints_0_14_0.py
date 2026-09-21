@@ -57,6 +57,13 @@ def test_health_audit_dashboard_card_is_present(monkeypatch, tmp_path) -> None:
     assert 'class="card row status-card"' in response.text
     assert '.query-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))' in response.text
     assert '.status-card .pill{padding:5px 8px;font-size:11px' in response.text
+    assert 'id="openBrowser"' in response.text
+    assert "🌐 Open in browser" in response.text
+    assert "function browserTargetUrl" in response.text
+    assert "function openHomeBrainInBrowser" in response.text
+    assert "searchParams.delete(\'external_auth\')" in response.text
+    assert "intent://" in response.text
+    assert "openBrowser.classList.add(\'visible\')" in response.text
     assert response.text.index('id="query"') < response.text.index('id="systemHealthCard"')
     assert "Pushover delivery failed" in response.text
     assert 'id="sendPushoverReport"' in response.text
