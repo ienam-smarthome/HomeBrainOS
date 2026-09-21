@@ -85,14 +85,12 @@ def test_parse_named_attribute_accepts_mobile_voice_shorthand():
 
 
 def test_parse_named_attribute_none_for_bare_qualifier_backtracking():
-    """Regression: parse_named_attribute's own regex used to backtrack
-    "What's the temperature?" into name="the" and "What is the current
-    battery" into name="current" when there was no real device name at
-    all -- both must fall through to None (letting parse_bare_attribute
-    handle them instead), not resolve "the"/"current" as a device name."""
+    """Regression: question-only qualifier wording is never a device name."""
 
     assert parse_named_attribute("what's the temperature?") is None
     assert parse_named_attribute("what is the current battery") is None
+    assert parse_named_attribute("How's the current humidity?") is None
+    assert parse_named_attribute("How is the current power?") is None
 
 
 def test_parse_named_attribute_none_for_pronoun_name():
