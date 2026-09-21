@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -147,3 +148,19 @@ def test_semantic_control_candidate_is_paraphrase_broad(prompt: str) -> None:
 
 def test_semantic_control_candidate_does_not_capture_unrelated_status_question() -> None:
     assert is_semantic_control_candidate("what is the bathroom temperature") is False
+
+
+
+def test_semantic_eval_corpus_covers_paraphrases_safety_and_scheduling() -> None:
+    corpus_path = (
+        Path(__file__).resolve().parent / "fixtures" / "semantic_control_eval.json"
+    )
+    cases = json.loads(corpus_path.read_text(encoding="utf-8"))
+
+    assert len(cases) >= 20
+    expected = [case["expected"] for case in cases]
+    assert any(item.get("operation") == "adjust_level" for item in expected)
+    assert any(item.get("operation") == "set_level" for item in expected)
+    assert any(item.get("domain") == "other" for item in expected)
+    assert any(item.get("timing") == "scheduled" for item in expected)
+    assert any(item.get("needs_clarification") is True for item in expected)
