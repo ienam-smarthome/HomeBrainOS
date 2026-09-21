@@ -27,6 +27,13 @@ percentage points; the semantic planner can also express explicit, small, or lar
 relative changes. When genuine information is missing, the request outcome is
 `needs_input` rather than incorrectly reporting Success.
 
+Semantic-language quality is evaluated separately from ordinary unit tests.
+`tests/fixtures/semantic_control_eval.json` contains paraphrase, safety,
+scheduling, and clarification cases; `scripts/run_semantic_planner_eval.py`
+runs those cases directly against the configured reasoning model without
+executing any Hubitat action. This gives model/intent regressions an explicit
+evaluation target instead of waiting for another live phrase to fail.
+
 Requests outside the currently supported routine semantic domain continue into
 the established unified tool loop. FastAPI sends those requests to the production
 `homebrain_agent.UnifiedMCPAgent`, which delegates no-more-tools final synthesis
