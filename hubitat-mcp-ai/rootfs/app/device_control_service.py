@@ -287,11 +287,20 @@ class DeviceControlService:
         names = arguments.get("device_names") or []
         kind = str(arguments.get("device_kind") or "").strip().lower()
         command = str(arguments.get("command") or "").strip()
+        level_raw = arguments.get("level")
+        try:
+            level = int(level_raw) if level_raw is not None else None
+        except (TypeError, ValueError):
+            level = None
         if (
             bool(room) == bool(names)
             or not isinstance(names, list)
             or kind not in {"auto", "light", "switch"}
-            or command not in {"on", "off", "toggle"}
+            or command not in {"on", "off", "toggle", "set_level"}
+            or (
+                command == "set_level"
+                and (level is None or not 0 <= level <= 100)
+            )
         ):
             return MCPToolResult(
                 DEVICE_CONTROL_TOOL,
@@ -302,7 +311,7 @@ class DeviceControlService:
                     "success": False,
                     "error": (
                         "Provide exactly one of room or device_names, plus a valid "
-                        "device_kind and command."
+                        "device_kind and command. set_level also requires level 0-100."
                     ),
                 },
                 is_error=True,
@@ -881,8 +890,16 @@ class DeviceControlService:
             # light in the house and reported all of them as "Turned off",
             # even the ones that were already off, which reads as if the
             # assistant has no idea which lights were actually on.
-            pre_switch = str(device_attributes(target).get("switch") or "").casefold()
-            expected_value: str | None = command if command in {"on", "off"} else None
+            target_attributes = device_attributes(target)
+            pre_switch = str(target_attributes.get("switch") or "").casefold()
+            pre_level = target_attributes.get("level")
+            expected_value: Any | None = (
+                command if command in {"on", "off"}
+                else level if command == "set_level"
+                else None
+            )
+            wait_attribute = "level" if command == "set_level" else "switch"
+            hub_command = "setLevel" if command == "set_level" else command
             if command == "toggle":
                 # "on"/"off" have a known target state up front, so they can
                 # ask the hub to waitFor convergence on it directly. "toggle"
@@ -922,11 +939,16 @@ class DeviceControlService:
                 "tool": "hub_call_device_command",
                 "args": {
                     "deviceId": device_id,
-                    "command": command,
+                    "command": hub_command,
+                    **(
+                        {"parameters": [level]}
+                        if command == "set_level"
+                        else {}
+                    ),
                     **(
                         {
                             "waitFor": {
-                                "attribute": "switch",
+                                "attribute": wait_attribute,
                                 "expectedValue": expected_value,
                                 "timeoutMs": 5000,
                             }
@@ -990,9 +1012,18 @@ class DeviceControlService:
             # prior reading defaults to "changed" (already_in_state False),
             # so a device with no cached state still gets reported as acted
             # upon rather than silently dropped from the summary.
-            already_in_state = (
-                expected_value is not None and pre_switch == expected_value
-            )
+            if command == "set_level" and level is not None:
+                try:
+                    already_in_state = (
+                        pre_level is not None
+                        and float(pre_level) == float(level)
+                    )
+                except (TypeError, ValueError):
+                    already_in_state = False
+            else:
+                already_in_state = (
+                    expected_value is not None and pre_switch == expected_value
+                )
             return {
                 "id": device_id,
                 "label": label,
@@ -1028,6 +1059,7 @@ class DeviceControlService:
         data = {
             "success": not failed and bool(succeeded),
             "command": command,
+            **({"level": level} if command == "set_level" else {}),
             "device_kind": kind,
             "matched": len(unique_targets),
             "executed": len(results),
