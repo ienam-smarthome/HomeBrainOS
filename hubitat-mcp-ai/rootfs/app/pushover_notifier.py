@@ -126,6 +126,7 @@ def _format_health_audit_lines(audit: dict[str, Any]) -> tuple[str, list[str]]:
     low_battery: list[str] = []
     broken_automations: list[str] = []
     logs: list[str] = []
+    device_warnings: list[str] = []
     other: list[str] = []
 
     for item in issues:
@@ -158,15 +159,43 @@ def _format_health_audit_lines(audit: dict[str, Any]) -> tuple[str, list[str]]:
                 + _html_text(suffix)
             )
         elif domain == "logs":
-            logs.append(_html_text(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix))
+            logs.append(
+                _html_text(
+                    f"{finding_title} — {detail}{suffix}"
+                    if detail
+                    else finding_title + suffix
+                )
+            )
+        elif domain == "devices":
+            device_warnings.append(
+                _html_text(
+                    f"{finding_title} — {detail}{suffix}"
+                    if detail
+                    else finding_title + suffix
+                )
+            )
         else:
-            other.append(_html_text(f"{finding_title} — {detail}{suffix}" if detail else finding_title + suffix))
+            other.append(
+                _html_text(
+                    f"{finding_title} — {detail}{suffix}"
+                    if detail
+                    else finding_title + suffix
+                )
+            )
 
     _append_section(lines, "Offline", offline, limit=8)
     _append_section(lines, "Low battery", low_battery, limit=6)
+    _append_section(lines, "Device warnings", device_warnings, limit=4)
     _append_section(lines, "Broken automations", broken_automations, limit=6)
     _append_section(lines, "Logs", logs, limit=3)
     _append_section(lines, "Other findings", other, limit=3)
+
+    new_issues = [
+        _html_text(str(item.get("title") or "Issue").strip())
+        for item in (audit.get("new_issues") or [])
+        if isinstance(item, dict)
+    ]
+    _append_section(lines, "New since previous check", new_issues, limit=4)
 
     resolved = [
         _html_text(str(item.get("title") or "Issue").strip())
