@@ -655,3 +655,53 @@ def test_control_presenter_reports_relative_brightness_transitions() -> None:
         "Brightness increased by 20 points: "
         "Livingroom Light 1 80% → 100%; Livingroom Light 2 60% → 80%."
     )
+
+
+
+def test_control_presenter_reports_absolute_heating_setpoint() -> None:
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": True,
+            "command": "set_temperature",
+            "setpoint": 20.5,
+            "succeeded": [
+                {
+                    "label": "Bedroom 1 TRV",
+                    "changed": True,
+                    "previous_setpoint": 19.0,
+                    "target_setpoint": 20.5,
+                    "temperature_unit": "°C",
+                }
+            ],
+            "failed": [],
+        },
+    )
+
+    assert message == "Set heating setpoint: Bedroom 1 TRV → 20.5°C."
+
+
+def test_control_presenter_reports_relative_heating_setpoint_transition() -> None:
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": True,
+            "command": "adjust_temperature",
+            "delta": -0.5,
+            "succeeded": [
+                {
+                    "label": "Bedroom 1 TRV",
+                    "changed": True,
+                    "previous_setpoint": 20.5,
+                    "target_setpoint": 20.0,
+                    "temperature_unit": "°C",
+                }
+            ],
+            "failed": [],
+        },
+    )
+
+    assert message == (
+        "Heating setpoint decreased by 0.5°: "
+        "Bedroom 1 TRV 20.5°C → 20°C."
+    )
