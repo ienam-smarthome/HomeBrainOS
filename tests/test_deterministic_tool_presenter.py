@@ -622,4 +622,4 @@ def test_control_presenter_reports_set_level_naturally():
         },
     )
 
-    assert message == "Set to 100% Livingroom Light 1 and Livingroom Light 2."
+    assert message == "Set Livingroom Light 1 and Livingroom Light 2 to 100%."
