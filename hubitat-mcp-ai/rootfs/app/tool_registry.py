@@ -88,7 +88,7 @@ _SENSITIVE_GATEWAYS = {HUB_UPDATE_FIRMWARE_TOOL}
 _DIRECT_MANAGE_TOOLS = {"hub_manage_virtual_device", "hub_manage_mode"}
 _ROUTINE_DEVICE_COMMANDS = {
     "off", "on", "ping", "refresh", "set_color", "set_color_temperature",
-    "set_level", "toggle", "update_check",
+    "set_level", "set_heating_setpoint", "toggle", "update_check",
 }
 _SENSITIVE_DEVICE_COMMANDS = {
     "close", "lock", "open", "unlock",
@@ -958,7 +958,7 @@ def home_snapshot_tool() -> MCPTool:
 def control_devices_tool() -> MCPTool:
     return MCPTool(
         LOCAL_CONTROL_TOOL,
-        "Routine Hubitat light/switch on, off, toggle, absolute level, or relative brightness control.",
+        "Routine capability-grounded Hubitat light/switch/thermostat control: on/off/toggle, light level changes, or heating-setpoint changes.",
         {
             "type": "object",
             "properties": {
@@ -974,22 +974,31 @@ def control_devices_tool() -> MCPTool:
                 },
                 "device_kind": {
                     "type": "string",
-                    "enum": ["auto", "light", "switch"],
+                    "enum": ["auto", "light", "switch", "thermostat"],
                 },
                 "command": {
                     "type": "string",
-                    "enum": ["on", "off", "toggle", "set_level", "adjust_level"],
+                    "enum": [
+                        "on", "off", "toggle", "set_level", "adjust_level",
+                        "set_temperature", "adjust_temperature",
+                    ],
                 },
                 "level": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 100,
                 },
+                "setpoint": {
+                    "type": "number",
+                    "minimum": 5,
+                    "maximum": 35,
+                    "description": "Required for set_temperature; heating setpoint in the hub/device temperature scale.",
+                },
                 "delta": {
-                    "type": "integer",
+                    "type": "number",
                     "minimum": -100,
                     "maximum": 100,
-                    "description": "Required for adjust_level; non-zero relative brightness change.",
+                    "description": "Relative amount for adjust_level or adjust_temperature; service applies operation-specific safety bounds.",
                 },
             },
             "required": ["device_kind", "command"],
