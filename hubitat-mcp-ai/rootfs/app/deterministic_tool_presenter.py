@@ -326,6 +326,51 @@ def _present_control(data: dict[str, Any]) -> str:
             message = f"{message} {note}"
         return message
 
+    if command in {"set_temperature", "adjust_temperature"}:
+        def temp_text(value: Any, unit: Any = "") -> str:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return "?"
+            number_text = str(int(number)) if number.is_integer() else f"{number:g}"
+            unit_text = str(unit or "").strip()
+            if not unit_text:
+                unit_text = "°"
+            elif unit_text.casefold() in {"c", "f"}:
+                unit_text = "°" + unit_text.upper()
+            return f"{number_text}{unit_text}"
+
+        if command == "set_temperature":
+            transitions = [
+                f"{item['label']} → "
+                f"{temp_text(item.get('target_setpoint'), item.get('temperature_unit'))}"
+                for item in succeeded_items
+            ]
+            message = "Set heating setpoint: " + "; ".join(transitions) + "."
+        else:
+            try:
+                delta_value = float(data.get("delta") or 0)
+            except (TypeError, ValueError):
+                delta_value = 0.0
+            direction = "increased" if delta_value > 0 else "decreased"
+            transitions = [
+                f"{item['label']} "
+                f"{temp_text(item.get('previous_setpoint'), item.get('temperature_unit'))} "
+                f"→ {temp_text(item.get('target_setpoint'), item.get('temperature_unit'))}"
+                for item in succeeded_items
+            ]
+            step = abs(delta_value)
+            step_text = str(int(step)) if step.is_integer() else f"{step:g}"
+            message = (
+                f"Heating setpoint {direction} by {step_text}°: "
+                + "; ".join(transitions)
+                + "."
+            )
+        note = data.get("note")
+        if note:
+            message = f"{message} {note}"
+        return message
+
     verb = {
         "on": "Turned on",
         "off": "Turned off",
