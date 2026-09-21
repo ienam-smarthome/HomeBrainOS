@@ -33,21 +33,47 @@ def _split_state_detail(detail: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def _bounded_message(lines: list[str]) -> str:
-    message = "\n".join(lines)
-    if len(message) <= PUSHOVER_MESSAGE_LIMIT:
-        return message
+def _fit_message_line(line: str) -> str:
+    """Keep one logical line safely below the Pushover body limit."""
 
-    kept: list[str] = []
-    for line in lines:
-        candidate = "\n".join([*kept, line])
-        if len(candidate) > PUSHOVER_MESSAGE_LIMIT - 2:
-            break
-        kept.append(line)
-    if not kept:
-        return "…"[:PUSHOVER_MESSAGE_LIMIT]
-    candidate = "\n".join([*kept, "…"])
-    return candidate if len(candidate) <= PUSHOVER_MESSAGE_LIMIT else "\n".join(kept)
+    if len(line) <= 850:
+        return line
+    plain = re.sub(r"<[^>]+>", "", line)
+    return plain[:847].rstrip() + "…"
+
+
+def _chunk_message_lines(lines: list[str]) -> list[str]:
+    """Split a report into complete Pushover messages without cutting HTML tags."""
+
+    chunks: list[str] = []
+    current: list[str] = []
+    for raw_line in lines:
+        line = _fit_message_line(raw_line)
+        candidate = "\n".join([*current, line])
+        if len(candidate) <= PUSHOVER_MESSAGE_LIMIT:
+            current.append(line)
+            continue
+
+        # Do not leave a section heading stranded at the bottom of a message.
+        heading = ""
+        if current and current[-1].endswith(":") and len(current) > 1:
+            heading = current.pop()
+
+        if current:
+            chunks.append("\n".join(current))
+        current = [heading] if heading else []
+
+        candidate = "\n".join([*current, line])
+        if len(candidate) > PUSHOVER_MESSAGE_LIMIT:
+            if current:
+                chunks.append("\n".join(current))
+                current = []
+            line = _fit_message_line(line)
+        current.append(line)
+
+    if current:
+        chunks.append("\n".join(current))
+    return chunks or [""]
 
 
 def _append_section(lines: list[str], heading: str, values: list[str], *, limit: int) -> None:
@@ -61,7 +87,7 @@ def _append_section(lines: list[str], heading: str, values: list[str], *, limit:
         lines.append(f"• +{remaining} more")
 
 
-def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
+def _format_health_audit_lines(audit: dict[str, Any]) -> tuple[str, list[str]]:
     status = str(audit.get("status") or "unknown").strip().title()
     title = f"HomeBrain System Check: {status}"[:250]
     hierarchy = audit.get("health_hierarchy") or {}
@@ -152,7 +178,24 @@ def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
     if not issues:
         lines.append("No current findings need attention.")
 
-    return title, _bounded_message(lines)
+    return title, lines
+
+
+def format_health_audit_messages(audit: dict[str, Any]) -> tuple[str, list[str]]:
+    title, lines = _format_health_audit_lines(audit)
+    return title, _chunk_message_lines(lines)
+
+
+def format_health_audit(audit: dict[str, Any]) -> tuple[str, str]:
+    """Backward-compatible single-message formatter.
+
+    Delivery uses format_health_audit_messages() so a large report is never
+    silently truncated. This helper returns the first part for existing callers
+    and focused unit tests.
+    """
+
+    title, messages = format_health_audit_messages(audit)
+    return title, messages[0]
 
 
 class PushoverNotifier:
@@ -225,8 +268,25 @@ class PushoverNotifier:
         }
 
     async def send(self, audit: dict[str, Any]) -> dict[str, Any]:
-        title, message = format_health_audit(audit)
-        return await self._send_message(title=title, message=message)
+        title, messages = format_health_audit_messages(audit)
+        deliveries: list[dict[str, Any]] = []
+        total = len(messages)
+        for index, message in enumerate(messages, start=1):
+            part_title = title if total == 1 else f"{title} ({index}/{total})"
+            deliveries.append(
+                await self._send_message(title=part_title, message=message)
+            )
+        return {
+            "sent": True,
+            "request": str(deliveries[0].get("request") or "") if deliveries else "",
+            "requests": [str(item.get("request") or "") for item in deliveries],
+            "title": title,
+            "messages_sent": total,
+        }
 
 
-__all__ = ["PushoverNotifier", "format_health_audit"]
+__all__ = [
+    "PushoverNotifier",
+    "format_health_audit",
+    "format_health_audit_messages",
+]
