@@ -294,7 +294,13 @@ def _present_control(data: dict[str, Any]) -> str:
                 parts.append(f"Failed: {_joined(failed_items)}.")
             return " ".join(parts)
         return _error(data, "The Hubitat device command failed.")
-    verb = {"on": "Turned on", "off": "Turned off", "toggle": "Toggled"}.get(str(data.get("command")), "Controlled")
+    command = str(data.get("command") or "")
+    verb = {
+        "on": "Turned on",
+        "off": "Turned off",
+        "toggle": "Toggled",
+        "set_level": f"Set to {data.get('level')}%",
+    }.get(command, "Controlled")
     # A command dispatched to several devices at once (a room, or "the
     # lights") is sent to every match regardless of its current state --
     # that's deliberate, see device_control_service.py's already_in_state
@@ -317,13 +323,21 @@ def _present_control(data: dict[str, Any]) -> str:
     if changed:
         message = f"{verb} {_joined(changed)}."
     elif already_in_state:
-        state_word = str(data.get("command") or "").casefold() or "in that state"
+        state_word = (
+            f"at {data.get('level')}%"
+            if command == "set_level"
+            else command.casefold() or "in that state"
+        )
         message = f"Nothing to do -- every matched device was already {state_word}."
     else:
         message = f"{verb} {_joined(succeeded) or 'the selected devices'}."
     if already_in_state and changed:
         was_were = "was" if len(already_in_state) == 1 else "were"
-        state_word = str(data.get("command") or "").casefold() or "in that state"
+        state_word = (
+            f"at {data.get('level')}%"
+            if command == "set_level"
+            else command.casefold() or "in that state"
+        )
         message = (
             f"{message} {len(already_in_state)} {was_were} already {state_word}: "
             f"{_joined(already_in_state)}."
