@@ -74,6 +74,7 @@ class SemanticPlanner:
             "\"name\":\"...\",\"kind\":\"light|switch|auto\"}|null,"
             "\"action\":{\"operation\":\"turn_on|turn_off|toggle|set_level|adjust_level\","
             "\"value\":0-100|null,\"delta\":-100..100|null,"
+            "\"direction\":\"increase|decrease\"|null,"
             "\"magnitude\":\"small|default|large\"}|null,"
             "\"needs_clarification\":true|false,"
             "\"clarification_question\":\"...\","
