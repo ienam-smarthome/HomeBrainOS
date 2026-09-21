@@ -108,7 +108,7 @@ def device_abilities(device: dict[str, Any]) -> set[str]:
 
     if (
         capabilities.intersection(
-            {"thermostatheatingsetpoint", "heatingsetpoint", "thermostat"}
+            {"thermostatheatingsetpoint", "heatingsetpoint"}
         )
         or "setheatingsetpoint" in commands
         or "heatingsetpoint" in attributes
@@ -117,7 +117,7 @@ def device_abilities(device: dict[str, Any]) -> set[str]:
 
     if (
         capabilities.intersection(
-            {"thermostatcoolingsetpoint", "coolingsetpoint", "thermostat"}
+            {"thermostatcoolingsetpoint", "coolingsetpoint"}
         )
         or "setcoolingsetpoint" in commands
         or "coolingsetpoint" in attributes
