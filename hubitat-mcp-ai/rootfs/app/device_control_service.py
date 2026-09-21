@@ -256,6 +256,27 @@ class DeviceControlService:
         ).casefold()
         return "switch" in capability_text
 
+    @staticmethod
+    def _attribute_unit(device: dict[str, Any], attribute: str) -> str:
+        wanted = str(attribute).casefold()
+        for raw in (
+            device.get("attributes"),
+            device.get("states"),
+            device.get("currentStates"),
+        ):
+            if not isinstance(raw, list):
+                continue
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name") or item.get("attribute")
+                if str(name or "").casefold() != wanted:
+                    continue
+                unit = str(item.get("unit") or "").strip()
+                if unit:
+                    return unit
+        return ""
+
     def _matches_kind(self, kind: str, device: dict[str, Any]) -> bool:
         """True when ``device`` belongs to the requested ``device_kind``.
 
@@ -949,6 +970,7 @@ class DeviceControlService:
             pre_switch = str(target_attributes.get("switch") or "").casefold()
             pre_level = target_attributes.get("level")
             pre_setpoint = target_attributes.get("heatingSetpoint")
+            temperature_unit = self._attribute_unit(target, "heatingSetpoint")
             target_level: int | None = level if command == "set_level" else None
             target_setpoint: float | None = (
                 setpoint if command == "set_temperature" else None
@@ -1071,6 +1093,7 @@ class DeviceControlService:
                         "verified": False,
                         "message": "Current heating setpoint is unavailable.",
                         "verification_message": "",
+                        "temperature_unit": temperature_unit,
                         "already_in_state": False,
                         "changed": False,
                     }
@@ -1272,6 +1295,7 @@ class DeviceControlService:
                             if pre_setpoint is not None and target_setpoint is not None
                             else None
                         ),
+                        "temperature_unit": temperature_unit,
                     }
                     if command in {"set_temperature", "adjust_temperature"}
                     else {}
