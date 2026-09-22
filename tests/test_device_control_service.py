@@ -1854,7 +1854,8 @@ async def test_hallway_room_brightness_ignores_remote_parent_and_controls_real_l
             "id": "3927",
             "label": "Hallway dimmer",
             "roomName": "",
-            "capabilities": ["Battery", "PushableButton"],
+            "capabilities": ["Battery", "PushableButton", "SwitchLevel"],
+            "commands": ["setLevel"],
             "attributes": [
                 {"name": "battery", "value": 82},
                 {"name": "level", "value": None},
