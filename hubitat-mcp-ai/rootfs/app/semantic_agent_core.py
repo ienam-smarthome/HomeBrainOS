@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from request_classification import routine_control_arguments
+from request_metrics import increment_active_metric
 from semantic_plan import (
     SemanticPlan,
     semantic_plan_from_control_arguments,
@@ -128,6 +129,7 @@ class SemanticAgentCore:
                         "name": str(room.get("name") or "").strip(),
                     }
                 )
+                increment_active_metric("semantic_target_grounded")
                 return plan.model_copy(update={"target": grounded_target})
 
         # Canonicalize an explicitly named device rather than preserving model
@@ -143,6 +145,7 @@ class SemanticAgentCore:
                         "name": str(device.get("name") or "").strip(),
                     }
                 )
+                increment_active_metric("semantic_target_grounded")
                 return plan.model_copy(update={"target": grounded_target})
 
         return plan
