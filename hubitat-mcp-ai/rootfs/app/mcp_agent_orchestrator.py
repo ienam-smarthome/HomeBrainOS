@@ -29,6 +29,7 @@ from causal_evidence_planner import (
     subject_room_filter_arguments,
     trigger_sensor_history_arguments,
 )
+from causal_subject_prefetch import causal_subject_seed
 from causal_native_logs import (
     causal_boundary_log_windows,
     correlate_native_log_boundaries,
@@ -289,6 +290,7 @@ class UnifiedMCPAgent:
         require_sensitive_confirmation: bool = True,
         confirmation_ttl_seconds: float = 120,
         rule_write_enabled: bool = True,
+        causal_subject_prefetch_enabled: bool = True,
         max_tool_result_chars: int = 24000,
         max_history_messages: int = 8,
         max_history_chars: int = 12000,
@@ -314,6 +316,9 @@ class UnifiedMCPAgent:
         self.max_tool_rounds = max(1, int(max_tool_rounds))
         self.require_sensitive_confirmation = bool(require_sensitive_confirmation)
         self.rule_write_enabled = bool(rule_write_enabled)
+        self.causal_subject_prefetch_enabled = bool(
+            causal_subject_prefetch_enabled
+        )
         self.confirmation_policy = ConfirmationPolicy(
             enabled=self.require_sensitive_confirmation
         )
@@ -538,6 +543,113 @@ class UnifiedMCPAgent:
         arguments: dict[str, Any],
     ) -> MCPToolResult:
         return await HubInfoService(self.mcp).snapshot(arguments)
+    async def _prefetch_explicit_causal_subject(
+        self,
+        user_prompt: str,
+        *,
+        catalog: ToolDiscoveryCatalog,
+        completed_calls: set[str],
+        messages: list[dict[str, Any]],
+    ) -> str:
+        """Gather explicit switch-causal evidence before the first model round.
+
+        This is deliberately narrower than general causal reasoning. It activates
+        only when authoritative identity plus the prompt establish exactly one
+        known switch device and an explicit on/off transition. The host then runs
+        the same DeviceHistoryService and native-log correlation used by the
+        ordinary model-selected path.
+
+        Returns one of: not_applicable, empty, sufficient, partial.
+        """
+
+        if not self.causal_subject_prefetch_enabled:
+            return "not_applicable"
+
+        history_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
+        if history_tool is None:
+            return "not_applicable"
+
+        try:
+            identities = await self.mcp.get_device_identities()
+        except Exception as exc:
+            logger.debug("Causal subject prefetch identity unavailable: %s", exc)
+            return "not_applicable"
+
+        seed = causal_subject_seed(user_prompt, identities)
+        if seed is None:
+            return "not_applicable"
+
+        arguments = {
+            "name": seed.name,
+            "attribute": seed.attribute,
+            # DeviceHistoryService interprets an explicit small state-history
+            # limit as "latest transitions over the bounded seven-day horizon"
+            # while still fetching enough rows internally for interval analysis.
+            "limit": 3,
+        }
+        signature = json.dumps(
+            [_LOCAL_DEVICE_HISTORY_TOOL, arguments],
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        )
+        if signature in completed_calls:
+            return "partial"
+        completed_calls.add(signature)
+
+        increment_active_metric("causal_subject_prefetch")
+        execution = await self.executor.execute(
+            _LOCAL_DEVICE_HISTORY_TOOL,
+            arguments,
+            tool=history_tool,
+            supports_live_claim=True,
+            evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_HISTORY_TOOL],
+        )
+        messages.append({
+            "role": "tool",
+            "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
+            "content": execution.content,
+        })
+        messages.append({
+            "role": "user",
+            "content": (
+                "HOST CAUSAL SUBJECT PREFETCH\n"
+                f"Authoritative identity matched the explicit transition subject to "
+                f"{seed.name!r} (confidence={seed.confidence:.3f}); the host gathered "
+                f"{seed.attribute} history before provider tool selection. Treat this "
+                "as current-turn evidence and do not request the same subject history "
+                "again merely to confirm it."
+            ),
+        })
+
+        if not execution.success or execution.result is None:
+            return "partial"
+        data = (
+            execution.result.data
+            if isinstance(execution.result.data, dict)
+            else {}
+        )
+        if not subject_has_observed_intervals(data):
+            increment_active_metric("causal_subject_empty_stop")
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST CAUSAL SUBJECT EVIDENCE STOP\n"
+                    "The deterministic subject prefetch did not establish a bounded "
+                    "active interval. Finalize from current-turn evidence only; do not "
+                    "construct a cause for an unobserved transition."
+                ),
+            })
+            return "empty"
+
+        sufficient = await self._collect_causal_boundary_logs(
+            catalog=catalog,
+            completed_calls=completed_calls,
+            messages=messages,
+        )
+        return "sufficient" if sufficient else "partial"
+
+
     async def _collect_causal_boundary_logs(
         self,
         *,
@@ -1355,6 +1467,18 @@ class UnifiedMCPAgent:
         proposal_error_retries = 0
         causal_completion_retry_used = False
         causal_completion_mode = False
+
+        if causal_request:
+            causal_prefetch = await self._prefetch_explicit_causal_subject(
+                user_prompt,
+                catalog=catalog,
+                completed_calls=completed_calls,
+                messages=messages,
+            )
+            if causal_prefetch in {"empty", "sufficient"}:
+                increment_active_metric("investigative_finalization")
+                return await self._final_answer(messages)
+
         for _ in range(self.max_tool_rounds):
             if causal_completion_mode:
                 catalog.activate_causal_provenance_view()
