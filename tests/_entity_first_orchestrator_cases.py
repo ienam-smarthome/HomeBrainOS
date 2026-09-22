@@ -499,6 +499,31 @@ async def test_rule_authoring_uses_deterministic_compiler_before_model():
 
 
 @pytest.mark.asyncio
+async def test_rule_write_setting_blocks_deterministic_authoring_before_discovery():
+    mcp = FakeMCP()
+    ai = FakeAI([])
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        rule_write_enabled=False,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "create a rule to turn on Couch Lamp every day at 7am",
+        session_id="rule-writing-disabled",
+    )
+
+    assert outcome.request_class == "write"
+    assert outcome.message == (
+        "Rule Machine writes are disabled in HomeBrain settings. "
+        "No rule was queued or changed."
+    )
+    assert mcp.calls == []
+    assert ai.requests == []
+
+@pytest.mark.asyncio
 async def test_rule_authoring_reachable_when_search_discovery_misses_gateway():
     """Regression test for a live production bug: control-language schedule
     requests like "turn off livingroom light 1 every day at 10:40am" were
