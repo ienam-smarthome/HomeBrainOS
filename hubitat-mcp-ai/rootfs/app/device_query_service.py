@@ -965,6 +965,82 @@ class DeviceQueryService:
                     ),
                 )
 
+        # A legacy labelFilter is intentionally narrow and can return zero
+        # rows for a harmless misspelling even when the complete structural
+        # identity cache contains one unmistakable device. History/causal reads
+        # must not terminate on that transport quirk. Fall back to the bounded
+        # authoritative identity world and run the same conservative resolver;
+        # its confidence/margin rules still refuse ambiguous names.
+        identity_fallback_used = False
+        if (
+            resolution.target is None
+            and not bare_attribute
+            and not resolution.alternatives
+        ):
+            identities: list[dict[str, Any]] = []
+            peek = getattr(self.mcp, "peek_device_identities", None)
+            if callable(peek):
+                try:
+                    identities = [
+                        dict(item)
+                        for item in (peek() or [])
+                        if isinstance(item, dict)
+                    ]
+                except Exception:
+                    identities = []
+            if not identities:
+                identity_reader = getattr(self.mcp, "get_device_identities", None)
+                if callable(identity_reader):
+                    try:
+                        identities = [
+                            dict(item)
+                            for item in (await identity_reader() or [])
+                            if isinstance(item, dict)
+                        ]
+                    except Exception:
+                        identities = []
+
+            fallback_candidates = identities
+            if kind_hint:
+                typed = [
+                    device
+                    for device in fallback_candidates
+                    if self._matches_device_kind(device, kind_hint)
+                ]
+                if typed:
+                    fallback_candidates = typed
+            if required_command:
+                fallback_candidates = [
+                    device
+                    for device in fallback_candidates
+                    if required_command.casefold() in device_commands(device)
+                ]
+            wanted_capabilities = {
+                re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                for value in (required_capabilities or set())
+                if str(value).strip()
+            }
+            if wanted_capabilities:
+                capable = []
+                for device in fallback_candidates:
+                    advertised = {
+                        re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                        for value in self._capability_names(device)
+                    }
+                    if advertised & wanted_capabilities:
+                        capable.append(device)
+                if capable:
+                    fallback_candidates = capable
+
+            if fallback_candidates:
+                fallback_resolution = resolve_device_candidate(
+                    requested,
+                    fallback_candidates,
+                )
+                if fallback_resolution.target is not None:
+                    resolution = fallback_resolution
+                    identity_fallback_used = True
+
         target = resolution.target
         data = {
             "requested": requested,
@@ -983,7 +1059,17 @@ class DeviceQueryService:
             "confidence": resolution.confidence,
             "reason": resolution.reason,
             "alternatives": list(resolution.alternatives),
-            "attempts": [{"source": attempt_source, "count": len(candidates)}],
+            "attempts": [
+                {"source": attempt_source, "count": len(candidates)},
+                *(
+                    [{
+                        "source": "authoritative_identity_fuzzy",
+                        "count": len(fallback_candidates),
+                    }]
+                    if identity_fallback_used
+                    else []
+                ),
+            ],
             "complete": bare_attribute or target is not None,
             "requestCacheHit": False,
         }
