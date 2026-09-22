@@ -15,6 +15,7 @@ The repository drift test compares this table directly with the live directory. 
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
 | `causal_attribution_guard.py` | Prevents app/rule configuration-only evidence from being promoted into a specific causal trigger, and ensures stronger aligned controller provenance wins when present. |
 | `causal_native_logs.py` | Derives native-log windows for both causal boundaries and deterministically correlates physical controller/input events -> subject commands -> state transitions, including repeated start/end provenance. |
+| `causal_subject_prefetch.py` | Conservatively matches one explicit known switch device and ON/OFF transition from a causal prompt so subject history can be gathered before the first provider round; ambiguous/broader causal questions fall through unchanged. |
 | `causal_evidence_planner.py` | Derives exact subject-room provenance discovery, one ranked controller history read, and deterministic controller-to-subject boundary alignments (start versus end) for causal investigations without authoring the causal answer. |
 | `causal_timeline.py` | Joins observed bounded/open subject intervals with directional controller provenance, subject command boundaries, and mode/context evidence; also exposes bounded causal-completeness and material-row coverage checks without authoring conclusions. |
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |

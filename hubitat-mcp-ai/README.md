@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.13**.
+Current add-on version: **0.16.14**.
 
 ## Architecture
+
+0.16.14 adds an identity-grounded causal subject prefetch for explicit known-device ON/OFF questions. When one authoritative device identity and a switch transition are unambiguous, HomeBrain gathers the same deterministic history and dual native-log provenance before the first provider call. Strong repeated native provenance therefore reaches the existing final synthesis in one model round instead of spending an initial model round merely choosing the history tool. Broader causal questions remain model-routed, and `causal_subject_prefetch_enabled: false` restores the 0.16.13 path.
 
 0.16.13 fixes causal-subject receipt handoff after deterministic history recovery. When a first noisy history pass is superseded by a scoped retry for the same canonical subject, the causal timeline now ranks the corrected interval-bearing receipt above the older empty receipt while still anchoring the subject identity so later controller histories cannot replace it. This lets 0.16.12 derive both native-log boundary windows from the recovered interval.
 
