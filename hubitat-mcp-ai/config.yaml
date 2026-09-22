@@ -43,6 +43,7 @@ options:
   mcp_device_cache_seconds: 12
   mcp_identity_cache_seconds: 120
   mcp_max_concurrent_calls: 2
+  mcp_batch_device_commands_enabled: true
   mcp_retry_attempts: 3
   mcp_retry_backoff_seconds: 0.25
   conversation_context_ttl_seconds: 600
@@ -97,6 +98,7 @@ schema:
   mcp_device_cache_seconds: int
   mcp_identity_cache_seconds: int
   mcp_max_concurrent_calls: int
+  mcp_batch_device_commands_enabled: bool
   mcp_retry_attempts: int
   mcp_retry_backoff_seconds: float
   conversation_context_ttl_seconds: int
