@@ -267,8 +267,12 @@ class HubitatMCPClient:
         bounded refresh instead of silently grounding a mutation to old data.
         """
 
+        candidates: list[tuple[float, list[dict[str, Any]]]] = []
         if self._cached_devices and self._identity_cache_fresh(self._devices_cached_at):
-            return [dict(item) for item in self._cached_devices]
+            candidates.append((
+                self._devices_cached_at,
+                [dict(item) for item in self._cached_devices],
+            ))
 
         generation = self._live_device_snapshot_generation
         if self._live_device_snapshot is not None:
@@ -279,7 +283,10 @@ class HubitatMCPClient:
             ):
                 devices = self._find_device_list(cached_result.data)
                 if isinstance(devices, list) and devices:
-                    return [dict(item) for item in devices if isinstance(item, dict)]
+                    candidates.append((
+                        cached_at,
+                        [dict(item) for item in devices if isinstance(item, dict)],
+                    ))
 
         if self._live_context_snapshot is not None:
             cached_at, cached_generation, cached_context = self._live_context_snapshot
@@ -289,9 +296,15 @@ class HubitatMCPClient:
             ):
                 devices = self._find_device_list(cached_context)
                 if isinstance(devices, list) and devices:
-                    return [dict(item) for item in devices if isinstance(item, dict)]
+                    candidates.append((
+                        cached_at,
+                        [dict(item) for item in devices if isinstance(item, dict)],
+                    ))
 
-        return []
+        if not candidates:
+            return []
+        _cached_at, identities = max(candidates, key=lambda item: item[0])
+        return identities
 
     async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
         """Return a short-lived detailed device manifest and coalesce refreshes."""
