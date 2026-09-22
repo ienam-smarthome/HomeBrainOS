@@ -40,6 +40,7 @@ class RequestMetrics:
         "proposal_validation_failures",
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
+        "device_control_needs_input",
         "resolution_cache_hit", "resolution_cache_metadata_miss", "evidence_sufficiency_stop",
         "causal_room_plan", "causal_provenance_read", "causal_sensor_read", "causal_sensor_aligned", "causal_location_read", "causal_app_navigation", "causal_provenance_aligned", "causal_completion_retry", "causal_subject_empty_stop", "investigative_finalization",
         "investigative_attribute_required", "gateway_operation_rejected",

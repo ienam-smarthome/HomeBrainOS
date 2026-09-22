@@ -705,3 +705,31 @@ def test_control_presenter_reports_relative_heating_setpoint_transition() -> Non
         "Heating setpoint decreased by 0.5°: "
         "Bedroom 1 TRV 20.5°C → 20°C."
     )
+
+
+
+def test_control_presenter_explains_missing_relative_baseline_as_needs_input() -> None:
+    message = present_tool_result(
+        "homebrain_control_devices",
+        {
+            "success": False,
+            "needs_input": True,
+            "clarification": (
+                "Hallway dimmer supports brightness control, but its current "
+                "level is not available. Specify an absolute brightness level instead."
+            ),
+            "failed": [
+                {
+                    "label": "Hallway dimmer",
+                    "needs_input": True,
+                    "command_sent": False,
+                }
+            ],
+        },
+        failed=True,
+    )
+
+    assert message == (
+        "Hallway dimmer supports brightness control, but its current "
+        "level is not available. Specify an absolute brightness level instead."
+    )

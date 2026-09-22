@@ -3,9 +3,19 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.1**.
+Current add-on version: **0.16.2**.
 
 ## Architecture
+
+0.16.2 hardens state-dependent semantic actions. A device can correctly
+advertise a capability while its cheapest native attribute endpoint has never
+reported the current value. Relative brightness/temperature now reads the
+native attribute first and, only when that yields no numeric state, retries
+through one fresh bulk live-context snapshot. Concurrent room controls coalesce
+that fallback in the MCP client. HomeBrain still never calculates a relative
+change from stale identity-cache state. If neither authoritative source has a
+baseline, it returns **Needs input** with an absolute-level/setpoint suggestion
+instead of a generic Failed result or guessing.
 
 0.16.1 tightens the capability ontology used by that world model: an ordinary
 Hubitat dimmer does not have to advertise a literal `Light` capability or put

@@ -16,6 +16,7 @@ _COUNTER_LABELS = (
     ("mutation_verification_failures", "Verification failures"),
     ("proposal_validation_failures", "Proposal validation failures"),
     ("device_control_failures", "Device control failures"),
+    ("device_control_needs_input", "Device controls needing input"),
     ("request_cancellations", "Cancellations"),
     ("device_resolution_ambiguous", "Ambiguous resolutions"),
     ("device_resolution_missing", "Missing-device resolutions"),
