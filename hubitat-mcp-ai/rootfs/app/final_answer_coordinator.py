@@ -97,7 +97,11 @@ def _synthesis_instruction(original_user: str) -> str:
             "remains unproven or unexplained. Only suggest a configuration change "
             "when the evidence makes it relevant. A device state transition or "
             "close timestamp alone is correlation, not proof of a person or "
-            "automation causing it. "
+            "automation causing it. App/rule configuration proves only that an automation "
+            "is configured or capable of managing the device; configuration alone "
+            "must never be described as the most likely trigger for a specific "
+            "transition. Require controller timing, execution/log provenance, or "
+            "other direct current-turn evidence before naming an initiating source. "
         )
     elif investigative:
         text += (
