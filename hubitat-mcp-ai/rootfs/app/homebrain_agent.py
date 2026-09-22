@@ -64,7 +64,8 @@ from request_classification import (
 from request_metrics import RequestMetrics
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
-from semantic_planner import SemanticPlanner
+from semantic_planner import SemanticPlanner, is_semantic_control_candidate
+from semantic_world_model import build_semantic_world, render_semantic_world
 from time_expressions import AT_TIME
 from token_aware_context_policy import TokenAwareModelContextPolicy
 from tool_catalog_assembly import build_request_tool_catalog
@@ -119,6 +120,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         deterministic_reads_enabled: bool = False,
         semantic_agent_enabled: bool = True,
         semantic_default_brightness_step: int = 20,
+        semantic_default_temperature_step: float = 1.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -149,6 +151,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         self.semantic_core = SemanticAgentCore(
             SemanticPlanner(self._chat),
             default_brightness_step=semantic_default_brightness_step,
+            default_temperature_step=semantic_default_temperature_step,
         )
         self.context_policy = TokenAwareModelContextPolicy(
             model_name=self.model_name,
@@ -940,6 +943,26 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         substituted["device_names"] = [last_device]
         return substituted
 
+    async def _semantic_world_context(self) -> str:
+        """Return bounded capability identity for planning, never current-state truth."""
+
+        try:
+            identity_reader = getattr(self.mcp, "get_device_identities", None)
+            if not callable(identity_reader):
+                identity_reader = getattr(self.mcp, "get_cached_devices", None)
+            if not callable(identity_reader):
+                return ""
+            devices = await identity_reader()
+        except Exception:
+            return ""
+        world = build_semantic_world(
+            [item for item in (devices or []) if isinstance(item, dict)]
+        )
+        rendered = render_semantic_world(world)
+        if rendered:
+            self.request_metrics.increment("semantic_world_context")
+        return rendered
+
     async def _semantic_control_outcome(
         self,
         user_prompt: str,
@@ -953,11 +976,18 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             return None
 
         selected_device = self._selected_devices.get(session_key, "")
+        world_context = ""
+        if (
+            self._routine_control_arguments(user_prompt) is None
+            and is_semantic_control_candidate(user_prompt)
+        ):
+            world_context = await self._semantic_world_context()
         try:
             plan = await self.semantic_core.plan_control(
                 user_prompt,
                 history=conversation_history,
                 selected_device=selected_device,
+                world_context=world_context,
             )
         except Exception:
             self.request_metrics.increment("semantic_planner_failures")
@@ -994,6 +1024,8 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         )
         if arguments.get("command") == "adjust_level":
             self.request_metrics.increment("semantic_relative_controls")
+        if arguments.get("command") in {"set_temperature", "adjust_temperature"}:
+            self.request_metrics.increment("semantic_temperature_controls")
 
         return await self._routine_control_outcome(
             arguments,

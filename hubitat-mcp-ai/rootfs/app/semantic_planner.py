@@ -15,7 +15,8 @@ ChatCallable = Callable[
 
 _CONTROL_CANDIDATE = re.compile(
     r"\b(?:turn|switch|power|toggle|set|dim|brighten|bright|brighter|"
-    r"increase|decrease|raise|lower|adjust|brightness|dimmer)\b",
+    r"increase|decrease|raise|lower|adjust|brightness|dimmer|make|warmer|"
+    r"cooler|heat|heating|temperature|thermostat)\b",
     re.I,
 )
 _READ_QUESTION_PREFIX = re.compile(
@@ -79,8 +80,8 @@ class SemanticPlanner:
             "\"domain\":\"device_control|other\","
             "\"timing\":\"now|scheduled|unknown\","
             "\"target\":{\"scope\":\"room|device|home|selection|unknown\","
-            "\"name\":\"...\",\"kind\":\"light|switch|auto\"}|null,"
-            "\"action\":{\"operation\":\"turn_on|turn_off|toggle|set_level|adjust_level\","
+            "\"name\":\"...\",\"kind\":\"light|switch|thermostat|auto\"}|null,"
+            "\"action\":{\"operation\":\"turn_on|turn_off|toggle|set_level|adjust_level|set_temperature|adjust_temperature\","
             "\"value\":0-100|null,\"delta\":-100..100|null,"
             "\"direction\":\"increase|decrease\"|null,"
             "\"magnitude\":\"small|default|large\"}|null,"
@@ -89,29 +90,41 @@ class SemanticPlanner:
             "\"confidence\":\"high|medium|low\""
             "}\n\n"
             "Planning rules:\n"
-            "- device_control means an actual request to change an ordinary light "
-            "or switch now. Questions such as 'why did the light turn off?' or "
-            "'how do I increase brightness?' are domain=other.\n"
+            "- device_control means an actual request to change an ordinary light, "
+            "switch, or heating thermostat now. Questions such as 'why did the light "
+            "turn off?' or 'how do I increase brightness?' are domain=other.\n"
             "- Locks, doors, garages, security, firmware, network blocking, rule "
             "authoring, and other sensitive/admin actions are domain=other.\n"
             "- Scheduled/future/recurring actions use timing=scheduled so another "
             "planner can handle them.\n"
             "- Interpret natural paraphrases semantically: brighter/turn up/raise "
             "brightness -> adjust_level upward; dimmer/turn down/lower brightness "
-            "-> adjust_level downward.\n"
-            "- If the user explicitly gives an absolute level, use set_level with "
-            "value. If the user explicitly gives a relative amount, use adjust_level "
-            "with signed delta and matching direction.\n"
-            "- If the user asks for a relative brightness change but gives no amount, "
-            "use adjust_level with delta=null, the correct direction, and "
-            "magnitude=default. Do NOT ask for "
-            "an amount; HomeBrain has a configured default step. 'a little/slightly' "
-            "uses magnitude=small; 'a lot/much' uses magnitude=large.\n"
+            "-> adjust_level downward. Warmer/turn the heating up/raise the "
+            "temperature -> adjust_temperature upward; cooler/turn the heating down/"
+            "lower the temperature -> adjust_temperature downward.\n"
+            "- If the user explicitly gives an absolute light level, use set_level "
+            "with value. If the user explicitly gives an absolute thermostat "
+            "temperature/setpoint, use set_temperature with value. Relative light "
+            "changes use adjust_level; relative thermostat changes use "
+            "adjust_temperature, with signed delta and matching direction when an "
+            "amount is explicit.\n"
+            "- If the user asks for a relative brightness or temperature change but "
+            "gives no amount, use the corresponding adjust operation with delta=null, "
+            "the correct direction, and magnitude=default. Do NOT ask for an amount; "
+            "HomeBrain has stable configured defaults. 'a little/slightly' uses "
+            "magnitude=small; 'a lot/much' uses magnitude=large.\n"
             "- Preserve the user's target meaning. Use room when the user clearly "
-            "targets a room/group (for example 'living room lights'); for room scope "
-            "put only the room identity in name (for example 'Living Room', not "
-            "'Living Room lights'). Use device for one named device. Do not invent "
-            "existence.\n"
+            "targets a room/group (for example 'living room lights' or 'make Bedroom "
+            "1 warmer'); for room scope put only the room identity in name. Use "
+            "device for one named device. When capability-grounded home context is "
+            "provided, prefer its exact canonical room/device names and never invent "
+            "a device or room that is not present there.\n"
+            "- Capability-grounded home context is identity/capability metadata only, "
+            "not live state. Never infer whether something is on, off, hot, cold, or "
+            "currently at a particular level from that context.\n"
+            "- For thermostat temperature actions, only choose a target whose context "
+            "advertises heating_setpoint; otherwise ask for clarification or use "
+            "domain=other rather than guessing.\n"
             "- Ask for clarification only when the requested action or target itself "
             "is genuinely missing/unclear, not merely because a relative amount was "
             "omitted.\n"
@@ -124,11 +137,17 @@ class SemanticPlanner:
         *,
         history: Any = None,
         selected_device: str = "",
+        world_context: str = "",
     ) -> SemanticPlan:
         context: list[str] = []
         if selected_device.strip():
             context.append(f"Current selected device hint: {selected_device.strip()}")
         context.extend(_history_lines(history))
+        if world_context.strip():
+            context.append(
+                "Capability-grounded home context (identity/capability metadata; "
+                "NOT live state):\n" + world_context.strip()
+            )
         user_content = str(prompt or "").strip()
         if context:
             user_content = (

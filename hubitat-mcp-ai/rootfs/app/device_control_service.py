@@ -14,11 +14,14 @@ from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import increment_active_metric
+from semantic_world_model import device_abilities
 from time_expressions import strip_trailing_time
 
 
 logger = logging.getLogger("HomeBrainOS.DeviceControl")
 DEVICE_CONTROL_TOOL = "homebrain_control_devices"
+_THERMOSTAT_MIN_SETPOINT = 5.0
+_THERMOSTAT_MAX_SETPOINT = 35.0
 
 # hub_list_devices (via the hub_read_devices gateway) only reliably returns
 # capability data -- what _is_switch_device()/is_light_device() key off of
@@ -164,6 +167,24 @@ def split_all_lights_exclusion(name: str) -> tuple[str, list[str]]:
     return base, excluded
 
 
+def _wire_scalar(value: Any) -> str:
+    """Canonical MCP wire form for scalar command/poll arguments.
+
+    The upstream Hubitat MCP schema declares command parameters and
+    waitFor.expectedValue as strings even when the underlying device command
+    expects NUMBER. The server normalizes those strings against the device's
+    command declaration before dispatch. Keep typed numbers inside HomeBrain
+    for arithmetic/reporting and stringify only at this transport boundary.
+    """
+
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return str(int(number)) if number.is_integer() else f"{number:g}"
+    return str(value)
+
+
 def _human_join(items: list[str]) -> str:
     values = [str(item) for item in items if str(item).strip()]
     if not values:
@@ -253,6 +274,27 @@ class DeviceControlService:
         ).casefold()
         return "switch" in capability_text
 
+    @staticmethod
+    def _attribute_unit(device: dict[str, Any], attribute: str) -> str:
+        wanted = str(attribute).casefold()
+        for raw in (
+            device.get("attributes"),
+            device.get("states"),
+            device.get("currentStates"),
+        ):
+            if not isinstance(raw, list):
+                continue
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name") or item.get("attribute")
+                if str(name or "").casefold() != wanted:
+                    continue
+                unit = str(item.get("unit") or "").strip()
+                if unit:
+                    return unit
+        return ""
+
     def _matches_kind(self, kind: str, device: dict[str, Any]) -> bool:
         """True when ``device`` belongs to the requested ``device_kind``.
 
@@ -278,6 +320,8 @@ class DeviceControlService:
             return is_light_device(device)
         if kind == "switch":
             return self._is_switch_device(device) and not is_light_device(device)
+        if kind == "thermostat":
+            return "heating_setpoint" in device_abilities(device)
         return self._is_switch_device(device) or is_light_device(device)
 
     async def execute(
@@ -289,21 +333,31 @@ class DeviceControlService:
         command = str(arguments.get("command") or "").strip()
         if command in {"set_level", "adjust_level"} and kind == "auto":
             kind = "light"
+        if command in {"set_temperature", "adjust_temperature"} and kind == "auto":
+            kind = "thermostat"
         level_raw = arguments.get("level")
+        setpoint_raw = arguments.get("setpoint")
         delta_raw = arguments.get("delta")
         try:
             level = int(level_raw) if level_raw is not None else None
         except (TypeError, ValueError):
             level = None
         try:
-            delta = int(delta_raw) if delta_raw is not None else None
+            setpoint = float(setpoint_raw) if setpoint_raw is not None else None
+        except (TypeError, ValueError):
+            setpoint = None
+        try:
+            delta = float(delta_raw) if delta_raw is not None else None
         except (TypeError, ValueError):
             delta = None
         if (
             bool(room) == bool(names)
             or not isinstance(names, list)
-            or kind not in {"auto", "light", "switch"}
-            or command not in {"on", "off", "toggle", "set_level", "adjust_level"}
+            or kind not in {"auto", "light", "switch", "thermostat"}
+            or command not in {
+                "on", "off", "toggle", "set_level", "adjust_level",
+                "set_temperature", "adjust_temperature",
+            }
             or (
                 command == "set_level"
                 and (
@@ -321,6 +375,23 @@ class DeviceControlService:
                     or not -100 <= delta <= 100
                 )
             )
+            or (
+                command == "set_temperature"
+                and (
+                    kind != "thermostat"
+                    or setpoint is None
+                    or not _THERMOSTAT_MIN_SETPOINT <= setpoint <= _THERMOSTAT_MAX_SETPOINT
+                )
+            )
+            or (
+                command == "adjust_temperature"
+                and (
+                    kind != "thermostat"
+                    or delta is None
+                    or delta == 0
+                    or not -10 <= delta <= 10
+                )
+            )
         ):
             return MCPToolResult(
                 DEVICE_CONTROL_TOOL,
@@ -332,7 +403,9 @@ class DeviceControlService:
                     "error": (
                         "Provide exactly one of room or device_names, plus a valid "
                         "device_kind and command. set_level requires level 0-100; "
-                        "adjust_level requires a non-zero delta from -100 to 100."
+                        "adjust_level requires a non-zero delta from -100 to 100; "
+                        "set_temperature requires a thermostat setpoint from 5-35; "
+                        "adjust_temperature requires a non-zero delta from -10 to 10."
                     ),
                 },
                 is_error=True,
@@ -513,6 +586,70 @@ class DeviceControlService:
         identity_candidates = [
             device for device in identity_manifest if self._matches_kind(kind, device)
         ]
+
+        # A thermostat mutation must never widen past an exact known device
+        # whose identity explicitly lacks heating-setpoint ability. Doing a
+        # second network lookup cannot safely turn "generic Thermostat" into
+        # permission to set a temperature, and on a warm complete identity
+        # snapshot it only adds latency before reaching the same conclusion.
+        # Fail closed at the semantic capability boundary.
+        if kind == "thermostat" and not room and names:
+            exact_cached_reasons = {
+                "exact normalized name",
+                "exact semantic room and device name",
+                "exact semantic name with device-kind token omitted",
+            }
+            for requested in names:
+                identity_resolution = resolve_device_candidate(
+                    str(requested), identity_manifest
+                )
+                if (
+                    identity_resolution.target is not None
+                    and identity_resolution.reason in exact_cached_reasons
+                    and not self._matches_kind(
+                        "thermostat", identity_resolution.target
+                    )
+                ):
+                    label = str(
+                        identity_resolution.matched_name
+                        or identity_resolution.target.get("label")
+                        or identity_resolution.target.get("name")
+                        or requested
+                    )
+                    error_message = (
+                        f"{label} does not advertise a controllable heating setpoint; "
+                        "no temperature command was sent."
+                    )
+                    data = {
+                        "success": False,
+                        "error": error_message,
+                        "matched": [],
+                        "executed": 0,
+                        "choices": [],
+                    }
+                    self._record_evidence(
+                        "hub_read_devices",
+                        {
+                            "tool": "hub_list_devices",
+                            "source": identity_source,
+                        },
+                        success=True,
+                        elapsed_ms=round(
+                            (time.monotonic() - identity_started) * 1000
+                        ),
+                        summary="Exact target lacks heating-setpoint ability",
+                        supports_live_claim=False,
+                        evidence_kind="control_target_resolution",
+                    )
+                    return MCPToolResult(
+                        DEVICE_CONTROL_TOOL,
+                        arguments,
+                        {},
+                        error_message,
+                        data,
+                        is_error=True,
+                    )
+
         fast_targets: list[dict[str, Any]] = []
         if room:
             wanted_room = normalized_name(room)
@@ -914,7 +1051,12 @@ class DeviceControlService:
             target_attributes = device_attributes(target)
             pre_switch = str(target_attributes.get("switch") or "").casefold()
             pre_level = target_attributes.get("level")
+            pre_setpoint = target_attributes.get("heatingSetpoint")
+            temperature_unit = self._attribute_unit(target, "heatingSetpoint")
             target_level: int | None = level if command == "set_level" else None
+            target_setpoint: float | None = (
+                setpoint if command == "set_temperature" else None
+            )
 
             if command == "adjust_level":
                 # Relative brightness is state-dependent. Never calculate it
@@ -978,19 +1120,94 @@ class DeviceControlService:
                     evidence_kind="control_precondition_state",
                 )
 
+            if command == "adjust_temperature":
+                state_arguments = {
+                    "tool": "hub_get_device_attribute",
+                    "args": {
+                        "deviceId": device_id,
+                        "attribute": "heatingSetpoint",
+                    },
+                }
+                state_started = time.monotonic()
+                try:
+                    async with semaphore:
+                        state_result = await self.mcp.call_tool(
+                            "hub_read_devices", state_arguments
+                        )
+                    current_setpoint = (
+                        state_result.data.get("value")
+                        if self._tool_succeeded(state_result)
+                        and isinstance(state_result.data, dict)
+                        else None
+                    )
+                    numeric_setpoint = float(current_setpoint)
+                    if not _THERMOSTAT_MIN_SETPOINT <= numeric_setpoint <= _THERMOSTAT_MAX_SETPOINT:
+                        raise ValueError("heatingSetpoint outside safe range")
+                    pre_setpoint = numeric_setpoint
+                    target_setpoint = round(
+                        max(
+                            _THERMOSTAT_MIN_SETPOINT,
+                            min(
+                                _THERMOSTAT_MAX_SETPOINT,
+                                numeric_setpoint + float(delta or 0),
+                            ),
+                        ),
+                        2,
+                    )
+                except Exception as exc:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        state_arguments,
+                        success=False,
+                        elapsed_ms=round(
+                            (time.monotonic() - state_started) * 1000
+                        ),
+                        summary=f"heatingSetpoint {label}: unavailable ({exc})",
+                        supports_live_claim=True,
+                        evidence_kind="control_precondition_state",
+                    )
+                    return {
+                        "id": device_id,
+                        "label": label,
+                        "room": room_name(target),
+                        "success": False,
+                        "command_sent": False,
+                        "verified": False,
+                        "message": "Current heating setpoint is unavailable.",
+                        "verification_message": "",
+                        "temperature_unit": temperature_unit,
+                        "already_in_state": False,
+                        "changed": False,
+                    }
+                self._record_evidence(
+                    "hub_read_devices",
+                    state_arguments,
+                    success=True,
+                    elapsed_ms=round((time.monotonic() - state_started) * 1000),
+                    summary=f"heatingSetpoint {label}: {pre_setpoint:g}",
+                    supports_live_claim=True,
+                    evidence_kind="control_precondition_state",
+                )
+
             expected_value: Any | None = (
                 command if command in {"on", "off"}
                 else target_level if command in {"set_level", "adjust_level"}
+                else target_setpoint
+                if command in {"set_temperature", "adjust_temperature"}
                 else None
             )
             wait_attribute = (
                 "level"
                 if command in {"set_level", "adjust_level"}
+                else "heatingSetpoint"
+                if command in {"set_temperature", "adjust_temperature"}
                 else "switch"
             )
             hub_command = (
                 "setLevel"
                 if command in {"set_level", "adjust_level"}
+                else "setHeatingSetpoint"
+                if command in {"set_temperature", "adjust_temperature"}
                 else command
             )
             if command == "toggle":
@@ -1034,15 +1251,17 @@ class DeviceControlService:
                     "deviceId": device_id,
                     "command": hub_command,
                     **(
-                        {"parameters": [target_level]}
+                        {"parameters": [_wire_scalar(target_level)]}
                         if command in {"set_level", "adjust_level"}
+                        else {"parameters": [_wire_scalar(target_setpoint)]}
+                        if command in {"set_temperature", "adjust_temperature"}
                         else {}
                     ),
                     **(
                         {
                             "waitFor": {
                                 "attribute": wait_attribute,
-                                "expectedValue": expected_value,
+                                "expectedValue": _wire_scalar(expected_value),
                                 "timeoutMs": 5000,
                             }
                         }
@@ -1090,12 +1309,26 @@ class DeviceControlService:
                 if command_success
                 else "failed"
             )
+            failure_detail = ""
+            if not command_success:
+                if isinstance(getattr(result, "data", None), dict):
+                    failure_detail = str(
+                        result.data.get("error")
+                        or result.data.get("message")
+                        or ""
+                    ).strip()
+                if not failure_detail:
+                    failure_detail = str(message or "").strip()
+                failure_detail = " ".join(failure_detail.split())[:220]
+            evidence_summary = f"{command} {label}: {evidence_outcome}"
+            if failure_detail:
+                evidence_summary += f" ({failure_detail})"
             self._record_evidence(
                 "hub_manage_devices",
                 call_arguments,
                 success=command_success and verified is not False,
                 elapsed_ms=round((time.monotonic() - started) * 1000),
-                summary=f"{command} {label}: {evidence_outcome}",
+                summary=evidence_summary,
                 supports_live_claim=True,
                 evidence_kind="device_command_result",
             )
@@ -1110,6 +1343,14 @@ class DeviceControlService:
                     already_in_state = (
                         pre_level is not None
                         and float(pre_level) == float(target_level)
+                    )
+                except (TypeError, ValueError):
+                    already_in_state = False
+            elif command in {"set_temperature", "adjust_temperature"} and target_setpoint is not None:
+                try:
+                    already_in_state = (
+                        pre_setpoint is not None
+                        and float(pre_setpoint) == float(target_setpoint)
                     )
                 except (TypeError, ValueError):
                     already_in_state = False
@@ -1141,6 +1382,20 @@ class DeviceControlService:
                     if command in {"set_level", "adjust_level"}
                     else {}
                 ),
+                **(
+                    {
+                        "previous_setpoint": pre_setpoint,
+                        "target_setpoint": target_setpoint,
+                        "delta_applied": (
+                            float(target_setpoint) - float(pre_setpoint)
+                            if pre_setpoint is not None and target_setpoint is not None
+                            else None
+                        ),
+                        "temperature_unit": temperature_unit,
+                    }
+                    if command in {"set_temperature", "adjust_temperature"}
+                    else {}
+                ),
             }
 
         results = await asyncio.gather(*(execute(target) for target in unique_targets))
@@ -1166,7 +1421,12 @@ class DeviceControlService:
             "success": not failed and bool(succeeded),
             "command": command,
             **({"level": level} if command == "set_level" else {}),
-            **({"delta": delta} if command == "adjust_level" else {}),
+            **({"setpoint": setpoint} if command == "set_temperature" else {}),
+            **(
+                {"delta": delta}
+                if command in {"adjust_level", "adjust_temperature"}
+                else {}
+            ),
             "device_kind": kind,
             "matched": len(unique_targets),
             "executed": len(results),

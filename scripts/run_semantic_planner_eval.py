@@ -93,7 +93,10 @@ async def main() -> int:
             prompt = str(case["prompt"])
             expected = dict(case["expected"])
             try:
-                plan = await planner.plan(prompt)
+                plan = await planner.plan(
+                    prompt,
+                    world_context=str(case.get("world_context") or ""),
+                )
                 actual = _actual(plan)
                 mismatches = _matches(expected, actual)
             except Exception as exc:

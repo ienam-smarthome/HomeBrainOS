@@ -2080,3 +2080,99 @@ async def test_semantic_planner_declines_advice_question_without_executing(
 
     assert base_calls == ["how do I increase living room brightness?"]
     assert outcome.message == "Use the brightness control."
+
+
+
+@pytest.mark.asyncio
+async def test_semantic_thermostat_plan_uses_capability_world_and_verified_control_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ThermostatIdentityMCP:
+        async def get_device_identities(self):
+            return [
+                {
+                    "id": "7331",
+                    "label": "Bedroom 1 TRV",
+                    "roomName": "Bedroom 1",
+                    "capabilities": [
+                        "ThermostatHeatingSetpoint",
+                        "TemperatureMeasurement",
+                        "Switch",
+                    ],
+                    "commands": ["setHeatingSetpoint"],
+                    "attributes": [
+                        {"name": "heatingSetpoint", "value": 20.0, "unit": "°C"},
+                    ],
+                }
+            ]
+
+    control_calls: list[dict[str, object]] = []
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "success": True,
+                "command": "adjust_temperature",
+                "delta": 1.0,
+                "succeeded": [
+                    {
+                        "id": "7331",
+                        "label": "Bedroom 1 TRV",
+                        "changed": True,
+                        "previous_setpoint": 20.0,
+                        "target_setpoint": 21.0,
+                        "temperature_unit": "°C",
+                    }
+                ],
+                "failed": [],
+            },
+        )
+
+    async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError("semantic thermostat control must not enter general loop")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
+
+    ai = FakeAI(
+        '{"version":"1","domain":"device_control","timing":"now",'
+        '"target":{"scope":"room","name":"Bedroom 1","kind":"thermostat"},'
+        '"action":{"operation":"adjust_temperature","value":null,"delta":null,'
+        '"direction":"increase","magnitude":"default"},'
+        '"needs_clarification":false,"clarification_question":"",'
+        '"confidence":"high","source":"model"}'
+    )
+    agent = UnifiedMCPAgent(ThermostatIdentityMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "make bedroom one warmer",
+        session_id="semantic-thermostat",
+    )
+
+    assert control_calls == [{
+        "room": "Bedroom 1",
+        "device_kind": "thermostat",
+        "command": "adjust_temperature",
+        "delta": 1.0,
+    }]
+    assert outcome.message == (
+        "Heating setpoint increased by 1°: "
+        "Bedroom 1 TRV 20°C → 21°C."
+    )
+    assert outcome.metrics["outcome"] == "success"
+    assert outcome.metrics["counters"]["semantic_planner_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_temperature_controls"] == 1
+    assert outcome.metrics["counters"]["semantic_world_context"] == 1
+
+    planner_payload = ai.requests[0]["json"]
+    planner_user = planner_payload["messages"][1]["content"]
+    assert "Capability-grounded home context" in planner_user
+    assert "Bedroom 1 TRV" in planner_user
+    assert "heating_setpoint" in planner_user
+    assert "7331" not in planner_user
+    assert "setHeatingSetpoint" not in planner_user

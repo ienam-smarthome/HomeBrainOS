@@ -140,6 +140,9 @@ async def test_semantic_planner_uses_no_tools_and_keeps_wire_details_out_of_prom
         "dim Bedroom 1",
         "lower hallway brightness a little",
         "set Livingroom Light 2 to 40%",
+        "make Bedroom 1 warmer",
+        "lower the Living Room temperature",
+        "set Bedroom 2 temperature to 20.5 degrees",
     ],
 )
 def test_semantic_control_candidate_is_paraphrase_broad(prompt: str) -> None:
@@ -161,6 +164,132 @@ def test_semantic_eval_corpus_covers_paraphrases_safety_and_scheduling() -> None
     expected = [case["expected"] for case in cases]
     assert any(item.get("operation") == "adjust_level" for item in expected)
     assert any(item.get("operation") == "set_level" for item in expected)
+    assert any(item.get("operation") == "adjust_temperature" for item in expected)
+    assert any(item.get("operation") == "set_temperature" for item in expected)
     assert any(item.get("domain") == "other" for item in expected)
     assert any(item.get("timing") == "scheduled" for item in expected)
     assert any(item.get("needs_clarification") is True for item in expected)
+
+
+
+def test_semantic_temperature_action_supports_fractional_setpoints_and_deltas() -> None:
+    absolute = SemanticAction(operation="set_temperature", value=20.5)
+    relative = SemanticAction(operation="adjust_temperature", delta=-0.5)
+
+    assert absolute.value == 20.5
+    assert relative.delta == -0.5
+    assert relative.direction == "decrease"
+
+
+def test_semantic_thermostat_target_is_executable_routine_control() -> None:
+    plan = SemanticPlan(
+        domain="device_control",
+        target=SemanticTarget(
+            scope="room",
+            name="Bedroom 1",
+            kind="thermostat",
+        ),
+        action=SemanticAction(
+            operation="adjust_temperature",
+            direction="increase",
+        ),
+    )
+
+    assert plan.executable_routine_control is True
+
+
+def test_semantic_core_compiles_temperature_defaults_without_protocol_names() -> None:
+    async def unused_chat(_messages, _tools):
+        raise AssertionError("compile must not call model")
+
+    core = SemanticAgentCore(
+        SemanticPlanner(unused_chat),
+        default_brightness_step=20,
+        default_temperature_step=1.0,
+    )
+    base = {
+        "domain": "device_control",
+        "timing": "now",
+        "target": {"scope": "room", "name": "Bedroom 1", "kind": "thermostat"},
+        "needs_clarification": False,
+        "clarification_question": "",
+        "confidence": "high",
+        "source": "model",
+    }
+
+    warmer = SemanticPlan.model_validate({
+        **base,
+        "action": {
+            "operation": "adjust_temperature",
+            "direction": "increase",
+            "delta": None,
+            "magnitude": "default",
+        },
+    })
+    slightly_cooler = SemanticPlan.model_validate({
+        **base,
+        "action": {
+            "operation": "adjust_temperature",
+            "direction": "decrease",
+            "delta": None,
+            "magnitude": "small",
+        },
+    })
+    absolute = SemanticPlan.model_validate({
+        **base,
+        "action": {
+            "operation": "set_temperature",
+            "value": 20.5,
+        },
+    })
+
+    assert core.compile_control(warmer) == {
+        "room": "Bedroom 1",
+        "command": "adjust_temperature",
+        "device_kind": "thermostat",
+        "delta": 1.0,
+    }
+    assert core.compile_control(slightly_cooler)["delta"] == -0.5
+    assert core.compile_control(absolute) == {
+        "room": "Bedroom 1",
+        "command": "set_temperature",
+        "device_kind": "thermostat",
+        "setpoint": 20.5,
+    }
+
+
+@pytest.mark.asyncio
+async def test_semantic_planner_receives_capability_world_as_non_live_context() -> None:
+    captured = {}
+
+    async def fake_chat(messages, tools):
+        captured["messages"] = messages
+        captured["tools"] = tools
+        return {
+            "content": (
+                '{"version":"1","domain":"device_control","timing":"now",'
+                '"target":{"scope":"room","name":"Bedroom 1","kind":"thermostat"},'
+                '"action":{"operation":"adjust_temperature","value":null,'
+                '"delta":null,"direction":"increase","magnitude":"default"},'
+                '"needs_clarification":false,"clarification_question":"",'
+                '"confidence":"high","source":"fastpath"}'
+            )
+        }
+
+    planner = SemanticPlanner(fake_chat)
+    plan = await planner.plan(
+        "make bedroom one warmer",
+        world_context=(
+            '{"live_state":false,"rooms":[{"name":"Bedroom 1",'
+            '"abilities":["heating_setpoint"],"devices":["Bedroom 1 TRV"]}]}'
+        ),
+    )
+
+    assert plan.source == "model"
+    assert plan.target is not None
+    assert plan.target.name == "Bedroom 1"
+    assert captured["tools"] == []
+    user_context = captured["messages"][1]["content"]
+    assert "Capability-grounded home context" in user_context
+    assert "NOT live state" in user_context
+    assert "Bedroom 1 TRV" in user_context

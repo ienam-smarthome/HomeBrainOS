@@ -199,5 +199,71 @@
       "timing": "now",
       "needs_clarification": true
     }
+  },
+  {
+    "prompt": "make bedroom one warmer",
+    "world_context": "{\"live_state\":false,\"rooms\":[{\"name\":\"Bedroom 1\",\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"],\"devices\":[\"Bedroom 1 TRV\",\"Bedroom 1 Light\"]},{\"name\":\"Living Room\",\"abilities\":[\"heating_setpoint\",\"brightness\",\"switch\"],\"devices\":[\"Livingroom TRV\",\"Livingroom Light 1\",\"Livingroom Light 2\"]}],\"devices\":[{\"name\":\"Bedroom 1 TRV\",\"room\":\"Bedroom 1\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]},{\"name\":\"Bedroom 1 Light\",\"room\":\"Bedroom 1\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]},{\"name\":\"Livingroom TRV\",\"room\":\"Living Room\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]}]}",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "bedroom 1",
+      "operation": "adjust_temperature",
+      "direction": "increase",
+      "delta": null,
+      "magnitude": "default",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "lower the living room temperature a little",
+    "world_context": "{\"live_state\":false,\"rooms\":[{\"name\":\"Bedroom 1\",\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"],\"devices\":[\"Bedroom 1 TRV\",\"Bedroom 1 Light\"]},{\"name\":\"Living Room\",\"abilities\":[\"heating_setpoint\",\"brightness\",\"switch\"],\"devices\":[\"Livingroom TRV\",\"Livingroom Light 1\",\"Livingroom Light 2\"]}],\"devices\":[{\"name\":\"Bedroom 1 TRV\",\"room\":\"Bedroom 1\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]},{\"name\":\"Bedroom 1 Light\",\"room\":\"Bedroom 1\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]},{\"name\":\"Livingroom TRV\",\"room\":\"Living Room\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]}]}",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "living room",
+      "operation": "adjust_temperature",
+      "direction": "decrease",
+      "delta": null,
+      "magnitude": "small",
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "set Bedroom 1 to 20.5 degrees",
+    "world_context": "{\"live_state\":false,\"rooms\":[{\"name\":\"Bedroom 1\",\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"],\"devices\":[\"Bedroom 1 TRV\",\"Bedroom 1 Light\"]},{\"name\":\"Living Room\",\"abilities\":[\"heating_setpoint\",\"brightness\",\"switch\"],\"devices\":[\"Livingroom TRV\",\"Livingroom Light 1\",\"Livingroom Light 2\"]}],\"devices\":[{\"name\":\"Bedroom 1 TRV\",\"room\":\"Bedroom 1\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]},{\"name\":\"Bedroom 1 Light\",\"room\":\"Bedroom 1\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]},{\"name\":\"Livingroom TRV\",\"room\":\"Living Room\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]}]}",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "bedroom 1",
+      "operation": "set_temperature",
+      "value": 20.5,
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "raise Bedroom 1 temperature by half a degree",
+    "world_context": "{\"live_state\":false,\"rooms\":[{\"name\":\"Bedroom 1\",\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"],\"devices\":[\"Bedroom 1 TRV\",\"Bedroom 1 Light\"]},{\"name\":\"Living Room\",\"abilities\":[\"heating_setpoint\",\"brightness\",\"switch\"],\"devices\":[\"Livingroom TRV\",\"Livingroom Light 1\",\"Livingroom Light 2\"]}],\"devices\":[{\"name\":\"Bedroom 1 TRV\",\"room\":\"Bedroom 1\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]},{\"name\":\"Bedroom 1 Light\",\"room\":\"Bedroom 1\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]},{\"name\":\"Livingroom TRV\",\"room\":\"Living Room\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]}]}",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "target_scope": "room",
+      "target_name": "bedroom 1",
+      "operation": "adjust_temperature",
+      "direction": "increase",
+      "delta": 0.5,
+      "needs_clarification": false
+    }
+  },
+  {
+    "prompt": "make the bedroom sensor warmer",
+    "world_context": "{\"live_state\":false,\"rooms\":[{\"name\":\"Bedroom 1\",\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"],\"devices\":[\"Bedroom 1 TRV\",\"Bedroom 1 Light\"]},{\"name\":\"Living Room\",\"abilities\":[\"heating_setpoint\",\"brightness\",\"switch\"],\"devices\":[\"Livingroom TRV\",\"Livingroom Light 1\",\"Livingroom Light 2\"]}],\"devices\":[{\"name\":\"Bedroom 1 TRV\",\"room\":\"Bedroom 1\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]},{\"name\":\"Bedroom 1 Light\",\"room\":\"Bedroom 1\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]},{\"name\":\"Livingroom TRV\",\"room\":\"Living Room\",\"kinds\":[\"thermostat\",\"switch\"],\"abilities\":[\"heating_setpoint\",\"temperature\",\"switch\"]}]}",
+    "expected": {
+      "domain": "device_control",
+      "timing": "now",
+      "needs_clarification": true
+    }
   }
 ]

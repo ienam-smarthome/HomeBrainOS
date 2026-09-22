@@ -87,8 +87,9 @@ _SENSITIVE_GATEWAYS = {HUB_UPDATE_FIRMWARE_TOOL}
 # confirmation) instead of being waved through as a safe read.
 _DIRECT_MANAGE_TOOLS = {"hub_manage_virtual_device", "hub_manage_mode"}
 _ROUTINE_DEVICE_COMMANDS = {
-    "off", "on", "ping", "refresh", "set_color", "set_color_temperature",
-    "set_level", "toggle", "update_check",
+    "adjust_level", "adjust_temperature", "off", "on", "ping", "refresh",
+    "set_color", "set_color_temperature", "set_heating_setpoint", "set_level",
+    "set_temperature", "toggle", "update_check",
 }
 _SENSITIVE_DEVICE_COMMANDS = {
     "close", "lock", "open", "unlock",
@@ -958,38 +959,47 @@ def home_snapshot_tool() -> MCPTool:
 def control_devices_tool() -> MCPTool:
     return MCPTool(
         LOCAL_CONTROL_TOOL,
-        "Routine Hubitat light/switch on, off, toggle, absolute level, or relative brightness control.",
+        "Routine light, switch, brightness, and heating-setpoint control.",
         {
             "type": "object",
             "properties": {
                 "room": {
                     "type": "string",
-                    "description": "Exact room; controls every matching device.",
+                    "description": "Exact room name.",
                 },
                 "device_names": {
                     "type": "array",
                     "items": {"type": "string"},
                     "minItems": 1,
-                    "description": "Exact device labels; do not combine with room.",
+                    "description": "Exact device labels.",
                 },
                 "device_kind": {
                     "type": "string",
-                    "enum": ["auto", "light", "switch"],
+                    "enum": ["auto", "light", "switch", "thermostat"],
                 },
                 "command": {
                     "type": "string",
-                    "enum": ["on", "off", "toggle", "set_level", "adjust_level"],
+                    "enum": [
+                        "on", "off", "toggle", "set_level", "adjust_level",
+                        "set_temperature", "adjust_temperature",
+                    ],
                 },
                 "level": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 100,
                 },
+                "setpoint": {
+                    "type": "number",
+                    "minimum": 5,
+                    "maximum": 35,
+                    "description": "Heating setpoint for set_temperature.",
+                },
                 "delta": {
-                    "type": "integer",
+                    "type": "number",
                     "minimum": -100,
                     "maximum": 100,
-                    "description": "Required for adjust_level; non-zero relative brightness change.",
+                    "description": "Signed relative adjustment.",
                 },
             },
             "required": ["device_kind", "command"],
