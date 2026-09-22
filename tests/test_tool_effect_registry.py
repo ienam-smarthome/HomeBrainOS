@@ -738,6 +738,73 @@ async def test_routine_manage_write_executes_without_confirmation():
 
 
 @pytest.mark.asyncio
+async def test_rule_write_setting_blocks_model_generated_rule_mutation():
+    class RuleGatewayMCP:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, object]]] = []
+
+        async def list_tools(self):
+            return [
+                gateway("hub_search_tools", readOnlyHint=True),
+                gateway("hub_manage_rule_machine", destructiveHint=True),
+            ]
+
+        async def get_cached_devices(self):
+            return []
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            if name == "hub_search_tools":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "",
+                    {"matches": [{"gateway": "hub_manage_rule_machine"}]},
+                )
+            raise AssertionError("Rule Machine write must not reach MCP")
+
+    mcp = RuleGatewayMCP()
+    arguments = {
+        "tool": "hub_set_rule",
+        "args": {
+            "name": "Weekday Couch Lamp",
+            "addAction": {
+                "capability": "runCommand",
+                "deviceIds": ["42"],
+                "capabilityFilter": "Switch",
+                "command": "on",
+            },
+        },
+    }
+    ai = FakeAI([
+        {"message": {"role": "assistant", "tool_calls": [{
+            "function": {
+                "name": "hub_manage_rule_machine",
+                "arguments": arguments,
+            }
+        }]}},
+    ])
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        rule_write_enabled=False,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Every weekday at 7am, turn Couch Lamp on",
+        session_id="model-rule-writing-disabled",
+    )
+
+    assert outcome.message == (
+        "Rule Machine writes are disabled in HomeBrain settings. "
+        "No rule was queued or changed."
+    )
+    assert all(name != "hub_manage_rule_machine" for name, _ in mcp.calls)
+
+@pytest.mark.asyncio
 async def test_sensitive_manage_write_still_waits_for_confirmation():
     mcp = GatewayMCP()
     arguments = {
