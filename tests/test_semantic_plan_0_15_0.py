@@ -10,6 +10,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from semantic_agent_core import SemanticAgentCore  # noqa: E402
+from semantic_fast_path import semantic_fast_plan  # noqa: E402
 from semantic_plan import (  # noqa: E402
     SemanticAction,
     SemanticPlan,
@@ -170,6 +171,67 @@ def test_semantic_eval_corpus_covers_paraphrases_safety_and_scheduling() -> None
     assert any(item.get("timing") == "scheduled" for item in expected)
     assert any(item.get("needs_clarification") is True for item in expected)
 
+
+
+@pytest.mark.parametrize(
+    ("prompt", "operation", "direction", "delta", "magnitude", "kind"),
+    [
+        ("increase hallway brightness", "adjust_level", "increase", None, "default", "light"),
+        ("lower hallway brightness a little", "adjust_level", "decrease", None, "small", "light"),
+        ("raise bedroom 1 brightness by 15%", "adjust_level", "increase", 15.0, "default", "light"),
+        ("dim bedroom 1 by 10%", "adjust_level", "decrease", -10.0, "default", "light"),
+        ("make kitchen much brighter", "adjust_level", "increase", None, "large", "light"),
+        ("turn the living room lights up", "adjust_level", "increase", None, "default", "light"),
+        ("make bedroom one warmer", "adjust_temperature", "increase", None, "default", "thermostat"),
+        ("lower the living room temperature a little", "adjust_temperature", "decrease", None, "small", "thermostat"),
+        ("raise Bedroom 1 temperature by half a degree", "adjust_temperature", "increase", 0.5, "default", "thermostat"),
+    ],
+)
+def test_clear_semantic_controls_have_zero_model_plans(
+    prompt: str,
+    operation: str,
+    direction: str,
+    delta: float | None,
+    magnitude: str,
+    kind: str,
+) -> None:
+    plan = semantic_fast_plan(prompt)
+
+    assert plan is not None
+    assert plan.source == "fastpath"
+    assert plan.target is not None
+    assert plan.target.kind == kind
+    assert plan.action is not None
+    assert plan.action.operation == operation
+    assert plan.action.direction == direction
+    assert plan.action.delta == delta
+    assert plan.action.magnitude == magnitude
+
+
+def test_clear_semantic_fast_path_handles_absolute_thermostat_setpoint() -> None:
+    plan = semantic_fast_plan("set Bedroom 2 temperature to 20.5 degrees")
+
+    assert plan is not None
+    assert plan.source == "fastpath"
+    assert plan.target is not None
+    assert plan.target.name == "Bedroom 2"
+    assert plan.target.kind == "thermostat"
+    assert plan.action is not None
+    assert plan.action.operation == "set_temperature"
+    assert plan.action.value == 20.5
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "how do I increase hallway brightness?",
+        "increase hallway brightness tomorrow",
+        "make the hallway brighter every evening",
+        "set Bedroom 2 temperature to 20.5 degrees at 7pm",
+    ],
+)
+def test_semantic_fast_path_refuses_questions_and_scheduled_requests(prompt: str) -> None:
+    assert semantic_fast_plan(prompt) is None
 
 
 def test_semantic_temperature_action_supports_fractional_setpoints_and_deltas() -> None:
