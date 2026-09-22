@@ -943,7 +943,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         substituted["device_names"] = [last_device]
         return substituted
 
-    async def _semantic_world_context(self) -> str:
+    async def _semantic_world_context(self, focus_text: str = "") -> str:
         """Return bounded capability identity for planning, never current-state truth."""
 
         try:
@@ -956,7 +956,8 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         except Exception:
             return ""
         world = build_semantic_world(
-            [item for item in (devices or []) if isinstance(item, dict)]
+            [item for item in (devices or []) if isinstance(item, dict)],
+            focus_text=focus_text,
         )
         rendered = render_semantic_world(world)
         if rendered:
@@ -981,7 +982,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             self._routine_control_arguments(user_prompt) is None
             and is_semantic_control_candidate(user_prompt)
         ):
-            world_context = await self._semantic_world_context()
+            world_context = await self._semantic_world_context(user_prompt)
         try:
             plan = await self.semantic_core.plan_control(
                 user_prompt,
