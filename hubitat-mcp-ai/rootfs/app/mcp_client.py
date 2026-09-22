@@ -98,6 +98,7 @@ class HubitatMCPClient:
         device_cache_seconds: float = 12,
         identity_cache_seconds: float = 120,
         max_concurrent_calls: int = 2,
+        batch_device_commands_enabled: bool = True,
         retry_attempts: int = 3,
         retry_backoff_seconds: float = 0.25,
         clock: Callable[[], float] = time.monotonic,
@@ -107,6 +108,7 @@ class HubitatMCPClient:
         self.device_cache_seconds = max(0.0, float(device_cache_seconds))
         self.identity_cache_seconds = max(0.0, float(identity_cache_seconds))
         self.max_concurrent_calls = max(1, min(8, int(max_concurrent_calls)))
+        self.batch_device_commands_enabled = bool(batch_device_commands_enabled)
         self.retry_attempts = max(1, min(5, int(retry_attempts)))
         self.retry_backoff_seconds = max(
             0.0, min(5.0, float(retry_backoff_seconds))
@@ -132,6 +134,8 @@ class HubitatMCPClient:
         self._snapshot_lock = asyncio.Lock()
         self._request_semaphore = asyncio.Semaphore(self.max_concurrent_calls)
         self._active_requests = 0
+        self._batch_device_commands_supported: bool | None = None
+        self._multi_device_attribute_poll_supported: bool | None = None
         self.server_info: dict[str, Any] = {}
         self._cached_devices: list[dict[str, Any]] = []
         self._devices_cached_at = 0.0
@@ -263,6 +267,8 @@ class HubitatMCPClient:
                 )
                 parsed[tool.name] = tool
             self._tools = parsed
+            self._batch_device_commands_supported = None
+            self._multi_device_attribute_poll_supported = None
             return list(parsed.values())
         finally:
             self._lock.release()
@@ -270,6 +276,46 @@ class HubitatMCPClient:
     async def get_tool(self, name: str) -> MCPTool | None:
         await self.list_tools()
         return self._tools.get(name)
+
+    @staticmethod
+    def _tool_contract_text(tool: MCPTool | None) -> str:
+        if tool is None:
+            return ""
+        try:
+            schema = json.dumps(tool.input_schema, ensure_ascii=False)
+        except Exception:
+            schema = ""
+        return f"{tool.description}\n{schema}".casefold()
+
+    async def supports_device_command_batch(self) -> bool:
+        """Return whether the live MCP catalog advertises batched device writes."""
+
+        if not self.batch_device_commands_enabled:
+            return False
+        if self._batch_device_commands_supported is not None:
+            return self._batch_device_commands_supported
+        tool = await self.get_tool("hub_manage_devices")
+        contract = self._tool_contract_text(tool)
+        supported = (
+            "hub_call_device_command" in contract
+            and "commands" in contract
+        )
+        self._batch_device_commands_supported = supported
+        return supported
+
+    async def supports_multi_device_attribute_poll(self) -> bool:
+        """Return whether the live MCP catalog advertises deviceIds polling."""
+
+        if self._multi_device_attribute_poll_supported is not None:
+            return self._multi_device_attribute_poll_supported
+        tool = await self.get_tool("hub_read_devices")
+        contract = self._tool_contract_text(tool)
+        supported = (
+            "hub_get_device_attribute" in contract
+            and "deviceids" in contract
+        )
+        self._multi_device_attribute_poll_supported = supported
+        return supported
 
     def peek_cached_devices(self) -> list[dict[str, Any]]:
         """Return the current detailed manifest without triggering a hub read."""
