@@ -943,24 +943,40 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         substituted["device_names"] = [last_device]
         return substituted
 
-    async def _semantic_world_context(self) -> str:
-        """Return bounded capability identity for planning, never current-state truth."""
+    async def _semantic_world_context(
+        self,
+        *,
+        include_grounding_world: bool = False,
+    ) -> str | tuple[str, dict[str, Any]]:
+        """Return bounded planner context plus optional full host grounding world.
+
+        The planner receives a compact rendered view, while host-owned entity
+        grounding may use the complete cached identity set. This prevents the
+        model-context size bound from silently removing a room that must still
+        be available to deterministic target resolution.
+        """
 
         try:
             identity_reader = getattr(self.mcp, "get_device_identities", None)
             if not callable(identity_reader):
                 identity_reader = getattr(self.mcp, "get_cached_devices", None)
             if not callable(identity_reader):
-                return ""
-            devices = await identity_reader()
+                return ("", {}) if include_grounding_world else ""
+            devices = [
+                item for item in (await identity_reader() or [])
+                if isinstance(item, dict)
+            ]
         except Exception:
-            return ""
+            return ("", {}) if include_grounding_world else ""
         world = build_semantic_world(
-            [item for item in (devices or []) if isinstance(item, dict)]
+            devices,
+            max_devices=max(64, len(devices)),
         )
         rendered = render_semantic_world(world)
         if rendered:
             self.request_metrics.increment("semantic_world_context")
+        if include_grounding_world:
+            return rendered, world
         return rendered
 
     async def _semantic_control_outcome(
@@ -977,17 +993,25 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         selected_device = self._selected_devices.get(session_key, "")
         world_context = ""
+        grounding_world: dict[str, Any] | None = None
         if (
             self._routine_control_arguments(user_prompt) is None
             and is_semantic_control_candidate(user_prompt)
         ):
-            world_context = await self._semantic_world_context()
+            semantic_world = await self._semantic_world_context(
+                include_grounding_world=True
+            )
+            if isinstance(semantic_world, tuple):
+                world_context, grounding_world = semantic_world
+            else:
+                world_context = semantic_world
         try:
             plan = await self.semantic_core.plan_control(
                 user_prompt,
                 history=conversation_history,
                 selected_device=selected_device,
                 world_context=world_context,
+                grounding_world=grounding_world,
             )
         except Exception:
             self.request_metrics.increment("semantic_planner_failures")
