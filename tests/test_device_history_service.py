@@ -268,7 +268,7 @@ async def test_history_recovers_dehumidifier_typo_from_authoritative_identity():
     assert result.data["deviceId"] == "4222"
     assert result.data["label"] == "Dehumidifier 2"
     assert result.data["temporalAnalysis"]["intervalCount"] == 1
-    assert result.data["temporalAnalysis"]["observedIntervals"][0]["start"] == (
+    assert result.data["temporalAnalysis"]["intervals"][0]["start"] == (
         "2026-09-22T22:07:37.107+0100"
     )
 
@@ -359,7 +359,7 @@ async def test_switch_history_uses_scoped_upstream_rows_to_preserve_old_on_bound
     assert result.is_error is False
     assert result.data["label"] == "Dehumidifier 2"
     assert result.data["temporalAnalysis"]["intervalCount"] == 1
-    interval = result.data["temporalAnalysis"]["observedIntervals"][0]
+    interval = result.data["temporalAnalysis"]["intervals"][0]
     assert interval["start"] == "2026-09-22T22:07:37.107+0100"
     assert interval["end"] == "2026-09-22T22:38:13.489+0100"
     event_calls = [
