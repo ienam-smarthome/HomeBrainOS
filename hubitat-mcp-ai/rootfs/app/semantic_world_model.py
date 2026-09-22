@@ -70,7 +70,7 @@ def is_brightness_device(device: dict[str, Any]) -> bool:
     """
 
     capabilities = {_normalized(value) for value in capability_names(device)}
-    commands = _command_names(device)
+    commands = device_command_names(device)
     attributes = {_normalized(key) for key in device_attributes(device)}
 
     level_capable = bool(
@@ -103,7 +103,7 @@ def is_brightness_device(device: dict[str, Any]) -> bool:
     return True
 
 
-def _command_names(device: dict[str, Any]) -> set[str]:
+def device_command_names(device: dict[str, Any]) -> set[str]:
     raw = device.get("commands") or []
     names: set[str] = set()
     if isinstance(raw, dict):
@@ -134,7 +134,7 @@ def device_abilities(device: dict[str, Any]) -> set[str]:
     """
 
     capabilities = {_normalized(value) for value in capability_names(device)}
-    commands = _command_names(device)
+    commands = device_command_names(device)
     attributes = {_normalized(key) for key in device_attributes(device)}
     abilities: set[str] = set()
 
@@ -335,6 +335,7 @@ def render_semantic_world(
 __all__ = [
     "build_semantic_world",
     "device_abilities",
+    "device_command_names",
     "is_brightness_device",
     "render_semantic_world",
     "semantic_device_kinds",
