@@ -207,6 +207,72 @@ async def test_explicit_hours_back_still_overrides_attribute_default():
     assert result.data["hoursBack"] == 6
 
 
+class TypoDehumidifierHistoryMCP:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+        self.identity = {
+            "id": "4222",
+            "label": "Dehumidifier 2",
+            "room": "Dehumidifier",
+            "capabilities": ["Switch", "PowerMeter"],
+        }
+
+    def peek_device_identities(self):
+        return [dict(self.identity)]
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        if operation == "hub_list_devices":
+            # Reproduce the exact targeted labelFilter miss from the live typo.
+            return MCPToolResult(name, arguments, {}, "ok", {"devices": []})
+        if operation == EVENT_OPERATION:
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {
+                    "events": [
+                        {
+                            "name": "switch",
+                            "value": "off",
+                            "date": "2026-09-22T22:38:13.489+0100",
+                            "isStateChange": True,
+                        },
+                        {
+                            "name": "switch",
+                            "value": "on",
+                            "date": "2026-09-22T22:07:37.107+0100",
+                            "isStateChange": True,
+                        },
+                    ],
+                    "count": 2,
+                },
+            )
+        raise AssertionError(f"unexpected operation: {operation}")
+
+
+@pytest.mark.asyncio
+async def test_history_recovers_dehumidifier_typo_from_authoritative_identity():
+    mcp = TypoDehumidifierHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({
+        "name": "dehumidifer 2",
+        "attribute": "switch",
+        "hours_back": 24,
+    })
+
+    assert result.is_error is False
+    assert result.data["deviceId"] == "4222"
+    assert result.data["label"] == "Dehumidifier 2"
+    assert result.data["temporalAnalysis"]["intervalCount"] == 1
+    assert result.data["temporalAnalysis"]["observedIntervals"][0]["start"] == (
+        "2026-09-22T22:07:37.107+0100"
+    )
+
+
 class NoisySwitchHistoryMCP(HistoryMCP):
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
