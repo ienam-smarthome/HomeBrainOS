@@ -3,11 +3,18 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.0**.
+Current add-on version: **0.16.1**.
 
 ## Architecture
 
-0.16.0 adds a capability-grounded semantic world model. Before a non-trivial
+0.16.1 hardens the capability-grounded semantic world for large homes. Room-level
+ability summaries now remain complete across the entire identity snapshot even
+when only a bounded number of per-device details fit in the planner context.
+Per-device details are prioritized by the current request, so a request naming
+Hallway keeps Hallway devices ahead of unrelated devices rather than losing them
+to an alphabetical 64-device cutoff.
+
+0.16.0 added the capability-grounded semantic world model. Before a non-trivial
 semantic control turn, HomeBrain projects the real Hubitat identity snapshot into
 bounded room/device context containing canonical names, semantic kinds, and
 abilities such as `brightness`, `heating_setpoint`, `temperature`, and
