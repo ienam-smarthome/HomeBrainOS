@@ -218,6 +218,7 @@ async def test_resolve_device_recovers_unique_misspelling_from_identity_cache():
     assert result.data["deviceId"] == "4222"
     assert result.data["label"] == "Dehumidifier 2"
     assert result.data["reason"] in {
+        "unique inventory candidate",
         "high-confidence ranked candidate",
         "dominant ranked candidate despite moderate absolute score",
     }
