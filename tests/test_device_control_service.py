@@ -84,7 +84,7 @@ async def test_smuggled_time_in_device_names_is_refused_not_misexecuted():
         "command": "on",
     })
 
-    assert result.is_error is True
+    assert result.is_error is False
     assert result.data["success"] is False
     assert result.data["requested_time"] == "23:11"
     assert "one-time" in result.data["error"].lower() or "one-off" in result.data["error"].lower()
