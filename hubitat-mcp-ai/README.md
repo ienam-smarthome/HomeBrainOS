@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.8**.
+Current add-on version: **0.16.9**.
 
 ## Architecture
+
+0.16.9 narrows the MCP transport's former global request lock. Session initialization and tool-catalog mutation remain serialized, cacheable aggregate device snapshots remain single-flight, and ordinary MCP operations run through a bounded concurrency gate (2 calls by default). This lets independent per-device live reads and verified writes overlap while retaining a `mcp_max_concurrent_calls: 1` rollback setting that restores serialized ordinary traffic.
 
 0.16.8 adds a deterministic semantic fast path for clear brightness and thermostat requests. These requests still use the same fresh host identity grounding and deterministic verified execution, but no longer pay for a provider round when the action, direction, amount, and target wording are already unambiguous.
 
