@@ -186,6 +186,48 @@ async def test_targeted_resolver_handles_spaces_hyphens_and_label_prefixes():
 
 
 @pytest.mark.asyncio
+async def test_resolve_device_recovers_unique_misspelling_from_identity_cache():
+    class TypoIdentityMCP:
+        def __init__(self):
+            self.calls = []
+            self.identities = [{
+                "id": "4222",
+                "label": "Dehumidifier 2",
+                "room": "Dehumidifier",
+                "capabilities": ["Switch", "PowerMeter"],
+            }]
+
+        def peek_device_identities(self):
+            return list(self.identities)
+
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            assert arguments["tool"] == "hub_list_devices"
+            assert arguments["args"]["labelFilter"] == "dehumidifer 2"
+            return MCPToolResult(name, arguments, {}, "ok", {"devices": []})
+
+    mcp = TypoIdentityMCP()
+    service = DeviceQueryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.resolve_device({
+        "name": "dehumidifer 2",
+    })
+
+    assert result.is_error is False
+    assert result.data["matched"] is True
+    assert result.data["deviceId"] == "4222"
+    assert result.data["label"] == "Dehumidifier 2"
+    assert result.data["reason"] in {
+        "high-confidence ranked candidate",
+        "dominant ranked candidate despite moderate absolute score",
+    }
+    assert result.data["attempts"] == [
+        {"source": "label_filter", "count": 0},
+        {"source": "authoritative_identity_fuzzy", "count": 1},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_room_climate_query_excludes_hub_and_appliance_telemetry():
     service = DeviceQueryService(
         QueryMCP([
