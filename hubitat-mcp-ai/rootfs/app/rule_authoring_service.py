@@ -157,6 +157,11 @@ class RuleAuthoringService:
         goal = cls._LEADING_PLEASE.sub("", goal)
         return goal.strip(" ,.-")
 
+    def matches_request(self, prompt: str) -> bool:
+        """Return whether the bounded deterministic authoring grammar applies."""
+
+        return self._intent(prompt) is not None
+
     def _intent(self, prompt: str) -> _ScheduleIntent | None:
         text = " ".join(str(prompt).strip().split())
         authored = self._AUTHORING.search(text) is not None
