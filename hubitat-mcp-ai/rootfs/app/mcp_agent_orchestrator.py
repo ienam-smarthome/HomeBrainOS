@@ -163,6 +163,10 @@ UNVERIFIED_MUTATION_REFUSAL = (
     "I could not verify that this action actually ran on Hubitat -- no "
     "successful tool result confirms it, so I will not report it as done."
 )
+RULE_WRITES_DISABLED_MESSAGE = (
+    "Rule Machine writes are disabled in HomeBrain settings. "
+    "No rule was queued or changed."
+)
 
 @dataclass(slots=True)
 class AgentOutcome:
@@ -195,6 +199,7 @@ class UnifiedMCPAgent:
         max_tool_rounds: int = 9,
         require_sensitive_confirmation: bool = True,
         confirmation_ttl_seconds: float = 120,
+        rule_write_enabled: bool = True,
         max_tool_result_chars: int = 24000,
         max_history_messages: int = 8,
         max_history_chars: int = 12000,
@@ -219,6 +224,7 @@ class UnifiedMCPAgent:
         self.tool_limit = max(1, int(tool_limit))
         self.max_tool_rounds = max(1, int(max_tool_rounds))
         self.require_sensitive_confirmation = bool(require_sensitive_confirmation)
+        self.rule_write_enabled = bool(rule_write_enabled)
         self.confirmation_policy = ConfirmationPolicy(
             enabled=self.require_sensitive_confirmation
         )
@@ -1015,6 +1021,11 @@ class UnifiedMCPAgent:
         if known_history_path:
             increment_active_metric("history_known_tool_fastpath")
         if (
+            not self.rule_write_enabled
+            and self.rule_authoring.matches_request(user_prompt)
+        ):
+            return RULE_WRITES_DISABLED_MESSAGE
+        if (
             search_tool is not None
             and not self._is_conversational_prompt(user_prompt)
             and not known_history_path
@@ -1352,6 +1363,12 @@ class UnifiedMCPAgent:
                 round_actions.append((name, arguments))
                 tool = catalog.declared_tool(name)
                 effect = classify_tool_effect(tool, arguments)
+                if (
+                    not self.rule_write_enabled
+                    and name == ConfirmedActionCoordinator.RULE_GATEWAY
+                    and effect.mutates
+                ):
+                    return RULE_WRITES_DISABLED_MESSAGE
                 proposal_error = rule_machine_proposal_error(
                     name, arguments, user_prompt=user_prompt
                 )
