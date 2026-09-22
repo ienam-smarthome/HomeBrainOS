@@ -1387,6 +1387,283 @@ async def test_adjust_level_reads_live_state_then_compiles_per_device_absolute_l
     assert len(precondition_receipts) == 2
 
 
+class BatchRelativeLevelMCP(RelativeLevelMCP):
+    def __init__(
+        self,
+        *,
+        live_levels: dict[str, int] | None = None,
+        failed_batch_ids: set[str] | None = None,
+    ) -> None:
+        super().__init__()
+        if live_levels is not None:
+            self.live_levels = dict(live_levels)
+        self.failed_batch_ids = set(failed_batch_ids or set())
+
+    async def supports_device_command_batch(self):
+        return True
+
+    async def supports_multi_device_attribute_poll(self):
+        return True
+
+    async def call_tool(self, gateway, arguments):
+        self.calls.append((gateway, arguments))
+        tool = arguments.get("tool")
+        args = arguments.get("args") or {}
+
+        if tool == "hub_get_device_attribute":
+            if "deviceIds" in args:
+                expected = str(args["expectedValue"])
+                return MCPToolResult(
+                    "hub_read_devices",
+                    arguments,
+                    {},
+                    "ok",
+                    {
+                        "success": True,
+                        "mode": "all",
+                        "devices": [
+                            {
+                                "deviceId": str(device_id),
+                                "finalValue": expected,
+                                "matched": True,
+                            }
+                            for device_id in args["deviceIds"]
+                        ],
+                        "convergedCount": len(args["deviceIds"]),
+                        "timedOut": False,
+                    },
+                )
+
+            device_id = str(args["deviceId"])
+            if "expectedValue" in args:
+                return MCPToolResult(
+                    "hub_read_devices",
+                    arguments,
+                    {},
+                    "ok",
+                    {
+                        "success": True,
+                        "finalValue": str(args["expectedValue"]),
+                        "timedOut": False,
+                    },
+                )
+            return MCPToolResult(
+                "hub_read_devices",
+                arguments,
+                {},
+                "ok",
+                {"success": True, "value": self.live_levels[device_id]},
+            )
+
+        if tool == "hub_call_device_command" and "commands" in args:
+            results = []
+            for entry in args["commands"]:
+                device_id = str(entry["deviceId"])
+                failed = device_id in self.failed_batch_ids
+                results.append(
+                    {
+                        "success": not failed,
+                        "deviceId": device_id,
+                        "command": entry["command"],
+                        **(
+                            {"error": "simulated batch dispatch failure"}
+                            if failed
+                            else {}
+                        ),
+                    }
+                )
+            failed_count = sum(
+                1 for item in results if item["success"] is False
+            )
+            return MCPToolResult(
+                "hub_manage_devices",
+                arguments,
+                {},
+                "ok",
+                {
+                    "success": failed_count == 0,
+                    "count": len(results),
+                    "sentCount": len(results) - failed_count,
+                    "failedCount": failed_count,
+                    "results": results,
+                    **(
+                        {
+                            "partial": True,
+                            "failedDeviceIds": [
+                                item["deviceId"]
+                                for item in results
+                                if item["success"] is False
+                            ],
+                        }
+                        if failed_count
+                        else {}
+                    ),
+                },
+            )
+
+        raise AssertionError(("unexpected tool call", gateway, arguments))
+
+
+@pytest.mark.asyncio
+async def test_adjust_level_batches_write_and_common_target_verification():
+    mcp = BatchRelativeLevelMCP(
+        live_levels={"7805": 60, "7828": 60},
+    )
+    service = DeviceControlService(mcp, recorder)
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        result = await service.execute({
+            "room": "Living Room",
+            "device_kind": "light",
+            "command": "adjust_level",
+            "delta": 20,
+        })
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert result.data["success"] is True
+    succeeded = {item["id"]: item for item in result.data["succeeded"]}
+    assert succeeded["7805"]["previous_level"] == 60
+    assert succeeded["7805"]["target_level"] == 80
+    assert succeeded["7828"]["previous_level"] == 60
+    assert succeeded["7828"]["target_level"] == 80
+
+    batch_calls = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+        and args.get("tool") == "hub_call_device_command"
+    ]
+    assert batch_calls == [{
+        "tool": "hub_call_device_command",
+        "args": {
+            "commands": [
+                {
+                    "deviceId": "7805",
+                    "command": "setLevel",
+                    "parameters": ["80"],
+                },
+                {
+                    "deviceId": "7828",
+                    "command": "setLevel",
+                    "parameters": ["80"],
+                },
+            ],
+        },
+    }]
+
+    verification_calls = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_read_devices"
+        and args.get("tool") == "hub_get_device_attribute"
+        and "expectedValue" in (args.get("args") or {})
+    ]
+    assert verification_calls == [{
+        "tool": "hub_get_device_attribute",
+        "args": {
+            "deviceIds": ["7805", "7828"],
+            "attribute": "level",
+            "expectedValue": "80",
+            "mode": "all",
+            "timeoutMs": 5000,
+        },
+    }]
+    assert snapshot["counters"]["device_control_batch_commands"] == 1
+    assert snapshot["counters"]["device_control_batch_verifications"] == 1
+
+
+@pytest.mark.asyncio
+async def test_adjust_level_batch_uses_individual_verification_for_different_targets():
+    mcp = BatchRelativeLevelMCP(
+        live_levels={"7805": 80, "7828": 60},
+    )
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Living Room",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["success"] is True
+    batch_call = next(
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+    )
+    assert batch_call["args"]["commands"] == [
+        {
+            "deviceId": "7805",
+            "command": "setLevel",
+            "parameters": ["100"],
+        },
+        {
+            "deviceId": "7828",
+            "command": "setLevel",
+            "parameters": ["80"],
+        },
+    ]
+
+    verification_calls = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_read_devices"
+        and args.get("tool") == "hub_get_device_attribute"
+        and "expectedValue" in (args.get("args") or {})
+    ]
+    assert not any(
+        "deviceIds" in item["args"]
+        for item in verification_calls
+    )
+    by_id = {
+        str(item["args"]["deviceId"]): item["args"]["expectedValue"]
+        for item in verification_calls
+    }
+    assert by_id == {"7805": "100", "7828": "80"}
+
+
+@pytest.mark.asyncio
+async def test_partial_batch_failure_is_reported_without_replaying_mutation():
+    mcp = BatchRelativeLevelMCP(
+        live_levels={"7805": 60, "7828": 60},
+        failed_batch_ids={"7828"},
+    )
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Living Room",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["success"] is False
+    succeeded = {item["id"]: item for item in result.data["succeeded"]}
+    failed = {item["id"]: item for item in result.data["failed"]}
+    assert succeeded["7805"]["verified"] is True
+    assert failed["7828"]["command_sent"] is False
+    assert failed["7828"]["verified"] is False
+    assert "simulated batch dispatch failure" in failed["7828"]["message"]
+
+    mutation_calls = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+        and args.get("tool") == "hub_call_device_command"
+    ]
+    assert len(mutation_calls) == 1
+    assert "commands" in mutation_calls[0]["args"]
+
+    verified_ids = {
+        str(args["args"]["deviceId"])
+        for gateway, args in mcp.calls
+        if gateway == "hub_read_devices"
+        and args.get("tool") == "hub_get_device_attribute"
+        and "expectedValue" in (args.get("args") or {})
+        and "deviceId" in (args.get("args") or {})
+    }
+    assert verified_ids == {"7805"}
+
+
 @pytest.mark.asyncio
 async def test_adjust_level_clamps_at_device_bounds():
     mcp = RelativeLevelMCP()
