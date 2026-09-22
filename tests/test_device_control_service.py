@@ -1333,7 +1333,7 @@ async def test_adjust_level_reads_live_state_then_compiles_per_device_absolute_l
     assert by_id["7805"]["parameters"] == ["100"]
     assert by_id["7805"]["waitFor"] == {
         "attribute": "level",
-        "expectedValue": 100,
+        "expectedValue": "100",
         "timeoutMs": 5000,
     }
     assert by_id["7828"]["parameters"] == ["80"]
