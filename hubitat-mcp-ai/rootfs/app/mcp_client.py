@@ -479,19 +479,8 @@ class HubitatMCPClient:
             "method": "resources/read",
             "params": {"uri": LIVE_CONTEXT_RESOURCE_URI},
         }
-        lock_started = time.monotonic()
-        async with self._lock:
-            add_active_metric_ms(
-                "mcp_lock_wait", (time.monotonic() - lock_started) * 1000
-            )
-            http_started = time.monotonic()
-            try:
-                response = await self._post(payload)
-            finally:
-                add_active_metric_ms(
-                    "mcp_http", (time.monotonic() - http_started) * 1000
-                )
-            result = self._rpc_result(response)
+        response = await self._post_bounded(payload)
+        result = self._rpc_result(response)
 
         contents = result.get("contents") or []
         text: str | None = None
@@ -639,6 +628,32 @@ class HubitatMCPClient:
         self._live_device_snapshot = None
         self._live_context_snapshot = None
 
+    async def _post_bounded(
+        self,
+        payload: dict[str, Any],
+        allow_empty: bool = False,
+    ) -> dict[str, Any]:
+        """Send one ordinary MCP request through the bounded concurrency gate."""
+
+        queue_started = time.monotonic()
+        await self._request_semaphore.acquire()
+        add_active_metric_ms(
+            "mcp_queue_wait", (time.monotonic() - queue_started) * 1000
+        )
+        self._active_requests += 1
+        observe_active_metric_max("mcp_concurrent_peak", self._active_requests)
+        try:
+            http_started = time.monotonic()
+            try:
+                return await self._post(payload, allow_empty=allow_empty)
+            finally:
+                add_active_metric_ms(
+                    "mcp_http", (time.monotonic() - http_started) * 1000
+                )
+        finally:
+            self._active_requests = max(0, self._active_requests - 1)
+            self._request_semaphore.release()
+
     async def call_tool(
         self,
         name: str,
@@ -684,18 +699,35 @@ class HubitatMCPClient:
                     )
                     return shared_result
 
-        lock_started = time.monotonic()
-        async with self._lock:
-            add_active_metric_ms(
-                "mcp_lock_wait", (time.monotonic() - lock_started) * 1000
-            )
-            if cacheable and self._live_device_snapshot is not None:
-                cached_at, cached_generation, cached_result = self._live_device_snapshot
-                if (
-                    cached_generation == self._live_device_snapshot_generation
-                    and self._clock() - cached_at < self._live_device_snapshot_ttl_seconds
-                ):
-                    return self._copy_tool_result(cached_result)
+        if cacheable:
+            shared_started = time.monotonic()
+            await self._snapshot_lock.acquire()
+            shared_wait_ms = (time.monotonic() - shared_started) * 1000
+            if shared_wait_ms >= 1:
+                add_active_metric_ms("mcp_shared_wait", shared_wait_ms)
+            try:
+                if self._live_device_snapshot is not None:
+                    cached_at, cached_generation, cached_result = self._live_device_snapshot
+                    if (
+                        cached_generation == self._live_device_snapshot_generation
+                        and self._clock() - cached_at < self._live_device_snapshot_ttl_seconds
+                    ):
+                        return self._copy_tool_result(cached_result)
+                generation = self._live_device_snapshot_generation
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": self._next_id(),
+                    "method": "tools/call",
+                    "params": {
+                        "name": name,
+                        "arguments": arguments,
+                    },
+                }
+                response = await self._post_bounded(payload)
+                result = self._rpc_result(response)
+            finally:
+                self._snapshot_lock.release()
+        else:
             generation = self._live_device_snapshot_generation
             payload = {
                 "jsonrpc": "2.0",
@@ -706,13 +738,7 @@ class HubitatMCPClient:
                     "arguments": arguments,
                 },
             }
-            http_started = time.monotonic()
-            try:
-                response = await self._post(payload)
-            finally:
-                add_active_metric_ms(
-                    "mcp_http", (time.monotonic() - http_started) * 1000
-                )
+            response = await self._post_bounded(payload)
             result = self._rpc_result(response)
 
         content = result.get("content") or []
