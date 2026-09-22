@@ -104,3 +104,11 @@ def test_webui_title_cannot_break_out_of_the_inline_script_tag() -> None:
     page_via_version = render_page("HomeBrain", payload)
     assert "</script><img" not in page_via_version
     assert "<\\/script><img" in page_via_version
+
+
+def test_read_answer_speech_normalizes_visual_arrows_and_percentages() -> None:
+    page = render_page("HomeBrain", "0.16.5")
+
+    assert ".replace(/→/g,' to ')" in page
+    assert ".replace(/←/g,' from ')" in page
+    assert ".replace(/(\\d+(?:\\.\\d+)?)\\s*%/g,'$1 percent')" in page

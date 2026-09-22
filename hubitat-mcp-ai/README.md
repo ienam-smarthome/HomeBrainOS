@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.4**.
+Current add-on version: **0.16.5**.
 
 ## Architecture
+
+0.16.5 improves read-aloud phrasing in the web UI. Visual arrows such as `50% → 70%` are spoken as natural transitions such as “50 percent to 70 percent” instead of the speech engine announcing “right arrow”.
 
 0.16.4 makes host-owned entity grounding independent of the model's bounded
 semantic context. The planner still receives a compact capability world, but
