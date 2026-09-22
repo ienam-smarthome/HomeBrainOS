@@ -1543,6 +1543,13 @@ class UnifiedMCPAgent:
                 arguments = function.get("arguments") or {}
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
+                arguments = dict(arguments)
+                if causal_request:
+                    arguments = _normalize_causal_log_call(
+                        name,
+                        arguments,
+                        self.evidence.receipts(),
+                    )
                 signature = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False, default=str)
                 if signature in completed_calls:
                     duplicate_signature_seen = True
@@ -1574,6 +1581,10 @@ class UnifiedMCPAgent:
                     and name == _LOCAL_FILTER_TOOL
                     and str(arguments.get("attribute") or "").strip().casefold() == "room"
                 )
+                broad_causal_inventory = bool(
+                    causal_request
+                    and _is_broad_device_inventory_call(name, arguments)
+                )
                 missing_related_attribute = bool(
                     investigative_request
                     and name == _LOCAL_DEVICE_HISTORY_TOOL
@@ -1597,6 +1608,18 @@ class UnifiedMCPAgent:
                             "completed host-side from the resolved subject metadata. "
                             "Use the gathered controller/provenance evidence and move "
                             "to a different evidence class."
+                        )
+                    })
+                elif broad_causal_inventory:
+                    round_tool_failure = True
+                    increment_active_metric("causal_broad_inventory_blocked")
+                    content = json.dumps({
+                        "error": (
+                            "Broad hub_list_devices inventory reads are not a causal "
+                            "provenance source and are blocked for this investigation. "
+                            "Use homebrain_device_history/homebrain_resolve_device for "
+                            "the named subject, or a scoped labelFilter/roomFilter when "
+                            "a genuinely new device identity is required."
                         )
                     })
                 elif missing_related_attribute:
