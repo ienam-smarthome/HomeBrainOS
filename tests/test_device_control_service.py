@@ -831,6 +831,43 @@ class FailingControlMCP(ControlMCP):
         return await super().call_tool(gateway, arguments)
 
 
+class RaisingControlMCP(ControlMCP):
+    """Raise at the transport boundary instead of returning an error result."""
+
+    async def call_tool(self, gateway, arguments):
+        if arguments.get("tool") == "hub_call_device_command":
+            self.calls.append((gateway, arguments))
+            raise RuntimeError("simulated Hubitat transport failure")
+        return await super().call_tool(gateway, arguments)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_exception_returns_original_failure_without_unbound_result():
+    """A thrown MCP exception must not be replaced by UnboundLocalError."""
+
+    mcp = RaisingControlMCP([HALLWAY_LIGHT_1])
+    service = DeviceControlService(mcp, recorder)
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        result = await service.execute({
+            "device_names": ["Hallway Light 1"],
+            "device_kind": "light",
+            "command": "on",
+        })
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert result.is_error is True
+    assert result.data["success"] is False
+    assert len(result.data["failed"]) == 1
+    failure = result.data["failed"][0]
+    assert failure["command_sent"] is False
+    assert "simulated Hubitat transport failure" in failure["message"]
+    assert "UnboundLocalError" not in failure["message"]
+    assert snapshot["counters"]["device_control_failures"] == 1
+
 @pytest.mark.asyncio
 async def test_dispatch_failure_records_device_control_failures_metric():
     """Regression test for a live-observed bug: a routine light/switch
