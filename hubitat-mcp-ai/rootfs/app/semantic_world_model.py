@@ -40,6 +40,39 @@ def _normalized(value: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
 
 
+def _focus_tokens(value: Any) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        if len(token) > 1
+    }
+
+
+def _focus_score(*, focus_text: str, room: str, label: str) -> int:
+    """Prioritize semantic details explicitly referenced by the current request.
+
+    The room summaries remain complete regardless of this score. Scoring only
+    decides which per-device details survive the bounded context budget.
+    """
+
+    focus_normalized = _normalized(focus_text)
+    if not focus_normalized:
+        return 0
+
+    room_normalized = _normalized(room)
+    label_normalized = _normalized(label)
+    score = 0
+    if label_normalized and label_normalized in focus_normalized:
+        score += 1000
+    if room_normalized and room_normalized in focus_normalized:
+        score += 500
+
+    focus_terms = _focus_tokens(focus_text)
+    score += 20 * len(_focus_tokens(label) & focus_terms)
+    score += 10 * len(_focus_tokens(room) & focus_terms)
+    return score
+
+
 def _command_names(device: dict[str, Any]) -> set[str]:
     raw = device.get("commands") or []
     names: set[str] = set()
@@ -183,10 +216,17 @@ def build_semantic_world(
     devices: list[dict[str, Any]],
     *,
     max_devices: int = 64,
+    focus_text: str = "",
 ) -> dict[str, Any]:
-    """Build compact canonical identity/capability context for semantic planning."""
+    """Build compact canonical identity/capability context for semantic planning.
 
-    rows: list[dict[str, Any]] = []
+    Room-level capability summaries are intentionally complete across the whole
+    identity snapshot. Only per-device detail is bounded. This prevents a large
+    home from making a later-sorting room appear not to exist merely because the
+    first N detailed devices exhausted the planner budget.
+    """
+
+    all_rows: list[dict[str, Any]] = []
     room_abilities: dict[str, set[str]] = defaultdict(set)
     room_devices: dict[str, list[str]] = defaultdict(list)
 
@@ -205,31 +245,48 @@ def build_semantic_world(
         if not abilities:
             continue
         room = room_name(device) or "Unassigned"
-        rows.append(
+        all_rows.append(
             {
                 "name": label,
                 "room": room,
                 "kinds": semantic_device_kinds(device),
                 "abilities": abilities,
+                "_focus_score": _focus_score(
+                    focus_text=focus_text,
+                    room=room,
+                    label=label,
+                ),
             }
         )
         room_devices[room].append(label)
         room_abilities[room].update(abilities)
 
-    rows.sort(key=lambda item: (str(item["room"]).casefold(), str(item["name"]).casefold()))
-    rows = rows[: max(1, int(max_devices))]
-    visible_names = {str(item["name"]) for item in rows}
+    all_rows.sort(
+        key=lambda item: (
+            -int(item.get("_focus_score") or 0),
+            str(item["room"]).casefold(),
+            str(item["name"]).casefold(),
+        )
+    )
+    rows = all_rows[: max(1, int(max_devices))]
+    for row in rows:
+        row.pop("_focus_score", None)
+
+    visible_by_room: dict[str, list[str]] = defaultdict(list)
+    for row in rows:
+        visible_by_room[str(row["room"])].append(str(row["name"]))
 
     rooms: list[dict[str, Any]] = []
     for room in sorted(room_devices, key=str.casefold):
-        names = [name for name in room_devices[room] if name in visible_names]
-        if not names:
-            continue
+        all_names = sorted(room_devices[room], key=str.casefold)
+        visible_names = sorted(visible_by_room.get(room, []), key=str.casefold)
         rooms.append(
             {
                 "name": room,
                 "abilities": sorted(room_abilities[room]),
-                "devices": sorted(names, key=str.casefold),
+                "device_count": len(all_names),
+                "devices": visible_names,
+                "details_complete": len(visible_names) == len(all_names),
             }
         )
 
