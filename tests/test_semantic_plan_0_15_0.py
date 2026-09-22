@@ -10,6 +10,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "a
 sys.path.insert(0, str(APP_DIR))
 
 from semantic_agent_core import SemanticAgentCore  # noqa: E402
+from semantic_fast_path import semantic_fast_plan  # noqa: E402
 from semantic_plan import (  # noqa: E402
     SemanticAction,
     SemanticPlan,
@@ -172,6 +173,68 @@ def test_semantic_eval_corpus_covers_paraphrases_safety_and_scheduling() -> None
 
 
 
+@pytest.mark.parametrize(
+    ("prompt", "operation", "direction", "delta", "magnitude", "kind"),
+    [
+        ("increase hallway brightness", "adjust_level", "increase", None, "default", "light"),
+        ("lower hallway brightness a little", "adjust_level", "decrease", None, "small", "light"),
+        ("raise bedroom 1 brightness by 15%", "adjust_level", "increase", 15.0, "default", "light"),
+        ("dim bedroom 1 by 10%", "adjust_level", "decrease", -10.0, "default", "light"),
+        ("make kitchen much brighter", "adjust_level", "increase", None, "large", "light"),
+        ("turn the living room lights up", "adjust_level", "increase", None, "default", "light"),
+        ("make bedroom one warmer", "adjust_temperature", "increase", None, "default", "thermostat"),
+        ("lower the living room temperature a little", "adjust_temperature", "decrease", None, "small", "thermostat"),
+        ("raise Bedroom 1 temperature by half a degree", "adjust_temperature", "increase", 0.5, "default", "thermostat"),
+    ],
+)
+def test_clear_semantic_controls_have_zero_model_plans(
+    prompt: str,
+    operation: str,
+    direction: str,
+    delta: float | None,
+    magnitude: str,
+    kind: str,
+) -> None:
+    plan = semantic_fast_plan(prompt)
+
+    assert plan is not None
+    assert plan.source == "fastpath"
+    assert plan.target is not None
+    assert plan.target.kind == kind
+    assert plan.action is not None
+    assert plan.action.operation == operation
+    assert plan.action.direction == direction
+    assert plan.action.delta == delta
+    assert plan.action.magnitude == magnitude
+
+
+def test_clear_semantic_fast_path_handles_absolute_thermostat_setpoint() -> None:
+    plan = semantic_fast_plan("set Bedroom 2 temperature to 20.5 degrees")
+
+    assert plan is not None
+    assert plan.source == "fastpath"
+    assert plan.target is not None
+    assert plan.target.name == "Bedroom 2"
+    assert plan.target.kind == "thermostat"
+    assert plan.action is not None
+    assert plan.action.operation == "set_temperature"
+    assert plan.action.value == 20.5
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "make it brighter",
+        "how do I increase hallway brightness?",
+        "increase hallway brightness tomorrow",
+        "make the hallway brighter every evening",
+        "set Bedroom 2 temperature to 20.5 degrees at 7pm",
+    ],
+)
+def test_semantic_fast_path_refuses_questions_and_scheduled_requests(prompt: str) -> None:
+    assert semantic_fast_plan(prompt) is None
+
+
 def test_semantic_temperature_action_supports_fractional_setpoints_and_deltas() -> None:
     absolute = SemanticAction(operation="set_temperature", value=20.5)
     relative = SemanticAction(operation="adjust_temperature", delta=-0.5)
@@ -311,20 +374,9 @@ async def test_semantic_planner_receives_capability_world_as_non_live_context() 
 
 
 @pytest.mark.asyncio
-async def test_semantic_core_prefers_explicit_room_over_model_invented_device_target() -> None:
+async def test_semantic_core_prefers_explicit_room_without_provider_round() -> None:
     async def fake_chat(_messages, _tools):
-        # Reproduce the observed Gemma mistake: the user said "hallway" but
-        # the model selected a similarly named controller device.
-        return {
-            "content": (
-                '{"version":"1","domain":"device_control","timing":"now",'
-                '"target":{"scope":"device","name":"Hallway dimmer","kind":"light"},'
-                '"action":{"operation":"adjust_level","value":null,"delta":null,'
-                '"direction":"increase","magnitude":"default"},'
-                '"needs_clarification":false,"clarification_question":"",'
-                '"confidence":"high","source":"model"}'
-            )
-        }
+        raise AssertionError("clear relative brightness should bypass provider")
 
     world = json.dumps({
         "live_state": False,
@@ -376,19 +428,7 @@ async def test_semantic_core_prefers_explicit_room_over_model_invented_device_ta
 @pytest.mark.asyncio
 async def test_semantic_core_host_grounds_two_explicit_devices_as_selection() -> None:
     async def fake_chat(_messages, _tools):
-        # The model only selects the first device; host grounding must recover
-        # both explicitly named devices from authoritative canonical identity.
-        return {
-            "content": (
-                '{"version":"1","domain":"device_control","timing":"now",'
-                '"target":{"scope":"device","name":"Hallway Light 1","names":[],'
-                '"kind":"light"},'
-                '"action":{"operation":"adjust_level","value":null,"delta":null,'
-                '"direction":"increase","magnitude":"default"},'
-                '"needs_clarification":false,"clarification_question":"",'
-                '"confidence":"high","source":"model"}'
-            )
-        }
+        raise AssertionError("clear multi-device brightness should bypass provider")
 
     world = json.dumps({
         "live_state": False,
@@ -436,6 +476,44 @@ async def test_semantic_core_host_grounds_two_explicit_devices_as_selection() ->
         "command": "adjust_level",
         "device_kind": "light",
         "delta": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_semantic_core_normalizes_spoken_room_numbers_for_host_grounding() -> None:
+    async def forbidden_chat(_messages, _tools):
+        raise AssertionError("clear thermostat request should bypass provider")
+
+    world = json.dumps({
+        "live_state": False,
+        "rooms": [{
+            "name": "Bedroom 1",
+            "abilities": ["heating_setpoint", "temperature", "switch"],
+            "devices": ["Bedroom 1 TRV"],
+        }],
+        "devices": [{
+            "name": "Bedroom 1 TRV",
+            "room": "Bedroom 1",
+            "kinds": ["thermostat"],
+            "abilities": ["heating_setpoint", "temperature", "switch"],
+        }],
+    })
+
+    core = SemanticAgentCore(SemanticPlanner(forbidden_chat))
+    plan = await core.plan_control(
+        "make bedroom one warmer",
+        world_context=world,
+    )
+
+    assert plan is not None
+    assert plan.target is not None
+    assert plan.target.scope == "room"
+    assert plan.target.name == "Bedroom 1"
+    assert core.compile_control(plan) == {
+        "room": "Bedroom 1",
+        "command": "adjust_temperature",
+        "device_kind": "thermostat",
+        "delta": 1.0,
     }
 
 

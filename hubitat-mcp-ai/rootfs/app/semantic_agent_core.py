@@ -6,6 +6,7 @@ from typing import Any
 
 from request_classification import routine_control_arguments
 from request_metrics import increment_active_metric
+from semantic_fast_path import semantic_fast_plan
 from semantic_plan import (
     SemanticPlan,
     semantic_plan_from_control_arguments,
@@ -40,7 +41,23 @@ class SemanticAgentCore:
 
     @staticmethod
     def _phrase_tokens(value: Any) -> list[str]:
-        return re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        number_words = {
+            "zero": "0",
+            "one": "1",
+            "two": "2",
+            "three": "3",
+            "four": "4",
+            "five": "5",
+            "six": "6",
+            "seven": "7",
+            "eight": "8",
+            "nine": "9",
+            "ten": "10",
+        }
+        return [
+            number_words.get(token, token)
+            for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        ]
 
     @classmethod
     def _explicit_entities(
@@ -245,6 +262,21 @@ class SemanticAgentCore:
                         grounding_context,
                     )
                 return fast_plan
+
+        local_plan = semantic_fast_plan(prompt)
+        if local_plan is not None:
+            grounding_context: str | dict[str, Any] = (
+                grounding_world
+                if grounding_world is not None
+                else world_context
+            )
+            if grounding_context:
+                return self.ground_plan_target(
+                    prompt,
+                    local_plan,
+                    grounding_context,
+                )
+            return local_plan
 
         if not is_semantic_control_candidate(prompt):
             return None

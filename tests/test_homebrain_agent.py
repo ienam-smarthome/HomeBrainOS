@@ -1920,7 +1920,7 @@ async def test_immediate_set_level_uses_routine_control_without_confirmation_or_
 
 
 @pytest.mark.asyncio
-async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool_loop(
+async def test_semantic_fast_plan_handles_relative_brightness_without_provider_or_general_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     control_calls: list[dict[str, object]] = []
@@ -1959,17 +1959,36 @@ async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool
     async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
         raise AssertionError("semantic routine control must not enter the general tool loop")
 
+    async def semantic_world(*_args: object, **_kwargs: object):
+        world = {
+            "live_state": False,
+            "rooms": [{
+                "name": "Living Room",
+                "abilities": ["brightness", "switch"],
+                "devices": ["Livingroom Light 1", "Livingroom Light 2"],
+            }],
+            "devices": [
+                {
+                    "name": "Livingroom Light 1",
+                    "room": "Living Room",
+                    "kinds": ["light"],
+                    "abilities": ["brightness", "switch"],
+                },
+                {
+                    "name": "Livingroom Light 2",
+                    "room": "Living Room",
+                    "kinds": ["light"],
+                    "abilities": ["brightness", "switch"],
+                },
+            ],
+        }
+        return json.dumps(world), world
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_semantic_world_context", semantic_world)
     monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
     monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
 
-    ai = FakeAI(
-        '{"version":"1","domain":"device_control","timing":"now",'
-        '"target":{"scope":"room","name":"Living Room","kind":"light"},'
-        '"action":{"operation":"adjust_level","value":null,"delta":null,'
-        '"direction":"increase","magnitude":"default"},'
-        '"needs_clarification":false,"clarification_question":"",'
-        '"confidence":"high","source":"model"}'
-    )
+    ai = FakeAI("unused -- clear relative brightness must stay zero-model")
     agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
@@ -1989,9 +2008,10 @@ async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool
     )
     assert outcome.request_class == "write"
     assert outcome.metrics["outcome"] == "success"
-    assert outcome.metrics["counters"]["model_rounds"] == 1
-    assert outcome.metrics["counters"]["semantic_planner_plans"] == 1
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
     assert outcome.metrics["counters"]["semantic_relative_controls"] == 1
+    assert ai.requests == []
 
 
 @pytest.mark.asyncio
@@ -2073,6 +2093,97 @@ async def test_semantic_two_device_request_executes_host_grounded_selection(
     }]
     assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
     assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert outcome.metrics["outcome"] == "success"
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
+async def test_clear_multi_device_brightness_bypasses_provider_and_keeps_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_calls: list[dict[str, object]] = []
+    world = {
+        "live_state": False,
+        "rooms": [{
+            "name": "Hallway",
+            "abilities": ["brightness", "switch"],
+            "devices": ["Hallway Light 1", "Hallway Light 2"],
+        }],
+        "devices": [
+            {
+                "name": "Hallway Light 1",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+            {
+                "name": "Hallway Light 2",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+        ],
+    }
+
+    async def semantic_world(*_args: object, **_kwargs: object):
+        return json.dumps(world), world
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "success": True,
+                "command": "adjust_level",
+                "delta": 20,
+                "succeeded": [
+                    {
+                        "id": "7829",
+                        "label": "Hallway Light 1",
+                        "changed": True,
+                        "previous_level": 50,
+                        "target_level": 70,
+                    },
+                    {
+                        "id": "7820",
+                        "label": "Hallway Light 2",
+                        "changed": True,
+                        "previous_level": 50,
+                        "target_level": 70,
+                    },
+                ],
+                "failed": [],
+            },
+        )
+
+    async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError("clear semantic control must not enter general tool loop")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_semantic_world_context", semantic_world)
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
+
+    ai = FakeAI("unused -- clear multi-device brightness must stay zero-model")
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "make Hallway Light 1 and Hallway Light 2 brighter",
+        session_id="semantic-fast-multi-brightness",
+    )
+
+    assert control_calls == [{
+        "device_names": ["Hallway Light 1", "Hallway Light 2"],
+        "command": "adjust_level",
+        "device_kind": "light",
+        "delta": 20,
+    }]
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
+    assert outcome.metrics["counters"]["semantic_relative_controls"] == 1
     assert outcome.metrics["counters"].get("model_rounds", 0) == 0
     assert outcome.metrics["outcome"] == "success"
     assert ai.requests == []
@@ -2372,14 +2483,7 @@ async def test_semantic_thermostat_plan_uses_capability_world_and_verified_contr
     monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
     monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
 
-    ai = FakeAI(
-        '{"version":"1","domain":"device_control","timing":"now",'
-        '"target":{"scope":"room","name":"Bedroom 1","kind":"thermostat"},'
-        '"action":{"operation":"adjust_temperature","value":null,"delta":null,'
-        '"direction":"increase","magnitude":"default"},'
-        '"needs_clarification":false,"clarification_question":"",'
-        '"confidence":"high","source":"model"}'
-    )
+    ai = FakeAI("unused -- clear thermostat request must stay zero-model")
     agent = UnifiedMCPAgent(ThermostatIdentityMCP(), "key", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
@@ -2398,14 +2502,9 @@ async def test_semantic_thermostat_plan_uses_capability_world_and_verified_contr
         "Bedroom 1 TRV 20°C → 21°C."
     )
     assert outcome.metrics["outcome"] == "success"
-    assert outcome.metrics["counters"]["semantic_planner_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
     assert outcome.metrics["counters"]["semantic_temperature_controls"] == 1
     assert outcome.metrics["counters"]["semantic_world_context"] == 1
-
-    planner_payload = ai.requests[0]["json"]
-    planner_user = planner_payload["messages"][1]["content"]
-    assert "Capability-grounded home context" in planner_user
-    assert "Bedroom 1 TRV" in planner_user
-    assert "heating_setpoint" in planner_user
-    assert "7331" not in planner_user
-    assert "setHeatingSetpoint" not in planner_user
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert ai.requests == []
