@@ -79,6 +79,7 @@ def load_options() -> dict[str, Any]:
         "mcp_device_cache_seconds": 12,
         "mcp_identity_cache_seconds": 120,
         "mcp_max_concurrent_calls": 2,
+        "mcp_batch_device_commands_enabled": True,
         "mcp_retry_attempts": 3,
         "mcp_retry_backoff_seconds": 0.25,
         "confirmation_ttl_seconds": 120,
@@ -141,6 +142,9 @@ mcp = HubitatMCPClient(
         OPTIONS.get("mcp_identity_cache_seconds") or 120
     ),
     max_concurrent_calls=int(OPTIONS.get("mcp_max_concurrent_calls") or 2),
+    batch_device_commands_enabled=_bool(
+        OPTIONS.get("mcp_batch_device_commands_enabled"), True
+    ),
     retry_attempts=int(OPTIONS.get("mcp_retry_attempts") or 3),
     retry_backoff_seconds=float(
         OPTIONS.get("mcp_retry_backoff_seconds") or 0.25
