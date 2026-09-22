@@ -268,7 +268,7 @@
   },
   {
     "prompt": "increase hallway brightness",
-    "world_context": "{\"live_state\":false,\"rooms\":[{\"name\":\"Hallway\",\"abilities\":[\"brightness\",\"switch\"],\"devices\":[\"Hallway Main\",\"Hallway Secondary\"]}],\"devices\":[{\"name\":\"Hallway Main\",\"room\":\"Hallway\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]},{\"name\":\"Hallway Secondary\",\"room\":\"Hallway\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]}]}",
+    "world_context": "{\"live_state\":false,\"rooms\":[{\"name\":\"Hallway\",\"abilities\":[\"brightness\",\"switch\"],\"devices\":[\"Hallway Light 1\",\"Hallway Light 2\"]},{\"name\":\"Unassigned\",\"abilities\":[\"battery\"],\"devices\":[\"Hallway dimmer\"]}],\"devices\":[{\"name\":\"Hallway dimmer\",\"room\":\"Unassigned\",\"kinds\":[\"sensor\"],\"abilities\":[\"battery\"]},{\"name\":\"Hallway Light 1\",\"room\":\"Hallway\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]},{\"name\":\"Hallway Light 2\",\"room\":\"Hallway\",\"kinds\":[\"light\"],\"abilities\":[\"brightness\",\"switch\"]}]}",
     "expected": {
       "domain": "device_control",
       "timing": "now",
