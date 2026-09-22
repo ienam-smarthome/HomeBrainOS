@@ -45,6 +45,7 @@ def test_exact_named_switch_causal_subject_is_prefetched() -> None:
     assert seed.name == "Dehumidifier 2"
     assert seed.attribute == "switch"
     assert seed.confidence == 1.0
+    assert seed.target["id"] == "4222"
 
 
 def test_minor_device_typo_is_prefetched_when_unique() -> None:
@@ -190,13 +191,8 @@ class _PrefetchMCP:
         args = arguments.get("args") or {}
 
         if name == "hub_read_devices" and operation == "hub_list_devices":
-            assert args["labelFilter"] == "Dehumidifier 2"
-            return MCPToolResult(
-                name,
-                arguments,
-                {},
-                "ok",
-                {"devices": [dict(self.identity)]},
+            raise AssertionError(
+                "causal prefetch must reuse the already-grounded identity"
             )
 
         if name == "hub_read_devices" and operation == "hub_list_device_events":
@@ -313,6 +309,7 @@ async def test_strong_causal_prefetch_reaches_final_reasoning_in_one_model_round
         "model",
         ai_client=ai,
         require_sensitive_confirmation=False,
+        causal_deterministic_final_enabled=False,
     )
 
     outcome = await agent.process_user_request_result(
