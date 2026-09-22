@@ -41,6 +41,7 @@ options:
   stream_idle_timeout_seconds: 20
   mcp_timeout_seconds: 25
   mcp_device_cache_seconds: 12
+  mcp_identity_cache_seconds: 120
   mcp_retry_attempts: 3
   mcp_retry_backoff_seconds: 0.25
   conversation_context_ttl_seconds: 600
@@ -93,6 +94,7 @@ schema:
   stream_idle_timeout_seconds: int
   mcp_timeout_seconds: int
   mcp_device_cache_seconds: int
+  mcp_identity_cache_seconds: int
   mcp_retry_attempts: int
   mcp_retry_backoff_seconds: float
   conversation_context_ttl_seconds: int
