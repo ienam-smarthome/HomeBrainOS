@@ -35,6 +35,7 @@ from causal_native_logs import (
     correlate_native_log_boundaries,
     native_log_provenance_sufficient,
     render_native_log_correlation,
+    render_strong_native_provenance_answer,
 )
 from causal_timeline import (
     causal_log_windows,
@@ -291,6 +292,7 @@ class UnifiedMCPAgent:
         confirmation_ttl_seconds: float = 120,
         rule_write_enabled: bool = True,
         causal_subject_prefetch_enabled: bool = True,
+        causal_deterministic_final_enabled: bool = True,
         max_tool_result_chars: int = 24000,
         max_history_messages: int = 8,
         max_history_chars: int = 12000,
@@ -318,6 +320,9 @@ class UnifiedMCPAgent:
         self.rule_write_enabled = bool(rule_write_enabled)
         self.causal_subject_prefetch_enabled = bool(
             causal_subject_prefetch_enabled
+        )
+        self.causal_deterministic_final_enabled = bool(
+            causal_deterministic_final_enabled
         )
         self.confirmation_policy = ConfirmationPolicy(
             enabled=self.require_sensitive_confirmation
@@ -582,6 +587,7 @@ class UnifiedMCPAgent:
         arguments = {
             "name": seed.name,
             "attribute": seed.attribute,
+            "_resolved_target": dict(seed.target),
             # DeviceHistoryService interprets an explicit small state-history
             # limit as "latest transitions over the bounded seven-day horizon"
             # while still fetching enough rows internally for interval analysis.
@@ -1475,7 +1481,23 @@ class UnifiedMCPAgent:
                 completed_calls=completed_calls,
                 messages=messages,
             )
-            if causal_prefetch in {"empty", "sufficient"}:
+            if causal_prefetch == "sufficient":
+                deterministic_answer = (
+                    render_strong_native_provenance_answer(
+                        self.evidence.receipts()
+                    )
+                    if self.causal_deterministic_final_enabled
+                    else None
+                )
+                if deterministic_answer:
+                    increment_active_metric(
+                        "causal_deterministic_finalization"
+                    )
+                    increment_active_metric("investigative_finalization")
+                    return deterministic_answer
+                increment_active_metric("investigative_finalization")
+                return await self._final_answer(messages)
+            if causal_prefetch == "empty":
                 increment_active_metric("investigative_finalization")
                 return await self._final_answer(messages)
 
