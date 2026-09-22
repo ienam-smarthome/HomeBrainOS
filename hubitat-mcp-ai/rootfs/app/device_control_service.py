@@ -1507,24 +1507,24 @@ class DeviceControlService:
         results = await asyncio.gather(*(execute(target) for target in unique_targets))
         succeeded = [item for item in results if item["success"]]
         failed = [item for item in results if not item["success"]]
-        if failed:
-            # A routine light/switch command that didn't fully succeed --
-            # either Hubitat rejected the command outright (command_sent
-            # False, presented to the user as "Failed: <device>.") or
-            # accepted it but the device never converged to the expected
-            # switch state within the wait window (command_sent True,
-            # verified False, presented as "Command sent but state
-            # verification failed"). Neither case previously touched any
-            # fixed outcome counter, so classify_completed_request() fell
-            # through to its "success" default -- observed live, the WebUI
-            # showed a green "Success" badge next to a message that
-            # literally read "Failed: Livingroom Light 2 and Livingroom
-            # Light 1." This counter closes that gap the same way
-            # ConfirmedActionCoordinator already does for the sensitive-
-            # mutation path via mutation_verification_failures.
+        needs_input_items = [
+            item for item in failed if item.get("needs_input") is True
+        ]
+        hard_failures = [
+            item for item in failed if item.get("needs_input") is not True
+        ]
+        needs_input_only = bool(failed) and not succeeded and not hard_failures
+        if needs_input_only:
+            increment_active_metric("device_control_needs_input")
+        elif failed:
+            # A routine command that was actually rejected or failed
+            # verification remains a hard failure. Missing live precondition
+            # state is different: when *every* unresolved target only needs an
+            # absolute value from the user, classify the turn as needs_input.
             increment_active_metric("device_control_failures")
         data = {
             "success": not failed and bool(succeeded),
+            "needs_input": needs_input_only,
             "command": command,
             **({"level": level} if command == "set_level" else {}),
             **({"setpoint": setpoint} if command == "set_temperature" else {}),
@@ -1540,6 +1540,21 @@ class DeviceControlService:
             "failed": failed,
             "complete": True,
         }
+        if needs_input_only:
+            details = [
+                str(item.get("message") or "").strip()
+                for item in needs_input_items
+                if str(item.get("message") or "").strip()
+            ]
+            data["clarification"] = (
+                details[0]
+                if len(details) == 1
+                else (
+                    "I found the requested devices, but their current state is "
+                    "not available, so I cannot safely calculate a relative "
+                    "change. Specify an absolute level/setpoint instead."
+                )
+            )
         if stripped_action_note is not None:
             data["note"] = (
                 f"This request also mentioned \"{stripped_action_note}\", which "
