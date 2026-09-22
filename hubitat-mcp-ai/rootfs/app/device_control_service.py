@@ -14,7 +14,11 @@ from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import increment_active_metric
-from semantic_world_model import device_abilities, is_brightness_device
+from semantic_world_model import (
+    device_abilities,
+    device_command_names,
+    is_brightness_device,
+)
 from time_expressions import strip_trailing_time
 
 
@@ -1178,7 +1182,131 @@ class DeviceControlService:
                 supports_live_claim=True,
                 evidence_kind="control_precondition_state",
             )
-            return None, f"{direct_reason}; {fallback_reason}"
+
+            # If the device explicitly advertises refresh, actively ask it to
+            # publish current state once before giving up. This is capability-
+            # grounded recovery, not a device-name exception: many bridged or
+            # sleepy drivers expose setLevel/heatingSetpoint control before
+            # they have populated currentStates. Refresh is only attempted when
+            # the identity says it is supported.
+            if "refresh" not in device_command_names(target):
+                return None, f"{direct_reason}; {fallback_reason}"
+
+            refresh_arguments = {
+                "tool": "hub_call_device_command",
+                "args": {"deviceId": device_id, "command": "refresh"},
+            }
+            refresh_started = time.monotonic()
+            refresh_reason = ""
+            try:
+                async with semaphore:
+                    refreshed = await self.mcp.call_tool(
+                        "hub_manage_devices", refresh_arguments
+                    )
+                refreshed_data = (
+                    refreshed.data if isinstance(refreshed.data, dict) else {}
+                )
+                refresh_ok = self._tool_succeeded(refreshed)
+                state = (
+                    refreshed_data.get("state")
+                    if isinstance(refreshed_data.get("state"), dict)
+                    else {}
+                )
+                value = numeric_state_value(state.get(attribute))
+                if refresh_ok and value is not None:
+                    self._record_evidence(
+                        "hub_manage_devices",
+                        refresh_arguments,
+                        success=True,
+                        elapsed_ms=round(
+                            (time.monotonic() - refresh_started) * 1000
+                        ),
+                        summary=(
+                            f"refresh {label}: {attribute} {value:g} "
+                            "reported in post-refresh state"
+                        ),
+                        supports_live_claim=True,
+                        evidence_kind="control_precondition_refresh",
+                    )
+                    return value, "device-refresh-state"
+                if not refresh_ok:
+                    refresh_reason = str(
+                        refreshed_data.get("error")
+                        or refreshed_data.get("message")
+                        or refreshed.text
+                        or "refresh command failed"
+                    ).strip()
+                else:
+                    refresh_reason = (
+                        "refresh succeeded but post-refresh state had no numeric "
+                        f"{attribute}"
+                    )
+            except Exception as exc:
+                refresh_reason = f"{type(exc).__name__}: {exc}"
+
+            self._record_evidence(
+                "hub_manage_devices",
+                refresh_arguments,
+                success=not refresh_reason.startswith(("MCPError", "RuntimeError")),
+                elapsed_ms=round((time.monotonic() - refresh_started) * 1000),
+                summary=f"refresh {label}: {refresh_reason}",
+                supports_live_claim=True,
+                evidence_kind="control_precondition_refresh",
+            )
+
+            # Some integrations update asynchronously after refresh. Give the
+            # device one short bounded opportunity to publish the state and
+            # then re-read the native attribute. Never loop indefinitely.
+            await asyncio.sleep(0.35)
+            reread_started = time.monotonic()
+            try:
+                async with semaphore:
+                    reread = await self.mcp.call_tool(
+                        "hub_read_devices", direct_arguments
+                    )
+                reread_data = (
+                    reread.data if isinstance(reread.data, dict) else {}
+                )
+                value = numeric_state_value(
+                    reread_data.get("value")
+                    if self._tool_succeeded(reread)
+                    else None
+                )
+                if value is not None:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        direct_arguments,
+                        success=True,
+                        elapsed_ms=round(
+                            (time.monotonic() - reread_started) * 1000
+                        ),
+                        summary=(
+                            f"{attribute} {label}: {value:g} "
+                            "(after device refresh)"
+                        ),
+                        supports_live_claim=True,
+                        evidence_kind="control_precondition_state",
+                    )
+                    return value, "device-refresh-reread"
+                reread_reason = (
+                    "attribute still has no numeric value after refresh"
+                )
+            except Exception as exc:
+                reread_reason = f"{type(exc).__name__}: {exc}"
+
+            self._record_evidence(
+                "hub_read_devices",
+                direct_arguments,
+                success=False,
+                elapsed_ms=round((time.monotonic() - reread_started) * 1000),
+                summary=f"{attribute} {label}: {reread_reason}",
+                supports_live_claim=True,
+                evidence_kind="control_precondition_state",
+            )
+            return None, (
+                f"{direct_reason}; {fallback_reason}; "
+                f"{refresh_reason}; {reread_reason}"
+            )
 
         async def execute(target: dict[str, Any]) -> dict[str, Any]:
             device_id = str(target.get("id") or target.get("deviceId"))
