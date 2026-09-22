@@ -149,3 +149,19 @@ def test_identity_freshness_metrics_are_presented() -> None:
         {"label": "Identity refreshes", "value": "1"},
         {"label": "Outcome", "value": "success"},
     ]
+
+
+def test_mcp_concurrency_metrics_are_presented() -> None:
+    assert present_request_metrics({
+        "outcome": "success",
+        "counters": {"mcp_concurrent_peak": 2},
+        "timings_ms": {
+            "mcp_queue_wait": 120,
+            "mcp_session_lock_wait": 15,
+        },
+    }) == [
+        {"label": "MCP concurrent peak", "value": "2"},
+        {"label": "MCP queue wait", "value": "120 ms"},
+        {"label": "MCP session lock wait", "value": "15 ms"},
+        {"label": "Outcome", "value": "success"},
+    ]
