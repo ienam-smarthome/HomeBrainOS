@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.5**.
+Current add-on version: **0.16.6**.
 
 ## Architecture
+
+0.16.6 hardens routine-control failure handling, makes multi-round provider timing cumulative, and wires the existing `rule_write_enabled` setting into both deterministic and model-driven Rule Machine write paths.
 
 0.16.5 improves read-aloud phrasing in the web UI. Visual arrows such as `50% → 70%` are spoken as natural transitions such as “50 percent to 70 percent” instead of the speech engine announcing “right arrow”.
 
