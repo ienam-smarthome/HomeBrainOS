@@ -67,7 +67,7 @@ class SemanticAgentCore:
         return ""
 
     @classmethod
-    def _ground_plan_target(
+    def ground_plan_target(
         cls,
         prompt: str,
         plan: SemanticPlan,
@@ -172,7 +172,7 @@ class SemanticAgentCore:
         )
         if plan.domain != "device_control":
             return None
-        return self._ground_plan_target(prompt, plan, world_context)
+        return self.ground_plan_target(prompt, plan, world_context)
 
     def _relative_delta(self, plan: SemanticPlan) -> float:
         action = plan.action
