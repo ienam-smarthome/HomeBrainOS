@@ -1380,6 +1380,7 @@ class DeviceControlService:
             command_success = False
             verified: bool | None = None
             verification_message = ""
+            result: MCPToolResult | None = None
             try:
                 async with semaphore:
                     result = await self.mcp.call_tool(
