@@ -43,18 +43,6 @@ class SemanticAgentCore:
         return re.findall(r"[a-z0-9]+", str(value or "").casefold())
 
     @classmethod
-    def _contains_entity_phrase(cls, prompt: str, entity_name: str) -> bool:
-        prompt_tokens = cls._phrase_tokens(prompt)
-        entity_tokens = cls._phrase_tokens(entity_name)
-        if not prompt_tokens or not entity_tokens or len(entity_tokens) > len(prompt_tokens):
-            return False
-        width = len(entity_tokens)
-        return any(
-            prompt_tokens[index:index + width] == entity_tokens
-            for index in range(len(prompt_tokens) - width + 1)
-        )
-
-    @classmethod
     def _explicit_entities(
         cls,
         prompt: str,
