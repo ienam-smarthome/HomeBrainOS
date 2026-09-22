@@ -303,34 +303,96 @@ def render_semantic_world(
     *,
     max_chars: int = 7000,
 ) -> str:
-    """Render bounded planner context; never includes current state or IDs."""
+    """Render bounded planner context; never includes current state or IDs.
+
+    Per-device detail is trimmed before room summaries. Room abilities therefore
+    remain visible even when a large device inventory cannot fit in context.
+    """
 
     if not isinstance(world, dict):
         return ""
-    payload = {
-        "live_state": False,
-        "rooms": world.get("rooms") or [],
-        "devices": world.get("devices") or [],
-    }
+
+    source_rooms = [
+        dict(room)
+        for room in (world.get("rooms") or [])
+        if isinstance(room, dict)
+    ]
+    devices = [
+        dict(device)
+        for device in (world.get("devices") or [])
+        if isinstance(device, dict)
+    ]
+
+    def payload_for(
+        current_devices: list[dict[str, Any]],
+        *,
+        include_room_devices: bool = True,
+    ) -> dict[str, Any]:
+        visible_by_room: dict[str, set[str]] = defaultdict(set)
+        for item in current_devices:
+            visible_by_room[str(item.get("room") or "")].add(
+                str(item.get("name") or "")
+            )
+
+        rooms: list[dict[str, Any]] = []
+        for original in source_rooms:
+            room = dict(original)
+            if include_room_devices:
+                room_name_value = str(room.get("name") or "")
+                visible = visible_by_room.get(room_name_value, set())
+                room["devices"] = [
+                    name
+                    for name in (room.get("devices") or [])
+                    if str(name) in visible
+                ]
+                room["details_complete"] = (
+                    len(room["devices"]) == int(room.get("device_count") or 0)
+                )
+            else:
+                room.pop("devices", None)
+                room["details_complete"] = False
+            rooms.append(room)
+
+        return {
+            "live_state": False,
+            "rooms": rooms,
+            "devices": current_devices,
+        }
+
+    payload = payload_for(devices)
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    while devices and len(text) > max_chars:
+        devices.pop()
+        payload = payload_for(devices)
+        text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+    if len(text) <= max_chars:
+        return text
+
+    payload = payload_for([], include_room_devices=False)
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     if len(text) <= max_chars:
         return text
 
-    devices = list(payload["devices"])
-    while devices and len(text) > max_chars:
-        devices.pop()
-        payload["devices"] = devices
-        visible = {str(item.get("name") or "") for item in devices}
-        trimmed_rooms = []
-        for room in world.get("rooms") or []:
-            room_devices = [
-                name for name in room.get("devices") or [] if str(name) in visible
-            ]
-            if room_devices:
-                trimmed_rooms.append({**room, "devices": room_devices})
-        payload["rooms"] = trimmed_rooms
-        text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    return text[:max_chars]
+    compact_rooms: list[dict[str, Any]] = []
+    for room in payload["rooms"]:
+        candidate = {
+            "live_state": False,
+            "rooms": compact_rooms + [room],
+            "devices": [],
+        }
+        candidate_text = json.dumps(
+            candidate, ensure_ascii=False, separators=(",", ":")
+        )
+        if len(candidate_text) > max_chars:
+            break
+        compact_rooms.append(room)
+
+    return json.dumps(
+        {"live_state": False, "rooms": compact_rooms, "devices": []},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 __all__ = [
