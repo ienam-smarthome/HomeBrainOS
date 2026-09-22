@@ -145,3 +145,17 @@ def test_cancellation_precedes_unresolved_conditions() -> None:
         assert metrics.completed_outcome() == "cancelled"
     finally:
         metrics.reset(token)
+
+
+def test_request_metrics_observe_counter_max_keeps_peak_value() -> None:
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        metrics.observe_counter_max("mcp_concurrent_peak", 1)
+        metrics.observe_counter_max("mcp_concurrent_peak", 3)
+        metrics.observe_counter_max("mcp_concurrent_peak", 2)
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert snapshot["counters"]["mcp_concurrent_peak"] == 3
