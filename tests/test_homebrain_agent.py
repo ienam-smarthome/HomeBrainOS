@@ -1969,6 +1969,129 @@ async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool
 
 
 @pytest.mark.asyncio
+async def test_semantic_grounding_uses_full_world_when_planner_context_is_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_calls: list[dict[str, object]] = []
+
+    class LargeIdentityMCP:
+        async def get_device_identities(self):
+            devices = [
+                {
+                    "id": str(index),
+                    "label": f"A very long synthetic switch device {index:03d} for context pressure",
+                    "roomName": f"A Room {index:03d}",
+                    "capabilities": ["Actuator", "Switch"],
+                    "commands": ["on", "off"],
+                    "attributes": [{"name": "switch", "value": "off"}],
+                }
+                for index in range(90)
+            ]
+            devices.extend([
+                {
+                    "id": "3927",
+                    "label": "Hallway dimmer",
+                    "roomName": "Unassigned",
+                    "capabilities": ["Battery", "PushableButton", "SwitchLevel"],
+                    "commands": ["setLevel"],
+                    "attributes": [
+                        {"name": "battery", "value": 82},
+                        {"name": "level", "value": None},
+                    ],
+                },
+                {
+                    "id": "7829",
+                    "label": "Hallway Light 1",
+                    "roomName": "Hallway",
+                    "capabilities": [
+                        "Actuator", "ChangeLevel", "Light", "Switch", "SwitchLevel"
+                    ],
+                    "commands": ["on", "off", "setLevel"],
+                    "attributes": [{"name": "level", "value": 50}],
+                },
+                {
+                    "id": "7830",
+                    "label": "Hallway Light 2",
+                    "roomName": "Hallway",
+                    "capabilities": [
+                        "Actuator", "ChangeLevel", "Light", "Switch", "SwitchLevel"
+                    ],
+                    "commands": ["on", "off", "setLevel"],
+                    "attributes": [{"name": "level", "value": 30}],
+                },
+            ])
+            return devices
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "success": True,
+                "command": "adjust_level",
+                "delta": 20,
+                "succeeded": [
+                    {
+                        "id": "7829",
+                        "label": "Hallway Light 1",
+                        "changed": True,
+                        "previous_level": 50,
+                        "target_level": 70,
+                    },
+                    {
+                        "id": "7830",
+                        "label": "Hallway Light 2",
+                        "changed": True,
+                        "previous_level": 30,
+                        "target_level": 50,
+                    },
+                ],
+                "failed": [],
+            },
+        )
+
+    async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError("semantic routine control must not enter the general tool loop")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
+
+    ai = FakeAI(
+        '{"version":"1","domain":"device_control","timing":"now",'
+        '"target":{"scope":"device","name":"Hallway dimmer","kind":"light"},'
+        '"action":{"operation":"adjust_level","value":null,"delta":null,'
+        '"direction":"increase","magnitude":"default"},'
+        '"needs_clarification":false,"clarification_question":"",'
+        '"confidence":"high","source":"model"}'
+    )
+    agent = UnifiedMCPAgent(LargeIdentityMCP(), "key", ai_client=ai)
+
+    rendered, full_world = await agent._semantic_world_context(
+        include_grounding_world=True
+    )
+    assert "Hallway Light 1" not in rendered
+    assert any(room["name"] == "Hallway" for room in full_world["rooms"])
+
+    outcome = await agent.process_user_request_result(
+        "increase hallway brightness",
+        session_id="semantic-grounding-full-world",
+    )
+
+    assert control_calls == [{
+        "room": "Hallway",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    }]
+    assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
+    assert outcome.metrics["counters"]["semantic_relative_controls"] == 1
+    assert "Hallway dimmer" not in str(control_calls)
+
+
+@pytest.mark.asyncio
 async def test_semantic_clarification_is_needs_input_not_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
