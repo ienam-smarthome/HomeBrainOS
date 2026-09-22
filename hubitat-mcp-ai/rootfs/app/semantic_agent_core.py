@@ -54,6 +54,64 @@ class SemanticAgentCore:
             for index in range(len(prompt_tokens) - width + 1)
         )
 
+    @classmethod
+    def _explicit_entities(
+        cls,
+        prompt: str,
+        entities: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return unique canonical entities explicitly named without overlap.
+
+        Prefer the longest phrase when one canonical name is contained inside
+        another (for example room "Hallway" versus device "Hallway Light 1").
+        Duplicate canonical labels are deliberately excluded because a spoken
+        label that maps to two real devices is not a safe explicit identity.
+        """
+
+        prompt_tokens = cls._phrase_tokens(prompt)
+        if not prompt_tokens:
+            return []
+
+        token_counts: dict[tuple[str, ...], int] = {}
+        prepared: list[tuple[dict[str, Any], tuple[str, ...]]] = []
+        for entity in entities:
+            tokens = tuple(cls._phrase_tokens(entity.get("name")))
+            if not tokens:
+                continue
+            prepared.append((entity, tokens))
+            token_counts[tokens] = token_counts.get(tokens, 0) + 1
+
+        matches: list[tuple[int, int, int, dict[str, Any]]] = []
+        for entity, tokens in prepared:
+            if token_counts.get(tokens) != 1 or len(tokens) > len(prompt_tokens):
+                continue
+            width = len(tokens)
+            for start in range(len(prompt_tokens) - width + 1):
+                if tuple(prompt_tokens[start:start + width]) == tokens:
+                    matches.append((start, start + width, width, entity))
+
+        selected: list[tuple[int, int, dict[str, Any]]] = []
+        occupied: set[int] = set()
+        for start, end, width, entity in sorted(
+            matches,
+            key=lambda item: (-item[2], item[0], str(item[3].get("name") or "").casefold()),
+        ):
+            span = set(range(start, end))
+            if occupied.intersection(span):
+                continue
+            selected.append((start, end, entity))
+            occupied.update(span)
+
+        selected.sort(key=lambda item: item[0])
+        result: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for _start, _end, entity in selected:
+            key = str(entity.get("name") or "").strip().casefold()
+            if key and key not in seen:
+                result.append(entity)
+                seen.add(key)
+        return result
+
     @staticmethod
     def _required_ability(plan: SemanticPlan) -> str:
         action = plan.action
@@ -111,15 +169,33 @@ class SemanticAgentCore:
             item for item in (world.get("devices") or [])
             if isinstance(item, dict) and str(item.get("name") or "").strip()
         ]
-        explicit_rooms = [
-            item for item in rooms
-            if cls._contains_entity_phrase(prompt, str(item.get("name") or ""))
-        ]
-        explicit_devices = [
-            item for item in devices
-            if cls._contains_entity_phrase(prompt, str(item.get("name") or ""))
-        ]
+        explicit_rooms = cls._explicit_entities(prompt, rooms)
+        explicit_devices = cls._explicit_entities(prompt, devices)
         required_ability = cls._required_ability(plan)
+
+        if len(explicit_devices) >= 2:
+            compatible = [
+                item
+                for item in explicit_devices
+                if (
+                    not required_ability
+                    or required_ability
+                    in {str(value) for value in (item.get("abilities") or [])}
+                )
+            ]
+            if len(compatible) == len(explicit_devices):
+                grounded_target = plan.target.model_copy(
+                    update={
+                        "scope": "selection",
+                        "name": "",
+                        "names": [
+                            str(item.get("name") or "").strip()
+                            for item in explicit_devices
+                        ],
+                    }
+                )
+                increment_active_metric("semantic_target_grounded")
+                return plan.model_copy(update={"target": grounded_target})
 
         if len(explicit_rooms) == 1 and not explicit_devices:
             room = explicit_rooms[0]
@@ -131,6 +207,7 @@ class SemanticAgentCore:
                     update={
                         "scope": "room",
                         "name": str(room.get("name") or "").strip(),
+                        "names": [],
                     }
                 )
                 increment_active_metric("semantic_target_grounded")
@@ -147,6 +224,7 @@ class SemanticAgentCore:
                     update={
                         "scope": "device",
                         "name": str(device.get("name") or "").strip(),
+                        "names": [],
                     }
                 )
                 increment_active_metric("semantic_target_grounded")
@@ -225,6 +303,8 @@ class SemanticAgentCore:
 
         if target.scope == "room":
             arguments["room"] = target.name
+        elif target.scope == "selection":
+            arguments["device_names"] = list(target.names)
         else:
             arguments["device_names"] = [target.name]
 
