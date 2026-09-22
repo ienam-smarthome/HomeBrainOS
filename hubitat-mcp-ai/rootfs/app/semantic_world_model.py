@@ -40,6 +40,69 @@ def _normalized(value: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
 
 
+_NON_BRIGHTNESS_LEVEL_CAPABILITIES = {
+    "fancontrol",
+    "windowshade",
+    "windowshadelevel",
+    "garagedoorcontrol",
+    "doorcontrol",
+    "audiovolume",
+}
+_NON_BRIGHTNESS_LEVEL_COMMANDS = {
+    "setspeed",
+    "setposition",
+    "setvolume",
+    "open",
+    "close",
+}
+
+
+def is_brightness_device(device: dict[str, Any]) -> bool:
+    """True for semantic dimmers, even when the label/capabilities omit Light.
+
+    Hubitat dimmer drivers do not have to advertise a literal Light capability.
+    Many ordinary wall dimmers expose only Switch + SwitchLevel + setLevel and
+    can be labelled simply "Hallway" or "Landing". Treat level control as
+    brightness unless the same identity has stronger semantics for a fan,
+    shade/door position, or audio volume. This keeps capability grounding broad
+    enough for real dimmers without turning every generic level-like actuator
+    into a light.
+    """
+
+    capabilities = {_normalized(value) for value in capability_names(device)}
+    commands = _command_names(device)
+    attributes = {_normalized(key) for key in device_attributes(device)}
+
+    level_capable = bool(
+        capabilities.intersection({"switchlevel", "changelevel"})
+        or "setlevel" in commands
+        or "level" in attributes
+    )
+    if not level_capable:
+        return False
+    if is_light_device(device):
+        return True
+
+    if capabilities.intersection(_NON_BRIGHTNESS_LEVEL_CAPABILITIES):
+        return False
+    if commands.intersection(_NON_BRIGHTNESS_LEVEL_COMMANDS):
+        return False
+
+    # Thermostat/setpoint devices may expose unrelated numeric levels through
+    # bridge drivers. Do not reinterpret those as lighting brightness.
+    if capabilities.intersection(
+        {
+            "thermostat",
+            "thermostatheatingsetpoint",
+            "thermostatcoolingsetpoint",
+            "heatingsetpoint",
+            "coolingsetpoint",
+        }
+    ):
+        return False
+    return True
+
+
 def _command_names(device: dict[str, Any]) -> set[str]:
     raw = device.get("commands") or []
     names: set[str] = set()
@@ -82,14 +145,7 @@ def device_abilities(device: dict[str, Any]) -> set[str]:
     ):
         abilities.add("switch")
 
-    if (
-        is_light_device(device)
-        and (
-            capabilities.intersection({"switchlevel", "changelevel"})
-            or "setlevel" in commands
-            or "level" in attributes
-        )
-    ):
+    if is_brightness_device(device):
         abilities.add("brightness")
 
     if (
@@ -162,7 +218,7 @@ def semantic_device_kinds(device: dict[str, Any]) -> list[str]:
     abilities = device_abilities(device)
     capabilities = {_normalized(value) for value in capability_names(device)}
     kinds: list[str] = []
-    if is_light_device(device):
+    if is_light_device(device) or "brightness" in abilities:
         kinds.append("light")
     if "heating_setpoint" in abilities or "cooling_setpoint" in abilities:
         kinds.append("thermostat")
@@ -279,6 +335,7 @@ def render_semantic_world(
 __all__ = [
     "build_semantic_world",
     "device_abilities",
+    "is_brightness_device",
     "render_semantic_world",
     "semantic_device_kinds",
 ]
