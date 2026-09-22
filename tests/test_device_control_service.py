@@ -1621,3 +1621,65 @@ async def test_temperature_control_rejects_device_without_explicit_heating_setpo
     assert result.data["success"] is False
     assert result.data["executed"] == 0
     assert mcp.calls == []
+
+
+
+@pytest.mark.asyncio
+async def test_adjust_level_matches_unlabelled_switchlevel_dimmers_in_room():
+    mcp = RelativeLevelMCP()
+    mcp.devices = [
+        {
+            "id": "7805",
+            "label": "Hallway Main",
+            "roomName": "Hallway",
+            "capabilities": ["Switch", "SwitchLevel"],
+            "commands": ["on", "off", "setLevel"],
+            "attributes": [
+                {"name": "switch", "value": "on"},
+                {"name": "level", "value": 5},
+            ],
+        },
+        {
+            "id": "7828",
+            "label": "Hallway Secondary",
+            "roomName": "Hallway",
+            "capabilities": ["Switch", "SwitchLevel"],
+            "commands": ["on", "off", "setLevel"],
+            "attributes": [
+                {"name": "switch", "value": "on"},
+                {"name": "level", "value": 5},
+            ],
+        },
+        {
+            "id": "fan1",
+            "label": "Hallway Fan",
+            "roomName": "Hallway",
+            "capabilities": ["Switch", "SwitchLevel", "FanControl"],
+            "commands": ["on", "off", "setLevel", "setSpeed"],
+            "attributes": [
+                {"name": "switch", "value": "on"},
+                {"name": "level", "value": 50},
+                {"name": "speed", "value": "medium"},
+            ],
+        },
+    ]
+    mcp.live_levels = {"7805": 40, "7828": 20}
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Hallway",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["success"] is True
+    assert result.data["matched"] == 2
+    assert {item["label"] for item in result.data["succeeded"]} == {
+        "Hallway Main",
+        "Hallway Secondary",
+    }
+    assert not any(
+        args.get("args", {}).get("deviceId") == "fan1"
+        for _gateway, args in mcp.calls
+    )
