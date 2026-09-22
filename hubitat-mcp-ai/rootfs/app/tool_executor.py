@@ -340,6 +340,11 @@ class ToolExecutor:
         safe_arguments = prepare_history_arguments(name, model_arguments)
         safe_arguments = _normalize_device_command_parameters(name, safe_arguments)
         receipt_arguments = deepcopy(safe_arguments)
+        # Host-only execution hints may carry already-grounded structural
+        # identity into a local service to avoid a redundant remote lookup.
+        # They are not part of the public/model tool contract and should not be
+        # serialized into evidence receipts.
+        receipt_arguments.pop("_resolved_target", None)
         declared_tool = tool or MCPTool(name, name, {})
         effect = classify_tool_effect(declared_tool, receipt_arguments)
         handler = self.local_handlers.get(name)

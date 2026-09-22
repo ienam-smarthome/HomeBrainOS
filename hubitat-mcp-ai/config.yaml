@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.16.14"
+version: "0.16.15"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -56,6 +56,7 @@ options:
   rule_create_paused_required: true
   deterministic_reads_enabled: false
   causal_subject_prefetch_enabled: true
+  causal_deterministic_final_enabled: true
   semantic_agent_enabled: true
   semantic_default_brightness_step: 20
   semantic_default_temperature_step: 1.0
@@ -111,6 +112,7 @@ schema:
   rule_create_paused_required: bool
   deterministic_reads_enabled: bool
   causal_subject_prefetch_enabled: bool
+  causal_deterministic_final_enabled: bool
   semantic_agent_enabled: bool
   semantic_default_brightness_step: int
   semantic_default_temperature_step: float

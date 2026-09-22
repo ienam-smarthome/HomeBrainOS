@@ -98,6 +98,7 @@ def load_options() -> dict[str, Any]:
         # behaviour without a code change.
         "deterministic_reads_enabled": False,
         "causal_subject_prefetch_enabled": True,
+        "causal_deterministic_final_enabled": True,
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
         "semantic_default_temperature_step": 1.0,
@@ -243,6 +244,9 @@ agent = UnifiedMCPAgent(
     ),
     causal_subject_prefetch_enabled=_bool(
         OPTIONS.get("causal_subject_prefetch_enabled"), True
+    ),
+    causal_deterministic_final_enabled=_bool(
+        OPTIONS.get("causal_deterministic_final_enabled"), True
     ),
     semantic_agent_enabled=_bool(
         OPTIONS.get("semantic_agent_enabled"), True

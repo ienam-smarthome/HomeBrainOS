@@ -58,6 +58,7 @@ class CausalSubjectSeed:
     attribute: str
     confidence: float
     matched_text: str
+    target: dict[str, Any]
 
 
 def _tokens(value: Any) -> list[str]:
@@ -252,6 +253,7 @@ def causal_subject_seed(
         attribute="switch",
         confidence=confidence,
         matched_text=matched_text,
+        target=dict(device),
     )
 
 
