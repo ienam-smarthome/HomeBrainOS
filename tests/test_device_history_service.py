@@ -207,6 +207,138 @@ async def test_explicit_hours_back_still_overrides_attribute_default():
     assert result.data["hoursBack"] == 6
 
 
+class NoisySwitchHistoryMCP(HistoryMCP):
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        if operation == "hub_list_devices":
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {"devices": [{
+                    "id": "4222",
+                    "label": "Dehumidifier 2",
+                    "room": "Dehumidifier",
+                    "capabilities": ["Switch", "PowerMeter"],
+                }]},
+            )
+        if operation == EVENT_OPERATION:
+            args = arguments.get("args") or {}
+            if args.get("attribute") == "switch":
+                return MCPToolResult(
+                    name,
+                    arguments,
+                    {},
+                    "ok",
+                    {
+                        "events": [
+                            {
+                                "name": "switch",
+                                "value": "off",
+                                "date": "2026-09-22T22:38:13.489+0100",
+                                "isStateChange": True,
+                            },
+                            {
+                                "name": "switch",
+                                "value": "on",
+                                "date": "2026-09-22T22:07:37.107+0100",
+                                "isStateChange": True,
+                            },
+                        ],
+                        "count": 2,
+                    },
+                )
+            # Reproduce the live noisy-page failure: the older switch=on edge
+            # has been crowded out by power/energy/rtt telemetry.
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {
+                    "events": [
+                        {
+                            "name": "rtt",
+                            "value": "80",
+                            "date": "2026-09-22T22:53:33.104+0100",
+                            "isStateChange": True,
+                        },
+                        {
+                            "name": "switch",
+                            "value": "off",
+                            "date": "2026-09-22T22:38:13.489+0100",
+                            "isStateChange": True,
+                        },
+                    ],
+                    "count": 50,
+                },
+            )
+        raise AssertionError(f"unexpected operation: {operation}")
+
+
+@pytest.mark.asyncio
+async def test_switch_history_uses_scoped_upstream_rows_to_preserve_old_on_boundary():
+    mcp = NoisySwitchHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({
+        "name": "dehumidifier 2",
+        "attribute": "switch",
+        "hours_back": 24,
+        "limit": 20,
+    })
+
+    assert result.is_error is False
+    assert result.data["label"] == "Dehumidifier 2"
+    assert result.data["temporalAnalysis"]["intervalCount"] == 1
+    interval = result.data["temporalAnalysis"]["observedIntervals"][0]
+    assert interval["start"] == "2026-09-22T22:07:37.107+0100"
+    assert interval["end"] == "2026-09-22T22:38:13.489+0100"
+    event_calls = [
+        args for _gateway, args in mcp.calls
+        if args.get("tool") == EVENT_OPERATION
+    ]
+    assert len(event_calls) == 1
+    assert event_calls[0]["args"]["attribute"] == "switch"
+
+
+class BrokenSwitchFilterHistoryMCP(NoisySwitchHistoryMCP):
+    async def call_tool(self, name, arguments):
+        operation = arguments.get("tool")
+        args = arguments.get("args") or {}
+        if operation == EVENT_OPERATION and args.get("attribute") == "switch":
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name, arguments, {}, "ok", {"events": [], "count": 0}
+            )
+        return await super().call_tool(name, arguments)
+
+
+@pytest.mark.asyncio
+async def test_switch_history_falls_back_unfiltered_when_scoped_filter_is_empty():
+    mcp = BrokenSwitchFilterHistoryMCP()
+    service = DeviceHistoryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.history({
+        "name": "dehumidifier 2",
+        "attribute": "switch",
+        "hours_back": 24,
+    })
+
+    event_calls = [
+        args for _gateway, args in mcp.calls
+        if args.get("tool") == EVENT_OPERATION
+    ]
+    assert len(event_calls) == 2
+    assert event_calls[0]["args"]["attribute"] == "switch"
+    assert "attribute" not in event_calls[1]["args"]
+    # The fallback page only carries the off edge in this fixture, so the
+    # important invariant is fail-closed: no invented bounded interval.
+    assert result.data["temporalAnalysis"]["intervalCount"] == 0
+
+
 class BrokenAttributeFilterHistoryMCP(HistoryMCP):
     """Reproduces a live-confirmed upstream bug (2026-08-13): calling
     hub_list_device_events with attribute="contact" for the real Front
