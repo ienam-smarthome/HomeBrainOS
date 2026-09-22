@@ -1127,10 +1127,14 @@ async def test_mcp_client_peek_device_identities_can_use_complete_live_context_w
 
     from mcp_client import HubitatMCPClient
 
-    client = HubitatMCPClient("http://example.invalid/mcp")
+    client = HubitatMCPClient(
+        "http://example.invalid/mcp",
+        identity_cache_seconds=120,
+        clock=lambda: 1000.0,
+    )
     try:
         client._live_context_snapshot = (
-            1.0,
+            950.0,
             client._live_device_snapshot_generation,
             {
                 "devices": [
