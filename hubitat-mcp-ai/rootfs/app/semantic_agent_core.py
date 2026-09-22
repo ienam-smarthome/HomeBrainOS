@@ -72,7 +72,7 @@ class SemanticAgentCore:
         cls,
         prompt: str,
         plan: SemanticPlan,
-        world_context: str,
+        world_context: str | dict[str, Any],
     ) -> SemanticPlan:
         """Validate model entity choice against the capability world.
 
@@ -86,16 +86,20 @@ class SemanticAgentCore:
         """
 
         if (
-            not world_context.strip()
-            or plan.target is None
+            plan.target is None
             or plan.action is None
             or plan.needs_clarification
         ):
             return plan
-        try:
-            world = json.loads(world_context)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return plan
+        if isinstance(world_context, dict):
+            world = world_context
+        else:
+            if not str(world_context or "").strip():
+                return plan
+            try:
+                world = json.loads(str(world_context))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return plan
         if not isinstance(world, dict):
             return plan
 
@@ -157,6 +161,7 @@ class SemanticAgentCore:
         history: Any = None,
         selected_device: str = "",
         world_context: str = "",
+        grounding_world: dict[str, Any] | None = None,
     ) -> SemanticPlan | None:
         fast_arguments = routine_control_arguments(prompt)
         if fast_arguments is not None:
@@ -175,7 +180,11 @@ class SemanticAgentCore:
         )
         if plan.domain != "device_control":
             return None
-        return self.ground_plan_target(prompt, plan, world_context)
+        return self.ground_plan_target(
+            prompt,
+            plan,
+            grounding_world if grounding_world is not None else world_context,
+        )
 
     def _relative_delta(self, plan: SemanticPlan) -> float:
         action = plan.action

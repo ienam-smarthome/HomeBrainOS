@@ -3,9 +3,15 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.3**.
+Current add-on version: **0.16.4**.
 
 ## Architecture
+
+0.16.4 makes host-owned entity grounding independent of the model's bounded
+semantic context. The planner still receives a compact capability world, but
+the host now retains the complete cached identity world for final target
+binding. This prevents larger installations from losing a valid room merely
+because it fell outside the planner context budget.
 
 0.16.3 adds host-owned semantic entity grounding. The reasoning model can still
 interpret meaning, but it no longer gets final authority over *which* similarly
