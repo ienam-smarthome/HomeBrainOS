@@ -164,6 +164,24 @@ def split_all_lights_exclusion(name: str) -> tuple[str, list[str]]:
     return base, excluded
 
 
+def _wire_scalar(value: Any) -> str:
+    """Canonical MCP wire form for scalar command/poll arguments.
+
+    The upstream Hubitat MCP schema declares command parameters and
+    waitFor.expectedValue as strings even when the underlying device command
+    expects NUMBER. The server normalizes those strings against the device's
+    command declaration before dispatch. Keep typed numbers inside HomeBrain
+    for arithmetic/reporting and stringify only at this transport boundary.
+    """
+
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return str(int(number)) if number.is_integer() else f"{number:g}"
+    return str(value)
+
+
 def _human_join(items: list[str]) -> str:
     values = [str(item) for item in items if str(item).strip()]
     if not values:
@@ -1034,7 +1052,7 @@ class DeviceControlService:
                     "deviceId": device_id,
                     "command": hub_command,
                     **(
-                        {"parameters": [target_level]}
+                        {"parameters": [_wire_scalar(target_level)]}
                         if command in {"set_level", "adjust_level"}
                         else {}
                     ),
@@ -1042,7 +1060,7 @@ class DeviceControlService:
                         {
                             "waitFor": {
                                 "attribute": wait_attribute,
-                                "expectedValue": expected_value,
+                                "expectedValue": _wire_scalar(expected_value),
                                 "timeoutMs": 5000,
                             }
                         }
@@ -1090,12 +1108,26 @@ class DeviceControlService:
                 if command_success
                 else "failed"
             )
+            failure_detail = ""
+            if not command_success:
+                if isinstance(getattr(result, "data", None), dict):
+                    failure_detail = str(
+                        result.data.get("error")
+                        or result.data.get("message")
+                        or ""
+                    ).strip()
+                if not failure_detail:
+                    failure_detail = str(message or "").strip()
+                failure_detail = " ".join(failure_detail.split())[:220]
+            evidence_summary = f"{command} {label}: {evidence_outcome}"
+            if failure_detail:
+                evidence_summary += f" ({failure_detail})"
             self._record_evidence(
                 "hub_manage_devices",
                 call_arguments,
                 success=command_success and verified is not False,
                 elapsed_ms=round((time.monotonic() - started) * 1000),
-                summary=f"{command} {label}: {evidence_outcome}",
+                summary=evidence_summary,
                 supports_live_claim=True,
                 evidence_kind="device_command_result",
             )
