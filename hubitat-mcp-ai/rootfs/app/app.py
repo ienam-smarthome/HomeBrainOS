@@ -97,6 +97,7 @@ def load_options() -> dict[str, Any]:
         # this flag. Set True to restore the exact prior all-deterministic
         # behaviour without a code change.
         "deterministic_reads_enabled": False,
+        "causal_subject_prefetch_enabled": True,
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
         "semantic_default_temperature_step": 1.0,
@@ -239,6 +240,9 @@ agent = UnifiedMCPAgent(
     rule_write_enabled=_bool(OPTIONS.get("rule_write_enabled"), True),
     deterministic_reads_enabled=_bool(
         OPTIONS.get("deterministic_reads_enabled"), False
+    ),
+    causal_subject_prefetch_enabled=_bool(
+        OPTIONS.get("causal_subject_prefetch_enabled"), True
     ),
     semantic_agent_enabled=_bool(
         OPTIONS.get("semantic_agent_enabled"), True
