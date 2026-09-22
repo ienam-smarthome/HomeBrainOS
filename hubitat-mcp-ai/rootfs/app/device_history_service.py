@@ -651,14 +651,26 @@ class DeviceHistoryService:
                 required_history_hours_absolute(time_window.start, now=now),
             )
 
-        # The upstream attribute filter is not reliable for every driver, so
-        # fetch a bounded unfiltered set and filter by event name locally.
+        # Most driver-specific upstream attribute filters are not reliable
+        # enough to trust as the sole source (a live-confirmed contact-filter
+        # bug returned a clean empty list despite real contact events). Switch
+        # history is the exception we intentionally exploit for causal subjects:
+        # high-churn metering devices can push an older switch=on boundary out of
+        # the newest 50 generic events entirely. Ask upstream for switch rows
+        # first so the state boundary cannot be crowded out. If that scoped read
+        # returns no rows, retry once unfiltered and keep the established local
+        # filtering fallback.
         fetch_limit = 50 if attribute else limit
+        attribute_cf = attribute.casefold() if attribute else ""
+        upstream_scoped_attribute = "switch" if attribute_cf == "switch" else ""
         event_args: dict[str, Any] = {
             "deviceId": str(device_id),
             "hoursBack": hours_back,
             "limit": fetch_limit,
         }
+        if upstream_scoped_attribute:
+            event_args["attribute"] = upstream_scoped_attribute
+
         source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
         started = time.monotonic()
         try:
@@ -692,9 +704,64 @@ class DeviceHistoryService:
 
         success = _shared_tool_succeeded(source)
         source_events = self._events(source.data, limit=fetch_limit) if success else []
+
+        if success and upstream_scoped_attribute and not source_events:
+            self._record_evidence(
+                DEVICE_GATEWAY,
+                source_arguments,
+                success=True,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=(
+                    f"0 upstream {upstream_scoped_attribute} events for {label!r}; "
+                    "retrying unfiltered because driver-side filters can be incomplete"
+                ),
+                supports_live_claim=True,
+                evidence_kind="authoritative_device_event_history",
+            )
+            fallback_args = {
+                "deviceId": str(device_id),
+                "hoursBack": hours_back,
+                "limit": fetch_limit,
+            }
+            source_arguments = {"tool": EVENT_OPERATION, "args": fallback_args}
+            started = time.monotonic()
+            try:
+                source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
+            except Exception as exc:
+                elapsed_ms = round((time.monotonic() - started) * 1000)
+                self._record_evidence(
+                    DEVICE_GATEWAY,
+                    source_arguments,
+                    success=False,
+                    elapsed_ms=elapsed_ms,
+                    summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                    supports_live_claim=True,
+                    evidence_kind="authoritative_device_event_history",
+                )
+                data = {
+                    "success": False,
+                    "requested": requested,
+                    "deviceId": str(device_id),
+                    "label": label,
+                    "error": str(exc)[:500],
+                }
+                return MCPToolResult(
+                    DEVICE_HISTORY_TOOL,
+                    arguments,
+                    {},
+                    json.dumps(data),
+                    data,
+                    is_error=True,
+                )
+            success = _shared_tool_succeeded(source)
+            source_events = (
+                self._events(source.data, limit=fetch_limit)
+                if success
+                else []
+            )
+
         filtered_events = source_events
         if attribute:
-            attribute_cf = attribute.casefold()
             filtered_events = [
                 event
                 for event in source_events
