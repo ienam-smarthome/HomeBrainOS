@@ -282,48 +282,64 @@ def correlate_native_log_boundaries(
             ]
             correlations.append(correlation)
 
-    by_role = {str(row.get("boundaryRole")): row for row in correlations}
-    start_controller = (by_role.get("start") or {}).get("controller")
-    end_controller = (by_role.get("end") or {}).get("controller")
-    repeated = bool(
-        isinstance(start_controller, dict)
-        and isinstance(end_controller, dict)
-        and start_controller.get("fingerprint")
-        and start_controller.get("fingerprint") == end_controller.get("fingerprint")
-    )
-    if repeated:
-        for row in correlations:
-            row["repeatedControllerPattern"] = True
-            row["provenanceStrength"] = "strong-repeated-temporal-provenance"
-    else:
-        for row in correlations:
-            row["repeatedControllerPattern"] = False
-            row["provenanceStrength"] = (
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in correlations:
+        timeline_id = str(row.get("timelineId") or "")
+        role = str(row.get("boundaryRole") or "")
+        grouped.setdefault(timeline_id, {})[role] = row
+
+    repeated_timelines: set[str] = set()
+    for timeline_id, by_role in grouped.items():
+        start_controller = (by_role.get("start") or {}).get("controller")
+        end_controller = (by_role.get("end") or {}).get("controller")
+        if (
+            isinstance(start_controller, dict)
+            and isinstance(end_controller, dict)
+            and start_controller.get("fingerprint")
+            and start_controller.get("fingerprint")
+            == end_controller.get("fingerprint")
+        ):
+            repeated_timelines.add(timeline_id)
+
+    for row in correlations:
+        repeated = str(row.get("timelineId") or "") in repeated_timelines
+        row["repeatedControllerPattern"] = repeated
+        row["provenanceStrength"] = (
+            "strong-repeated-temporal-provenance"
+            if repeated
+            else (
                 "strong-single-boundary-temporal-provenance"
                 if row.get("controller")
                 else "subject-command-only"
             )
+        )
     return correlations
 
 
 def native_log_provenance_sufficient(correlations: list[dict[str, Any]]) -> bool:
-    """Require repeated same-controller start/end evidence before early finalization."""
+    """Require repeated same-controller start/end evidence on one timeline."""
 
-    if not correlations:
-        return False
-    by_role = {str(row.get("boundaryRole")): row for row in correlations}
-    start = by_role.get("start")
-    end = by_role.get("end")
-    if not isinstance(start, dict) or not isinstance(end, dict):
-        return False
-    return bool(
-        start.get("controller")
-        and end.get("controller")
-        and start.get("repeatedControllerPattern") is True
-        and end.get("repeatedControllerPattern") is True
-        and start.get("command")
-        and end.get("command")
-    )
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in correlations:
+        timeline_id = str(row.get("timelineId") or "")
+        role = str(row.get("boundaryRole") or "")
+        grouped.setdefault(timeline_id, {})[role] = row
+
+    for by_role in grouped.values():
+        start = by_role.get("start")
+        end = by_role.get("end")
+        if not isinstance(start, dict) or not isinstance(end, dict):
+            continue
+        if (
+            start.get("controller")
+            and end.get("controller")
+            and start.get("repeatedControllerPattern") is True
+            and end.get("repeatedControllerPattern") is True
+            and start.get("command")
+            and end.get("command")
+        ):
+            return True
+    return False
 
 
 def render_native_log_correlation(
