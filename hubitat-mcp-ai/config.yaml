@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.16.8"
+version: "0.16.9"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -42,6 +42,7 @@ options:
   mcp_timeout_seconds: 25
   mcp_device_cache_seconds: 12
   mcp_identity_cache_seconds: 120
+  mcp_max_concurrent_calls: 2
   mcp_retry_attempts: 3
   mcp_retry_backoff_seconds: 0.25
   conversation_context_ttl_seconds: 600
@@ -95,6 +96,7 @@ schema:
   mcp_timeout_seconds: int
   mcp_device_cache_seconds: int
   mcp_identity_cache_seconds: int
+  mcp_max_concurrent_calls: int
   mcp_retry_attempts: int
   mcp_retry_backoff_seconds: float
   conversation_context_ttl_seconds: int

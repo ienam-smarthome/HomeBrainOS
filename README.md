@@ -8,7 +8,7 @@ Short GitHub description: Local-first AI smart-home assistant for Hubitat + Home
 
 | Component | Version | Status | Purpose |
 | --- | --- | --- | --- |
-| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.8 | Maintained | Capability-grounded semantic smart-home agent with AI intent planning, deterministic verified execution, bounded history, and grounded synthesis |
+| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.9 | Maintained | Capability-grounded semantic smart-home agent with AI intent planning, deterministic verified execution, bounded history, and grounded synthesis |
 
 The legacy/alternate HomeBrain OS dashboard (Maker API-based, `homebrainos/`)
 has been retired and removed from this repository. All assistant development is

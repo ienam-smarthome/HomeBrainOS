@@ -34,6 +34,7 @@ class RequestMetrics:
 
     ALLOWED_COUNTERS = frozenset({
         "model_rounds", "tool_calls", "tool_discovery_calls", "mcp_retries",
+        "mcp_concurrent_peak",
         "evidence_retries", "grounding_refusals", "confirmation_queued",
         "confirmation_expired", "confirmation_evicted",
         "mutation_verification_failures",
@@ -55,7 +56,8 @@ class RequestMetrics:
         "semantic_needs_input",
     })
     ALLOWED_TIMINGS = frozenset({
-        "provider", "tool_discovery", "mcp", "mcp_lock_wait", "mcp_http",
+        "provider", "tool_discovery", "mcp", "mcp_lock_wait",
+        "mcp_queue_wait", "mcp_session_lock_wait", "mcp_http",
         "mcp_shared_wait", "local_tool", "verification", "total",
     })
     ALLOWED_OUTCOMES = frozenset({
@@ -83,6 +85,16 @@ class RequestMetrics:
         state = self._state.get()
         if state is not None:
             state.counters[name] = state.counters.get(name, 0) + max(0, int(amount))
+
+    def observe_counter_max(self, name: str, value: int) -> None:
+        if name not in self.ALLOWED_COUNTERS:
+            raise ValueError(f"Unsupported metric counter: {name}")
+        state = self._state.get()
+        if state is not None:
+            state.counters[name] = max(
+                state.counters.get(name, 0),
+                max(0, int(value)),
+            )
 
     def observe_ms(self, name: str, elapsed_ms: int | float) -> None:
         if name not in self.ALLOWED_TIMINGS:
@@ -153,7 +165,14 @@ def add_active_metric_ms(name: str, elapsed_ms: int | float) -> None:
         metrics.add_ms(name, elapsed_ms)
 
 
+def observe_active_metric_max(name: str, value: int) -> None:
+    metrics = _ACTIVE_REQUEST_METRICS.get()
+    if metrics is not None:
+        metrics.observe_counter_max(name, value)
+
+
 __all__ = [
     "RequestMetricState", "RequestMetricToken", "RequestMetrics",
     "active_request_identity", "increment_active_metric", "add_active_metric_ms",
+    "observe_active_metric_max",
 ]

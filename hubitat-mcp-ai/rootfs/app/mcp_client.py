@@ -20,7 +20,11 @@ from device_read_contract import (
     projected_state_shape_is_usable,
 )
 from mcp_retry_metrics import record_mcp_retry_attempt
-from request_metrics import add_active_metric_ms, increment_active_metric
+from request_metrics import (
+    add_active_metric_ms,
+    increment_active_metric,
+    observe_active_metric_max,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +97,7 @@ class HubitatMCPClient:
         timeout_seconds: float = 25,
         device_cache_seconds: float = 12,
         identity_cache_seconds: float = 120,
+        max_concurrent_calls: int = 2,
         retry_attempts: int = 3,
         retry_backoff_seconds: float = 0.25,
         clock: Callable[[], float] = time.monotonic,
@@ -101,6 +106,7 @@ class HubitatMCPClient:
         self.timeout_seconds = max(3.0, float(timeout_seconds))
         self.device_cache_seconds = max(0.0, float(device_cache_seconds))
         self.identity_cache_seconds = max(0.0, float(identity_cache_seconds))
+        self.max_concurrent_calls = max(1, min(8, int(max_concurrent_calls)))
         self.retry_attempts = max(1, min(5, int(retry_attempts)))
         self.retry_backoff_seconds = max(
             0.0, min(5.0, float(retry_backoff_seconds))
@@ -119,7 +125,13 @@ class HubitatMCPClient:
         self._request_id = 0
         self._initialized = False
         self._tools: dict[str, MCPTool] = {}
+        # Session/tool-catalog mutations stay serialized. Ordinary MCP
+        # operations use a separate bounded semaphore below so independent
+        # reads and verified writes can overlap safely after initialization.
         self._lock = asyncio.Lock()
+        self._snapshot_lock = asyncio.Lock()
+        self._request_semaphore = asyncio.Semaphore(self.max_concurrent_calls)
+        self._active_requests = 0
         self.server_info: dict[str, Any] = {}
         self._cached_devices: list[dict[str, Any]] = []
         self._devices_cached_at = 0.0
@@ -175,7 +187,12 @@ class HubitatMCPClient:
         if not self.configured:
             raise MCPError("Hubitat MCP endpoint is not configured")
 
-        async with self._lock:
+        lock_started = time.monotonic()
+        await self._lock.acquire()
+        session_wait_ms = (time.monotonic() - lock_started) * 1000
+        if session_wait_ms >= 1:
+            add_active_metric_ms("mcp_session_lock_wait", session_wait_ms)
+        try:
             if self._initialized and not force:
                 return
             payload = {
@@ -205,13 +222,22 @@ class HubitatMCPClient:
                 await self._post(notification, allow_empty=True)
             except Exception:
                 pass
+        finally:
+            self._lock.release()
 
     async def list_tools(self, refresh: bool = False) -> list[MCPTool]:
         await self.initialize()
         if self._tools and not refresh:
             return list(self._tools.values())
 
-        async with self._lock:
+        lock_started = time.monotonic()
+        await self._lock.acquire()
+        session_wait_ms = (time.monotonic() - lock_started) * 1000
+        if session_wait_ms >= 1:
+            add_active_metric_ms("mcp_session_lock_wait", session_wait_ms)
+        try:
+            if self._tools and not refresh:
+                return list(self._tools.values())
             payload = {
                 "jsonrpc": "2.0",
                 "id": self._next_id(),
@@ -238,6 +264,8 @@ class HubitatMCPClient:
                 parsed[tool.name] = tool
             self._tools = parsed
             return list(parsed.values())
+        finally:
+            self._lock.release()
 
     async def get_tool(self, name: str) -> MCPTool | None:
         await self.list_tools()
@@ -467,19 +495,8 @@ class HubitatMCPClient:
             "method": "resources/read",
             "params": {"uri": LIVE_CONTEXT_RESOURCE_URI},
         }
-        lock_started = time.monotonic()
-        async with self._lock:
-            add_active_metric_ms(
-                "mcp_lock_wait", (time.monotonic() - lock_started) * 1000
-            )
-            http_started = time.monotonic()
-            try:
-                response = await self._post(payload)
-            finally:
-                add_active_metric_ms(
-                    "mcp_http", (time.monotonic() - http_started) * 1000
-                )
-            result = self._rpc_result(response)
+        response = await self._post_bounded(payload)
+        result = self._rpc_result(response)
 
         contents = result.get("contents") or []
         text: str | None = None
@@ -627,6 +644,32 @@ class HubitatMCPClient:
         self._live_device_snapshot = None
         self._live_context_snapshot = None
 
+    async def _post_bounded(
+        self,
+        payload: dict[str, Any],
+        allow_empty: bool = False,
+    ) -> dict[str, Any]:
+        """Send one ordinary MCP request through the bounded concurrency gate."""
+
+        queue_started = time.monotonic()
+        await self._request_semaphore.acquire()
+        add_active_metric_ms(
+            "mcp_queue_wait", (time.monotonic() - queue_started) * 1000
+        )
+        self._active_requests += 1
+        observe_active_metric_max("mcp_concurrent_peak", self._active_requests)
+        try:
+            http_started = time.monotonic()
+            try:
+                return await self._post(payload, allow_empty=allow_empty)
+            finally:
+                add_active_metric_ms(
+                    "mcp_http", (time.monotonic() - http_started) * 1000
+                )
+        finally:
+            self._active_requests = max(0, self._active_requests - 1)
+            self._request_semaphore.release()
+
     async def call_tool(
         self,
         name: str,
@@ -672,18 +715,35 @@ class HubitatMCPClient:
                     )
                     return shared_result
 
-        lock_started = time.monotonic()
-        async with self._lock:
-            add_active_metric_ms(
-                "mcp_lock_wait", (time.monotonic() - lock_started) * 1000
-            )
-            if cacheable and self._live_device_snapshot is not None:
-                cached_at, cached_generation, cached_result = self._live_device_snapshot
-                if (
-                    cached_generation == self._live_device_snapshot_generation
-                    and self._clock() - cached_at < self._live_device_snapshot_ttl_seconds
-                ):
-                    return self._copy_tool_result(cached_result)
+        if cacheable:
+            shared_started = time.monotonic()
+            await self._snapshot_lock.acquire()
+            shared_wait_ms = (time.monotonic() - shared_started) * 1000
+            if shared_wait_ms >= 1:
+                add_active_metric_ms("mcp_shared_wait", shared_wait_ms)
+            try:
+                if self._live_device_snapshot is not None:
+                    cached_at, cached_generation, cached_result = self._live_device_snapshot
+                    if (
+                        cached_generation == self._live_device_snapshot_generation
+                        and self._clock() - cached_at < self._live_device_snapshot_ttl_seconds
+                    ):
+                        return self._copy_tool_result(cached_result)
+                generation = self._live_device_snapshot_generation
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": self._next_id(),
+                    "method": "tools/call",
+                    "params": {
+                        "name": name,
+                        "arguments": arguments,
+                    },
+                }
+                response = await self._post_bounded(payload)
+                result = self._rpc_result(response)
+            finally:
+                self._snapshot_lock.release()
+        else:
             generation = self._live_device_snapshot_generation
             payload = {
                 "jsonrpc": "2.0",
@@ -694,13 +754,7 @@ class HubitatMCPClient:
                     "arguments": arguments,
                 },
             }
-            http_started = time.monotonic()
-            try:
-                response = await self._post(payload)
-            finally:
-                add_active_metric_ms(
-                    "mcp_http", (time.monotonic() - http_started) * 1000
-                )
+            response = await self._post_bounded(payload)
             result = self._rpc_result(response)
 
         content = result.get("content") or []
