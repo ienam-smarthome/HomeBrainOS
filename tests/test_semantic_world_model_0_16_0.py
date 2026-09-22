@@ -9,6 +9,7 @@ sys.path.insert(0, str(APP_DIR))
 from semantic_world_model import (  # noqa: E402
     build_semantic_world,
     device_abilities,
+    is_brightness_device,
     render_semantic_world,
     semantic_device_kinds,
 )
@@ -113,3 +114,62 @@ def test_render_world_is_bounded_and_drops_devices_cleanly() -> None:
 
     assert len(rendered) <= 900
     assert "Very Long Light Device 00" in rendered
+
+
+
+def test_unlabelled_switchlevel_dimmer_is_semantic_brightness_device() -> None:
+    hallway_dimmer = {
+        "id": "h1",
+        "label": "Hallway Main",
+        "roomName": "Hallway",
+        "capabilities": ["Switch", "SwitchLevel"],
+        "commands": ["on", "off", "setLevel"],
+        "attributes": [
+            {"name": "switch", "value": "on"},
+            {"name": "level", "value": 45},
+        ],
+    }
+
+    assert is_brightness_device(hallway_dimmer) is True
+    assert "brightness" in device_abilities(hallway_dimmer)
+    assert "light" in semantic_device_kinds(hallway_dimmer)
+
+    world = build_semantic_world([hallway_dimmer])
+    assert world["rooms"] == [{
+        "name": "Hallway",
+        "abilities": ["brightness", "switch"],
+        "devices": ["Hallway Main"],
+    }]
+
+
+def test_switchlevel_fan_is_not_reinterpreted_as_brightness() -> None:
+    fan = {
+        "id": "fan1",
+        "label": "Hallway Fan",
+        "roomName": "Hallway",
+        "capabilities": ["Switch", "SwitchLevel", "FanControl"],
+        "commands": ["on", "off", "setLevel", "setSpeed"],
+        "attributes": [
+            {"name": "switch", "value": "on"},
+            {"name": "level", "value": 50},
+            {"name": "speed", "value": "medium"},
+        ],
+    }
+
+    assert is_brightness_device(fan) is False
+    assert "brightness" not in device_abilities(fan)
+    assert "fan_speed" in device_abilities(fan)
+
+
+def test_switchlevel_shade_is_not_reinterpreted_as_brightness() -> None:
+    shade = {
+        "id": "shade1",
+        "label": "Hallway Blind",
+        "roomName": "Hallway",
+        "capabilities": ["SwitchLevel", "WindowShade"],
+        "commands": ["setLevel", "setPosition", "open", "close"],
+        "attributes": [{"name": "level", "value": 50}],
+    }
+
+    assert is_brightness_device(shade) is False
+    assert "brightness" not in device_abilities(shade)
