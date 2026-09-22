@@ -1920,7 +1920,7 @@ async def test_immediate_set_level_uses_routine_control_without_confirmation_or_
 
 
 @pytest.mark.asyncio
-async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool_loop(
+async def test_semantic_fast_plan_handles_relative_brightness_without_provider_or_general_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     control_calls: list[dict[str, object]] = []
@@ -1962,14 +1962,7 @@ async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool
     monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
     monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
 
-    ai = FakeAI(
-        '{"version":"1","domain":"device_control","timing":"now",'
-        '"target":{"scope":"room","name":"Living Room","kind":"light"},'
-        '"action":{"operation":"adjust_level","value":null,"delta":null,'
-        '"direction":"increase","magnitude":"default"},'
-        '"needs_clarification":false,"clarification_question":"",'
-        '"confidence":"high","source":"model"}'
-    )
+    ai = FakeAI("unused -- clear relative brightness must stay zero-model")
     agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
@@ -1989,9 +1982,10 @@ async def test_semantic_ai_plan_handles_relative_brightness_without_general_tool
     )
     assert outcome.request_class == "write"
     assert outcome.metrics["outcome"] == "success"
-    assert outcome.metrics["counters"]["model_rounds"] == 1
-    assert outcome.metrics["counters"]["semantic_planner_plans"] == 1
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
     assert outcome.metrics["counters"]["semantic_relative_controls"] == 1
+    assert ai.requests == []
 
 
 @pytest.mark.asyncio
