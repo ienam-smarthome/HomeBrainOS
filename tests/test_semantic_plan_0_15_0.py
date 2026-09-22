@@ -373,20 +373,9 @@ async def test_semantic_planner_receives_capability_world_as_non_live_context() 
 
 
 @pytest.mark.asyncio
-async def test_semantic_core_prefers_explicit_room_over_model_invented_device_target() -> None:
+async def test_semantic_core_prefers_explicit_room_without_provider_round() -> None:
     async def fake_chat(_messages, _tools):
-        # Reproduce the observed Gemma mistake: the user said "hallway" but
-        # the model selected a similarly named controller device.
-        return {
-            "content": (
-                '{"version":"1","domain":"device_control","timing":"now",'
-                '"target":{"scope":"device","name":"Hallway dimmer","kind":"light"},'
-                '"action":{"operation":"adjust_level","value":null,"delta":null,'
-                '"direction":"increase","magnitude":"default"},'
-                '"needs_clarification":false,"clarification_question":"",'
-                '"confidence":"high","source":"model"}'
-            )
-        }
+        raise AssertionError("clear relative brightness should bypass provider")
 
     world = json.dumps({
         "live_state": False,
@@ -438,19 +427,7 @@ async def test_semantic_core_prefers_explicit_room_over_model_invented_device_ta
 @pytest.mark.asyncio
 async def test_semantic_core_host_grounds_two_explicit_devices_as_selection() -> None:
     async def fake_chat(_messages, _tools):
-        # The model only selects the first device; host grounding must recover
-        # both explicitly named devices from authoritative canonical identity.
-        return {
-            "content": (
-                '{"version":"1","domain":"device_control","timing":"now",'
-                '"target":{"scope":"device","name":"Hallway Light 1","names":[],'
-                '"kind":"light"},'
-                '"action":{"operation":"adjust_level","value":null,"delta":null,'
-                '"direction":"increase","magnitude":"default"},'
-                '"needs_clarification":false,"clarification_question":"",'
-                '"confidence":"high","source":"model"}'
-            )
-        }
+        raise AssertionError("clear multi-device brightness should bypass provider")
 
     world = json.dumps({
         "live_state": False,
@@ -498,6 +475,44 @@ async def test_semantic_core_host_grounds_two_explicit_devices_as_selection() ->
         "command": "adjust_level",
         "device_kind": "light",
         "delta": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_semantic_core_normalizes_spoken_room_numbers_for_host_grounding() -> None:
+    async def forbidden_chat(_messages, _tools):
+        raise AssertionError("clear thermostat request should bypass provider")
+
+    world = json.dumps({
+        "live_state": False,
+        "rooms": [{
+            "name": "Bedroom 1",
+            "abilities": ["heating_setpoint", "temperature", "switch"],
+            "devices": ["Bedroom 1 TRV"],
+        }],
+        "devices": [{
+            "name": "Bedroom 1 TRV",
+            "room": "Bedroom 1",
+            "kinds": ["thermostat"],
+            "abilities": ["heating_setpoint", "temperature", "switch"],
+        }],
+    })
+
+    core = SemanticAgentCore(SemanticPlanner(forbidden_chat))
+    plan = await core.plan_control(
+        "make bedroom one warmer",
+        world_context=world,
+    )
+
+    assert plan is not None
+    assert plan.target is not None
+    assert plan.target.scope == "room"
+    assert plan.target.name == "Bedroom 1"
+    assert core.compile_control(plan) == {
+        "room": "Bedroom 1",
+        "command": "adjust_temperature",
+        "device_kind": "thermostat",
+        "delta": 1.0,
     }
 
 
