@@ -357,11 +357,9 @@ def _duration_text(start: Any, end: Any) -> str:
     seconds = round((right - left).total_seconds())
     if seconds < 60:
         return f"{seconds} seconds"
-    minutes = seconds // 60
-    remainder = seconds % 60
-    if remainder == 0:
-        return f"{minutes} minutes"
-    return f"approximately {minutes} minutes"
+    if seconds % 60 == 0:
+        return f"{seconds // 60} minutes"
+    return f"approximately {max(1, round(seconds / 60))} minutes"
 
 
 def render_strong_native_provenance_answer(
