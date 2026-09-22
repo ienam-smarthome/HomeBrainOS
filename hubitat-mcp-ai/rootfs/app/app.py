@@ -84,6 +84,7 @@ def load_options() -> dict[str, Any]:
         "unified_mcp_max_tool_rounds": 9,
         "max_tool_result_chars": 24000,
         "require_sensitive_confirmation": True,
+        "rule_write_enabled": True,
         # Rollback lever for the 0.10.410 reasoning-first refactor -- see
         # UnifiedMCPAgent.__init__'s docstring comment for the full
         # rationale. Default False: historical/causal/diagnostic READ
@@ -229,6 +230,7 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("require_sensitive_confirmation"), True
     ),
     confirmation_ttl_seconds=float(OPTIONS.get("confirmation_ttl_seconds") or 120),
+    rule_write_enabled=_bool(OPTIONS.get("rule_write_enabled"), True),
     deterministic_reads_enabled=_bool(
         OPTIONS.get("deterministic_reads_enabled"), False
     ),
