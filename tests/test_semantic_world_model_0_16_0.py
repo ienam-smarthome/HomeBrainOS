@@ -173,3 +173,23 @@ def test_switchlevel_shade_is_not_reinterpreted_as_brightness() -> None:
 
     assert is_brightness_device(shade) is False
     assert "brightness" not in device_abilities(shade)
+
+
+
+def test_device_command_names_normalizes_list_and_mapping_shapes() -> None:
+    from semantic_world_model import device_command_names
+
+    assert device_command_names({
+        "commands": [
+            {"name": "setLevel"},
+            {"command": "refresh"},
+            "on",
+        ]
+    }) == {"setlevel", "refresh", "on"}
+
+    assert device_command_names({
+        "commands": {
+            "off": {},
+            "Refresh": {"name": "refresh"},
+        }
+    }) == {"off", "refresh"}
