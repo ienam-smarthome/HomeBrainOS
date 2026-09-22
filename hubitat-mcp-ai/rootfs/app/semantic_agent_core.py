@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from request_classification import routine_control_arguments
@@ -35,6 +37,116 @@ class SemanticAgentCore:
             0.1, min(10.0, float(default_temperature_step))
         )
 
+    @staticmethod
+    def _phrase_tokens(value: Any) -> list[str]:
+        return re.findall(r"[a-z0-9]+", str(value or "").casefold())
+
+    @classmethod
+    def _contains_entity_phrase(cls, prompt: str, entity_name: str) -> bool:
+        prompt_tokens = cls._phrase_tokens(prompt)
+        entity_tokens = cls._phrase_tokens(entity_name)
+        if not prompt_tokens or not entity_tokens or len(entity_tokens) > len(prompt_tokens):
+            return False
+        width = len(entity_tokens)
+        return any(
+            prompt_tokens[index:index + width] == entity_tokens
+            for index in range(len(prompt_tokens) - width + 1)
+        )
+
+    @staticmethod
+    def _required_ability(plan: SemanticPlan) -> str:
+        action = plan.action
+        if action is None:
+            return ""
+        if action.operation in {"set_level", "adjust_level"}:
+            return "brightness"
+        if action.operation in {"set_temperature", "adjust_temperature"}:
+            return "heating_setpoint"
+        if action.operation in {"turn_on", "turn_off", "toggle"}:
+            return "switch"
+        return ""
+
+    @classmethod
+    def _ground_plan_target(
+        cls,
+        prompt: str,
+        plan: SemanticPlan,
+        world_context: str,
+    ) -> SemanticPlan:
+        """Validate model entity choice against the capability world.
+
+        A model may select a plausible device label when the user actually named
+        a room. Example: "increase hallway brightness" was mapped to a controller
+        called "Hallway dimmer" even though the real Hallway room contains the
+        controllable lights. The host owns entity grounding: when exactly one real
+        room is explicitly named, no full device label is explicitly named, and
+        that room advertises the required ability, prefer room scope regardless
+        of the model's guessed device label.
+        """
+
+        if (
+            not world_context.strip()
+            or plan.target is None
+            or plan.action is None
+            or plan.needs_clarification
+        ):
+            return plan
+        try:
+            world = json.loads(world_context)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return plan
+        if not isinstance(world, dict):
+            return plan
+
+        rooms = [
+            item for item in (world.get("rooms") or [])
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+        devices = [
+            item for item in (world.get("devices") or [])
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+        explicit_rooms = [
+            item for item in rooms
+            if cls._contains_entity_phrase(prompt, str(item.get("name") or ""))
+        ]
+        explicit_devices = [
+            item for item in devices
+            if cls._contains_entity_phrase(prompt, str(item.get("name") or ""))
+        ]
+        required_ability = cls._required_ability(plan)
+
+        if len(explicit_rooms) == 1 and not explicit_devices:
+            room = explicit_rooms[0]
+            room_abilities = {
+                str(value) for value in (room.get("abilities") or [])
+            }
+            if not required_ability or required_ability in room_abilities:
+                grounded_target = plan.target.model_copy(
+                    update={
+                        "scope": "room",
+                        "name": str(room.get("name") or "").strip(),
+                    }
+                )
+                return plan.model_copy(update={"target": grounded_target})
+
+        # Canonicalize an explicitly named device rather than preserving model
+        # spelling/casing. This does not invent a target; it only binds a full
+        # user-mentioned label to the corresponding world entity.
+        if len(explicit_devices) == 1:
+            device = explicit_devices[0]
+            abilities = {str(value) for value in (device.get("abilities") or [])}
+            if not required_ability or required_ability in abilities:
+                grounded_target = plan.target.model_copy(
+                    update={
+                        "scope": "device",
+                        "name": str(device.get("name") or "").strip(),
+                    }
+                )
+                return plan.model_copy(update={"target": grounded_target})
+
+        return plan
+
     async def plan_control(
         self,
         prompt: str,
@@ -60,7 +172,7 @@ class SemanticAgentCore:
         )
         if plan.domain != "device_control":
             return None
-        return plan
+        return self._ground_plan_target(prompt, plan, world_context)
 
     def _relative_delta(self, plan: SemanticPlan) -> float:
         action = plan.action
