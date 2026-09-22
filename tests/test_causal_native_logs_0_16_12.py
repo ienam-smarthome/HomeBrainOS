@@ -204,3 +204,86 @@ def test_native_log_metrics_are_supported_and_presented() -> None:
     assert {"label": "Causal native-log reads", "value": "2"} in rows
     assert {"label": "Causal native-log correlations", "value": "2"} in rows
     assert {"label": "Repeated controller patterns", "value": "1"} in rows
+
+
+def test_superseded_empty_subject_history_does_not_shadow_scoped_retry() -> None:
+    empty_first_pass = {
+        "tool": "homebrain_device_history",
+        "success": True,
+        "arguments": {"name": "dehumidifier 2"},
+        "details": {
+            "label": "Dehumidifier 2",
+            "attribute": "switch",
+            "attributeInferred": True,
+            "hoursBack": 24,
+            "sourceEventCount": 20,
+            "temporalAnalysis": {
+                "intervalCount": 0,
+                "observedIntervals": [],
+                "unboundedActiveInterval": False,
+                "openActiveInterval": False,
+                "openActiveStart": None,
+            },
+        },
+    }
+    corrected_retry = subject_evidence()
+    corrected_retry["arguments"] = {
+        "name": "Dehumidifier 2",
+        "attribute": "switch",
+        "limit": 50,
+        "hours_back": 24,
+    }
+
+    windows = causal_boundary_log_windows(
+        [empty_first_pass, corrected_retry]
+    )
+
+    assert windows == [
+        {
+            "timelineId": "T1",
+            "boundaryRole": "start",
+            "subjectBoundary": "2026-09-22T22:07:37.107000+01:00",
+            "since": "2026-09-22T21:07:27.107000Z",
+            "until": "2026-09-22T21:07:47.107000Z",
+        },
+        {
+            "timelineId": "T1",
+            "boundaryRole": "end",
+            "subjectBoundary": "2026-09-22T22:38:13.489000+01:00",
+            "since": "2026-09-22T21:38:03.489000Z",
+            "until": "2026-09-22T21:38:23.489000Z",
+        },
+    ]
+
+
+def test_later_controller_history_cannot_replace_anchored_causal_subject() -> None:
+    controller_history = {
+        "tool": "homebrain_device_history",
+        "success": True,
+        "arguments": {"name": "Ikea Rodret (Livingroom)", "attribute": "switch"},
+        "details": {
+            "label": "Ikea Rodret (Livingroom)",
+            "attribute": "switch",
+            "temporalAnalysis": {
+                "intervalCount": 1,
+                "observedIntervals": [{
+                    "start": "2026-09-22T22:07:36.900+0100",
+                    "end": "2026-09-22T22:07:37.300+0100",
+                    "durationSeconds": 0,
+                    "duration": "0s",
+                }],
+            },
+        },
+    }
+
+    windows = causal_boundary_log_windows(
+        [subject_evidence(), controller_history]
+    )
+
+    assert len(windows) == 2
+    assert windows[0]["subjectBoundary"] == (
+        "2026-09-22T22:07:37.107000+01:00"
+    )
+    assert windows[1]["subjectBoundary"] == (
+        "2026-09-22T22:38:13.489000+01:00"
+    )
