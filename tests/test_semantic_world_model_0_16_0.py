@@ -181,7 +181,8 @@ def test_hue_dimmer_remote_parent_level_telemetry_is_not_a_brightness_actuator()
         "id": "3927",
         "label": "Hallway dimmer",
         "roomName": "",
-        "capabilities": ["Battery", "PushableButton"],
+        "capabilities": ["Battery", "PushableButton", "SwitchLevel"],
+        "commands": ["setLevel"],
         "attributes": [
             {"name": "battery", "value": 82},
             {"name": "level", "value": None},
