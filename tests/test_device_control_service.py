@@ -1843,3 +1843,67 @@ async def test_adjust_level_missing_from_both_live_sources_requests_absolute_inp
         gateway == "hub_manage_devices"
         for gateway, _arguments in mcp.calls
     )
+
+
+
+@pytest.mark.asyncio
+async def test_hallway_room_brightness_ignores_remote_parent_and_controls_real_lights():
+    mcp = RelativeLevelMCP()
+    mcp.devices = [
+        {
+            "id": "3927",
+            "label": "Hallway dimmer",
+            "roomName": "",
+            "capabilities": ["Battery", "PushableButton"],
+            "attributes": [
+                {"name": "battery", "value": 82},
+                {"name": "level", "value": None},
+            ],
+        },
+        {
+            "id": "7829",
+            "label": "Hallway Light 1",
+            "roomName": "Hallway",
+            "capabilities": [
+                "Actuator", "ChangeLevel", "Light", "Refresh", "Switch", "SwitchLevel"
+            ],
+            "commands": ["on", "off", "setLevel"],
+            "attributes": [
+                {"name": "switch", "value": "on"},
+                {"name": "level", "value": 50},
+            ],
+        },
+        {
+            "id": "7830",
+            "label": "Hallway Light 2",
+            "roomName": "Hallway",
+            "capabilities": [
+                "Actuator", "ChangeLevel", "Light", "Refresh", "Switch", "SwitchLevel"
+            ],
+            "commands": ["on", "off", "setLevel"],
+            "attributes": [
+                {"name": "switch", "value": "on"},
+                {"name": "level", "value": 30},
+            ],
+        },
+    ]
+    mcp.live_levels = {"7829": 50, "7830": 30}
+    service = DeviceControlService(mcp, recorder)
+
+    result = await service.execute({
+        "room": "Hallway",
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["success"] is True
+    assert result.data["matched"] == 2
+    assert {item["label"] for item in result.data["succeeded"]} == {
+        "Hallway Light 1",
+        "Hallway Light 2",
+    }
+    assert not any(
+        args.get("args", {}).get("deviceId") == "3927"
+        for _gateway, args in mcp.calls
+    )
