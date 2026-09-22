@@ -13,6 +13,7 @@ def test_each_coverage_counter_maps_to_expected_outcome() -> None:
         "proposal_validation_failures": "failed",
         "device_control_failures": "failed",
         "request_cancellations": "cancelled",
+        "device_control_needs_input": "needs_input",
         "semantic_needs_input": "needs_input",
         "confirmation_expired": "unresolved",
         "device_resolution_ambiguous": "unresolved",
@@ -74,3 +75,17 @@ def test_zero_and_negative_values_do_not_change_classification() -> None:
         "request_cancellations": 0,
         "device_resolution_missing": 0,
     }) == "success"
+
+
+
+def test_missing_control_precondition_is_needs_input_not_failure() -> None:
+    assert classify_completed_request({
+        "device_control_needs_input": 1,
+    }) == "needs_input"
+
+
+def test_hard_control_failure_still_wins_over_needs_input() -> None:
+    assert classify_completed_request({
+        "device_control_failures": 1,
+        "device_control_needs_input": 1,
+    }) == "failed"
