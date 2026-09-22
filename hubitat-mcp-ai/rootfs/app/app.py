@@ -77,6 +77,7 @@ def load_options() -> dict[str, Any]:
         "stream_idle_timeout_seconds": 20,
         "mcp_timeout_seconds": 25,
         "mcp_device_cache_seconds": 12,
+        "mcp_identity_cache_seconds": 120,
         "mcp_retry_attempts": 3,
         "mcp_retry_backoff_seconds": 0.25,
         "confirmation_ttl_seconds": 120,
@@ -135,6 +136,9 @@ mcp = HubitatMCPClient(
     access_token=str(OPTIONS.get("hubitat_mcp_token") or ""),
     timeout_seconds=float(OPTIONS.get("mcp_timeout_seconds") or 25),
     device_cache_seconds=float(OPTIONS.get("mcp_device_cache_seconds") or 12),
+    identity_cache_seconds=float(
+        OPTIONS.get("mcp_identity_cache_seconds") or 120
+    ),
     retry_attempts=int(OPTIONS.get("mcp_retry_attempts") or 3),
     retry_backoff_seconds=float(
         OPTIONS.get("mcp_retry_backoff_seconds") or 0.25
