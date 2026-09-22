@@ -2073,6 +2073,97 @@ async def test_semantic_two_device_request_executes_host_grounded_selection(
 
 
 @pytest.mark.asyncio
+async def test_clear_multi_device_brightness_bypasses_provider_and_keeps_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_calls: list[dict[str, object]] = []
+    world = {
+        "live_state": False,
+        "rooms": [{
+            "name": "Hallway",
+            "abilities": ["brightness", "switch"],
+            "devices": ["Hallway Light 1", "Hallway Light 2"],
+        }],
+        "devices": [
+            {
+                "name": "Hallway Light 1",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+            {
+                "name": "Hallway Light 2",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+        ],
+    }
+
+    async def semantic_world(*_args: object, **_kwargs: object):
+        return json.dumps(world), world
+
+    async def fake_control_devices(_self: object, arguments: dict[str, object]) -> MCPToolResult:
+        control_calls.append(arguments)
+        return MCPToolResult(
+            "homebrain_control_devices",
+            arguments,
+            {},
+            "ok",
+            {
+                "success": True,
+                "command": "adjust_level",
+                "delta": 20,
+                "succeeded": [
+                    {
+                        "id": "7829",
+                        "label": "Hallway Light 1",
+                        "changed": True,
+                        "previous_level": 50,
+                        "target_level": 70,
+                    },
+                    {
+                        "id": "7820",
+                        "label": "Hallway Light 2",
+                        "changed": True,
+                        "previous_level": 50,
+                        "target_level": 70,
+                    },
+                ],
+                "failed": [],
+            },
+        )
+
+    async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
+        raise AssertionError("clear semantic control must not enter general tool loop")
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_semantic_world_context", semantic_world)
+    monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
+    monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
+
+    ai = FakeAI("unused -- clear multi-device brightness must stay zero-model")
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+
+    outcome = await agent.process_user_request_result(
+        "make Hallway Light 1 and Hallway Light 2 brighter",
+        session_id="semantic-fast-multi-brightness",
+    )
+
+    assert control_calls == [{
+        "device_names": ["Hallway Light 1", "Hallway Light 2"],
+        "command": "adjust_level",
+        "device_kind": "light",
+        "delta": 20,
+    }]
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
+    assert outcome.metrics["counters"]["semantic_relative_controls"] == 1
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert outcome.metrics["outcome"] == "success"
+    assert ai.requests == []
+
+
+@pytest.mark.asyncio
 async def test_semantic_grounding_uses_full_world_when_planner_context_is_truncated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
