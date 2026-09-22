@@ -9,6 +9,7 @@ _OUTCOME_COUNTER_PRECEDENCE: tuple[tuple[str, str], ...] = (
     ("proposal_validation_failures", "failed"),
     ("device_control_failures", "failed"),
     ("request_cancellations", "cancelled"),
+    ("device_control_needs_input", "needs_input"),
     ("semantic_needs_input", "needs_input"),
     ("confirmation_expired", "unresolved"),
     ("device_resolution_ambiguous", "unresolved"),
