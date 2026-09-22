@@ -42,6 +42,7 @@ class RequestMetrics:
         "request_cancellations", "device_resolution_ambiguous",
         "device_resolution_missing", "device_control_failures",
         "device_control_needs_input",
+        "device_control_batch_commands", "device_control_batch_verifications",
         "resolution_cache_hit", "resolution_cache_metadata_miss",
         "control_local_identity_cache_hit", "control_identity_lookup",
         "identity_cache_hit", "identity_refresh",
