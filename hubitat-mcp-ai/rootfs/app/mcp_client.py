@@ -20,7 +20,11 @@ from device_read_contract import (
     projected_state_shape_is_usable,
 )
 from mcp_retry_metrics import record_mcp_retry_attempt
-from request_metrics import add_active_metric_ms, increment_active_metric
+from request_metrics import (
+    add_active_metric_ms,
+    increment_active_metric,
+    observe_active_metric_max,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +97,7 @@ class HubitatMCPClient:
         timeout_seconds: float = 25,
         device_cache_seconds: float = 12,
         identity_cache_seconds: float = 120,
+        max_concurrent_calls: int = 2,
         retry_attempts: int = 3,
         retry_backoff_seconds: float = 0.25,
         clock: Callable[[], float] = time.monotonic,
@@ -101,6 +106,7 @@ class HubitatMCPClient:
         self.timeout_seconds = max(3.0, float(timeout_seconds))
         self.device_cache_seconds = max(0.0, float(device_cache_seconds))
         self.identity_cache_seconds = max(0.0, float(identity_cache_seconds))
+        self.max_concurrent_calls = max(1, min(8, int(max_concurrent_calls)))
         self.retry_attempts = max(1, min(5, int(retry_attempts)))
         self.retry_backoff_seconds = max(
             0.0, min(5.0, float(retry_backoff_seconds))
@@ -119,7 +125,13 @@ class HubitatMCPClient:
         self._request_id = 0
         self._initialized = False
         self._tools: dict[str, MCPTool] = {}
+        # Session/tool-catalog mutations stay serialized. Ordinary MCP
+        # operations use a separate bounded semaphore below so independent
+        # reads and verified writes can overlap safely after initialization.
         self._lock = asyncio.Lock()
+        self._snapshot_lock = asyncio.Lock()
+        self._request_semaphore = asyncio.Semaphore(self.max_concurrent_calls)
+        self._active_requests = 0
         self.server_info: dict[str, Any] = {}
         self._cached_devices: list[dict[str, Any]] = []
         self._devices_cached_at = 0.0
