@@ -6,6 +6,9 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
+from causal_attribution_guard import (  # noqa: E402
+    guard_configuration_only_causal_claim,
+)
 from causal_timeline import causal_log_windows  # noqa: E402
 from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
 from final_answer_coordinator import _synthesis_instruction  # noqa: E402
@@ -116,3 +119,74 @@ def test_evidence_ledger_marks_app_config_as_navigation_not_execution_proof() ->
     assert "hub_get_app_config" in ledger
     assert "CONFIGURATION/NAVIGATION ONLY" in ledger
     assert "not execution proof" in ledger
+
+
+def test_configuration_only_likely_cause_claim_is_softened_when_provenance_missing() -> None:
+    evidence = [
+        *_dehumidifier_evidence(),
+        {
+            "tool": "hub_read_apps_code",
+            "sub_tool": "hub_get_app_config",
+            "success": True,
+            "summary": "Humidity Controller config",
+        },
+    ]
+    draft = (
+        "The most likely cause was the Humidity Controller app. "
+        "There was no direct log evidence showing what initiated the turn-on."
+    )
+
+    corrected, changed = guard_configuration_only_causal_claim(draft, evidence)
+
+    assert changed is True
+    assert "configuration shows that the automation can manage this device" in corrected
+    assert "does not establish that it initiated this specific turn-on" in corrected
+
+
+def test_aligned_controller_evidence_outranks_app_configuration() -> None:
+    evidence = [
+        {
+            "tool": "homebrain_device_history",
+            "success": True,
+            "details": {
+                "label": "Dehumidifier 2",
+                "room": "Dehumidifier",
+                "attribute": "switch",
+                "temporalAnalysis": {
+                    "observedIntervals": [{
+                        "start": "2026-09-22T22:07:37.107+0100",
+                        "end": "2026-09-22T22:38:13.489+0100",
+                        "durationSeconds": 1836,
+                        "duration": "31m",
+                    }],
+                },
+            },
+        },
+        {
+            "tool": "homebrain_device_history",
+            "success": True,
+            "details": {
+                "label": "Ikea Rodret button switch (Livingroom)",
+                "attribute": "pushed",
+                "observedEvents": [{
+                    "name": "pushed",
+                    "value": "2",
+                    "description": "button 2 was pushed [physical]",
+                    "date": "2026-09-22T22:07:36.927+0100",
+                }],
+            },
+        },
+        {
+            "tool": "hub_read_apps_code",
+            "sub_tool": "hub_get_app_config",
+            "success": True,
+            "summary": "Humidity Controller config",
+        },
+    ]
+    draft = "The Humidity Controller app most likely caused the turn-on."
+
+    corrected, changed = guard_configuration_only_causal_claim(draft, evidence)
+
+    assert changed is True
+    assert "strongest current-turn start-boundary evidence" in corrected
+    assert "aligned controller event" in corrected
