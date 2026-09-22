@@ -420,9 +420,25 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
             if key in seen:
                 continue
             seen.add(key)
+            details = receipt.get("details")
+            log_hints: list[str] = []
+            if isinstance(details, dict) and isinstance(details.get("logs"), list):
+                for row in details.get("logs")[:4]:
+                    if not isinstance(row, dict):
+                        continue
+                    date = str(row.get("date") or "?").strip()
+                    source = str(row.get("source") or "").strip()
+                    message = str(row.get("message") or "").strip()
+                    rendered = " | ".join(
+                        part for part in (date, source, message) if part
+                    )
+                    if rendered:
+                        log_hints.append(rendered)
+            summary = str(receipt.get("summary") or "successful read")
+            if log_hints:
+                summary += "; nearby rows=[" + "; ".join(log_hints) + "]"
             lines.append(
-                f"- CHECKED native/log evidence ({scope}): "
-                f"{receipt.get('summary') or 'successful read'}"
+                f"- CHECKED native/log evidence ({scope}): {summary}"
             )
             continue
 
@@ -431,10 +447,15 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
             if key in seen:
                 continue
             seen.add(key)
+            source_name = str(receipt.get("sub_tool") or receipt.get("tool") or "")
+            qualifier = (
+                " [CONFIGURATION/NAVIGATION ONLY — not execution proof]"
+                if source_name in {"hub_get_app_config", "hub_list_apps"}
+                else ""
+            )
             lines.append(
-                f"- CHECKED rule/app evidence via "
-                f"{receipt.get('sub_tool') or receipt.get('tool')}: "
-                f"{receipt.get('summary') or 'successful read'}"
+                f"- CHECKED rule/app evidence via {source_name}: "
+                f"{receipt.get('summary') or 'successful read'}{qualifier}"
             )
             continue
 

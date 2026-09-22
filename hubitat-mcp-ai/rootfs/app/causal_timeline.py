@@ -8,7 +8,7 @@ device commands, and mode/context evidence.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
 
@@ -517,6 +517,63 @@ def missing_material_timeline_rows(
     return missing
 
 
+def causal_log_windows(
+    evidence: list[dict[str, Any]],
+    *,
+    padding_seconds: int = 10,
+    max_windows: int = 2,
+) -> list[dict[str, str]]:
+    """Return UTC log windows around unresolved material start boundaries.
+
+    Device-history timestamps carry the Hubitat location offset. Native
+    hub_get_logs accepts timezone-aware ISO timestamps, but timezone-free or
+    incorrectly suffixed values are interpreted as UTC. Convert the observed
+    boundary explicitly to UTC so a 22:07 +01:00 event becomes 21:07Z rather
+    than an impossible 22:07Z query one hour later.
+
+    At most two windows are returned because causal completion itself permits
+    only a bounded pair of complementary provenance reads.
+    """
+
+    rows = unresolved_material_timeline_rows(evidence)
+    if not rows:
+        rows = [
+            row
+            for row in build_causal_timeline_rows(evidence)
+            if row.get("material")
+        ]
+
+    parsed: list[tuple[datetime, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for row in rows:
+        start_text = str(row.get("start") or "").strip()
+        start = _parse_time(start_text)
+        if start is None:
+            continue
+        key = start.isoformat()
+        if key in seen:
+            continue
+        seen.add(key)
+        parsed.append((start, row))
+
+    # Most recent material transition first: "why did X turn on?" normally
+    # refers to the latest observed activation, while still allowing a second
+    # material boundary to be checked in the same bounded completion phase.
+    parsed.sort(key=lambda item: item[0], reverse=True)
+    pad = timedelta(seconds=max(1, min(60, int(padding_seconds))))
+    windows: list[dict[str, str]] = []
+    for start, row in parsed[: max(1, min(2, int(max_windows)))]:
+        since = (start - pad).astimezone(timezone.utc)
+        until = (start + pad).astimezone(timezone.utc)
+        windows.append({
+            "timelineId": str(row.get("id") or ""),
+            "subjectStart": start.isoformat(),
+            "since": since.isoformat().replace("+00:00", "Z"),
+            "until": until.isoformat().replace("+00:00", "Z"),
+        })
+    return windows
+
+
 def command_source_followup_needed(
     evidence: list[dict[str, Any]],
 ) -> tuple[bool, list[str]]:
@@ -572,6 +629,7 @@ def render_command_source_followup(evidence: list[dict[str, Any]]) -> str | None
 
 __all__ = [
     "build_causal_timeline_rows",
+    "causal_log_windows",
     "command_source_followup_needed",
     "missing_material_timeline_rows",
     "unresolved_material_timeline_rows",

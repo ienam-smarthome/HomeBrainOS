@@ -496,3 +496,58 @@ async def test_setlevel_parameter_object_is_normalized_to_gateway_array():
     assert sent[0]["parameters"] == [100]
     assert sent[1]["parameters"] == [100]
     assert arguments["args"]["commands"][0]["parameters"] == {"level": 100}
+
+
+@pytest.mark.asyncio
+async def test_native_log_rows_are_preserved_in_bounded_evidence_details():
+    result = MCPToolResult(
+        "hub_read_diagnostics",
+        {},
+        {},
+        "",
+        {
+            "count": 2,
+            "logs": [
+                {
+                    "timestamp": "2026-09-22T22:07:36.927+0100",
+                    "source": "Ikea Rodret button switch (Livingroom)",
+                    "level": "info",
+                    "message": "button 2 was pushed",
+                },
+                {
+                    "timestamp": "2026-09-22T22:07:37.107+0100",
+                    "source": "Dehumidifier 2",
+                    "level": "info",
+                    "message": "Command called: on()",
+                },
+            ],
+        },
+    )
+    mcp = FakeMCP(result=result)
+    evidence = EvidenceRecorder()
+    executor = ToolExecutor(mcp, evidence, clock=clock(10.0, 10.1))
+    token = evidence.begin()
+    try:
+        await executor.execute(
+            "hub_read_diagnostics",
+            {
+                "tool": "hub_get_logs",
+                "args": {
+                    "since": "2026-09-22T21:07:27Z",
+                    "until": "2026-09-22T21:07:47Z",
+                },
+            },
+            tool=MCPTool(
+                "hub_read_diagnostics",
+                "Read diagnostics",
+                {},
+                annotations={"effect": ToolEffect.READ.value},
+            ),
+        )
+        receipt = evidence.receipts()[0]
+    finally:
+        evidence.reset(token)
+
+    assert receipt["details"]["logCount"] == 2
+    assert receipt["details"]["logs"][0]["source"].startswith("Ikea Rodret")
+    assert receipt["details"]["logs"][1]["message"] == "Command called: on()"

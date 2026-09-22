@@ -29,6 +29,7 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
 )
 from causal_timeline import (
+    causal_log_windows,
     render_command_source_followup,
     unresolved_material_timeline_rows,
 )
@@ -87,6 +88,86 @@ from tool_registry import (
 )
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
+
+
+def _gateway_leaf(arguments: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    leaf = str(arguments.get("tool") or "").strip()
+    inner = arguments.get("args")
+    return leaf, dict(inner) if isinstance(inner, dict) else {}
+
+
+def _is_broad_device_inventory_call(
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> bool:
+    if tool_name not in {"hub_read_devices", "hub_manage_devices"}:
+        return False
+    leaf, inner = _gateway_leaf(arguments)
+    if leaf != "hub_list_devices":
+        return False
+    scoped_keys = {
+        "filter",
+        "labelFilter",
+        "capabilityFilter",
+        "roomFilter",
+        "changedSince",
+        "attributeNames",
+        "onlyOn",
+        "cursor",
+    }
+    return not any(
+        key in inner and inner.get(key) not in (None, "", [], {})
+        for key in scoped_keys
+    )
+
+
+def _normalize_causal_log_call(
+    tool_name: str,
+    arguments: dict[str, Any],
+    evidence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Force native log reads onto observed causal boundary timestamps.
+
+    Native hub logs interpret timezone-free values as UTC. Model-authored
+    conversions can therefore shift a Hubitat-local +01:00 boundary by an hour.
+    The host owns this conversion because the actual device-history timestamp is
+    already structured evidence.
+    """
+
+    leaf, inner = _gateway_leaf(arguments)
+    direct = tool_name == "hub_get_logs"
+    gateway = leaf == "hub_get_logs"
+    if not (direct or gateway):
+        return arguments
+
+    windows = causal_log_windows(evidence)
+    if not windows:
+        return arguments
+
+    prior_log_reads = sum(
+        1
+        for receipt in evidence
+        if isinstance(receipt, dict)
+        and receipt.get("success") is True
+        and (
+            str(receipt.get("tool") or "") == "hub_get_logs"
+            or str(receipt.get("sub_tool") or "") == "hub_get_logs"
+        )
+    )
+    window = windows[min(prior_log_reads, len(windows) - 1)]
+    normalized = dict(arguments)
+    if direct:
+        normalized["since"] = window["since"]
+        normalized["until"] = window["until"]
+        normalized.setdefault("limit", 100)
+        return normalized
+
+    normalized_inner = dict(inner)
+    normalized_inner["since"] = window["since"]
+    normalized_inner["until"] = window["until"]
+    normalized_inner.setdefault("limit", 100)
+    normalized["args"] = normalized_inner
+    return normalized
 
 
 def _controller_followup_arguments(
@@ -673,6 +754,27 @@ class UnifiedMCPAgent:
         unresolved_material = unresolved_material_timeline_rows(
             self.evidence.receipts()
         )
+        log_windows = causal_log_windows(self.evidence.receipts())
+        if log_windows:
+            rows = [
+                (
+                    f"- {item.get('timelineId') or 'transition'}: subject "
+                    f"{item.get('subjectStart')} -> native-log UTC window "
+                    f"{item.get('since')} .. {item.get('until')}"
+                )
+                for item in log_windows
+            ]
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST CAUSAL NATIVE-LOG WINDOWS\n"
+                    + "\n".join(rows)
+                    + "\nThese UTC boundaries were derived from the observed "
+                    "Hubitat event timestamps. When selecting hub_get_logs, do not "
+                    "invent or manually convert a clock time; the host will enforce "
+                    "the matching since/until window on the call."
+                ),
+            })
         if (
             unresolved_material
             and "hub_read_apps_code" in catalog.available_names
@@ -1462,6 +1564,13 @@ class UnifiedMCPAgent:
                 arguments = function.get("arguments") or {}
                 if isinstance(arguments, str):
                     arguments = json.loads(arguments or "{}")
+                arguments = dict(arguments)
+                if causal_request:
+                    arguments = _normalize_causal_log_call(
+                        name,
+                        arguments,
+                        self.evidence.receipts(),
+                    )
                 signature = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False, default=str)
                 if signature in completed_calls:
                     duplicate_signature_seen = True
@@ -1493,6 +1602,10 @@ class UnifiedMCPAgent:
                     and name == _LOCAL_FILTER_TOOL
                     and str(arguments.get("attribute") or "").strip().casefold() == "room"
                 )
+                broad_causal_inventory = bool(
+                    causal_request
+                    and _is_broad_device_inventory_call(name, arguments)
+                )
                 missing_related_attribute = bool(
                     investigative_request
                     and name == _LOCAL_DEVICE_HISTORY_TOOL
@@ -1516,6 +1629,18 @@ class UnifiedMCPAgent:
                             "completed host-side from the resolved subject metadata. "
                             "Use the gathered controller/provenance evidence and move "
                             "to a different evidence class."
+                        )
+                    })
+                elif broad_causal_inventory:
+                    round_tool_failure = True
+                    increment_active_metric("causal_broad_inventory_blocked")
+                    content = json.dumps({
+                        "error": (
+                            "Broad hub_list_devices inventory reads are not a causal "
+                            "provenance source and are blocked for this investigation. "
+                            "Use homebrain_device_history/homebrain_resolve_device for "
+                            "the named subject, or a scoped labelFilter/roomFilter when "
+                            "a genuinely new device identity is required."
                         )
                     })
                 elif missing_related_attribute:

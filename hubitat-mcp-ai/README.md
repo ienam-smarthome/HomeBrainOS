@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.9**.
+Current add-on version: **0.16.10**.
 
 ## Architecture
+
+0.16.10 hardens causal investigations around observed device-state boundaries. History target resolution now recovers unique minor misspellings from the authoritative identity world, switch history is scoped upstream so noisy metering telemetry cannot crowd out the older on/off boundary, causal native-log windows are host-derived from the Hubitat event timestamp and converted explicitly to UTC, broad unscoped device inventories are blocked during causal investigations, and final synthesis treats app configuration as capability/navigation context rather than execution proof.
 
 0.16.9 narrows the MCP transport's former global request lock. Session initialization and tool-catalog mutation remain serialized, cacheable aggregate device snapshots remain single-flight, and ordinary MCP operations run through a bounded concurrency gate (2 calls by default). This lets independent per-device live reads and verified writes overlap while retaining a `mcp_max_concurrent_calls: 1` rollback setting that restores serialized ordinary traffic.
 

@@ -13,6 +13,7 @@ The repository drift test compares this table directly with the live directory. 
 | `automation_ideas_service.py` | Asks the model for grounded, creative new-automation suggestions (never factual claims). |
 | `automation_status_service.py` | Reads and normalises Hubitat automation status. |
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
+| `causal_attribution_guard.py` | Prevents app/rule configuration-only evidence from being promoted into a specific causal trigger, and ensures stronger aligned controller provenance wins when present. |
 | `causal_evidence_planner.py` | Derives exact subject-room provenance discovery, one ranked controller history read, and deterministic controller-to-subject boundary alignments (start versus end) for causal investigations without authoring the causal answer. |
 | `causal_timeline.py` | Joins observed bounded/open subject intervals with directional controller provenance, subject command boundaries, and mode/context evidence; also exposes bounded causal-completeness and material-row coverage checks without authoring conclusions. |
 | `controller_correlation_guard.py` | Rejects synthesis that misuses an interval-end controller event as provenance for the earlier turn-on transition. |
