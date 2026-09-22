@@ -116,16 +116,16 @@ def is_brightness_device(device: dict[str, Any]) -> bool:
     # non-Light device: either Hubitat Actuator capability or an explicit
     # setLevel command. A button/battery component with only a level-like
     # reading must never become a semantic light.
+    if (
+        capabilities.intersection(_CONTROLLER_ONLY_CAPABILITIES)
+        and "actuator" not in capabilities
+    ):
+        return False
     actuator_evidence = (
         "actuator" in capabilities
         or "setlevel" in commands
     )
     if not actuator_evidence:
-        return False
-    if capabilities.intersection(_CONTROLLER_ONLY_CAPABILITIES) and (
-        "actuator" not in capabilities
-        and "setlevel" not in commands
-    ):
         return False
     return True
 
