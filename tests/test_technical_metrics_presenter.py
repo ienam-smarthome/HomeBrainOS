@@ -165,3 +165,18 @@ def test_mcp_concurrency_metrics_are_presented() -> None:
         {"label": "MCP session lock wait", "value": "15 ms"},
         {"label": "Outcome", "value": "success"},
     ]
+
+
+def test_batch_device_control_metrics_are_presented() -> None:
+    assert present_request_metrics({
+        "outcome": "success",
+        "counters": {
+            "device_control_batch_commands": 1,
+            "device_control_batch_verifications": 1,
+        },
+        "timings_ms": {},
+    }) == [
+        {"label": "Batched device commands", "value": "1"},
+        {"label": "Batched device verifications", "value": "1"},
+        {"label": "Outcome", "value": "success"},
+    ]
