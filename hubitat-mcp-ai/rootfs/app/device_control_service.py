@@ -14,7 +14,7 @@ from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
 from request_metrics import increment_active_metric
-from semantic_world_model import device_abilities
+from semantic_world_model import device_abilities, is_brightness_device
 from time_expressions import strip_trailing_time
 
 
@@ -317,7 +317,7 @@ class DeviceControlService:
         """
 
         if kind == "light":
-            return is_light_device(device)
+            return is_light_device(device) or is_brightness_device(device)
         if kind == "switch":
             return self._is_switch_device(device) and not is_light_device(device)
         if kind == "thermostat":
