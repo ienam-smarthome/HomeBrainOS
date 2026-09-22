@@ -2058,15 +2058,7 @@ async def test_semantic_two_device_request_executes_host_grounded_selection(
     monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
     monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
 
-    ai = FakeAI(
-        '{"version":"1","domain":"device_control","timing":"now",'
-        '"target":{"scope":"device","name":"Hallway Light 1","names":[],'
-        '"kind":"light"},'
-        '"action":{"operation":"turn_off","value":null,"delta":null,'
-        '"direction":null,"magnitude":"default"},'
-        '"needs_clarification":false,"clarification_question":"",'
-        '"confidence":"high","source":"model"}'
-    )
+    ai = FakeAI("unused -- explicit multi-device control stays zero-model")
     agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
@@ -2077,11 +2069,13 @@ async def test_semantic_two_device_request_executes_host_grounded_selection(
     assert control_calls == [{
         "device_names": ["Hallway Light 1", "Kitchen Light"],
         "command": "off",
-        "device_kind": "light",
+        "device_kind": "auto",
     }]
     assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
-    assert outcome.metrics["counters"]["semantic_planner_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
     assert outcome.metrics["outcome"] == "success"
+    assert ai.requests == []
 
 
 @pytest.mark.asyncio
