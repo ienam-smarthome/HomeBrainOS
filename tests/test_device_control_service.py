@@ -1843,3 +1843,182 @@ async def test_adjust_level_missing_from_both_live_sources_requests_absolute_inp
         gateway == "hub_manage_devices"
         for gateway, _arguments in mcp.calls
     )
+
+
+
+@pytest.mark.asyncio
+async def test_adjust_level_uses_advertised_refresh_to_acquire_missing_baseline():
+    class RefreshableHallwayMCP(RelativeLevelMCP):
+        def __init__(self):
+            super().__init__()
+            self.devices = [{
+                "id": "3927",
+                "label": "Hallway dimmer",
+                "roomName": "Hallway",
+                "capabilities": ["Switch", "SwitchLevel", "Refresh"],
+                "commands": ["on", "off", "setLevel", "refresh"],
+                "attributes": [{"name": "switch", "value": "on"}],
+            }]
+            self.calls = []
+
+        async def call_tool(self, gateway, arguments):
+            self.calls.append((gateway, arguments))
+            if arguments.get("tool") == "hub_get_device_attribute":
+                return MCPToolResult(
+                    "hub_read_devices",
+                    arguments,
+                    {},
+                    "never reported",
+                    {
+                        "success": True,
+                        "attribute": "level",
+                        "value": None,
+                        "neverReported": True,
+                    },
+                )
+            if (
+                arguments.get("tool") == "hub_call_device_command"
+                and arguments.get("args", {}).get("command") == "refresh"
+            ):
+                return MCPToolResult(
+                    "hub_manage_devices",
+                    arguments,
+                    {},
+                    "refreshed",
+                    {
+                        "success": True,
+                        "state": {
+                            "switch": {"value": "on"},
+                            "level": {"value": 35, "timestamp": "2026-09-22 09:00:00"},
+                        },
+                    },
+                )
+            if arguments.get("tool") == "hub_call_device_command":
+                expected = arguments["args"]["waitFor"]["expectedValue"]
+                return MCPToolResult(
+                    "hub_manage_devices",
+                    arguments,
+                    {},
+                    "ok",
+                    {
+                        "success": True,
+                        "waitFor": {"converged": True, "value": expected},
+                    },
+                )
+            raise AssertionError((gateway, arguments))
+
+        async def get_live_context(self, refresh=False):
+            assert refresh is True
+            return {
+                "devices": [{
+                    "id": "3927",
+                    "label": "Hallway dimmer",
+                    "roomName": "Hallway",
+                    "attributes": [{"name": "switch", "value": "on"}],
+                }]
+            }
+
+    mcp = RefreshableHallwayMCP()
+    receipts = []
+
+    def capture(*args, **kwargs):
+        receipts.append((args, kwargs))
+
+    service = DeviceControlService(mcp, capture)
+    result = await service.execute({
+        "device_names": ["Hallway dimmer"],
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["success"] is True
+    item = result.data["succeeded"][0]
+    assert item["previous_level"] == 35
+    assert item["target_level"] == 55
+
+    refresh_call = next(
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+        and args.get("args", {}).get("command") == "refresh"
+    )
+    assert refresh_call == {
+        "tool": "hub_call_device_command",
+        "args": {"deviceId": "3927", "command": "refresh"},
+    }
+
+    level_command = [
+        args for gateway, args in mcp.calls
+        if gateway == "hub_manage_devices"
+        and args.get("args", {}).get("command") == "setLevel"
+    ][0]
+    assert level_command["args"]["parameters"] == ["55"]
+    assert level_command["args"]["waitFor"]["expectedValue"] == "55"
+
+    refresh_evidence = [
+        kwargs for _args, kwargs in receipts
+        if kwargs.get("evidence_kind") == "control_precondition_refresh"
+    ]
+    assert len(refresh_evidence) == 1
+    assert refresh_evidence[0]["success"] is True
+    assert "level 35" in refresh_evidence[0]["summary"]
+
+
+@pytest.mark.asyncio
+async def test_missing_baseline_does_not_send_refresh_when_device_does_not_advertise_it():
+    class NoRefreshHallwayMCP(RelativeLevelMCP):
+        def __init__(self):
+            super().__init__()
+            self.devices = [{
+                "id": "3927",
+                "label": "Hallway dimmer",
+                "roomName": "Hallway",
+                "capabilities": ["Switch", "SwitchLevel"],
+                "commands": ["on", "off", "setLevel"],
+                "attributes": [{"name": "switch", "value": "on"}],
+            }]
+            self.calls = []
+
+        async def call_tool(self, gateway, arguments):
+            self.calls.append((gateway, arguments))
+            if arguments.get("tool") == "hub_get_device_attribute":
+                return MCPToolResult(
+                    "hub_read_devices",
+                    arguments,
+                    {},
+                    "never reported",
+                    {
+                        "success": True,
+                        "value": None,
+                        "neverReported": True,
+                    },
+                )
+            raise AssertionError("No device command should be sent")
+
+        async def get_live_context(self, refresh=False):
+            assert refresh is True
+            return {
+                "devices": [{
+                    "id": "3927",
+                    "label": "Hallway dimmer",
+                    "attributes": [{"name": "switch", "value": "on"}],
+                }]
+            }
+
+    mcp = NoRefreshHallwayMCP()
+    service = DeviceControlService(mcp, recorder)
+    result = await service.execute({
+        "device_names": ["Hallway dimmer"],
+        "device_kind": "light",
+        "command": "adjust_level",
+        "delta": 20,
+    })
+
+    assert result.data["needs_input"] is True
+    assert all(
+        not (
+            gateway == "hub_manage_devices"
+            and args.get("args", {}).get("command") == "refresh"
+        )
+        for gateway, args in mcp.calls
+    )
