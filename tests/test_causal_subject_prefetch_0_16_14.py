@@ -356,6 +356,75 @@ async def test_strong_causal_prefetch_reaches_final_reasoning_in_one_model_round
 
 
 @pytest.mark.asyncio
+async def test_strong_causal_prefetch_finalizes_without_provider_or_identity_lookup():
+    mcp = _PrefetchMCP()
+    ai = _OneRoundAI()
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Why did dehumidifer 2 turn on?"
+    )
+
+    counters = outcome.metrics["counters"]
+    assert len(ai.requests) == 0
+    assert counters.get("model_rounds", 0) == 0
+    assert counters["causal_subject_prefetch"] == 1
+    assert counters["causal_native_log_reads"] == 2
+    assert counters["causal_native_log_correlations"] == 2
+    assert counters["causal_repeated_controller_pattern"] == 1
+    assert counters["causal_deterministic_finalization"] == 1
+    assert counters["investigative_finalization"] == 1
+
+    assert "Ikea Rodret (Livingroom)" in outcome.message
+    assert "button 2" in outcome.message
+    assert "76 ms later" in outcome.message
+    assert "01. Humidity Controller" in outcome.message
+    assert "downstream handling" in outcome.message
+    assert "does not independently prove" in outcome.message
+    assert "identify the person" in outcome.message
+
+    assert not any(
+        name == "hub_read_devices"
+        and arguments.get("tool") == "hub_list_devices"
+        for name, arguments in mcp.calls
+    )
+
+    history_receipts = [
+        receipt
+        for receipt in outcome.evidence
+        if receipt.get("tool") == "homebrain_device_history"
+    ]
+    assert len(history_receipts) == 1
+    assert history_receipts[0]["arguments"] == {
+        "name": "Dehumidifier 2",
+        "attribute": "switch",
+        "limit": 3,
+    }
+
+
+def test_deterministic_causal_final_metric_is_supported_and_presented() -> None:
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        metrics.increment("causal_deterministic_finalization")
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert snapshot["counters"]["causal_deterministic_finalization"] == 1
+    assert {
+        "label": "Deterministic causal finalizations",
+        "value": "1",
+    } in present_request_metrics(snapshot)
+
+
+@pytest.mark.asyncio
 async def test_causal_prefetch_rollback_keeps_model_tool_selection_path():
     mcp = _PrefetchMCP()
     ai = _OneRoundAI()
