@@ -55,6 +55,7 @@ options:
   rule_write_enabled: true
   rule_create_paused_required: true
   deterministic_reads_enabled: false
+  causal_subject_prefetch_enabled: true
   semantic_agent_enabled: true
   semantic_default_brightness_step: 20
   semantic_default_temperature_step: 1.0
@@ -109,6 +110,7 @@ schema:
   rule_write_enabled: bool
   rule_create_paused_required: bool
   deterministic_reads_enabled: bool
+  causal_subject_prefetch_enabled: bool
   semantic_agent_enabled: bool
   semantic_default_brightness_step: int
   semantic_default_temperature_step: float
