@@ -20,7 +20,7 @@ from device_read_contract import (
     projected_state_shape_is_usable,
 )
 from mcp_retry_metrics import record_mcp_retry_attempt
-from request_metrics import add_active_metric_ms
+from request_metrics import add_active_metric_ms, increment_active_metric
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,7 @@ class HubitatMCPClient:
         access_token: str = "",
         timeout_seconds: float = 25,
         device_cache_seconds: float = 12,
+        identity_cache_seconds: float = 120,
         retry_attempts: int = 3,
         retry_backoff_seconds: float = 0.25,
         clock: Callable[[], float] = time.monotonic,
@@ -99,6 +100,7 @@ class HubitatMCPClient:
         self.endpoint_url = self._with_token(endpoint_url.strip(), access_token.strip())
         self.timeout_seconds = max(3.0, float(timeout_seconds))
         self.device_cache_seconds = max(0.0, float(device_cache_seconds))
+        self.identity_cache_seconds = max(0.0, float(identity_cache_seconds))
         self.retry_attempts = max(1, min(5, int(retry_attempts)))
         self.retry_backoff_seconds = max(
             0.0, min(5.0, float(retry_backoff_seconds))
@@ -246,31 +248,48 @@ class HubitatMCPClient:
 
         return [dict(item) for item in self._cached_devices]
 
-    def peek_device_identities(self) -> list[dict[str, Any]]:
-        """Return the best complete local identity snapshot without I/O.
+    def _identity_cache_fresh(self, cached_at: float) -> bool:
+        if cached_at <= 0:
+            return False
+        return self._clock() - cached_at < self.identity_cache_seconds
 
-        Routine device controls only need stable identity/capability metadata to
-        resolve an exact cached target before dispatching the verified command.
-        Prefer the detailed manifest, then a complete full-device snapshot, then
-        the complete live-context snapshot. All of these were already accepted
-        as identity sources elsewhere; this helper simply guarantees that the
-        fast path never refreshes the hub while trying to resolve a known target.
+    def peek_device_identities(self) -> list[dict[str, Any]]:
+        """Return a fresh complete local identity snapshot without I/O.
+
+        Identity/capability data is allowed to live longer than current-state
+        data, but it must not remain authoritative forever. A stale structural
+        snapshot can contain removed devices, old room membership, or renamed
+        entities and therefore corrupt host-owned target grounding.
+
+        Prefer the detailed manifest, then complete device/context snapshots,
+        but only while each source is inside the dedicated identity TTL.
+        Returning an empty list for stale sources lets the caller perform one
+        bounded refresh instead of silently grounding a mutation to old data.
         """
 
-        if self._cached_devices:
+        if self._cached_devices and self._identity_cache_fresh(self._devices_cached_at):
             return [dict(item) for item in self._cached_devices]
 
+        generation = self._live_device_snapshot_generation
         if self._live_device_snapshot is not None:
-            _cached_at, _generation, cached_result = self._live_device_snapshot
-            devices = self._find_device_list(cached_result.data)
-            if isinstance(devices, list) and devices:
-                return [dict(item) for item in devices if isinstance(item, dict)]
+            cached_at, cached_generation, cached_result = self._live_device_snapshot
+            if (
+                cached_generation == generation
+                and self._identity_cache_fresh(cached_at)
+            ):
+                devices = self._find_device_list(cached_result.data)
+                if isinstance(devices, list) and devices:
+                    return [dict(item) for item in devices if isinstance(item, dict)]
 
         if self._live_context_snapshot is not None:
-            _cached_at, _generation, cached_context = self._live_context_snapshot
-            devices = self._find_device_list(cached_context)
-            if isinstance(devices, list) and devices:
-                return [dict(item) for item in devices if isinstance(item, dict)]
+            cached_at, cached_generation, cached_context = self._live_context_snapshot
+            if (
+                cached_generation == generation
+                and self._identity_cache_fresh(cached_at)
+            ):
+                devices = self._find_device_list(cached_context)
+                if isinstance(devices, list) and devices:
+                    return [dict(item) for item in devices if isinstance(item, dict)]
 
         return []
 
@@ -471,23 +490,27 @@ class HubitatMCPClient:
         return value
 
     async def get_device_identities(self) -> list[dict[str, Any]]:
-        """Return complete device identity with the cheapest safe source first."""
+        """Return fresh complete identity with the cheapest authoritative source.
+
+        A warm structural cache avoids unnecessary hub traffic. Once that cache
+        exceeds the identity TTL, refresh the one-shot bulk context first; it is
+        much cheaper than the paginated detailed manifest and carries the room/
+        capability identity needed for deterministic target grounding. Only when
+        the bulk context is unavailable or incomplete do we refresh the detailed
+        manifest. Stale identity is never silently promoted back to authoritative.
+        """
 
         cached = self.peek_device_identities()
         if cached:
+            increment_active_metric("identity_cache_hit")
             return cached
 
-        # A cold control request used to jump straight to the detailed paginated
-        # hub_list_devices manifest. On a real ~200-device hub that path took
-        # ~24 seconds before a 733 ms command could even start. The bulk context
-        # resource already carries complete structural identity (id/label/room/
-        # capabilities), which is enough for deterministic routine resolution.
-        # Prefer that one bounded read and only fall back to the detailed manifest
-        # when the context resource is unavailable or explicitly incomplete.
+        increment_active_metric("identity_refresh")
+
         try:
-            context = await self.get_live_context()
+            context = await self.get_live_context(refresh=True)
         except Exception as exc:
-            logger.debug("Live context unavailable for identity lookup: %s", exc)
+            logger.debug("Live context unavailable for identity refresh: %s", exc)
         else:
             if live_context_is_complete(context):
                 devices = self._find_device_list(context)
@@ -497,7 +520,16 @@ class HubitatMCPClient:
                 if identities:
                     return identities
 
-        return await self.get_cached_devices()
+        try:
+            await self.get_cached_devices(refresh=True)
+        except Exception as exc:
+            logger.debug("Detailed manifest unavailable for identity refresh: %s", exc)
+            return []
+
+        # get_cached_devices() may legally preserve the previous manifest when
+        # the server exposes no compatible detailed-list tool. Re-check the
+        # timestamp rather than treating that stale fallback as authoritative.
+        return self.peek_device_identities()
 
     @classmethod
     def _find_device_list(cls, value: Any) -> list[Any] | None:
