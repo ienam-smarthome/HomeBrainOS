@@ -342,6 +342,168 @@ def native_log_provenance_sufficient(correlations: list[dict[str, Any]]) -> bool
     return False
 
 
+def _clock_text(value: Any) -> str:
+    parsed = _parse_time(value)
+    if parsed is None:
+        return str(value or "").strip()
+    return parsed.strftime("%I:%M:%S %p").lstrip("0")
+
+
+def _duration_text(start: Any, end: Any) -> str:
+    left = _parse_time(start)
+    right = _parse_time(end)
+    if left is None or right is None or right < left:
+        return ""
+    seconds = round((right - left).total_seconds())
+    if seconds < 60:
+        return f"{seconds} seconds"
+    minutes = seconds // 60
+    remainder = seconds % 60
+    if remainder == 0:
+        return f"{minutes} minutes"
+    return f"approximately {minutes} minutes"
+
+
+def render_strong_native_provenance_answer(
+    evidence: list[dict[str, Any]],
+) -> str | None:
+    """Render the narrow repeated-controller causal result without a model.
+
+    This intentionally refuses every partial shape. It only authors an answer
+    after the existing native-log sufficiency contract has established the same
+    physical controller/input immediately before both the ON and OFF commands
+    for one material subject interval. The wording preserves the same mapping
+    and person-identification caveats required by model synthesis.
+    """
+
+    correlations = correlate_native_log_boundaries(evidence)
+    if not native_log_provenance_sufficient(correlations):
+        return None
+
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in correlations:
+        timeline_id = str(row.get("timelineId") or "")
+        role = str(row.get("boundaryRole") or "")
+        grouped.setdefault(timeline_id, {})[role] = row
+
+    selected: tuple[datetime, dict[str, Any], dict[str, Any]] | None = None
+    for by_role in grouped.values():
+        start = by_role.get("start")
+        end = by_role.get("end")
+        if not isinstance(start, dict) or not isinstance(end, dict):
+            continue
+        if not (
+            start.get("repeatedControllerPattern") is True
+            and end.get("repeatedControllerPattern") is True
+        ):
+            continue
+        start_time = _parse_time(start.get("stateBoundary"))
+        if start_time is None:
+            continue
+        if selected is None or start_time > selected[0]:
+            selected = (start_time, start, end)
+
+    if selected is None:
+        return None
+
+    _start_time, start, end = selected
+    subject = str(start.get("subject") or "").strip()
+    start_controller = (
+        start.get("controller")
+        if isinstance(start.get("controller"), dict)
+        else {}
+    )
+    end_controller = (
+        end.get("controller")
+        if isinstance(end.get("controller"), dict)
+        else {}
+    )
+    start_command = (
+        start.get("command")
+        if isinstance(start.get("command"), dict)
+        else {}
+    )
+    end_command = (
+        end.get("command")
+        if isinstance(end.get("command"), dict)
+        else {}
+    )
+
+    controller_label = str(
+        start_controller.get("sourceLabel")
+        or end_controller.get("sourceLabel")
+        or "the physical controller"
+    ).strip()
+    button = str(
+        start_controller.get("button")
+        or end_controller.get("button")
+        or ""
+    ).strip()
+    control_name = (
+        f"button {button} on {controller_label}"
+        if button
+        else controller_label
+    )
+
+    start_press = _clock_text(start_controller.get("date"))
+    start_command_time = _clock_text(start_command.get("date"))
+    end_press = _clock_text(end_controller.get("date"))
+    end_command_time = _clock_text(end_command.get("date"))
+    on_delay = start_controller.get("controllerToCommandMs")
+    off_delay = end_controller.get("controllerToCommandMs")
+    duration = _duration_text(
+        start.get("stateBoundary"),
+        end.get("stateBoundary"),
+    )
+
+    reactions = [
+        item
+        for item in (start.get("appReactions") or [])
+        if isinstance(item, dict)
+    ]
+    app_label = ""
+    if reactions:
+        app_label = str(reactions[0].get("sourceLabel") or "").strip()
+
+    paragraphs = [
+        (
+            f"Based on the available evidence, the strongest initiating-control "
+            f"candidate for {subject} turning on was a physical press of "
+            f"{control_name}."
+        ),
+        (
+            f"At {start_press}, {control_name} was pressed. "
+            f"About {on_delay:g} ms later, at {start_command_time}, an ON command "
+            f"was sent to {subject}."
+        ),
+    ]
+
+    if app_label:
+        paragraphs.append(
+            f"{app_label} reacted after the ON command and managed the resulting "
+            "manual run, so the recorded app activity is downstream handling "
+            "rather than the initiating event."
+        )
+
+    ending = (
+        f"The same {control_name} was pressed again at {end_press}, immediately "
+        f"before the OFF command at {end_command_time}"
+    )
+    if off_delay not in {None, ""}:
+        ending += f" ({off_delay:g} ms later)"
+    if duration:
+        ending += f", after the device had been on for {duration}"
+    ending += "."
+    paragraphs.append(ending)
+
+    paragraphs.append(
+        "The repeated start/end timing is strong temporal provenance for this "
+        "controller/input. It does not independently prove the configured "
+        "button-to-device mapping or identify the person who pressed it."
+    )
+    return "\n\n".join(paragraphs)
+
+
 def render_native_log_correlation(
     correlations: list[dict[str, Any]],
 ) -> str | None:
@@ -400,4 +562,5 @@ __all__ = [
     "correlate_native_log_boundaries",
     "native_log_provenance_sufficient",
     "render_native_log_correlation",
+    "render_strong_native_provenance_answer",
 ]
