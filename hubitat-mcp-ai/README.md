@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.6**.
+Current add-on version: **0.16.7**.
 
 ## Architecture
+
+0.16.7 adds bounded structural-identity freshness and typed multi-device semantic selections. Host grounding now expires old room/device identity, refreshes from the bulk context before falling back to the detailed manifest, and zero-model routine controls use the same fresh host grounding as model-interpreted controls. Explicit commands naming multiple canonical devices compile to one deterministic multi-device action.
 
 0.16.6 hardens routine-control failure handling, makes multi-round provider timing cumulative, and wires the existing `rule_write_enabled` setting into both deterministic and model-driven Rule Machine write paths.
 
