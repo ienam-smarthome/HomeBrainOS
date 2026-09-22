@@ -181,6 +181,20 @@ def test_semantic_temperature_action_supports_fractional_setpoints_and_deltas() 
     assert relative.direction == "decrease"
 
 
+def test_semantic_selection_requires_multiple_canonical_names() -> None:
+    target = SemanticTarget(
+        scope="selection",
+        names=["Hallway Light 1", "Kitchen Light", "hallway light 1"],
+        kind="light",
+    )
+
+    assert target.name == ""
+    assert target.names == ["Hallway Light 1", "Kitchen Light"]
+
+    with pytest.raises(ValueError, match="at least two names"):
+        SemanticTarget(scope="selection", names=["Hallway Light 1"], kind="light")
+
+
 def test_semantic_thermostat_target_is_executable_routine_control() -> None:
     plan = SemanticPlan(
         domain="device_control",
@@ -356,6 +370,114 @@ async def test_semantic_core_prefers_explicit_room_over_model_invented_device_ta
         "command": "adjust_level",
         "device_kind": "light",
         "delta": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_semantic_core_host_grounds_two_explicit_devices_as_selection() -> None:
+    async def fake_chat(_messages, _tools):
+        # The model only selects the first device; host grounding must recover
+        # both explicitly named devices from authoritative canonical identity.
+        return {
+            "content": (
+                '{"version":"1","domain":"device_control","timing":"now",'
+                '"target":{"scope":"device","name":"Hallway Light 1","names":[],'
+                '"kind":"light"},'
+                '"action":{"operation":"adjust_level","value":null,"delta":null,'
+                '"direction":"increase","magnitude":"default"},'
+                '"needs_clarification":false,"clarification_question":"",'
+                '"confidence":"high","source":"model"}'
+            )
+        }
+
+    world = json.dumps({
+        "live_state": False,
+        "rooms": [
+            {
+                "name": "Hallway",
+                "abilities": ["brightness", "switch"],
+                "devices": ["Hallway Light 1"],
+            },
+            {
+                "name": "Kitchen",
+                "abilities": ["brightness", "switch"],
+                "devices": ["Kitchen Light"],
+            },
+        ],
+        "devices": [
+            {
+                "name": "Hallway Light 1",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+            {
+                "name": "Kitchen Light",
+                "room": "Kitchen",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+        ],
+    })
+
+    core = SemanticAgentCore(SemanticPlanner(fake_chat))
+    plan = await core.plan_control(
+        "make Hallway Light 1 and Kitchen Light brighter",
+        world_context=world,
+    )
+
+    assert plan is not None
+    assert plan.target is not None
+    assert plan.target.scope == "selection"
+    assert plan.target.name == ""
+    assert plan.target.names == ["Hallway Light 1", "Kitchen Light"]
+    assert core.compile_control(plan) == {
+        "device_names": ["Hallway Light 1", "Kitchen Light"],
+        "command": "adjust_level",
+        "device_kind": "light",
+        "delta": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_semantic_core_fastpath_multi_device_is_host_grounded_without_model() -> None:
+    async def forbidden_chat(_messages, _tools):
+        raise AssertionError("explicit switch control should remain zero-model")
+
+    world = json.dumps({
+        "live_state": False,
+        "rooms": [],
+        "devices": [
+            {
+                "name": "Hallway Light 1",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+            {
+                "name": "Kitchen Light",
+                "room": "Kitchen",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+        ],
+    })
+
+    core = SemanticAgentCore(SemanticPlanner(forbidden_chat))
+    plan = await core.plan_control(
+        "turn off Hallway Light 1 and Kitchen Light",
+        world_context=world,
+    )
+
+    assert plan is not None
+    assert plan.source == "fastpath"
+    assert plan.target is not None
+    assert plan.target.scope == "selection"
+    assert plan.target.names == ["Hallway Light 1", "Kitchen Light"]
+    assert core.compile_control(plan) == {
+        "device_names": ["Hallway Light 1", "Kitchen Light"],
+        "command": "off",
+        "device_kind": "auto",
     }
 
 

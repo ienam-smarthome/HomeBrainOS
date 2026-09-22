@@ -134,3 +134,18 @@ def test_semantic_target_grounding_metric_is_presented() -> None:
         {"label": "Semantic targets host-grounded", "value": "1"},
         {"label": "Outcome", "value": "success"},
     ]
+
+
+def test_identity_freshness_metrics_are_presented() -> None:
+    assert present_request_metrics({
+        "outcome": "success",
+        "counters": {
+            "control_local_identity_cache_hit": 1,
+            "identity_refresh": 1,
+        },
+        "timings_ms": {},
+    }) == [
+        {"label": "Control identity cache hits", "value": "1"},
+        {"label": "Identity refreshes", "value": "1"},
+        {"label": "Outcome", "value": "success"},
+    ]

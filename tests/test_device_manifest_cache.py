@@ -86,23 +86,130 @@ async def test_device_manifest_refresh_bypasses_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_device_identities_use_known_manifest_without_ttl_refresh(monkeypatch):
+async def test_device_identities_use_fresh_manifest_without_io(monkeypatch):
     client = HubitatMCPClient(
         "http://hub/mcp",
         device_cache_seconds=12,
+        identity_cache_seconds=120,
         clock=lambda: 1000.0,
     )
     client._cached_devices = [{"id": "1", "label": "Livingroom Light 2"}]
-    client._devices_cached_at = 1.0
+    client._devices_cached_at = 950.0
 
-    async def unexpected_list_tools():
-        raise AssertionError("identity lookup must not refresh live device state")
+    async def unexpected_live_context(*_args, **_kwargs):
+        raise AssertionError("fresh identity lookup must not refresh the hub")
 
-    monkeypatch.setattr(client, "list_tools", unexpected_list_tools)
+    monkeypatch.setattr(client, "get_live_context", unexpected_live_context)
 
     assert await client.get_device_identities() == [
         {"id": "1", "label": "Livingroom Light 2"}
     ]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_identities_refresh_expired_manifest_from_bulk_context(monkeypatch):
+    client = HubitatMCPClient(
+        "http://hub/mcp",
+        device_cache_seconds=12,
+        identity_cache_seconds=120,
+        clock=lambda: 1000.0,
+    )
+    client._cached_devices = [{"id": "old", "label": "Old Hallway Light"}]
+    client._devices_cached_at = 1.0
+    calls = []
+
+    async def fresh_context(*, refresh=False):
+        calls.append(refresh)
+        return {
+            "devices": [{
+                "id": "new",
+                "label": "Hallway Light 1",
+                "room": "Hallway",
+                "capabilities": ["Actuator", "Light", "Switch", "SwitchLevel"],
+            }],
+            "totalDevices": 1,
+            "idsComplete": True,
+            "partial": False,
+            "truncated": False,
+        }
+
+    async def forbidden_manifest(*_args, **_kwargs):
+        raise AssertionError("complete bulk context should avoid the detailed manifest")
+
+    monkeypatch.setattr(client, "get_live_context", fresh_context)
+    monkeypatch.setattr(client, "get_cached_devices", forbidden_manifest)
+
+    assert client.peek_device_identities() == []
+    assert await client.get_device_identities() == [{
+        "id": "new",
+        "label": "Hallway Light 1",
+        "room": "Hallway",
+        "capabilities": ["Actuator", "Light", "Switch", "SwitchLevel"],
+    }]
+    assert calls == [True]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_identity_peek_prefers_newer_complete_source() -> None:
+    client = HubitatMCPClient(
+        "http://hub/mcp",
+        identity_cache_seconds=120,
+        clock=lambda: 1000.0,
+    )
+    client._cached_devices = [{"id": "old", "label": "Old name"}]
+    client._devices_cached_at = 950.0
+    client._live_context_snapshot = (
+        990.0,
+        client._live_device_snapshot_generation,
+        {
+            "devices": [{"id": "new", "label": "New name"}],
+            "totalDevices": 1,
+            "idsComplete": True,
+            "partial": False,
+            "truncated": False,
+        },
+    )
+
+    assert client.peek_device_identities() == [{"id": "new", "label": "New name"}]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_identity_refresh_falls_back_to_detailed_manifest_when_context_incomplete(
+    monkeypatch,
+):
+    client = HubitatMCPClient(
+        "http://hub/mcp",
+        identity_cache_seconds=120,
+        clock=lambda: 1000.0,
+    )
+    client._cached_devices = [{"id": "old", "label": "Old name"}]
+    client._devices_cached_at = 1.0
+    calls = []
+
+    async def incomplete_context(*, refresh=False):
+        calls.append(("context", refresh))
+        return {
+            "devices": [{"id": "partial", "label": "Partial name"}],
+            "totalDevices": 2,
+            "idsComplete": False,
+        }
+
+    async def fresh_manifest(*, refresh=False):
+        calls.append(("manifest", refresh))
+        client._cached_devices = [{"id": "new", "label": "Fresh detailed name"}]
+        client._devices_cached_at = 1000.0
+        return list(client._cached_devices)
+
+    monkeypatch.setattr(client, "get_live_context", incomplete_context)
+    monkeypatch.setattr(client, "get_cached_devices", fresh_manifest)
+
+    assert await client.get_device_identities() == [
+        {"id": "new", "label": "Fresh detailed name"}
+    ]
+    assert calls == [("context", True), ("manifest", True)]
     await client.close()
 
 

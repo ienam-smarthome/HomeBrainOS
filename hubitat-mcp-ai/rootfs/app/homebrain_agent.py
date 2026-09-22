@@ -994,10 +994,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         selected_device = self._selected_devices.get(session_key, "")
         world_context = ""
         grounding_world: dict[str, Any] | None = None
-        if (
-            self._routine_control_arguments(user_prompt) is None
-            and is_semantic_control_candidate(user_prompt)
-        ):
+        if is_semantic_control_candidate(user_prompt):
             semantic_world = await self._semantic_world_context(
                 include_grounding_world=True
             )

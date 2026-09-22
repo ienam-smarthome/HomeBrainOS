@@ -26,13 +26,28 @@ PlanSource = Literal["fastpath", "model"]
 class SemanticTarget(BaseModel):
     scope: TargetScope
     name: str = Field(default="", max_length=160)
+    names: list[str] = Field(default_factory=list, max_length=16)
     kind: DeviceKind = "auto"
 
     @model_validator(mode="after")
     def validate_target_name(self) -> "SemanticTarget":
         self.name = " ".join(self.name.strip().split())
-        if self.scope in {"room", "device", "selection"} and not self.name:
+        normalized_names: list[str] = []
+        seen: set[str] = set()
+        for value in self.names:
+            candidate = " ".join(str(value or "").strip().split())
+            key = candidate.casefold()
+            if candidate and key not in seen:
+                normalized_names.append(candidate)
+                seen.add(key)
+        self.names = normalized_names
+
+        if self.scope in {"room", "device"} and not self.name:
             raise ValueError("named target scope requires name")
+        if self.scope == "selection" and len(self.names) < 2:
+            raise ValueError("selection target requires at least two names")
+        if self.scope != "selection" and self.names:
+            raise ValueError("names are only valid for selection targets")
         return self
 
 
@@ -106,6 +121,10 @@ class SemanticPlan(BaseModel):
             and self.target is not None
             and self.action is not None
             and self.target.scope in {"room", "device", "selection"}
+            and (
+                self.target.scope != "selection"
+                or len(self.target.names) >= 2
+            )
             and self.target.kind in {"light", "switch", "thermostat", "auto"}
         )
 
