@@ -224,6 +224,7 @@ def test_clear_semantic_fast_path_handles_absolute_thermostat_setpoint() -> None
 @pytest.mark.parametrize(
     "prompt",
     [
+        "make it brighter",
         "how do I increase hallway brightness?",
         "increase hallway brightness tomorrow",
         "make the hallway brighter every evening",
