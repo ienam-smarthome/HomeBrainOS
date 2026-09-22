@@ -110,3 +110,15 @@ def test_semantic_metrics_are_presented_without_dynamic_plan_content() -> None:
         {"label": "Semantic clarifications", "value": "1"},
         {"label": "Outcome", "value": "needs_input"},
     ]
+
+
+
+def test_device_control_needs_input_metric_is_presented() -> None:
+    assert present_request_metrics({
+        "outcome": "needs_input",
+        "counters": {"device_control_needs_input": 1},
+        "timings_ms": {},
+    }) == [
+        {"label": "Device controls needing input", "value": "1"},
+        {"label": "Outcome", "value": "needs_input"},
+    ]
