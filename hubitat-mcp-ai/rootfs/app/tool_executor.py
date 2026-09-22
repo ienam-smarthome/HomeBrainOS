@@ -137,7 +137,44 @@ class ToolExecutor:
     def result_details(result: MCPToolResult) -> dict[str, Any] | None:
         """Return bounded structured proof that is useful in technical receipts."""
 
-        return history_temporal_evidence_details(result.data)
+        history = history_temporal_evidence_details(result.data)
+        if history is not None:
+            return history
+
+        data = result.data
+        if isinstance(data, dict) and isinstance(data.get("logs"), list):
+            rows: list[dict[str, Any]] = []
+            for item in data.get("logs")[:20]:
+                if not isinstance(item, dict):
+                    continue
+                row = {
+                    "date": (
+                        item.get("date")
+                        or item.get("timestamp")
+                        or item.get("time")
+                    ),
+                    "source": (
+                        item.get("source")
+                        or item.get("sourceName")
+                        or item.get("app")
+                        or item.get("device")
+                    ),
+                    "level": item.get("level"),
+                    "message": (
+                        item.get("message")
+                        or item.get("msg")
+                        or item.get("description")
+                        or item.get("text")
+                    ),
+                }
+                if any(value not in {None, ""} for value in row.values()):
+                    rows.append(row)
+            return {
+                "logCount": data.get("count", len(data.get("logs"))),
+                "logs": rows,
+            }
+
+        return None
 
     @staticmethod
     def result_summary(result: MCPToolResult) -> str:
