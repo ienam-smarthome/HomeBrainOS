@@ -1180,6 +1180,482 @@ class DeviceControlService:
             )
             return None, f"{direct_reason}; {fallback_reason}"
 
+        async def execute_batch_targets() -> list[dict[str, Any]] | None:
+            """Use the upstream multi-device command form when it is advertised.
+
+            The server validates the complete commands[] envelope before firing
+            anything and reports per-entry results. HomeBrain still owns live
+            preconditions and post-command verification. If the live MCP catalog
+            does not advertise the batch contract, return None and preserve the
+            established per-device path unchanged.
+            """
+
+            if (
+                len(unique_targets) < 2
+                or len(unique_targets) > 20
+                or command not in {"on", "off", "set_level", "adjust_level"}
+            ):
+                return None
+
+            supports_batch = getattr(
+                self.mcp, "supports_device_command_batch", None
+            )
+            if not callable(supports_batch):
+                return None
+            try:
+                if not await supports_batch():
+                    return None
+            except Exception as exc:
+                logger.debug("Could not confirm MCP batch-command support: %s", exc)
+                return None
+
+            async def prepare(target: dict[str, Any]) -> dict[str, Any]:
+                device_id = str(target.get("id") or target.get("deviceId"))
+                label = str(
+                    target.get("_resolved_label")
+                    or target.get("label")
+                    or target.get("name")
+                    or device_id
+                )
+                target_attributes = device_attributes(target)
+                pre_switch = str(
+                    target_attributes.get("switch") or ""
+                ).casefold()
+                pre_level = target_attributes.get("level")
+                target_level: int | None = (
+                    level if command == "set_level" else None
+                )
+
+                if command == "adjust_level":
+                    numeric_level, read_reason = await read_numeric_precondition(
+                        target,
+                        device_id=device_id,
+                        label=label,
+                        attribute="level",
+                    )
+                    if (
+                        numeric_level is None
+                        or not 0 <= numeric_level <= 100
+                    ):
+                        return {
+                            "id": device_id,
+                            "result": {
+                                "id": device_id,
+                                "label": label,
+                                "room": room_name(target),
+                                "success": False,
+                                "needs_input": True,
+                                "command_sent": False,
+                                "verified": False,
+                                "message": (
+                                    f"{label} supports brightness control, but its "
+                                    "current level is not available, so I cannot "
+                                    f"safely calculate a relative "
+                                    f"{int(abs(delta or 0))}-point change. "
+                                    "Specify an absolute brightness level instead."
+                                ),
+                                "state_read_reason": read_reason,
+                                "verification_message": "",
+                                "already_in_state": False,
+                                "changed": False,
+                            },
+                        }
+                    pre_level = numeric_level
+                    target_level = max(
+                        0,
+                        min(100, round(numeric_level + int(delta or 0))),
+                    )
+
+                expected_value: Any = (
+                    command
+                    if command in {"on", "off"}
+                    else target_level
+                )
+                hub_command = (
+                    "setLevel"
+                    if command in {"set_level", "adjust_level"}
+                    else command
+                )
+                entry: dict[str, Any] = {
+                    "deviceId": device_id,
+                    "command": hub_command,
+                }
+                if command in {"set_level", "adjust_level"}:
+                    entry["parameters"] = [_wire_scalar(target_level)]
+
+                return {
+                    "id": device_id,
+                    "plan": {
+                        "target": target,
+                        "device_id": device_id,
+                        "label": label,
+                        "pre_switch": pre_switch,
+                        "pre_level": pre_level,
+                        "target_level": target_level,
+                        "expected_value": expected_value,
+                        "wait_attribute": (
+                            "level"
+                            if command in {"set_level", "adjust_level"}
+                            else "switch"
+                        ),
+                        "entry": entry,
+                    },
+                }
+
+            prepared = await asyncio.gather(
+                *(prepare(target) for target in unique_targets)
+            )
+            resolved_results: dict[str, dict[str, Any]] = {
+                str(item["id"]): item["result"]
+                for item in prepared
+                if isinstance(item.get("result"), dict)
+            }
+            plans = [
+                item["plan"]
+                for item in prepared
+                if isinstance(item.get("plan"), dict)
+            ]
+            if not plans:
+                return [
+                    resolved_results[
+                        str(target.get("id") or target.get("deviceId"))
+                    ]
+                    for target in unique_targets
+                ]
+
+            batch_arguments = {
+                "tool": "hub_call_device_command",
+                "args": {
+                    "commands": [dict(plan["entry"]) for plan in plans],
+                },
+            }
+            batch_started = time.monotonic()
+            batch_result: MCPToolResult | None = None
+            batch_message = ""
+            batch_items: dict[str, dict[str, Any]] = {}
+            try:
+                async with semaphore:
+                    batch_result = await self.mcp.call_tool(
+                        "hub_manage_devices", batch_arguments
+                    )
+                batch_message = str(batch_result.text or "")
+                batch_data = (
+                    batch_result.data
+                    if isinstance(batch_result.data, dict)
+                    else {}
+                )
+                raw_items = batch_data.get("results")
+                if isinstance(raw_items, list):
+                    for raw_item in raw_items:
+                        if not isinstance(raw_item, dict):
+                            continue
+                        item_id = str(
+                            raw_item.get("deviceId")
+                            or raw_item.get("id")
+                            or ""
+                        )
+                        if item_id:
+                            batch_items[item_id] = dict(raw_item)
+            except Exception as exc:
+                batch_message = f"{type(exc).__name__}: {exc}"
+                logger.exception("Batched high-level device command failed")
+
+            dispatch_success: dict[str, bool] = {}
+            for plan in plans:
+                device_id = str(plan["device_id"])
+                item = batch_items.get(device_id)
+                dispatch_success[device_id] = bool(
+                    item
+                    and item.get("success") is not False
+                    and not item.get("error")
+                )
+
+            sent_count = sum(dispatch_success.values())
+            increment_active_metric("device_control_batch_commands")
+            self._record_evidence(
+                "hub_manage_devices",
+                batch_arguments,
+                success=sent_count == len(plans),
+                elapsed_ms=round(
+                    (time.monotonic() - batch_started) * 1000
+                ),
+                summary=(
+                    f"{command} batch: {sent_count}/{len(plans)} "
+                    "device commands dispatched; verification follows"
+                ),
+                supports_live_claim=True,
+                evidence_kind="device_command_result",
+            )
+
+            verify_plans = [
+                plan
+                for plan in plans
+                if dispatch_success.get(str(plan["device_id"])) is True
+            ]
+            verified: dict[str, bool] = {}
+            verification_messages: dict[str, str] = {}
+
+            same_attribute = (
+                len({
+                    str(plan["wait_attribute"])
+                    for plan in verify_plans
+                }) == 1
+            )
+            expected_wire_values = [
+                _wire_scalar(plan["expected_value"])
+                for plan in verify_plans
+            ]
+            same_expected = (
+                bool(expected_wire_values)
+                and len(set(expected_wire_values)) == 1
+            )
+            supports_multi_poll = getattr(
+                self.mcp, "supports_multi_device_attribute_poll", None
+            )
+            multi_poll_available = False
+            if (
+                len(verify_plans) >= 2
+                and same_attribute
+                and same_expected
+                and callable(supports_multi_poll)
+            ):
+                try:
+                    multi_poll_available = bool(
+                        await supports_multi_poll()
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "Could not confirm multi-device attribute poll support: %s",
+                        exc,
+                    )
+
+            if multi_poll_available:
+                attribute = str(verify_plans[0]["wait_attribute"])
+                verification_arguments = {
+                    "tool": "hub_get_device_attribute",
+                    "args": {
+                        "deviceIds": [
+                            str(plan["device_id"])
+                            for plan in verify_plans
+                        ],
+                        "attribute": attribute,
+                        "expectedValue": expected_wire_values[0],
+                        "mode": "all",
+                        "timeoutMs": 5000,
+                    },
+                }
+                verification_started = time.monotonic()
+                verification_result: MCPToolResult | None = None
+                verification_data: dict[str, Any] = {}
+                try:
+                    async with semaphore:
+                        verification_result = await self.mcp.call_tool(
+                            "hub_read_devices",
+                            verification_arguments,
+                        )
+                    verification_data = (
+                        verification_result.data
+                        if isinstance(verification_result.data, dict)
+                        else {}
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "Multi-device command verification failed"
+                    )
+                    verification_data = {
+                        "success": False,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+
+                raw_devices = verification_data.get("devices")
+                if isinstance(raw_devices, list):
+                    for raw_item in raw_devices:
+                        if not isinstance(raw_item, dict):
+                            continue
+                        device_id = str(
+                            raw_item.get("deviceId")
+                            or raw_item.get("id")
+                            or ""
+                        )
+                        if not device_id:
+                            continue
+                        is_verified = (
+                            raw_item.get("matched") is True
+                            and raw_item.get("readError") is not True
+                        )
+                        verified[device_id] = is_verified
+                        verification_messages[device_id] = json.dumps(
+                            raw_item,
+                            ensure_ascii=False,
+                        )
+                for plan in verify_plans:
+                    device_id = str(plan["device_id"])
+                    verified.setdefault(device_id, False)
+                    verification_messages.setdefault(
+                        device_id,
+                        str(
+                            verification_data.get("error")
+                            or "Batch verification omitted this device."
+                        ),
+                    )
+
+                matched_count = sum(verified.values())
+                increment_active_metric(
+                    "device_control_batch_verifications"
+                )
+                self._record_evidence(
+                    "hub_read_devices",
+                    verification_arguments,
+                    success=matched_count == len(verify_plans),
+                    elapsed_ms=round(
+                        (time.monotonic() - verification_started) * 1000
+                    ),
+                    summary=(
+                        f"{attribute} batch verification: "
+                        f"{matched_count}/{len(verify_plans)} converged"
+                    ),
+                    supports_live_claim=True,
+                    evidence_kind="control_postcondition_state",
+                )
+            else:
+                async def verify_one(
+                    plan: dict[str, Any],
+                ) -> tuple[str, bool, str]:
+                    device_id = str(plan["device_id"])
+                    verification_arguments = {
+                        "tool": "hub_get_device_attribute",
+                        "args": {
+                            "deviceId": device_id,
+                            "attribute": str(plan["wait_attribute"]),
+                            "expectedValue": _wire_scalar(
+                                plan["expected_value"]
+                            ),
+                            "timeoutMs": 5000,
+                        },
+                    }
+                    started = time.monotonic()
+                    result: MCPToolResult | None = None
+                    try:
+                        async with semaphore:
+                            result = await self.mcp.call_tool(
+                                "hub_read_devices",
+                                verification_arguments,
+                            )
+                        data = (
+                            result.data
+                            if isinstance(result.data, dict)
+                            else {}
+                        )
+                        is_verified = self._tool_succeeded(result)
+                        message = json.dumps(data, ensure_ascii=False)
+                    except Exception as exc:
+                        is_verified = False
+                        message = f"{type(exc).__name__}: {exc}"
+                    self._record_evidence(
+                        "hub_read_devices",
+                        verification_arguments,
+                        success=is_verified,
+                        elapsed_ms=round(
+                            (time.monotonic() - started) * 1000
+                        ),
+                        summary=(
+                            f"{plan['wait_attribute']} "
+                            f"{plan['label']}: "
+                            f"{'verified' if is_verified else 'not verified'}"
+                        ),
+                        supports_live_claim=True,
+                        evidence_kind="control_postcondition_state",
+                    )
+                    return device_id, is_verified, message
+
+                verification_rows = await asyncio.gather(
+                    *(verify_one(plan) for plan in verify_plans)
+                )
+                for device_id, is_verified, message in verification_rows:
+                    verified[device_id] = is_verified
+                    verification_messages[device_id] = message
+
+            for plan in plans:
+                device_id = str(plan["device_id"])
+                label = str(plan["label"])
+                item = batch_items.get(device_id) or {}
+                command_success = dispatch_success.get(device_id, False)
+                was_verified = (
+                    verified.get(device_id, False)
+                    if command_success
+                    else False
+                )
+                if command_success:
+                    message = str(
+                        item.get("message")
+                        or item.get("note")
+                        or "Batch command dispatched."
+                    )
+                else:
+                    message = str(
+                        item.get("error")
+                        or item.get("message")
+                        or batch_message
+                        or "Batch command was not confirmed as dispatched."
+                    )
+
+                target_level = plan.get("target_level")
+                pre_level = plan.get("pre_level")
+                if (
+                    command in {"set_level", "adjust_level"}
+                    and target_level is not None
+                ):
+                    try:
+                        already_in_state = (
+                            pre_level is not None
+                            and float(pre_level) == float(target_level)
+                        )
+                    except (TypeError, ValueError):
+                        already_in_state = False
+                else:
+                    already_in_state = (
+                        plan.get("expected_value") is not None
+                        and plan.get("pre_switch")
+                        == plan.get("expected_value")
+                    )
+
+                success = command_success and was_verified
+                resolved_results[device_id] = {
+                    "id": device_id,
+                    "label": label,
+                    "room": room_name(plan["target"]),
+                    "success": success,
+                    "command_sent": command_success,
+                    "verified": was_verified,
+                    "message": message,
+                    "verification_message": verification_messages.get(
+                        device_id, ""
+                    ),
+                    "already_in_state": already_in_state,
+                    "changed": success and not already_in_state,
+                    **(
+                        {
+                            "previous_level": pre_level,
+                            "target_level": target_level,
+                            "delta_applied": (
+                                float(target_level) - float(pre_level)
+                                if pre_level is not None
+                                and target_level is not None
+                                else None
+                            ),
+                        }
+                        if command in {"set_level", "adjust_level"}
+                        else {}
+                    ),
+                }
+
+            return [
+                resolved_results[
+                    str(target.get("id") or target.get("deviceId"))
+                ]
+                for target in unique_targets
+            ]
+
         async def execute(target: dict[str, Any]) -> dict[str, Any]:
             device_id = str(target.get("id") or target.get("deviceId"))
             label = str(
@@ -1505,7 +1981,14 @@ class DeviceControlService:
                 ),
             }
 
-        results = await asyncio.gather(*(execute(target) for target in unique_targets))
+        batch_results = await execute_batch_targets()
+        results = (
+            batch_results
+            if batch_results is not None
+            else await asyncio.gather(
+                *(execute(target) for target in unique_targets)
+            )
+        )
         succeeded = [item for item in results if item["success"]]
         failed = [item for item in results if not item["success"]]
         needs_input_items = [
