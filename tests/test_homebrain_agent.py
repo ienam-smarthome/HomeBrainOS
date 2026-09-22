@@ -92,6 +92,31 @@ async def test_chat_records_model_round_and_provider_timing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_adds_provider_time_instead_of_overwriting_previous_rounds() -> None:
+    ai = FakeAI("Measured answer.")
+    agent = UnifiedMCPAgent(FakeMCP(), "key", ai_client=ai)
+    calls: list[tuple[str, float]] = []
+
+    class SpyMetrics:
+        def increment(self, name: str, amount: int = 1) -> None:
+            calls.append((f"increment:{name}", float(amount)))
+
+        def add_ms(self, name: str, elapsed_ms: int | float) -> None:
+            calls.append((f"add:{name}", float(elapsed_ms)))
+
+        def observe_ms(self, name: str, elapsed_ms: int | float) -> None:
+            if name == "provider":
+                raise AssertionError("provider timing must accumulate across rounds")
+
+    agent.request_metrics = SpyMetrics()  # type: ignore[assignment]
+
+    await agent._chat([{"role": "user", "content": "first"}], [])
+    await agent._chat([{"role": "user", "content": "second"}], [])
+
+    assert sum(1 for name, _value in calls if name == "increment:model_rounds") == 2
+    assert sum(1 for name, _value in calls if name == "add:provider") == 2
+
+@pytest.mark.asyncio
 async def test_process_result_returns_privacy_safe_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_base_result(*_args: object, **_kwargs: object) -> AgentOutcome:
         return AgentOutcome(
