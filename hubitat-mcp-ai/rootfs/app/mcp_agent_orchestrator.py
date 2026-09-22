@@ -116,7 +116,7 @@ def _is_broad_device_inventory_call(
         "cursor",
     }
     return not any(
-        key in inner and inner.get(key) not in {None, "", [], {}}
+        key in inner and inner.get(key) not in (None, "", [], {})
         for key in scoped_keys
     )
 
