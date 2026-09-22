@@ -261,9 +261,10 @@ class HubitatMCPClient:
         snapshot can contain removed devices, old room membership, or renamed
         entities and therefore corrupt host-owned target grounding.
 
-        Prefer the detailed manifest, then complete device/context snapshots,
-        but only while each source is inside the dedicated identity TTL.
-        Returning an empty list for stale sources lets the caller perform one
+        Consider the detailed manifest and complete device/context snapshots,
+        but only while each source is inside the dedicated identity TTL, and
+        choose the freshest complete source. Returning an empty list for stale
+        sources lets the caller perform one
         bounded refresh instead of silently grounding a mutation to old data.
         """
 
