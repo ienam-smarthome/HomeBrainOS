@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from causal_attribution_guard import guard_configuration_only_causal_claim
 from causal_timeline import missing_material_timeline_rows
 from controller_correlation_guard import guard_controller_boundary_claim
 from evidence_source_guard import (
@@ -64,6 +65,15 @@ def validate_synthesis(
         )
         if controller_boundary_changed:
             issues.append("controller_boundary_direction")
+
+        corrected, configuration_causality_changed = (
+            guard_configuration_only_causal_claim(
+                corrected,
+                evidence,
+            )
+        )
+        if configuration_causality_changed:
+            issues.append("configuration_only_causal_attribution")
 
     missing_rows = (
         missing_material_timeline_rows(corrected, evidence)
