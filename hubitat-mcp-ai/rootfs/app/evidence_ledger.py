@@ -431,10 +431,15 @@ def _ledger_lines(receipts: list[dict[str, Any]]) -> list[str]:
             if key in seen:
                 continue
             seen.add(key)
+            source_name = str(receipt.get("sub_tool") or receipt.get("tool") or "")
+            qualifier = (
+                " [CONFIGURATION/NAVIGATION ONLY — not execution proof]"
+                if source_name in {"hub_get_app_config", "hub_list_apps"}
+                else ""
+            )
             lines.append(
-                f"- CHECKED rule/app evidence via "
-                f"{receipt.get('sub_tool') or receipt.get('tool')}: "
-                f"{receipt.get('summary') or 'successful read'}"
+                f"- CHECKED rule/app evidence via {source_name}: "
+                f"{receipt.get('summary') or 'successful read'}{qualifier}"
             )
             continue
 
