@@ -29,6 +29,7 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
 )
 from causal_timeline import (
+    causal_log_windows,
     render_command_source_followup,
     unresolved_material_timeline_rows,
 )
@@ -87,6 +88,86 @@ from tool_registry import (
 )
 
 logger = logging.getLogger("HomeBrainOS.Orchestrator")
+
+
+def _gateway_leaf(arguments: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    leaf = str(arguments.get("tool") or "").strip()
+    inner = arguments.get("args")
+    return leaf, dict(inner) if isinstance(inner, dict) else {}
+
+
+def _is_broad_device_inventory_call(
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> bool:
+    if tool_name not in {"hub_read_devices", "hub_manage_devices"}:
+        return False
+    leaf, inner = _gateway_leaf(arguments)
+    if leaf != "hub_list_devices":
+        return False
+    scoped_keys = {
+        "filter",
+        "labelFilter",
+        "capabilityFilter",
+        "roomFilter",
+        "changedSince",
+        "attributeNames",
+        "onlyOn",
+        "cursor",
+    }
+    return not any(
+        key in inner and inner.get(key) not in {None, "", [], {}}
+        for key in scoped_keys
+    )
+
+
+def _normalize_causal_log_call(
+    tool_name: str,
+    arguments: dict[str, Any],
+    evidence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Force native log reads onto observed causal boundary timestamps.
+
+    Native hub logs interpret timezone-free values as UTC. Model-authored
+    conversions can therefore shift a Hubitat-local +01:00 boundary by an hour.
+    The host owns this conversion because the actual device-history timestamp is
+    already structured evidence.
+    """
+
+    leaf, inner = _gateway_leaf(arguments)
+    direct = tool_name == "hub_get_logs"
+    gateway = leaf == "hub_get_logs"
+    if not (direct or gateway):
+        return arguments
+
+    windows = causal_log_windows(evidence)
+    if not windows:
+        return arguments
+
+    prior_log_reads = sum(
+        1
+        for receipt in evidence
+        if isinstance(receipt, dict)
+        and receipt.get("success") is True
+        and (
+            str(receipt.get("tool") or "") == "hub_get_logs"
+            or str(receipt.get("sub_tool") or "") == "hub_get_logs"
+        )
+    )
+    window = windows[min(prior_log_reads, len(windows) - 1)]
+    normalized = dict(arguments)
+    if direct:
+        normalized["since"] = window["since"]
+        normalized["until"] = window["until"]
+        normalized.setdefault("limit", 100)
+        return normalized
+
+    normalized_inner = dict(inner)
+    normalized_inner["since"] = window["since"]
+    normalized_inner["until"] = window["until"]
+    normalized_inner.setdefault("limit", 100)
+    normalized["args"] = normalized_inner
+    return normalized
 
 
 def _controller_followup_arguments(
