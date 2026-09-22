@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from causal_native_logs import (
+    correlate_native_log_boundaries,
+    render_native_log_correlation,
+)
 from causal_timeline import render_causal_timeline
 from evidence_ledger import build_current_turn_evidence_ledger
 from investigation_policy import (
@@ -102,6 +106,14 @@ def _synthesis_instruction(original_user: str) -> str:
             "must never be described as the most likely trigger for a specific "
             "transition. Require controller timing, execution/log provenance, or "
             "other direct current-turn evidence before naming an initiating source. "
+            "When HOST NATIVE-LOG BOUNDARY CORRELATION shows the same physical "
+            "controller/input immediately preceding both the subject ON command "
+            "and later OFF command, present that repeated controller/input as the "
+            "strongest initiating-control candidate rather than dismissing it as "
+            "an unrelated coincidence. Keep the explicit caveat that repeated "
+            "timestamp correlation does not independently prove the configured "
+            "button-to-device mapping. If an app reaction appears only after the "
+            "subject command, describe it as downstream handling, not initiation. "
         )
     elif investigative:
         text += (
@@ -152,6 +164,13 @@ class FinalAnswerCoordinator:
         current_turn = _current_turn_messages(messages)
         brief = build_current_turn_evidence_ledger(evidence)
         causal_timeline = render_causal_timeline(evidence) if causal else None
+        native_log_correlation = (
+            render_native_log_correlation(
+                correlate_native_log_boundaries(evidence)
+            )
+            if causal
+            else None
+        )
         tool_packet = (
             build_tool_evidence_packet(current_turn)
             if investigative
@@ -167,6 +186,11 @@ class FinalAnswerCoordinator:
             final_messages.append({"role": "user", "content": brief})
         if causal_timeline:
             final_messages.append({"role": "user", "content": causal_timeline})
+        if native_log_correlation:
+            final_messages.append({
+                "role": "user",
+                "content": native_log_correlation,
+            })
         if tool_packet:
             final_messages.append({"role": "user", "content": tool_packet})
         final_messages.append({
