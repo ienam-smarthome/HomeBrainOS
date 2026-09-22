@@ -530,7 +530,12 @@ class DeviceHistoryService:
         # Resolve the device before paying for the authoritative timezone read.
         # An ambiguous/missing target cannot produce history anyway, so reading
         # hub_get_info first only adds latency to a clarification response.
-        resolver = DeviceQueryService(self.mcp, self._record_evidence)
+        #
+        # Deterministic host paths may already have a fresh authoritative
+        # identity from HubitatMCPClient.get_device_identities(). In that narrow
+        # case they can pass it as the private _resolved_target field and avoid
+        # repeating a targeted hub_list_devices lookup. Model-authored schemas do
+        # not expose this field, and ToolExecutor strips it from evidence receipts.
         normalized_attribute = str(attribute or "").strip().casefold()
         required_fields = (
             {"attributes", "capabilities"}
@@ -540,17 +545,29 @@ class DeviceHistoryService:
         required_capabilities = set(
             _HISTORY_ATTRIBUTE_CAPABILITIES.get(normalized_attribute, ())
         )
-        resolution = await resolver.resolve_device(
-            {"name": requested},
-            required_fields=required_fields,
-            required_capabilities=required_capabilities,
-        )
-        resolution_data = resolution.data if isinstance(resolution.data, dict) else {}
+        resolved_target = arguments.get("_resolved_target")
         target = (
-            resolution_data.get("target")
-            if isinstance(resolution_data.get("target"), dict)
+            dict(resolved_target)
+            if isinstance(resolved_target, dict)
             else None
         )
+        resolution_data: dict[str, Any] = {}
+        if target is None:
+            resolver = DeviceQueryService(self.mcp, self._record_evidence)
+            resolution = await resolver.resolve_device(
+                {"name": requested},
+                required_fields=required_fields,
+                required_capabilities=required_capabilities,
+            )
+            resolution_data = (
+                resolution.data if isinstance(resolution.data, dict) else {}
+            )
+            target = (
+                resolution_data.get("target")
+                if isinstance(resolution_data.get("target"), dict)
+                else None
+            )
+
         if target is None:
             alternatives = [
                 str(item)
