@@ -44,6 +44,7 @@ _COUNTER_LABELS = (
     ("semantic_relative_controls", "Relative semantic controls"),
     ("semantic_temperature_controls", "Semantic thermostat controls"),
     ("semantic_world_context", "Capability-grounded semantic contexts"),
+    ("semantic_target_grounded", "Semantic targets host-grounded"),
     ("semantic_needs_input", "Semantic clarifications"),
 )
 
