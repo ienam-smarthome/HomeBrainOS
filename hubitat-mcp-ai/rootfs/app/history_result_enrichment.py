@@ -123,6 +123,77 @@ def _analysis_for(
     )
 
 
+def inferred_state_retry_arguments(
+    name: str,
+    original_arguments: dict[str, Any],
+    result: MCPToolResult,
+) -> dict[str, Any] | None:
+    """Return one deterministic scoped-history retry for a causal subject.
+
+    Attribute-less semantic history can infer a binary state only after reading
+    a mixed event page. On high-churn devices that page can contain a recent
+    switch=off row while the older switch=on boundary has already been crowded
+    out by metering/RTT telemetry. If the page is full, the inferred attribute is
+    binary, and no bounded interval was established, retry the same canonical
+    device once with that exact attribute and the local 50-row ceiling.
+
+    The caller decides whether the request is causal. This helper is structural
+    only and never infers intent from prompt wording.
+    """
+
+    if name != DEVICE_HISTORY_TOOL or result.is_error:
+        return None
+    if str(original_arguments.get("attribute") or "").strip():
+        return None
+    data = result.data
+    if not isinstance(data, dict) or data.get("attributeInferred") is not True:
+        return None
+    attribute = str(data.get("attribute") or "").strip().casefold()
+    if attribute not in _STATE_PAIRS:
+        return None
+    temporal = data.get("temporalAnalysis")
+    if not isinstance(temporal, dict):
+        return None
+    try:
+        interval_count = int(temporal.get("intervalCount") or 0)
+    except (TypeError, ValueError):
+        interval_count = 0
+    if interval_count > 0:
+        return None
+
+    try:
+        requested_limit = int(original_arguments.get("limit") or 20)
+    except (TypeError, ValueError):
+        requested_limit = 20
+    requested_limit = max(1, min(50, requested_limit))
+    try:
+        source_count = int(data.get("sourceEventCount") or 0)
+    except (TypeError, ValueError):
+        source_count = 0
+    if source_count < requested_limit:
+        return None
+
+    canonical_name = str(
+        data.get("label")
+        or data.get("requested")
+        or original_arguments.get("name")
+        or ""
+    ).strip()
+    if not canonical_name:
+        return None
+
+    retry = deepcopy(original_arguments)
+    retry["name"] = canonical_name
+    retry["attribute"] = attribute
+    retry["limit"] = 50
+    if "hours_back" not in retry and data.get("hoursBack") is not None:
+        try:
+            retry["hours_back"] = int(data.get("hoursBack"))
+        except (TypeError, ValueError):
+            pass
+    return retry
+
+
 def enrich_history_result(name: str, result: MCPToolResult) -> MCPToolResult:
     """Return a history result with every deterministic derivation available."""
 
@@ -182,4 +253,9 @@ def enrich_history_result(name: str, result: MCPToolResult) -> MCPToolResult:
     )
 
 
-__all__ = ["DEVICE_HISTORY_TOOL", "enrich_history_result", "prepare_history_arguments"]
+__all__ = [
+    "DEVICE_HISTORY_TOOL",
+    "enrich_history_result",
+    "inferred_state_retry_arguments",
+    "prepare_history_arguments",
+]

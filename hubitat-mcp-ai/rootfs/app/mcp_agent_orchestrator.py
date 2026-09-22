@@ -48,6 +48,7 @@ from evidence_recorder import EvidenceRecorder
 from final_answer_coordinator import FinalAnswerCoordinator
 from grounding_policy import GroundingAction, GroundingPolicy
 from hub_info_service import HubInfoService
+from history_result_enrichment import inferred_state_retry_arguments
 from investigation_policy import (
     is_causal_investigation,
     is_history_investigation,
@@ -1674,13 +1675,65 @@ class UnifiedMCPAgent:
                     )
                     if execution.effect.mutates:
                         self._mark_mutation()
-                    content = execution.content
-                    result = execution.result
                     grounding.record_tool_outcome(
                         name,
                         dict(arguments),
                         success=execution.success,
                     )
+
+                    # A causal subject read may begin attribute-less, infer one
+                    # binary state from a full mixed page, yet still establish
+                    # no bounded interval because the older opposite boundary
+                    # was crowded out by noisy telemetry. Before the host is
+                    # allowed to declare an empty causal subject, deterministically
+                    # retry that same canonical device once with the inferred
+                    # state attribute. This is host-generated, so it consumes no
+                    # additional model round or model-directed read budget.
+                    if (
+                        causal_request
+                        and name == _LOCAL_DEVICE_HISTORY_TOOL
+                        and execution.success
+                        and execution.result is not None
+                    ):
+                        retry_arguments = inferred_state_retry_arguments(
+                            name,
+                            arguments,
+                            execution.result,
+                        )
+                        if retry_arguments is not None:
+                            retry_signature = json.dumps(
+                                [name, retry_arguments],
+                                sort_keys=True,
+                                ensure_ascii=False,
+                                default=str,
+                            )
+                            if retry_signature not in completed_calls:
+                                completed_calls.add(retry_signature)
+                                increment_active_metric(
+                                    "causal_inferred_attribute_retry"
+                                )
+                                retry_execution = await self.executor.execute(
+                                    name,
+                                    retry_arguments,
+                                    tool=tool,
+                                    supports_live_claim=True,
+                                    evidence_kind=_EVIDENCE_KINDS.get(
+                                        name, "tool_result"
+                                    ),
+                                )
+                                grounding.record_tool_outcome(
+                                    name,
+                                    dict(retry_arguments),
+                                    success=retry_execution.success,
+                                )
+                                if (
+                                    retry_execution.success
+                                    and retry_execution.result is not None
+                                ):
+                                    execution = retry_execution
+
+                    content = execution.content
+                    result = execution.result
                     if not execution.success:
                         round_tool_failure = True
                     if result is not None:

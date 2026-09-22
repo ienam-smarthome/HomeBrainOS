@@ -35,6 +35,7 @@ _COUNTER_LABELS = (
     ("causal_app_navigation", "Causal app navigation loads"),
     ("causal_provenance_aligned", "Aligned provenance events"),
     ("causal_completion_retry", "Causal completion retries"),
+    ("causal_inferred_attribute_retry", "Causal inferred-state retries"),
     ("causal_subject_empty_stop", "Empty-subject causal stops"),
     ("causal_broad_inventory_blocked", "Blocked broad causal inventories"),
     ("investigative_finalization", "Investigative finalizations"),
