@@ -1025,6 +1025,161 @@ class DeviceControlService:
 
         semaphore = asyncio.Semaphore(8)
 
+        def numeric_state_value(raw: Any) -> float | None:
+            if isinstance(raw, bool) or raw is None:
+                return None
+            if isinstance(raw, dict):
+                for key in ("numberValue", "currentValue", "value"):
+                    if key in raw:
+                        value = numeric_state_value(raw.get(key))
+                        if value is not None:
+                            return value
+                return None
+            try:
+                return float(str(raw).strip().rstrip("%"))
+            except (TypeError, ValueError):
+                return None
+
+        def find_device_record(value: Any, wanted_id: str) -> dict[str, Any] | None:
+            if isinstance(value, list):
+                for item in value:
+                    found = find_device_record(item, wanted_id)
+                    if found is not None:
+                        return found
+                return None
+            if not isinstance(value, dict):
+                return None
+            candidate_id = str(value.get("id") or value.get("deviceId") or "")
+            if candidate_id == wanted_id:
+                return value
+            for key in ("devices", "items", "results", "data", "result", "output", "content"):
+                if key in value:
+                    found = find_device_record(value.get(key), wanted_id)
+                    if found is not None:
+                        return found
+            return None
+
+        async def read_numeric_precondition(
+            target: dict[str, Any],
+            *,
+            device_id: str,
+            label: str,
+            attribute: str,
+        ) -> tuple[float | None, str]:
+            """Read state-dependent control input with one authoritative fallback.
+
+            Native per-attribute reads are cheapest and normally authoritative.
+            Some real Hubitat drivers expose the capability/command correctly but
+            have never populated that attribute through the native fullJson path.
+            When that happens, retry once through a fresh bulk live-context read.
+            This is still live state -- never a stale identity-cache value -- and
+            concurrent room controls coalesce that one bulk refresh in MCPClient.
+            """
+
+            direct_arguments = {
+                "tool": "hub_get_device_attribute",
+                "args": {"deviceId": device_id, "attribute": attribute},
+            }
+            started = time.monotonic()
+            direct_reason = ""
+            try:
+                async with semaphore:
+                    direct = await self.mcp.call_tool(
+                        "hub_read_devices", direct_arguments
+                    )
+                direct_data = direct.data if isinstance(direct.data, dict) else {}
+                raw_value = (
+                    direct_data.get("value")
+                    if self._tool_succeeded(direct)
+                    else None
+                )
+                value = numeric_state_value(raw_value)
+                if value is not None:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        direct_arguments,
+                        success=True,
+                        elapsed_ms=round((time.monotonic() - started) * 1000),
+                        summary=f"{attribute} {label}: {value:g}",
+                        supports_live_claim=True,
+                        evidence_kind="control_precondition_state",
+                    )
+                    return value, "direct-attribute"
+                if direct_data.get("neverReported") is True:
+                    direct_reason = "attribute has never reported"
+                elif direct_data.get("readError") is True:
+                    direct_reason = str(
+                        direct_data.get("error") or "attribute read error"
+                    )
+                else:
+                    direct_reason = "attribute returned no numeric value"
+            except Exception as exc:
+                direct_reason = f"{type(exc).__name__}: {exc}"
+
+            self._record_evidence(
+                "hub_read_devices",
+                direct_arguments,
+                success=False,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{attribute} {label}: {direct_reason}",
+                supports_live_claim=True,
+                evidence_kind="control_precondition_state",
+            )
+
+            context_reader = getattr(self.mcp, "get_live_context", None)
+            if not callable(context_reader):
+                return None, direct_reason
+
+            context_started = time.monotonic()
+            context_arguments = {
+                "resource": "hubitat://context",
+                "strategy": "precondition-live-context-fallback",
+                "deviceId": device_id,
+                "required_attributes": [attribute],
+            }
+            try:
+                context = await context_reader(refresh=True)
+                record = find_device_record(context, device_id)
+                raw_value = None
+                if isinstance(record, dict):
+                    attributes = device_attributes(record)
+                    raw_value = attributes.get(attribute)
+                    if raw_value is None:
+                        raw_value = record.get(attribute)
+                value = numeric_state_value(raw_value)
+                if value is not None:
+                    self._record_evidence(
+                        "hub_read_devices",
+                        context_arguments,
+                        success=True,
+                        elapsed_ms=round(
+                            (time.monotonic() - context_started) * 1000
+                        ),
+                        summary=(
+                            f"{attribute} {label}: {value:g} "
+                            "(fresh live-context fallback)"
+                        ),
+                        supports_live_claim=True,
+                        evidence_kind="control_precondition_state",
+                    )
+                    return value, "live-context"
+                fallback_reason = (
+                    "fresh live context also reported no numeric value"
+                )
+            except Exception as exc:
+                fallback_reason = f"live-context fallback failed: {type(exc).__name__}: {exc}"
+
+            self._record_evidence(
+                "hub_read_devices",
+                context_arguments,
+                success=False,
+                elapsed_ms=round((time.monotonic() - context_started) * 1000),
+                summary=f"{attribute} {label}: {fallback_reason}",
+                supports_live_claim=True,
+                evidence_kind="control_precondition_state",
+            )
+            return None, f"{direct_reason}; {fallback_reason}"
+
         async def execute(target: dict[str, Any]) -> dict[str, Any]:
             device_id = str(target.get("id") or target.get("deviceId"))
             label = str(
@@ -1060,133 +1215,84 @@ class DeviceControlService:
 
             if command == "adjust_level":
                 # Relative brightness is state-dependent. Never calculate it
-                # from a cached identity snapshot: read the authoritative live
-                # level immediately before compiling the absolute setLevel call.
-                state_arguments = {
-                    "tool": "hub_get_device_attribute",
-                    "args": {"deviceId": device_id, "attribute": "level"},
-                }
-                state_started = time.monotonic()
-                try:
-                    async with semaphore:
-                        state_result = await self.mcp.call_tool(
-                            "hub_read_devices", state_arguments
-                        )
-                    current_level = (
-                        state_result.data.get("value")
-                        if self._tool_succeeded(state_result)
-                        and isinstance(state_result.data, dict)
-                        else None
-                    )
-                    numeric_level = float(current_level)
-                    if not 0 <= numeric_level <= 100:
-                        raise ValueError("level outside 0-100")
-                    pre_level = numeric_level
-                    target_level = max(
-                        0,
-                        min(100, round(numeric_level + int(delta or 0))),
-                    )
-                except Exception as exc:
-                    self._record_evidence(
-                        "hub_read_devices",
-                        state_arguments,
-                        success=False,
-                        elapsed_ms=round(
-                            (time.monotonic() - state_started) * 1000
-                        ),
-                        summary=f"level {label}: unavailable ({exc})",
-                        supports_live_claim=True,
-                        evidence_kind="control_precondition_state",
-                    )
+                # from stale identity-cache state. Read the native attribute
+                # first, then one fresh live-context fallback if that driver
+                # exposes level through the bulk context but not native fullJson.
+                numeric_level, read_reason = await read_numeric_precondition(
+                    target,
+                    device_id=device_id,
+                    label=label,
+                    attribute="level",
+                )
+                if numeric_level is None or not 0 <= numeric_level <= 100:
                     return {
                         "id": device_id,
                         "label": label,
                         "room": room_name(target),
                         "success": False,
+                        "needs_input": True,
                         "command_sent": False,
                         "verified": False,
-                        "message": "Current brightness level is unavailable.",
+                        "message": (
+                            f"{label} supports brightness control, but its current "
+                            "level is not available, so I cannot safely calculate "
+                            f"a relative {int(abs(delta or 0))}-point change. "
+                            "Specify an absolute brightness level instead."
+                        ),
+                        "state_read_reason": read_reason,
                         "verification_message": "",
                         "already_in_state": False,
                         "changed": False,
                     }
-                self._record_evidence(
-                    "hub_read_devices",
-                    state_arguments,
-                    success=True,
-                    elapsed_ms=round((time.monotonic() - state_started) * 1000),
-                    summary=f"level {label}: {pre_level:g}",
-                    supports_live_claim=True,
-                    evidence_kind="control_precondition_state",
+                pre_level = numeric_level
+                target_level = max(
+                    0,
+                    min(100, round(numeric_level + int(delta or 0))),
                 )
 
             if command == "adjust_temperature":
-                state_arguments = {
-                    "tool": "hub_get_device_attribute",
-                    "args": {
-                        "deviceId": device_id,
-                        "attribute": "heatingSetpoint",
-                    },
-                }
-                state_started = time.monotonic()
-                try:
-                    async with semaphore:
-                        state_result = await self.mcp.call_tool(
-                            "hub_read_devices", state_arguments
-                        )
-                    current_setpoint = (
-                        state_result.data.get("value")
-                        if self._tool_succeeded(state_result)
-                        and isinstance(state_result.data, dict)
-                        else None
-                    )
-                    numeric_setpoint = float(current_setpoint)
-                    if not _THERMOSTAT_MIN_SETPOINT <= numeric_setpoint <= _THERMOSTAT_MAX_SETPOINT:
-                        raise ValueError("heatingSetpoint outside safe range")
-                    pre_setpoint = numeric_setpoint
-                    target_setpoint = round(
-                        max(
-                            _THERMOSTAT_MIN_SETPOINT,
-                            min(
-                                _THERMOSTAT_MAX_SETPOINT,
-                                numeric_setpoint + float(delta or 0),
-                            ),
-                        ),
-                        2,
-                    )
-                except Exception as exc:
-                    self._record_evidence(
-                        "hub_read_devices",
-                        state_arguments,
-                        success=False,
-                        elapsed_ms=round(
-                            (time.monotonic() - state_started) * 1000
-                        ),
-                        summary=f"heatingSetpoint {label}: unavailable ({exc})",
-                        supports_live_claim=True,
-                        evidence_kind="control_precondition_state",
-                    )
+                numeric_setpoint, read_reason = await read_numeric_precondition(
+                    target,
+                    device_id=device_id,
+                    label=label,
+                    attribute="heatingSetpoint",
+                )
+                if (
+                    numeric_setpoint is None
+                    or not _THERMOSTAT_MIN_SETPOINT
+                    <= numeric_setpoint
+                    <= _THERMOSTAT_MAX_SETPOINT
+                ):
                     return {
                         "id": device_id,
                         "label": label,
                         "room": room_name(target),
                         "success": False,
+                        "needs_input": True,
                         "command_sent": False,
                         "verified": False,
-                        "message": "Current heating setpoint is unavailable.",
+                        "message": (
+                            f"{label} supports heating-setpoint control, but its "
+                            "current setpoint is not available, so I cannot safely "
+                            "calculate a relative temperature change. Specify an "
+                            "absolute setpoint instead."
+                        ),
+                        "state_read_reason": read_reason,
                         "verification_message": "",
                         "temperature_unit": temperature_unit,
                         "already_in_state": False,
                         "changed": False,
                     }
-                self._record_evidence(
-                    "hub_read_devices",
-                    state_arguments,
-                    success=True,
-                    elapsed_ms=round((time.monotonic() - state_started) * 1000),
-                    summary=f"heatingSetpoint {label}: {pre_setpoint:g}",
-                    supports_live_claim=True,
-                    evidence_kind="control_precondition_state",
+                pre_setpoint = numeric_setpoint
+                target_setpoint = round(
+                    max(
+                        _THERMOSTAT_MIN_SETPOINT,
+                        min(
+                            _THERMOSTAT_MAX_SETPOINT,
+                            numeric_setpoint + float(delta or 0),
+                        ),
+                    ),
+                    2,
                 )
 
             expected_value: Any | None = (
