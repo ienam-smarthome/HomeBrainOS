@@ -1198,6 +1198,7 @@ class DeviceControlService:
             }
             refresh_started = time.monotonic()
             refresh_reason = ""
+            refresh_ok = False
             try:
                 async with semaphore:
                     refreshed = await self.mcp.call_tool(
@@ -1247,7 +1248,7 @@ class DeviceControlService:
             self._record_evidence(
                 "hub_manage_devices",
                 refresh_arguments,
-                success=not refresh_reason.startswith(("MCPError", "RuntimeError")),
+                success=refresh_ok,
                 elapsed_ms=round((time.monotonic() - refresh_started) * 1000),
                 summary=f"refresh {label}: {refresh_reason}",
                 supports_live_claim=True,
