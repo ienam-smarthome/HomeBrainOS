@@ -754,6 +754,27 @@ class UnifiedMCPAgent:
         unresolved_material = unresolved_material_timeline_rows(
             self.evidence.receipts()
         )
+        log_windows = causal_log_windows(self.evidence.receipts())
+        if log_windows:
+            rows = [
+                (
+                    f"- {item.get('timelineId') or 'transition'}: subject "
+                    f"{item.get('subjectStart')} -> native-log UTC window "
+                    f"{item.get('since')} .. {item.get('until')}"
+                )
+                for item in log_windows
+            ]
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST CAUSAL NATIVE-LOG WINDOWS\n"
+                    + "\n".join(rows)
+                    + "\nThese UTC boundaries were derived from the observed "
+                    "Hubitat event timestamps. When selecting hub_get_logs, do not "
+                    "invent or manually convert a clock time; the host will enforce "
+                    "the matching since/until window on the call."
+                ),
+            })
         if (
             unresolved_material
             and "hub_read_apps_code" in catalog.available_names
