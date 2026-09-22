@@ -273,6 +273,11 @@ def _present_home_snapshot(data: dict[str, Any]) -> str:
 
 
 def _present_control(data: dict[str, Any]) -> str:
+    if _coerce_bool(data.get("needs_input"), default=False):
+        clarification = str(data.get("clarification") or "").strip()
+        if clarification:
+            return clarification
+
     succeeded_items = [x for x in data.get("succeeded", []) if isinstance(x, dict) and x.get("label")]
     succeeded = [str(x["label"]) for x in succeeded_items]
     unverified = [
