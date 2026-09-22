@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.12**.
+Current add-on version: **0.16.13**.
 
 ## Architecture
+
+0.16.13 fixes causal-subject receipt handoff after deterministic history recovery. When a first noisy history pass is superseded by a scoped retry for the same canonical subject, the causal timeline now ranks the corrected interval-bearing receipt above the older empty receipt while still anchoring the subject identity so later controller histories cannot replace it. This lets 0.16.12 derive both native-log boundary windows from the recovered interval.
 
 0.16.12 promotes native Hubitat execution logs to the first causal provenance layer. Once a subject interval is established, the host derives both START and END log windows from the observed Hubitat timestamps, reads those windows in parallel, and deterministically correlates physical controller/input events -> subject commands -> state boundaries. A repeated match from the same physical controller/input at both boundaries is treated as strong temporal provenance and can finalize the causal evidence layer without weaker room/sensor/location/app discovery. App log rows that occur after the device command are explicitly classified as downstream handling rather than initiation.
 
