@@ -39,19 +39,80 @@ def _details(receipt: dict[str, Any]) -> dict[str, Any]:
 
 
 def _subject_receipt(evidence: list[dict[str, Any]]) -> dict[str, Any] | None:
-    for receipt in evidence:
+    """Return the strongest current-turn history receipt for the causal subject.
+
+    A causal history request can legitimately produce more than one receipt for
+    the same subject. In particular, the first attribute-less read may infer a
+    binary state from a full noisy page yet establish no interval, after which
+    the host performs a scoped retry that does recover the interval. The older
+    first-pass receipt must not shadow that corrected result.
+
+    Anchor the subject to the first qualifying history receipt, then rank only
+    later receipts for that same canonical subject. Prefer bounded intervals,
+    then open/unbounded active transitions, then an otherwise valid empty
+    temporal history. Ties prefer the later receipt so deterministic retries can
+    supersede stale first-pass evidence without allowing later controller
+    histories for another device to become the causal subject.
+    """
+
+    candidates: list[tuple[int, int, dict[str, Any]]] = []
+    anchor_key = ""
+
+    for index, receipt in enumerate(evidence):
         if (
-            isinstance(receipt, dict)
-            and receipt.get("success") is True
-            and receipt.get("tool") == "homebrain_device_history"
+            not isinstance(receipt, dict)
+            or receipt.get("success") is not True
+            or receipt.get("tool") != "homebrain_device_history"
         ):
-            details = _details(receipt)
-            temporal = details.get("temporalAnalysis")
-            if isinstance(temporal, dict) and isinstance(
-                temporal.get("observedIntervals"), list
-            ):
-                return receipt
-    return None
+            continue
+
+        details = _details(receipt)
+        temporal = details.get("temporalAnalysis")
+        if not isinstance(temporal, dict):
+            continue
+        intervals = temporal.get("observedIntervals")
+        if not isinstance(intervals, list):
+            continue
+
+        label = str(details.get("label") or "").strip()
+        arguments = receipt.get("arguments")
+        requested = (
+            str(arguments.get("name") or "").strip()
+            if isinstance(arguments, dict)
+            else ""
+        )
+        subject_key = re.sub(
+            r"[^a-z0-9]",
+            "",
+            (label or requested).casefold(),
+        )
+        if not subject_key:
+            continue
+
+        if not anchor_key:
+            anchor_key = subject_key
+        if subject_key != anchor_key:
+            continue
+
+        bounded = any(
+            isinstance(item, dict)
+            and str(item.get("start") or "").strip()
+            and str(item.get("end") or "").strip()
+            for item in intervals
+        )
+        open_active = bool(
+            temporal.get("unboundedActiveInterval")
+            or temporal.get("openActiveInterval")
+            or str(temporal.get("openActiveStart") or "").strip()
+        )
+        rank = 2 if bounded else 1 if open_active else 0
+        candidates.append((rank, index, receipt))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return candidates[0][2]
 
 
 def _controller_receipts(
