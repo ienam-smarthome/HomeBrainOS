@@ -233,6 +233,17 @@ class SemanticAgentCore:
         if fast_arguments is not None:
             fast_plan = semantic_plan_from_control_arguments(fast_arguments)
             if fast_plan is not None:
+                grounding_context: str | dict[str, Any] = (
+                    grounding_world
+                    if grounding_world is not None
+                    else world_context
+                )
+                if grounding_context:
+                    return self.ground_plan_target(
+                        prompt,
+                        fast_plan,
+                        grounding_context,
+                    )
                 return fast_plan
 
         if not is_semantic_control_candidate(prompt):
