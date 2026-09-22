@@ -23,6 +23,10 @@ _FUTURE_OR_RECURRING = re.compile(
     re.I,
 )
 _TRAILING_PUNCTUATION = re.compile(r"[.!?]+\s*$")
+_PRONOUN_TARGET = re.compile(
+    r"^(?:it|this|that|them|these|those|this one|that one|the same one)$",
+    re.I,
+)
 _AMOUNT = (
     r"(?P<amount>\d{1,3}(?:\.\d+)?)"
     r"(?:\s*(?:%|percent|percentage\s+points?|points?))?"
@@ -66,7 +70,7 @@ def _relative_plan(
     magnitude: str = "default",
 ) -> SemanticPlan | None:
     target = _clean_target(target)
-    if not target:
+    if not target or _PRONOUN_TARGET.fullmatch(target):
         return None
 
     delta: float | None = None
