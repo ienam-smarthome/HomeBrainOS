@@ -183,7 +183,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         try:
             return await super()._chat(messages, tools)
         finally:
-            self.request_metrics.observe_ms("provider", (time.monotonic() - started) * 1000)
+            self.request_metrics.add_ms("provider", (time.monotonic() - started) * 1000)
 
     def _create_grounding_policy(self, *, logs_requested: bool, conversational: bool) -> LiveEvidenceAuthority:
         return LiveEvidenceAuthority(
