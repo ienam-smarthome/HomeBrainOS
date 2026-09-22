@@ -113,3 +113,82 @@ def test_render_world_is_bounded_and_drops_devices_cleanly() -> None:
 
     assert len(rendered) <= 900
     assert "Very Long Light Device 00" in rendered
+
+
+
+def _large_world_devices() -> list[dict]:
+    devices = [
+        {
+            **LIGHT,
+            "id": str(index),
+            "label": f"Early Room Device {index:03d}",
+            "roomName": "AAA Early Room",
+        }
+        for index in range(120)
+    ]
+    devices.extend(
+        [
+            {
+                **LIGHT,
+                "id": "hall-1",
+                "label": "Hallway Light 1",
+                "roomName": "Hallway",
+            },
+            {
+                **LIGHT,
+                "id": "hall-2",
+                "label": "Hallway Light 2",
+                "roomName": "Hallway",
+            },
+        ]
+    )
+    return devices
+
+
+def test_large_world_keeps_room_abilities_beyond_device_detail_cap() -> None:
+    world = build_semantic_world(_large_world_devices(), max_devices=64)
+
+    # Hallway device details sort beyond the first 64 without focus, but the
+    # room-level capability model must remain complete.
+    assert all(
+        item["room"] != "Hallway"
+        for item in world["devices"]
+    )
+    hallway = next(room for room in world["rooms"] if room["name"] == "Hallway")
+    assert hallway["device_count"] == 2
+    assert "brightness" in hallway["abilities"]
+    assert hallway["details_complete"] is False
+
+
+def test_focus_text_prioritizes_referenced_room_device_details() -> None:
+    world = build_semantic_world(
+        _large_world_devices(),
+        max_devices=64,
+        focus_text="increase hallway brightness",
+    )
+
+    hallway_details = [
+        item for item in world["devices"] if item["room"] == "Hallway"
+    ]
+    assert [item["name"] for item in hallway_details] == [
+        "Hallway Light 1",
+        "Hallway Light 2",
+    ]
+    assert all("brightness" in item["abilities"] for item in hallway_details)
+
+
+def test_bounded_render_keeps_room_capabilities_after_detail_trimming() -> None:
+    world = build_semantic_world(
+        _large_world_devices(),
+        max_devices=64,
+        focus_text="increase hallway brightness",
+    )
+    rendered = render_semantic_world(world, max_chars=1200)
+
+    import json
+
+    payload = json.loads(rendered)
+    assert len(rendered) <= 1200
+    hallway = next(room for room in payload["rooms"] if room["name"] == "Hallway")
+    assert "brightness" in hallway["abilities"]
+    assert hallway["device_count"] == 2
