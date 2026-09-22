@@ -14,6 +14,7 @@ APP_DIR = ROOT / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from chat_transport import ChatTransport  # noqa: E402
+from semantic_agent_core import SemanticAgentCore  # noqa: E402
 from semantic_plan import SemanticPlan  # noqa: E402
 from semantic_planner import SemanticPlanner  # noqa: E402
 
@@ -86,6 +87,7 @@ async def main() -> int:
         stream_idle_timeout_seconds=20,
     )
     planner = SemanticPlanner(transport.chat)
+    core = SemanticAgentCore(planner)
     passed = 0
     failures: list[dict[str, Any]] = []
     try:
@@ -93,9 +95,15 @@ async def main() -> int:
             prompt = str(case["prompt"])
             expected = dict(case["expected"])
             try:
+                world_context = str(case.get("world_context") or "")
                 plan = await planner.plan(
                     prompt,
-                    world_context=str(case.get("world_context") or ""),
+                    world_context=world_context,
+                )
+                plan = core.ground_plan_target(
+                    prompt,
+                    plan,
+                    world_context,
                 )
                 actual = _actual(plan)
                 mismatches = _matches(expected, actual)
@@ -123,7 +131,10 @@ async def main() -> int:
 
     total = len(cases)
     accuracy = (passed / total * 100.0) if total else 0.0
-    print(f"\nSemantic planner eval: {passed}/{total} passed ({accuracy:.1f}%).")
+    print(
+        f"\nSemantic interpretation eval: "
+        f"{passed}/{total} passed ({accuracy:.1f}%)."
+    )
     if failures:
         print(json.dumps({"failures": failures}, indent=2))
         return 1
