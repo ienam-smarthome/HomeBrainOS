@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.9**.
+Current add-on version: **0.16.10**.
 
 ## Architecture
+
+0.16.10 uses the Hubitat MCP server's advertised multi-device command contract for compatible two-or-more-device light/switch controls. HomeBrain keeps authoritative per-device precondition reads, sends one validated `commands[]` mutation, then verifies the final state separately. When every target expects the same value it uses one `deviceIds` all-device verification poll; when expected values differ it verifies each device against its own exact value. The path is feature-detected from the live MCP catalog and can be disabled with `mcp_batch_device_commands_enabled: false`.
 
 0.16.9 narrows the MCP transport's former global request lock. Session initialization and tool-catalog mutation remain serialized, cacheable aggregate device snapshots remain single-flight, and ordinary MCP operations run through a bounded concurrency gate (2 calls by default). This lets independent per-device live reads and verified writes overlap while retaining a `mcp_max_concurrent_calls: 1` rollback setting that restores serialized ordinary traffic.
 
