@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.11**.
+Current add-on version: **0.16.12**.
 
 ## Architecture
+
+0.16.12 promotes native Hubitat execution logs to the first causal provenance layer. Once a subject interval is established, the host derives both START and END log windows from the observed Hubitat timestamps, reads those windows in parallel, and deterministically correlates physical controller/input events -> subject commands -> state boundaries. A repeated match from the same physical controller/input at both boundaries is treated as strong temporal provenance and can finalize the causal evidence layer without weaker room/sensor/location/app discovery. App log rows that occur after the device command are explicitly classified as downstream handling rather than initiation.
 
 0.16.11 closes the remaining empty-subject causal gap from 0.16.10. If an attribute-less causal history read infers one binary state attribute from a full mixed page but establishes no bounded interval, the host deterministically retries the same canonical device once with that inferred attribute and the 50-row ceiling before it may stop the causal investigation. The retry is host-generated, consumes no additional model round, and lets the 0.16.10 upstream switch-scoped history path recover older state boundaries hidden behind noisy metering/RTT telemetry.
 
