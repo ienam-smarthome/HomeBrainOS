@@ -3,9 +3,19 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.0**.
+Current add-on version: **0.16.1**.
 
 ## Architecture
+
+0.16.1 tightens the capability ontology used by that world model: an ordinary
+Hubitat dimmer does not have to advertise a literal `Light` capability or put
+"Light" in its label. Devices exposing semantic level control
+(`SwitchLevel`/`setLevel`/`level`) are treated as brightness-capable unless
+their identity has stronger non-light semantics such as fan speed, shade/door
+position, thermostat setpoints, or audio volume. Planning and deterministic
+execution now use the same brightness predicate, so a device that appears
+brightness-capable to the AI cannot then be rejected by the executor merely
+because it is labelled "Hallway Main" rather than "Hallway Light".
 
 0.16.0 adds a capability-grounded semantic world model. Before a non-trivial
 semantic control turn, HomeBrain projects the real Hubitat identity snapshot into
