@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.7**.
+Current add-on version: **0.16.8**.
 
 ## Architecture
+
+0.16.8 adds a deterministic semantic fast path for clear brightness and thermostat requests. These requests still use the same fresh host identity grounding and deterministic verified execution, but no longer pay for a provider round when the action, direction, amount, and target wording are already unambiguous.
 
 0.16.7 adds bounded structural-identity freshness and typed multi-device semantic selections. Host grounding now expires old room/device identity, refreshes from the bulk context before falling back to the detailed manifest, and zero-model routine controls use the same fresh host grounding as model-interpreted controls. Explicit commands naming multiple canonical devices compile to one deterministic multi-device action.
 
