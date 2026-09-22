@@ -55,6 +55,13 @@ _NON_BRIGHTNESS_LEVEL_COMMANDS = {
     "open",
     "close",
 }
+_CONTROLLER_ONLY_CAPABILITIES = {
+    "button",
+    "pushablebutton",
+    "holdablebutton",
+    "doubletapablebutton",
+    "releasablebutton",
+}
 
 
 def is_brightness_device(device: dict[str, Any]) -> bool:
@@ -73,10 +80,13 @@ def is_brightness_device(device: dict[str, Any]) -> bool:
     commands = _command_names(device)
     attributes = {_normalized(key) for key in device_attributes(device)}
 
+    # State attributes describe what a driver has reported, not what it can
+    # safely mutate. A bare "level" attribute is therefore insufficient to
+    # infer brightness control. Require an actual level-control capability or
+    # command, then separately reject stronger non-light semantics.
     level_capable = bool(
         capabilities.intersection({"switchlevel", "changelevel"})
         or "setlevel" in commands
-        or "level" in attributes
     )
     if not level_capable:
         return False
@@ -99,6 +109,23 @@ def is_brightness_device(device: dict[str, Any]) -> bool:
             "coolingsetpoint",
         }
     ):
+        return False
+
+    # Controller/remotes can expose level-like telemetry even though they are
+    # not lighting actuators. Require positive actuator evidence for a
+    # non-Light device: either Hubitat Actuator capability or an explicit
+    # setLevel command. A button/battery component with only a level-like
+    # reading must never become a semantic light.
+    if (
+        capabilities.intersection(_CONTROLLER_ONLY_CAPABILITIES)
+        and "actuator" not in capabilities
+    ):
+        return False
+    actuator_evidence = (
+        "actuator" in capabilities
+        or "setlevel" in commands
+    )
+    if not actuator_evidence:
         return False
     return True
 

@@ -48,7 +48,8 @@ class RequestMetrics:
         "semantic_fastpath_plans", "semantic_planner_plans",
         "semantic_planner_failures", "semantic_plan_compile_failures",
         "semantic_relative_controls", "semantic_temperature_controls",
-        "semantic_world_context", "semantic_needs_input",
+        "semantic_world_context", "semantic_target_grounded",
+        "semantic_needs_input",
     })
     ALLOWED_TIMINGS = frozenset({
         "provider", "tool_discovery", "mcp", "mcp_lock_wait", "mcp_http",

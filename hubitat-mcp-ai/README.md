@@ -3,9 +3,25 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.2**.
+Current add-on version: **0.16.3**.
 
 ## Architecture
+
+0.16.3 adds host-owned semantic entity grounding. The reasoning model can still
+interpret meaning, but it no longer gets final authority over *which* similarly
+named entity the user meant. If the user explicitly names one real room and does
+not explicitly name a full device label, HomeBrain binds the semantic plan to
+that room when the room advertises the requested ability. Conversely, a full
+explicit device label stays device-scoped. This prevents a controller named
+"Hallway dimmer" from stealing a room-wide request such as "increase hallway
+brightness" from the actual Hallway lights.
+
+The capability ontology is tightened at the same time: a state attribute named
+`level` alone is not evidence of a writable light. Non-Light devices need
+actual level-control capability/command plus actuator evidence, and
+button/controller components without `Actuator` are excluded even if bridge
+metadata happens to expose `SwitchLevel` or `setLevel`. The semantic world and
+the deterministic executor continue to share the same predicate.
 
 0.16.2 hardens state-dependent semantic actions. A device can correctly
 advertise a capability while its cheapest native attribute endpoint has never

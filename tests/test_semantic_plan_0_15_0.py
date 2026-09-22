@@ -293,3 +293,116 @@ async def test_semantic_planner_receives_capability_world_as_non_live_context() 
     assert "Capability-grounded home context" in user_context
     assert "NOT live state" in user_context
     assert "Bedroom 1 TRV" in user_context
+
+
+
+@pytest.mark.asyncio
+async def test_semantic_core_prefers_explicit_room_over_model_invented_device_target() -> None:
+    async def fake_chat(_messages, _tools):
+        # Reproduce the observed Gemma mistake: the user said "hallway" but
+        # the model selected a similarly named controller device.
+        return {
+            "content": (
+                '{"version":"1","domain":"device_control","timing":"now",'
+                '"target":{"scope":"device","name":"Hallway dimmer","kind":"light"},'
+                '"action":{"operation":"adjust_level","value":null,"delta":null,'
+                '"direction":"increase","magnitude":"default"},'
+                '"needs_clarification":false,"clarification_question":"",'
+                '"confidence":"high","source":"model"}'
+            )
+        }
+
+    world = json.dumps({
+        "live_state": False,
+        "rooms": [{
+            "name": "Hallway",
+            "abilities": ["brightness", "switch"],
+            "devices": ["Hallway Light 1", "Hallway Light 2"],
+        }],
+        "devices": [
+            {
+                "name": "Hallway dimmer",
+                "room": "Unassigned",
+                "kinds": ["sensor"],
+                "abilities": ["battery"],
+            },
+            {
+                "name": "Hallway Light 1",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+            {
+                "name": "Hallway Light 2",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+        ],
+    })
+
+    core = SemanticAgentCore(SemanticPlanner(fake_chat))
+    plan = await core.plan_control(
+        "increase hallway brightness",
+        world_context=world,
+    )
+
+    assert plan is not None
+    assert plan.target is not None
+    assert plan.target.scope == "room"
+    assert plan.target.name == "Hallway"
+    assert core.compile_control(plan) == {
+        "room": "Hallway",
+        "command": "adjust_level",
+        "device_kind": "light",
+        "delta": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_semantic_core_preserves_explicit_full_device_name_over_room_name() -> None:
+    async def fake_chat(_messages, _tools):
+        return {
+            "content": (
+                '{"version":"1","domain":"device_control","timing":"now",'
+                '"target":{"scope":"device","name":"Hallway Light 1","kind":"light"},'
+                '"action":{"operation":"set_level","value":70,"delta":null,'
+                '"direction":null,"magnitude":"default"},'
+                '"needs_clarification":false,"clarification_question":"",'
+                '"confidence":"high","source":"model"}'
+            )
+        }
+
+    world = json.dumps({
+        "live_state": False,
+        "rooms": [{
+            "name": "Hallway",
+            "abilities": ["brightness", "switch"],
+            "devices": ["Hallway Light 1", "Hallway Light 2"],
+        }],
+        "devices": [
+            {
+                "name": "Hallway Light 1",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+            {
+                "name": "Hallway Light 2",
+                "room": "Hallway",
+                "kinds": ["light"],
+                "abilities": ["brightness", "switch"],
+            },
+        ],
+    })
+
+    core = SemanticAgentCore(SemanticPlanner(fake_chat))
+    plan = await core.plan_control(
+        "set Hallway Light 1 to 70%",
+        world_context=world,
+    )
+
+    assert plan is not None
+    assert plan.target is not None
+    assert plan.target.scope == "device"
+    assert plan.target.name == "Hallway Light 1"

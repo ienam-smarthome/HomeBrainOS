@@ -173,3 +173,55 @@ def test_switchlevel_shade_is_not_reinterpreted_as_brightness() -> None:
 
     assert is_brightness_device(shade) is False
     assert "brightness" not in device_abilities(shade)
+
+
+
+def test_hue_dimmer_remote_parent_level_telemetry_is_not_a_brightness_actuator() -> None:
+    remote_parent = {
+        "id": "3927",
+        "label": "Hallway dimmer",
+        "roomName": "",
+        "capabilities": ["Battery", "PushableButton", "SwitchLevel"],
+        "commands": ["setLevel"],
+        "attributes": [
+            {"name": "battery", "value": 82},
+            {"name": "level", "value": None},
+        ],
+    }
+    hallway_light_1 = {
+        "id": "7829",
+        "label": "Hallway Light 1",
+        "roomName": "Hallway",
+        "capabilities": [
+            "Actuator", "ChangeLevel", "Light", "Refresh", "Switch", "SwitchLevel"
+        ],
+        "commands": ["on", "off", "setLevel", "startLevelChange", "stopLevelChange"],
+        "attributes": [{"name": "level", "value": 50}],
+    }
+    hallway_light_2 = {
+        **hallway_light_1,
+        "id": "7830",
+        "label": "Hallway Light 2",
+    }
+
+    assert is_brightness_device(remote_parent) is False
+    assert "brightness" not in device_abilities(remote_parent)
+    assert is_brightness_device(hallway_light_1) is True
+    assert is_brightness_device(hallway_light_2) is True
+
+    world = build_semantic_world([remote_parent, hallway_light_1, hallway_light_2])
+    hallway = next(room for room in world["rooms"] if room["name"] == "Hallway")
+    assert hallway["devices"] == ["Hallway Light 1", "Hallway Light 2"]
+    assert "brightness" in hallway["abilities"]
+
+
+def test_bare_level_attribute_does_not_create_mutating_brightness_ability() -> None:
+    telemetry_only = {
+        "id": "telemetry1",
+        "label": "Remote level telemetry",
+        "capabilities": ["Battery"],
+        "attributes": [{"name": "level", "value": 50}],
+    }
+
+    assert is_brightness_device(telemetry_only) is False
+    assert "brightness" not in device_abilities(telemetry_only)
