@@ -1959,6 +1959,32 @@ async def test_semantic_fast_plan_handles_relative_brightness_without_provider_o
     async def forbidden_base(*_args: object, **_kwargs: object) -> AgentOutcome:
         raise AssertionError("semantic routine control must not enter the general tool loop")
 
+    async def semantic_world(*_args: object, **_kwargs: object):
+        world = {
+            "live_state": False,
+            "rooms": [{
+                "name": "Living Room",
+                "abilities": ["brightness", "switch"],
+                "devices": ["Livingroom Light 1", "Livingroom Light 2"],
+            }],
+            "devices": [
+                {
+                    "name": "Livingroom Light 1",
+                    "room": "Living Room",
+                    "kinds": ["light"],
+                    "abilities": ["brightness", "switch"],
+                },
+                {
+                    "name": "Livingroom Light 2",
+                    "room": "Living Room",
+                    "kinds": ["light"],
+                    "abilities": ["brightness", "switch"],
+                },
+            ],
+        }
+        return json.dumps(world), world
+
+    monkeypatch.setattr(UnifiedMCPAgent, "_semantic_world_context", semantic_world)
     monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
     monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
 
@@ -2457,14 +2483,7 @@ async def test_semantic_thermostat_plan_uses_capability_world_and_verified_contr
     monkeypatch.setattr(UnifiedMCPAgent, "_control_devices", fake_control_devices)
     monkeypatch.setattr(BaseUnifiedMCPAgent, "process_user_request_result", forbidden_base)
 
-    ai = FakeAI(
-        '{"version":"1","domain":"device_control","timing":"now",'
-        '"target":{"scope":"room","name":"Bedroom 1","kind":"thermostat"},'
-        '"action":{"operation":"adjust_temperature","value":null,"delta":null,'
-        '"direction":"increase","magnitude":"default"},'
-        '"needs_clarification":false,"clarification_question":"",'
-        '"confidence":"high","source":"model"}'
-    )
+    ai = FakeAI("unused -- clear thermostat request must stay zero-model")
     agent = UnifiedMCPAgent(ThermostatIdentityMCP(), "key", ai_client=ai)
 
     outcome = await agent.process_user_request_result(
@@ -2483,14 +2502,9 @@ async def test_semantic_thermostat_plan_uses_capability_world_and_verified_contr
         "Bedroom 1 TRV 20°C → 21°C."
     )
     assert outcome.metrics["outcome"] == "success"
-    assert outcome.metrics["counters"]["semantic_planner_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_fastpath_plans"] == 1
+    assert outcome.metrics["counters"]["semantic_target_grounded"] == 1
     assert outcome.metrics["counters"]["semantic_temperature_controls"] == 1
     assert outcome.metrics["counters"]["semantic_world_context"] == 1
-
-    planner_payload = ai.requests[0]["json"]
-    planner_user = planner_payload["messages"][1]["content"]
-    assert "Capability-grounded home context" in planner_user
-    assert "Bedroom 1 TRV" in planner_user
-    assert "heating_setpoint" in planner_user
-    assert "7331" not in planner_user
-    assert "setHeatingSetpoint" not in planner_user
+    assert outcome.metrics["counters"].get("model_rounds", 0) == 0
+    assert ai.requests == []
