@@ -106,11 +106,10 @@ async def test_reads_bounded_authoritative_history_after_targeted_resolution():
     assert result.data["hoursBack"] == 168
     assert result.data["count"] == 2
     assert result.data["causationAvailable"] is False
-    # `attribute` is deliberately NOT forwarded to the upstream call -- see
-    # test_attribute_filter_is_applied_locally_not_forwarded_upstream for
-    # why (a live-confirmed upstream filter bug for at least one attribute
-    # name). The full unfiltered window is fetched instead and filtered by
-    # attribute name on this side.
+    # Switch history is deliberately scoped upstream so high-churn telemetry
+    # cannot crowd the on/off boundaries out of the newest event page. Other
+    # attributes retain the local-filter fallback because some driver-specific
+    # upstream filters are known to return false empty results.
     assert mcp.calls[-1] == (
         DEVICE_GATEWAY,
         {
@@ -119,6 +118,7 @@ async def test_reads_bounded_authoritative_history_after_targeted_resolution():
                 "deviceId": "42",
                 "hoursBack": 168,
                 "limit": 50,
+                "attribute": "switch",
             },
         },
     )
@@ -155,11 +155,8 @@ async def test_attribute_scoped_query_widens_default_window_to_seven_days():
 
     assert result.is_error is False
     assert result.data["hoursBack"] == 168
-    # `attribute` is no longer forwarded upstream (see
-    # test_attribute_filter_is_applied_locally_not_forwarded_upstream) and
-    # the fetch always uses the max bound when scoped to one attribute, so
-    # the caller's small `limit` is applied client-side after filtering,
-    # not sent to the upstream call.
+    # Switch history is scoped upstream, while the caller's small presentation
+    # limit is still applied client-side after the bounded fetch.
     assert mcp.calls[-1] == (
         DEVICE_GATEWAY,
         {
@@ -168,6 +165,7 @@ async def test_attribute_scoped_query_widens_default_window_to_seven_days():
                 "deviceId": "42",
                 "hoursBack": 168,
                 "limit": 50,
+                "attribute": "switch",
             },
         },
     )
