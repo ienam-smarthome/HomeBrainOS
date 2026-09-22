@@ -187,7 +187,12 @@ class HubitatMCPClient:
         if not self.configured:
             raise MCPError("Hubitat MCP endpoint is not configured")
 
-        async with self._lock:
+        lock_started = time.monotonic()
+        await self._lock.acquire()
+        session_wait_ms = (time.monotonic() - lock_started) * 1000
+        if session_wait_ms >= 1:
+            add_active_metric_ms("mcp_session_lock_wait", session_wait_ms)
+        try:
             if self._initialized and not force:
                 return
             payload = {
@@ -217,13 +222,22 @@ class HubitatMCPClient:
                 await self._post(notification, allow_empty=True)
             except Exception:
                 pass
+        finally:
+            self._lock.release()
 
     async def list_tools(self, refresh: bool = False) -> list[MCPTool]:
         await self.initialize()
         if self._tools and not refresh:
             return list(self._tools.values())
 
-        async with self._lock:
+        lock_started = time.monotonic()
+        await self._lock.acquire()
+        session_wait_ms = (time.monotonic() - lock_started) * 1000
+        if session_wait_ms >= 1:
+            add_active_metric_ms("mcp_session_lock_wait", session_wait_ms)
+        try:
+            if self._tools and not refresh:
+                return list(self._tools.values())
             payload = {
                 "jsonrpc": "2.0",
                 "id": self._next_id(),
@@ -250,6 +264,8 @@ class HubitatMCPClient:
                 parsed[tool.name] = tool
             self._tools = parsed
             return list(parsed.values())
+        finally:
+            self._lock.release()
 
     async def get_tool(self, name: str) -> MCPTool | None:
         await self.list_tools()
