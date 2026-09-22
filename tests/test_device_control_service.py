@@ -1207,10 +1207,10 @@ async def test_room_set_level_uses_verified_setlevel_parameter_array():
     assert len(command_calls) == 2
     for arguments in command_calls:
         assert arguments["args"]["command"] == "setLevel"
-        assert arguments["args"]["parameters"] == [100]
+        assert arguments["args"]["parameters"] == ["100"]
         assert arguments["args"]["waitFor"] == {
             "attribute": "level",
-            "expectedValue": 100,
+            "expectedValue": "100",
             "timeoutMs": 5000,
         }
 
@@ -1330,14 +1330,14 @@ async def test_adjust_level_reads_live_state_then_compiles_per_device_absolute_l
     ]
     by_id = {item["args"]["deviceId"]: item["args"] for item in commands}
     assert by_id["7805"]["command"] == "setLevel"
-    assert by_id["7805"]["parameters"] == [100]
+    assert by_id["7805"]["parameters"] == ["100"]
     assert by_id["7805"]["waitFor"] == {
         "attribute": "level",
         "expectedValue": 100,
         "timeoutMs": 5000,
     }
-    assert by_id["7828"]["parameters"] == [80]
-    assert by_id["7828"]["waitFor"]["expectedValue"] == 80
+    assert by_id["7828"]["parameters"] == ["80"]
+    assert by_id["7828"]["waitFor"]["expectedValue"] == "80"
 
     precondition_receipts = [
         kwargs for _args, kwargs in receipts
