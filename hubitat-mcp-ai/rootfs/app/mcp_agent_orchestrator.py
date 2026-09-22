@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -27,6 +28,12 @@ from causal_evidence_planner import (
     subject_has_observed_intervals,
     subject_room_filter_arguments,
     trigger_sensor_history_arguments,
+)
+from causal_native_logs import (
+    causal_boundary_log_windows,
+    correlate_native_log_boundaries,
+    native_log_provenance_sufficient,
+    render_native_log_correlation,
 )
 from causal_timeline import (
     causal_log_windows,
@@ -531,6 +538,108 @@ class UnifiedMCPAgent:
         arguments: dict[str, Any],
     ) -> MCPToolResult:
         return await HubInfoService(self.mcp).snapshot(arguments)
+    async def _collect_causal_boundary_logs(
+        self,
+        *,
+        catalog: ToolDiscoveryCatalog,
+        completed_calls: set[str],
+        messages: list[dict[str, Any]],
+    ) -> bool:
+        """Collect both subject boundaries from native logs before weaker evidence.
+
+        Native logs are the closest available execution provenance. Query both
+        start and end boundaries host-side so a repeated physical-controller
+        pattern can be tested deterministically without spending a model round
+        choosing log windows.
+        """
+
+        diagnostics_tool = catalog.declared_tool("hub_read_diagnostics")
+        if diagnostics_tool is None:
+            return False
+
+        windows = causal_boundary_log_windows(
+            self.evidence.receipts(),
+            max_intervals=1,
+        )
+        if not windows:
+            return False
+
+        pending: list[tuple[dict[str, Any], str]] = []
+        for window in windows:
+            arguments = {
+                "tool": "hub_get_logs",
+                "args": {
+                    "limit": 100,
+                    "since": window["since"],
+                    "until": window["until"],
+                },
+            }
+            signature = json.dumps(
+                ["hub_read_diagnostics", arguments],
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            )
+            if signature in completed_calls:
+                continue
+            completed_calls.add(signature)
+            pending.append((arguments, window["boundaryRole"]))
+
+        if not pending:
+            correlations = correlate_native_log_boundaries(
+                self.evidence.receipts()
+            )
+            return native_log_provenance_sufficient(correlations)
+
+        increment_active_metric("causal_native_log_reads", len(pending))
+
+        async def read_one(
+            arguments: dict[str, Any],
+        ):
+            return await self.executor.execute(
+                "hub_read_diagnostics",
+                arguments,
+                tool=diagnostics_tool,
+                supports_live_claim=True,
+                evidence_kind="authoritative_native_log_history",
+            )
+
+        executions = await asyncio.gather(
+            *(read_one(arguments) for arguments, _role in pending)
+        )
+        for (arguments, role), execution in zip(pending, executions):
+            messages.append({
+                "role": "tool",
+                "tool_name": "hub_read_diagnostics",
+                "content": execution.content,
+            })
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST NATIVE-LOG BOUNDARY READ\n"
+                    f"Completed the host-derived {role} boundary log window "
+                    f"{arguments['args']['since']} .. {arguments['args']['until']}. "
+                    "This is direct current-turn provenance evidence."
+                ),
+            })
+
+        correlations = correlate_native_log_boundaries(
+            self.evidence.receipts()
+        )
+        if correlations:
+            increment_active_metric(
+                "causal_native_log_correlations",
+                len(correlations),
+            )
+            instruction = render_native_log_correlation(correlations)
+            if instruction:
+                messages.append({"role": "user", "content": instruction})
+
+        sufficient = native_log_provenance_sufficient(correlations)
+        if sufficient:
+            increment_active_metric("causal_repeated_controller_pattern")
+        return sufficient
+
     async def _expand_causal_subject_evidence(
         self,
         subject_history: dict[str, Any],
@@ -542,14 +651,38 @@ class UnifiedMCPAgent:
         """Gather the fixed non-provenance causal evidence layer host-side.
 
         Causal reasoning should not spend separate model rounds rediscovering the
-        same room/controller/location evidence classes. The host deterministically
-        gathers one highest-ranked same-room controller history when available and
-        one location/mode history clipped to the active semantic window. The model
-        then gets one bounded provenance round for logs/rules/apps before final
-        synthesis.
+        same evidence classes. Native logs are tested first at both observed
+        subject boundaries because they are stronger execution provenance than
+        room correlation or app configuration. If a repeated physical-controller
+        -> subject-command pattern is established at both boundaries, weaker
+        discovery is skipped. Otherwise the established room/controller/location
+        layer remains the compatibility fallback before one bounded provenance
+        round.
         """
 
         expanded = False
+        native_log_sufficient = await self._collect_causal_boundary_logs(
+            catalog=catalog,
+            completed_calls=completed_calls,
+            messages=messages,
+        )
+        if native_log_sufficient:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST CAUSAL EVIDENCE LAYER COMPLETE\n"
+                    "Repeated native-log provenance established the same physical "
+                    "controller/input immediately before both the subject ON command "
+                    "and the later OFF command. This direct execution-timing evidence "
+                    "outranks room correlation and app configuration, so do not fan "
+                    "out to weaker device/sensor/location/config discovery. Final "
+                    "synthesis must present the controller/input as the strongest "
+                    "initiating-control candidate, distinguish downstream app reactions "
+                    "that occur after the command, and retain the caveat that timing "
+                    "alone does not independently prove the configured mapping."
+                ),
+            })
+            return True
         controller_checked = False
         room_arguments = subject_room_filter_arguments(subject_history)
         filter_tool = catalog.declared_tool(_LOCAL_FILTER_TOOL)
@@ -1914,6 +2047,14 @@ class UnifiedMCPAgent:
                         messages=messages,
                     )
                 )
+                if native_log_provenance_sufficient(
+                    correlate_native_log_boundaries(
+                        self.evidence.receipts()
+                    )
+                ):
+                    increment_active_metric("investigative_finalization")
+                    return await self._final_answer(messages)
+
                 if not causal_completion_retry_used:
                     # Once the subject has real transitions, all stable
                     # subject-adjacent evidence is gathered host-side. Never
