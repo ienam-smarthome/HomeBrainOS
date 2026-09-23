@@ -92,6 +92,7 @@ from tool_registry import (
     LOCAL_ACTIVE_SWITCHES_TOOL as _LOCAL_ACTIVE_SWITCHES_TOOL,
     LOCAL_CONTROL_TOOL as _LOCAL_CONTROL_TOOL,
     LOCAL_DEVICE_HISTORY_TOOL as _LOCAL_DEVICE_HISTORY_TOOL,
+    LOCAL_DEVICE_INVENTORY_TOOL as _LOCAL_DEVICE_INVENTORY_TOOL,
     LOCAL_FILTER_TOOL as _LOCAL_FILTER_TOOL,
     LOCAL_HOME_SNAPSHOT_TOOL as _LOCAL_HOME_SNAPSHOT_TOOL,
     LOCAL_HUB_INFO_TOOL as _LOCAL_HUB_INFO_TOOL,
@@ -238,6 +239,18 @@ def _explicit_mutation_request(prompt: str) -> bool:
         return False
     return _requests_mutation(text)
 
+_DEVICE_INVENTORY_PATTERNS = (
+    r"^\s*(?:please\s+)?(?:list|show)(?:\s+me)?\s+(?:all\s+|every\s+)?(?:my\s+)?devices\s*[?.!]*$",
+    r"^\s*(?:my\s+)?device\s+inventory\s*[?.!]*$",
+    r"^\s*what\s+devices\s+(?:do\s+i\s+have|are\s+on\s+the\s+hub)\s*[?.!]*$",
+)
+
+
+def _is_device_inventory_request(prompt: str) -> bool:
+    text = str(prompt or "").strip()
+    return any(re.search(pattern, text, re.I) is not None for pattern in _DEVICE_INVENTORY_PATTERNS)
+
+
 # Successful temporal history is strong structured evidence. Straight factual
 # history requests can move directly to synthesis once the complete native tool
 # round has executed. Investigative requests remain eligible for broader evidence
@@ -368,6 +381,7 @@ class UnifiedMCPAgent:
                 _LOCAL_QUERY_TOOL: self._query_devices,
                 _LOCAL_RESOLVE_TOOL: self._resolve_device,
                 _LOCAL_DEVICE_HISTORY_TOOL: self.device_history.history,
+                _LOCAL_DEVICE_INVENTORY_TOOL: self._device_inventory,
                 _LOCAL_LOCATION_EVENTS_TOOL: self.device_history.location_events,
                 _LOCAL_WEATHER_TOOL: self._weather_snapshot,
                 _LOCAL_ACTIVE_LIGHTS_TOOL: self._active_lights,
@@ -1132,6 +1146,10 @@ class UnifiedMCPAgent:
         service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.query_devices(arguments)
 
+    async def _device_inventory(self, arguments: dict[str, Any]) -> MCPToolResult:
+        service = DeviceQueryService(self.mcp, self.evidence.record)
+        return await service.device_inventory(arguments)
+
     async def _resolve_device(self, arguments: dict[str, Any]) -> MCPToolResult:
         service = DeviceQueryService(self.mcp, self.evidence.record)
         return await service.resolve_device(arguments)
@@ -1423,6 +1441,26 @@ class UnifiedMCPAgent:
                 "Nothing was executed. Submit the original request again and only "
                 "confirm when the response carries a verified pending action."
             )
+        if _is_device_inventory_request(user_prompt):
+            inventory_tool = catalog.declared_tool(_LOCAL_DEVICE_INVENTORY_TOOL)
+            if inventory_tool is not None:
+                execution = await self.executor.execute(
+                    _LOCAL_DEVICE_INVENTORY_TOOL,
+                    {},
+                    tool=inventory_tool,
+                    supports_live_claim=False,
+                    evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_INVENTORY_TOOL],
+                )
+                if execution.result is not None:
+                    message = present_tool_result(
+                        _LOCAL_DEVICE_INVENTORY_TOOL,
+                        execution.result.data,
+                        failed=not execution.success,
+                        fallback_error=execution.result.text,
+                    )
+                    if message is not None:
+                        return message
+
         capability_discovery = ""
         capability_additions: list[MCPTool] = []
         search_tool = catalog.declared_tool(SEARCH_TOOL)
