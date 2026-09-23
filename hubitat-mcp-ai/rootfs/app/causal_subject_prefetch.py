@@ -56,6 +56,7 @@ _SWITCH_TRANSITION = re.compile(
 class CausalSubjectSeed:
     name: str
     attribute: str
+    transition: str
     confidence: float
     matched_text: str
     target: dict[str, Any]
@@ -235,7 +236,16 @@ def causal_subject_seed(
     this automation?") remain in the normal model tool-selection path.
     """
 
-    if _SWITCH_TRANSITION.search(str(prompt or "")) is None:
+    transition_match = _SWITCH_TRANSITION.search(str(prompt or ""))
+    if transition_match is None:
+        return None
+    if transition_match.group("state1"):
+        transition = transition_match.group("state1").casefold()
+    elif transition_match.group("state2"):
+        transition = "on"
+    elif transition_match.group("state3"):
+        transition = "off"
+    else:
         return None
 
     match = _best_prompt_match(prompt, identities)
@@ -251,6 +261,7 @@ def causal_subject_seed(
     return CausalSubjectSeed(
         name=canonical,
         attribute="switch",
+        transition=transition,
         confidence=confidence,
         matched_text=matched_text,
         target=dict(device),
