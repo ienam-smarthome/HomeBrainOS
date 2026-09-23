@@ -84,6 +84,169 @@ def _subject_command_events(
     return []
 
 
+def _subject_boundary_events(
+    evidence: list[dict[str, Any]],
+    *,
+    subject: str,
+) -> list[dict[str, Any]]:
+    wanted = str(subject or "").strip().casefold()
+    for receipt in reversed(evidence):
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("success") is not True
+            or receipt.get("tool") != "homebrain_device_history"
+        ):
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        label = str(details.get("label") or "").strip().casefold()
+        if wanted and label != wanted:
+            continue
+        events = details.get("boundaryEvents")
+        if isinstance(events, list):
+            return [row for row in events if isinstance(row, dict)]
+    return []
+
+
+def _producer_key(value: Any) -> tuple[str, str, str]:
+    if not isinstance(value, dict):
+        return "", "", ""
+    return (
+        str(value.get("type") or "").strip().casefold(),
+        str(value.get("id") or "").strip(),
+        str(value.get("label") or "").strip().casefold(),
+    )
+
+
+def _same_producer(left: Any, right: Any) -> bool:
+    left_type, left_id, left_label = _producer_key(left)
+    right_type, right_id, right_label = _producer_key(right)
+    if left_id and right_id:
+        return left_id == right_id and (
+            not left_type or not right_type or left_type == right_type
+        )
+    return bool(left_label and left_label == right_label)
+
+
+def _matching_boundary_event(
+    evidence: list[dict[str, Any]],
+    *,
+    subject: str,
+    action: str,
+    boundary: datetime,
+    max_delta_seconds: float = 0.5,
+) -> dict[str, Any] | None:
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for event in _subject_boundary_events(evidence, subject=subject):
+        if str(event.get("name") or "").casefold() != "switch":
+            continue
+        if str(event.get("value") or "").strip().casefold() != action:
+            continue
+        event_time = _parse_time(event.get("date"))
+        if event_time is None:
+            continue
+        delta = abs((event_time - boundary).total_seconds())
+        if delta <= max(0.05, float(max_delta_seconds)):
+            candidates.append((delta, event))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def correlate_boundary_producers(
+    evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Expose authoritative producer metadata carried by switch boundary events."""
+
+    correlations: list[dict[str, Any]] = []
+    for timeline in build_causal_timeline_rows(evidence):
+        if not timeline.get("material"):
+            continue
+        subject = str(timeline.get("subject") or "").strip()
+        for role, action, boundary_key in (
+            ("start", "on", "start"),
+            ("end", "off", "end"),
+        ):
+            if role == "end" and timeline.get("open"):
+                continue
+            boundary = _parse_time(timeline.get(boundary_key))
+            if boundary is None:
+                continue
+            event = _matching_boundary_event(
+                evidence,
+                subject=subject,
+                action=action,
+                boundary=boundary,
+            )
+            if not isinstance(event, dict):
+                continue
+            producer = event.get("producedBy")
+            if not (
+                isinstance(producer, dict)
+                and str(producer.get("label") or "").strip()
+            ):
+                continue
+            correlations.append({
+                "timelineId": str(timeline.get("id") or ""),
+                "boundaryRole": role,
+                "subject": subject,
+                "open": bool(timeline.get("open")),
+                "intervalStart": timeline.get("start"),
+                "intervalEnd": timeline.get("end"),
+                "stateBoundary": boundary.isoformat(),
+                "action": action,
+                "event": {
+                    "name": str(event.get("name") or "").strip(),
+                    "value": str(event.get("value") or "").strip(),
+                    "date": str(event.get("date") or "").strip(),
+                    "type": str(event.get("type") or "").strip(),
+                    "description": str(event.get("description") or "").strip(),
+                    "triggered": (
+                        list(event.get("triggered"))
+                        if isinstance(event.get("triggered"), list)
+                        else []
+                    ),
+                },
+                "producer": dict(producer),
+                "provenanceStrength": "authoritative-state-boundary-producer",
+            })
+    return correlations
+
+
+def boundary_producer_transition_sufficient(
+    correlations: list[dict[str, Any]],
+    transition: str,
+) -> bool:
+    """Return whether a non-self producer is recorded on the requested boundary."""
+
+    action = str(transition or "").strip().casefold()
+    role = {"on": "start", "off": "end"}.get(action)
+    if role is None:
+        return False
+    for row in correlations:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("boundaryRole") or "") != role:
+            continue
+        if str(row.get("action") or "") != action:
+            continue
+        producer = row.get("producer")
+        if not isinstance(producer, dict):
+            continue
+        producer_label = str(producer.get("label") or "").strip()
+        subject = str(row.get("subject") or "").strip()
+        if not producer_label:
+            continue
+        # Self-produced MQTT/device state events do not identify the initiator;
+        # keep those eligible for the established deeper fallback path.
+        if producer_label.casefold() == subject.casefold():
+            continue
+        return True
+    return False
+
+
 def correlate_command_producers(
     evidence: list[dict[str, Any]],
     *,
