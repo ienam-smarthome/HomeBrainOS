@@ -13,6 +13,7 @@ _HOME_SNAPSHOT_TOOL = "homebrain_home_snapshot"
 _CONTROL_TOOL = "homebrain_control_devices"
 _HUB_INFO_TOOL = "homebrain_hub_info_snapshot"
 _DEVICE_HISTORY_TOOL = "homebrain_device_history"
+_DEVICE_INVENTORY_TOOL = "homebrain_device_inventory"
 
 _OPERATORS = {
     "eq": "equal to", "ne": "not equal to", "lt": "below",
@@ -145,6 +146,30 @@ def _labels(data: dict[str, Any], key: str) -> list[str]:
         str(item.get("label") or item.get("name") or item.get("id") or "Unknown")
         for item in data.get(key, []) if isinstance(item, dict)
     ]
+
+
+def _present_device_inventory(data: dict[str, Any]) -> str:
+    count = int(data.get("count") or 0)
+    rooms = [item for item in data.get("rooms", []) if isinstance(item, dict)]
+    if count <= 0:
+        return "No Hubitat devices were found in the authoritative identity inventory."
+
+    lines = [
+        f"{count} Hubitat devices across {len(rooms)} room groups.",
+    ]
+    for room in rooms:
+        room_name = str(room.get("room") or "Unassigned")
+        devices = [
+            str(item.get("label") or item.get("id") or "Unknown device")
+            for item in room.get("devices", [])
+            if isinstance(item, dict)
+        ]
+        if not devices:
+            continue
+        lines.append(
+            f"**{room_name} ({len(devices)}):** " + ", ".join(devices)
+        )
+    return "\n\n".join(lines)
 
 
 def _present_filter(data: dict[str, Any]) -> str:
@@ -662,7 +687,7 @@ def _present_hub_info(data: dict[str, Any]) -> str:
 
 
 def present_tool_result(tool_name: str, data: Any, *, failed: bool = False, fallback_error: str = "") -> str | None:
-    if tool_name not in {_FILTER_TOOL, _ACTIVE_LIGHTS_TOOL, _ACTIVE_ROOMS_TOOL, _ACTIVE_SWITCHES_TOOL, _HOME_SNAPSHOT_TOOL, _CONTROL_TOOL, _HUB_INFO_TOOL, _DEVICE_HISTORY_TOOL}:
+    if tool_name not in {_FILTER_TOOL, _ACTIVE_LIGHTS_TOOL, _ACTIVE_ROOMS_TOOL, _ACTIVE_SWITCHES_TOOL, _HOME_SNAPSHOT_TOOL, _CONTROL_TOOL, _HUB_INFO_TOOL, _DEVICE_HISTORY_TOOL, _DEVICE_INVENTORY_TOOL}:
         return None
     payload = data if isinstance(data, dict) else {}
     if failed and tool_name not in {_CONTROL_TOOL, _DEVICE_HISTORY_TOOL}:
@@ -675,6 +700,7 @@ def present_tool_result(tool_name: str, data: Any, *, failed: bool = False, fall
         _HOME_SNAPSHOT_TOOL: _present_home_snapshot,
         _HUB_INFO_TOOL: _present_hub_info,
         _DEVICE_HISTORY_TOOL: _present_device_history,
+        _DEVICE_INVENTORY_TOOL: _present_device_inventory,
     }
     return presenters.get(tool_name, _present_control)(payload)
 
