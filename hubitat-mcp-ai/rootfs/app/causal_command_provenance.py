@@ -273,8 +273,21 @@ def correlate_command_producers(
             if boundary is None:
                 continue
 
-            candidates: list[tuple[float, datetime, dict[str, Any]]] = []
+            candidates: list[
+                tuple[float, datetime, dict[str, Any], bool]
+            ] = []
             event_name = f"command-{action}"
+            boundary_event = _matching_boundary_event(
+                evidence,
+                subject=subject,
+                action=action,
+                boundary=boundary,
+            )
+            boundary_producer = (
+                boundary_event.get("producedBy")
+                if isinstance(boundary_event, dict)
+                else None
+            )
             for event in command_events:
                 if str(event.get("name") or "").casefold() != event_name:
                     continue
@@ -288,17 +301,28 @@ def correlate_command_producers(
                 if event_time is None:
                     continue
                 delta = (boundary - event_time).total_seconds()
-                # Command provenance is directional: the command must be issued
-                # at or before the resulting state boundary. A later command,
-                # even if close in absolute time, cannot explain an earlier
-                # switch transition.
                 if 0.0 <= delta <= max(0.1, float(max_delta_seconds)):
-                    candidates.append((delta, event_time, event))
+                    candidates.append((delta, event_time, event, False))
+                    continue
+
+                # Some Hubitat integrations record the state event a few
+                # milliseconds before the corresponding command row. Never
+                # accept that inversion from timing alone. It is eligible only
+                # when the boundary event independently names the same APP
+                # producer, which makes the producer identity authoritative even
+                # though the two event timestamps landed in reverse order.
+                producer_type = str(producer.get("type") or "").casefold()
+                if (
+                    -0.25 <= delta < 0.0
+                    and producer_type == "app"
+                    and _same_producer(producer, boundary_producer)
+                ):
+                    candidates.append((abs(delta), event_time, event, True))
             if not candidates:
                 continue
 
             candidates.sort(key=lambda item: item[0])
-            _distance, command_time, event = candidates[0]
+            _distance, command_time, event, inverted = candidates[0]
             producer = dict(event.get("producedBy") or {})
             correlations.append({
                 "timelineId": str(timeline.get("id") or ""),
@@ -319,9 +343,19 @@ def correlate_command_producers(
                         (boundary - command_time).total_seconds() * 1000,
                         1,
                     ),
+                    "recordingOrderInverted": inverted,
                 },
+                "boundaryProducer": (
+                    dict(boundary_producer)
+                    if isinstance(boundary_producer, dict)
+                    else None
+                ),
                 "producer": producer,
-                "provenanceStrength": "authoritative-command-producer",
+                "provenanceStrength": (
+                    "authoritative-command-producer-boundary-corroborated"
+                    if inverted
+                    else "authoritative-command-producer"
+                ),
             })
     return correlations
 
