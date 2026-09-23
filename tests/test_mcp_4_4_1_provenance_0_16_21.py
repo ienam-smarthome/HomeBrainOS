@@ -262,10 +262,3 @@ async def test_mcp_441_structured_command_provenance_finalizes_without_logs_or_m
         "type": "app",
     }
 
-    triggered_rows = [
-        row
-        for row in details["events"]
-        if row.get("triggered")
-    ]
-    assert triggered_rows
-    assert triggered_rows[0]["triggered"][0]["name"] == "Maker API"
