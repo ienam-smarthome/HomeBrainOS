@@ -44,19 +44,19 @@ def _duration_text(start: Any, end: Any) -> str:
     seconds = round((right - left).total_seconds())
     if seconds < 60:
         return f"{seconds} seconds"
-    if seconds % 3600 == 0:
-        hours = seconds // 3600
-        return f"{hours} hour" if hours == 1 else f"{hours} hours"
-    if seconds % 60 == 0:
-        minutes = seconds // 60
-        if minutes < 60:
-            return f"{minutes} minutes"
-        hours, remainder = divmod(minutes, 60)
-        if remainder == 0:
-            return f"{hours} hours"
-        hour_word = "hour" if hours == 1 else "hours"
-        return f"{hours} {hour_word} {remainder} minutes"
-    return f"approximately {max(1, round(seconds / 60))} minutes"
+
+    rounded_minutes = max(1, round(seconds / 60))
+    exact_minute = seconds % 60 == 0
+    if rounded_minutes < 60:
+        prefix = "" if exact_minute else "approximately "
+        return f"{prefix}{rounded_minutes} minutes"
+
+    hours, remainder = divmod(rounded_minutes, 60)
+    hour_word = "hour" if hours == 1 else "hours"
+    prefix = "" if exact_minute else "approximately "
+    if remainder == 0:
+        return f"{prefix}{hours} {hour_word}"
+    return f"{prefix}{hours} {hour_word} {remainder} minutes"
 
 
 def _subject_command_events(
