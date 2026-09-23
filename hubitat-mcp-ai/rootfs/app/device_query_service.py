@@ -1340,12 +1340,46 @@ class DeviceQueryService:
                 "devices": devices,
             })
 
+        requested_group = str(arguments.get("group") or "").strip()
+        matched_group: dict[str, Any] | None = None
+        alternatives: list[dict[str, Any]] = []
+        if requested_group:
+            normalize = lambda value: re.sub(
+                r"[^a-z0-9]+", "",
+                str(value or "").casefold(),
+            )
+            wanted = normalize(requested_group)
+            exact = [
+                room
+                for room in rooms
+                if normalize(room.get("room")) == wanted
+            ]
+            if len(exact) == 1:
+                matched_group = exact[0]
+            elif not exact and wanted:
+                fuzzy = [
+                    room
+                    for room in rooms
+                    if (
+                        wanted in normalize(room.get("room"))
+                        or normalize(room.get("room")) in wanted
+                    )
+                ]
+                if len(fuzzy) == 1:
+                    matched_group = fuzzy[0]
+                elif len(fuzzy) > 1:
+                    alternatives = fuzzy
+
         data = {
             "count": len(unique),
             "rooms": rooms,
             "room_count": len(rooms),
             "complete": True,
             "read_scope": "authoritative device identity",
+            "mode": "group" if requested_group else "summary",
+            "requested_group": requested_group or None,
+            "matched_group": matched_group,
+            "alternatives": alternatives,
         }
         return MCPToolResult(
             DEVICE_INVENTORY_TOOL,
