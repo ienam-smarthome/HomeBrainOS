@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.17**.
+Current add-on version: **0.16.18**.
 
 ## Architecture
+
+0.16.18 completes the authoritative command-producer fast path for explicit switch OFF questions. When the observed OFF boundary has an adjacent `command-off` event with `producedBy`, HomeBrain now treats that direct metadata as sufficient, renders an OFF-focused deterministic explanation, and skips historical native-log reads and provider synthesis. The matching ON producer and run duration are retained as context when available. This activates automatically once the upstream Hubitat MCP server preserves native event provenance; otherwise the existing native-log fallback remains unchanged.
 
 0.16.17 promotes Hubitat command-event `producedBy` metadata above historical log correlation. Explicit switch-causal prefetch now reads scoped `command-on`/`command-off` event rows alongside switch history, preserves their producer identity, and can finalize a turn-on explanation directly when the ON command names its producer. This avoids slow/empty historical `hub_get_logs` queries after live logs have rolled over. Native-log provenance remains the fallback when command producer metadata is unavailable.
 
