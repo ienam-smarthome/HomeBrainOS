@@ -571,6 +571,14 @@ def window_event_evidence(
                 "description",
                 "date",
                 "isStateChange",
+                "source",
+                "type",
+                "triggered",
+                "physical",
+                "digital",
+                "deviceId",
+                "installedAppId",
+                "producedBy",
             )
             if key in item
         }
@@ -636,6 +644,14 @@ def boundary_event_evidence(
                 "description",
                 "date",
                 "isStateChange",
+                "source",
+                "type",
+                "triggered",
+                "physical",
+                "digital",
+                "deviceId",
+                "installedAppId",
+                "producedBy",
             )
             if key in item
         }
@@ -756,6 +772,14 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
                     "description",
                     "date",
                     "isStateChange",
+                    "source",
+                    "type",
+                    "triggered",
+                    "physical",
+                    "digital",
+                    "deviceId",
+                    "installedAppId",
+                    "producedBy",
                 )
                 if key in item
             }
@@ -765,6 +789,36 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         if bounded_window_events:
             details["windowEvents"] = bounded_window_events
             details["windowEventsTruncated"] = len(window_events) > 24
+
+    command_events = result_data.get("commandEvents")
+    if isinstance(command_events, list):
+        bounded_command_events = [
+            {
+                key: item.get(key)
+                for key in (
+                    "name",
+                    "value",
+                    "unit",
+                    "description",
+                    "date",
+                    "isStateChange",
+                    "source",
+                    "type",
+                    "triggered",
+                    "physical",
+                    "digital",
+                    "deviceId",
+                    "installedAppId",
+                    "producedBy",
+                )
+                if key in item
+            }
+            for item in command_events[:24]
+            if isinstance(item, dict)
+        ]
+        if bounded_command_events:
+            details["commandEvents"] = bounded_command_events
+            details["commandEventsTruncated"] = len(command_events) > 24
 
     boundary_events = result_data.get("boundaryEvents")
     if isinstance(boundary_events, list):
@@ -778,6 +832,14 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
                     "description",
                     "date",
                     "isStateChange",
+                    "source",
+                    "type",
+                    "triggered",
+                    "physical",
+                    "digital",
+                    "deviceId",
+                    "installedAppId",
+                    "producedBy",
                     "boundaryDeltaSeconds",
                 )
                 if key in item
@@ -803,6 +865,14 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
                     "description",
                     "date",
                     "isStateChange",
+                    "source",
+                    "type",
+                    "triggered",
+                    "physical",
+                    "digital",
+                    "deviceId",
+                    "installedAppId",
+                    "producedBy",
                 )
                 if key in item
             })
@@ -824,6 +894,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         or bool(details.get("observedEvents"))
         or bool(details.get("windowEvents"))
         or bool(details.get("boundaryEvents"))
+        or bool(details.get("commandEvents"))
         or any(
             key in result_data
             for key in (
