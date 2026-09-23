@@ -351,8 +351,8 @@ async def test_strong_causal_prefetch_reaches_final_reasoning_in_one_model_round
     assert {
         call["args"]["attribute"]
         for call in command_calls
-    } == {"command-on", "command-off"}
-    assert outcome.metrics["counters"]["causal_command_producer_reads"] == 2
+    } == {"command-on"}
+    assert outcome.metrics["counters"]["causal_command_producer_reads"] == 1
 
     log_calls = [
         arguments
