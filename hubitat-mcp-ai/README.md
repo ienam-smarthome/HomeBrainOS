@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.22**.
+Current add-on version: **0.16.23**.
 
 ## Architecture
+
+0.16.23 formalizes the direct causal-provenance fast path as capability-generic for ordinary switch devices such as lights, sockets and fans, and expands only unambiguous switch-state language. Phrases including `turned itself on/off`, `switched itself on/off`, `powered itself on/off`, `came back on`, `went back off`, `shut itself off`, and `started/stopped running` can now seed the same deterministic two-read path when one known device exposes switch state. Ambiguous non-state wording such as `stopped responding` remains on the normal reasoning path.
 
 0.16.22 reduces the direct causal-provenance critical path without increasing Hubitat concurrency. Explicit ON/OFF causal questions now start switch history and only the requested `command-on` or `command-off` provenance read together, using the existing two-call MCP semaphore. The opposite command source is no longer fetched just for narrative context; the deterministic renderer keeps the observed interval duration from switch history. General history callers without an explicit causal transition retain the richer two-direction provenance behavior.
 
