@@ -900,7 +900,15 @@ def device_inventory_tool() -> MCPTool:
         ),
         {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "group": {
+                    "type": "string",
+                    "description": (
+                        "Optional room/group name for a scoped inventory drill-down. "
+                        "Omit for a compact whole-home group-count summary."
+                    ),
+                },
+            },
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
