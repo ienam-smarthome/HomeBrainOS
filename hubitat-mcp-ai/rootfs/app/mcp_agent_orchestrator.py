@@ -603,6 +603,7 @@ class UnifiedMCPAgent:
             "attribute": seed.attribute,
             "_resolved_target": dict(seed.target),
             "_include_command_provenance": True,
+            "_causal_transition": seed.transition,
             # DeviceHistoryService interprets an explicit small state-history
             # limit as "latest transitions over the bounded seven-day horizon"
             # while still fetching enough rows internally for interval analysis.
@@ -666,7 +667,10 @@ class UnifiedMCPAgent:
         command_correlations = correlate_command_producers(
             self.evidence.receipts()
         )
-        if command_producer_turn_on_sufficient(command_correlations):
+        if (
+            seed.transition == "on"
+            and command_producer_turn_on_sufficient(command_correlations)
+        ):
             increment_active_metric("causal_command_producer_provenance")
             instruction = render_command_producer_evidence(
                 command_correlations
