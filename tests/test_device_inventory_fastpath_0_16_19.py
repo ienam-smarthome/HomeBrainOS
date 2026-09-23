@@ -95,7 +95,7 @@ async def test_device_inventory_groups_complete_identity_by_room() -> None:
     assert mcp.tool_calls == []
 
 
-def test_device_inventory_presenter_renders_every_room_without_truncation() -> None:
+def test_device_inventory_presenter_renders_compact_group_summary() -> None:
     data = {
         "count": 4,
         "rooms": [
@@ -123,10 +123,11 @@ def test_device_inventory_presenter_renders_every_room_without_truncation() -> N
     message = present_tool_result("homebrain_device_inventory", data)
 
     assert message is not None
-    assert message.startswith("4 Hubitat devices across 3 room groups.")
-    assert "**Bathroom (2):** Bathroom Light, Bathroom Motion" in message
-    assert "**Bedroom 1 (1):** Bedroom Meter" in message
-    assert "**Unassigned (1):** Hub Info (C8 Pro)" in message
+    assert message.startswith("4 Hubitat devices across 3 groups.")
+    assert "**Groups:** Bathroom 2 · Bedroom 1 1 · Unassigned 1." in message
+    assert "Bathroom Light" not in message
+    assert "Bedroom Meter" not in message
+    assert "list Bathroom devices" in message
 
 
 @pytest.mark.asyncio
@@ -156,10 +157,11 @@ async def test_inventory_requests_skip_model_and_remote_device_pagination(prompt
     assert mcp.tool_calls == []
     assert mcp.identity_reads == 1
     assert outcome.metrics["counters"].get("model_rounds", 0) == 0
-    assert outcome.message.startswith("4 Hubitat devices across 3 room groups.")
-    assert "Bathroom Light" in outcome.message
-    assert "Bedroom Meter" in outcome.message
-    assert "Hub Info (C8 Pro)" in outcome.message
+    assert outcome.message.startswith("4 Hubitat devices across 3 groups.")
+    assert "**Groups:** Bathroom 2 · Bedroom 1 1 · Unassigned 1." in outcome.message
+    assert "Bathroom Light" not in outcome.message
+    assert "Bedroom Meter" not in outcome.message
+    assert "Hub Info (C8 Pro)" not in outcome.message
 
     inventory_receipts = [
         receipt
