@@ -161,15 +161,21 @@ def correlate_command_producers(
     return correlations
 
 
-def command_producer_turn_on_sufficient(
+def command_producer_transition_sufficient(
     correlations: list[dict[str, Any]],
+    transition: str,
 ) -> bool:
-    """A direct producer on an adjacent command-on is sufficient for turn-on."""
+    """Return whether direct producer provenance proves the requested boundary."""
+
+    action = str(transition or "").strip().casefold()
+    boundary_role = {"on": "start", "off": "end"}.get(action)
+    if boundary_role is None:
+        return False
 
     return any(
         isinstance(row, dict)
-        and str(row.get("boundaryRole") or "") == "start"
-        and str(row.get("action") or "") == "on"
+        and str(row.get("boundaryRole") or "") == boundary_role
+        and str(row.get("action") or "") == action
         and isinstance(row.get("producer"), dict)
         and str(row["producer"].get("label") or "").strip()
         and isinstance(row.get("command"), dict)
@@ -177,97 +183,164 @@ def command_producer_turn_on_sufficient(
     )
 
 
+def command_producer_turn_on_sufficient(
+    correlations: list[dict[str, Any]],
+) -> bool:
+    """Compatibility wrapper for the original 0.16.17 turn-on contract."""
+
+    return command_producer_transition_sufficient(correlations, "on")
+
+
 def render_command_producer_answer(
     evidence: list[dict[str, Any]],
+    *,
+    transition: str = "on",
 ) -> str | None:
     """Render the strongest direct command-producer result without a model."""
 
     correlations = correlate_command_producers(evidence)
-    starts = [
+    action = str(transition or "").strip().casefold()
+    if action not in {"on", "off"}:
+        action = "on"
+    boundary_role = "start" if action == "on" else "end"
+
+    matches = [
         row
         for row in correlations
-        if str(row.get("boundaryRole") or "") == "start"
-        and str(row.get("action") or "") == "on"
+        if str(row.get("boundaryRole") or "") == boundary_role
+        and str(row.get("action") or "") == action
         and isinstance(row.get("producer"), dict)
     ]
-    if not starts:
+    if not matches:
         return None
 
-    starts.sort(
+    matches.sort(
         key=lambda row: _parse_time(row.get("stateBoundary"))
         or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
-    start = starts[0]
-    timeline_id = str(start.get("timelineId") or "")
-    end = next(
-        (
-            row
-            for row in correlations
-            if str(row.get("timelineId") or "") == timeline_id
-            and str(row.get("boundaryRole") or "") == "end"
-            and str(row.get("action") or "") == "off"
-        ),
-        None,
-    )
-
-    subject = str(start.get("subject") or "the device").strip()
-    producer = start.get("producer") or {}
+    focus = matches[0]
+    timeline_id = str(focus.get("timelineId") or "")
+    subject = str(focus.get("subject") or "the device").strip()
+    producer = focus.get("producer") or {}
     producer_label = str(producer.get("label") or "").strip()
-    command = start.get("command") or {}
+    command = focus.get("command") or {}
     command_time = _clock_text(command.get("date"))
-    state_time = _clock_text(start.get("stateBoundary"))
+    state_time = _clock_text(focus.get("stateBoundary"))
     delay = command.get("commandToStateMs")
 
-    paragraphs = [
-        (
-            f"Hubitat records the ON command for {subject} as produced by "
-            f"{producer_label}."
-        ),
-        (
-            f"The ON command was issued at {command_time}, followed by the "
-            f"device reporting ON at {state_time}"
-            + (
-                f" ({abs(float(delay)):g} ms later)."
-                if delay not in {None, ""}
-                else "."
+    if action == "off":
+        start_row = next(
+            (
+                row
+                for row in correlations
+                if str(row.get("timelineId") or "") == timeline_id
+                and str(row.get("boundaryRole") or "") == "start"
+                and str(row.get("action") or "") == "on"
+            ),
+            None,
+        )
+        paragraphs = [
+            (
+                f"Hubitat records the OFF command for {subject} as produced by "
+                f"{producer_label}."
+            ),
+            (
+                f"The OFF command was issued at {command_time}, followed by the "
+                f"device reporting OFF at {state_time}"
+                + (
+                    f" ({abs(float(delay)):g} ms later)."
+                    if delay not in {None, ""}
+                    else "."
+                )
+            ),
+        ]
+        if isinstance(start_row, dict):
+            start_producer = start_row.get("producer") or {}
+            start_label = str(start_producer.get("label") or "").strip()
+            start_command = start_row.get("command") or {}
+            on_command_time = _clock_text(start_command.get("date"))
+            on_state_time = _clock_text(start_row.get("stateBoundary"))
+            on_delay = start_command.get("commandToStateMs")
+            duration = _duration_text(
+                start_row.get("stateBoundary"),
+                focus.get("stateBoundary"),
             )
-        ),
-    ]
+            context = "This ended"
+            if duration:
+                context += f" an observed run of {duration}"
+            else:
+                context += " the observed ON interval"
+            if start_label:
+                context += (
+                    f". The matching ON command was produced by {start_label} "
+                    f"at {on_command_time}, and the device reported ON at "
+                    f"{on_state_time}"
+                )
+                if on_delay not in {None, ""}:
+                    context += f" ({abs(float(on_delay)):g} ms later)"
+            context += "."
+            paragraphs.append(context)
+    else:
+        start_row = focus
+        end_row = next(
+            (
+                row
+                for row in correlations
+                if str(row.get("timelineId") or "") == timeline_id
+                and str(row.get("boundaryRole") or "") == "end"
+                and str(row.get("action") or "") == "off"
+            ),
+            None,
+        )
+        paragraphs = [
+            (
+                f"Hubitat records the ON command for {subject} as produced by "
+                f"{producer_label}."
+            ),
+            (
+                f"The ON command was issued at {command_time}, followed by the "
+                f"device reporting ON at {state_time}"
+                + (
+                    f" ({abs(float(delay)):g} ms later)."
+                    if delay not in {None, ""}
+                    else "."
+                )
+            ),
+        ]
 
-    if isinstance(end, dict):
-        end_producer = end.get("producer") or {}
-        end_label = str(end_producer.get("label") or "").strip()
-        end_command = end.get("command") or {}
-        off_command_time = _clock_text(end_command.get("date"))
-        off_state_time = _clock_text(end.get("stateBoundary"))
-        off_delay = end_command.get("commandToStateMs")
-        duration = _duration_text(
-            start.get("stateBoundary"),
-            end.get("stateBoundary"),
-        )
-        ending = (
-            f"At {off_command_time}, the OFF command was produced by "
-            f"{end_label}, and the device reported OFF at {off_state_time}"
-        )
-        if off_delay not in {None, ""}:
-            ending += f" ({abs(float(off_delay)):g} ms later)"
-        if duration:
-            ending += f", ending an observed run of {duration}"
-        ending += "."
-        paragraphs.append(ending)
-    elif start.get("open"):
-        paragraphs.append(
-            "The current ON interval is still open, so no closing OFF command "
-            "or completed run duration has been observed yet."
-        )
+        if isinstance(end_row, dict):
+            end_producer = end_row.get("producer") or {}
+            end_label = str(end_producer.get("label") or "").strip()
+            end_command = end_row.get("command") or {}
+            off_command_time = _clock_text(end_command.get("date"))
+            off_state_time = _clock_text(end_row.get("stateBoundary"))
+            off_delay = end_command.get("commandToStateMs")
+            duration = _duration_text(
+                start_row.get("stateBoundary"),
+                end_row.get("stateBoundary"),
+            )
+            ending = (
+                f"At {off_command_time}, the OFF command was produced by "
+                f"{end_label}, and the device reported OFF at {off_state_time}"
+            )
+            if off_delay not in {None, ""}:
+                ending += f" ({abs(float(off_delay)):g} ms later)"
+            if duration:
+                ending += f", ending an observed run of {duration}"
+            ending += "."
+            paragraphs.append(ending)
+        elif start_row.get("open"):
+            paragraphs.append(
+                "The current ON interval is still open, so no closing OFF command "
+                "or completed run duration has been observed yet."
+            )
 
     paragraphs.append(
         "The Produced By field identifies the Hubitat app/action that issued "
         "the command. It does not identify the person who initiated that action."
     )
     return "\n\n".join(paragraphs)
-
 
 def render_command_producer_evidence(
     correlations: list[dict[str, Any]],
@@ -295,6 +368,7 @@ def render_command_producer_evidence(
 
 
 __all__ = [
+    "command_producer_transition_sufficient",
     "command_producer_turn_on_sufficient",
     "correlate_command_producers",
     "render_command_producer_answer",

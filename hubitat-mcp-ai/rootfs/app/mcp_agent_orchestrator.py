@@ -30,7 +30,7 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
 )
 from causal_command_provenance import (
-    command_producer_turn_on_sufficient,
+    command_producer_transition_sufficient,
     correlate_command_producers,
     render_command_producer_answer,
     render_command_producer_evidence,
@@ -563,7 +563,7 @@ class UnifiedMCPAgent:
         catalog: ToolDiscoveryCatalog,
         completed_calls: set[str],
         messages: list[dict[str, Any]],
-    ) -> tuple[str, str | None]:
+    ) -> tuple[str, str | None, str | None]:
         """Gather explicit switch-causal evidence before the first model round.
 
         This is deliberately narrower than general causal reasoning. It activates
@@ -572,28 +572,28 @@ class UnifiedMCPAgent:
         the same DeviceHistoryService and native-log correlation used by the
         ordinary model-selected path.
 
-        Returns (status, canonical_subject_key), where status is one of:
-        not_applicable, empty, sufficient, partial. The subject key lets the
-        caller keep the prefetched device anchored as the investigative subject
-        if later fallback reasoning inspects controller histories.
+        Returns (status, canonical_subject_key, transition), where status is
+        one of: not_applicable, empty, sufficient, partial. The subject key lets
+        the caller keep the prefetched device anchored as the investigative
+        subject if later fallback reasoning inspects controller histories.
         """
 
         if not self.causal_subject_prefetch_enabled:
-            return "not_applicable", None
+            return "not_applicable", None, None
 
         history_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
         if history_tool is None:
-            return "not_applicable", None
+            return "not_applicable", None, None
 
         try:
             identities = await self.mcp.get_device_identities()
         except Exception as exc:
             logger.debug("Causal subject prefetch identity unavailable: %s", exc)
-            return "not_applicable", None
+            return "not_applicable", None, None
 
         seed = causal_subject_seed(user_prompt, identities)
         if seed is None:
-            return "not_applicable", None
+            return "not_applicable", None, None
         subject_key = re.sub(
             r"[^a-z0-9]", "", seed.name.casefold()
         ) or None
@@ -616,7 +616,7 @@ class UnifiedMCPAgent:
             default=str,
         )
         if signature in completed_calls:
-            return "partial", subject_key
+            return "partial", subject_key, seed.transition
         completed_calls.add(signature)
 
         increment_active_metric("causal_subject_prefetch")
@@ -645,7 +645,7 @@ class UnifiedMCPAgent:
         })
 
         if not execution.success or execution.result is None:
-            return "partial", subject_key
+            return "partial", subject_key, seed.transition
         data = (
             execution.result.data
             if isinstance(execution.result.data, dict)
@@ -662,14 +662,14 @@ class UnifiedMCPAgent:
                     "construct a cause for an unobserved transition."
                 ),
             })
-            return "empty", subject_key
+            return "empty", subject_key, seed.transition
 
         command_correlations = correlate_command_producers(
             self.evidence.receipts()
         )
-        if (
-            seed.transition == "on"
-            and command_producer_turn_on_sufficient(command_correlations)
+        if command_producer_transition_sufficient(
+            command_correlations,
+            seed.transition,
         ):
             increment_active_metric("causal_command_producer_provenance")
             instruction = render_command_producer_evidence(
@@ -677,7 +677,7 @@ class UnifiedMCPAgent:
             )
             if instruction:
                 messages.append({"role": "user", "content": instruction})
-            return "sufficient", subject_key
+            return "sufficient", subject_key, seed.transition
 
         sufficient = await self._collect_causal_boundary_logs(
             catalog=catalog,
@@ -685,9 +685,9 @@ class UnifiedMCPAgent:
             messages=messages,
         )
         return (
-            ("sufficient", subject_key)
+            ("sufficient", subject_key, seed.transition)
             if sufficient
-            else ("partial", subject_key)
+            else ("partial", subject_key, seed.transition)
         )
 
 
@@ -1530,7 +1530,7 @@ class UnifiedMCPAgent:
         causal_completion_mode = False
 
         if causal_request:
-            causal_prefetch, prefetched_subject_key = (
+            causal_prefetch, prefetched_subject_key, prefetched_transition = (
                 await self._prefetch_explicit_causal_subject(
                     user_prompt,
                     catalog=catalog,
@@ -1544,7 +1544,8 @@ class UnifiedMCPAgent:
                 deterministic_answer = (
                     (
                         render_command_producer_answer(
-                            self.evidence.receipts()
+                            self.evidence.receipts(),
+                            transition=prefetched_transition or "on",
                         )
                         or render_strong_native_provenance_answer(
                             self.evidence.receipts()
