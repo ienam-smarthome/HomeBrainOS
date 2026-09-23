@@ -245,10 +245,39 @@ _DEVICE_INVENTORY_PATTERNS = (
     r"^\s*what\s+devices\s+(?:do\s+i\s+have|are\s+on\s+the\s+hub)\s*[?.!]*$",
 )
 
+_DEVICE_INVENTORY_SCOPE_PATTERNS = (
+    r"^\s*(?:please\s+)?(?:list|show)(?:\s+me)?\s+(?:all\s+)?(?P<group>.+?)\s+devices\s*[?.!]*$",
+    r"^\s*(?:please\s+)?(?:list|show)(?:\s+me)?\s+devices\s+(?:in|from)\s+(?:the\s+)?(?P<group>.+?)\s*[?.!]*$",
+)
 
-def _is_device_inventory_request(prompt: str) -> bool:
+_DEVICE_INVENTORY_LIVE_QUALIFIERS = {
+    "active", "inactive", "on", "off", "online", "offline", "open", "closed",
+    "low battery", "low batteries", "battery", "batteries", "motion", "motions",
+    "light", "lights", "switch", "switches", "sensor", "sensors",
+}
+
+
+def _device_inventory_arguments(prompt: str) -> dict[str, str] | None:
+    """Return deterministic inventory arguments without stealing live-state reads."""
+
     text = str(prompt or "").strip()
-    return any(re.search(pattern, text, re.I) is not None for pattern in _DEVICE_INVENTORY_PATTERNS)
+    if not text:
+        return None
+    if any(re.search(pattern, text, re.I) is not None for pattern in _DEVICE_INVENTORY_PATTERNS):
+        return {}
+
+    for pattern in _DEVICE_INVENTORY_SCOPE_PATTERNS:
+        match = re.search(pattern, text, re.I)
+        if match is None:
+            continue
+        group = str(match.group("group") or "").strip(" .?!")
+        if not group:
+            return None
+        normalized = re.sub(r"\s+", " ", group.casefold()).strip()
+        if normalized in _DEVICE_INVENTORY_LIVE_QUALIFIERS:
+            return None
+        return {"group": group}
+    return None
 
 
 # Successful temporal history is strong structured evidence. Straight factual
@@ -1441,12 +1470,13 @@ class UnifiedMCPAgent:
                 "Nothing was executed. Submit the original request again and only "
                 "confirm when the response carries a verified pending action."
             )
-        if _is_device_inventory_request(user_prompt):
+        inventory_arguments = _device_inventory_arguments(user_prompt)
+        if inventory_arguments is not None:
             inventory_tool = catalog.available_tool(_LOCAL_DEVICE_INVENTORY_TOOL)
             if inventory_tool is not None:
                 execution = await self.executor.execute(
                     _LOCAL_DEVICE_INVENTORY_TOOL,
-                    {},
+                    inventory_arguments,
                     tool=inventory_tool,
                     supports_live_claim=False,
                     evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_INVENTORY_TOOL],
