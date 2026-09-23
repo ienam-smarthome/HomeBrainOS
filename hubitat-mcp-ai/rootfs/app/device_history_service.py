@@ -398,13 +398,20 @@ class DeviceHistoryService:
             )
             return rows
 
+        increment_active_metric(
+            "causal_command_producer_reads",
+            len(actions),
+        )
         batches = await asyncio.gather(
             *(read_one(action) for action in actions)
         )
         rows = [item for batch in batches for item in batch]
         rows.sort(
-            key=lambda item: self._event_datetime(item.get("date"))
-            or datetime.min.astimezone(),
+            key=lambda item: (
+                self._event_datetime(item.get("date")).timestamp()
+                if self._event_datetime(item.get("date")) is not None
+                else float("-inf")
+            ),
             reverse=True,
         )
         return rows
@@ -997,10 +1004,16 @@ class DeviceHistoryService:
             and attribute_cf == "switch"
             and isinstance(temporal_analysis, dict)
         ):
+            command_actions = (
+                ("on",)
+                if temporal_analysis.get("openActiveInterval") is True
+                else ("on", "off")
+            )
             command_events = await self._read_command_events(
                 device_id=str(device_id),
                 label=label,
                 hours_back=hours_back,
+                actions=command_actions,
             )
 
         # Preserve event rows close to deterministic interval boundaries from
