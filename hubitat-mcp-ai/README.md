@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.15**.
+Current add-on version: **0.16.16**.
 
 ## Architecture
+
+0.16.16 extends the zero-model causal fast path to currently-open switch intervals. A physical controller/input immediately preceding the observed ON command is sufficient start-boundary provenance for a still-open run; HomeBrain does not wait for an OFF event that has not happened yet. The answer explicitly says the interval is open and that no end-boundary corroboration or duration exists. The prefetched device identity is also persisted as the investigative subject key so later controller histories cannot be mistaken for the causal subject or trigger an empty-subject stop.
 
 0.16.15 removes the last provider round from the strongest explicit switch-causal path. The causal prefetch now reuses its already-grounded structural device identity inside DeviceHistoryService instead of paying for another targeted device lookup. When the existing START/END native-log correlator proves the same physical controller/input immediately before both subject commands, a narrow deterministic renderer produces the final answer directly with the same provenance and mapping/person caveats. Partial or ambiguous evidence still falls back to the 0.16.14 model synthesis path. Set `causal_deterministic_final_enabled: false` to keep the prefetch but restore provider-authored final synthesis.
 
