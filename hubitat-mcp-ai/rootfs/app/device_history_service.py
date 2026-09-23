@@ -552,10 +552,41 @@ class DeviceHistoryService:
             "limit": fetch_limit,
         }
         source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
+
+        # Explicit causal prefetch already tells us which transition the user
+        # asked about. Start that one command-event read alongside switch
+        # history so the existing two-call MCP concurrency budget is fully
+        # utilized. The opposite command is optional narrative context and no
+        # longer delays direct-provenance finalization.
+        requested_transition = str(
+            arguments.get("_causal_transition") or ""
+        ).strip().casefold()
+        command_prefetch_task: asyncio.Task[list[dict[str, Any]]] | None = None
+        if (
+            bool(arguments.get("_include_command_provenance"))
+            and attribute_cf == "switch"
+            and requested_transition in {"on", "off"}
+        ):
+            command_prefetch_task = asyncio.create_task(
+                self._read_command_events(
+                    device_id=str(device_id),
+                    label=label,
+                    hours_back=hours_back,
+                    actions=(requested_transition,),
+                ),
+                name=f"command-provenance-{device_id}-{requested_transition}",
+            )
+
         started = time.monotonic()
         try:
             source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
         except Exception as exc:
+            if command_prefetch_task is not None:
+                command_prefetch_task.cancel()
+                await asyncio.gather(
+                    command_prefetch_task,
+                    return_exceptions=True,
+                )
             elapsed_ms = round((time.monotonic() - started) * 1000)
             self._record_evidence(
                 DEVICE_GATEWAY,
@@ -916,6 +947,12 @@ class DeviceHistoryService:
             try:
                 source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
             except Exception as exc:
+                if command_prefetch_task is not None:
+                    command_prefetch_task.cancel()
+                    await asyncio.gather(
+                        command_prefetch_task,
+                        return_exceptions=True,
+                    )
                 elapsed_ms = round((time.monotonic() - started) * 1000)
                 self._record_evidence(
                     DEVICE_GATEWAY,
@@ -966,6 +1003,12 @@ class DeviceHistoryService:
             evidence_kind="authoritative_device_event_history",
         )
         if not success:
+            if command_prefetch_task is not None:
+                command_prefetch_task.cancel()
+                await asyncio.gather(
+                    command_prefetch_task,
+                    return_exceptions=True,
+                )
             data = {
                 "success": False,
                 "requested": requested,
@@ -1006,23 +1049,32 @@ class DeviceHistoryService:
             else:
                 temporal_analysis = analyze_state_intervals(attribute, events)
 
+        prefetched_command_events: list[dict[str, Any]] | None = None
+        if command_prefetch_task is not None:
+            prefetched_command_events = await command_prefetch_task
+
         command_events: list[dict[str, Any]] = []
         if (
             bool(arguments.get("_include_command_provenance"))
             and attribute_cf == "switch"
             and isinstance(temporal_analysis, dict)
         ):
-            command_actions = (
-                ("on",)
-                if temporal_analysis.get("openActiveInterval") is True
-                else ("on", "off")
-            )
-            command_events = await self._read_command_events(
-                device_id=str(device_id),
-                label=label,
-                hours_back=hours_back,
-                actions=command_actions,
-            )
+            if prefetched_command_events is not None:
+                command_events = prefetched_command_events
+            else:
+                # General history callers without an explicit causal transition
+                # keep the established richer provenance behavior.
+                command_actions = (
+                    ("on",)
+                    if temporal_analysis.get("openActiveInterval") is True
+                    else ("on", "off")
+                )
+                command_events = await self._read_command_events(
+                    device_id=str(device_id),
+                    label=label,
+                    hours_back=hours_back,
+                    actions=command_actions,
+                )
 
         # Preserve event rows close to deterministic interval boundaries from
         # the full fetched source page. Command rows are merged only for
