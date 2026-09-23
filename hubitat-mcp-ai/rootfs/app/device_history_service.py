@@ -330,6 +330,86 @@ class DeviceHistoryService:
             return None
         return f"{offset[:3]}:{offset[3:]}" if len(offset) == 5 else offset
 
+    async def _read_command_events(
+        self,
+        *,
+        device_id: str,
+        label: str,
+        hours_back: int,
+        actions: tuple[str, ...] = ("on", "off"),
+    ) -> list[dict[str, Any]]:
+        """Read command event rows with Hubitat producer metadata.
+
+        Command history is a distinct event stream from switch state. Query the
+        exact command names so high-churn power/RTT telemetry cannot crowd the
+        causal rows out of a generic newest-first page. A zero-row result is not
+        retried generically here; native-log provenance remains the established
+        fallback when the upstream command filter is unavailable.
+        """
+
+        async def read_one(action: str) -> list[dict[str, Any]]:
+            event_name = f"command-{action}"
+            event_args = {
+                "deviceId": str(device_id),
+                "hoursBack": int(hours_back),
+                "limit": 20,
+                "attribute": event_name,
+            }
+            source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
+            started = time.monotonic()
+            try:
+                source = await self.mcp.call_tool(
+                    DEVICE_GATEWAY,
+                    source_arguments,
+                )
+            except Exception as exc:
+                self._record_evidence(
+                    DEVICE_GATEWAY,
+                    source_arguments,
+                    success=False,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                    supports_live_claim=True,
+                    evidence_kind="authoritative_command_event_history",
+                )
+                return []
+
+            success = _shared_tool_succeeded(source)
+            rows = self._events(source.data, limit=20) if success else []
+            rows = [
+                row
+                for row in rows
+                if str(row.get("name") or "").casefold() == event_name
+            ]
+            self._record_evidence(
+                DEVICE_GATEWAY,
+                source_arguments,
+                success=success,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{len(rows)} {event_name} events for {label!r}",
+                supports_live_claim=True,
+                evidence_kind="authoritative_command_event_history",
+                details={
+                    "label": label,
+                    "eventName": event_name,
+                    "events": rows[:12],
+                    "eventCount": len(rows),
+                } if success else None,
+            )
+            return rows
+
+        batches = await asyncio.gather(
+            *(read_one(action) for action in actions)
+        )
+        rows = [item for batch in batches for item in batch]
+        rows.sort(
+            key=lambda item: self._event_datetime(item.get("date"))
+            or datetime.min.astimezone(),
+            reverse=True,
+        )
+        return rows
+
+
     @staticmethod
     def _fallback_resolution_name(requested: str) -> str | None:
         """Return one bounded broader lookup token for an exact-filter miss.
