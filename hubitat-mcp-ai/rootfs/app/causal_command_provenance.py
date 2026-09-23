@@ -390,6 +390,138 @@ def command_producer_turn_on_sufficient(
     return command_producer_transition_sufficient(correlations, "on")
 
 
+def _command_state_timing_text(
+    *,
+    action: str,
+    subject: str,
+    producer_label: str,
+    command_time: str,
+    state_time: str,
+    delay_ms: Any,
+    inverted: bool,
+) -> str:
+    action_upper = action.upper()
+    try:
+        delay_value = float(delay_ms)
+    except (TypeError, ValueError):
+        delay_value = 0.0
+
+    if inverted:
+        return (
+            f"The {action_upper} state for {subject} was recorded at {state_time}; "
+            f"an adjacent {action_upper} command from {producer_label} was recorded "
+            f"{abs(delay_value):g} ms later. The state boundary independently names "
+            f"the same app producer, so this is treated as a recording-order "
+            f"inversion rather than a later unrelated command."
+        )
+
+    return (
+        f"The {action_upper} command was issued at {command_time}, followed by the "
+        f"device reporting {action_upper} at {state_time}"
+        + (
+            f" ({abs(delay_value):g} ms later)."
+            if delay_ms not in {None, ""}
+            else "."
+        )
+    )
+
+
+def render_boundary_producer_answer(
+    evidence: list[dict[str, Any]],
+    *,
+    transition: str,
+) -> str | None:
+    """Render direct switch-boundary provenance without overstating causation."""
+
+    action = str(transition or "").strip().casefold()
+    role = {"on": "start", "off": "end"}.get(action)
+    if role is None:
+        return None
+
+    matches = [
+        row
+        for row in correlate_boundary_producers(evidence)
+        if str(row.get("boundaryRole") or "") == role
+        and str(row.get("action") or "") == action
+    ]
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda row: _parse_time(row.get("stateBoundary"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    focus = matches[0]
+    subject = str(focus.get("subject") or "the device").strip()
+    producer = focus.get("producer") or {}
+    producer_label = str(producer.get("label") or "").strip()
+    producer_type = str(producer.get("type") or "").strip().casefold()
+    if not producer_label or producer_label.casefold() == subject.casefold():
+        return None
+
+    event = focus.get("event") or {}
+    event_type = str(event.get("type") or "").strip().casefold()
+    state_time = _clock_text(focus.get("stateBoundary"))
+    action_upper = action.upper()
+    paragraphs: list[str] = []
+
+    if producer_type == "app":
+        paragraphs.append(
+            f"Hubitat records the {action_upper} state event for {subject} as "
+            f"produced by the app {producer_label}."
+        )
+        paragraphs.append(
+            f"The device reported {action_upper} at {state_time}. No separate "
+            f"command-{action} producer was recorded for this boundary, so this "
+            f"is direct state-event provenance rather than a separate command row."
+        )
+    else:
+        qualifier = f" {event_type}" if event_type else ""
+        paragraphs.append(
+            f"Hubitat did not record a command-{action} producer for {subject}. "
+            f"The {action_upper} state event at {state_time} is marked{qualifier} "
+            f"and was produced by {producer_label}."
+        )
+        paragraphs.append(
+            f"This identifies the reporting path into Hubitat, not the exact "
+            f"initiating action. From this evidence alone, HomeBrain cannot "
+            f"distinguish a bridge-side button/switch action, vendor app command, "
+            f"vendor-native automation, or another action behind {producer_label}."
+        )
+
+    triggered = [
+        str(item.get("name") or "").strip()
+        for item in event.get("triggered", [])
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    ]
+    if triggered:
+        unique_triggered = list(dict.fromkeys(triggered))
+        paragraphs.append(
+            "Hubitat also records these downstream listeners as triggered by the "
+            f"state event: {', '.join(unique_triggered)}. Their presence shows "
+            "reaction to the state change; it does not prove they initiated it."
+        )
+
+    if action == "on":
+        interval_end = focus.get("intervalEnd")
+        duration = _duration_text(focus.get("stateBoundary"), interval_end)
+        if duration:
+            paragraphs.append(
+                f"The observed ON interval ended at {_clock_text(interval_end)} "
+                f"after {duration}."
+            )
+    else:
+        interval_start = focus.get("intervalStart")
+        duration = _duration_text(interval_start, focus.get("stateBoundary"))
+        if duration:
+            paragraphs.append(
+                f"This ended an observed run of {duration}, which began when the "
+                f"device reported ON at {_clock_text(interval_start)}."
+            )
+
+    return "\n\n".join(paragraphs)
+
+
 def render_command_producer_answer(
     evidence: list[dict[str, Any]],
     *,
@@ -444,14 +576,14 @@ def render_command_producer_answer(
                 f"Hubitat records the OFF command for {subject} as produced by "
                 f"{producer_label}."
             ),
-            (
-                f"The OFF command was issued at {command_time}, followed by the "
-                f"device reporting OFF at {state_time}"
-                + (
-                    f" ({abs(float(delay)):g} ms later)."
-                    if delay not in {None, ""}
-                    else "."
-                )
+            _command_state_timing_text(
+                action="off",
+                subject=subject,
+                producer_label=producer_label,
+                command_time=command_time,
+                state_time=state_time,
+                delay_ms=delay,
+                inverted=bool(command.get("recordingOrderInverted")),
             ),
         ]
         if isinstance(start_row, dict):
@@ -508,14 +640,14 @@ def render_command_producer_answer(
                 f"Hubitat records the ON command for {subject} as produced by "
                 f"{producer_label}."
             ),
-            (
-                f"The ON command was issued at {command_time}, followed by the "
-                f"device reporting ON at {state_time}"
-                + (
-                    f" ({abs(float(delay)):g} ms later)."
-                    if delay not in {None, ""}
-                    else "."
-                )
+            _command_state_timing_text(
+                action="on",
+                subject=subject,
+                producer_label=producer_label,
+                command_time=command_time,
+                state_time=state_time,
+                delay_ms=delay,
+                inverted=bool(command.get("recordingOrderInverted")),
             ),
         ]
 
@@ -589,9 +721,12 @@ def render_command_producer_evidence(
 
 
 __all__ = [
+    "boundary_producer_transition_sufficient",
     "command_producer_transition_sufficient",
     "command_producer_turn_on_sufficient",
+    "correlate_boundary_producers",
     "correlate_command_producers",
+    "render_boundary_producer_answer",
     "render_command_producer_answer",
     "render_command_producer_evidence",
 ]
