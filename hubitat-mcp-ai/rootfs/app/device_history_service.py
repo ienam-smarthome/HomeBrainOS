@@ -552,41 +552,10 @@ class DeviceHistoryService:
             "limit": fetch_limit,
         }
         source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
-
-        # Explicit causal prefetch already tells us which transition the user
-        # asked about. Start that one command-event read alongside switch
-        # history so the existing two-call MCP concurrency budget is fully
-        # utilized. The opposite command is optional narrative context and no
-        # longer delays direct-provenance finalization.
-        requested_transition = str(
-            arguments.get("_causal_transition") or ""
-        ).strip().casefold()
-        command_prefetch_task: asyncio.Task[list[dict[str, Any]]] | None = None
-        if (
-            bool(arguments.get("_include_command_provenance"))
-            and attribute_cf == "switch"
-            and requested_transition in {"on", "off"}
-        ):
-            command_prefetch_task = asyncio.create_task(
-                self._read_command_events(
-                    device_id=str(device_id),
-                    label=label,
-                    hours_back=hours_back,
-                    actions=(requested_transition,),
-                ),
-                name=f"command-provenance-{device_id}-{requested_transition}",
-            )
-
         started = time.monotonic()
         try:
             source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
         except Exception as exc:
-            if command_prefetch_task is not None:
-                command_prefetch_task.cancel()
-                await asyncio.gather(
-                    command_prefetch_task,
-                    return_exceptions=True,
-                )
             elapsed_ms = round((time.monotonic() - started) * 1000)
             self._record_evidence(
                 DEVICE_GATEWAY,
@@ -891,10 +860,41 @@ class DeviceHistoryService:
             event_args["attribute"] = upstream_scoped_attribute
 
         source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
+
+        # An explicit causal request already names the boundary it cares about.
+        # Start only that command-event read alongside switch history. This uses
+        # the existing two-call MCP concurrency budget without raising global
+        # hub concurrency or waiting for an opposite-direction command that is
+        # only optional narrative context.
+        requested_transition = str(
+            arguments.get("_causal_transition") or ""
+        ).strip().casefold()
+        command_prefetch_task: asyncio.Task[list[dict[str, Any]]] | None = None
+        if (
+            bool(arguments.get("_include_command_provenance"))
+            and attribute_cf == "switch"
+            and requested_transition in {"on", "off"}
+        ):
+            command_prefetch_task = asyncio.create_task(
+                self._read_command_events(
+                    device_id=str(device_id),
+                    label=label,
+                    hours_back=hours_back,
+                    actions=(requested_transition,),
+                ),
+                name=f"command-provenance-{device_id}-{requested_transition}",
+            )
+
         started = time.monotonic()
         try:
             source = await self.mcp.call_tool(DEVICE_GATEWAY, source_arguments)
         except Exception as exc:
+            if command_prefetch_task is not None:
+                command_prefetch_task.cancel()
+                await asyncio.gather(
+                    command_prefetch_task,
+                    return_exceptions=True,
+                )
             elapsed_ms = round((time.monotonic() - started) * 1000)
             self._record_evidence(
                 DEVICE_GATEWAY,
