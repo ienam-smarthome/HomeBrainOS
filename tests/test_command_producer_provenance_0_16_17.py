@@ -347,6 +347,7 @@ async def test_agent_finalizes_from_command_producer_without_logs_or_provider() 
     assert counters.get("model_rounds", 0) == 0
     assert counters["causal_subject_prefetch"] == 1
     assert counters["causal_command_producer_reads"] == 1
+    assert counters["tool_calls"] == 3
     assert counters["causal_command_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
     assert counters["investigative_finalization"] == 1
