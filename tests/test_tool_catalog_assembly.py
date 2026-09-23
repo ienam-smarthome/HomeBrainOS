@@ -35,8 +35,6 @@ def test_remote_tools_are_preserved_alongside_local_tools() -> None:
 def test_empty_remote_tools_still_yields_full_local_set() -> None:
     catalog = build_request_tool_catalog([])
 
-    # Eleven safe-read tools (added homebrain_location_events in 0.10.410,
-    # so the general model loop can reason over location/mode event history
-    # now that the deterministic dispatch branch for it is opt-in rather
-    # than the only way to reach that data) plus the one control tool.
-    assert len(catalog.available_names) == 12
+    # Twelve safe-read tools (including the deterministic whole-home device
+    # inventory) plus the one control tool.
+    assert len(catalog.available_names) == 13
