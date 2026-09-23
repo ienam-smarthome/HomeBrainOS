@@ -142,6 +142,8 @@ def correlate_command_producers(
                 "boundaryRole": role,
                 "subject": subject,
                 "open": bool(timeline.get("open")),
+                "intervalStart": timeline.get("start"),
+                "intervalEnd": timeline.get("end"),
                 "stateBoundary": boundary.isoformat(),
                 "action": action,
                 "command": {
@@ -281,6 +283,17 @@ def render_command_producer_answer(
                     context += f" ({abs(float(on_delay)):g} ms later)"
             context += "."
             paragraphs.append(context)
+        else:
+            interval_start = focus.get("intervalStart")
+            duration = _duration_text(
+                interval_start,
+                focus.get("stateBoundary"),
+            )
+            if duration:
+                paragraphs.append(
+                    f"This ended an observed run of {duration}, which began when "
+                    f"the device reported ON at {_clock_text(interval_start)}."
+                )
     else:
         start_row = focus
         end_row = next(
@@ -335,6 +348,17 @@ def render_command_producer_answer(
                 "The current ON interval is still open, so no closing OFF command "
                 "or completed run duration has been observed yet."
             )
+        else:
+            interval_end = focus.get("intervalEnd")
+            duration = _duration_text(
+                focus.get("stateBoundary"),
+                interval_end,
+            )
+            if duration:
+                paragraphs.append(
+                    f"The observed run ended when the device reported OFF at "
+                    f"{_clock_text(interval_end)}, after {duration}."
+                )
 
     paragraphs.append(
         "The Produced By field identifies the Hubitat app/action that issued "
