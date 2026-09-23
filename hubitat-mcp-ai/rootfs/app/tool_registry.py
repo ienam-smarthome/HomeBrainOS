@@ -19,6 +19,7 @@ LOCAL_FILTER_TOOL = "homebrain_filter_devices"
 LOCAL_QUERY_TOOL = "homebrain_query_devices"
 LOCAL_RESOLVE_TOOL = "homebrain_resolve_device"
 LOCAL_DEVICE_HISTORY_TOOL = "homebrain_device_history"
+LOCAL_DEVICE_INVENTORY_TOOL = "homebrain_device_inventory"
 LOCAL_ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 LOCAL_ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 LOCAL_ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
@@ -40,6 +41,7 @@ EVIDENCE_KINDS = {
     LOCAL_QUERY_TOOL: "deterministic_attribute_query",
     LOCAL_RESOLVE_TOOL: "deterministic_targeted_device_resolution",
     LOCAL_DEVICE_HISTORY_TOOL: "deterministic_device_event_history",
+    LOCAL_DEVICE_INVENTORY_TOOL: "deterministic_device_inventory",
     LOCAL_ACTIVE_LIGHTS_TOOL: "deterministic_active_lights",
     LOCAL_ACTIVE_ROOMS_TOOL: "deterministic_active_rooms",
     LOCAL_ACTIVE_SWITCHES_TOOL: "deterministic_active_switches",
@@ -877,6 +879,24 @@ def weather_snapshot_tool() -> MCPTool:
             "Read all current attributes from the Hubitat weather device. "
             "Use this for current-weather questions and when locating the "
             "weather device. Do not substitute ordinary indoor sensors."
+        ),
+        {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
+    )
+
+
+def device_inventory_tool() -> MCPTool:
+    return MCPTool(
+        LOCAL_DEVICE_INVENTORY_TOOL,
+        (
+            "Return the complete Hubitat device identity inventory in one "
+            "deterministic host-side read, grouped by room. Use this for broad "
+            "whole-home requests such as list devices, show all devices, or "
+            "device inventory. Do not use it for live-state questions."
         ),
         {
             "type": "object",
