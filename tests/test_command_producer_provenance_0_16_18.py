@@ -264,7 +264,7 @@ async def test_agent_finalizes_off_producer_without_logs_or_provider() -> None:
     assert ai.requests == []
     assert counters.get("model_rounds", 0) == 0
     assert counters["causal_subject_prefetch"] == 1
-    assert counters["causal_command_producer_reads"] == 2
+    assert counters["causal_command_producer_reads"] == 1
     assert counters["causal_command_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
     assert counters["investigative_finalization"] == 1
@@ -276,7 +276,8 @@ async def test_agent_finalizes_off_producer_without_logs_or_provider() -> None:
     )
     assert "83 ms later" in outcome.message
     assert "observed run of 1 hour 30 minutes" in outcome.message
-    assert "Ikea Rodret (Livingroom): button 2 pushed" in outcome.message
+    assert "began when the device reported ON at 6:57:23 AM" in outcome.message
+    assert "Ikea Rodret (Livingroom): button 2 pushed" not in outcome.message
 
     assert not any(
         name == "hub_read_diagnostics"
