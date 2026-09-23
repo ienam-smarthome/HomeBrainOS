@@ -38,6 +38,7 @@ logger = logging.getLogger("HomeBrainOS.DeviceQuery")
 DEVICE_FILTER_TOOL = "homebrain_filter_devices"
 DEVICE_QUERY_TOOL = "homebrain_query_devices"
 DEVICE_RESOLVE_TOOL = "homebrain_resolve_device"
+DEVICE_INVENTORY_TOOL = "homebrain_device_inventory"
 ACTIVE_LIGHTS_TOOL = "homebrain_active_lights"
 ACTIVE_ROOMS_TOOL = "homebrain_active_rooms"
 ACTIVE_SWITCHES_TOOL = "homebrain_active_switches"
@@ -1265,6 +1266,94 @@ class DeviceQueryService:
             "complete": True,
         }
         return MCPToolResult(WEATHER_SNAPSHOT_TOOL, arguments, {}, json.dumps(data), data)
+
+    async def device_inventory(self, arguments: dict[str, Any]) -> MCPToolResult:
+        """Return the complete structural device inventory without state pagination."""
+
+        try:
+            identities = await self.mcp.get_device_identities()
+        except Exception as exc:
+            data = {
+                "success": False,
+                "error": f"Device inventory unavailable: {exc}",
+                "count": 0,
+                "rooms": [],
+                "complete": False,
+            }
+            return MCPToolResult(
+                DEVICE_INVENTORY_TOOL,
+                arguments,
+                {},
+                json.dumps(data),
+                data,
+                is_error=True,
+            )
+
+        unique: dict[str, dict[str, Any]] = {}
+        for index, device in enumerate(identities or []):
+            if not isinstance(device, dict):
+                continue
+            device_id = str(
+                device.get("id")
+                or device.get("deviceId")
+                or ""
+            ).strip()
+            label = str(
+                device.get("label")
+                or device.get("name")
+                or (f"Device {device_id}" if device_id else f"Device {index + 1}")
+            ).strip()
+            if not label:
+                continue
+            room = str(
+                device.get("room")
+                or device.get("roomName")
+                or ""
+            ).strip() or "Unassigned"
+            key = device_id or f"label:{label.casefold()}"
+            unique[key] = {
+                "id": device_id or None,
+                "label": label,
+                "room": room,
+            }
+
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for item in unique.values():
+            grouped.setdefault(str(item["room"]), []).append({
+                "id": item["id"],
+                "label": item["label"],
+            })
+
+        rooms = []
+        room_names = sorted(
+            grouped,
+            key=lambda value: (value == "Unassigned", value.casefold()),
+        )
+        for room in room_names:
+            devices = sorted(
+                grouped[room],
+                key=lambda item: str(item.get("label") or "").casefold(),
+            )
+            rooms.append({
+                "room": room,
+                "count": len(devices),
+                "devices": devices,
+            })
+
+        data = {
+            "count": len(unique),
+            "rooms": rooms,
+            "room_count": len(rooms),
+            "complete": True,
+            "read_scope": "authoritative device identity",
+        }
+        return MCPToolResult(
+            DEVICE_INVENTORY_TOOL,
+            arguments,
+            {},
+            json.dumps(data, ensure_ascii=False),
+            data,
+        )
 
     async def active_rooms(self, arguments: dict[str, Any]) -> MCPToolResult:
         source, devices = await self._active_room_devices()
