@@ -291,6 +291,28 @@ def test_command_producer_correlation_is_direct_and_boundary_aligned() -> None:
     assert command_producer_turn_on_sufficient(rows) is True
 
 
+def test_command_after_state_boundary_is_not_accepted_as_provenance() -> None:
+    receipt = _history_receipt()
+    receipt["details"]["commandEvents"] = [
+        {
+            "name": "command-on",
+            "description": "Command called: on()",
+            "date": "2026-09-23T06:57:23.900+0100",
+            "type": "command",
+            "producedBy": {
+                "label": "Late producer",
+                "id": "9999",
+                "type": "app",
+            },
+        }
+    ]
+
+    rows = correlate_command_producers([receipt])
+
+    assert rows == []
+    assert command_producer_turn_on_sufficient(rows) is False
+
+
 def test_command_producer_renderer_distinguishes_on_and_off_sources() -> None:
     message = render_command_producer_answer([_history_receipt()])
 
