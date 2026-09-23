@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.21**.
+Current add-on version: **0.16.22**.
 
 ## Architecture
+
+0.16.22 reduces the direct causal-provenance critical path without increasing Hubitat concurrency. Explicit ON/OFF causal questions now start switch history and only the requested `command-on` or `command-off` provenance read together, using the existing two-call MCP semaphore. The opposite command source is no longer fetched just for narrative context; the deterministic renderer keeps the observed interval duration from switch history. General history callers without an explicit causal transition retain the richer two-direction provenance behavior.
 
 0.16.21 adds explicit compatibility with MCP Rule Server 4.4.1's structured device-event provenance. HomeBrain now safely accepts `producedBy` objects such as `{name, appId}` / `{name, deviceId}`, infers app/device producer type when the upstream row omits a separate type field, and preserves the new structured `triggered` list without treating list metadata as a scalar. This activates the 0.16.17/0.16.18 direct command-producer causal fast path against the upstream fix for issue #458 while retaining raw-HTML compatibility for older MCP servers.
 
