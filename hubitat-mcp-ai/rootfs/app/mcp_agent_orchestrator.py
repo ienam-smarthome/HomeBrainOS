@@ -33,6 +33,8 @@ from causal_subject_prefetch import causal_subject_seed
 from causal_native_logs import (
     causal_boundary_log_windows,
     correlate_native_log_boundaries,
+    native_log_causal_provenance_sufficient,
+    native_log_open_start_sufficient,
     native_log_provenance_sufficient,
     render_native_log_correlation,
     render_strong_native_provenance_answer,
@@ -555,7 +557,7 @@ class UnifiedMCPAgent:
         catalog: ToolDiscoveryCatalog,
         completed_calls: set[str],
         messages: list[dict[str, Any]],
-    ) -> str:
+    ) -> tuple[str, str | None]:
         """Gather explicit switch-causal evidence before the first model round.
 
         This is deliberately narrower than general causal reasoning. It activates
@@ -564,25 +566,31 @@ class UnifiedMCPAgent:
         the same DeviceHistoryService and native-log correlation used by the
         ordinary model-selected path.
 
-        Returns one of: not_applicable, empty, sufficient, partial.
+        Returns (status, canonical_subject_key), where status is one of:
+        not_applicable, empty, sufficient, partial. The subject key lets the
+        caller keep the prefetched device anchored as the investigative subject
+        if later fallback reasoning inspects controller histories.
         """
 
         if not self.causal_subject_prefetch_enabled:
-            return "not_applicable"
+            return "not_applicable", None
 
         history_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
         if history_tool is None:
-            return "not_applicable"
+            return "not_applicable", None
 
         try:
             identities = await self.mcp.get_device_identities()
         except Exception as exc:
             logger.debug("Causal subject prefetch identity unavailable: %s", exc)
-            return "not_applicable"
+            return "not_applicable", None
 
         seed = causal_subject_seed(user_prompt, identities)
         if seed is None:
-            return "not_applicable"
+            return "not_applicable", None
+        subject_key = re.sub(
+            r"[^a-z0-9]", "", seed.name.casefold()
+        ) or None
 
         arguments = {
             "name": seed.name,
@@ -600,7 +608,7 @@ class UnifiedMCPAgent:
             default=str,
         )
         if signature in completed_calls:
-            return "partial"
+            return "partial", subject_key
         completed_calls.add(signature)
 
         increment_active_metric("causal_subject_prefetch")
@@ -629,7 +637,7 @@ class UnifiedMCPAgent:
         })
 
         if not execution.success or execution.result is None:
-            return "partial"
+            return "partial", subject_key
         data = (
             execution.result.data
             if isinstance(execution.result.data, dict)
@@ -646,14 +654,18 @@ class UnifiedMCPAgent:
                     "construct a cause for an unobserved transition."
                 ),
             })
-            return "empty"
+            return "empty", subject_key
 
         sufficient = await self._collect_causal_boundary_logs(
             catalog=catalog,
             completed_calls=completed_calls,
             messages=messages,
         )
-        return "sufficient" if sufficient else "partial"
+        return (
+            ("sufficient", subject_key)
+            if sufficient
+            else ("partial", subject_key)
+        )
 
 
     async def _collect_causal_boundary_logs(
@@ -707,7 +719,7 @@ class UnifiedMCPAgent:
             correlations = correlate_native_log_boundaries(
                 self.evidence.receipts()
             )
-            return native_log_provenance_sufficient(correlations)
+            return native_log_causal_provenance_sufficient(correlations)
 
         increment_active_metric("causal_native_log_reads", len(pending))
 
@@ -753,10 +765,13 @@ class UnifiedMCPAgent:
             if instruction:
                 messages.append({"role": "user", "content": instruction})
 
-        sufficient = native_log_provenance_sufficient(correlations)
-        if sufficient:
+        closed_sufficient = native_log_provenance_sufficient(correlations)
+        open_sufficient = native_log_open_start_sufficient(correlations)
+        if closed_sufficient:
             increment_active_metric("causal_repeated_controller_pattern")
-        return sufficient
+        if open_sufficient:
+            increment_active_metric("causal_open_start_provenance")
+        return bool(closed_sufficient or open_sufficient)
 
     async def _expand_causal_subject_evidence(
         self,
@@ -1475,12 +1490,16 @@ class UnifiedMCPAgent:
         causal_completion_mode = False
 
         if causal_request:
-            causal_prefetch = await self._prefetch_explicit_causal_subject(
-                user_prompt,
-                catalog=catalog,
-                completed_calls=completed_calls,
-                messages=messages,
+            causal_prefetch, prefetched_subject_key = (
+                await self._prefetch_explicit_causal_subject(
+                    user_prompt,
+                    catalog=catalog,
+                    completed_calls=completed_calls,
+                    messages=messages,
+                )
             )
+            if prefetched_subject_key:
+                investigative_subject_history_key = prefetched_subject_key
             if causal_prefetch == "sufficient":
                 deterministic_answer = (
                     render_strong_native_provenance_answer(
@@ -2193,7 +2212,7 @@ class UnifiedMCPAgent:
                         messages=messages,
                     )
                 )
-                if native_log_provenance_sufficient(
+                if native_log_causal_provenance_sufficient(
                     correlate_native_log_boundaries(
                         self.evidence.receipts()
                     )
