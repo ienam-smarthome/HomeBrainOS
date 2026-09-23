@@ -3,11 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.18**.
+Current add-on version: **0.16.19**.
 
 ## Architecture
 
-0.16.18 completes the authoritative command-producer fast path for explicit switch OFF questions. When the observed OFF boundary has an adjacent `command-off` event with `producedBy`, HomeBrain now treats that direct metadata as sufficient, renders an OFF-focused deterministic explanation, and skips historical native-log reads and provider synthesis. The matching ON producer and run duration are retained as context when available. This activates automatically once the upstream Hubitat MCP server preserves native event provenance; otherwise the existing native-log fallback remains unchanged.
+0.16.19 makes the ingress UI substantially more compact and mobile-friendly: live summary tiles and quick actions move to the top, low-value Open sensors/Recommendations shortcuts are removed, and a local Hubitat backup shortcut is added. It also adds a zero-model whole-home device-inventory fast path. Plain requests such as `list devices` now use HomeBrain's authoritative identity cache/live-context resource and render the complete inventory grouped by room instead of making Gemma page `hub_list_devices` 50 rows at a time.\n\n0.16.18 completes the authoritative command-producer fast path for explicit switch OFF questions. When the observed OFF boundary has an adjacent `command-off` event with `producedBy`, HomeBrain now treats that direct metadata as sufficient, renders an OFF-focused deterministic explanation, and skips historical native-log reads and provider synthesis. The matching ON producer and run duration are retained as context when available. This activates automatically once the upstream Hubitat MCP server preserves native event provenance; otherwise the existing native-log fallback remains unchanged.
 
 0.16.17 promotes Hubitat command-event `producedBy` metadata above historical log correlation. Explicit switch-causal prefetch now reads scoped `command-on`/`command-off` event rows alongside switch history, preserves their producer identity, and can finalize a turn-on explanation directly when the ON command names its producer. This avoids slow/empty historical `hub_get_logs` queries after live logs have rolled over. Native-log provenance remains the fallback when command producer metadata is unavailable.
 
