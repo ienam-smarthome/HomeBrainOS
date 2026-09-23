@@ -424,6 +424,305 @@ def test_deterministic_causal_final_metric_is_supported_and_presented() -> None:
     } in present_request_metrics(snapshot)
 
 
+class _OpenPrefetchMCP(_PrefetchMCP):
+    async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        operation = arguments.get("tool")
+        args = arguments.get("args") or {}
+
+        if name == "hub_read_devices" and operation == "hub_list_devices":
+            raise AssertionError(
+                "strong open-start prefetch must not resolve another device"
+            )
+
+        if name == "hub_read_devices" and operation == "hub_list_device_events":
+            assert args["deviceId"] == "4222"
+            assert args["attribute"] == "switch"
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {
+                    "events": [
+                        {
+                            "name": "switch",
+                            "value": "on",
+                            "description": "switch attribute updated",
+                            "date": "2026-09-23T06:57:23.391+0100",
+                            "isStateChange": True,
+                        },
+                        {
+                            "name": "switch",
+                            "value": "off",
+                            "description": "switch attribute updated",
+                            "date": "2026-09-22T22:38:13.489+0100",
+                            "isStateChange": True,
+                        },
+                        {
+                            "name": "switch",
+                            "value": "on",
+                            "description": "switch attribute updated",
+                            "date": "2026-09-22T22:07:37.107+0100",
+                            "isStateChange": True,
+                        },
+                    ],
+                    "count": 3,
+                },
+            )
+
+        if name == "hub_read_diagnostics" and operation == "hub_get_logs":
+            since = str(args.get("since") or "")
+            assert since.startswith("2026-09-23T05:57:13")
+            rows = [
+                {
+                    "date": "2026-09-23 06:57:23.459",
+                    "level": "INFO",
+                    "message": (
+                        "app|3995|01. Humidity Controller|01. Humidity Controller: "
+                        "Unit 2 manual: will turn OFF after 90 min"
+                    ),
+                },
+                {
+                    "date": "2026-09-23 06:57:23.438",
+                    "level": "INFO",
+                    "message": (
+                        "app|3995|01. Humidity Controller|01. Humidity Controller: "
+                        "DEV LOCK set [unit2]: manual for 5430s (manual run)"
+                    ),
+                },
+                {
+                    "date": "2026-09-23 06:57:23.275",
+                    "level": "INFO",
+                    "message": (
+                        "dev|4222|Dehumidifier 2|Dehumidifier 2 turn on command"
+                    ),
+                },
+                {
+                    "date": "2026-09-23 06:57:23.196",
+                    "level": "INFO",
+                    "message": (
+                        "dev|7129|Ikea Rodret (Livingroom)|Ikea Rodret "
+                        "(Livingroom) button 2 (Off) was pushed [physical]"
+                    ),
+                },
+            ]
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {"logs": rows, "count": len(rows)},
+            )
+
+        raise AssertionError((name, arguments))
+
+
+@pytest.mark.asyncio
+async def test_open_interval_start_provenance_finalizes_without_provider():
+    mcp = _OpenPrefetchMCP()
+    ai = _OneRoundAI()
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Why did dehumidifier 2 turn on this morning?"
+    )
+
+    counters = outcome.metrics["counters"]
+    assert len(ai.requests) == 0
+    assert counters.get("model_rounds", 0) == 0
+    assert counters["causal_subject_prefetch"] == 1
+    assert counters["causal_native_log_reads"] == 1
+    assert counters["causal_native_log_correlations"] == 1
+    assert counters["causal_open_start_provenance"] == 1
+    assert counters["causal_deterministic_finalization"] == 1
+    assert counters["investigative_finalization"] == 1
+    assert counters.get("causal_repeated_controller_pattern", 0) == 0
+    assert counters.get("causal_subject_empty_stop", 0) == 0
+
+    assert "Ikea Rodret (Livingroom)" in outcome.message
+    assert "button 2" in outcome.message
+    assert "79 ms later" in outcome.message
+    assert "01. Humidity Controller" in outcome.message
+    assert "downstream handling" in outcome.message
+    assert "still open" in outcome.message
+    assert "no closing OFF transition" in outcome.message
+    assert "no end-boundary corroboration" in outcome.message
+    assert "does not independently prove" in outcome.message
+    assert "identify the person" in outcome.message
+
+    log_calls = [
+        arguments
+        for name, arguments in mcp.calls
+        if name == "hub_read_diagnostics"
+        and arguments.get("tool") == "hub_get_logs"
+    ]
+    assert len(log_calls) == 1
+    assert log_calls[0]["args"]["since"] == (
+        "2026-09-23T05:57:13.391000Z"
+    )
+
+
+class _PartialOpenMCP(_OpenPrefetchMCP):
+    async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
+        operation = arguments.get("tool")
+        args = arguments.get("args") or {}
+
+        if name == "hub_read_diagnostics" and operation == "hub_get_logs":
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {
+                    "logs": [
+                        {
+                            "date": "2026-09-23 06:57:23.438",
+                            "level": "INFO",
+                            "message": (
+                                "app|3995|01. Humidity Controller|"
+                                "01. Humidity Controller: DEV LOCK set [unit2]: "
+                                "manual for 5430s (manual run)"
+                            ),
+                        },
+                        {
+                            "date": "2026-09-23 06:57:23.275",
+                            "level": "INFO",
+                            "message": (
+                                "dev|4222|Dehumidifier 2|"
+                                "Dehumidifier 2 turn on command"
+                            ),
+                        },
+                    ],
+                    "count": 2,
+                },
+            )
+
+        if name == "hub_read_devices" and operation == "hub_list_devices":
+            self.calls.append((name, arguments))
+            assert args["labelFilter"] == "Ikea Rodret (Livingroom)"
+            controller = device("7129", "Ikea Rodret (Livingroom)")
+            controller["room"] = "Button Controllers"
+            controller["capabilities"] = ["PushableButton", "Battery"]
+            controller["attributes"] = {"pushed": 2, "battery": 42}
+            controller["commands"] = []
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {"devices": [controller]},
+            )
+
+        if (
+            name == "hub_read_devices"
+            and operation == "hub_list_device_events"
+            and args.get("deviceId") == "7129"
+        ):
+            self.calls.append((name, arguments))
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {
+                    "events": [
+                        {
+                            "name": "pushed",
+                            "value": "2",
+                            "description": "Button 2 (Off) was pushed",
+                            "date": "2026-09-23T06:57:23.197+0100",
+                            "isStateChange": True,
+                        }
+                    ],
+                    "count": 1,
+                },
+            )
+
+        return await super().call_tool(name, arguments)
+
+
+class _ControllerHistoryAI:
+    def __init__(self) -> None:
+        self.requests: list[dict] = []
+
+    async def post(self, _url: str, **kwargs) -> _Response:
+        self.requests.append(dict(kwargs))
+        if len(self.requests) == 1:
+            response = _Response("")
+            response.json = lambda: {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "function": {
+                            "name": "homebrain_device_history",
+                            "arguments": {
+                                "name": "Ikea Rodret (Livingroom)"
+                            },
+                        }
+                    }],
+                }
+            }
+            return response
+        return _Response(
+            "The open Dehumidifier 2 transition remains the causal subject; "
+            "controller history is supporting evidence only."
+        )
+
+    async def aclose(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_partial_open_prefetch_keeps_subject_anchored_during_controller_history():
+    mcp = _PartialOpenMCP()
+    ai = _ControllerHistoryAI()
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        require_sensitive_confirmation=False,
+        max_tool_rounds=2,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Why did dehumidifier 2 turn on this morning?"
+    )
+
+    assert len(ai.requests) >= 2
+    assert outcome.metrics["counters"]["causal_subject_prefetch"] == 1
+    # The prefetched Dehumidifier remains the anchored causal subject. Target
+    # grounding may either execute or reject the synthetic Rodret follow-up, but
+    # it must never let that later controller request become a new subject and
+    # trigger the empty-subject causal stop.
+    assert outcome.metrics["counters"].get("causal_subject_empty_stop", 0) == 0
+
+
+def test_open_start_metric_is_supported_and_presented() -> None:
+    metrics = RequestMetrics()
+    token = metrics.begin()
+    try:
+        metrics.increment("causal_open_start_provenance")
+        snapshot = metrics.finish("success")
+    finally:
+        metrics.reset(token)
+
+    assert snapshot["counters"]["causal_open_start_provenance"] == 1
+    assert {
+        "label": "Open-start controller provenance",
+        "value": "1",
+    } in present_request_metrics(snapshot)
+
+
 @pytest.mark.asyncio
 async def test_causal_prefetch_rollback_keeps_model_tool_selection_path():
     mcp = _PrefetchMCP()

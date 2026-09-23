@@ -46,7 +46,7 @@ class RequestMetrics:
         "control_local_identity_cache_hit", "control_identity_lookup",
         "identity_cache_hit", "identity_refresh",
         "evidence_sufficiency_stop",
-        "causal_room_plan", "causal_provenance_read", "causal_sensor_read", "causal_sensor_aligned", "causal_location_read", "causal_app_navigation", "causal_provenance_aligned", "causal_completion_retry", "causal_inferred_attribute_retry", "causal_subject_prefetch", "causal_native_log_reads", "causal_native_log_correlations", "causal_repeated_controller_pattern", "causal_deterministic_finalization", "causal_subject_empty_stop", "investigative_finalization",
+        "causal_room_plan", "causal_provenance_read", "causal_sensor_read", "causal_sensor_aligned", "causal_location_read", "causal_app_navigation", "causal_provenance_aligned", "causal_completion_retry", "causal_inferred_attribute_retry", "causal_subject_prefetch", "causal_native_log_reads", "causal_native_log_correlations", "causal_repeated_controller_pattern", "causal_open_start_provenance", "causal_deterministic_finalization", "causal_subject_empty_stop", "investigative_finalization",
         "investigative_attribute_required", "gateway_operation_rejected",
         "history_attribute_rejected", "history_known_tool_fastpath",
         "semantic_fastpath_plans", "semantic_planner_plans",

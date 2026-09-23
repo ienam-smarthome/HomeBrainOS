@@ -244,6 +244,7 @@ def correlate_native_log_boundaries(
                 "subject": subject,
                 "stateBoundary": boundary.isoformat(),
                 "expectedAction": expected_action,
+                "open": bool(timeline.get("open")),
                 "command": {
                     "date": command_time.isoformat(),
                     "sourceId": str(command_row.get("sourceId") or ""),
@@ -342,6 +343,46 @@ def native_log_provenance_sufficient(correlations: list[dict[str, Any]]) -> bool
     return False
 
 
+def native_log_open_start_sufficient(
+    correlations: list[dict[str, Any]],
+) -> bool:
+    """Accept direct physical START provenance for a still-open ON interval.
+
+    A currently active interval has no end boundary by definition, so demanding
+    repeated START/END corroboration would make the strongest current-event
+    evidence unusable until the device eventually turns off. For an explicit
+    "why did it turn on" investigation, one OPEN timeline may therefore be
+    sufficient when native logs show both the subject ON command and a physical
+    controller/input immediately before that command.
+
+    This does not relax closed-interval handling: a closed interval still
+    requires the existing repeated START/END sufficiency contract.
+    """
+
+    candidates = [
+        row
+        for row in correlations
+        if isinstance(row, dict)
+        and row.get("open") is True
+        and str(row.get("boundaryRole") or "") == "start"
+        and str(row.get("expectedAction") or "") == "on"
+        and isinstance(row.get("controller"), dict)
+        and isinstance(row.get("command"), dict)
+    ]
+    return bool(candidates)
+
+
+def native_log_causal_provenance_sufficient(
+    correlations: list[dict[str, Any]],
+) -> bool:
+    """Return strong causal sufficiency for closed or currently-open intervals."""
+
+    return bool(
+        native_log_provenance_sufficient(correlations)
+        or native_log_open_start_sufficient(correlations)
+    )
+
+
 def _clock_text(value: Any) -> str:
     parsed = _parse_time(value)
     if parsed is None:
@@ -375,8 +416,82 @@ def render_strong_native_provenance_answer(
     """
 
     correlations = correlate_native_log_boundaries(evidence)
-    if not native_log_provenance_sufficient(correlations):
+    closed_sufficient = native_log_provenance_sufficient(correlations)
+    open_sufficient = native_log_open_start_sufficient(correlations)
+    if not (closed_sufficient or open_sufficient):
         return None
+
+    if open_sufficient:
+        open_rows = [
+            row
+            for row in correlations
+            if isinstance(row, dict)
+            and row.get("open") is True
+            and str(row.get("boundaryRole") or "") == "start"
+            and isinstance(row.get("controller"), dict)
+            and isinstance(row.get("command"), dict)
+        ]
+        open_rows.sort(
+            key=lambda row: _parse_time(row.get("stateBoundary"))
+            or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+        start = open_rows[0]
+        subject = str(start.get("subject") or "").strip()
+        controller = start.get("controller") or {}
+        command = start.get("command") or {}
+        controller_label = str(
+            controller.get("sourceLabel") or "the physical controller"
+        ).strip()
+        button = str(controller.get("button") or "").strip()
+        control_name = (
+            f"button {button} on {controller_label}"
+            if button
+            else controller_label
+        )
+        press_time = _clock_text(controller.get("date"))
+        command_time = _clock_text(command.get("date"))
+        delay = controller.get("controllerToCommandMs")
+        reactions = [
+            item
+            for item in (start.get("appReactions") or [])
+            if isinstance(item, dict)
+        ]
+        app_label = (
+            str(reactions[0].get("sourceLabel") or "").strip()
+            if reactions
+            else ""
+        )
+
+        paragraphs = [
+            (
+                f"Based on the available evidence, the strongest initiating-control "
+                f"candidate for {subject} turning on was a physical press of "
+                f"{control_name}."
+            ),
+            (
+                f"At {press_time}, {control_name} was pressed. "
+                f"About {delay:g} ms later, at {command_time}, an ON command "
+                f"was sent to {subject}."
+            ),
+        ]
+        if app_label:
+            paragraphs.append(
+                f"{app_label} reacted after the ON command and managed the resulting "
+                "manual run, so the recorded app activity is downstream handling "
+                "rather than the initiating event."
+            )
+        paragraphs.append(
+            "The current ON interval is still open: no closing OFF transition has "
+            "been observed yet, so there is no end-boundary corroboration or "
+            "established duration for this run."
+        )
+        paragraphs.append(
+            "The start-boundary timing is strong temporal provenance for this "
+            "controller/input. It does not independently prove the configured "
+            "button-to-device mapping or identify the person who pressed it."
+        )
+        return "\n\n".join(paragraphs)
 
     grouped: dict[str, dict[str, dict[str, Any]]] = {}
     for row in correlations:
@@ -552,12 +667,25 @@ def render_native_log_correlation(
             "that timestamp repetition does not independently prove the configured "
             "mapping."
         )
+    elif native_log_open_start_sufficient(correlations):
+        lines.append(
+            "DETERMINISTIC OPEN-INTERVAL RESULT: the subject has a recorded ON "
+            "transition with no observed closing OFF transition yet. A physical "
+            "controller/input immediately preceded the ON command, so present it as "
+            "the strongest initiating-control candidate for this open run. Do not "
+            "invent a duration or end-boundary corroboration. If an app reaction is "
+            "logged only after the ON command, describe it as downstream handling. "
+            "Preserve the caveat that start-boundary timing does not independently "
+            "prove the configured mapping or identify a person."
+        )
     return "\n".join(lines)
 
 
 __all__ = [
     "causal_boundary_log_windows",
     "correlate_native_log_boundaries",
+    "native_log_causal_provenance_sufficient",
+    "native_log_open_start_sufficient",
     "native_log_provenance_sufficient",
     "render_native_log_correlation",
     "render_strong_native_provenance_answer",
