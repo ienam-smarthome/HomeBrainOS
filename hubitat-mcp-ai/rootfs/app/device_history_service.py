@@ -991,17 +991,39 @@ class DeviceHistoryService:
             else:
                 temporal_analysis = analyze_state_intervals(attribute, events)
 
+        command_events: list[dict[str, Any]] = []
+        if (
+            bool(arguments.get("_include_command_provenance"))
+            and attribute_cf == "switch"
+            and isinstance(temporal_analysis, dict)
+        ):
+            command_events = await self._read_command_events(
+                device_id=str(device_id),
+                label=label,
+                hours_back=hours_back,
+            )
+
         # Preserve event rows close to deterministic interval boundaries from
-        # the full fetched source page, even when attribute filtering or the
-        # ordinary newest-first presentation cap would otherwise hide them.
+        # the full fetched source page. Command rows are merged only for
+        # boundary/window evidence so they can contribute direct producer
+        # provenance without changing switch-state interval arithmetic.
+        causal_source_events = [*source_events, *command_events]
         boundary_events = boundary_event_evidence(
-            source_events,
+            causal_source_events,
             temporal_analysis,
         )
         window_events = (
-            window_event_evidence(source_events, time_window.as_dict())
+            window_event_evidence(
+                causal_source_events,
+                time_window.as_dict(),
+            )
             if time_window is not None
             else []
+        )
+        causation_available = any(
+            isinstance(event.get("producedBy"), dict)
+            and str(event["producedBy"].get("label") or "").strip()
+            for event in command_events
         )
 
         data = {
@@ -1022,7 +1044,7 @@ class DeviceHistoryService:
             "analysisEventCount": len(filtered_events) if attribute else len(events),
             "events": events,
             "newestFirst": True,
-            "causationAvailable": False,
+            "causationAvailable": causation_available,
             "historySourceIntegrity": "unverified",
             "historySourceIntegrityVerified": False,
         }
@@ -1038,6 +1060,9 @@ class DeviceHistoryService:
             }
         if temporal_analysis is not None:
             data["temporalAnalysis"] = temporal_analysis
+        if command_events:
+            data["commandEvents"] = command_events[:24]
+            data["commandEventsTruncated"] = len(command_events) > 24
         if window_events:
             data["windowEvents"] = window_events
         if boundary_events:
