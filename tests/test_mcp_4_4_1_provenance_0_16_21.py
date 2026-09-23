@@ -225,6 +225,7 @@ async def test_mcp_441_structured_command_provenance_finalizes_without_logs_or_m
     assert counters.get("model_rounds", 0) == 0
     assert counters["causal_subject_prefetch"] == 1
     assert counters["causal_command_producer_reads"] == 1
+    assert counters["tool_calls"] == 3
     assert counters["causal_command_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
     assert counters.get("causal_native_log_reads", 0) == 0
