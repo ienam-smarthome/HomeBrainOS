@@ -29,6 +29,12 @@ from causal_evidence_planner import (
     subject_room_filter_arguments,
     trigger_sensor_history_arguments,
 )
+from causal_command_provenance import (
+    command_producer_turn_on_sufficient,
+    correlate_command_producers,
+    render_command_producer_answer,
+    render_command_producer_evidence,
+)
 from causal_subject_prefetch import causal_subject_seed
 from causal_native_logs import (
     causal_boundary_log_windows,
@@ -596,6 +602,8 @@ class UnifiedMCPAgent:
             "name": seed.name,
             "attribute": seed.attribute,
             "_resolved_target": dict(seed.target),
+            "_include_command_provenance": True,
+            "_causal_transition": seed.transition,
             # DeviceHistoryService interprets an explicit small state-history
             # limit as "latest transitions over the bounded seven-day horizon"
             # while still fetching enough rows internally for interval analysis.
@@ -655,6 +663,21 @@ class UnifiedMCPAgent:
                 ),
             })
             return "empty", subject_key
+
+        command_correlations = correlate_command_producers(
+            self.evidence.receipts()
+        )
+        if (
+            seed.transition == "on"
+            and command_producer_turn_on_sufficient(command_correlations)
+        ):
+            increment_active_metric("causal_command_producer_provenance")
+            instruction = render_command_producer_evidence(
+                command_correlations
+            )
+            if instruction:
+                messages.append({"role": "user", "content": instruction})
+            return "sufficient", subject_key
 
         sufficient = await self._collect_causal_boundary_logs(
             catalog=catalog,
@@ -1519,8 +1542,13 @@ class UnifiedMCPAgent:
                 investigative_subject_history_key = prefetched_subject_key
             if causal_prefetch == "sufficient":
                 deterministic_answer = (
-                    render_strong_native_provenance_answer(
-                        self.evidence.receipts()
+                    (
+                        render_command_producer_answer(
+                            self.evidence.receipts()
+                        )
+                        or render_strong_native_provenance_answer(
+                            self.evidence.receipts()
+                        )
                     )
                     if self.causal_deterministic_final_enabled
                     else None

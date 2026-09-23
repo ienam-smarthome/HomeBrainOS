@@ -13,7 +13,9 @@ adds causal conclusions.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+import html
 import json
 import re
 import time
@@ -193,6 +195,55 @@ class DeviceHistoryService:
         return current if isinstance(current, dict) else {}
 
     @staticmethod
+    def _producer(value: Any) -> dict[str, Any]:
+        """Normalize Hubitat command-event producedBy HTML safely.
+
+        The device-events endpoint exposes command rows with type=command and a
+        producedBy field. Hubitat commonly returns that field as an anchor such
+        as <a href='/installedapp/configure/583'>HomeKit Integration</a>.
+        Keep the human label plus a bounded structural source id/type, never the
+        raw HTML.
+        """
+
+        if isinstance(value, dict):
+            raw_label = (
+                value.get("label")
+                or value.get("name")
+                or value.get("displayName")
+                or value.get("text")
+            )
+            raw_id = value.get("id") or value.get("appId") or value.get("deviceId")
+            raw_type = value.get("type") or value.get("kind")
+            result = {
+                "label": str(raw_label or "").strip(),
+                "id": str(raw_id or "").strip() or None,
+                "type": str(raw_type or "").strip().casefold() or None,
+            }
+            return result if result["label"] else {}
+
+        raw = str(value or "").strip()
+        if not raw:
+            return {}
+        href_match = re.search(r"""href\s*=\s*['"]([^'"]+)['"]""", raw, re.I)
+        label = html.unescape(re.sub(r"<[^>]+>", "", raw)).strip()
+        href = href_match.group(1) if href_match else ""
+        producer_type: str | None = None
+        producer_id: str | None = None
+        app_match = re.search(r"/installedapp/configure/(\d+)", href, re.I)
+        device_match = re.search(r"/device/(?:edit|editDevice)/(\d+)", href, re.I)
+        if app_match:
+            producer_type = "app"
+            producer_id = app_match.group(1)
+        elif device_match:
+            producer_type = "device"
+            producer_id = device_match.group(1)
+        return {
+            "label": label,
+            "id": producer_id,
+            "type": producer_type,
+        } if label else {}
+
+    @staticmethod
     def _events(value: Any, *, limit: int) -> list[dict[str, Any]]:
         payload = DeviceHistoryService._payload(value)
         rows = payload.get("events")
@@ -202,7 +253,7 @@ class DeviceHistoryService:
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            events.append({
+            event = {
                 "name": row.get("name") or row.get("attribute"),
                 "value": row.get("value"),
                 "unit": row.get("unit"),
@@ -211,7 +262,32 @@ class DeviceHistoryService:
                 ),
                 "date": row.get("date") or row.get("timestamp"),
                 "isStateChange": row.get("isStateChange"),
-            })
+            }
+            # Preserve bounded provenance metadata from Hubitat's device event
+            # endpoint. Command rows are especially valuable because producedBy
+            # names the app/action that issued the command. These fields used to
+            # be dropped before causal reasoning could see them.
+            for key, aliases in {
+                "source": ("source",),
+                "type": ("type",),
+                "triggered": ("triggered",),
+                "physical": ("physical",),
+                "digital": ("digital",),
+                "deviceId": ("deviceId", "device_id"),
+                "installedAppId": ("installedAppId", "installed_app_id", "appId"),
+            }.items():
+                for alias in aliases:
+                    if alias in row and row.get(alias) not in {None, ""}:
+                        event[key] = row.get(alias)
+                        break
+            producer = DeviceHistoryService._producer(
+                row.get("producedBy")
+                or row.get("produced_by")
+                or row.get("producer")
+            )
+            if producer:
+                event["producedBy"] = producer
+            events.append(event)
             if len(events) >= limit:
                 break
         return events
@@ -253,6 +329,93 @@ class DeviceHistoryService:
         if not offset:
             return None
         return f"{offset[:3]}:{offset[3:]}" if len(offset) == 5 else offset
+
+    async def _read_command_events(
+        self,
+        *,
+        device_id: str,
+        label: str,
+        hours_back: int,
+        actions: tuple[str, ...] = ("on", "off"),
+    ) -> list[dict[str, Any]]:
+        """Read command event rows with Hubitat producer metadata.
+
+        Command history is a distinct event stream from switch state. Query the
+        exact command names so high-churn power/RTT telemetry cannot crowd the
+        causal rows out of a generic newest-first page. A zero-row result is not
+        retried generically here; native-log provenance remains the established
+        fallback when the upstream command filter is unavailable.
+        """
+
+        async def read_one(action: str) -> list[dict[str, Any]]:
+            event_name = f"command-{action}"
+            event_args = {
+                "deviceId": str(device_id),
+                "hoursBack": int(hours_back),
+                "limit": 20,
+                "attribute": event_name,
+            }
+            source_arguments = {"tool": EVENT_OPERATION, "args": event_args}
+            started = time.monotonic()
+            try:
+                source = await self.mcp.call_tool(
+                    DEVICE_GATEWAY,
+                    source_arguments,
+                )
+            except Exception as exc:
+                self._record_evidence(
+                    DEVICE_GATEWAY,
+                    source_arguments,
+                    success=False,
+                    elapsed_ms=round((time.monotonic() - started) * 1000),
+                    summary=f"{type(exc).__name__}: {str(exc)[:140]}",
+                    supports_live_claim=True,
+                    evidence_kind="authoritative_command_event_history",
+                )
+                return []
+
+            success = _shared_tool_succeeded(source)
+            rows = self._events(source.data, limit=20) if success else []
+            rows = [
+                row
+                for row in rows
+                if str(row.get("name") or "").casefold() == event_name
+            ]
+            self._record_evidence(
+                DEVICE_GATEWAY,
+                source_arguments,
+                success=success,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                summary=f"{len(rows)} {event_name} events for {label!r}",
+                supports_live_claim=True,
+                evidence_kind="authoritative_command_event_history",
+                details={
+                    "label": label,
+                    "eventName": event_name,
+                    "events": rows[:12],
+                    "eventCount": len(rows),
+                } if success else None,
+            )
+            return rows
+
+        increment_active_metric(
+            "causal_command_producer_reads",
+            len(actions),
+        )
+        batches = await asyncio.gather(
+            *(read_one(action) for action in actions)
+        )
+        rows = [item for batch in batches for item in batch]
+        rows.sort(
+            key=lambda item: (
+                self._event_datetime(item.get("date")).timestamp()
+                if self._event_datetime(item.get("date")) is not None
+                else float("-inf")
+            ),
+            reverse=True,
+        )
+        return rows
+
 
     @staticmethod
     def _fallback_resolution_name(requested: str) -> str | None:
@@ -835,17 +998,45 @@ class DeviceHistoryService:
             else:
                 temporal_analysis = analyze_state_intervals(attribute, events)
 
+        command_events: list[dict[str, Any]] = []
+        if (
+            bool(arguments.get("_include_command_provenance"))
+            and attribute_cf == "switch"
+            and isinstance(temporal_analysis, dict)
+        ):
+            command_actions = (
+                ("on",)
+                if temporal_analysis.get("openActiveInterval") is True
+                else ("on", "off")
+            )
+            command_events = await self._read_command_events(
+                device_id=str(device_id),
+                label=label,
+                hours_back=hours_back,
+                actions=command_actions,
+            )
+
         # Preserve event rows close to deterministic interval boundaries from
-        # the full fetched source page, even when attribute filtering or the
-        # ordinary newest-first presentation cap would otherwise hide them.
+        # the full fetched source page. Command rows are merged only for
+        # boundary/window evidence so they can contribute direct producer
+        # provenance without changing switch-state interval arithmetic.
+        causal_source_events = [*source_events, *command_events]
         boundary_events = boundary_event_evidence(
-            source_events,
+            causal_source_events,
             temporal_analysis,
         )
         window_events = (
-            window_event_evidence(source_events, time_window.as_dict())
+            window_event_evidence(
+                causal_source_events,
+                time_window.as_dict(),
+            )
             if time_window is not None
             else []
+        )
+        causation_available = any(
+            isinstance(event.get("producedBy"), dict)
+            and str(event["producedBy"].get("label") or "").strip()
+            for event in command_events
         )
 
         data = {
@@ -866,7 +1057,7 @@ class DeviceHistoryService:
             "analysisEventCount": len(filtered_events) if attribute else len(events),
             "events": events,
             "newestFirst": True,
-            "causationAvailable": False,
+            "causationAvailable": causation_available,
             "historySourceIntegrity": "unverified",
             "historySourceIntegrityVerified": False,
         }
@@ -882,6 +1073,9 @@ class DeviceHistoryService:
             }
         if temporal_analysis is not None:
             data["temporalAnalysis"] = temporal_analysis
+        if command_events:
+            data["commandEvents"] = command_events[:24]
+            data["commandEventsTruncated"] = len(command_events) > 24
         if window_events:
             data["windowEvents"] = window_events
         if boundary_events:

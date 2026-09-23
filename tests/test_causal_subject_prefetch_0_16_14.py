@@ -334,10 +334,25 @@ async def test_strong_causal_prefetch_reaches_final_reasoning_in_one_model_round
         for name, arguments in mcp.calls
         if name == "hub_read_devices"
         and arguments.get("tool") == "hub_list_device_events"
+        and arguments.get("args", {}).get("attribute") == "switch"
     ]
     assert len(history_calls) == 1
-    assert history_calls[0]["args"]["attribute"] == "switch"
     assert history_calls[0]["args"]["hoursBack"] == 168
+
+    command_calls = [
+        arguments
+        for name, arguments in mcp.calls
+        if name == "hub_read_devices"
+        and arguments.get("tool") == "hub_list_device_events"
+        and str(arguments.get("args", {}).get("attribute") or "").startswith(
+            "command-"
+        )
+    ]
+    assert {
+        call["args"]["attribute"]
+        for call in command_calls
+    } == {"command-on", "command-off"}
+    assert outcome.metrics["counters"]["causal_command_producer_reads"] == 2
 
     log_calls = [
         arguments
