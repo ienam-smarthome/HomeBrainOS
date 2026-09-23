@@ -125,8 +125,12 @@ def correlate_command_producers(
                 if event_time is None:
                     continue
                 delta = (boundary - event_time).total_seconds()
-                if abs(delta) <= max(0.1, float(max_delta_seconds)):
-                    candidates.append((abs(delta), event_time, event))
+                # Command provenance is directional: the command must be issued
+                # at or before the resulting state boundary. A later command,
+                # even if close in absolute time, cannot explain an earlier
+                # switch transition.
+                if 0.0 <= delta <= max(0.1, float(max_delta_seconds)):
+                    candidates.append((delta, event_time, event))
             if not candidates:
                 continue
 
