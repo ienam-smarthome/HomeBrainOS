@@ -40,6 +40,7 @@ _COUNTER_LABELS = (
     ("causal_native_log_reads", "Causal native-log reads"),
     ("causal_native_log_correlations", "Causal native-log correlations"),
     ("causal_repeated_controller_pattern", "Repeated controller patterns"),
+    ("causal_open_start_provenance", "Open-start controller provenance"),
     ("causal_deterministic_finalization", "Deterministic causal finalizations"),
     ("causal_subject_empty_stop", "Empty-subject causal stops"),
     ("causal_broad_inventory_blocked", "Blocked broad causal inventories"),
