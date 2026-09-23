@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.16**.
+Current add-on version: **0.16.17**.
 
 ## Architecture
+
+0.16.17 promotes Hubitat command-event `producedBy` metadata above historical log correlation. Explicit switch-causal prefetch now reads scoped `command-on`/`command-off` event rows alongside switch history, preserves their producer identity, and can finalize a turn-on explanation directly when the ON command names its producer. This avoids slow/empty historical `hub_get_logs` queries after live logs have rolled over. Native-log provenance remains the fallback when command producer metadata is unavailable.
 
 0.16.16 extends the zero-model causal fast path to currently-open switch intervals. A physical controller/input immediately preceding the observed ON command is sufficient start-boundary provenance for a still-open run; HomeBrain does not wait for an OFF event that has not happened yet. The answer explicitly says the interval is open and that no end-boundary corroboration or duration exists. The prefetched device identity is also persisted as the investigative subject key so later controller histories cannot be mistaken for the causal subject or trigger an empty-subject stop.
 
