@@ -214,6 +214,11 @@ class DeviceHistoryService:
             )
             raw_id = value.get("id") or value.get("appId") or value.get("deviceId")
             raw_type = value.get("type") or value.get("kind")
+            if not raw_type:
+                if value.get("appId") not in (None, ""):
+                    raw_type = "app"
+                elif value.get("deviceId") not in (None, ""):
+                    raw_type = "device"
             result = {
                 "label": str(raw_label or "").strip(),
                 "id": str(raw_id or "").strip() or None,
@@ -277,8 +282,11 @@ class DeviceHistoryService:
                 "installedAppId": ("installedAppId", "installed_app_id", "appId"),
             }.items():
                 for alias in aliases:
-                    if alias in row and row.get(alias) not in {None, ""}:
-                        event[key] = row.get(alias)
+                    if alias not in row:
+                        continue
+                    candidate = row.get(alias)
+                    if candidate is not None and candidate != "":
+                        event[key] = candidate
                         break
             producer = DeviceHistoryService._producer(
                 row.get("producedBy")
