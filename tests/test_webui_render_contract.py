@@ -64,8 +64,9 @@ def test_webui_shortcuts_drop_hub_resources_device_health_and_weather() -> None:
     assert "Hub resources" not in page
     assert "Device health" not in page
     assert "🌦️ Weather" not in page
-    assert "Open sensors" in page
-    assert "Firmware update" in page
+    assert "Open sensors" not in page
+    assert "Recommendations" not in page
+    assert "Firmware" in page
     # "Hub health" (a distinct, pre-existing shortcut) must survive --
     # confirms the removal targeted the right three buttons, not a
     # substring match that also caught this one.
@@ -112,3 +113,22 @@ def test_read_answer_speech_normalizes_visual_arrows_and_percentages() -> None:
     assert ".replace(/→/g,' to ')" in page
     assert ".replace(/←/g,' from ')" in page
     assert ".replace(/(\\d+(?:\\.\\d+)?)\\s*%/g,'$1 percent')" in page
+
+
+def test_webui_compact_tiles_are_at_top_and_local_backup_is_available() -> None:
+    page = render_page("HomeBrain", "0.16.19")
+
+    title = page.index("<h1>")
+    summary = page.index('id="summaryTiles"')
+    shortcuts = page.index('id="shortcuts"')
+    query = page.index('id="query"')
+    health = page.index('id="systemHealthCard"')
+
+    assert title < summary < shortcuts < query < health
+    assert 'class="card grid top-stats"' in page
+    assert 'class="card quick-grid"' in page
+    assert "repeat(4,minmax(0,1fr))" in page
+    assert "repeat(3,minmax(0,1fr))" in page
+    assert 'href="http://192.168.1.239/hub2/createFullLocalBackup"' in page
+    assert 'target="_blank"' in page
+    assert "💾 Local backup" in page
