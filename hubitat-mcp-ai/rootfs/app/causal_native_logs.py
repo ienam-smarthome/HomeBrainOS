@@ -667,6 +667,17 @@ def render_native_log_correlation(
             "that timestamp repetition does not independently prove the configured "
             "mapping."
         )
+    elif native_log_open_start_sufficient(correlations):
+        lines.append(
+            "DETERMINISTIC OPEN-INTERVAL RESULT: the subject has a recorded ON "
+            "transition with no observed closing OFF transition yet. A physical "
+            "controller/input immediately preceded the ON command, so present it as "
+            "the strongest initiating-control candidate for this open run. Do not "
+            "invent a duration or end-boundary corroboration. If an app reaction is "
+            "logged only after the ON command, describe it as downstream handling. "
+            "Preserve the caveat that start-boundary timing does not independently "
+            "prove the configured mapping or identify a person."
+        )
     return "\n".join(lines)
 
 
