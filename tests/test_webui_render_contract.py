@@ -54,10 +54,9 @@ def test_webui_dashboard_tiles_drop_switches_and_reorder_the_remaining_four() ->
     assert order == sorted(order), order
 
 
-def test_webui_shortcuts_drop_hub_resources_device_health_and_weather() -> None:
-    """These three shortcuts were plain NLP-query buttons with no live
-    data behind them (unlike the stat tile row) and were removed at the
-    user's request in favour of more directly useful shortcuts."""
+def test_webui_shortcuts_keep_only_compact_high_value_actions() -> None:
+    """Low-value shortcuts stay removed and the compact top action strip
+    retains the useful hub/rule actions requested for the mobile layout."""
 
     page = render_page("HomeBrain", "0.10.417")
 
@@ -67,9 +66,7 @@ def test_webui_shortcuts_drop_hub_resources_device_health_and_weather() -> None:
     assert "Open sensors" not in page
     assert "Recommendations" not in page
     assert "Firmware" in page
-    # "Hub health" (a distinct, pre-existing shortcut) must survive --
-    # confirms the removal targeted the right three buttons, not a
-    # substring match that also caught this one.
+    # Hub health remains a distinct high-value shortcut.
     assert "Hub health" in page
 
 
