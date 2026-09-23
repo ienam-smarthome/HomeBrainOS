@@ -13,7 +13,9 @@ adds causal conclusions.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+import html
 import json
 import re
 import time
@@ -193,6 +195,55 @@ class DeviceHistoryService:
         return current if isinstance(current, dict) else {}
 
     @staticmethod
+    def _producer(value: Any) -> dict[str, Any]:
+        """Normalize Hubitat command-event producedBy HTML safely.
+
+        The device-events endpoint exposes command rows with type=command and a
+        producedBy field. Hubitat commonly returns that field as an anchor such
+        as <a href='/installedapp/configure/583'>HomeKit Integration</a>.
+        Keep the human label plus a bounded structural source id/type, never the
+        raw HTML.
+        """
+
+        if isinstance(value, dict):
+            raw_label = (
+                value.get("label")
+                or value.get("name")
+                or value.get("displayName")
+                or value.get("text")
+            )
+            raw_id = value.get("id") or value.get("appId") or value.get("deviceId")
+            raw_type = value.get("type") or value.get("kind")
+            result = {
+                "label": str(raw_label or "").strip(),
+                "id": str(raw_id or "").strip() or None,
+                "type": str(raw_type or "").strip().casefold() or None,
+            }
+            return result if result["label"] else {}
+
+        raw = str(value or "").strip()
+        if not raw:
+            return {}
+        href_match = re.search(r"""href\s*=\s*['"]([^'"]+)['"]""", raw, re.I)
+        label = html.unescape(re.sub(r"<[^>]+>", "", raw)).strip()
+        href = href_match.group(1) if href_match else ""
+        producer_type: str | None = None
+        producer_id: str | None = None
+        app_match = re.search(r"/installedapp/configure/(\d+)", href, re.I)
+        device_match = re.search(r"/device/(?:edit|editDevice)/(\d+)", href, re.I)
+        if app_match:
+            producer_type = "app"
+            producer_id = app_match.group(1)
+        elif device_match:
+            producer_type = "device"
+            producer_id = device_match.group(1)
+        return {
+            "label": label,
+            "id": producer_id,
+            "type": producer_type,
+        } if label else {}
+
+    @staticmethod
     def _events(value: Any, *, limit: int) -> list[dict[str, Any]]:
         payload = DeviceHistoryService._payload(value)
         rows = payload.get("events")
@@ -202,7 +253,7 @@ class DeviceHistoryService:
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            events.append({
+            event = {
                 "name": row.get("name") or row.get("attribute"),
                 "value": row.get("value"),
                 "unit": row.get("unit"),
@@ -211,7 +262,32 @@ class DeviceHistoryService:
                 ),
                 "date": row.get("date") or row.get("timestamp"),
                 "isStateChange": row.get("isStateChange"),
-            })
+            }
+            # Preserve bounded provenance metadata from Hubitat's device event
+            # endpoint. Command rows are especially valuable because producedBy
+            # names the app/action that issued the command. These fields used to
+            # be dropped before causal reasoning could see them.
+            for key, aliases in {
+                "source": ("source",),
+                "type": ("type",),
+                "triggered": ("triggered",),
+                "physical": ("physical",),
+                "digital": ("digital",),
+                "deviceId": ("deviceId", "device_id"),
+                "installedAppId": ("installedAppId", "installed_app_id", "appId"),
+            }.items():
+                for alias in aliases:
+                    if alias in row and row.get(alias) not in {None, ""}:
+                        event[key] = row.get(alias)
+                        break
+            producer = DeviceHistoryService._producer(
+                row.get("producedBy")
+                or row.get("produced_by")
+                or row.get("producer")
+            )
+            if producer:
+                event["producedBy"] = producer
+            events.append(event)
             if len(events) >= limit:
                 break
         return events
