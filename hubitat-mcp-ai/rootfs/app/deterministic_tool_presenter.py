@@ -154,24 +154,61 @@ def _present_device_inventory(data: dict[str, Any]) -> str:
     if count <= 0:
         return "No Hubitat devices were found in the authoritative identity inventory."
 
-    lines = [
-        f"{count} Hubitat devices across {len(rooms)} room groups.",
+    requested_group = str(data.get("requested_group") or "").strip()
+    matched_group = data.get("matched_group")
+    alternatives = [
+        item for item in data.get("alternatives", []) if isinstance(item, dict)
     ]
-    for room in rooms:
-        room_name = str(room.get("room") or "Unassigned")
-        devices = [
-            str(item.get("label") or item.get("id") or "Unknown device")
-            for item in room.get("devices", [])
-            if isinstance(item, dict)
-        ]
-        if not devices:
-            continue
-        lines.append(
-            f"**{room_name} ({len(devices)}):** " + ", ".join(devices)
+
+    if requested_group:
+        if isinstance(matched_group, dict):
+            room_name = str(matched_group.get("room") or requested_group)
+            devices = [
+                str(item.get("label") or item.get("id") or "Unknown device")
+                for item in matched_group.get("devices", [])
+                if isinstance(item, dict)
+            ]
+            noun = "device" if len(devices) == 1 else "devices"
+            if not devices:
+                return f"No devices are assigned to **{room_name}**."
+            return (
+                f"{len(devices)} {noun} in **{room_name}**: "
+                + ", ".join(devices)
+                + "."
+            )
+
+        if alternatives:
+            labels = [
+                f"{item.get('room')} ({int(item.get('count') or 0)})"
+                for item in alternatives
+            ]
+            return (
+                f"More than one device group matches **{requested_group}**: "
+                + ", ".join(labels)
+                + ". Specify one, for example `list "
+                + str(alternatives[0].get("room") or "")
+                + " devices`."
+            )
+
+        available = " · ".join(
+            f"{item.get('room')} {int(item.get('count') or 0)}"
+            for item in rooms
         )
-    return "\n\n".join(lines)
+        return (
+            f"No device group matched **{requested_group}**. "
+            f"Available groups: {available}."
+        )
 
-
+    groups = " · ".join(
+        f"{item.get('room')} {int(item.get('count') or 0)}"
+        for item in rooms
+    )
+    return (
+        f"{count} Hubitat devices across {len(rooms)} groups.\n\n"
+        f"**Groups:** {groups}.\n\n"
+        "Ask for one group to see its device names, for example "
+        "`list Bathroom devices` or `list unassigned devices`."
+    )
 def _present_filter(data: dict[str, Any]) -> str:
     attribute = str(data.get("attribute") or "attribute")
     raw_operator = str(data.get("operator") or "")

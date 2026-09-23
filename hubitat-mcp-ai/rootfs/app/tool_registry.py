@@ -893,14 +893,22 @@ def device_inventory_tool() -> MCPTool:
     return MCPTool(
         LOCAL_DEVICE_INVENTORY_TOOL,
         (
-            "Return the complete Hubitat device identity inventory in one "
-            "deterministic host-side read, grouped by room. Use this for broad "
-            "whole-home requests such as list devices, show all devices, or "
-            "device inventory. Do not use it for live-state questions."
+            "Return the Hubitat structural device identity inventory in one "
+            "deterministic host-side read. With no group, return a compact "
+            "whole-home group/count summary. With group, return only that "
+            "room/group's device names. Do not use it for live-state questions."
         ),
         {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "group": {
+                    "type": "string",
+                    "description": (
+                        "Optional room/group name for a scoped inventory drill-down. "
+                        "Omit for a compact whole-home group-count summary."
+                    ),
+                },
+            },
             "additionalProperties": False,
         },
         annotations={"readOnlyHint": True, "effect": ToolEffect.READ.value},
