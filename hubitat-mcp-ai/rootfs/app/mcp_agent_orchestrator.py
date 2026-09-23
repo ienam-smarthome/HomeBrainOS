@@ -1442,7 +1442,7 @@ class UnifiedMCPAgent:
                 "confirm when the response carries a verified pending action."
             )
         if _is_device_inventory_request(user_prompt):
-            inventory_tool = catalog.declared_tool(_LOCAL_DEVICE_INVENTORY_TOOL)
+            inventory_tool = catalog.available_tool(_LOCAL_DEVICE_INVENTORY_TOOL)
             if inventory_tool is not None:
                 execution = await self.executor.execute(
                     _LOCAL_DEVICE_INVENTORY_TOOL,
