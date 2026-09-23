@@ -800,19 +800,36 @@ class UnifiedMCPAgent:
             messages=messages,
         )
         if native_log_sufficient:
+            correlations = correlate_native_log_boundaries(
+                self.evidence.receipts()
+            )
+            open_sufficient = native_log_open_start_sufficient(correlations)
+            closed_sufficient = native_log_provenance_sufficient(correlations)
+            detail = (
+                "The subject interval is still OPEN. Native logs established a "
+                "physical controller/input immediately before the subject ON "
+                "command, with no closing OFF transition observed yet. This direct "
+                "start-boundary execution timing is sufficient for the turn-on "
+                "question; do not invent end-boundary corroboration or a duration."
+                if open_sufficient and not closed_sufficient
+                else (
+                    "Repeated native-log provenance established the same physical "
+                    "controller/input immediately before both the subject ON command "
+                    "and the later OFF command."
+                )
+            )
             messages.append({
                 "role": "user",
                 "content": (
                     "HOST CAUSAL EVIDENCE LAYER COMPLETE\n"
-                    "Repeated native-log provenance established the same physical "
-                    "controller/input immediately before both the subject ON command "
-                    "and the later OFF command. This direct execution-timing evidence "
-                    "outranks room correlation and app configuration, so do not fan "
-                    "out to weaker device/sensor/location/config discovery. Final "
-                    "synthesis must present the controller/input as the strongest "
-                    "initiating-control candidate, distinguish downstream app reactions "
-                    "that occur after the command, and retain the caveat that timing "
-                    "alone does not independently prove the configured mapping."
+                    + detail
+                    + " This direct execution-timing evidence outranks room "
+                    "correlation and app configuration, so do not fan out to weaker "
+                    "device/sensor/location/config discovery. Final synthesis must "
+                    "present the controller/input as the strongest initiating-control "
+                    "candidate, distinguish downstream app reactions that occur after "
+                    "the command, and retain the caveat that timing alone does not "
+                    "independently prove the configured mapping or identify a person."
                 ),
             })
             return True
