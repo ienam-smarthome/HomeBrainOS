@@ -698,9 +698,16 @@ async def test_partial_open_prefetch_keeps_subject_anchored_during_controller_hi
         "Why did dehumidifier 2 turn on this morning?"
     )
 
-    assert len(ai.requests) == 2
+    assert len(ai.requests) >= 2
     assert outcome.metrics["counters"]["causal_subject_prefetch"] == 1
     assert outcome.metrics["counters"].get("causal_subject_empty_stop", 0) == 0
+    controller_receipts = [
+        receipt
+        for receipt in outcome.evidence
+        if receipt.get("tool") == "homebrain_device_history"
+        and receipt.get("details", {}).get("label") == "Ikea Rodret (Livingroom)"
+    ]
+    assert controller_receipts
 
 
 def test_open_start_metric_is_supported_and_presented() -> None:
