@@ -42,14 +42,52 @@ _GENERIC_SINGLE_TOKENS = {
     "outlet",
     "thermostat",
 }
-_SWITCH_TRANSITION = re.compile(
-    r"\b(?:"
-    r"(?:turn|turned|switch|switched|power|powered)\s+(?P<state1>on|off)"
-    r"|(?P<state2>came|come)\s+on"
-    r"|(?P<state3>went|go)\s+off"
-    r")\b",
-    re.I,
+_SWITCH_TRANSITIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"\b(?:turn|turned|switch|switched|power|powered)"
+            r"(?:\s+itself)?\s+on\b",
+            re.I,
+        ),
+        "on",
+    ),
+    (
+        re.compile(
+            r"\b(?:turn|turned|switch|switched|power|powered)"
+            r"(?:\s+itself)?\s+off\b",
+            re.I,
+        ),
+        "off",
+    ),
+    (
+        re.compile(r"\b(?:came|come)(?:\s+back)?\s+on\b", re.I),
+        "on",
+    ),
+    (
+        re.compile(r"\b(?:went|go)(?:\s+back)?\s+off\b", re.I),
+        "off",
+    ),
+    (
+        re.compile(r"\bshut(?:\s+itself)?(?:\s+down|\s+off)\b", re.I),
+        "off",
+    ),
+    (
+        re.compile(r"\bstart(?:ed)?\s+running\b", re.I),
+        "on",
+    ),
+    (
+        re.compile(r"\bstop(?:ped)?\s+running\b", re.I),
+        "off",
+    ),
 )
+
+
+def _switch_transition(prompt: str) -> str | None:
+    text = str(prompt or "")
+    for pattern, transition in _SWITCH_TRANSITIONS:
+        if pattern.search(text) is not None:
+            return transition
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,16 +274,8 @@ def causal_subject_seed(
     this automation?") remain in the normal model tool-selection path.
     """
 
-    transition_match = _SWITCH_TRANSITION.search(str(prompt or ""))
-    if transition_match is None:
-        return None
-    if transition_match.group("state1"):
-        transition = transition_match.group("state1").casefold()
-    elif transition_match.group("state2"):
-        transition = "on"
-    elif transition_match.group("state3"):
-        transition = "off"
-    else:
+    transition = _switch_transition(prompt)
+    if transition is None:
         return None
 
     match = _best_prompt_match(prompt, identities)
