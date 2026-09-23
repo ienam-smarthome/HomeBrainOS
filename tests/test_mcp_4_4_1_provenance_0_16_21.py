@@ -224,15 +224,16 @@ async def test_mcp_441_structured_command_provenance_finalizes_without_logs_or_m
     assert ai.requests == []
     assert counters.get("model_rounds", 0) == 0
     assert counters["causal_subject_prefetch"] == 1
-    assert counters["causal_command_producer_reads"] == 2
+    assert counters["causal_command_producer_reads"] == 1
     assert counters["causal_command_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
     assert counters.get("causal_native_log_reads", 0) == 0
 
     assert "Ikea Rodret (Livingroom): button 2 pushed" in outcome.message
-    assert "01. Humidity Controller" in outcome.message
     assert "99 ms later" in outcome.message
-    assert "83 ms later" in outcome.message
+    assert "The observed run ended when the device reported OFF at 8:27:23 AM" in outcome.message
+    assert "after 1 hour 30 minutes" in outcome.message
+    assert "01. Humidity Controller" not in outcome.message
 
     assert not any(
         name == "hub_read_diagnostics"
@@ -251,14 +252,10 @@ async def test_mcp_441_structured_command_provenance_finalizes_without_logs_or_m
         row["name"]: row
         for row in details["commandEvents"]
     }
+    assert set(by_name) == {"command-on"}
     assert by_name["command-on"]["producedBy"] == {
         "label": "Ikea Rodret (Livingroom): button 2 pushed",
         "id": "3700",
-        "type": "app",
-    }
-    assert by_name["command-off"]["producedBy"] == {
-        "label": "01. Humidity Controller",
-        "id": "3995",
         "type": "app",
     }
 
