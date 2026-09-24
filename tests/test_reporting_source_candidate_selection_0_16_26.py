@@ -425,7 +425,7 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
 
     assert "Bedroom 1 FP300 sensor" in message
     assert "no bounded correlation with the observed ON transitions" in message
-    assert "inactive edge(s) shortly before observed OFF boundaries" in message
+    assert "inactive edge(s) correlated with observed OFF boundaries" in message
 
     assert "Downstream level-recovery pattern" in message
     assert "5 of 5 observed ON transition(s)" in message
