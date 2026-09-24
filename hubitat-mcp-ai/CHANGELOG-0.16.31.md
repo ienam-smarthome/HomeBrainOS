@@ -111,7 +111,7 @@ choices:
   - Hallway Light 2
 
 model_rounds: 0
-tool_calls: 0
+tool_calls: 1
 causal_group_clarification: 1
 device_resolution_ambiguous: 1
 ```
@@ -140,7 +140,7 @@ This distinguishes the initial zero-model group clarification from
 - the provider receives zero requests;
 - MCP receives zero calls when identity cache is already available;
 - model rounds remain zero;
-- tool calls remain zero;
+- exactly one local resolver tool/evidence call is recorded;
 - the same two choices are returned;
 - the original causal objective is stored for the next selection;
 - one deterministic resolver evidence receipt is recorded;
