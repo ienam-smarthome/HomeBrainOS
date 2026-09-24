@@ -37,6 +37,7 @@ _COUNTER_LABELS = (
     ("causal_completion_retry", "Causal completion retries"),
     ("causal_inferred_attribute_retry", "Causal inferred-state retries"),
     ("causal_subject_prefetch", "Causal subject prefetches"),
+    ("causal_clarification_resume", "Causal clarification resumes"),
     ("causal_command_producer_reads", "Command-producer reads"),
     ("causal_command_producer_provenance", "Command-producer provenance"),
     ("causal_boundary_producer_provenance", "Boundary producer provenance"),

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from causal_attribution_guard import guard_configuration_only_causal_claim
+from causal_attribution_guard import (
+    guard_configuration_only_causal_claim,
+    guard_triggered_listener_causal_claim,
+)
 from causal_timeline import missing_material_timeline_rows
 from controller_correlation_guard import guard_controller_boundary_claim
 from evidence_source_guard import (
@@ -65,6 +68,15 @@ def validate_synthesis(
         )
         if controller_boundary_changed:
             issues.append("controller_boundary_direction")
+
+        corrected, triggered_listener_changed = (
+            guard_triggered_listener_causal_claim(
+                corrected,
+                evidence,
+            )
+        )
+        if triggered_listener_changed:
+            issues.append("triggered_listener_causal_attribution")
 
         corrected, configuration_causality_changed = (
             guard_configuration_only_causal_claim(
