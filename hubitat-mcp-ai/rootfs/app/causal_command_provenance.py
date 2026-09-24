@@ -529,7 +529,8 @@ def render_boundary_producer_answer(
     else:
         qualifier = f" {event_type}" if event_type else ""
         paragraphs.append(
-            f"Hubitat did not record a command-{action} producer for {subject}. "
+            f"Hubitat did not record a command-{action} producer aligned with "
+            f"this {action_upper} transition for {subject}. "
             f"The {action_upper} state event at {state_time} is marked{qualifier} "
             f"and was produced by {producer_label}."
         )

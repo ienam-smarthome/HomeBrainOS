@@ -125,6 +125,31 @@ def test_candidate_ranking_prefers_dimmer_and_physical_presence_source() -> None
         row["label"] for row in sensors
     }
 
+    cached_hints = DeviceQueryService.cached_room_event_source_hints(
+        ALL_DEVICES,
+        "Bedroom 1",
+    )
+    assert cached_hints is not None
+    assert [
+        row["label"] for row in cached_hints["controllerCandidates"][:2]
+    ] == ["Bedroom 1 dimmer", "Bedroom 1 button"]
+    assert [
+        row["label"] for row in cached_hints["triggerSensorCandidates"][:2]
+    ] == ["Bedroom 1 FP300 sensor", "Bedroom 1 Soft Sensor"]
+
+
+def test_cached_candidate_plan_falls_back_when_occupancy_shape_is_unknown() -> None:
+    sparse_sensor = _device(
+        "7999",
+        "Bedroom 1 sparse motion",
+        "Bedroom 1",
+        ["MotionSensor"],
+    )
+    assert DeviceQueryService.cached_room_event_source_hints(
+        [LIGHT, DIMMER, sparse_sensor],
+        "Bedroom 1",
+    ) is None
+
 
 _SWITCH_ROWS = [
     ("off", "2026-09-24T08:14:38.289+0100"),
@@ -379,6 +404,7 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
     assert counters.get("causal_native_log_reads", 0) == 0
     assert counters["causal_boundary_producer_provenance"] == 1
     assert counters["causal_reporting_source_correlation"] == 1
+    assert counters["causal_cached_candidate_plan"] == 1
     assert counters["causal_provenance_read"] == 2
     assert counters["causal_sensor_read"] == 2
     assert counters["causal_subject_pattern_read"] == 1
@@ -387,6 +413,7 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
 
     message = outcome.message
     assert "Matter Hue Bridge Pro" in message
+    assert "did not record a command-on producer aligned with this ON transition" in message
     assert "Bedroom 1 dimmer" in message
     assert "Bedroom 1 button" in message
     assert "Bedroom 1 FP300 sensor" in message
@@ -428,4 +455,9 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
     assert sum(1 for device_id, _attr in event_calls if device_id == "7773") == 0
     assert sum(1 for device_id, _attr in event_calls if device_id == "7775") == 0
     assert sum(1 for device_id, _attr in event_calls if device_id == "7756") == 1
+    assert not any(
+        name == "hub_read_devices"
+        and args.get("tool") == "hub_list_devices"
+        for name, args in mcp.calls
+    )
     assert not any(name == "hub_read_diagnostics" for name, _ in mcp.calls)

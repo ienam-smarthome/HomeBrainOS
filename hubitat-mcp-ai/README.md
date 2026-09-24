@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.31**.
+Current add-on version: **0.16.32**.
 
 ## Architecture
+
+0.16.32 tightens and speeds the deterministic reporting-source causal path. Boundary answers now say that no command producer was **aligned with the requested transition**, avoiding the misleading implication that the device has no command history at all. Secondary controller/sensor candidate discovery now reuses a fresh authoritative identity snapshot when it contains sufficient capability and occupancy-attribute shape, avoiding a redundant whole-home live-context read; sparse occupancy metadata falls back to the existing live room filter. Event histories remain live and bounded, and causal attribution rules are unchanged.
 
 0.16.31 removes the unnecessary provider round from initial causal room/group clarification. For an explicit switch-causal question such as `Why did hallway lights turn on?`, HomeBrain now checks the authoritative cached identity world before model routing. If the exact room + device-kind phrase maps to multiple concrete devices, it returns the same clarification choices locally, records deterministic resolver evidence, and preserves the causal objective for the existing 0.16.30 post-selection continuation. No event history is read until a concrete device is chosen.
 

@@ -28,6 +28,7 @@ _COUNTER_LABELS = (
     ("identity_cache_hit", "Identity cache hits"),
     ("identity_refresh", "Identity refreshes"),
     ("causal_room_plan", "Causal room plans"),
+    ("causal_cached_candidate_plan", "Cached causal candidate plans"),
     ("causal_provenance_read", "Causal provenance reads"),
     ("causal_sensor_read", "Causal motion/presence reads"),
     ("causal_sensor_aligned", "Causal sensor boundary alignments"),
