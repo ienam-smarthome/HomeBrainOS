@@ -128,6 +128,28 @@ def build_bridge_secondary_summary(
     }
 
 
+def bridge_secondary_details(
+    evidence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return the latest synthesized bridge-correlation receipt details."""
+
+    for receipt in reversed(evidence):
+        if (
+            isinstance(receipt, dict)
+            and receipt.get("success") is True
+            and receipt.get("tool") == "homebrain_causal_secondary_correlation"
+            and isinstance(receipt.get("details"), dict)
+        ):
+            return dict(receipt["details"])
+    return {}
+
+
+def render_bridge_secondary_from_evidence(
+    evidence: list[dict[str, Any]],
+) -> str | None:
+    return render_bridge_secondary_summary(bridge_secondary_details(evidence))
+
+
 def render_bridge_secondary_summary(
     summary: dict[str, Any],
 ) -> str | None:
@@ -229,6 +251,8 @@ def render_bridge_secondary_summary(
 
 __all__ = [
     "bridge_boundary_requires_secondary",
+    "bridge_secondary_details",
     "build_bridge_secondary_summary",
+    "render_bridge_secondary_from_evidence",
     "render_bridge_secondary_summary",
 ]
