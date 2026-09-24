@@ -230,18 +230,18 @@ def _dimmer_events() -> list[dict]:
 def _fp300_events() -> list[dict]:
     return [
         {
-            "name": "presence",
-            "value": "not present",
+            "name": "motion",
+            "value": "inactive",
             "date": "2026-09-24T08:14:38.215+0100",
-            "description": "presence inactive",
+            "description": "motion inactive",
             "isStateChange": True,
             "type": "physical",
         },
         {
-            "name": "presence",
-            "value": "present",
+            "name": "motion",
+            "value": "active",
             "date": "2026-09-24T07:20:00.000+0100",
-            "description": "presence active",
+            "description": "motion active",
             "isStateChange": True,
             "type": "physical",
         },
