@@ -993,6 +993,14 @@ class DeviceHistoryService:
                 if str(event.get("name") or "").casefold() == attribute_cf
             ]
         events = filtered_events[:limit]
+        correlation_events = (
+            filtered_events[:16]
+            if (
+                bool(arguments.get("_causal_correlation_history"))
+                and attribute_cf == "switch"
+            )
+            else []
+        )
         self._record_evidence(
             DEVICE_GATEWAY,
             source_arguments,
@@ -1133,6 +1141,9 @@ class DeviceHistoryService:
             }
         if temporal_analysis is not None:
             data["temporalAnalysis"] = temporal_analysis
+        if correlation_events:
+            data["correlationEvents"] = correlation_events
+            data["correlationEventsTruncated"] = len(filtered_events) > 16
         if command_events:
             data["commandEvents"] = command_events[:24]
             data["commandEventsTruncated"] = len(command_events) > 24
