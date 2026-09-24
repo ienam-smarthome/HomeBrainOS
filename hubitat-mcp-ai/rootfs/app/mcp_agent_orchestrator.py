@@ -656,9 +656,10 @@ class UnifiedMCPAgent:
             "_resolved_target": dict(seed.target),
             "_include_command_provenance": True,
             "_causal_transition": seed.transition,
-            # DeviceHistoryService interprets an explicit small state-history
-            # limit as "latest transitions over the bounded seven-day horizon"
-            # while still fetching enough rows internally for interval analysis.
+            "_causal_hours_back": 168,
+            # Keep several recent transitions available for repeated-pattern
+            # correlation while preserving the established seven-day causal
+            # horizon through a private host-only hint.
             "limit": 12,
         }
         signature = json.dumps(
