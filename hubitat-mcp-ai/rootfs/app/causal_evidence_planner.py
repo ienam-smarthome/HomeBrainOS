@@ -151,6 +151,7 @@ def sensor_transition_correlations(
     *,
     start_delta_seconds: float = 2.0,
     end_delay_seconds: float = 45.0,
+    end_after_slop_seconds: float = 2.0,
 ) -> list[dict[str, Any]]:
     """Correlate one motion/presence source with subject interval boundaries."""
 
@@ -184,7 +185,9 @@ def sensor_transition_correlations(
                     continue
                 rank = abs(signed)
             else:
-                if value not in inactive_values or signed > 0 or abs(signed) > end_delay_seconds:
+                if value not in inactive_values:
+                    continue
+                if signed < -end_delay_seconds or signed > end_after_slop_seconds:
                     continue
                 rank = abs(signed)
             candidates.append((rank, event_time, row))
@@ -192,6 +195,8 @@ def sensor_transition_correlations(
             continue
         candidates.sort(key=lambda item: item[0])
         delta, event_time, row = candidates[0]
+        producer = row.get("producedBy")
+        producer_info = dict(producer) if isinstance(producer, dict) else {}
         matches.append({
             "boundaryRole": role,
             "intervalIndex": boundary.get("intervalIndex"),
@@ -204,6 +209,7 @@ def sensor_transition_correlations(
             "attribute": attribute,
             "eventValue": row.get("value"),
             "description": row.get("description") or row.get("descriptionText"),
+            "producedBy": producer_info or None,
         })
     return matches
 
@@ -318,6 +324,7 @@ def _sensor_analysis(
         history,
         start_delta_seconds=5.0,
         end_delay_seconds=45.0,
+        end_after_slop_seconds=2.0,
     )
     relevant = [row for row in rows if row.get("boundaryRole") == requested_role]
     opposite = [row for row in rows if row.get("boundaryRole") == opposite_role]
@@ -336,6 +343,13 @@ def _sensor_analysis(
         for row in relevant
         if float(row.get("signedDeltaSeconds") or 0) > 0
     )
+    producer_labels = sorted({
+        str(producer.get("label") or producer.get("name") or "").strip()
+        for row in [*relevant, *opposite]
+        for producer in [row.get("producedBy")]
+        if isinstance(producer, dict)
+        and str(producer.get("label") or producer.get("name") or "").strip()
+    })
     return {
         "label": history.get("label"),
         "attribute": history.get("attribute"),
@@ -348,6 +362,7 @@ def _sensor_analysis(
         "oppositeCorrelations": opposite[:12],
         "requestedMatched": any(requested(row) for row in relevant),
         "afterSubjectCount": after_count,
+        "producerLabels": producer_labels,
         "repeatedUpstreamPattern": (
             requested_role == "start"
             and len(relevant) >= 2
@@ -784,17 +799,38 @@ def render_reporting_source_secondary_analysis(
                 "automation."
             )
         if opposite and role_word == "ON":
-            before = [
-                row for row in opposite
-                if float(row.get("signedDeltaSeconds") or 0) <= 0
-            ]
-            if before:
-                paragraphs.append(
-                    f"{label} also had {len(before)} inactive edge(s) shortly before "
-                    "observed OFF boundaries. That strengthens the repeated timing "
-                    "pattern, but remains temporal correlation rather than direct "
-                    "producer evidence."
-                )
+            timings = ", ".join(_delta_phrase(row) for row in opposite[:5])
+            paragraphs.append(
+                f"{label} also had {len(opposite)} inactive edge(s) correlated "
+                f"with observed OFF boundaries ({timings}). That strengthens the "
+                "repeated timing pattern, but remains temporal correlation rather "
+                "than direct producer evidence."
+            )
+
+    shared_producers: dict[str, list[str]] = {}
+    for sensor in sensors:
+        label = str(sensor.get("label") or "").strip()
+        producers = [
+            str(value).strip()
+            for value in (sensor.get("producerLabels") or [])
+            if str(value).strip()
+        ]
+        if label and len(producers) == 1:
+            shared_producers.setdefault(producers[0], []).append(label)
+    for producer, labels in shared_producers.items():
+        unique_labels = list(dict.fromkeys(labels))
+        if len(unique_labels) < 2:
+            continue
+        if len(unique_labels) == 2:
+            joined = f"{unique_labels[0]} and {unique_labels[1]}"
+        else:
+            joined = ", ".join(unique_labels[:-1]) + f", and {unique_labels[-1]}"
+        paragraphs.append(
+            f"{joined} are both reported into Hubitat through {producer}. Their "
+            "matching timing therefore should not be treated as independent "
+            "upstream confirmations. This identifies a shared reporting path, "
+            "not the automation or action that initiated the light/device change."
+        )
 
     recovery = analysis.get("levelRecovery")
     if isinstance(recovery, dict) and recovery.get("matchCount"):

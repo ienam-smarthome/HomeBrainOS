@@ -241,6 +241,66 @@ def test_secondary_analysis_preserves_repeated_pattern_and_requested_miss() -> N
     assert "does not identify a specific external hub or automation" in rendered
 
 
+def test_shared_sensor_reporting_path_is_not_independent_corroboration() -> None:
+    subject = {
+        "label": "Hallway Light 1",
+        "room": "Hallway",
+        "correlationEvents": [
+            {"name": "switch", "value": "off", "date": "2026-09-24T20:28:40.810+01:00"},
+            {"name": "switch", "value": "on", "date": "2026-09-24T20:28:20.371+01:00"},
+            {"name": "switch", "value": "off", "date": "2026-09-24T20:25:07.768+01:00"},
+            {"name": "switch", "value": "on", "date": "2026-09-24T20:24:24.025+01:00"},
+        ],
+    }
+    producer = {"label": "Matter Aqara M3", "id": "7718", "type": "device"}
+    fp300 = {
+        "label": "Hallway FP300 sensor",
+        "room": "Hallway",
+        "attribute": "motion",
+        "events": [
+            {"name": "motion", "value": "active", "date": "2026-09-24T20:28:21.335+01:00", "producedBy": producer},
+            {"name": "motion", "value": "inactive", "date": "2026-09-24T20:28:40.685+01:00", "producedBy": producer},
+            {"name": "motion", "value": "active", "date": "2026-09-24T20:24:25.487+01:00", "producedBy": producer},
+            {"name": "motion", "value": "inactive", "date": "2026-09-24T20:25:07.636+01:00", "producedBy": producer},
+        ],
+    }
+    soft = {
+        "label": "Hallway Soft Sensor",
+        "room": "Hallway",
+        "attribute": "motion",
+        "events": [
+            {"name": "motion", "value": "inactive", "date": "2026-09-24T20:28:15.306+01:00", "producedBy": producer},
+            {"name": "motion", "value": "active", "date": "2026-09-24T20:28:21.315+01:00", "producedBy": producer},
+            {"name": "motion", "value": "inactive", "date": "2026-09-24T20:28:41.694+01:00", "producedBy": producer},
+            {"name": "motion", "value": "active", "date": "2026-09-24T20:24:24.482+01:00", "producedBy": producer},
+            {"name": "motion", "value": "inactive", "date": "2026-09-24T20:25:08.368+01:00", "producedBy": producer},
+        ],
+    }
+
+    analysis = build_reporting_source_secondary_analysis(
+        subject,
+        transition="on",
+        requested_boundary="2026-09-24T20:28:20.371+01:00",
+        sensor_histories=[fp300, soft],
+    )
+
+    soft_end = next(
+        row
+        for row in analysis["sensors"][1]["oppositeCorrelations"]
+        if row["signedDeltaSeconds"] == 0.884
+    )
+    assert soft_end["producedBy"]["label"] == "Matter Aqara M3"
+    assert analysis["sensors"][0]["producerLabels"] == ["Matter Aqara M3"]
+    assert analysis["sensors"][1]["producerLabels"] == ["Matter Aqara M3"]
+
+    rendered = render_reporting_source_secondary_analysis(analysis)
+    assert rendered is not None
+    assert "0.884s after" in rendered
+    assert "both reported into Hubitat through Matter Aqara M3" in rendered
+    assert "should not be treated as independent upstream confirmations" in rendered
+    assert "not the automation or action that initiated" in rendered
+
+
 @pytest.mark.asyncio
 async def test_bridge_reporting_source_runs_bounded_secondary_correlation_zero_model() -> None:
     mcp = _BedroomCorrelationMCP()
