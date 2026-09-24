@@ -355,3 +355,75 @@ def test_self_produced_boundary_does_not_stop_deeper_fallback() -> None:
     rows = correlate_boundary_producers(evidence)
     assert rows
     assert boundary_producer_transition_sufficient(rows, "off") is False
+
+
+def _short_hue_switch_events() -> list[dict]:
+    return [
+        {
+            "name": "switch",
+            "value": "off",
+            "descriptionText": "Bedroom 1 Light switch is off",
+            "date": "2026-09-24T14:58:59.777+0100",
+            "isStateChange": True,
+            "type": "physical",
+            "producedBy": {"name": "Matter Hue Bridge Pro", "deviceId": 7790},
+        },
+        {
+            "name": "switch",
+            "value": "on",
+            "descriptionText": "Bedroom 1 Light switch is on",
+            "date": "2026-09-24T14:58:47.954+0100",
+            "isStateChange": True,
+            "type": "physical",
+            "producedBy": {"name": "Matter Hue Bridge Pro", "deviceId": 7790},
+        },
+        {
+            "name": "switch",
+            "value": "off",
+            "descriptionText": "Bedroom 1 Light switch is off",
+            "date": "2026-09-24T14:58:37.134+0100",
+            "isStateChange": True,
+            "type": "physical",
+            "producedBy": {"name": "Matter Hue Bridge Pro", "deviceId": 7790},
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_short_bridge_interval_keeps_authoritative_boundary_provenance() -> None:
+    device = _device("7840", "Bedroom 1 Light", "Bedroom 1")
+    mcp = _BoundaryMCP(
+        device=device,
+        transition="on",
+        switch_events=_short_hue_switch_events(),
+        command_events=[],
+    )
+    ai = _NoProvider()
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Why did Bedroom 1 Light turn itself on?"
+    )
+
+    counters = outcome.metrics["counters"]
+    assert ai.requests == []
+    assert counters.get("model_rounds", 0) == 0
+    assert counters["causal_subject_prefetch"] == 1
+    assert counters["causal_command_producer_reads"] == 1
+    assert counters["causal_boundary_producer_provenance"] == 1
+    assert counters["causal_deterministic_finalization"] == 1
+    assert counters.get("causal_native_log_reads", 0) == 0
+
+    assert "Matter Hue Bridge Pro" in outcome.message
+    assert "reporting path into Hubitat" in outcome.message
+    assert "12 seconds" in outcome.message
+    assert not any(
+        name == "hub_read_diagnostics"
+        for name, _arguments in mcp.calls
+    )

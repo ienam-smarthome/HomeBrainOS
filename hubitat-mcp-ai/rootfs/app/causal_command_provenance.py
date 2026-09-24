@@ -162,8 +162,11 @@ def correlate_boundary_producers(
 
     correlations: list[dict[str, Any]] = []
     for timeline in build_causal_timeline_rows(evidence):
-        if not timeline.get("material"):
-            continue
+        # Direct structured boundary provenance is authoritative for the observed
+        # transition itself, even when the interval is brief. The generic
+        # timeline's five-minute "material" threshold is useful for weaker
+        # contextual reasoning, but must not discard a short switch boundary that
+        # independently names its producer.
         subject = str(timeline.get("subject") or "").strip()
         for role, action, boundary_key in (
             ("start", "on", "start"),
