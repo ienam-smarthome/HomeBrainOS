@@ -82,6 +82,14 @@ class _BoundaryMCP:
     async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
         self.calls.append((name, arguments))
         assert name == "hub_read_devices", (name, arguments)
+        if arguments.get("tool") == "hub_list_devices":
+            return MCPToolResult(
+                name,
+                arguments,
+                {},
+                "ok",
+                {"devices": [dict(self.device)]},
+            )
         assert arguments.get("tool") == "hub_list_device_events", arguments
         args = arguments.get("args") or {}
         assert str(args.get("deviceId")) == str(self.device["id"])
@@ -170,7 +178,9 @@ async def test_corroborated_13ms_inversion_finalizes_fan_without_logs_or_model()
     assert counters["causal_command_producer_reads"] == 1
     assert counters["causal_command_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
-    assert counters["tool_calls"] == 3
+    assert counters["tool_calls"] >= 4
+    assert counters["causal_secondary_correlation"] == 1
+    assert counters["causal_secondary_room_read"] == 1
     assert counters.get("causal_native_log_reads", 0) == 0
 
     assert "01. Humidity Controller" in outcome.message
