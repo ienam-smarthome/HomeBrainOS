@@ -372,7 +372,7 @@ async def test_agent_finalizes_from_command_producer_without_logs_or_provider() 
     assert history_receipts[0]["arguments"] == {
         "name": "Dehumidifier 2",
         "attribute": "switch",
-        "limit": 3,
+        "limit": 12,
     }
     assert history_receipts[0]["details"]["commandEvents"][0]["producedBy"]
 
