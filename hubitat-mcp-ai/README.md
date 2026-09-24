@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.33**.
+Current add-on version: **0.16.34**.
 
 ## Architecture
+
+0.16.34 fixes Web UI device-choice intent preservation. The choice helper no longer treats any occurrence of `turn on`, `turn off`, or `toggle` as a control command. It only compacts clearly direct control requests (including polite `please` / `can you` forms); causal/history questions such as `Why did hallway lights turn on?` retain the original question and append an exact-device clarification when `Hallway Light 1` is selected. This keeps the visible question, conversation history, and backend request aligned with the user's original intent while preserving genuine control clarifications.
 
 0.16.33 improves reporting-source sensor-correlation fidelity using the live Hallway trace. Motion/presence OFF matching now permits a tiny post-boundary recording-order slop so a sensor edge 0.884 s after a light OFF is preferred over an unrelated inactive event 25.5 s earlier. Correlated sensor rows retain their structured `producedBy` reporting source, allowing deterministic synthesis to state when two sensor candidates share the same bridge and therefore are not independent corroboration. The release also adds `causal_cached_candidate_plan_fallback` so a safe 0.16.32 cache rejection is visible separately from a successful cached plan.
 
