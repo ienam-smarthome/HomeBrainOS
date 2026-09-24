@@ -221,6 +221,43 @@ def _timestamp(value: Any) -> datetime | None:
 def _subject_interval_boundaries(
     subject_history: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """Return bounded subject transitions for correlation.
+
+    Explicit causal prefetch can retain several switch rows from the same
+    authoritative source page as `correlationEvents`. Prefer those rows so a
+    bounded secondary investigation can compare repeated transitions without
+    re-reading the subject. Fall back to interval analysis for older/general
+    callers.
+    """
+
+    correlation_events = subject_history.get("correlationEvents")
+    if isinstance(correlation_events, list):
+        boundaries: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for item in correlation_events:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("name") or "").strip().casefold() != "switch":
+                continue
+            value = str(item.get("value") or "").strip().casefold()
+            role = "start" if value == "on" else "end" if value == "off" else ""
+            event_time = _timestamp(item.get("date") or item.get("timestamp"))
+            if not role or event_time is None:
+                continue
+            key = (role, event_time.isoformat())
+            if key in seen:
+                continue
+            seen.add(key)
+            boundaries.append({
+                "role": role,
+                "time": event_time,
+                "intervalIndex": len(boundaries) + 1,
+                "source": "correlationEvents",
+            })
+        if boundaries:
+            boundaries.sort(key=lambda item: item["time"])
+            return boundaries
+
     temporal = subject_history.get("temporalAnalysis")
     if not isinstance(temporal, dict):
         return []
@@ -256,7 +293,6 @@ def _subject_interval_boundaries(
             "open": True,
         })
     return boundaries
-
 
 def _controller_events(controller_history: dict[str, Any]) -> list[tuple[datetime, dict[str, Any]]]:
     rows = controller_history.get("events")
