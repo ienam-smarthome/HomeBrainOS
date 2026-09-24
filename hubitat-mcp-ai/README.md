@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.24**.
+Current add-on version: **0.16.25**.
 
 ## Architecture
+
+0.16.25 adds bounded secondary correlation for external bridge/device reporting-source provenance. When a requested switch boundary has no direct command producer and is reported through a non-self device/bridge, HomeBrain now reuses several switch rows from the already-fetched subject history, performs one exact-room discovery pass, and checks at most one highest-ranked controller plus one motion/presence source. Controller and sensor histories run concurrently. The deterministic answer separates direct reporting-source evidence, controller/sensor temporal correlation, repeated upstream-compatible patterns, and unresolved hypotheses; it never upgrades timing correlation into proof of a specific automation or hub. App-produced boundaries and direct command-producer cases retain the 0.16.24 immediate fast path.
 
 0.16.24 adds authoritative switch-boundary provenance for real integrations where a direct command row is absent or event timestamps are recorded a few milliseconds out of order. A slightly later command is accepted only when the requested switch boundary independently names the same app producer, preserving the strict anti-correlation rule otherwise. When no command row exists but a non-self boundary producer is available, HomeBrain can finalize deterministically while distinguishing an app producer from a bridge/device reporting source; device/bridge provenance is explicitly not presented as the exact initiating action. Long causal durations are also formatted as hours/minutes instead of large minute counts.
 
