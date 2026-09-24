@@ -32,6 +32,7 @@ from causal_evidence_planner import (
 from causal_bridge_correlation import (
     bridge_boundary_requires_secondary,
     build_bridge_secondary_summary,
+    render_bridge_secondary_from_evidence,
     render_bridge_secondary_summary,
 )
 from causal_command_provenance import (
@@ -1792,36 +1793,10 @@ class UnifiedMCPAgent:
                             )
                             + (
                                 "\n\n"
-                                + render_bridge_secondary_summary(
-                                    next(
-                                        (
-                                            receipt.get("details")
-                                            for receipt in reversed(
-                                                self.evidence.receipts()
-                                            )
-                                            if receipt.get("tool")
-                                            == "homebrain_causal_secondary_correlation"
-                                            and isinstance(
-                                                receipt.get("details"), dict
-                                            )
-                                        ),
-                                        {},
-                                    )
-                                )
-                                if render_bridge_secondary_summary(
-                                    next(
-                                        (
-                                            receipt.get("details")
-                                            for receipt in reversed(
-                                                self.evidence.receipts()
-                                            )
-                                            if receipt.get("tool")
-                                            == "homebrain_causal_secondary_correlation"
-                                            and isinstance(
-                                                receipt.get("details"), dict
-                                            )
-                                        ),
-                                        {},
+                                + secondary
+                                if (
+                                    secondary := render_bridge_secondary_from_evidence(
+                                        self.evidence.receipts()
                                     )
                                 )
                                 else ""
