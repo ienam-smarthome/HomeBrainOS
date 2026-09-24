@@ -14,6 +14,7 @@ The repository drift test compares this table directly with the live directory. 
 | `automation_status_service.py` | Reads and normalises Hubitat automation status. |
 | `capability_grounding.py` | Prevents unsupported capability-denial claims. |
 | `causal_attribution_guard.py` | Prevents app/rule configuration-only evidence from being promoted into a specific causal trigger, and ensures stronger aligned controller provenance wins when present. |
+| `causal_bridge_correlation.py` | Performs bounded same-room controller and presence/motion correlation only for external bridge/device switch-boundary provenance, preserving reporting-source versus initiator semantics and cautious hypothesis wording. |
 | `causal_command_provenance.py` | Correlates Hubitat command-on/command-off rows and their direct `producedBy` metadata to observed state boundaries; renders zero-model turn-on explanations when the command source is authoritative. |
 | `causal_native_logs.py` | Derives native-log windows for both causal boundaries and deterministically correlates physical controller/input events -> subject commands -> state transitions, including repeated start/end provenance. |
 | `causal_subject_prefetch.py` | Conservatively matches one explicit known switch device and ON/OFF transition from a causal prompt so subject history can be gathered before the first provider round; ambiguous/broader causal questions fall through unchanged. |
