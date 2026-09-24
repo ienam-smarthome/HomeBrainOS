@@ -334,8 +334,31 @@ class DeviceQueryService:
             if not (has_presence or has_motion):
                 continue
 
-            attribute = "presence" if has_presence else "motion"
-            capability_rank = 0 if has_presence else 1
+            # Some bridge child devices inherit broad capabilities from their
+            # parent even though they do not expose the corresponding live
+            # occupancy state themselves (seen with FP300 humidity/lux
+            # children). Only spend a bounded causal-history slot on an
+            # attribute this concrete device actually exposes.
+            live_attributes = {
+                cls._normalized_attribute(str(name))
+                for name in device_attributes(device).keys()
+            }
+            exposes_presence = (
+                has_presence
+                and cls._normalized_attribute("presence") in live_attributes
+            )
+            exposes_motion = (
+                has_motion
+                and cls._normalized_attribute("motion") in live_attributes
+            )
+            if exposes_presence:
+                attribute = "presence"
+                capability_rank = 0
+            elif exposes_motion:
+                attribute = "motion"
+                capability_rank = 1
+            else:
+                continue
 
             label = str(device.get("label") or device.get("name") or "").strip()
             room = str(device.get("room") or device.get("roomName") or "").strip()
@@ -376,6 +399,7 @@ class DeviceQueryService:
                     "capabilities": capabilities,
                     "matchBasis": basis,
                     "suggestedHistoryAttributes": [attribute],
+                    "exposedOccupancyAttribute": attribute,
                 },
             ))
 
