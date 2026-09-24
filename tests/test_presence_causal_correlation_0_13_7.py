@@ -15,13 +15,19 @@ from device_query_service import DeviceQueryService  # noqa: E402
 from request_metrics import RequestMetrics  # noqa: E402
 
 
-def _device(label: str, room: str, capabilities: list[str]) -> dict:
+def _device(
+    label: str,
+    room: str,
+    capabilities: list[str],
+    *,
+    attributes: dict | None = None,
+) -> dict:
     return {
         "id": label,
         "label": label,
         "room": room,
         "capabilities": capabilities,
-        "attributes": {},
+        "attributes": dict(attributes or {}),
     }
 
 
@@ -36,16 +42,19 @@ def test_room_trigger_sensor_candidates_are_capability_grounded() -> None:
             "Bedroom 3 Soft Sensor",
             "Bedroom 3",
             ["MotionSensor"],
+            attributes={"motion": "inactive"},
         ),
         _device(
             "Bedroom 3 Presence",
             "Bedroom 3",
             ["PresenceSensor"],
+            attributes={"presence": "present"},
         ),
         _device(
             "Hallway Motion",
             "Hallway",
             ["MotionSensor"],
+            attributes={"motion": "inactive"},
         ),
     ]
 
