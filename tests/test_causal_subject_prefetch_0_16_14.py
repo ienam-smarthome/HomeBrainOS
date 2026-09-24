@@ -419,7 +419,7 @@ async def test_strong_causal_prefetch_finalizes_without_provider_or_identity_loo
     assert history_receipts[0]["arguments"] == {
         "name": "Dehumidifier 2",
         "attribute": "switch",
-        "limit": 3,
+        "limit": 12,
     }
 
 
