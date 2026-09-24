@@ -215,6 +215,54 @@ def correlate_boundary_producers(
     return correlations
 
 
+def boundary_producer_transition_match(
+    correlations: list[dict[str, Any]],
+    transition: str,
+) -> dict[str, Any] | None:
+    """Return the newest non-self producer row for the requested boundary."""
+
+    action = str(transition or "").strip().casefold()
+    role = {"on": "start", "off": "end"}.get(action)
+    if role is None:
+        return None
+    candidates: list[dict[str, Any]] = []
+    for row in correlations:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("boundaryRole") or "") != role:
+            continue
+        if str(row.get("action") or "") != action:
+            continue
+        producer = row.get("producer")
+        if not isinstance(producer, dict):
+            continue
+        producer_label = str(producer.get("label") or "").strip()
+        subject = str(row.get("subject") or "").strip()
+        if not producer_label or producer_label.casefold() == subject.casefold():
+            continue
+        candidates.append(row)
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda row: _parse_time(row.get("stateBoundary"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return candidates[0]
+
+
+def boundary_producer_transition_kind(
+    correlations: list[dict[str, Any]],
+    transition: str,
+) -> str | None:
+    row = boundary_producer_transition_match(correlations, transition)
+    if row is None:
+        return None
+    producer = row.get("producer") or {}
+    producer_type = str(producer.get("type") or "").strip().casefold()
+    return "app" if producer_type == "app" else "reporting_source"
+
+
 def boundary_producer_transition_sufficient(
     correlations: list[dict[str, Any]],
     transition: str,
@@ -721,6 +769,8 @@ def render_command_producer_evidence(
 
 
 __all__ = [
+    "boundary_producer_transition_kind",
+    "boundary_producer_transition_match",
     "boundary_producer_transition_sufficient",
     "command_producer_transition_sufficient",
     "command_producer_turn_on_sufficient",
