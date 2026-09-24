@@ -35,6 +35,7 @@ from contextual_read_fast_path import (
 )
 from confirmation_policy import ConfirmationAction
 from confirmation_store import CONFIRM_WORDS
+from causal_subject_prefetch import switch_transition_from_prompt
 from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
 from device_target_resolver import resolve_capable_device_candidate
@@ -42,6 +43,7 @@ from direct_outcome_context import DirectOutcomeContext
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
 from hub_timezone import HubTimezoneResolver
 from live_evidence_authority import LiveEvidenceAuthority
+from investigation_policy import is_causal_investigation
 from location_event_queries import (
     find_mode_last_entered,
     mode_active_before,
@@ -174,6 +176,7 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
         )
         self.hub_timezone = HubTimezoneResolver(self.mcp, self.evidence.record)
         self._clarification_choices: dict[str, list[str]] = {}
+        self._clarification_objectives: dict[str, str] = {}
         self._selected_devices: dict[str, str] = {}
         self._history_references: dict[str, HistoryReference] = {}
 
@@ -1317,14 +1320,21 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                 if after_that is not None:
                     return await self._relative_that_outcome(after_that[0], after_that[1], "after", session_key)
 
-            selection = parse_device_selection(user_prompt)
-            if selection is not None:
-                return await self._selection_outcome(selection, session_key=session_key)
-
+            # Resolve a pending device clarification before treating the reply
+            # as a brand-new request. For causal switch investigations, preserve
+            # the original objective across the clarification boundary and resume
+            # the deterministic causal pipeline with the selected concrete device.
             prior_choices = list(self._clarification_choices.get(session_key) or [])
             if prior_choices:
                 normalized = user_prompt.casefold()
-                explicit = next((choice for choice in prior_choices if choice.casefold() in normalized), None)
+                explicit = next(
+                    (
+                        choice
+                        for choice in prior_choices
+                        if choice.casefold() in normalized
+                    ),
+                    None,
+                )
                 if explicit is None and self._is_choice_follow_up(user_prompt):
                     self.request_metrics.increment("device_resolution_ambiguous")
                     return AgentOutcome(
@@ -1334,8 +1344,40 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                         choices=prior_choices,
                     )
                 if explicit is not None:
+                    original_objective = self._clarification_objectives.pop(
+                        session_key,
+                        "",
+                    )
                     self._clarification_choices.pop(session_key, None)
                     self._selected_devices[session_key] = explicit
+                    transition = (
+                        switch_transition_from_prompt(original_objective)
+                        if is_causal_investigation(original_objective)
+                        else None
+                    )
+                    if transition in {"on", "off"}:
+                        self.request_metrics.increment(
+                            "causal_clarification_resume"
+                        )
+                        resumed_prompt = (
+                            f"Why did {explicit} turn itself {transition}?"
+                        )
+                        base_process = super(
+                            UnifiedMCPAgent,
+                            self,
+                        ).process_user_request_result
+                        return await base_process(
+                            resumed_prompt,
+                            conversation_history,
+                            session_id=session_id,
+                        )
+
+            selection = parse_device_selection(user_prompt)
+            if selection is not None:
+                return await self._selection_outcome(
+                    selection,
+                    session_key=session_key,
+                )
 
             contextual_attribute = parse_contextual_attribute(user_prompt)
             selected_device = self._selected_devices.get(session_key)
@@ -1460,6 +1502,13 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
             choices = [clean_choice_label(choice) for choice in choices]
             outcome.choices = choices
             self._clarification_choices[session_key] = choices
+            if (
+                is_causal_investigation(user_prompt)
+                and switch_transition_from_prompt(user_prompt) in {"on", "off"}
+            ):
+                self._clarification_objectives[session_key] = user_prompt
+            else:
+                self._clarification_objectives.pop(session_key, None)
         return outcome
 
     async def _process_user_request(
