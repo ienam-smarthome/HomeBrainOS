@@ -82,12 +82,18 @@ _SWITCH_TRANSITIONS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
-def _switch_transition(prompt: str) -> str | None:
+def switch_transition_from_prompt(prompt: str) -> str | None:
+    """Return an explicit binary switch transition named by the prompt."""
+
     text = str(prompt or "")
     for pattern, transition in _SWITCH_TRANSITIONS:
         if pattern.search(text) is not None:
             return transition
     return None
+
+
+# Internal compatibility alias for existing call sites.
+_switch_transition = switch_transition_from_prompt
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,4 +304,8 @@ def causal_subject_seed(
     )
 
 
-__all__ = ["CausalSubjectSeed", "causal_subject_seed"]
+__all__ = [
+    "CausalSubjectSeed",
+    "causal_subject_seed",
+    "switch_transition_from_prompt",
+]
