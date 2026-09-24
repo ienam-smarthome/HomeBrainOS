@@ -1138,7 +1138,34 @@ class DeviceQueryService:
                     except Exception:
                         identities = []
 
-            room_kind = self._room_kind_reference(requested, identities)
+            room_kind_identities = identities
+            if required_command:
+                room_kind_identities = [
+                    device
+                    for device in room_kind_identities
+                    if required_command.casefold() in device_commands(device)
+                ]
+            wanted_capabilities = {
+                re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                for value in (required_capabilities or set())
+                if str(value).strip()
+            }
+            if wanted_capabilities:
+                capable_room_kind = []
+                for device in room_kind_identities:
+                    advertised = {
+                        re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                        for value in self._capability_names(device)
+                    }
+                    if advertised & wanted_capabilities:
+                        capable_room_kind.append(device)
+                if capable_room_kind:
+                    room_kind_identities = capable_room_kind
+
+            room_kind = self._room_kind_reference(
+                requested,
+                room_kind_identities,
+            )
             if room_kind is not None:
                 room_kind_name, room_label, room_devices = room_kind
                 labels = tuple(
@@ -1192,11 +1219,6 @@ class DeviceQueryService:
                         for device in fallback_candidates
                         if required_command.casefold() in device_commands(device)
                     ]
-                wanted_capabilities = {
-                    re.sub(r"[^a-z0-9]", "", str(value).casefold())
-                    for value in (required_capabilities or set())
-                    if str(value).strip()
-                }
                 if wanted_capabilities:
                     capable = []
                     for device in fallback_candidates:
