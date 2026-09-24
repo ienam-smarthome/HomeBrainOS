@@ -680,8 +680,13 @@ class DeviceHistoryService:
         )
         explicit_small_limit = "limit" in arguments and limit <= 3
         default_hours_back = 168 if attribute and explicit_small_limit else 24
+        private_causal_hours = arguments.get("_causal_hours_back")
         hours_back = self._integer(
-            arguments.get("hours_back"),
+            (
+                arguments.get("hours_back")
+                if arguments.get("hours_back") not in (None, "")
+                else private_causal_hours
+            ),
             default=default_hours_back,
             minimum=1,
             maximum=168,
