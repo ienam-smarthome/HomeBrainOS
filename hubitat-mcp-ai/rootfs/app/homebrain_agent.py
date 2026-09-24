@@ -1485,6 +1485,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                             session_id=session_id,
                         )
 
+            causal_group_clarification = (
+                await self._causal_group_clarification_outcome(
+                    user_prompt,
+                    session_key=session_key,
+                )
+            )
+            if causal_group_clarification is not None:
+                return causal_group_clarification
+
             selection = parse_device_selection(user_prompt)
             if selection is not None:
                 return await self._selection_outcome(
