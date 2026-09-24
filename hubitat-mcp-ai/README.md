@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.30**.
+Current add-on version: **0.16.31**.
 
 ## Architecture
+
+0.16.31 removes the unnecessary provider round from initial causal room/group clarification. For an explicit switch-causal question such as `Why did hallway lights turn on?`, HomeBrain now checks the authoritative cached identity world before model routing. If the exact room + device-kind phrase maps to multiple concrete devices, it returns the same clarification choices locally, records deterministic resolver evidence, and preserves the causal objective for the existing 0.16.30 post-selection continuation. No event history is read until a concrete device is chosen.
 
 0.16.30 preserves causal intent across device clarification and adds a hard triggered-listener attribution guard. When a causal room/group question such as `Why did hallway lights turn on?` resolves to several concrete devices, selecting one now resumes the same deterministic causal switch investigation instead of starting a generic model-led history request. Final synthesis also treats an app present only in a physical event's `triggered[]` list as downstream whenever structured `producedBy` names a bridge/device, unless separate direct producer evidence independently proves that app issued the transition.
 
