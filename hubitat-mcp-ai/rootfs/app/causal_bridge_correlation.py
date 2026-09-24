@@ -188,7 +188,7 @@ def render_bridge_secondary_summary(
                     else "at the same time as"
                 )
                 details.append(
-                    f"{ROLE if False else role}: {label} "
+                    f"{role}: {label} "
                     f"{row.get('eventValue')} was recorded {direction} "
                     "the switch boundary"
                 )
