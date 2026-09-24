@@ -154,6 +154,54 @@ def test_repeated_presence_pattern_correlates_subject_starts_and_delayed_offs() 
     assert "do not name a specific external hub" in instruction
 
 
+def test_end_correlation_prefers_near_after_edge_over_stale_prior_inactive() -> None:
+    subject = {
+        "label": "Hallway Light 1",
+        "correlationEvents": [
+            {
+                "name": "switch",
+                "value": "off",
+                "date": "2026-09-24T20:28:40.810+01:00",
+            },
+            {
+                "name": "switch",
+                "value": "on",
+                "date": "2026-09-24T20:28:20.371+01:00",
+            },
+        ],
+    }
+    sensor = {
+        "label": "Hallway Soft Sensor",
+        "attribute": "motion",
+        "events": [
+            {
+                "name": "motion",
+                "value": "inactive",
+                "date": "2026-09-24T20:28:15.306+01:00",
+                "producedBy": {"label": "Matter Aqara M3", "id": "7718"},
+            },
+            {
+                "name": "motion",
+                "value": "active",
+                "date": "2026-09-24T20:28:21.315+01:00",
+                "producedBy": {"label": "Matter Aqara M3", "id": "7718"},
+            },
+            {
+                "name": "motion",
+                "value": "inactive",
+                "date": "2026-09-24T20:28:41.694+01:00",
+                "producedBy": {"label": "Matter Aqara M3", "id": "7718"},
+            },
+        ],
+    }
+
+    rows = sensor_transition_correlations(subject, sensor)
+    end = next(row for row in rows if row["boundaryRole"] == "end")
+
+    assert end["signedDeltaSeconds"] == 0.884
+    assert end["producedBy"]["label"] == "Matter Aqara M3"
+
+
 def test_lux_history_is_not_accepted_as_trigger_sensor_history() -> None:
     room_filter = {
         "eventSourceHints": {
