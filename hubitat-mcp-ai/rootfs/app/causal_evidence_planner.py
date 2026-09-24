@@ -576,10 +576,40 @@ def _delta_phrase(row: dict[str, Any]) -> str:
     return "at the same time as"
 
 
+def _candidate_phrase(
+    item: dict[str, Any],
+    *,
+    kind: str,
+    subject_room: str,
+) -> str:
+    label = str(item.get("label") or "").strip()
+    room = str(item.get("room") or "").strip()
+    basis = str(item.get("matchBasis") or "").strip()
+    normalized_room = " ".join(room.casefold().split())
+    normalized_subject = " ".join(subject_room.casefold().split())
+
+    if (
+        basis == "room"
+        and normalized_room
+        and normalized_room == normalized_subject
+    ):
+        return f"same-room {kind} {label}"
+    if basis == "label-affinity":
+        if room:
+            return (
+                f"{kind} candidate {label} (label-associated with {subject_room}, "
+                f"but assigned to Hubitat room {room})"
+            )
+        return f"{kind} candidate {label} (label-associated with {subject_room})"
+    if room:
+        return f"{kind} {label} (Hubitat room {room})"
+    return f"{kind} {label}"
+
+
 def render_reporting_source_secondary_analysis(
     analysis: dict[str, Any],
 ) -> str | None:
-    """Render secondary correlation without turning timing into a causal claim."""
+    """Render bounded multi-candidate correlation without overstating causation."""
 
     if not isinstance(analysis, dict):
         return None
@@ -588,10 +618,25 @@ def render_reporting_source_secondary_analysis(
     if not role_word:
         return None
 
+    subject_room = str(analysis.get("room") or "").strip()
     paragraphs: list[str] = []
-    controller = analysis.get("controller")
-    if isinstance(controller, dict):
+
+    controllers = [
+        row for row in analysis.get("controllers", [])
+        if isinstance(row, dict)
+    ]
+    if not controllers and isinstance(analysis.get("controller"), dict):
+        controllers = [analysis["controller"]]
+
+    for controller in controllers:
         label = str(controller.get("label") or "").strip()
+        if not label:
+            continue
+        phrase = _candidate_phrase(
+            controller,
+            kind="controller",
+            subject_room=subject_room,
+        )
         relevant = [
             row for row in controller.get("relevantAlignments", [])
             if isinstance(row, dict)
@@ -600,37 +645,50 @@ def render_reporting_source_secondary_analysis(
             row for row in controller.get("oppositeAlignments", [])
             if isinstance(row, dict)
         ]
-        if label:
-            if relevant:
-                paragraphs.append(
-                    f"The bounded same-room controller check found {len(relevant)} "
-                    f"{role_word} boundary alignment(s) for {label}. "
-                    + (
-                        "One aligns with the specific requested transition. "
-                        if controller.get("requestedMatched")
-                        else "None aligns with the specific requested transition. "
-                    )
-                    + "Controller timing is corroborating evidence only unless a "
-                    "direct command/producer row establishes causation."
+        if relevant:
+            paragraphs.append(
+                f"The checked {phrase} had {len(relevant)} {role_word} boundary "
+                "alignment(s). "
+                + (
+                    "One aligns with the specific requested transition. "
+                    if controller.get("requestedMatched")
+                    else "None aligns with the specific requested transition. "
                 )
-            elif opposite:
-                opposite_word = "OFF" if role_word == "ON" else "ON"
-                paragraphs.append(
-                    f"The checked same-room controller {label} did not align with "
-                    f"the {role_word} boundaries. It did align with "
-                    f"{len(opposite)} {opposite_word} boundary event(s), which is "
-                    f"evidence about those {opposite_word} transitions, not the "
-                    f"requested {role_word} transition."
-                )
-            else:
-                paragraphs.append(
-                    f"The checked same-room controller {label} had no event within "
-                    f"2 seconds of the observed {role_word} boundaries."
-                )
+                + "Controller timing is corroborating evidence only unless a "
+                "direct command/producer row establishes causation."
+            )
+        elif opposite:
+            opposite_word = "OFF" if role_word == "ON" else "ON"
+            paragraphs.append(
+                f"The checked {phrase} did not align with the {role_word} "
+                f"boundaries. It did align with {len(opposite)} {opposite_word} "
+                f"boundary event(s), which is evidence about those "
+                f"{opposite_word} transitions, not the requested {role_word} "
+                "transition."
+            )
+        else:
+            paragraphs.append(
+                f"The checked {phrase} had no event within 2 seconds of the "
+                f"observed {role_word} boundaries."
+            )
 
-    sensor = analysis.get("sensor")
-    if isinstance(sensor, dict):
+    sensors = [
+        row for row in analysis.get("sensors", [])
+        if isinstance(row, dict)
+    ]
+    if not sensors and isinstance(analysis.get("sensor"), dict):
+        sensors = [analysis["sensor"]]
+
+    transition_count = int(analysis.get("transitionCount") or 0)
+    for sensor in sensors:
         label = str(sensor.get("label") or "").strip()
+        if not label:
+            continue
+        phrase = _candidate_phrase(
+            sensor,
+            kind="motion/presence source",
+            subject_room=subject_room,
+        )
         relevant = [
             row for row in sensor.get("relevantCorrelations", [])
             if isinstance(row, dict)
@@ -639,14 +697,13 @@ def render_reporting_source_secondary_analysis(
             row for row in sensor.get("oppositeCorrelations", [])
             if isinstance(row, dict)
         ]
-        transition_count = int(analysis.get("transitionCount") or 0)
-        if label and relevant:
-            timings = ", ".join(
-                _delta_phrase(row) for row in relevant[:4]
-            )
+
+        if relevant:
+            timings = ", ".join(_delta_phrase(row) for row in relevant[:4])
             paragraphs.append(
-                f"For {label}, {len(relevant)} of {transition_count or len(relevant)} "
-                f"observed {role_word} transition(s) had a matching "
+                f"For the checked {phrase}, {len(relevant)} of "
+                f"{transition_count or len(relevant)} observed {role_word} "
+                f"transition(s) had a matching "
                 f"{sensor.get('attribute') or 'sensor'} edge within the bounded "
                 f"window ({timings}). "
                 + (
@@ -656,13 +713,13 @@ def render_reporting_source_secondary_analysis(
                     "edge within the bounded window."
                 )
             )
-        elif label:
+        else:
             paragraphs.append(
-                f"The checked motion/presence source {label} had no bounded "
-                f"correlation with the observed {role_word} transitions."
+                f"The checked {phrase} had no bounded correlation with the "
+                f"observed {role_word} transitions."
             )
 
-        if label and sensor.get("repeatedUpstreamPattern"):
+        if sensor.get("repeatedUpstreamPattern"):
             paragraphs.append(
                 f"In multiple ON transitions the light/device changed before "
                 f"Hubitat recorded {label} becoming active. That repeated ordering "
@@ -671,7 +728,7 @@ def render_reporting_source_secondary_analysis(
                 "the device and it does not identify a specific external hub or "
                 "automation."
             )
-        if label and opposite and role_word == "ON":
+        if opposite and role_word == "ON":
             before = [
                 row for row in opposite
                 if float(row.get("signedDeltaSeconds") or 0) <= 0
@@ -684,10 +741,47 @@ def render_reporting_source_secondary_analysis(
                     "producer evidence."
                 )
 
+    recovery = analysis.get("levelRecovery")
+    if isinstance(recovery, dict) and recovery.get("matchCount"):
+        count = int(recovery.get("matchCount") or 0)
+        total = int(recovery.get("transitionCount") or count)
+        high = int(recovery.get("highInitialLevelCount") or 0)
+        producer = str(recovery.get("producerLabel") or "").strip()
+        examples = [
+            row for row in recovery.get("matches", [])
+            if isinstance(row, dict)
+        ][:4]
+        timings = ", ".join(
+            (
+                f"level {row.get('initialLevel'):g} at "
+                f"{float(row.get('levelDeltaSeconds') or 0):g}s, recovery command "
+                f"at {float(row.get('commandDeltaSeconds') or 0):g}s"
+            )
+            for row in examples
+            if isinstance(row.get("initialLevel"), (int, float))
+        )
+        producer_text = (
+            f" from {producer}" if producer else ""
+        )
+        paragraphs.append(
+            f"Downstream level-recovery pattern: {count} of {total} observed ON "
+            f"transition(s) were followed by an immediate level event and a "
+            f"setLevel command{producer_text} within 5 seconds; {high} began at "
+            "about level 100. "
+            + (f"Examples: {timings}. " if timings else "")
+            + "Because those setLevel commands occur after the ON boundary, they "
+            "are evidence of recovery/adjustment after the light was already on, "
+            "not evidence that the app initiated the ON."
+        )
+        if recovery.get("requestedMatched"):
+            paragraphs.append(
+                "The specific requested ON transition also shows this downstream "
+                "level-recovery pattern."
+            )
+
     if not paragraphs:
         return None
     return "\n\n".join(paragraphs)
-
 
 def render_reporting_source_secondary_evidence(
     evidence: list[dict[str, Any]],
