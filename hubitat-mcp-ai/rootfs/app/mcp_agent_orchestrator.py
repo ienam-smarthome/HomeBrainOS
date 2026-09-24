@@ -30,8 +30,11 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
 )
 from causal_command_provenance import (
+    boundary_producer_transition_sufficient,
     command_producer_transition_sufficient,
+    correlate_boundary_producers,
     correlate_command_producers,
+    render_boundary_producer_answer,
     render_command_producer_answer,
     render_command_producer_evidence,
 )
@@ -720,6 +723,16 @@ class UnifiedMCPAgent:
             )
             if instruction:
                 messages.append({"role": "user", "content": instruction})
+            return "sufficient", subject_key, seed.transition
+
+        boundary_correlations = correlate_boundary_producers(
+            self.evidence.receipts()
+        )
+        if boundary_producer_transition_sufficient(
+            boundary_correlations,
+            seed.transition,
+        ):
+            increment_active_metric("causal_boundary_producer_provenance")
             return "sufficient", subject_key, seed.transition
 
         sufficient = await self._collect_causal_boundary_logs(
@@ -1612,6 +1625,10 @@ class UnifiedMCPAgent:
                 deterministic_answer = (
                     (
                         render_command_producer_answer(
+                            self.evidence.receipts(),
+                            transition=prefetched_transition or "on",
+                        )
+                        or render_boundary_producer_answer(
                             self.evidence.receipts(),
                             transition=prefetched_transition or "on",
                         )

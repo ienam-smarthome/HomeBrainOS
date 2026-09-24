@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.23**.
+Current add-on version: **0.16.24**.
 
 ## Architecture
+
+0.16.24 adds authoritative switch-boundary provenance for real integrations where a direct command row is absent or event timestamps are recorded a few milliseconds out of order. A slightly later command is accepted only when the requested switch boundary independently names the same app producer, preserving the strict anti-correlation rule otherwise. When no command row exists but a non-self boundary producer is available, HomeBrain can finalize deterministically while distinguishing an app producer from a bridge/device reporting source; device/bridge provenance is explicitly not presented as the exact initiating action. Long causal durations are also formatted as hours/minutes instead of large minute counts.
 
 0.16.23 formalizes the direct causal-provenance fast path as capability-generic for ordinary switch devices such as lights, sockets and fans, and expands only unambiguous switch-state language. Phrases including `turned itself on/off`, `switched itself on/off`, `powered itself on/off`, `came back on`, `went back off`, `shut itself off`, and `started/stopped running` can now seed the same deterministic two-read path when one known device exposes switch state. Ambiguous non-state wording such as `stopped responding` remains on the normal reasoning path.
 

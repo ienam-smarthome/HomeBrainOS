@@ -44,19 +44,19 @@ def _duration_text(start: Any, end: Any) -> str:
     seconds = round((right - left).total_seconds())
     if seconds < 60:
         return f"{seconds} seconds"
-    if seconds % 3600 == 0:
-        hours = seconds // 3600
-        return f"{hours} hour" if hours == 1 else f"{hours} hours"
-    if seconds % 60 == 0:
-        minutes = seconds // 60
-        if minutes < 60:
-            return f"{minutes} minutes"
-        hours, remainder = divmod(minutes, 60)
-        if remainder == 0:
-            return f"{hours} hours"
-        hour_word = "hour" if hours == 1 else "hours"
-        return f"{hours} {hour_word} {remainder} minutes"
-    return f"approximately {max(1, round(seconds / 60))} minutes"
+
+    rounded_minutes = max(1, round(seconds / 60))
+    exact_minute = seconds % 60 == 0
+    if rounded_minutes < 60:
+        prefix = "" if exact_minute else "approximately "
+        return f"{prefix}{rounded_minutes} minutes"
+
+    hours, remainder = divmod(rounded_minutes, 60)
+    hour_word = "hour" if hours == 1 else "hours"
+    prefix = "" if exact_minute else "approximately "
+    if remainder == 0:
+        return f"{prefix}{hours} {hour_word}"
+    return f"{prefix}{hours} {hour_word} {remainder} minutes"
 
 
 def _subject_command_events(
@@ -82,6 +82,169 @@ def _subject_command_events(
         if isinstance(events, list):
             return [row for row in events if isinstance(row, dict)]
     return []
+
+
+def _subject_boundary_events(
+    evidence: list[dict[str, Any]],
+    *,
+    subject: str,
+) -> list[dict[str, Any]]:
+    wanted = str(subject or "").strip().casefold()
+    for receipt in reversed(evidence):
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("success") is not True
+            or receipt.get("tool") != "homebrain_device_history"
+        ):
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        label = str(details.get("label") or "").strip().casefold()
+        if wanted and label != wanted:
+            continue
+        events = details.get("boundaryEvents")
+        if isinstance(events, list):
+            return [row for row in events if isinstance(row, dict)]
+    return []
+
+
+def _producer_key(value: Any) -> tuple[str, str, str]:
+    if not isinstance(value, dict):
+        return "", "", ""
+    return (
+        str(value.get("type") or "").strip().casefold(),
+        str(value.get("id") or "").strip(),
+        str(value.get("label") or "").strip().casefold(),
+    )
+
+
+def _same_producer(left: Any, right: Any) -> bool:
+    left_type, left_id, left_label = _producer_key(left)
+    right_type, right_id, right_label = _producer_key(right)
+    if left_id and right_id:
+        return left_id == right_id and (
+            not left_type or not right_type or left_type == right_type
+        )
+    return bool(left_label and left_label == right_label)
+
+
+def _matching_boundary_event(
+    evidence: list[dict[str, Any]],
+    *,
+    subject: str,
+    action: str,
+    boundary: datetime,
+    max_delta_seconds: float = 0.5,
+) -> dict[str, Any] | None:
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for event in _subject_boundary_events(evidence, subject=subject):
+        if str(event.get("name") or "").casefold() != "switch":
+            continue
+        if str(event.get("value") or "").strip().casefold() != action:
+            continue
+        event_time = _parse_time(event.get("date"))
+        if event_time is None:
+            continue
+        delta = abs((event_time - boundary).total_seconds())
+        if delta <= max(0.05, float(max_delta_seconds)):
+            candidates.append((delta, event))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def correlate_boundary_producers(
+    evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Expose authoritative producer metadata carried by switch boundary events."""
+
+    correlations: list[dict[str, Any]] = []
+    for timeline in build_causal_timeline_rows(evidence):
+        if not timeline.get("material"):
+            continue
+        subject = str(timeline.get("subject") or "").strip()
+        for role, action, boundary_key in (
+            ("start", "on", "start"),
+            ("end", "off", "end"),
+        ):
+            if role == "end" and timeline.get("open"):
+                continue
+            boundary = _parse_time(timeline.get(boundary_key))
+            if boundary is None:
+                continue
+            event = _matching_boundary_event(
+                evidence,
+                subject=subject,
+                action=action,
+                boundary=boundary,
+            )
+            if not isinstance(event, dict):
+                continue
+            producer = event.get("producedBy")
+            if not (
+                isinstance(producer, dict)
+                and str(producer.get("label") or "").strip()
+            ):
+                continue
+            correlations.append({
+                "timelineId": str(timeline.get("id") or ""),
+                "boundaryRole": role,
+                "subject": subject,
+                "open": bool(timeline.get("open")),
+                "intervalStart": timeline.get("start"),
+                "intervalEnd": timeline.get("end"),
+                "stateBoundary": boundary.isoformat(),
+                "action": action,
+                "event": {
+                    "name": str(event.get("name") or "").strip(),
+                    "value": str(event.get("value") or "").strip(),
+                    "date": str(event.get("date") or "").strip(),
+                    "type": str(event.get("type") or "").strip(),
+                    "description": str(event.get("description") or "").strip(),
+                    "triggered": (
+                        list(event.get("triggered"))
+                        if isinstance(event.get("triggered"), list)
+                        else []
+                    ),
+                },
+                "producer": dict(producer),
+                "provenanceStrength": "authoritative-state-boundary-producer",
+            })
+    return correlations
+
+
+def boundary_producer_transition_sufficient(
+    correlations: list[dict[str, Any]],
+    transition: str,
+) -> bool:
+    """Return whether a non-self producer is recorded on the requested boundary."""
+
+    action = str(transition or "").strip().casefold()
+    role = {"on": "start", "off": "end"}.get(action)
+    if role is None:
+        return False
+    for row in correlations:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("boundaryRole") or "") != role:
+            continue
+        if str(row.get("action") or "") != action:
+            continue
+        producer = row.get("producer")
+        if not isinstance(producer, dict):
+            continue
+        producer_label = str(producer.get("label") or "").strip()
+        subject = str(row.get("subject") or "").strip()
+        if not producer_label:
+            continue
+        # Self-produced MQTT/device state events do not identify the initiator;
+        # keep those eligible for the established deeper fallback path.
+        if producer_label.casefold() == subject.casefold():
+            continue
+        return True
+    return False
 
 
 def correlate_command_producers(
@@ -110,8 +273,21 @@ def correlate_command_producers(
             if boundary is None:
                 continue
 
-            candidates: list[tuple[float, datetime, dict[str, Any]]] = []
+            candidates: list[
+                tuple[float, datetime, dict[str, Any], bool]
+            ] = []
             event_name = f"command-{action}"
+            boundary_event = _matching_boundary_event(
+                evidence,
+                subject=subject,
+                action=action,
+                boundary=boundary,
+            )
+            boundary_producer = (
+                boundary_event.get("producedBy")
+                if isinstance(boundary_event, dict)
+                else None
+            )
             for event in command_events:
                 if str(event.get("name") or "").casefold() != event_name:
                     continue
@@ -125,17 +301,28 @@ def correlate_command_producers(
                 if event_time is None:
                     continue
                 delta = (boundary - event_time).total_seconds()
-                # Command provenance is directional: the command must be issued
-                # at or before the resulting state boundary. A later command,
-                # even if close in absolute time, cannot explain an earlier
-                # switch transition.
                 if 0.0 <= delta <= max(0.1, float(max_delta_seconds)):
-                    candidates.append((delta, event_time, event))
+                    candidates.append((delta, event_time, event, False))
+                    continue
+
+                # Some Hubitat integrations record the state event a few
+                # milliseconds before the corresponding command row. Never
+                # accept that inversion from timing alone. It is eligible only
+                # when the boundary event independently names the same APP
+                # producer, which makes the producer identity authoritative even
+                # though the two event timestamps landed in reverse order.
+                producer_type = str(producer.get("type") or "").casefold()
+                if (
+                    -0.25 <= delta < 0.0
+                    and producer_type == "app"
+                    and _same_producer(producer, boundary_producer)
+                ):
+                    candidates.append((abs(delta), event_time, event, True))
             if not candidates:
                 continue
 
             candidates.sort(key=lambda item: item[0])
-            _distance, command_time, event = candidates[0]
+            _distance, command_time, event, inverted = candidates[0]
             producer = dict(event.get("producedBy") or {})
             correlations.append({
                 "timelineId": str(timeline.get("id") or ""),
@@ -156,9 +343,19 @@ def correlate_command_producers(
                         (boundary - command_time).total_seconds() * 1000,
                         1,
                     ),
+                    "recordingOrderInverted": inverted,
                 },
+                "boundaryProducer": (
+                    dict(boundary_producer)
+                    if isinstance(boundary_producer, dict)
+                    else None
+                ),
                 "producer": producer,
-                "provenanceStrength": "authoritative-command-producer",
+                "provenanceStrength": (
+                    "authoritative-command-producer-boundary-corroborated"
+                    if inverted
+                    else "authoritative-command-producer"
+                ),
             })
     return correlations
 
@@ -191,6 +388,138 @@ def command_producer_turn_on_sufficient(
     """Compatibility wrapper for the original 0.16.17 turn-on contract."""
 
     return command_producer_transition_sufficient(correlations, "on")
+
+
+def _command_state_timing_text(
+    *,
+    action: str,
+    subject: str,
+    producer_label: str,
+    command_time: str,
+    state_time: str,
+    delay_ms: Any,
+    inverted: bool,
+) -> str:
+    action_upper = action.upper()
+    try:
+        delay_value = float(delay_ms)
+    except (TypeError, ValueError):
+        delay_value = 0.0
+
+    if inverted:
+        return (
+            f"The {action_upper} state for {subject} was recorded at {state_time}; "
+            f"an adjacent {action_upper} command from {producer_label} was recorded "
+            f"{abs(delay_value):g} ms later. The state boundary independently names "
+            f"the same app producer, so this is treated as a recording-order "
+            f"inversion rather than a later unrelated command."
+        )
+
+    return (
+        f"The {action_upper} command was issued at {command_time}, followed by the "
+        f"device reporting {action_upper} at {state_time}"
+        + (
+            f" ({abs(delay_value):g} ms later)."
+            if delay_ms not in {None, ""}
+            else "."
+        )
+    )
+
+
+def render_boundary_producer_answer(
+    evidence: list[dict[str, Any]],
+    *,
+    transition: str,
+) -> str | None:
+    """Render direct switch-boundary provenance without overstating causation."""
+
+    action = str(transition or "").strip().casefold()
+    role = {"on": "start", "off": "end"}.get(action)
+    if role is None:
+        return None
+
+    matches = [
+        row
+        for row in correlate_boundary_producers(evidence)
+        if str(row.get("boundaryRole") or "") == role
+        and str(row.get("action") or "") == action
+    ]
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda row: _parse_time(row.get("stateBoundary"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    focus = matches[0]
+    subject = str(focus.get("subject") or "the device").strip()
+    producer = focus.get("producer") or {}
+    producer_label = str(producer.get("label") or "").strip()
+    producer_type = str(producer.get("type") or "").strip().casefold()
+    if not producer_label or producer_label.casefold() == subject.casefold():
+        return None
+
+    event = focus.get("event") or {}
+    event_type = str(event.get("type") or "").strip().casefold()
+    state_time = _clock_text(focus.get("stateBoundary"))
+    action_upper = action.upper()
+    paragraphs: list[str] = []
+
+    if producer_type == "app":
+        paragraphs.append(
+            f"Hubitat records the {action_upper} state event for {subject} as "
+            f"produced by the app {producer_label}."
+        )
+        paragraphs.append(
+            f"The device reported {action_upper} at {state_time}. No separate "
+            f"command-{action} producer was recorded for this boundary, so this "
+            f"is direct state-event provenance rather than a separate command row."
+        )
+    else:
+        qualifier = f" {event_type}" if event_type else ""
+        paragraphs.append(
+            f"Hubitat did not record a command-{action} producer for {subject}. "
+            f"The {action_upper} state event at {state_time} is marked{qualifier} "
+            f"and was produced by {producer_label}."
+        )
+        paragraphs.append(
+            f"This identifies the reporting path into Hubitat, not the exact "
+            f"initiating action. From this evidence alone, HomeBrain cannot "
+            f"distinguish a bridge-side button/switch action, vendor app command, "
+            f"vendor-native automation, or another action behind {producer_label}."
+        )
+
+    triggered = [
+        str(item.get("name") or "").strip()
+        for item in event.get("triggered", [])
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    ]
+    if triggered:
+        unique_triggered = list(dict.fromkeys(triggered))
+        paragraphs.append(
+            "Hubitat also records these downstream listeners as triggered by the "
+            f"state event: {', '.join(unique_triggered)}. Their presence shows "
+            "reaction to the state change; it does not prove they initiated it."
+        )
+
+    if action == "on":
+        interval_end = focus.get("intervalEnd")
+        duration = _duration_text(focus.get("stateBoundary"), interval_end)
+        if duration:
+            paragraphs.append(
+                f"The observed ON interval ended at {_clock_text(interval_end)} "
+                f"after {duration}."
+            )
+    else:
+        interval_start = focus.get("intervalStart")
+        duration = _duration_text(interval_start, focus.get("stateBoundary"))
+        if duration:
+            paragraphs.append(
+                f"This ended an observed run of {duration}, which began when the "
+                f"device reported ON at {_clock_text(interval_start)}."
+            )
+
+    return "\n\n".join(paragraphs)
 
 
 def render_command_producer_answer(
@@ -247,14 +576,14 @@ def render_command_producer_answer(
                 f"Hubitat records the OFF command for {subject} as produced by "
                 f"{producer_label}."
             ),
-            (
-                f"The OFF command was issued at {command_time}, followed by the "
-                f"device reporting OFF at {state_time}"
-                + (
-                    f" ({abs(float(delay)):g} ms later)."
-                    if delay not in {None, ""}
-                    else "."
-                )
+            _command_state_timing_text(
+                action="off",
+                subject=subject,
+                producer_label=producer_label,
+                command_time=command_time,
+                state_time=state_time,
+                delay_ms=delay,
+                inverted=bool(command.get("recordingOrderInverted")),
             ),
         ]
         if isinstance(start_row, dict):
@@ -311,14 +640,14 @@ def render_command_producer_answer(
                 f"Hubitat records the ON command for {subject} as produced by "
                 f"{producer_label}."
             ),
-            (
-                f"The ON command was issued at {command_time}, followed by the "
-                f"device reporting ON at {state_time}"
-                + (
-                    f" ({abs(float(delay)):g} ms later)."
-                    if delay not in {None, ""}
-                    else "."
-                )
+            _command_state_timing_text(
+                action="on",
+                subject=subject,
+                producer_label=producer_label,
+                command_time=command_time,
+                state_time=state_time,
+                delay_ms=delay,
+                inverted=bool(command.get("recordingOrderInverted")),
             ),
         ]
 
@@ -392,9 +721,12 @@ def render_command_producer_evidence(
 
 
 __all__ = [
+    "boundary_producer_transition_sufficient",
     "command_producer_transition_sufficient",
     "command_producer_turn_on_sufficient",
+    "correlate_boundary_producers",
     "correlate_command_producers",
+    "render_boundary_producer_answer",
     "render_command_producer_answer",
     "render_command_producer_evidence",
 ]
