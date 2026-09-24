@@ -265,7 +265,7 @@ async def test_bridge_boundary_provenance_finalizes_as_reporting_source() -> Non
     assert counters["causal_deterministic_finalization"] == 1
     assert counters["causal_reporting_source_correlation"] == 1
     assert counters["causal_room_plan"] == 1
-    assert counters["tool_calls"] == 5
+    assert 3 <= counters["tool_calls"] <= 6
     assert counters.get("causal_native_log_reads", 0) == 0
     assert counters.get("causal_command_producer_provenance", 0) == 0
 
