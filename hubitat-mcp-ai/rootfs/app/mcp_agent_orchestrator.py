@@ -29,6 +29,11 @@ from causal_evidence_planner import (
     subject_room_filter_arguments,
     trigger_sensor_history_arguments,
 )
+from causal_bridge_correlation import (
+    bridge_boundary_requires_secondary,
+    build_bridge_secondary_summary,
+    render_bridge_secondary_summary,
+)
 from causal_command_provenance import (
     boundary_producer_transition_sufficient,
     command_producer_transition_sufficient,
@@ -653,7 +658,7 @@ class UnifiedMCPAgent:
             # DeviceHistoryService interprets an explicit small state-history
             # limit as "latest transitions over the bounded seven-day horizon"
             # while still fetching enough rows internally for interval analysis.
-            "limit": 3,
+            "limit": 12,
         }
         signature = json.dumps(
             [_LOCAL_DEVICE_HISTORY_TOOL, arguments],
@@ -733,6 +738,17 @@ class UnifiedMCPAgent:
             seed.transition,
         ):
             increment_active_metric("causal_boundary_producer_provenance")
+            if bridge_boundary_requires_secondary(
+                boundary_correlations,
+                seed.transition,
+            ):
+                await self._collect_bridge_secondary_correlation(
+                    data,
+                    transition=seed.transition,
+                    catalog=catalog,
+                    completed_calls=completed_calls,
+                    messages=messages,
+                )
             return "sufficient", subject_key, seed.transition
 
         sufficient = await self._collect_causal_boundary_logs(
@@ -745,6 +761,144 @@ class UnifiedMCPAgent:
             if sufficient
             else ("partial", subject_key, seed.transition)
         )
+
+
+    async def _collect_bridge_secondary_correlation(
+        self,
+        subject_history: dict[str, Any],
+        *,
+        transition: str,
+        catalog: ToolDiscoveryCatalog,
+        completed_calls: set[str],
+        messages: list[dict[str, Any]],
+    ) -> None:
+        """Collect one controller + one presence/motion correlation for bridge events.
+
+        This runs only after the requested boundary already has authoritative
+        external device/bridge provenance and no stronger command-producer path
+        finalized the answer. It is deliberately bounded and never promotes
+        timing correlation to proof of a specific external automation.
+        """
+
+        room_arguments = subject_room_filter_arguments(subject_history)
+        filter_tool = catalog.available_tool(_LOCAL_FILTER_TOOL)
+        history_tool = catalog.available_tool(_LOCAL_DEVICE_HISTORY_TOOL)
+        if (
+            room_arguments is None
+            or filter_tool is None
+            or history_tool is None
+        ):
+            return
+
+        started = time.monotonic()
+        increment_active_metric("causal_secondary_correlation")
+        increment_active_metric("causal_secondary_room_read")
+        filter_execution = await self.executor.execute(
+            _LOCAL_FILTER_TOOL,
+            room_arguments,
+            tool=filter_tool,
+            supports_live_claim=True,
+            evidence_kind=_EVIDENCE_KINDS[_LOCAL_FILTER_TOOL],
+        )
+        completed_calls.add(json.dumps(
+            [_LOCAL_FILTER_TOOL, room_arguments],
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        ))
+        if not filter_execution.success or filter_execution.result is None:
+            return
+        filter_data = (
+            filter_execution.result.data
+            if isinstance(filter_execution.result.data, dict)
+            else {}
+        )
+
+        controller_arguments = controller_history_arguments(filter_data)
+        sensor_arguments = trigger_sensor_history_arguments(filter_data)
+        pending: list[tuple[str, dict[str, Any]]] = []
+        if controller_arguments is not None:
+            pending.append(("controller", controller_arguments))
+        if sensor_arguments is not None:
+            pending.append(("sensor", sensor_arguments))
+        if not pending:
+            return
+
+        for kind, arguments in pending:
+            completed_calls.add(json.dumps(
+                [_LOCAL_DEVICE_HISTORY_TOOL, arguments],
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            ))
+            increment_active_metric(
+                "causal_secondary_controller_read"
+                if kind == "controller"
+                else "causal_secondary_sensor_read"
+            )
+
+        async def read_one(arguments: dict[str, Any]):
+            return await self.executor.execute(
+                _LOCAL_DEVICE_HISTORY_TOOL,
+                arguments,
+                tool=history_tool,
+                supports_live_claim=True,
+                evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_HISTORY_TOOL],
+            )
+
+        executions = await asyncio.gather(
+            *(read_one(arguments) for _kind, arguments in pending)
+        )
+        by_kind: dict[str, dict[str, Any]] = {}
+        for (kind, arguments), execution in zip(pending, executions):
+            messages.append({
+                "role": "tool",
+                "tool_name": _LOCAL_DEVICE_HISTORY_TOOL,
+                "content": execution.content,
+            })
+            if execution.result is not None and isinstance(
+                execution.result.data, dict
+            ):
+                by_kind[kind] = execution.result.data
+
+        summary = build_bridge_secondary_summary(
+            subject_history,
+            transition=transition,
+            controller_history=by_kind.get("controller"),
+            sensor_history=by_kind.get("sensor"),
+        )
+        sensor = summary.get("sensor")
+        if (
+            isinstance(sensor, dict)
+            and sensor.get("repeatedStartPattern") is True
+        ):
+            increment_active_metric("causal_secondary_repeated_sensor_pattern")
+
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        self.evidence.record(
+            "homebrain_causal_secondary_correlation",
+            {
+                "subject": subject_history.get("label"),
+                "transition": transition,
+            },
+            success=True,
+            elapsed_ms=elapsed_ms,
+            summary=(
+                "bounded same-room controller and motion/presence correlation"
+            ),
+            supports_live_claim=True,
+            evidence_kind="deterministic_secondary_correlation",
+            effect="read",
+            details=summary,
+        )
+        rendered = render_bridge_secondary_summary(summary)
+        if rendered:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST BRIDGE SECONDARY CORRELATION\n" + rendered
+                ),
+            })
 
 
     async def _collect_causal_boundary_logs(
@@ -1628,10 +1782,51 @@ class UnifiedMCPAgent:
                             self.evidence.receipts(),
                             transition=prefetched_transition or "on",
                         )
-                        or render_boundary_producer_answer(
-                            self.evidence.receipts(),
-                            transition=prefetched_transition or "on",
-                        )
+                        or (
+                            (
+                                render_boundary_producer_answer(
+                                    self.evidence.receipts(),
+                                    transition=prefetched_transition or "on",
+                                )
+                                or ""
+                            )
+                            + (
+                                "\n\n"
+                                + render_bridge_secondary_summary(
+                                    next(
+                                        (
+                                            receipt.get("details")
+                                            for receipt in reversed(
+                                                self.evidence.receipts()
+                                            )
+                                            if receipt.get("tool")
+                                            == "homebrain_causal_secondary_correlation"
+                                            and isinstance(
+                                                receipt.get("details"), dict
+                                            )
+                                        ),
+                                        {},
+                                    )
+                                )
+                                if render_bridge_secondary_summary(
+                                    next(
+                                        (
+                                            receipt.get("details")
+                                            for receipt in reversed(
+                                                self.evidence.receipts()
+                                            )
+                                            if receipt.get("tool")
+                                            == "homebrain_causal_secondary_correlation"
+                                            and isinstance(
+                                                receipt.get("details"), dict
+                                            )
+                                        ),
+                                        {},
+                                    )
+                                )
+                                else ""
+                            )
+                        ).strip()
                         or render_strong_native_provenance_answer(
                             self.evidence.receipts()
                         )
