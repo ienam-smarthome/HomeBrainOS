@@ -170,10 +170,16 @@ def render_bridge_secondary_summary(
                 parts.append(f"{starts} ON/start alignment(s)")
             if ends:
                 parts.append(f"{ends} OFF/end alignment(s)")
+            interval_count = int(summary.get("intervalCount") or 0)
+            comparison = (
+                f" across {interval_count} observed interval(s)"
+                if interval_count
+                else ""
+            )
             paragraphs.append(
                 f"Same-room controller check: {label} had "
                 + " and ".join(parts)
-                + " within 2 seconds of the compared light boundaries. "
+                + f" within 2 seconds of the compared light boundaries{comparison}. "
                 "This is timing evidence only; it does not by itself prove that "
                 "controller initiated those transitions."
             )
@@ -227,10 +233,11 @@ def render_bridge_secondary_summary(
                         f"Across {starts} recent ON boundaries, {label} repeatedly "
                         f"changed within 5 seconds, and in {after} cases the light "
                         "changed before Hubitat recorded the sensor active edge. "
-                        "That repeated ordering is consistent with a shared "
-                        "upstream/outside-Hubitat automation path, but it is not "
-                        "proof that the sensor directly caused the light or that a "
-                        "particular external platform performed the action."
+                        "That repeated ordering makes a shared "
+                        "upstream/outside-Hubitat automation involving this sensor "
+                        "a plausible hypothesis, but it is not proof that the sensor "
+                        "directly caused the light or that a particular external "
+                        "platform performed the action."
                     )
                 else:
                     paragraphs.append(
