@@ -305,10 +305,13 @@ class DeviceQueryService:
                 for value in capabilities
             }
             attribute = ""
-            if "motionsensor" in normalized:
-                attribute = "motion"
-            elif "presencesensor" in normalized:
+            capability_rank = 9
+            if "presencesensor" in normalized:
                 attribute = "presence"
+                capability_rank = 0
+            elif "motionsensor" in normalized:
+                attribute = "motion"
+                capability_rank = 1
             if not attribute:
                 continue
 
@@ -337,7 +340,7 @@ class DeviceQueryService:
                 token in normalized_label for token in ("presence", "soft sensor", "motion")
             ) else 1
             ranked.append((
-                score * 10 + label_score,
+                score * 100 + capability_rank * 10 + label_score,
                 normalized_label,
                 {
                     "id": device.get("id") or device.get("deviceId"),
