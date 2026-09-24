@@ -784,35 +784,68 @@ class UnifiedMCPAgent:
         filter_tool = catalog.declared_tool(_LOCAL_FILTER_TOOL)
         history_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
         room_arguments = subject_room_filter_arguments(subject_history)
-        if (
-            filter_tool is None
-            or history_tool is None
-            or room_arguments is None
-        ):
+        if history_tool is None or room_arguments is None:
             return
 
         started = time.monotonic()
         increment_active_metric("causal_reporting_source_correlation")
         increment_active_metric("causal_room_plan")
-        filter_execution = await self.executor.execute(
-            _LOCAL_FILTER_TOOL,
-            room_arguments,
-            tool=filter_tool,
-            supports_live_claim=True,
-            evidence_kind=_EVIDENCE_KINDS[_LOCAL_FILTER_TOOL],
-        )
-        completed_calls.add(json.dumps(
-            [_LOCAL_FILTER_TOOL, room_arguments],
-            sort_keys=True,
-            ensure_ascii=False,
-            default=str,
-        ))
-        filter_data = (
-            filter_execution.result.data
-            if filter_execution.result is not None
-            and isinstance(filter_execution.result.data, dict)
-            else {}
-        )
+
+        # Candidate discovery is structural, not a live-state claim. Reuse the
+        # fresh authoritative identity snapshot when it contains enough
+        # capability/attribute shape to rank the same bounded controller and
+        # occupancy candidates. This avoids a full bulk live-context read solely
+        # to rediscover room membership. If the cached snapshot cannot safely
+        # prove occupancy attribute exposure, fall back to the existing live
+        # room filter.
+        filter_data: dict[str, Any] = {}
+        cached_candidate_plan = False
+        peek_identities = getattr(self.mcp, "peek_device_identities", None)
+        if callable(peek_identities):
+            try:
+                identities = [
+                    dict(item)
+                    for item in (peek_identities() or [])
+                    if isinstance(item, dict)
+                ]
+            except Exception:
+                identities = []
+            if identities:
+                cached_hints = DeviceQueryService.cached_room_event_source_hints(
+                    identities,
+                    room_arguments.get("value"),
+                )
+                if cached_hints is not None:
+                    filter_data = (
+                        {"eventSourceHints": cached_hints}
+                        if cached_hints
+                        else {}
+                    )
+                    cached_candidate_plan = True
+                    increment_active_metric("causal_cached_candidate_plan")
+
+        if not cached_candidate_plan:
+            if filter_tool is None:
+                return
+            filter_execution = await self.executor.execute(
+                _LOCAL_FILTER_TOOL,
+                room_arguments,
+                tool=filter_tool,
+                supports_live_claim=True,
+                evidence_kind=_EVIDENCE_KINDS[_LOCAL_FILTER_TOOL],
+            )
+            completed_calls.add(json.dumps(
+                [_LOCAL_FILTER_TOOL, room_arguments],
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            ))
+            filter_data = (
+                filter_execution.result.data
+                if filter_execution.result is not None
+                and isinstance(filter_execution.result.data, dict)
+                else {}
+            )
 
         controller_specs = controller_history_candidates(
             filter_data,
