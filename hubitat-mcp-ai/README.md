@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.28**.
+Current add-on version: **0.16.29**.
 
 ## Architecture
+
+0.16.29 adds authoritative room + device-kind recovery for history target resolution. Natural plural references such as `Hallway lights` are no longer treated as literal labels and then reduced to a generic `lights` lookup. HomeBrain now checks the exact Hubitat room against authoritative identity metadata and filters by real device kind. One matching device resolves directly; multiple matching devices are surfaced as concrete alternatives without silently choosing one or claiming the group does not exist.
 
 0.16.28 tightens reporting-source secondary evidence selection and downstream level-recovery parsing. Motion/presence candidates must now expose the concrete live occupancy attribute that will be queried, preventing bridge child devices such as humidity/lux measurements from consuming bounded causal-history slots merely because they inherit broad capabilities. The recovery detector now recognizes both external ON -> level -> app setLevel and external ON -> app setLevel -> resulting level orderings, keeping resulting levels distinct from initial bridge levels.
 
