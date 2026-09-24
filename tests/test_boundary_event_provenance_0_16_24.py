@@ -178,9 +178,8 @@ async def test_corroborated_13ms_inversion_finalizes_fan_without_logs_or_model()
     assert counters["causal_command_producer_reads"] == 1
     assert counters["causal_command_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
-    assert counters["tool_calls"] >= 4
-    assert counters["causal_secondary_correlation"] == 1
-    assert counters["causal_secondary_room_read"] == 1
+    assert counters["tool_calls"] == 3
+    assert counters.get("causal_secondary_correlation", 0) == 0
     assert counters.get("causal_native_log_reads", 0) == 0
 
     assert "01. Humidity Controller" in outcome.message
@@ -269,7 +268,11 @@ async def test_bridge_boundary_provenance_finalizes_as_reporting_source() -> Non
     assert counters["causal_command_producer_reads"] == 1
     assert counters["causal_boundary_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
-    assert counters["tool_calls"] == 3
+    assert counters["tool_calls"] == 5
+    assert counters["causal_secondary_correlation"] == 1
+    assert counters["causal_secondary_room_read"] == 1
+    assert counters.get("causal_secondary_controller_read", 0) == 0
+    assert counters.get("causal_secondary_sensor_read", 0) == 0
     assert counters.get("causal_native_log_reads", 0) == 0
     assert counters.get("causal_command_producer_provenance", 0) == 0
 
