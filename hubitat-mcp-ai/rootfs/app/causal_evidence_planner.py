@@ -30,58 +30,105 @@ def subject_room_filter_arguments(
     }
 
 
+def _candidate_history_arguments(
+    room_filter: dict[str, Any],
+    *,
+    key: str,
+    allowed_attributes: set[str] | None = None,
+    limit: int = 2,
+) -> list[dict[str, Any]]:
+    if not isinstance(room_filter, dict):
+        return []
+    hints = room_filter.get("eventSourceHints")
+    if not isinstance(hints, dict):
+        return []
+    candidates = hints.get(key)
+    if not isinstance(candidates, list) or not candidates:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        label = str(candidate.get("label") or "").strip()
+        attrs = [
+            str(value).strip()
+            for value in (candidate.get("suggestedHistoryAttributes") or [])
+            if str(value).strip()
+        ]
+        if not label or not attrs:
+            continue
+        attribute = attrs[0]
+        if (
+            allowed_attributes is not None
+            and attribute.casefold() not in allowed_attributes
+        ):
+            continue
+        rows.append({
+            "name": label,
+            "attribute": attribute,
+            "candidate": dict(candidate),
+        })
+        if len(rows) >= max(1, int(limit)):
+            break
+    return rows
+
+
+def controller_history_candidates(
+    room_filter: dict[str, Any],
+    *,
+    limit: int = 2,
+) -> list[dict[str, Any]]:
+    """Return bounded ranked controller history requests plus candidate metadata."""
+
+    return _candidate_history_arguments(
+        room_filter,
+        key="controllerCandidates",
+        limit=limit,
+    )
+
+
 def controller_history_arguments(
     room_filter: dict[str, Any],
 ) -> dict[str, str] | None:
-    """Return one highest-ranked controller history read from room evidence."""
+    """Compatibility wrapper returning the highest-ranked controller only."""
 
-    if not isinstance(room_filter, dict):
+    rows = controller_history_candidates(room_filter, limit=1)
+    if not rows:
         return None
-    hints = room_filter.get("eventSourceHints")
-    if not isinstance(hints, dict):
-        return None
-    candidates = hints.get("controllerCandidates")
-    if not isinstance(candidates, list) or not candidates:
-        return None
-    candidate = candidates[0]
-    if not isinstance(candidate, dict):
-        return None
-    label = str(candidate.get("label") or "").strip()
-    attrs = [
-        str(value).strip()
-        for value in (candidate.get("suggestedHistoryAttributes") or [])
-        if str(value).strip()
-    ]
-    if not label or not attrs:
-        return None
-    return {"name": label, "attribute": attrs[0]}
+    return {
+        "name": str(rows[0]["name"]),
+        "attribute": str(rows[0]["attribute"]),
+    }
+
+
+def trigger_sensor_history_candidates(
+    room_filter: dict[str, Any],
+    *,
+    limit: int = 2,
+) -> list[dict[str, Any]]:
+    """Return bounded ranked occupancy history requests plus candidate metadata."""
+
+    return _candidate_history_arguments(
+        room_filter,
+        key="triggerSensorCandidates",
+        allowed_attributes={"motion", "presence"},
+        limit=limit,
+    )
 
 
 def trigger_sensor_history_arguments(
     room_filter: dict[str, Any],
 ) -> dict[str, str] | None:
-    """Return one highest-ranked capability-grounded motion/presence history read."""
+    """Compatibility wrapper returning the highest-ranked occupancy source only."""
 
-    if not isinstance(room_filter, dict):
+    rows = trigger_sensor_history_candidates(room_filter, limit=1)
+    if not rows:
         return None
-    hints = room_filter.get("eventSourceHints")
-    if not isinstance(hints, dict):
-        return None
-    candidates = hints.get("triggerSensorCandidates")
-    if not isinstance(candidates, list) or not candidates:
-        return None
-    candidate = candidates[0]
-    if not isinstance(candidate, dict):
-        return None
-    label = str(candidate.get("label") or "").strip()
-    attrs = [
-        str(value).strip()
-        for value in (candidate.get("suggestedHistoryAttributes") or [])
-        if str(value).strip()
-    ]
-    if not label or not attrs or attrs[0].casefold() not in {"motion", "presence"}:
-        return None
-    return {"name": label, "attribute": attrs[0]}
+    return {
+        "name": str(rows[0]["name"]),
+        "attribute": str(rows[0]["attribute"]),
+    }
 
 
 def _sensor_events(sensor_history: dict[str, Any]) -> list[tuple[datetime, dict[str, Any]]]:
@@ -209,6 +256,211 @@ def render_sensor_correlation_instruction(
 
 
 
+def _history_match_basis(
+    history: dict[str, Any] | None,
+    subject_room: str,
+) -> str:
+    if not isinstance(history, dict):
+        return ""
+    explicit = str(history.get("candidateMatchBasis") or "").strip()
+    if explicit:
+        return explicit
+    room = " ".join(str(history.get("room") or "").strip().casefold().split())
+    wanted = " ".join(str(subject_room or "").strip().casefold().split())
+    return "room" if room and wanted and room == wanted else "label-affinity"
+
+
+def _controller_analysis(
+    subject_history: dict[str, Any],
+    history: dict[str, Any],
+    *,
+    requested_role: str,
+    opposite_role: str,
+    requested_time: datetime | None,
+) -> dict[str, Any]:
+    rows = controller_boundary_alignments(subject_history, history)
+    relevant = [row for row in rows if row.get("boundaryRole") == requested_role]
+    opposite = [row for row in rows if row.get("boundaryRole") == opposite_role]
+
+    def requested(row: dict[str, Any]) -> bool:
+        if requested_time is None:
+            return False
+        row_time = _timestamp(row.get("subjectTransition"))
+        return (
+            row_time is not None
+            and abs((row_time - requested_time).total_seconds()) <= 0.25
+        )
+
+    return {
+        "label": history.get("label"),
+        "attribute": history.get("attribute"),
+        "room": history.get("room"),
+        "matchBasis": _history_match_basis(
+            history,
+            str(subject_history.get("room") or ""),
+        ),
+        "relevantAlignments": relevant[:8],
+        "oppositeAlignments": opposite[:8],
+        "requestedMatched": any(requested(row) for row in relevant),
+    }
+
+
+def _sensor_analysis(
+    subject_history: dict[str, Any],
+    history: dict[str, Any],
+    *,
+    requested_role: str,
+    opposite_role: str,
+    requested_time: datetime | None,
+) -> dict[str, Any]:
+    rows = sensor_transition_correlations(
+        subject_history,
+        history,
+        start_delta_seconds=5.0,
+        end_delay_seconds=45.0,
+    )
+    relevant = [row for row in rows if row.get("boundaryRole") == requested_role]
+    opposite = [row for row in rows if row.get("boundaryRole") == opposite_role]
+
+    def requested(row: dict[str, Any]) -> bool:
+        if requested_time is None:
+            return False
+        row_time = _timestamp(row.get("subjectTransition"))
+        return (
+            row_time is not None
+            and abs((row_time - requested_time).total_seconds()) <= 0.25
+        )
+
+    after_count = sum(
+        1
+        for row in relevant
+        if float(row.get("signedDeltaSeconds") or 0) > 0
+    )
+    return {
+        "label": history.get("label"),
+        "attribute": history.get("attribute"),
+        "room": history.get("room"),
+        "matchBasis": _history_match_basis(
+            history,
+            str(subject_history.get("room") or ""),
+        ),
+        "relevantCorrelations": relevant[:12],
+        "oppositeCorrelations": opposite[:12],
+        "requestedMatched": any(requested(row) for row in relevant),
+        "afterSubjectCount": after_count,
+        "repeatedUpstreamPattern": (
+            requested_role == "start"
+            and len(relevant) >= 2
+            and after_count >= 2
+        ),
+    }
+
+
+def _level_recovery_pattern(
+    subject_history: dict[str, Any],
+    detail_history: dict[str, Any] | None,
+    *,
+    requested_boundary: Any,
+) -> dict[str, Any]:
+    if not isinstance(detail_history, dict):
+        return {}
+
+    raw_events = detail_history.get("events")
+    if not isinstance(raw_events, list):
+        return {}
+
+    events: list[tuple[datetime, dict[str, Any]]] = []
+    for row in raw_events:
+        if not isinstance(row, dict):
+            continue
+        ts = _timestamp(row.get("date") or row.get("timestamp"))
+        if ts is not None:
+            events.append((ts, row))
+    if not events:
+        return {}
+    events.sort(key=lambda item: item[0])
+
+    starts = [
+        row for row in _subject_interval_boundaries(subject_history)
+        if row.get("role") == "start" and isinstance(row.get("time"), datetime)
+    ]
+    requested = _timestamp(requested_boundary)
+    matches: list[dict[str, Any]] = []
+    for boundary in starts:
+        boundary_time = boundary["time"]
+        level_rows: list[tuple[float, datetime, dict[str, Any]]] = []
+        command_rows: list[tuple[float, datetime, dict[str, Any]]] = []
+        for event_time, row in events:
+            signed = (event_time - boundary_time).total_seconds()
+            if signed < 0:
+                continue
+            name = str(row.get("name") or "").strip().casefold()
+            if name == "level" and signed <= 1.0:
+                level_rows.append((signed, event_time, row))
+            elif name == "command-setlevel" and signed <= 5.0:
+                producer = row.get("producedBy")
+                if isinstance(producer, dict) and str(
+                    producer.get("label") or ""
+                ).strip():
+                    command_rows.append((signed, event_time, row))
+        if not level_rows or not command_rows:
+            continue
+        level_rows.sort(key=lambda item: item[0])
+        command_rows.sort(key=lambda item: item[0])
+        level_delta, level_time, level_row = level_rows[0]
+        command_delta, command_time, command_row = command_rows[0]
+        producer = dict(command_row.get("producedBy") or {})
+        try:
+            initial_level = float(level_row.get("value"))
+        except (TypeError, ValueError):
+            initial_level = None
+        matches.append({
+            "subjectTransition": boundary_time.isoformat(),
+            "levelEvent": level_time.isoformat(),
+            "initialLevel": initial_level,
+            "levelDeltaSeconds": round(level_delta, 3),
+            "commandEvent": command_time.isoformat(),
+            "commandDeltaSeconds": round(command_delta, 3),
+            "commandDescription": (
+                command_row.get("description")
+                or command_row.get("descriptionText")
+            ),
+            "producer": producer,
+            "requestedMatched": (
+                requested is not None
+                and abs((boundary_time - requested).total_seconds()) <= 0.25
+            ),
+        })
+
+    if not matches:
+        return {}
+
+    producer_counts: dict[str, int] = {}
+    for row in matches:
+        label = str((row.get("producer") or {}).get("label") or "").strip()
+        if label:
+            producer_counts[label] = producer_counts.get(label, 0) + 1
+    producer_label = (
+        max(producer_counts, key=producer_counts.get)
+        if producer_counts
+        else ""
+    )
+    high_level_count = sum(
+        1
+        for row in matches
+        if isinstance(row.get("initialLevel"), (int, float))
+        and float(row["initialLevel"]) >= 99.0
+    )
+    return {
+        "matchCount": len(matches),
+        "transitionCount": len(starts),
+        "requestedMatched": any(row.get("requestedMatched") for row in matches),
+        "highInitialLevelCount": high_level_count,
+        "producerLabel": producer_label or None,
+        "matches": matches[:12],
+    }
+
+
 def build_reporting_source_secondary_analysis(
     subject_history: dict[str, Any],
     *,
@@ -216,6 +468,9 @@ def build_reporting_source_secondary_analysis(
     requested_boundary: Any,
     controller_history: dict[str, Any] | None = None,
     sensor_history: dict[str, Any] | None = None,
+    controller_histories: list[dict[str, Any]] | None = None,
+    sensor_histories: list[dict[str, Any]] | None = None,
+    subject_event_history: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build bounded deterministic correlation around an external reporting source."""
 
@@ -231,52 +486,46 @@ def build_reporting_source_secondary_analysis(
     ]
     opposite_role = "end" if requested_role == "start" else "start"
 
-    def matches_requested(row: dict[str, Any]) -> bool:
-        if requested_time is None:
-            return False
-        row_time = _timestamp(row.get("subjectTransition"))
-        return (
-            row_time is not None
-            and abs((row_time - requested_time).total_seconds()) <= 0.25
-        )
-
-    controller_rows = (
-        controller_boundary_alignments(subject_history, controller_history)
-        if isinstance(controller_history, dict)
-        else []
-    )
-    controller_relevant = [
-        row for row in controller_rows if row.get("boundaryRole") == requested_role
+    controller_inputs = [
+        item for item in (controller_histories or []) if isinstance(item, dict)
     ]
-    controller_opposite = [
-        row for row in controller_rows if row.get("boundaryRole") == opposite_role
+    sensor_inputs = [
+        item for item in (sensor_histories or []) if isinstance(item, dict)
     ]
+    if isinstance(controller_history, dict) and not controller_inputs:
+        controller_inputs = [controller_history]
+    if isinstance(sensor_history, dict) and not sensor_inputs:
+        sensor_inputs = [sensor_history]
 
-    sensor_rows = (
-        sensor_transition_correlations(
+    controllers = [
+        _controller_analysis(
             subject_history,
-            sensor_history,
-            start_delta_seconds=5.0,
-            end_delay_seconds=45.0,
+            item,
+            requested_role=requested_role,
+            opposite_role=opposite_role,
+            requested_time=requested_time,
         )
-        if isinstance(sensor_history, dict)
-        else []
-    )
-    sensor_relevant = [
-        row for row in sensor_rows if row.get("boundaryRole") == requested_role
+        for item in controller_inputs
     ]
-    sensor_opposite = [
-        row for row in sensor_rows if row.get("boundaryRole") == opposite_role
+    sensors = [
+        _sensor_analysis(
+            subject_history,
+            item,
+            requested_role=requested_role,
+            opposite_role=opposite_role,
+            requested_time=requested_time,
+        )
+        for item in sensor_inputs
     ]
-    sensor_after_count = sum(
-        1
-        for row in sensor_relevant
-        if float(row.get("signedDeltaSeconds") or 0) > 0
-    )
-    repeated_upstream_pattern = (
-        requested_role == "start"
-        and len(sensor_relevant) >= 2
-        and sensor_after_count >= 2
+
+    recovery = (
+        _level_recovery_pattern(
+            subject_history,
+            subject_event_history,
+            requested_boundary=requested_boundary,
+        )
+        if action == "on"
+        else {}
     )
 
     return {
@@ -287,44 +536,31 @@ def build_reporting_source_secondary_analysis(
             requested_time.isoformat() if requested_time is not None else None
         ),
         "transitionCount": len(relevant_boundaries),
-        "controller": {
-            "label": (
-                controller_history.get("label")
-                if isinstance(controller_history, dict)
-                else None
-            ),
-            "attribute": (
-                controller_history.get("attribute")
-                if isinstance(controller_history, dict)
-                else None
-            ),
-            "relevantAlignments": controller_relevant[:8],
-            "oppositeAlignments": controller_opposite[:8],
-            "requestedMatched": any(
-                matches_requested(row) for row in controller_relevant
-            ),
+        "controllers": controllers,
+        "sensors": sensors,
+        # Compatibility aliases for the established single-candidate contract.
+        "controller": controllers[0] if controllers else {
+            "label": None,
+            "attribute": None,
+            "room": None,
+            "matchBasis": None,
+            "relevantAlignments": [],
+            "oppositeAlignments": [],
+            "requestedMatched": False,
         },
-        "sensor": {
-            "label": (
-                sensor_history.get("label")
-                if isinstance(sensor_history, dict)
-                else None
-            ),
-            "attribute": (
-                sensor_history.get("attribute")
-                if isinstance(sensor_history, dict)
-                else None
-            ),
-            "relevantCorrelations": sensor_relevant[:12],
-            "oppositeCorrelations": sensor_opposite[:12],
-            "requestedMatched": any(
-                matches_requested(row) for row in sensor_relevant
-            ),
-            "afterSubjectCount": sensor_after_count,
-            "repeatedUpstreamPattern": repeated_upstream_pattern,
+        "sensor": sensors[0] if sensors else {
+            "label": None,
+            "attribute": None,
+            "room": None,
+            "matchBasis": None,
+            "relevantCorrelations": [],
+            "oppositeCorrelations": [],
+            "requestedMatched": False,
+            "afterSubjectCount": 0,
+            "repeatedUpstreamPattern": False,
         },
+        "levelRecovery": recovery,
     }
-
 
 def _delta_phrase(row: dict[str, Any]) -> str:
     try:
