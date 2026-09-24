@@ -269,7 +269,10 @@ async def test_bridge_boundary_provenance_finalizes_as_reporting_source() -> Non
     assert counters.get("causal_native_log_reads", 0) == 0
     assert counters.get("causal_command_producer_provenance", 0) == 0
 
-    assert "did not record a command-on producer" in outcome.message
+    assert (
+        "did not record a command-on producer aligned with this ON transition"
+        in outcome.message
+    )
     assert "Matter Hue Bridge Pro" in outcome.message
     assert "reporting path into Hubitat" in outcome.message
     assert "not the exact initiating action" in outcome.message
