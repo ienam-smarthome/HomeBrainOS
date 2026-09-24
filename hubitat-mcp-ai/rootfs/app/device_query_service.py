@@ -235,14 +235,19 @@ class DeviceQueryService:
         devices: list[dict[str, Any]],
         room_value: Any,
     ) -> list[dict[str, Any]]:
-        """Rank button-capable candidates by room metadata, then label affinity."""
+        """Rank button-capable candidates by room metadata and control semantics.
+
+        Exact Hubitat room assignment always outranks label affinity. Within the
+        same basis, dimmer/remote/switch-style controller labels rank ahead of a
+        generic button label so a bounded causal pass is more likely to inspect
+        the controller most directly associated with lighting.
+        """
 
         wanted_room = " ".join(str(room_value or "").strip().casefold().split())
         if not wanted_room:
             return []
 
-        exact: list[dict[str, Any]] = []
-        label_affinity: list[dict[str, Any]] = []
+        ranked: list[tuple[int, int, str, dict[str, Any]]] = []
         seen_ids: set[str] = set()
 
         for device in devices:
@@ -260,11 +265,12 @@ class DeviceQueryService:
             normalized_room = " ".join(room.casefold().split())
             normalized_label = " ".join(label.casefold().split())
 
-            basis = ""
             if normalized_room == wanted_room:
                 basis = "room"
+                basis_rank = 0
             elif wanted_room in normalized_label:
                 basis = "label-affinity"
+                basis_rank = 1
             else:
                 continue
 
@@ -273,6 +279,18 @@ class DeviceQueryService:
                 continue
             seen_ids.add(dedupe)
 
+            if "dimmer" in normalized_label:
+                role_rank = 0
+            elif any(
+                token in normalized_label
+                for token in ("remote", "switch", "scene controller")
+            ):
+                role_rank = 1
+            elif "button" in normalized_label:
+                role_rank = 2
+            else:
+                role_rank = 3
+
             item = {
                 "id": device.get("id") or device.get("deviceId"),
                 "label": label or None,
@@ -280,9 +298,10 @@ class DeviceQueryService:
                 "capabilities": capabilities,
                 "matchBasis": basis,
             }
-            (exact if basis == "room" else label_affinity).append(item)
+            ranked.append((basis_rank, role_rank, normalized_label, item))
 
-        return [*exact, *label_affinity][:12]
+        ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+        return [item[3] for item in ranked[:12]]
 
     @classmethod
     def _room_trigger_sensor_candidates(
@@ -290,13 +309,19 @@ class DeviceQueryService:
         devices: list[dict[str, Any]],
         room_value: Any,
     ) -> list[dict[str, Any]]:
-        """Rank same-room motion/presence sensors for causal trigger correlation."""
+        """Rank capability-grounded occupancy sensors for causal correlation.
+
+        Exact room assignment wins over label affinity. PresenceSensor outranks a
+        motion-only device within the same basis. Derived/virtual/soft sensors are
+        still valid candidates, but lose a final tiebreak to a physical-looking
+        sensor with the same capability basis.
+        """
 
         wanted_room = " ".join(str(room_value or "").strip().casefold().split())
         if not wanted_room:
             return []
 
-        ranked: list[tuple[int, str, dict[str, Any]]] = []
+        ranked: list[tuple[int, int, int, str, dict[str, Any]]] = []
         seen: set[str] = set()
         for device in devices:
             capabilities = sorted(cls._capability_names(device))
@@ -304,23 +329,23 @@ class DeviceQueryService:
                 re.sub(r"[^a-z0-9]", "", value.casefold())
                 for value in capabilities
             }
-            attribute = ""
-            if "motionsensor" in normalized:
-                attribute = "motion"
-            elif "presencesensor" in normalized:
-                attribute = "presence"
-            if not attribute:
+            has_presence = "presencesensor" in normalized
+            has_motion = "motionsensor" in normalized
+            if not (has_presence or has_motion):
                 continue
+
+            attribute = "presence" if has_presence else "motion"
+            capability_rank = 0 if has_presence else 1
 
             label = str(device.get("label") or device.get("name") or "").strip()
             room = str(device.get("room") or device.get("roomName") or "").strip()
             normalized_room = " ".join(room.casefold().split())
             normalized_label = " ".join(label.casefold().split())
             if normalized_room == wanted_room:
-                score = 0
+                basis_rank = 0
                 basis = "room"
             elif wanted_room and wanted_room in normalized_label:
-                score = 1
+                basis_rank = 1
                 basis = "label-affinity"
             else:
                 continue
@@ -330,14 +355,19 @@ class DeviceQueryService:
             if not key or key in seen:
                 continue
             seen.add(key)
-            # Prefer semantic presence/soft-sensor labels only as a stable
-            # tiebreaker after capability + room match; never infer capability
-            # from the label itself.
-            label_score = 0 if any(
-                token in normalized_label for token in ("presence", "soft sensor", "motion")
-            ) else 1
+
+            derived_rank = (
+                1
+                if any(
+                    token in normalized_label
+                    for token in ("soft sensor", "virtual", "derived")
+                )
+                else 0
+            )
             ranked.append((
-                score * 10 + label_score,
+                basis_rank,
+                capability_rank,
+                derived_rank,
                 normalized_label,
                 {
                     "id": device.get("id") or device.get("deviceId"),
@@ -349,8 +379,8 @@ class DeviceQueryService:
                 },
             ))
 
-        ranked.sort(key=lambda item: (item[0], item[1]))
-        return [item[2] for item in ranked[:8]]
+        ranked.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+        return [item[4] for item in ranked[:8]]
 
     @staticmethod
     def _controller_event_source_hints(
