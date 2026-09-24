@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.26**.
+Current add-on version: **0.16.27**.
 
 ## Architecture
+
+0.16.27 fixes authoritative boundary provenance for short switch intervals. The generic causal timeline still uses its five-minute materiality threshold for weaker contextual reasoning, but direct structured switch-boundary `producedBy` evidence is no longer discarded merely because the observed ON/OFF interval lasted under five minutes. This prevents brief externally reported Hue/Matter transitions from falling back to slow model investigation when the boundary itself already identifies the reporting source.
 
 0.16.26 improves bounded reporting-source candidate selection. External bridge/device cases now inspect up to two ranked controller candidates and two ranked occupancy sensors, while direct command/app-provenance cases remain unchanged. Exact Hubitat room assignment outranks label affinity; label-affinity candidates are never described as same-room, PresenceSensor outranks MotionSensor within the same basis, and derived/soft/virtual sensors lose a final tiebreak to physical-looking sources. The secondary pass also performs one bounded unfiltered subject-event read so deterministic analysis can identify external ON -> level 100 -> downstream setLevel recovery patterns and explicitly classify those app commands as post-ON recovery rather than the initiating cause.
 
