@@ -112,8 +112,12 @@ def _synthesis_instruction(original_user: str) -> str:
             "strongest initiating-control candidate rather than dismissing it as "
             "an unrelated coincidence. Keep the explicit caveat that repeated "
             "timestamp correlation does not independently prove the configured "
-            "button-to-device mapping. If an app reaction appears only after the "
-            "subject command, describe it as downstream handling, not initiation. "
+            "button-to-device mapping. A Hubitat event's triggered[] list names "
+            "listeners invoked by that state event; if the event is physical and "
+            "producedBy names a bridge/device, an app appearing only in triggered[] "
+            "must be described as downstream, never as the initiating trigger. "
+            "If an app reaction appears only after the subject command, describe "
+            "it as downstream handling, not initiation. "
         )
     elif investigative:
         text += (
