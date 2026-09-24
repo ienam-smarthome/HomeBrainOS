@@ -20,9 +20,11 @@ from confirmation_policy import ConfirmationAction, ConfirmationPolicy
 from confirmation_store import CONFIRM_WORDS, ConfirmationStore, PendingConfirmation
 from capability_grounding import CapabilityAction, CapabilityGroundingPolicy
 from causal_evidence_planner import (
+    build_reporting_source_secondary_analysis,
     controller_boundary_alignments,
     controller_history_arguments,
     render_controller_alignment_instruction,
+    render_reporting_source_secondary_evidence,
     render_sensor_correlation_instruction,
     sensor_transition_correlations,
     subject_has_observed_intervals,
@@ -30,6 +32,8 @@ from causal_evidence_planner import (
     trigger_sensor_history_arguments,
 )
 from causal_command_provenance import (
+    boundary_producer_transition_kind,
+    boundary_producer_transition_match,
     boundary_producer_transition_sufficient,
     command_producer_transition_sufficient,
     correlate_boundary_producers,
@@ -650,6 +654,7 @@ class UnifiedMCPAgent:
             "_resolved_target": dict(seed.target),
             "_include_command_provenance": True,
             "_causal_transition": seed.transition,
+            "_causal_correlation_history": True,
             # DeviceHistoryService interprets an explicit small state-history
             # limit as "latest transitions over the bounded seven-day horizon"
             # while still fetching enough rows internally for interval analysis.
@@ -733,6 +738,22 @@ class UnifiedMCPAgent:
             seed.transition,
         ):
             increment_active_metric("causal_boundary_producer_provenance")
+            boundary_kind = boundary_producer_transition_kind(
+                boundary_correlations,
+                seed.transition,
+            )
+            boundary_match = boundary_producer_transition_match(
+                boundary_correlations,
+                seed.transition,
+            )
+            if boundary_kind == "reporting_source" and boundary_match is not None:
+                await self._collect_reporting_source_secondary_correlation(
+                    subject_history=data,
+                    transition=seed.transition,
+                    boundary_match=boundary_match,
+                    catalog=catalog,
+                    completed_calls=completed_calls,
+                )
             return "sufficient", subject_key, seed.transition
 
         sufficient = await self._collect_causal_boundary_logs(
@@ -746,6 +767,187 @@ class UnifiedMCPAgent:
             else ("partial", subject_key, seed.transition)
         )
 
+
+    async def _collect_reporting_source_secondary_correlation(
+        self,
+        *,
+        subject_history: dict[str, Any],
+        transition: str,
+        boundary_match: dict[str, Any],
+        catalog: ToolDiscoveryCatalog,
+        completed_calls: set[str],
+    ) -> None:
+        """Run one bounded controller + motion/presence pass for bridge provenance."""
+
+        filter_tool = catalog.declared_tool(_LOCAL_FILTER_TOOL)
+        history_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
+        room_arguments = subject_room_filter_arguments(subject_history)
+        if (
+            filter_tool is None
+            or history_tool is None
+            or room_arguments is None
+        ):
+            return
+
+        started = time.monotonic()
+        increment_active_metric("causal_reporting_source_correlation")
+        increment_active_metric("causal_room_plan")
+        filter_execution = await self.executor.execute(
+            _LOCAL_FILTER_TOOL,
+            room_arguments,
+            tool=filter_tool,
+            supports_live_claim=True,
+            evidence_kind=_EVIDENCE_KINDS[_LOCAL_FILTER_TOOL],
+        )
+        completed_calls.add(json.dumps(
+            [_LOCAL_FILTER_TOOL, room_arguments],
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        ))
+        filter_data = (
+            filter_execution.result.data
+            if filter_execution.result is not None
+            and isinstance(filter_execution.result.data, dict)
+            else {}
+        )
+
+        hints = (
+            filter_data.get("eventSourceHints")
+            if isinstance(filter_data.get("eventSourceHints"), dict)
+            else {}
+        )
+
+        def grounded_history_arguments(
+            base: dict[str, str] | None,
+            candidate_key: str,
+        ) -> dict[str, Any] | None:
+            if base is None:
+                return None
+            arguments: dict[str, Any] = {
+                **base,
+                "hours_back": 48,
+                "limit": 50,
+            }
+            candidates = hints.get(candidate_key)
+            if isinstance(candidates, list):
+                wanted = str(base.get("name") or "").strip().casefold()
+                for candidate in candidates:
+                    if not isinstance(candidate, dict):
+                        continue
+                    label = str(candidate.get("label") or "").strip()
+                    if label.casefold() == wanted and label:
+                        arguments["_resolved_target"] = dict(candidate)
+                        break
+            return arguments
+
+        controller_arguments = grounded_history_arguments(
+            controller_history_arguments(filter_data),
+            "controllerCandidates",
+        )
+        sensor_arguments = grounded_history_arguments(
+            trigger_sensor_history_arguments(filter_data),
+            "triggerSensorCandidates",
+        )
+
+        pending: list[tuple[str, dict[str, Any]]] = []
+        if controller_arguments is not None:
+            increment_active_metric("causal_provenance_read")
+            pending.append(("controller", controller_arguments))
+        if sensor_arguments is not None:
+            increment_active_metric("causal_sensor_read")
+            pending.append(("sensor", sensor_arguments))
+
+        async def read_history(
+            arguments: dict[str, Any],
+        ):
+            return await self.executor.execute(
+                _LOCAL_DEVICE_HISTORY_TOOL,
+                arguments,
+                tool=history_tool,
+                supports_live_claim=True,
+                evidence_kind=_EVIDENCE_KINDS[_LOCAL_DEVICE_HISTORY_TOOL],
+            )
+
+        executions = (
+            await asyncio.gather(
+                *(read_history(arguments) for _kind, arguments in pending)
+            )
+            if pending
+            else []
+        )
+
+        controller_data: dict[str, Any] | None = None
+        sensor_data: dict[str, Any] | None = None
+        for (kind, arguments), execution in zip(pending, executions):
+            completed_calls.add(json.dumps(
+                [_LOCAL_DEVICE_HISTORY_TOOL, {
+                    key: value
+                    for key, value in arguments.items()
+                    if not str(key).startswith("_")
+                }],
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            ))
+            data = (
+                execution.result.data
+                if execution.result is not None
+                and isinstance(execution.result.data, dict)
+                else None
+            )
+            if kind == "controller":
+                controller_data = data
+            else:
+                sensor_data = data
+
+        analysis = build_reporting_source_secondary_analysis(
+            subject_history,
+            transition=transition,
+            requested_boundary=boundary_match.get("stateBoundary"),
+            controller_history=controller_data,
+            sensor_history=sensor_data,
+        )
+        controller_rows = (
+            analysis.get("controller", {}).get("relevantAlignments", [])
+            if isinstance(analysis.get("controller"), dict)
+            else []
+        )
+        sensor_rows = (
+            analysis.get("sensor", {}).get("relevantCorrelations", [])
+            if isinstance(analysis.get("sensor"), dict)
+            else []
+        )
+        if controller_rows:
+            increment_active_metric(
+                "causal_provenance_aligned",
+                len(controller_rows),
+            )
+        if sensor_rows:
+            increment_active_metric(
+                "causal_sensor_aligned",
+                len(sensor_rows),
+            )
+
+        self.evidence.record(
+            "homebrain_causal_secondary_correlation",
+            {
+                "subject": subject_history.get("label"),
+                "room": subject_history.get("room"),
+                "transition": transition,
+            },
+            success=True,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            summary=(
+                "bounded reporting-source correlation: "
+                f"controller_alignments={len(controller_rows)}, "
+                f"sensor_correlations={len(sensor_rows)}"
+            ),
+            supports_live_claim=True,
+            evidence_kind="deterministic_causal_secondary_correlation",
+            effect=ToolEffect.READ,
+            details=analysis,
+        )
 
     async def _collect_causal_boundary_logs(
         self,
@@ -1458,6 +1660,26 @@ class UnifiedMCPAgent:
             )
         ).message
 
+    def _render_boundary_with_secondary(
+        self,
+        transition: str,
+    ) -> str | None:
+        evidence = self.evidence.receipts()
+        base = render_boundary_producer_answer(
+            evidence,
+            transition=transition,
+        )
+        if base is None:
+            return None
+        secondary = render_reporting_source_secondary_evidence(evidence)
+        if not secondary:
+            return base
+        return (
+            base
+            + "\n\n**Bounded secondary correlation**\n\n"
+            + secondary
+        )
+
     async def _process_user_request(
         self,
         user_prompt: str,
@@ -1628,9 +1850,8 @@ class UnifiedMCPAgent:
                             self.evidence.receipts(),
                             transition=prefetched_transition or "on",
                         )
-                        or render_boundary_producer_answer(
-                            self.evidence.receipts(),
-                            transition=prefetched_transition or "on",
+                        or self._render_boundary_with_secondary(
+                            prefetched_transition or "on"
                         )
                         or render_strong_native_provenance_answer(
                             self.evidence.receipts()

@@ -208,6 +208,264 @@ def render_sensor_correlation_instruction(
     )
 
 
+
+def build_reporting_source_secondary_analysis(
+    subject_history: dict[str, Any],
+    *,
+    transition: str,
+    requested_boundary: Any,
+    controller_history: dict[str, Any] | None = None,
+    sensor_history: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build bounded deterministic correlation around an external reporting source."""
+
+    action = str(transition or "").strip().casefold()
+    requested_role = {"on": "start", "off": "end"}.get(action)
+    if requested_role is None:
+        return {}
+
+    boundaries = _subject_interval_boundaries(subject_history)
+    requested_time = _timestamp(requested_boundary)
+    relevant_boundaries = [
+        row for row in boundaries if row.get("role") == requested_role
+    ]
+    opposite_role = "end" if requested_role == "start" else "start"
+
+    def matches_requested(row: dict[str, Any]) -> bool:
+        if requested_time is None:
+            return False
+        row_time = _timestamp(row.get("subjectTransition"))
+        return (
+            row_time is not None
+            and abs((row_time - requested_time).total_seconds()) <= 0.25
+        )
+
+    controller_rows = (
+        controller_boundary_alignments(subject_history, controller_history)
+        if isinstance(controller_history, dict)
+        else []
+    )
+    controller_relevant = [
+        row for row in controller_rows if row.get("boundaryRole") == requested_role
+    ]
+    controller_opposite = [
+        row for row in controller_rows if row.get("boundaryRole") == opposite_role
+    ]
+
+    sensor_rows = (
+        sensor_transition_correlations(
+            subject_history,
+            sensor_history,
+            start_delta_seconds=5.0,
+            end_delay_seconds=45.0,
+        )
+        if isinstance(sensor_history, dict)
+        else []
+    )
+    sensor_relevant = [
+        row for row in sensor_rows if row.get("boundaryRole") == requested_role
+    ]
+    sensor_opposite = [
+        row for row in sensor_rows if row.get("boundaryRole") == opposite_role
+    ]
+    sensor_after_count = sum(
+        1
+        for row in sensor_relevant
+        if float(row.get("signedDeltaSeconds") or 0) > 0
+    )
+    repeated_upstream_pattern = (
+        requested_role == "start"
+        and len(sensor_relevant) >= 2
+        and sensor_after_count >= 2
+    )
+
+    return {
+        "subject": subject_history.get("label"),
+        "room": subject_history.get("room"),
+        "transition": action,
+        "requestedBoundary": (
+            requested_time.isoformat() if requested_time is not None else None
+        ),
+        "transitionCount": len(relevant_boundaries),
+        "controller": {
+            "label": (
+                controller_history.get("label")
+                if isinstance(controller_history, dict)
+                else None
+            ),
+            "attribute": (
+                controller_history.get("attribute")
+                if isinstance(controller_history, dict)
+                else None
+            ),
+            "relevantAlignments": controller_relevant[:8],
+            "oppositeAlignments": controller_opposite[:8],
+            "requestedMatched": any(
+                matches_requested(row) for row in controller_relevant
+            ),
+        },
+        "sensor": {
+            "label": (
+                sensor_history.get("label")
+                if isinstance(sensor_history, dict)
+                else None
+            ),
+            "attribute": (
+                sensor_history.get("attribute")
+                if isinstance(sensor_history, dict)
+                else None
+            ),
+            "relevantCorrelations": sensor_relevant[:12],
+            "oppositeCorrelations": sensor_opposite[:12],
+            "requestedMatched": any(
+                matches_requested(row) for row in sensor_relevant
+            ),
+            "afterSubjectCount": sensor_after_count,
+            "repeatedUpstreamPattern": repeated_upstream_pattern,
+        },
+    }
+
+
+def _delta_phrase(row: dict[str, Any]) -> str:
+    try:
+        signed = float(row.get("signedDeltaSeconds"))
+    except (TypeError, ValueError):
+        return "at nearly the same time"
+    seconds = abs(signed)
+    number = f"{seconds:.3f}".rstrip("0").rstrip(".")
+    if signed > 0:
+        return f"{number}s after"
+    if signed < 0:
+        return f"{number}s before"
+    return "at the same time as"
+
+
+def render_reporting_source_secondary_analysis(
+    analysis: dict[str, Any],
+) -> str | None:
+    """Render secondary correlation without turning timing into a causal claim."""
+
+    if not isinstance(analysis, dict):
+        return None
+    transition = str(analysis.get("transition") or "").strip().casefold()
+    role_word = "ON" if transition == "on" else "OFF" if transition == "off" else ""
+    if not role_word:
+        return None
+
+    paragraphs: list[str] = []
+    controller = analysis.get("controller")
+    if isinstance(controller, dict):
+        label = str(controller.get("label") or "").strip()
+        relevant = [
+            row for row in controller.get("relevantAlignments", [])
+            if isinstance(row, dict)
+        ]
+        opposite = [
+            row for row in controller.get("oppositeAlignments", [])
+            if isinstance(row, dict)
+        ]
+        if label:
+            if relevant:
+                paragraphs.append(
+                    f"The bounded same-room controller check found {len(relevant)} "
+                    f"{role_word} boundary alignment(s) for {label}. "
+                    + (
+                        "One aligns with the specific requested transition. "
+                        if controller.get("requestedMatched")
+                        else "None aligns with the specific requested transition. "
+                    )
+                    + "Controller timing is corroborating evidence only unless a "
+                    "direct command/producer row establishes causation."
+                )
+            elif opposite:
+                opposite_word = "OFF" if role_word == "ON" else "ON"
+                paragraphs.append(
+                    f"The checked same-room controller {label} did not align with "
+                    f"the {role_word} boundaries. It did align with "
+                    f"{len(opposite)} {opposite_word} boundary event(s), which is "
+                    f"evidence about those {opposite_word} transitions, not the "
+                    f"requested {role_word} transition."
+                )
+            else:
+                paragraphs.append(
+                    f"The checked same-room controller {label} had no event within "
+                    f"2 seconds of the observed {role_word} boundaries."
+                )
+
+    sensor = analysis.get("sensor")
+    if isinstance(sensor, dict):
+        label = str(sensor.get("label") or "").strip()
+        relevant = [
+            row for row in sensor.get("relevantCorrelations", [])
+            if isinstance(row, dict)
+        ]
+        opposite = [
+            row for row in sensor.get("oppositeCorrelations", [])
+            if isinstance(row, dict)
+        ]
+        transition_count = int(analysis.get("transitionCount") or 0)
+        if label and relevant:
+            timings = ", ".join(
+                _delta_phrase(row) for row in relevant[:4]
+            )
+            paragraphs.append(
+                f"For {label}, {len(relevant)} of {transition_count or len(relevant)} "
+                f"observed {role_word} transition(s) had a matching "
+                f"{sensor.get('attribute') or 'sensor'} edge within the bounded "
+                f"window ({timings}). "
+                + (
+                    "The specific requested transition also has such an edge."
+                    if sensor.get("requestedMatched")
+                    else "The specific requested transition does not have such an "
+                    "edge within the bounded window."
+                )
+            )
+        elif label:
+            paragraphs.append(
+                f"The checked motion/presence source {label} had no bounded "
+                f"correlation with the observed {role_word} transitions."
+            )
+
+        if label and sensor.get("repeatedUpstreamPattern"):
+            paragraphs.append(
+                f"In multiple ON transitions the light/device changed before "
+                f"Hubitat recorded {label} becoming active. That repeated ordering "
+                f"is consistent with an upstream or outside-Hubitat relationship "
+                f"involving {label}, but it does not prove that {label} triggered "
+                "the device and it does not identify a specific external hub or "
+                "automation."
+            )
+        if label and opposite and role_word == "ON":
+            before = [
+                row for row in opposite
+                if float(row.get("signedDeltaSeconds") or 0) <= 0
+            ]
+            if before:
+                paragraphs.append(
+                    f"{label} also had {len(before)} inactive edge(s) shortly before "
+                    "observed OFF boundaries. That strengthens the repeated timing "
+                    "pattern, but remains temporal correlation rather than direct "
+                    "producer evidence."
+                )
+
+    if not paragraphs:
+        return None
+    return "\n\n".join(paragraphs)
+
+
+def render_reporting_source_secondary_evidence(
+    evidence: list[dict[str, Any]],
+) -> str | None:
+    for receipt in reversed(evidence):
+        if (
+            isinstance(receipt, dict)
+            and receipt.get("success") is True
+            and receipt.get("tool") == "homebrain_causal_secondary_correlation"
+            and isinstance(receipt.get("details"), dict)
+        ):
+            return render_reporting_source_secondary_analysis(receipt["details"])
+    return None
+
 def _timestamp(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -221,6 +479,43 @@ def _timestamp(value: Any) -> datetime | None:
 def _subject_interval_boundaries(
     subject_history: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """Return bounded subject transitions for correlation.
+
+    Explicit causal prefetch can retain several switch rows from the same
+    authoritative source page as `correlationEvents`. Prefer those rows so a
+    bounded secondary investigation can compare repeated transitions without
+    re-reading the subject. Fall back to interval analysis for older/general
+    callers.
+    """
+
+    correlation_events = subject_history.get("correlationEvents")
+    if isinstance(correlation_events, list):
+        boundaries: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for item in correlation_events:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("name") or "").strip().casefold() != "switch":
+                continue
+            value = str(item.get("value") or "").strip().casefold()
+            role = "start" if value == "on" else "end" if value == "off" else ""
+            event_time = _timestamp(item.get("date") or item.get("timestamp"))
+            if not role or event_time is None:
+                continue
+            key = (role, event_time.isoformat())
+            if key in seen:
+                continue
+            seen.add(key)
+            boundaries.append({
+                "role": role,
+                "time": event_time,
+                "intervalIndex": len(boundaries) + 1,
+                "source": "correlationEvents",
+            })
+        if boundaries:
+            boundaries.sort(key=lambda item: item["time"])
+            return boundaries
+
     temporal = subject_history.get("temporalAnalysis")
     if not isinstance(temporal, dict):
         return []
@@ -256,7 +551,6 @@ def _subject_interval_boundaries(
             "open": True,
         })
     return boundaries
-
 
 def _controller_events(controller_history: dict[str, Any]) -> list[tuple[datetime, dict[str, Any]]]:
     rows = controller_history.get("events")
@@ -424,6 +718,9 @@ __all__ = [
     "controller_history_arguments",
     "controller_transition_alignments",
     "render_controller_alignment_instruction",
+    "build_reporting_source_secondary_analysis",
+    "render_reporting_source_secondary_analysis",
+    "render_reporting_source_secondary_evidence",
     "render_sensor_correlation_instruction",
     "sensor_transition_correlations",
     "subject_has_observed_intervals",
