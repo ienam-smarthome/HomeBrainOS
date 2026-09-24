@@ -186,7 +186,7 @@ async def test_history_collects_scoped_command_producer_rows() -> None:
     result = await service.history({
         "name": "Dehumidifier 2",
         "attribute": "switch",
-        "limit": 3,
+        "limit": 12,
         "_resolved_target": _device(),
         "_include_command_provenance": True,
     })
