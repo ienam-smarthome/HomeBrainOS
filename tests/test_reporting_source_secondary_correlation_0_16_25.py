@@ -284,8 +284,12 @@ def test_shared_sensor_reporting_path_is_not_independent_corroboration() -> None
         sensor_histories=[fp300, soft],
     )
 
-    soft_end = analysis["sensors"][1]["oppositeCorrelations"][-1]
-    assert soft_end["signedDeltaSeconds"] == 0.884
+    soft_end = next(
+        row
+        for row in analysis["sensors"][1]["oppositeCorrelations"]
+        if row["signedDeltaSeconds"] == 0.884
+    )
+    assert soft_end["producedBy"]["label"] == "Matter Aqara M3"
     assert analysis["sensors"][0]["producerLabels"] == ["Matter Aqara M3"]
     assert analysis["sensors"][1]["producerLabels"] == ["Matter Aqara M3"]
 
