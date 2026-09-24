@@ -459,6 +459,71 @@ class DeviceQueryService:
                 break
         return hints
 
+    @classmethod
+    def room_event_source_hints(
+        cls,
+        devices: list[dict[str, Any]],
+        room_value: Any,
+    ) -> dict[str, Any]:
+        """Build bounded causal event-source hints from structural device data."""
+
+        controller_candidates = cls._room_controller_candidates(devices, room_value)
+        controller_hints = cls._controller_event_source_hints(controller_candidates)
+        trigger_sensor_hints = cls._room_trigger_sensor_candidates(devices, room_value)
+        if not (controller_hints or trigger_sensor_hints):
+            return {}
+        return {
+            "controllerCandidates": controller_hints,
+            "triggerSensorCandidates": trigger_sensor_hints,
+            "note": (
+                "Controller candidates advertise button capabilities. Trigger "
+                "sensor candidates advertise MotionSensor/PresenceSensor. Use "
+                "capability-grounded histories and signed transition timing; "
+                "these hints alone do not establish causation."
+            ),
+        }
+
+    @classmethod
+    def cached_room_event_source_hints(
+        cls,
+        devices: list[dict[str, Any]],
+        room_value: Any,
+    ) -> dict[str, Any] | None:
+        """Return safe room hints from a fresh identity cache, or None to refresh.
+
+        A cached structural snapshot is sufficient for controller ranking. For
+        occupancy devices we additionally require some attribute-shape metadata
+        on every room/label-associated MotionSensor/PresenceSensor candidate.
+        If a candidate advertises occupancy capability but the cached row carries
+        no attributes at all, fall back to the live room filter rather than risk
+        dropping a real trigger source.
+        """
+
+        if not devices:
+            return None
+        wanted_room = " ".join(str(room_value or "").strip().casefold().split())
+        if not wanted_room:
+            return None
+
+        for device in devices:
+            capabilities = {
+                re.sub(r"[^a-z0-9]", "", value.casefold())
+                for value in cls._capability_names(device)
+            }
+            if not ({"motionsensor", "presencesensor"} & capabilities):
+                continue
+
+            label = str(device.get("label") or device.get("name") or "").strip()
+            room = str(device.get("room") or device.get("roomName") or "").strip()
+            normalized_room = " ".join(room.casefold().split())
+            normalized_label = " ".join(label.casefold().split())
+            if normalized_room != wanted_room and wanted_room not in normalized_label:
+                continue
+            if not device_attributes(device):
+                return None
+
+        return cls.room_event_source_hints(devices, room_value)
+
     @staticmethod
     def _capability_names(device: dict[str, Any]) -> set[str]:
         return capability_names(device)
@@ -840,20 +905,9 @@ class DeviceQueryService:
             # Room discovery is a semantic operation. Preserve bounded event-source
             # hints for later deterministic causal planning; these are candidates,
             # not causal claims.
-            controller_candidates = self._room_controller_candidates(devices, expected)
-            controller_hints = self._controller_event_source_hints(controller_candidates)
-            trigger_sensor_hints = self._room_trigger_sensor_candidates(devices, expected)
-            if controller_hints or trigger_sensor_hints:
-                data["eventSourceHints"] = {
-                    "controllerCandidates": controller_hints,
-                    "triggerSensorCandidates": trigger_sensor_hints,
-                    "note": (
-                        "Controller candidates advertise button capabilities. Trigger "
-                        "sensor candidates advertise MotionSensor/PresenceSensor. Use "
-                        "capability-grounded histories and signed transition timing; "
-                        "these hints alone do not establish causation."
-                    ),
-                }
+            event_source_hints = self.room_event_source_hints(devices, expected)
+            if event_source_hints:
+                data["eventSourceHints"] = event_source_hints
         return MCPToolResult(DEVICE_FILTER_TOOL, arguments, {}, json.dumps(data), data)
 
     @staticmethod
