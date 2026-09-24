@@ -851,6 +851,39 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
             details["boundaryEvents"] = bounded_boundary_events
             details["boundaryEventsTruncated"] = len(boundary_events) > 20
 
+    correlation_events = result_data.get("correlationEvents")
+    if isinstance(correlation_events, list):
+        bounded_correlation_events = [
+            {
+                key: item.get(key)
+                for key in (
+                    "name",
+                    "value",
+                    "unit",
+                    "description",
+                    "date",
+                    "isStateChange",
+                    "source",
+                    "type",
+                    "triggered",
+                    "physical",
+                    "digital",
+                    "deviceId",
+                    "installedAppId",
+                    "producedBy",
+                )
+                if key in item
+            }
+            for item in correlation_events[:16]
+            if isinstance(item, dict)
+        ]
+        if bounded_correlation_events:
+            details["correlationEvents"] = bounded_correlation_events
+            details["correlationEventsTruncated"] = (
+                bool(result_data.get("correlationEventsTruncated"))
+                or len(correlation_events) > 16
+            )
+
     if isinstance(events, list):
         observed_events: list[dict[str, Any]] = []
         for item in events[:16]:
@@ -895,6 +928,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         or bool(details.get("windowEvents"))
         or bool(details.get("boundaryEvents"))
         or bool(details.get("commandEvents"))
+        or bool(details.get("correlationEvents"))
         or any(
             key in result_data
             for key in (
