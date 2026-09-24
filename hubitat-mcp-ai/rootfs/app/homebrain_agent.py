@@ -35,7 +35,10 @@ from contextual_read_fast_path import (
 )
 from confirmation_policy import ConfirmationAction
 from confirmation_store import CONFIRM_WORDS
-from causal_subject_prefetch import switch_transition_from_prompt
+from causal_subject_prefetch import (
+    causal_switch_subject_phrase,
+    switch_transition_from_prompt,
+)
 from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
 from device_target_resolver import resolve_capable_device_candidate
