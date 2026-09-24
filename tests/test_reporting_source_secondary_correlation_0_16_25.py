@@ -39,6 +39,7 @@ FP300 = {
     "name": "Bedroom 1 FP300 sensor",
     "room": "Bedroom 1",
     "capabilities": ["MotionSensor"],
+    "attributes": {"motion": "active"},
     "commands": [],
 }
 

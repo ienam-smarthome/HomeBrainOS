@@ -54,11 +54,25 @@ BUTTON = _device(
     ["PushableButton"],
 )
 FP300 = _device(
-    "7902",
-    "Bedroom 1 FP300",
+    "7774",
+    "Bedroom 1 FP300 sensor",
     "Bedroom 1",
     ["PresenceSensor", "MotionSensor"],
-    attributes={"presence": "present", "motion": "active"},
+    attributes={"motion": "active"},
+)
+FP300_HUMIDITY = _device(
+    "7773",
+    "Bedroom 1 FP300 humidity",
+    "Bedroom 1",
+    ["PresenceSensor", "HumidityMeasurement"],
+    attributes={"humidity": 47},
+)
+FP300_LUX = _device(
+    "7775",
+    "Bedroom 1 FP300 lux",
+    "Bedroom 1",
+    ["PresenceSensor", "IlluminanceMeasurement"],
+    attributes={"illuminance": 18},
 )
 SOFT = _device(
     "7756",
@@ -67,7 +81,15 @@ SOFT = _device(
     ["MotionSensor"],
     attributes={"motion": "inactive"},
 )
-ALL_DEVICES = [LIGHT, DIMMER, BUTTON, FP300, SOFT]
+ALL_DEVICES = [
+    LIGHT,
+    DIMMER,
+    BUTTON,
+    FP300_HUMIDITY,
+    FP300_LUX,
+    FP300,
+    SOFT,
+]
 
 
 def test_candidate_ranking_prefers_dimmer_and_physical_presence_source() -> None:
@@ -90,11 +112,18 @@ def test_candidate_ranking_prefers_dimmer_and_physical_presence_source() -> None
     ]
 
     assert [row["label"] for row in sensors[:2]] == [
-        "Bedroom 1 FP300",
+        "Bedroom 1 FP300 sensor",
         "Bedroom 1 Soft Sensor",
     ]
-    assert sensors[0]["suggestedHistoryAttributes"] == ["presence"]
+    assert sensors[0]["suggestedHistoryAttributes"] == ["motion"]
+    assert sensors[0]["exposedOccupancyAttribute"] == "motion"
     assert sensors[1]["suggestedHistoryAttributes"] == ["motion"]
+    assert "Bedroom 1 FP300 humidity" not in {
+        row["label"] for row in sensors
+    }
+    assert "Bedroom 1 FP300 lux" not in {
+        row["label"] for row in sensors
+    }
 
 
 _SWITCH_ROWS = [
@@ -143,8 +172,10 @@ def _switch_events() -> list[dict]:
 def _subject_detail_events() -> list[dict]:
     rows = list(_switch_events())
     recovery = [
+        # Existing bridge-level-first pattern.
         ("2026-09-24T08:06:14.155+0100", 100, "2026-09-24T08:06:17.189+0100"),
-        ("2026-09-24T08:01:41.316+0100", 100, "2026-09-24T08:01:44.349+0100"),
+        # Live alternate ordering: app command first, resulting level later.
+        ("2026-09-24T08:01:42.296+0100", 45, "2026-09-24T08:01:41.353+0100"),
         ("2026-09-24T07:59:22.558+0100", 100, "2026-09-24T07:59:25.610+0100"),
         ("2026-09-24T07:43:03.276+0100", 100, "2026-09-24T07:43:06.330+0100"),
         ("2026-09-24T07:34:34.695+0100", 100, "2026-09-24T07:34:34.773+0100"),
@@ -199,18 +230,18 @@ def _dimmer_events() -> list[dict]:
 def _fp300_events() -> list[dict]:
     return [
         {
-            "name": "presence",
-            "value": "not present",
+            "name": "motion",
+            "value": "inactive",
             "date": "2026-09-24T08:14:38.215+0100",
-            "description": "presence inactive",
+            "description": "motion inactive",
             "isStateChange": True,
             "type": "physical",
         },
         {
-            "name": "presence",
-            "value": "present",
+            "name": "motion",
+            "value": "active",
             "date": "2026-09-24T07:20:00.000+0100",
-            "description": "presence active",
+            "description": "motion active",
             "isStateChange": True,
             "type": "physical",
         },
@@ -306,8 +337,12 @@ class _MorningBedroomMCP:
             events = _dimmer_events()
         elif device_id == "7744":
             events = []
-        elif device_id == "7902":
+        elif device_id == "7774":
             events = _fp300_events()
+        elif device_id in {"7773", "7775"}:
+            raise AssertionError(
+                ("non-occupancy FP300 child must not be queried", device_id)
+            )
         elif device_id == "7756":
             events = _soft_events()
         else:
@@ -354,19 +389,22 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
     assert "Matter Hue Bridge Pro" in message
     assert "Bedroom 1 dimmer" in message
     assert "Bedroom 1 button" in message
-    assert "Bedroom 1 FP300" in message
+    assert "Bedroom 1 FP300 sensor" in message
     assert "Bedroom 1 Soft Sensor" in message
 
     assert "same-room controller Bedroom 1 button" not in message
     assert "same-room controller Bedroom 1 dimmer" not in message
     assert "assigned to Hubitat room Button Controllers" in message
 
-    assert "Bedroom 1 FP300" in message
+    assert "Bedroom 1 FP300 sensor" in message
     assert "no bounded correlation with the observed ON transitions" in message
     assert "inactive edge(s) shortly before observed OFF boundaries" in message
 
     assert "Downstream level-recovery pattern" in message
     assert "5 of 5 observed ON transition(s)" in message
+    assert "4 level-first sequence(s)" in message
+    assert "1 command-first sequence(s)" in message
+    assert "resulting level 45" in message
     assert "Bedroom 1 (⚪ Lights Off)" in message
     assert "not evidence that the app initiated the ON" in message
     assert "specific requested ON transition also shows" in message
@@ -386,6 +424,8 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
     assert sum(1 for device_id, _attr in event_calls if device_id == "7840") == 3
     assert sum(1 for device_id, _attr in event_calls if device_id == "7901") == 1
     assert sum(1 for device_id, _attr in event_calls if device_id == "7744") == 1
-    assert sum(1 for device_id, _attr in event_calls if device_id == "7902") == 1
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7774") == 1
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7773") == 0
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7775") == 0
     assert sum(1 for device_id, _attr in event_calls if device_id == "7756") == 1
     assert not any(name == "hub_read_diagnostics" for name, _ in mcp.calls)

@@ -386,38 +386,85 @@ def _level_recovery_pattern(
     ]
     requested = _timestamp(requested_boundary)
     matches: list[dict[str, Any]] = []
+
     for boundary in starts:
         boundary_time = boundary["time"]
         level_rows: list[tuple[float, datetime, dict[str, Any]]] = []
         command_rows: list[tuple[float, datetime, dict[str, Any]]] = []
+
         for event_time, row in events:
             signed = (event_time - boundary_time).total_seconds()
-            if signed < 0:
+            if signed < 0 or signed > 5.0:
                 continue
             name = str(row.get("name") or "").strip().casefold()
-            if name == "level" and signed <= 1.0:
+            if name == "level":
                 level_rows.append((signed, event_time, row))
-            elif name == "command-setlevel" and signed <= 5.0:
+            elif name == "command-setlevel":
                 producer = row.get("producedBy")
                 if isinstance(producer, dict) and str(
                     producer.get("label") or ""
                 ).strip():
                     command_rows.append((signed, event_time, row))
+
         if not level_rows or not command_rows:
             continue
+
         level_rows.sort(key=lambda item: item[0])
         command_rows.sort(key=lambda item: item[0])
-        level_delta, level_time, level_row = level_rows[0]
         command_delta, command_time, command_row = command_rows[0]
+
+        # Two valid downstream recovery shapes are observed live:
+        #
+        #   ON -> bridge level -> app setLevel
+        #   ON -> app setLevel -> resulting bridge level
+        #
+        # Keep them distinct so a resulting level is never called an initial
+        # level merely because it happened close to the ON boundary.
+        before_command = [
+            item
+            for item in level_rows
+            if item[0] <= min(1.0, command_delta)
+        ]
+        after_command = [
+            item
+            for item in level_rows
+            if command_delta <= item[0] <= min(5.0, command_delta + 2.0)
+        ]
+
+        sequence = ""
+        level_delta: float
+        level_time: datetime
+        level_row: dict[str, Any]
+        initial_level: float | None = None
+        result_level: float | None = None
+
+        if before_command:
+            level_delta, level_time, level_row = before_command[0]
+            sequence = "level-before-command"
+            try:
+                initial_level = float(level_row.get("value"))
+            except (TypeError, ValueError):
+                initial_level = None
+        elif after_command:
+            level_delta, level_time, level_row = after_command[0]
+            sequence = "command-before-level"
+            try:
+                result_level = float(level_row.get("value"))
+            except (TypeError, ValueError):
+                result_level = None
+        else:
+            continue
+
         producer = dict(command_row.get("producedBy") or {})
-        try:
-            initial_level = float(level_row.get("value"))
-        except (TypeError, ValueError):
-            initial_level = None
         matches.append({
             "subjectTransition": boundary_time.isoformat(),
+            "sequence": sequence,
             "levelEvent": level_time.isoformat(),
+            "levelValue": (
+                initial_level if initial_level is not None else result_level
+            ),
             "initialLevel": initial_level,
+            "resultLevel": result_level,
             "levelDeltaSeconds": round(level_delta, 3),
             "commandEvent": command_time.isoformat(),
             "commandDeltaSeconds": round(command_delta, 3),
@@ -451,11 +498,19 @@ def _level_recovery_pattern(
         if isinstance(row.get("initialLevel"), (int, float))
         and float(row["initialLevel"]) >= 99.0
     )
+    level_before_count = sum(
+        1 for row in matches if row.get("sequence") == "level-before-command"
+    )
+    command_before_count = sum(
+        1 for row in matches if row.get("sequence") == "command-before-level"
+    )
     return {
         "matchCount": len(matches),
         "transitionCount": len(starts),
         "requestedMatched": any(row.get("requestedMatched") for row in matches),
         "highInitialLevelCount": high_level_count,
+        "levelBeforeCommandCount": level_before_count,
+        "commandBeforeLevelCount": command_before_count,
         "producerLabel": producer_label or None,
         "matches": matches[:12],
     }
@@ -746,29 +801,61 @@ def render_reporting_source_secondary_analysis(
         count = int(recovery.get("matchCount") or 0)
         total = int(recovery.get("transitionCount") or count)
         high = int(recovery.get("highInitialLevelCount") or 0)
+        level_first = int(recovery.get("levelBeforeCommandCount") or 0)
+        command_first = int(recovery.get("commandBeforeLevelCount") or 0)
         producer = str(recovery.get("producerLabel") or "").strip()
         examples = [
             row for row in recovery.get("matches", [])
             if isinstance(row, dict)
         ][:4]
-        timings = ", ".join(
-            (
-                f"level {row.get('initialLevel'):g} at "
-                f"{float(row.get('levelDeltaSeconds') or 0):g}s, recovery command "
-                f"at {float(row.get('commandDeltaSeconds') or 0):g}s"
+
+        example_texts: list[str] = []
+        for row in examples:
+            sequence = str(row.get("sequence") or "")
+            level_delta = float(row.get("levelDeltaSeconds") or 0)
+            command_delta = float(row.get("commandDeltaSeconds") or 0)
+            if (
+                sequence == "level-before-command"
+                and isinstance(row.get("initialLevel"), (int, float))
+            ):
+                example_texts.append(
+                    f"level {row.get('initialLevel'):g} at {level_delta:g}s, "
+                    f"recovery command at {command_delta:g}s"
+                )
+            elif (
+                sequence == "command-before-level"
+                and isinstance(row.get("resultLevel"), (int, float))
+            ):
+                example_texts.append(
+                    f"recovery command at {command_delta:g}s, resulting level "
+                    f"{row.get('resultLevel'):g} at {level_delta:g}s"
+                )
+
+        producer_text = f" from {producer}" if producer else ""
+        sequence_parts: list[str] = []
+        if level_first:
+            sequence_parts.append(
+                f"{level_first} level-first sequence(s)"
             )
-            for row in examples
-            if isinstance(row.get("initialLevel"), (int, float))
-        )
-        producer_text = (
-            f" from {producer}" if producer else ""
+        if command_first:
+            sequence_parts.append(
+                f"{command_first} command-first sequence(s)"
+            )
+        sequence_text = (
+            "; " + ", ".join(sequence_parts)
+            if sequence_parts
+            else ""
         )
         paragraphs.append(
             f"Downstream level-recovery pattern: {count} of {total} observed ON "
-            f"transition(s) were followed by an immediate level event and a "
-            f"setLevel command{producer_text} within 5 seconds; {high} began at "
-            "about level 100. "
-            + (f"Examples: {timings}. " if timings else "")
+            f"transition(s) had a setLevel command{producer_text} within 5 seconds "
+            f"and a nearby level event{sequence_text}; {high} began at about "
+            "level 100. "
+            + (
+                f"Examples: {', '.join(example_texts)}. "
+                if example_texts
+                else ""
+            )
             + "Because those setLevel commands occur after the ON boundary, they "
             "are evidence of recovery/adjustment after the light was already on, "
             "not evidence that the app initiated the ON."
