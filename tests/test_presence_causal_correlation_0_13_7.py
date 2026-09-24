@@ -223,8 +223,10 @@ def test_causal_sensor_metrics_are_supported() -> None:
     try:
         metrics.increment("causal_sensor_read")
         metrics.increment("causal_sensor_aligned", 4)
+        metrics.increment("causal_cached_candidate_plan_fallback")
         counters = metrics.snapshot()["counters"]
         assert counters["causal_sensor_read"] == 1
         assert counters["causal_sensor_aligned"] == 4
+        assert counters["causal_cached_candidate_plan_fallback"] == 1
     finally:
         metrics.reset(token)
