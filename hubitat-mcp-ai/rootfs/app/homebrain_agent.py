@@ -35,7 +35,10 @@ from contextual_read_fast_path import (
 )
 from confirmation_policy import ConfirmationAction
 from confirmation_store import CONFIRM_WORDS
-from causal_subject_prefetch import switch_transition_from_prompt
+from causal_subject_prefetch import (
+    causal_switch_subject_phrase,
+    switch_transition_from_prompt,
+)
 from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
 from device_target_resolver import resolve_capable_device_candidate
@@ -296,6 +299,116 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
 
         return await self._direct_outcome(operation, request_class="live-read")
 
+    async def _causal_group_clarification_outcome(
+        self,
+        user_prompt: str,
+        *,
+        session_key: str,
+    ) -> AgentOutcome | None:
+        """Resolve explicit causal room-kind groups before any model round."""
+
+        if not is_causal_investigation(user_prompt):
+            return None
+        transition = switch_transition_from_prompt(user_prompt)
+        subject = causal_switch_subject_phrase(user_prompt)
+        if transition not in {"on", "off"} or not subject:
+            return None
+
+        started = time.monotonic()
+        identities: list[dict[str, Any]] = []
+        cache_hit = False
+        peek = getattr(self.mcp, "peek_device_identities", None)
+        if callable(peek):
+            try:
+                identities = [
+                    dict(item)
+                    for item in (peek() or [])
+                    if isinstance(item, dict)
+                ]
+            except Exception:
+                identities = []
+        if identities:
+            cache_hit = True
+        else:
+            identity_reader = getattr(self.mcp, "get_device_identities", None)
+            if callable(identity_reader):
+                try:
+                    identities = [
+                        dict(item)
+                        for item in (await identity_reader() or [])
+                        if isinstance(item, dict)
+                    ]
+                except Exception:
+                    identities = []
+
+        room_kind = DeviceQueryService._room_kind_reference(subject, identities)
+        if room_kind is None:
+            return None
+        kind, room, devices = room_kind
+        if len(devices) <= 1:
+            return None
+
+        choices = [
+            clean_choice_label(
+                str(device.get("label") or device.get("name") or "").strip()
+            )
+            for device in devices
+            if str(device.get("label") or device.get("name") or "").strip()
+        ]
+        choices = list(dict.fromkeys(choice for choice in choices if choice))
+        if len(choices) <= 1:
+            return None
+
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+
+        async def operation() -> str:
+            if cache_hit:
+                self.request_metrics.increment("identity_cache_hit")
+            else:
+                self.request_metrics.increment("identity_refresh")
+            self.request_metrics.increment("causal_group_clarification")
+            self.request_metrics.increment("device_resolution_ambiguous")
+            self._choices.set(choices)
+            self.evidence.record(
+                "homebrain_resolve_device",
+                {"name": subject},
+                success=True,
+                elapsed_ms=elapsed_ms,
+                summary=(
+                    f"room-kind clarification: {len(choices)} {kind} "
+                    f"devices in {room}"
+                ),
+                supports_live_claim=False,
+                evidence_kind="deterministic_targeted_device_resolution",
+                details={
+                    "requested": subject,
+                    "matched": False,
+                    "alternatives": choices,
+                    "reason": (
+                        f"{subject!r} refers to {len(choices)} {kind} devices "
+                        f"in Hubitat room {room!r}: {', '.join(choices)}."
+                    ),
+                    "attempts": [{
+                        "source": "authoritative_identity_room_kind",
+                        "count": len(choices),
+                    }],
+                    "complete": False,
+                },
+            )
+            joined = (
+                f"{choices[0]} or {choices[1]}"
+                if len(choices) == 2
+                else ", ".join(choices[:-1]) + f", or {choices[-1]}"
+            )
+            return (
+                f"I could not resolve **{subject}** uniquely. "
+                f"Possible matches: {joined}."
+            )
+
+        return await self._direct_outcome(
+            operation,
+            request_class="live-read",
+        )
     async def _contextual_attribute_outcome(
         self,
         name: str,
@@ -1371,6 +1484,15 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                             conversation_history,
                             session_id=session_id,
                         )
+
+            causal_group_clarification = (
+                await self._causal_group_clarification_outcome(
+                    user_prompt,
+                    session_key=session_key,
+                )
+            )
+            if causal_group_clarification is not None:
+                return causal_group_clarification
 
             selection = parse_device_selection(user_prompt)
             if selection is not None:
