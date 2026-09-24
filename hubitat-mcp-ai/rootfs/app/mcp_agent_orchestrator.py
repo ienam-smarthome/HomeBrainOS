@@ -823,6 +823,10 @@ class UnifiedMCPAgent:
                     )
                     cached_candidate_plan = True
                     increment_active_metric("causal_cached_candidate_plan")
+                else:
+                    increment_active_metric(
+                        "causal_cached_candidate_plan_fallback"
+                    )
 
         if not cached_candidate_plan:
             if filter_tool is None:
