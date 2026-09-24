@@ -82,10 +82,6 @@ class _BoundaryMCP:
     async def call_tool(self, name: str, arguments: dict) -> MCPToolResult:
         self.calls.append((name, arguments))
         assert name == "hub_read_devices", (name, arguments)
-        if arguments.get("tool") == "hub_list_devices":
-            data = {"devices": [dict(self.device)]}
-            return MCPToolResult(name, arguments, {}, "ok", data)
-
         assert arguments.get("tool") == "hub_list_device_events", arguments
         args = arguments.get("args") or {}
         assert str(args.get("deviceId")) == str(self.device["id"])
@@ -263,9 +259,7 @@ async def test_bridge_boundary_provenance_finalizes_as_reporting_source() -> Non
     assert counters["causal_command_producer_reads"] == 1
     assert counters["causal_boundary_producer_provenance"] == 1
     assert counters["causal_deterministic_finalization"] == 1
-    assert counters["causal_reporting_source_correlation"] == 1
-    assert counters["causal_room_plan"] == 1
-    assert 3 <= counters["tool_calls"] <= 6
+    assert counters["tool_calls"] == 3
     assert counters.get("causal_native_log_reads", 0) == 0
     assert counters.get("causal_command_producer_provenance", 0) == 0
 

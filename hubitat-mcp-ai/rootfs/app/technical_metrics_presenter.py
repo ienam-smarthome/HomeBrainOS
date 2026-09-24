@@ -40,7 +40,6 @@ _COUNTER_LABELS = (
     ("causal_command_producer_reads", "Command-producer reads"),
     ("causal_command_producer_provenance", "Command-producer provenance"),
     ("causal_boundary_producer_provenance", "Boundary producer provenance"),
-    ("causal_reporting_source_correlation", "Reporting-source correlation passes"),
     ("causal_native_log_reads", "Causal native-log reads"),
     ("causal_native_log_correlations", "Causal native-log correlations"),
     ("causal_repeated_controller_pattern", "Repeated controller patterns"),
