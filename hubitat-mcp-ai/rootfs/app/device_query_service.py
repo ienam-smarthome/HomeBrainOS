@@ -861,10 +861,17 @@ class DeviceQueryService:
         return targeted_name_variants(value)
 
     _KIND_HINT_WORDS = {
-        "light": (" light", "lamp", "bulb"),
-        "switch": (" switch",),
-        "socket": ("socket", "plug", "outlet"),
+        "light": (" light", "lights", "lamp", "lamps", "bulb", "bulbs"),
+        "switch": (" switch", "switches"),
+        "socket": ("socket", "sockets", "plug", "plugs", "outlet", "outlets"),
         "motion": ("motion",),
+    }
+    _ROOM_KIND_ALIASES = {
+        "light": frozenset({"light", "lights", "lamp", "lamps", "bulb", "bulbs"}),
+        "switch": frozenset({"switch", "switches"}),
+        "socket": frozenset({"socket", "sockets", "plug", "plugs", "outlet", "outlets"}),
+        "motion": frozenset({"motion"}),
+        "sensor": frozenset({"sensor", "sensors"}),
     }
 
     @classmethod
@@ -874,6 +881,81 @@ class DeviceQueryService:
             if any(word in text for word in words):
                 return kind
         return ""
+
+    @classmethod
+    def _room_kind_reference(
+        cls,
+        requested: str,
+        devices: list[dict[str, Any]],
+    ) -> tuple[str, str, list[dict[str, Any]]] | None:
+        """Resolve an exact room + device-kind reference from identity.
+
+        Spoken/history requests commonly use a room plural such as
+        "Hallway lights" even when Hubitat stores the concrete devices as
+        "Hallway Light 1" and "Hallway Light 2". A label-only resolver
+        must not turn that valid group reference into "device not found".
+
+        This helper is deliberately strict: the final token must be a known
+        device-kind word and the preceding text must exactly match one
+        authoritative Hubitat room. It never fuzzy-matches a room and never
+        silently chooses one member when several devices match.
+        """
+
+        text = cls._strip_leading_article(str(requested or ""))
+        tokens = re.findall(r"[a-z0-9]+", text.casefold())
+        if len(tokens) < 2:
+            return None
+
+        kind = next(
+            (
+                candidate_kind
+                for candidate_kind, aliases in cls._ROOM_KIND_ALIASES.items()
+                if tokens[-1] in aliases
+            ),
+            "",
+        )
+        if not kind:
+            return None
+
+        wanted_room = " ".join(tokens[:-1]).strip()
+        wanted_room_key = re.sub(r"[^a-z0-9]", "", wanted_room)
+        if not wanted_room_key:
+            return None
+
+        matching: list[dict[str, Any]] = []
+        room_label = ""
+        seen: set[str] = set()
+        for device in devices:
+            room = str(device.get("room") or device.get("roomName") or "").strip()
+            if not room:
+                continue
+            room_key = re.sub(r"[^a-z0-9]", "", room.casefold())
+            if room_key != wanted_room_key:
+                continue
+            if not cls._matches_device_kind(device, kind):
+                continue
+            key = str(
+                device.get("id")
+                or device.get("deviceId")
+                or device.get("label")
+                or device.get("name")
+                or ""
+            ).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            matching.append(dict(device))
+            room_label = room_label or room
+
+        if not matching:
+            return None
+
+        matching.sort(
+            key=lambda item: str(
+                item.get("label") or item.get("name") or item.get("id") or ""
+            ).casefold()
+        )
+        return kind, room_label or wanted_room, matching
 
     @staticmethod
     def _strip_leading_article(value: str) -> str:
@@ -1021,12 +1103,13 @@ class DeviceQueryService:
                 )
 
         # A legacy labelFilter is intentionally narrow and can return zero
-        # rows for a harmless misspelling even when the complete structural
-        # identity cache contains one unmistakable device. History/causal reads
-        # must not terminate on that transport quirk. Fall back to the bounded
-        # authoritative identity world and run the same conservative resolver;
-        # its confidence/margin rules still refuse ambiguous names.
-        identity_fallback_used = False
+        # rows for a harmless misspelling or for a valid room-kind phrase such
+        # as "Hallway lights". Fall back to the bounded authoritative identity
+        # world. Exact room + device-kind grouping is checked before ordinary
+        # fuzzy-name recovery so a plural room reference can never be reported
+        # as a missing literal label.
+        identity_fallback_source = ""
+        identity_fallback_count = 0
         if (
             resolution.target is None
             and not bare_attribute
@@ -1055,46 +1138,86 @@ class DeviceQueryService:
                     except Exception:
                         identities = []
 
-            fallback_candidates = identities
-            if kind_hint:
-                typed = [
-                    device
-                    for device in fallback_candidates
-                    if self._matches_device_kind(device, kind_hint)
-                ]
-                if typed:
-                    fallback_candidates = typed
-            if required_command:
-                fallback_candidates = [
-                    device
-                    for device in fallback_candidates
-                    if required_command.casefold() in device_commands(device)
-                ]
-            wanted_capabilities = {
-                re.sub(r"[^a-z0-9]", "", str(value).casefold())
-                for value in (required_capabilities or set())
-                if str(value).strip()
-            }
-            if wanted_capabilities:
-                capable = []
-                for device in fallback_candidates:
-                    advertised = {
-                        re.sub(r"[^a-z0-9]", "", str(value).casefold())
-                        for value in self._capability_names(device)
-                    }
-                    if advertised & wanted_capabilities:
-                        capable.append(device)
-                if capable:
-                    fallback_candidates = capable
-
-            if fallback_candidates:
-                fallback_resolution = resolve_device_candidate(
-                    requested,
-                    fallback_candidates,
+            room_kind = self._room_kind_reference(requested, identities)
+            if room_kind is not None:
+                room_kind_name, room_label, room_devices = room_kind
+                labels = tuple(
+                    str(device.get("label") or device.get("name") or "").strip()
+                    for device in room_devices
+                    if str(device.get("label") or device.get("name") or "").strip()
                 )
-                if fallback_resolution.target is not None:
-                    resolution = fallback_resolution
-                    identity_fallback_used = True
+                identity_fallback_source = "authoritative_room_kind"
+                identity_fallback_count = len(room_devices)
+                if len(room_devices) == 1:
+                    only = room_devices[0]
+                    label = str(only.get("label") or only.get("name") or requested)
+                    exact = resolve_device_candidate(label, [only])
+                    resolution = CandidateResolution(
+                        target=exact.target or only,
+                        matched_name=label,
+                        confidence=0.99,
+                        alternatives=(label,),
+                        reason=(
+                            f"{requested!r} exactly identifies the only "
+                            f"{room_kind_name} device in Hubitat room {room_label!r}."
+                        ),
+                    )
+                else:
+                    increment_active_metric("device_resolution_ambiguous")
+                    resolution = CandidateResolution(
+                        target=None,
+                        matched_name=None,
+                        confidence=1.0,
+                        alternatives=labels[:8],
+                        reason=(
+                            f"{requested!r} refers to {len(room_devices)} "
+                            f"{room_kind_name} devices in Hubitat room "
+                            f"{room_label!r}: {', '.join(labels[:8])}."
+                        ),
+                    )
+
+            if room_kind is None:
+                fallback_candidates = identities
+                if kind_hint:
+                    typed = [
+                        device
+                        for device in fallback_candidates
+                        if self._matches_device_kind(device, kind_hint)
+                    ]
+                    if typed:
+                        fallback_candidates = typed
+                if required_command:
+                    fallback_candidates = [
+                        device
+                        for device in fallback_candidates
+                        if required_command.casefold() in device_commands(device)
+                    ]
+                wanted_capabilities = {
+                    re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                    for value in (required_capabilities or set())
+                    if str(value).strip()
+                }
+                if wanted_capabilities:
+                    capable = []
+                    for device in fallback_candidates:
+                        advertised = {
+                            re.sub(r"[^a-z0-9]", "", str(value).casefold())
+                            for value in self._capability_names(device)
+                        }
+                        if advertised & wanted_capabilities:
+                            capable.append(device)
+                    if capable:
+                        fallback_candidates = capable
+
+                if fallback_candidates:
+                    fallback_resolution = resolve_device_candidate(
+                        requested,
+                        fallback_candidates,
+                    )
+                    if fallback_resolution.target is not None:
+                        resolution = fallback_resolution
+                        identity_fallback_source = "authoritative_identity_fuzzy"
+                        identity_fallback_count = len(fallback_candidates)
 
         target = resolution.target
         data = {
@@ -1118,10 +1241,10 @@ class DeviceQueryService:
                 {"source": attempt_source, "count": len(candidates)},
                 *(
                     [{
-                        "source": "authoritative_identity_fuzzy",
-                        "count": len(fallback_candidates),
+                        "source": identity_fallback_source,
+                        "count": identity_fallback_count,
                     }]
-                    if identity_fallback_used
+                    if identity_fallback_source
                     else []
                 ),
             ],
