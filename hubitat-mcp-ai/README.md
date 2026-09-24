@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.27**.
+Current add-on version: **0.16.28**.
 
 ## Architecture
+
+0.16.28 tightens reporting-source secondary evidence selection and downstream level-recovery parsing. Motion/presence candidates must now expose the concrete live occupancy attribute that will be queried, preventing bridge child devices such as humidity/lux measurements from consuming bounded causal-history slots merely because they inherit broad capabilities. The recovery detector now recognizes both external ON -> level -> app setLevel and external ON -> app setLevel -> resulting level orderings, keeping resulting levels distinct from initial bridge levels.
 
 0.16.27 fixes authoritative boundary provenance for short switch intervals. The generic causal timeline still uses its five-minute materiality threshold for weaker contextual reasoning, but direct structured switch-boundary `producedBy` evidence is no longer discarded merely because the observed ON/OFF interval lasted under five minutes. This prevents brief externally reported Hue/Matter transitions from falling back to slow model investigation when the boundary itself already identifies the reporting source.
 
