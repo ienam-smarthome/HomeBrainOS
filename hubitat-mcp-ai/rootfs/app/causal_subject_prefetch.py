@@ -42,6 +42,29 @@ _GENERIC_SINGLE_TOKENS = {
     "outlet",
     "thermostat",
 }
+
+_CAUSAL_SWITCH_SUBJECT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"^\s*(?:why|how)\s+(?:did|does|do)\s+"
+        r"(?P<subject>.+?)\s+"
+        r"(?:turn|turned|switch|switched|power|powered)"
+        r"(?:\s+itself)?\s+(?:on|off)\s*[?.!]*\s*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:why|how)\s+(?:did|does|do)\s+"
+        r"(?P<subject>.+?)\s+"
+        r"(?:come|came)(?:\s+back)?\s+on\s*[?.!]*\s*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:why|how)\s+(?:did|does|do)\s+"
+        r"(?P<subject>.+?)\s+"
+        r"(?:go|went)(?:\s+back)?\s+off\s*[?.!]*\s*$",
+        re.I,
+    ),
+)
+
 _SWITCH_TRANSITIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(
@@ -94,6 +117,25 @@ def switch_transition_from_prompt(prompt: str) -> str | None:
 
 # Internal compatibility alias for existing call sites.
 _switch_transition = switch_transition_from_prompt
+
+
+def causal_switch_subject_phrase(prompt: str) -> str | None:
+    """Extract the explicit subject from a narrow switch-causal question.
+
+    This parser is intentionally conservative. It exists for deterministic
+    clarification of exact room + device-kind groups such as "hallway lights";
+    broader causal language continues through the normal reasoning pipeline.
+    """
+
+    if switch_transition_from_prompt(prompt) not in {"on", "off"}:
+        return None
+    for pattern in _CAUSAL_SWITCH_SUBJECT_PATTERNS:
+        match = pattern.fullmatch(str(prompt or ""))
+        if match is None:
+            continue
+        subject = " ".join(match.group("subject").strip().split())
+        return subject or None
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,5 +349,6 @@ def causal_subject_seed(
 __all__ = [
     "CausalSubjectSeed",
     "causal_subject_seed",
+    "causal_switch_subject_phrase",
     "switch_transition_from_prompt",
 ]
