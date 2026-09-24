@@ -23,6 +23,7 @@ from causal_evidence_planner import (
     build_reporting_source_secondary_analysis,
     controller_boundary_alignments,
     controller_history_arguments,
+    controller_history_candidates,
     render_controller_alignment_instruction,
     render_reporting_source_secondary_evidence,
     render_sensor_correlation_instruction,
@@ -30,6 +31,7 @@ from causal_evidence_planner import (
     subject_has_observed_intervals,
     subject_room_filter_arguments,
     trigger_sensor_history_arguments,
+    trigger_sensor_history_candidates,
 )
 from causal_command_provenance import (
     boundary_producer_transition_kind,
@@ -777,7 +779,7 @@ class UnifiedMCPAgent:
         catalog: ToolDiscoveryCatalog,
         completed_calls: set[str],
     ) -> None:
-        """Run one bounded controller + motion/presence pass for bridge provenance."""
+        """Run bounded multi-candidate correlation for bridge/device provenance."""
 
         filter_tool = catalog.declared_tool(_LOCAL_FILTER_TOOL)
         history_tool = catalog.declared_tool(_LOCAL_DEVICE_HISTORY_TOOL)
@@ -812,51 +814,67 @@ class UnifiedMCPAgent:
             else {}
         )
 
-        hints = (
-            filter_data.get("eventSourceHints")
-            if isinstance(filter_data.get("eventSourceHints"), dict)
-            else {}
+        controller_specs = controller_history_candidates(
+            filter_data,
+            limit=2,
+        )
+        sensor_specs = trigger_sensor_history_candidates(
+            filter_data,
+            limit=2,
         )
 
         def grounded_history_arguments(
-            base: dict[str, str] | None,
-            candidate_key: str,
-        ) -> dict[str, Any] | None:
-            if base is None:
-                return None
+            spec: dict[str, Any],
+        ) -> tuple[dict[str, Any], dict[str, Any]]:
+            candidate = (
+                dict(spec.get("candidate"))
+                if isinstance(spec.get("candidate"), dict)
+                else {}
+            )
             arguments: dict[str, Any] = {
-                **base,
+                "name": str(spec.get("name") or ""),
+                "attribute": str(spec.get("attribute") or ""),
                 "hours_back": 48,
                 "limit": 50,
             }
-            candidates = hints.get(candidate_key)
-            if isinstance(candidates, list):
-                wanted = str(base.get("name") or "").strip().casefold()
-                for candidate in candidates:
-                    if not isinstance(candidate, dict):
-                        continue
-                    label = str(candidate.get("label") or "").strip()
-                    if label.casefold() == wanted and label:
-                        arguments["_resolved_target"] = dict(candidate)
-                        break
-            return arguments
+            if candidate:
+                arguments["_resolved_target"] = candidate
+            return arguments, candidate
 
-        controller_arguments = grounded_history_arguments(
-            controller_history_arguments(filter_data),
-            "controllerCandidates",
-        )
-        sensor_arguments = grounded_history_arguments(
-            trigger_sensor_history_arguments(filter_data),
-            "triggerSensorCandidates",
-        )
-
-        pending: list[tuple[str, dict[str, Any]]] = []
-        if controller_arguments is not None:
+        pending: list[
+            tuple[str, dict[str, Any], dict[str, Any]]
+        ] = []
+        for spec in controller_specs:
+            arguments, candidate = grounded_history_arguments(spec)
             increment_active_metric("causal_provenance_read")
-            pending.append(("controller", controller_arguments))
-        if sensor_arguments is not None:
+            pending.append(("controller", arguments, candidate))
+        for spec in sensor_specs:
+            arguments, candidate = grounded_history_arguments(spec)
             increment_active_metric("causal_sensor_read")
-            pending.append(("sensor", sensor_arguments))
+            pending.append(("sensor", arguments, candidate))
+
+        # One unfiltered subject-event page lets deterministic analysis prove
+        # patterns such as external ON -> level 100 -> downstream setLevel
+        # recovery without asking a model to infer causation from screenshots or
+        # unrelated logs.
+        subject_label = str(subject_history.get("label") or "").strip()
+        subject_id = str(subject_history.get("deviceId") or "").strip()
+        if subject_label and subject_id:
+            subject_target = {
+                "id": subject_id,
+                "label": subject_label,
+                "name": subject_label,
+                "room": subject_history.get("room"),
+                "capabilities": subject_history.get("capabilities") or [],
+            }
+            subject_arguments: dict[str, Any] = {
+                "name": subject_label,
+                "hours_back": 48,
+                "limit": 50,
+                "_resolved_target": subject_target,
+            }
+            increment_active_metric("causal_subject_pattern_read")
+            pending.append(("subject-events", subject_arguments, subject_target))
 
         async def read_history(
             arguments: dict[str, Any],
@@ -871,15 +889,16 @@ class UnifiedMCPAgent:
 
         executions = (
             await asyncio.gather(
-                *(read_history(arguments) for _kind, arguments in pending)
+                *(read_history(arguments) for _kind, arguments, _meta in pending)
             )
             if pending
             else []
         )
 
-        controller_data: dict[str, Any] | None = None
-        sensor_data: dict[str, Any] | None = None
-        for (kind, arguments), execution in zip(pending, executions):
+        controller_data: list[dict[str, Any]] = []
+        sensor_data: list[dict[str, Any]] = []
+        subject_event_data: dict[str, Any] | None = None
+        for (kind, arguments, metadata), execution in zip(pending, executions):
             completed_calls.add(json.dumps(
                 [_LOCAL_DEVICE_HISTORY_TOOL, {
                     key: value
@@ -891,33 +910,46 @@ class UnifiedMCPAgent:
                 default=str,
             ))
             data = (
-                execution.result.data
+                dict(execution.result.data)
                 if execution.result is not None
                 and isinstance(execution.result.data, dict)
                 else None
             )
-            if kind == "controller":
-                controller_data = data
+            if not isinstance(data, dict):
+                continue
+            if kind in {"controller", "sensor"}:
+                if metadata:
+                    data["candidateMatchBasis"] = metadata.get("matchBasis")
+                    data["candidateRoom"] = metadata.get("room")
+                if kind == "controller":
+                    controller_data.append(data)
+                else:
+                    sensor_data.append(data)
             else:
-                sensor_data = data
+                subject_event_data = data
 
         analysis = build_reporting_source_secondary_analysis(
             subject_history,
             transition=transition,
             requested_boundary=boundary_match.get("stateBoundary"),
-            controller_history=controller_data,
-            sensor_history=sensor_data,
+            controller_histories=controller_data,
+            sensor_histories=sensor_data,
+            subject_event_history=subject_event_data,
         )
-        controller_rows = (
-            analysis.get("controller", {}).get("relevantAlignments", [])
-            if isinstance(analysis.get("controller"), dict)
-            else []
-        )
-        sensor_rows = (
-            analysis.get("sensor", {}).get("relevantCorrelations", [])
-            if isinstance(analysis.get("sensor"), dict)
-            else []
-        )
+        controller_rows = [
+            row
+            for item in analysis.get("controllers", [])
+            if isinstance(item, dict)
+            for row in item.get("relevantAlignments", [])
+            if isinstance(row, dict)
+        ]
+        sensor_rows = [
+            row
+            for item in analysis.get("sensors", [])
+            if isinstance(item, dict)
+            for row in item.get("relevantCorrelations", [])
+            if isinstance(row, dict)
+        ]
         if controller_rows:
             increment_active_metric(
                 "causal_provenance_aligned",
@@ -927,6 +959,16 @@ class UnifiedMCPAgent:
             increment_active_metric(
                 "causal_sensor_aligned",
                 len(sensor_rows),
+            )
+        recovery = (
+            analysis.get("levelRecovery")
+            if isinstance(analysis.get("levelRecovery"), dict)
+            else {}
+        )
+        if recovery.get("matchCount"):
+            increment_active_metric(
+                "causal_level_recovery_pattern",
+                int(recovery.get("matchCount") or 0),
             )
 
         self.evidence.record(
@@ -940,8 +982,11 @@ class UnifiedMCPAgent:
             elapsed_ms=round((time.monotonic() - started) * 1000),
             summary=(
                 "bounded reporting-source correlation: "
+                f"controllers={len(controller_data)}, "
                 f"controller_alignments={len(controller_rows)}, "
-                f"sensor_correlations={len(sensor_rows)}"
+                f"sensors={len(sensor_data)}, "
+                f"sensor_correlations={len(sensor_rows)}, "
+                f"level_recoveries={int(recovery.get('matchCount') or 0)}"
             ),
             supports_live_claim=True,
             evidence_kind="deterministic_causal_secondary_correlation",

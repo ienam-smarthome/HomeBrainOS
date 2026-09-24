@@ -161,6 +161,8 @@ class _BedroomCorrelationMCP:
             events = _light_events()
         elif device_id == "7840" and attribute == "command-on":
             events = []
+        elif device_id == "7840" and attribute is None:
+            events = _light_events()
         elif device_id == "7200":
             events = _dimmer_events()
         elif device_id == "7300":
@@ -263,6 +265,7 @@ async def test_bridge_reporting_source_runs_bounded_secondary_correlation_zero_m
     assert counters["causal_room_plan"] == 1
     assert counters["causal_provenance_read"] == 1
     assert counters["causal_sensor_read"] == 1
+    assert counters["causal_subject_pattern_read"] == 1
     assert counters["causal_sensor_aligned"] == 2
     assert counters["causal_deterministic_finalization"] == 1
 
@@ -285,6 +288,6 @@ async def test_bridge_reporting_source_runs_bounded_secondary_correlation_zero_m
         for name, args in mcp.calls
         if name == "hub_read_devices" and args.get("tool") == "hub_list_device_events"
     ]
-    assert event_calls.count("7840") == 2
+    assert event_calls.count("7840") == 3
     assert event_calls.count("7200") == 1
     assert event_calls.count("7300") == 1
