@@ -131,7 +131,7 @@ async def test_initial_causal_room_group_clarifies_without_model_or_mcp() -> Non
     assert ai.requests == []
     assert mcp.calls == []
     assert counters.get("model_rounds", 0) == 0
-    assert counters.get("tool_calls", 0) == 0
+    assert counters["tool_calls"] == 1
     assert counters["causal_group_clarification"] == 1
     assert counters["device_resolution_ambiguous"] == 1
     assert counters["identity_cache_hit"] == 1
