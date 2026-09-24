@@ -801,29 +801,61 @@ def render_reporting_source_secondary_analysis(
         count = int(recovery.get("matchCount") or 0)
         total = int(recovery.get("transitionCount") or count)
         high = int(recovery.get("highInitialLevelCount") or 0)
+        level_first = int(recovery.get("levelBeforeCommandCount") or 0)
+        command_first = int(recovery.get("commandBeforeLevelCount") or 0)
         producer = str(recovery.get("producerLabel") or "").strip()
         examples = [
             row for row in recovery.get("matches", [])
             if isinstance(row, dict)
         ][:4]
-        timings = ", ".join(
-            (
-                f"level {row.get('initialLevel'):g} at "
-                f"{float(row.get('levelDeltaSeconds') or 0):g}s, recovery command "
-                f"at {float(row.get('commandDeltaSeconds') or 0):g}s"
+
+        example_texts: list[str] = []
+        for row in examples:
+            sequence = str(row.get("sequence") or "")
+            level_delta = float(row.get("levelDeltaSeconds") or 0)
+            command_delta = float(row.get("commandDeltaSeconds") or 0)
+            if (
+                sequence == "level-before-command"
+                and isinstance(row.get("initialLevel"), (int, float))
+            ):
+                example_texts.append(
+                    f"level {row.get('initialLevel'):g} at {level_delta:g}s, "
+                    f"recovery command at {command_delta:g}s"
+                )
+            elif (
+                sequence == "command-before-level"
+                and isinstance(row.get("resultLevel"), (int, float))
+            ):
+                example_texts.append(
+                    f"recovery command at {command_delta:g}s, resulting level "
+                    f"{row.get('resultLevel'):g} at {level_delta:g}s"
+                )
+
+        producer_text = f" from {producer}" if producer else ""
+        sequence_parts: list[str] = []
+        if level_first:
+            sequence_parts.append(
+                f"{level_first} level-first sequence(s)"
             )
-            for row in examples
-            if isinstance(row.get("initialLevel"), (int, float))
-        )
-        producer_text = (
-            f" from {producer}" if producer else ""
+        if command_first:
+            sequence_parts.append(
+                f"{command_first} command-first sequence(s)"
+            )
+        sequence_text = (
+            "; " + ", ".join(sequence_parts)
+            if sequence_parts
+            else ""
         )
         paragraphs.append(
             f"Downstream level-recovery pattern: {count} of {total} observed ON "
-            f"transition(s) were followed by an immediate level event and a "
-            f"setLevel command{producer_text} within 5 seconds; {high} began at "
-            "about level 100. "
-            + (f"Examples: {timings}. " if timings else "")
+            f"transition(s) had a setLevel command{producer_text} within 5 seconds "
+            f"and a nearby level event{sequence_text}; {high} began at about "
+            "level 100. "
+            + (
+                f"Examples: {', '.join(example_texts)}. "
+                if example_texts
+                else ""
+            )
             + "Because those setLevel commands occur after the ON boundary, they "
             "are evidence of recovery/adjustment after the light was already on, "
             "not evidence that the app initiated the ON."
