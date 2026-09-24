@@ -267,7 +267,14 @@ async def test_bridge_reporting_source_adds_bounded_controller_and_fp300_correla
     assert counters["causal_secondary_room_read"] == 1
     assert counters["causal_secondary_controller_read"] == 1
     assert counters["causal_secondary_sensor_read"] == 1
-    assert counters["causal_secondary_repeated_sensor_pattern"] == 1
+    summaries = [
+        receipt for receipt in outcome.evidence
+        if receipt.get("tool") == "homebrain_causal_secondary_correlation"
+    ]
+    assert summaries, outcome.evidence
+    assert counters.get("causal_secondary_repeated_sensor_pattern", 0) == 1, (
+        summaries[0].get("details")
+    )
     assert counters["causal_deterministic_finalization"] == 1
     assert counters.get("causal_native_log_reads", 0) == 0
 
@@ -313,10 +320,6 @@ async def test_bridge_reporting_source_adds_bounded_controller_and_fp300_correla
     assert len(subject_receipts) == 1
     assert subject_receipts[0]["arguments"]["limit"] == 12
 
-    summaries = [
-        receipt for receipt in outcome.evidence
-        if receipt.get("tool") == "homebrain_causal_secondary_correlation"
-    ]
     assert len(summaries) == 1
     sensor = summaries[0]["details"]["sensor"]
     assert sensor["label"] == "Bedroom 1 FP300 sensor"
