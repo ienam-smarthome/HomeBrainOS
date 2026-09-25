@@ -3,11 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.38**.
+Current add-on version: **0.16.39**.
 
 ## Architecture
 
-0.16.38 refines deterministic causal presentation without changing the evidence hierarchy. Reporting-source investigations now show the requested motion/presence timing direction and delta, explicitly report checked controllers when no matching button event was found, and finish with a clear unresolved-initiator conclusion when Hubitat has no direct command producer. Shared-bridge sensor correlations remain identified as non-independent evidence. Technical timing rows now label MCP HTTP as aggregate work so parallel HTTP time is not mistaken for wall-clock request duration.
+0.16.39 sharpens the live causal explanation from the Hallway retest. Completed ON runs now keep exact seconds and correct singular/plural units (for example `1 minute 7 seconds` instead of `approximately 1 minutes`). When every requested motion/presence report is recorded after the focal device transition, the deterministic answer now states that those recorded sensor edges cannot be the Hubitat-side trigger while preserving the possibility that an upstream system detected motion earlier and reported states in a different order. Technical metrics also label MCP queue wait as aggregate work, matching the existing aggregate MCP HTTP wording for concurrent requests.
 
 0.16.36 makes deterministic causal answers much easier to read without weakening provenance rules. The main response now presents a compact conclusion-first summary (`Cause` or `Main finding`) followed by only the most useful status, motion/presence, shared-path, downstream-listener, recovery, and limitation bullets. Per-candidate timing deltas, repeated transition details, controller misses, and the full forensic correlation payload remain available in Technical Details/evidence instead of being repeated in the main answer. Direct command-producer answers are likewise reduced to cause, run/status, and the producer-scope note. The change is presentation-only: evidence collection, attribution thresholds, model-free finalization, and cache behavior are unchanged.
 
@@ -618,7 +618,7 @@ cumulative discovery duration, cumulative remote MCP duration, actual MCP retry
 attempts, grounding retries and refusals, confirmation queuing and expiry,
 confirmed Rule Machine verification duration, verification failures, ambiguous
 and missing device resolutions, cancellation, total duration, and the final
-request outcome. It also exposes MCP lock-wait, aggregate MCP HTTP, and MCP shared-read-wait
+request outcome. It also exposes MCP lock-wait, aggregate MCP queue-wait, aggregate MCP HTTP, and MCP shared-read-wait
 durations, so time spent awaiting another already-running manifest/snapshot is no
 longer hidden inside a local tool's elapsed time. Completed-request classification
 is delegated to the pure `request_outcome_policy` module, which applies an explicit
