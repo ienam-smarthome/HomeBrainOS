@@ -75,7 +75,7 @@ _DURATION_LABELS = (
     ("provider", "Provider"),
     ("mcp", "MCP"),
     ("mcp_lock_wait", "MCP lock wait"),
-    ("mcp_queue_wait", "MCP queue wait"),
+    ("mcp_queue_wait", "Aggregate MCP queue wait"),
     ("mcp_session_lock_wait", "MCP session lock wait"),
     ("mcp_shared_wait", "MCP shared-read wait"),
     ("mcp_http", "Aggregate MCP HTTP"),
