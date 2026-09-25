@@ -176,6 +176,30 @@ def _names(device: dict[str, Any]) -> list[str]:
     return result
 
 
+def _is_trailing_parenthetical_alias(
+    device: dict[str, Any],
+    candidate: str,
+) -> bool:
+    """Return whether candidate is a synthetic base-name alias.
+
+    Synthetic aliases are exact-match conveniences only. They must not create a
+    new fuzzy competitor for another canonical device (for example the derived
+    alias "Bedroom2" competing with "Bedroom 1 Light").
+    """
+
+    wanted = str(candidate or "").strip()
+    if not wanted:
+        return False
+    for field in _NAME_FIELDS:
+        value = str(device.get(field) or "").strip()
+        if not value:
+            continue
+        base = re.sub(r"\s*\([^()]{1,48}\)\s*$", "", value).strip()
+        if base and base != value and base == wanted:
+            return True
+    return False
+
+
 def _identity_key(device: dict[str, Any]) -> str:
     stable = str(device.get("id") or device.get("deviceId") or "").strip()
     if stable:
@@ -288,6 +312,11 @@ def _best_prompt_match(
             for start in range(len(prompt_tokens) - width + 1):
                 window = prompt_tokens[start:start + width]
                 score = _window_similarity(name_tokens, window)
+                if (
+                    _is_trailing_parenthetical_alias(device, name)
+                    and score < 1.0
+                ):
+                    continue
                 if single:
                     # Exact short labels are safe; fuzzy single-token names need
                     # enough identifying information to avoid matching ordinary
