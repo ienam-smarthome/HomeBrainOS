@@ -201,6 +201,67 @@ def test_cached_context_enriches_only_missing_attribute_shape_by_device_id() -> 
     assert enriched_by_id["7774"]["attributes"]["motion"] == "active"
 
 
+def test_explicit_empty_cached_context_shape_is_known_not_unknown() -> None:
+    empty_presence = _device(
+        "7998",
+        "Bedroom 1 FP300 spare child",
+        "Bedroom 1",
+        ["PresenceSensor"],
+    )
+    identities = [LIGHT, DIMMER, FP300, SOFT, empty_presence]
+
+    # A plain structural identity with no occupancy attribute shape must still
+    # force the safe fallback.
+    assert DeviceQueryService.cached_room_event_source_hints(
+        identities,
+        "Bedroom 1",
+    ) is None
+
+    # A complete cached context row with an explicit empty state container is
+    # different: the exact-ID row proves this child exposes no occupancy state,
+    # so it can be safely excluded without refreshing the whole home again.
+    enriched = DeviceQueryService.enrich_identity_attribute_shape(
+        identities,
+        [dict(item) for item in identities],
+    )
+    hints = DeviceQueryService.cached_room_event_source_hints(
+        enriched,
+        "Bedroom 1",
+    )
+
+    assert hints is not None
+    assert [
+        row["label"] for row in hints["triggerSensorCandidates"][:2]
+    ] == ["Bedroom 1 FP300 sensor", "Bedroom 1 Soft Sensor"]
+    assert "Bedroom 1 FP300 spare child" not in {
+        row["label"] for row in hints["triggerSensorCandidates"]
+    }
+
+
+def test_missing_cached_context_state_container_remains_unknown() -> None:
+    empty_presence = _device(
+        "7998",
+        "Bedroom 1 FP300 spare child",
+        "Bedroom 1",
+        ["PresenceSensor"],
+    )
+    identities = [LIGHT, DIMMER, FP300, SOFT, empty_presence]
+    live_rows = [dict(item) for item in identities]
+    for row in live_rows:
+        if row["id"] == "7998":
+            row.pop("attributes", None)
+
+    enriched = DeviceQueryService.enrich_identity_attribute_shape(
+        identities,
+        live_rows,
+    )
+
+    assert DeviceQueryService.cached_room_event_source_hints(
+        enriched,
+        "Bedroom 1",
+    ) is None
+
+
 _SWITCH_ROWS = [
     ("off", "2026-09-24T08:14:38.289+0100"),
     ("on", "2026-09-24T08:06:14.134+0100"),
