@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.45**.
+Current add-on version: **0.16.46**.
 
 ## Architecture
+
+0.16.46 recognizes Rule Machine/App native log lines such as `Action: On: <device>` as direct app execution provenance when they align to the requested device boundary. Same-app `Triggered:` and `Event:` rows immediately before the action are preserved as the bounded trigger chain, allowing deterministic zero-model finalization instead of downgrading the run to configuration-only evidence. The Hallway topology also aliases Hubitat label `Hallway Sensor P1` to configured `Hallway Aqara P1`, so topology-aware selection can choose the real P1 source when exposed.
 
 0.16.45 makes configured-trigger visibility explicit when topology-aware causal planning falls back to a derived/composite sensor. It records which configured sources were available in the existing safe Hubitat motion/presence candidate pool and which were unavailable from that pool, without adding discovery I/O or claiming the source is absent from the upstream platform. Technical Details expose `causal_topology_sensor_fallback` when a derived signal fills the bounded sensor budget.
 
