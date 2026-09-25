@@ -165,3 +165,14 @@ def test_mcp_concurrency_metrics_are_presented() -> None:
         {"label": "MCP session lock wait", "value": "15 ms"},
         {"label": "Outcome", "value": "success"},
     ]
+
+def test_mcp_http_timing_is_labeled_as_aggregate_work() -> None:
+    assert present_request_metrics({
+        "outcome": "success",
+        "timings_ms": {"mcp_http": 3237, "total": 2710},
+    }) == [
+        {"label": "Aggregate MCP HTTP", "value": "3.2 s"},
+        {"label": "Total", "value": "2.7 s"},
+        {"label": "Outcome", "value": "success"},
+    ]
+

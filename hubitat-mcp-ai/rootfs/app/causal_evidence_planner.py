@@ -920,6 +920,8 @@ def render_reporting_source_secondary_summary(
 
     lines: list[str] = []
     transition_count = int(analysis.get("transitionCount") or 0)
+    subject = str(analysis.get("subject") or "the device").strip()
+    requested_time = _timestamp(analysis.get("requestedBoundary"))
 
     sensors = [
         row for row in analysis.get("sensors", [])
@@ -928,42 +930,75 @@ def render_reporting_source_secondary_summary(
     if not sensors and isinstance(analysis.get("sensor"), dict):
         sensors = [analysis["sensor"]]
 
-    sensor_stats: list[tuple[str, int, int, bool]] = []
+    sensor_stats: list[dict[str, Any]] = []
     for sensor in sensors:
         label = str(sensor.get("label") or "").strip()
         relevant = [
             row for row in sensor.get("relevantCorrelations", [])
             if isinstance(row, dict)
         ]
-        if label and relevant:
-            sensor_stats.append((
-                label,
-                len(relevant),
-                transition_count or len(relevant),
-                bool(sensor.get("requestedMatched")),
-            ))
+        if not label or not relevant:
+            continue
+
+        requested_row: dict[str, Any] | None = None
+        if requested_time is not None:
+            for row in relevant:
+                row_time = _timestamp(row.get("subjectTransition"))
+                if (
+                    row_time is not None
+                    and abs((row_time - requested_time).total_seconds()) <= 0.25
+                ):
+                    requested_row = row
+                    break
+
+        requested_delta: float | None = None
+        if isinstance(requested_row, dict):
+            try:
+                requested_delta = float(requested_row.get("signedDeltaSeconds"))
+            except (TypeError, ValueError):
+                requested_delta = None
+
+        sensor_stats.append({
+            "label": label,
+            "count": len(relevant),
+            "total": transition_count or len(relevant),
+            "requested": bool(sensor.get("requestedMatched")),
+            "requestedDelta": requested_delta,
+        })
 
     if sensor_stats:
-        if (
-            len(sensor_stats) == 2
-            and sensor_stats[0][1:] == sensor_stats[1][1:]
-        ):
-            first, second = sensor_stats[0], sensor_stats[1]
-            motion_text = (
-                f"{first[0]} and {second[0]} each matched "
-                f"{first[1]}/{first[2]} recent {role_word} transitions"
+        parts = [
+            f"{row['label']}: {row['count']}/{row['total']}"
+            + (" including requested" if row["requested"] else "")
+            for row in sensor_stats
+        ]
+        motion_text = (
+            f"{'; '.join(parts)} recent {role_word} transition correlations."
+        )
+
+        requested_timings: list[str] = []
+        for row in sensor_stats:
+            delta = row.get("requestedDelta")
+            if not isinstance(delta, (int, float)):
+                continue
+            if abs(float(delta)) < 0.05:
+                relation = "at effectively the same time as"
+                delta_text = ""
+            elif float(delta) > 0:
+                relation = "after"
+                delta_text = f"{abs(float(delta)):.2f}".rstrip("0").rstrip(".") + "s "
+            else:
+                relation = "before"
+                delta_text = f"{abs(float(delta)):.2f}".rstrip("0").rstrip(".") + "s "
+            requested_timings.append(
+                f"{row['label']} was reported {delta_text}{relation} "
+                f"{subject} changed {role_word}"
             )
-            if first[3]:
-                motion_text += ", including the requested transition"
-            motion_text += "."
-        else:
-            parts = [
-                f"{label}: {count}/{total}"
-                + (" including requested" if requested else "")
-                for label, count, total, requested in sensor_stats
-            ]
-            motion_text = (
-                f"{'; '.join(parts)} recent {role_word} transition correlations."
+        if requested_timings:
+            motion_text += (
+                " For the requested transition, "
+                + "; ".join(requested_timings)
+                + "."
             )
         lines.append(f"- **Motion/presence:** {motion_text}")
 
@@ -997,24 +1032,65 @@ def render_reporting_source_secondary_summary(
     ]
     if not controllers and isinstance(analysis.get("controller"), dict):
         controllers = [analysis["controller"]]
-    aligned_controllers: list[str] = []
+
+    requested_controllers: list[str] = []
+    historical_controllers: list[str] = []
     for controller in controllers:
         label = str(controller.get("label") or "").strip()
         relevant = [
             row for row in controller.get("relevantAlignments", [])
             if isinstance(row, dict)
         ]
-        if label and relevant:
-            aligned_controllers.append(
-                f"{label} ({len(relevant)} alignment"
-                + ("s" if len(relevant) != 1 else "")
-                + ")"
-            )
-    if aligned_controllers:
-        lines.append(
-            f"- **Controller timing:** {', '.join(aligned_controllers)}; timing "
-            "alone is not direct producer proof."
+        if not label or not relevant:
+            continue
+        rendered = (
+            f"{label} ({len(relevant)} alignment"
+            + ("s" if len(relevant) != 1 else "")
+            + ")"
         )
+        if controller.get("requestedMatched"):
+            requested_controllers.append(rendered)
+        else:
+            historical_controllers.append(rendered)
+
+    if requested_controllers:
+        lines.append(
+            f"- **Controller timing:** {', '.join(requested_controllers)} matched "
+            f"the requested {role_word} boundary; timing alone is not direct "
+            "producer proof."
+        )
+    elif controllers:
+        labels = [
+            str(row.get("label") or "").strip()
+            for row in controllers
+            if str(row.get("label") or "").strip()
+        ]
+        attributes = {
+            str(row.get("attribute") or "").strip()
+            for row in controllers
+            if str(row.get("attribute") or "").strip()
+        }
+        if labels:
+            if len(labels) == 1:
+                controller_text = labels[0]
+            elif len(labels) == 2:
+                controller_text = f"{labels[0]} or {labels[1]}"
+            else:
+                controller_text = ", ".join(labels[:-1]) + f", or {labels[-1]}"
+            event_text = (
+                next(iter(attributes))
+                if len(attributes) == 1
+                else "controller"
+            )
+            lines.append(
+                f"- **Controller check:** No matching {event_text} event was found "
+                f"for {controller_text} at the requested {role_word} transition."
+            )
+        if historical_controllers:
+            lines.append(
+                f"- **Other controller timing:** {', '.join(historical_controllers)} "
+                "aligned with other recent boundaries, not the requested transition."
+            )
 
     recovery = analysis.get("levelRecovery")
     if isinstance(recovery, dict) and recovery.get("matchCount"):
@@ -1028,10 +1104,15 @@ def render_reporting_source_secondary_summary(
             "evidence."
         )
 
-    if sensor_stats or aligned_controllers:
+    if sensor_stats or controllers:
         lines.append(
-            "- **Limit:** These are timing correlations; they do not prove the "
-            "exact automation/action that initiated the change."
+            "- **Limit:** These timing correlations do not prove the exact "
+            "automation/action that initiated the change."
+        )
+        lines.append(
+            f"- **Conclusion:** Exact initiator unresolved. Hubitat did not record "
+            f"a direct {role_word} command producer for this transition; an "
+            "automation or action outside Hubitat remains possible."
         )
 
     if not lines:
