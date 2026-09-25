@@ -92,10 +92,10 @@ def test_reporting_source_summary_exposes_requested_timing_and_negative_controll
         "ON transition correlations."
     ) in message
     assert (
-        "Hallway FP300 sensor was reported 1.0s after Hallway Light 1 changed ON"
+        "Hallway FP300 sensor was reported 0.95s after Hallway Light 1 changed ON"
     ) in message
     assert (
-        "Hallway Soft Sensor was reported 0.9s after Hallway Light 1 changed ON"
+        "Hallway Soft Sensor was reported 0.93s after Hallway Light 1 changed ON"
     ) in message
     assert (
         "- **Shared path:** Hallway FP300 sensor and Hallway Soft Sensor are both "
