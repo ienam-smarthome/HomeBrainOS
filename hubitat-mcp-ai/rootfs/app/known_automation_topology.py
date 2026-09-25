@@ -188,7 +188,6 @@ def _requested_sensor_edges(analysis: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-
 def prioritize_known_automation_sensor_candidates(
     candidates: list[dict[str, Any]],
     known_automations: list[dict[str, Any]] | None,
@@ -274,6 +273,7 @@ def prioritize_known_automation_sensor_candidates(
 
     ranked.sort(key=lambda item: (item[0], item[1]))
     return [item[2] for item in ranked[:bounded_limit]], True
+
 
 def match_known_automations(
     analysis: dict[str, Any],
