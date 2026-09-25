@@ -40,6 +40,7 @@ from causal_command_provenance import (
     command_producer_transition_sufficient,
     correlate_boundary_producers,
     correlate_command_producers,
+    focal_transition_boundary,
     render_boundary_producer_summary,
     render_command_producer_summary,
     render_command_producer_evidence,
@@ -717,12 +718,16 @@ class UnifiedMCPAgent:
             })
             return "empty", subject_key, seed.transition
 
-        command_correlations = correlate_command_producers(
-            self.evidence.receipts()
+        current_evidence = self.evidence.receipts()
+        command_correlations = correlate_command_producers(current_evidence)
+        requested_boundary = focal_transition_boundary(
+            current_evidence,
+            seed.transition,
         )
         if command_producer_transition_sufficient(
             command_correlations,
             seed.transition,
+            requested_boundary=requested_boundary,
         ):
             increment_active_metric("causal_command_producer_provenance")
             instruction = render_command_producer_evidence(

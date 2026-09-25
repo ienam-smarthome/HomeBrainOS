@@ -298,6 +298,44 @@ def boundary_producer_transition_sufficient(
     return False
 
 
+def focal_transition_boundary(
+    evidence: list[dict[str, Any]],
+    transition: str,
+) -> str | None:
+    """Return the newest observed boundary for the requested transition.
+
+    A generic causal question such as "why did X turn on?" is about the newest
+    observed matching transition. This anchor must remain stable even if later
+    secondary evidence adds older intervals or historical command rows.
+    """
+
+    action = str(transition or "").strip().casefold()
+    boundary_key = {"on": "start", "off": "end"}.get(action)
+    if boundary_key is None:
+        return None
+
+    candidates: list[datetime] = []
+    for row in build_causal_timeline_rows(evidence):
+        if not isinstance(row, dict):
+            continue
+        if action == "off" and row.get("open"):
+            continue
+        parsed = _parse_time(row.get(boundary_key))
+        if parsed is not None:
+            candidates.append(parsed)
+    if not candidates:
+        return None
+    return max(candidates).isoformat()
+
+
+def _same_boundary(left: Any, right: Any) -> bool:
+    first = _parse_time(left)
+    second = _parse_time(right)
+    if first is None or second is None:
+        return False
+    return abs((first - second).total_seconds()) <= 0.001
+
+
 def correlate_command_producers(
     evidence: list[dict[str, Any]],
     *,
@@ -307,8 +345,9 @@ def correlate_command_producers(
 
     correlations: list[dict[str, Any]] = []
     for timeline in build_causal_timeline_rows(evidence):
-        if not timeline.get("material"):
-            continue
+        # Direct command provenance is stronger than the generic five-minute
+        # materiality threshold. Short transitions must remain eligible when a
+        # command row aligns with their exact state boundary.
         subject = str(timeline.get("subject") or "").strip()
         command_events = _subject_command_events(evidence, subject=subject)
         if not command_events:
@@ -414,8 +453,14 @@ def correlate_command_producers(
 def command_producer_transition_sufficient(
     correlations: list[dict[str, Any]],
     transition: str,
+    *,
+    requested_boundary: Any = None,
 ) -> bool:
-    """Return whether direct producer provenance proves the requested boundary."""
+    """Return whether direct producer provenance proves the requested boundary.
+
+    When a focal boundary is supplied, an older command-backed interval must not
+    satisfy a newer causal question.
+    """
 
     action = str(transition or "").strip().casefold()
     boundary_role = {"on": "start", "off": "end"}.get(action)
@@ -426,6 +471,10 @@ def command_producer_transition_sufficient(
         isinstance(row, dict)
         and str(row.get("boundaryRole") or "") == boundary_role
         and str(row.get("action") or "") == action
+        and (
+            requested_boundary in {None, ""}
+            or _same_boundary(row.get("stateBoundary"), requested_boundary)
+        )
         and isinstance(row.get("producer"), dict)
         and str(row["producer"].get("label") or "").strip()
         and isinstance(row.get("command"), dict)
@@ -587,11 +636,16 @@ def render_command_producer_answer(
         action = "on"
     boundary_role = "start" if action == "on" else "end"
 
+    requested_boundary = focal_transition_boundary(evidence, action)
     matches = [
         row
         for row in correlations
         if str(row.get("boundaryRole") or "") == boundary_role
         and str(row.get("action") or "") == action
+        and (
+            requested_boundary in {None, ""}
+            or _same_boundary(row.get("stateBoundary"), requested_boundary)
+        )
         and isinstance(row.get("producer"), dict)
     ]
     if not matches:
@@ -842,11 +896,16 @@ def render_command_producer_summary(
         action = "on"
     boundary_role = "start" if action == "on" else "end"
 
+    requested_boundary = focal_transition_boundary(evidence, action)
     matches = [
         row
         for row in correlate_command_producers(evidence)
         if str(row.get("boundaryRole") or "") == boundary_role
         and str(row.get("action") or "") == action
+        and (
+            requested_boundary in {None, ""}
+            or _same_boundary(row.get("stateBoundary"), requested_boundary)
+        )
         and isinstance(row.get("producer"), dict)
     ]
     if not matches:
@@ -944,6 +1003,7 @@ __all__ = [
     "command_producer_turn_on_sufficient",
     "correlate_boundary_producers",
     "correlate_command_producers",
+    "focal_transition_boundary",
     "render_boundary_producer_answer",
     "render_command_producer_answer",
     "render_command_producer_evidence",
