@@ -820,6 +820,49 @@ class UnifiedMCPAgent:
                     identities,
                     room_arguments.get("value"),
                 )
+
+                # A newer detailed identity manifest can legitimately outrank an
+                # older (but still identity-TTL-fresh) live-context snapshot while
+                # carrying less attribute shape. Before paying for another whole-
+                # home live read, borrow only attribute names from the cached
+                # context and keep the newer identity rows authoritative for
+                # device ID, label, room, capabilities, and commands.
+                if cached_hints is None:
+                    peek_context = getattr(
+                        self.mcp,
+                        "peek_cached_live_context_devices",
+                        None,
+                    )
+                    try:
+                        context_devices = (
+                            [
+                                dict(item)
+                                for item in (peek_context() or [])
+                                if isinstance(item, dict)
+                            ]
+                            if callable(peek_context)
+                            else []
+                        )
+                    except Exception:
+                        context_devices = []
+                    if context_devices:
+                        enriched_identities = (
+                            DeviceQueryService.enrich_identity_attribute_shape(
+                                identities,
+                                context_devices,
+                            )
+                        )
+                        cached_hints = (
+                            DeviceQueryService.cached_room_event_source_hints(
+                                enriched_identities,
+                                room_arguments.get("value"),
+                            )
+                        )
+                        if cached_hints is not None:
+                            increment_active_metric(
+                                "causal_cached_context_shape_plan"
+                            )
+
                 if cached_hints is not None:
                     filter_data = (
                         {"eventSourceHints": cached_hints}

@@ -335,6 +335,36 @@ class HubitatMCPClient:
         _cached_at, identities = max(candidates, key=lambda item: item[0])
         return identities
 
+    def peek_cached_live_context_devices(self) -> list[dict[str, Any]]:
+        """Return a fresh cached live-context device snapshot without I/O.
+
+        This accessor exists for structural enrichment only. Callers may reuse
+        room/capability/attribute *shape* while the snapshot is inside the
+        identity TTL, but must not treat the returned state values as a current
+        live-state read. Generation invalidation still clears the snapshot after
+        writes.
+        """
+
+        snapshot = self._live_context_snapshot
+        if snapshot is None:
+            return []
+
+        cached_at, cached_generation, cached_context = snapshot
+        if (
+            cached_generation != self._live_device_snapshot_generation
+            or not self._identity_cache_fresh(cached_at)
+        ):
+            return []
+
+        devices = self._find_device_list(cached_context)
+        if not isinstance(devices, list):
+            return []
+        return [
+            dict(item)
+            for item in devices
+            if isinstance(item, dict)
+        ]
+
     async def get_cached_devices(self, refresh: bool = False) -> list[dict[str, Any]]:
         """Return a short-lived detailed device manifest and coalesce refreshes."""
 

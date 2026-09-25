@@ -484,6 +484,46 @@ class DeviceQueryService:
         }
 
     @classmethod
+    def enrich_identity_attribute_shape(
+        cls,
+        identities: list[dict[str, Any]],
+        live_devices: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Merge only cached attribute shape into fresher structural identities.
+
+        Device ID is the only join key. The identity row remains authoritative
+        for label, room, capabilities, and commands; cached live-context values
+        merely contribute attribute names so causal candidate planning can tell
+        whether a concrete occupancy child really exposes motion/presence.
+        """
+
+        live_by_id = {
+            str(item.get("id") or item.get("deviceId")): item
+            for item in live_devices
+            if isinstance(item, dict)
+            and (item.get("id") or item.get("deviceId"))
+        }
+        enriched: list[dict[str, Any]] = []
+        for identity in identities:
+            if not isinstance(identity, dict):
+                continue
+            row = dict(identity)
+            device_id = str(
+                identity.get("id") or identity.get("deviceId") or ""
+            ).strip()
+            live = live_by_id.get(device_id)
+            if isinstance(live, dict):
+                live_attributes = device_attributes(live)
+                if live_attributes:
+                    identity_attributes = device_attributes(identity)
+                    row["attributes"] = {
+                        **live_attributes,
+                        **identity_attributes,
+                    }
+            enriched.append(row)
+        return enriched
+
+    @classmethod
     def cached_room_event_source_hints(
         cls,
         devices: list[dict[str, Any]],
@@ -494,9 +534,9 @@ class DeviceQueryService:
         A cached structural snapshot is sufficient for controller ranking. For
         occupancy devices we additionally require some attribute-shape metadata
         on every room/label-associated MotionSensor/PresenceSensor candidate.
-        If a candidate advertises occupancy capability but the cached row carries
-        no attributes at all, fall back to the live room filter rather than risk
-        dropping a real trigger source.
+        A non-empty shape may legitimately exclude a broad-capability bridge child
+        (for example humidity/lux only); only a completely missing shape is
+        insufficient and requires a live refresh or cached-context enrichment.
         """
 
         if not devices:

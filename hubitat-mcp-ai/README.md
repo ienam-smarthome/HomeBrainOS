@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.39**.
+Current add-on version: **0.16.40**.
 
 ## Architecture
+
+0.16.40 reduces redundant reporting-source candidate discovery on warm caches without weakening live provenance. If the freshest structural identity snapshot is complete but lacks occupancy attribute shape, HomeBrain can now borrow only attribute names from a still identity-TTL-fresh cached live-context snapshot by exact device ID. The newer identity rows remain authoritative for IDs, labels, rooms, capabilities, and commands, and all controller, sensor, subject, and command event histories are still read live. If cached context is absent, stale, invalidated, or still insufficient, the existing whole-home live room-filter fallback remains unchanged. Technical metrics expose `causal_cached_context_shape_plan` when this recovery path is used.
 
 0.16.39 sharpens the live causal explanation from the Hallway retest. Short completed ON runs under two minutes now keep exact seconds and correct singular/plural units (for example `1 minute 7 seconds` instead of `approximately 1 minutes`), while established compact rounding remains unchanged for longer runs. When every requested motion/presence report is recorded after the focal device transition, the deterministic answer now states that those recorded sensor edges cannot be the Hubitat-side trigger while preserving the possibility that an upstream system detected motion earlier and reported states in a different order. Technical metrics also label MCP queue wait as aggregate work, matching the existing aggregate MCP HTTP wording for concurrent requests.
 
