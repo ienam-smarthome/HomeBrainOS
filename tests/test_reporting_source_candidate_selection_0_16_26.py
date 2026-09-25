@@ -412,30 +412,21 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
     assert counters["causal_deterministic_finalization"] == 1
 
     message = outcome.message
+    assert "**Main finding:**" in message
     assert "Matter Hue Bridge Pro" in message
-    assert "did not record a command-on producer aligned with this ON transition" in message
-    assert "Bedroom 1 dimmer" in message
-    assert "Bedroom 1 button" in message
-    assert "Bedroom 1 FP300 sensor" in message
-    assert "Bedroom 1 Soft Sensor" in message
-
-    assert "same-room controller Bedroom 1 button" not in message
-    assert "same-room controller Bedroom 1 dimmer" not in message
-    assert "assigned to Hubitat room Button Controllers" in message
-
-    assert "Bedroom 1 FP300 sensor" in message
-    assert "no bounded correlation with the observed ON transitions" in message
-    assert "inactive edge(s) correlated with observed OFF boundaries" in message
-
-    assert "Downstream level-recovery pattern" in message
-    assert "5 of 5 observed ON transition(s)" in message
-    assert "4 level-first sequence(s)" in message
-    assert "1 command-first sequence(s)" in message
-    assert "resulting level 45" in message
+    assert "**Reporting path:**" in message
+    assert "**After ON:**" in message
+    assert "5/5 transitions had nearby setLevel activity" in message
+    assert "post-ON adjustment, not trigger evidence" in message
     assert "Bedroom 1 (⚪ Lights Off)" in message
-    assert "not evidence that the app initiated the ON" in message
-    assert "specific requested ON transition also shows" in message
+    assert "not proven initiators" in message
 
+    # Candidate-by-candidate timing remains available in evidence rather than
+    # being repeated in the main answer.
+    assert "assigned to Hubitat room Button Controllers" not in message
+    assert "inactive edge(s) correlated with observed OFF boundaries" not in message
+    assert "Downstream level-recovery pattern" not in message
+    assert "resulting level 45" not in message
     assert "FP300 triggered" not in message
     assert "Aqara" not in message
 
