@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.16.45"
+version: "0.16.46"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -57,7 +57,7 @@ options:
   deterministic_reads_enabled: false
   causal_subject_prefetch_enabled: true
   causal_deterministic_final_enabled: true
-  causal_known_automations_json: '[{"name":"Hallway Lights ON","platform":"Aqara M3","triggerMode":"any","triggers":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1"}],"derivedSensors":[{"device":"Hallway Soft Sensor","kind":"occupancy","sourceMode":"combined","sources":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1"}]}],"actions":[{"device":"Hallway Light 1","transition":"on"},{"device":"Hallway Light 2","transition":"on"}]}]'
+  causal_known_automations_json: '[{"name":"Hallway Lights ON","platform":"Aqara M3","triggerMode":"any","triggers":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1","aliases":["Hallway Sensor P1"]}],"derivedSensors":[{"device":"Hallway Soft Sensor","kind":"occupancy","sourceMode":"combined","sources":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1"}]}],"actions":[{"device":"Hallway Light 1","transition":"on"},{"device":"Hallway Light 2","transition":"on"}]}]'
   semantic_agent_enabled: true
   semantic_default_brightness_step: 20
   semantic_default_temperature_step: 1.0
