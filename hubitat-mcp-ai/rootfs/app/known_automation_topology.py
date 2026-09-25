@@ -275,6 +275,176 @@ def prioritize_known_automation_sensor_candidates(
     return [item[2] for item in ranked[:bounded_limit]], True
 
 
+def known_automation_sensor_candidate_visibility(
+    candidates: list[dict[str, Any]],
+    selected_candidates: list[dict[str, Any]],
+    known_automations: list[dict[str, Any]] | None,
+    *,
+    subject: Any,
+    transition: Any,
+) -> list[dict[str, Any]]:
+    """Describe configured trigger visibility inside the already-safe sensor pool.
+
+    This is planning observability only. It does not perform discovery, does not
+    promote configuration to execution evidence, and does not claim that a
+    configured sensor is absent from the external platform. "Unavailable" here
+    means only that the configured source was not present in the current
+    capability/attribute-shape-grounded Hubitat occupancy candidate pool.
+    """
+
+    rows = [dict(row) for row in candidates if isinstance(row, dict)]
+    selected = [
+        dict(row) for row in selected_candidates if isinstance(row, dict)
+    ]
+    if not known_automations:
+        return []
+
+    subject_key = _normalized_label(subject)
+    transition_key = _transition(transition)
+    if not subject_key or transition_key not in {"on", "off"}:
+        return []
+
+    def candidate_label(row: dict[str, Any]) -> str:
+        candidate = row.get("candidate")
+        candidate_data = candidate if isinstance(candidate, dict) else {}
+        return str(
+            row.get("name")
+            or candidate_data.get("label")
+            or candidate_data.get("name")
+            or ""
+        ).strip()
+
+    pool_labels = [
+        (candidate_label(row), _normalized_label(candidate_label(row)))
+        for row in rows
+        if candidate_label(row)
+    ]
+    selected_labels = [
+        (candidate_label(row), _normalized_label(candidate_label(row)))
+        for row in selected
+        if candidate_label(row)
+    ]
+
+    visibility: list[dict[str, Any]] = []
+    for automation in known_automations:
+        if not isinstance(automation, dict):
+            continue
+        action_matches = any(
+            isinstance(action, dict)
+            and subject_key in _labels(action)
+            and _transition(action.get("transition")) == transition_key
+            for action in (automation.get("actions") or [])
+        )
+        if not action_matches:
+            continue
+
+        configured_sources: list[tuple[str, set[str]]] = []
+        seen_sources: set[str] = set()
+        for trigger in automation.get("triggers") or []:
+            if not isinstance(trigger, dict):
+                continue
+            display = str(
+                trigger.get("device")
+                or trigger.get("label")
+                or trigger.get("name")
+                or ""
+            ).strip()
+            labels = _labels(trigger)
+            key = _normalized_label(display)
+            if display and labels and key not in seen_sources:
+                seen_sources.add(key)
+                configured_sources.append((display, labels))
+
+        derived_sensors: list[tuple[str, set[str]]] = []
+        seen_derived: set[str] = set()
+        for derived in automation.get("derivedSensors") or []:
+            if not isinstance(derived, dict):
+                continue
+            display = str(
+                derived.get("device")
+                or derived.get("label")
+                or derived.get("name")
+                or ""
+            ).strip()
+            labels = _labels(derived)
+            key = _normalized_label(display)
+            if display and labels and key not in seen_derived:
+                seen_derived.add(key)
+                derived_sensors.append((display, labels))
+
+        available_sources: list[str] = []
+        unavailable_sources: list[str] = []
+        selected_sources: list[str] = []
+        for display, labels in configured_sources:
+            if any(normalized in labels for _label, normalized in pool_labels):
+                available_sources.append(display)
+            else:
+                unavailable_sources.append(display)
+            if any(normalized in labels for _label, normalized in selected_labels):
+                selected_sources.append(display)
+
+        fallback_derived: list[str] = []
+        for display, labels in derived_sensors:
+            if any(normalized in labels for _label, normalized in selected_labels):
+                fallback_derived.append(display)
+
+        visibility.append({
+            "name": str(automation.get("name") or "").strip(),
+            "platform": str(
+                automation.get("platform") or "External platform"
+            ).strip(),
+            "configuredSourceSensors": [
+                display for display, _labels_for_source in configured_sources
+            ],
+            "availableSourceSensors": available_sources,
+            "unavailableSourceSensors": unavailable_sources,
+            "selectedSourceSensors": selected_sources,
+            "selectedSensors": [label for label, _normalized in selected_labels],
+            "fallbackDerivedSensors": fallback_derived,
+            "evidenceSource": "safe_hubitat_occupancy_candidate_pool",
+        })
+
+    return visibility
+
+
+def render_known_automation_sensor_visibility(
+    visibility: list[dict[str, Any]] | None,
+) -> str | None:
+    """Explain bounded fallback when a configured source is not Hubitat-visible."""
+
+    rows = [row for row in (visibility or []) if isinstance(row, dict)]
+    for row in rows:
+        unavailable = [
+            str(value).strip()
+            for value in (row.get("unavailableSourceSensors") or [])
+            if str(value).strip()
+        ]
+        if not unavailable:
+            continue
+        fallback = [
+            str(value).strip()
+            for value in (row.get("fallbackDerivedSensors") or [])
+            if str(value).strip()
+        ]
+        name = str(row.get("name") or "configured automation").strip()
+        platform = str(row.get("platform") or "External platform").strip()
+        missing_text = "/".join(dict.fromkeys(unavailable))
+        sentence = (
+            f"- **Trigger visibility:** {missing_text} is configured for "
+            f"{platform} “{name}” but was not available in HomeBrain's current "
+            "safe Hubitat motion/presence candidate pool."
+        )
+        if fallback:
+            fallback_text = "/".join(dict.fromkeys(fallback))
+            sentence += (
+                f" {fallback_text} was therefore used as the bounded topology "
+                "fallback; this does not mean the source sensor is absent from "
+                f"{platform}."
+            )
+        return sentence
+    return None
+
+
 def match_known_automations(
     analysis: dict[str, Any],
     known_automations: list[dict[str, Any]] | None,
