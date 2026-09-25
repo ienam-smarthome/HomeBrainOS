@@ -1106,10 +1106,13 @@ def render_reporting_source_secondary_summary(
 
     if sensor_stats or controllers:
         lines.append(
+            "- **Limit:** These timing correlations do not prove the exact "
+            "automation/action that initiated the change."
+        )
+        lines.append(
             f"- **Conclusion:** Exact initiator unresolved. Hubitat did not record "
-            f"a direct {role_word} command producer for this transition. The timing "
-            "evidence is correlation only; an automation or action outside Hubitat "
-            "remains possible."
+            f"a direct {role_word} command producer for this transition; an "
+            "automation or action outside Hubitat remains possible."
         )
 
     if not lines:
