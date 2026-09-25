@@ -269,17 +269,14 @@ async def test_bridge_boundary_provenance_finalizes_as_reporting_source() -> Non
     assert counters.get("causal_native_log_reads", 0) == 0
     assert counters.get("causal_command_producer_provenance", 0) == 0
 
-    assert (
-        "did not record a command-on producer aligned with this ON transition"
-        in outcome.message
-    )
+    assert "**Main finding:** Hubitat has no direct command producer" in outcome.message
     assert "Matter Hue Bridge Pro" in outcome.message
-    assert "reporting path into Hubitat" in outcome.message
-    assert "not the exact initiating action" in outcome.message
+    assert "**Reporting path:**" in outcome.message
+    assert "does not identify the exact initiating action" in outcome.message
     assert "Bedroom 1 (⚪ Lights Off)" in outcome.message
     assert "SenseCap D1 Settings" in outcome.message
-    assert "reaction to the state change" in outcome.message
-    assert "rather than by a Hubitat automation" not in outcome.message
+    assert "not proven initiators" in outcome.message
+    assert "**Run:**" in outcome.message
     assert "12 minutes" in outcome.message
 
     assert not any(
@@ -424,7 +421,8 @@ async def test_short_bridge_interval_keeps_authoritative_boundary_provenance() -
     assert counters.get("causal_native_log_reads", 0) == 0
 
     assert "Matter Hue Bridge Pro" in outcome.message
-    assert "reporting path into Hubitat" in outcome.message
+    assert "**Reporting path:**" in outcome.message
+    assert "**Run:**" in outcome.message
     assert "12 seconds" in outcome.message
     assert not any(
         name == "hub_read_diagnostics"
