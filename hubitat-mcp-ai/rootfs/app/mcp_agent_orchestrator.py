@@ -82,6 +82,7 @@ from investigation_policy import (
     uses_known_history_evidence_path,
 )
 from known_automation_topology import (
+    known_automation_sensor_candidate_visibility,
     parse_known_automations,
     prioritize_known_automation_sensor_candidates,
 )
@@ -924,6 +925,25 @@ class UnifiedMCPAgent:
         )
         if topology_sensor_plan:
             increment_active_metric("causal_topology_sensor_plan")
+        topology_sensor_visibility = known_automation_sensor_candidate_visibility(
+            sensor_pool,
+            sensor_specs,
+            self.known_automations,
+            subject=subject_history.get("label"),
+            transition=transition,
+        )
+        topology_sensor_fallbacks = sum(
+            1
+            for row in topology_sensor_visibility
+            if isinstance(row, dict)
+            and row.get("unavailableSourceSensors")
+            and row.get("fallbackDerivedSensors")
+        )
+        if topology_sensor_fallbacks:
+            increment_active_metric(
+                "causal_topology_sensor_fallback",
+                topology_sensor_fallbacks,
+            )
 
         def grounded_history_arguments(
             spec: dict[str, Any],
@@ -1039,6 +1059,10 @@ class UnifiedMCPAgent:
             subject_event_history=subject_event_data,
             known_automations=self.known_automations,
         )
+        if topology_sensor_visibility:
+            analysis["knownAutomationSensorVisibility"] = (
+                topology_sensor_visibility
+            )
         controller_rows = [
             row
             for item in analysis.get("controllers", [])
@@ -1114,7 +1138,8 @@ class UnifiedMCPAgent:
                 f"sensor_correlations={len(sensor_rows)}, "
                 f"level_recoveries={int(recovery.get('matchCount') or 0)}, "
                 f"known_automation_matches={len(known_matches)}, "
-                f"composite_sensor_matches={composite_sensor_matches}"
+                f"composite_sensor_matches={composite_sensor_matches}, "
+                f"topology_sensor_fallbacks={topology_sensor_fallbacks}"
             ),
             supports_live_claim=True,
             evidence_kind="deterministic_causal_secondary_correlation",
