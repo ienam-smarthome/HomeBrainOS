@@ -106,12 +106,13 @@ def test_reporting_source_summary_exposes_requested_timing_and_negative_controll
         "dimmer or Hallway dimmer - 1 at the requested ON transition."
     ) in message
     assert (
-        "- **Conclusion:** Exact initiator unresolved. Hubitat did not record a "
-        "direct ON command producer for this transition."
+        "- **Limit:** These timing correlations do not prove the exact "
+        "automation/action that initiated the change."
     ) in message
     assert (
-        "The timing evidence is correlation only; an automation or action outside "
-        "Hubitat remains possible."
+        "- **Conclusion:** Exact initiator unresolved. Hubitat did not record a "
+        "direct ON command producer for this transition; an automation or action "
+        "outside Hubitat remains possible."
     ) in message
 
 
