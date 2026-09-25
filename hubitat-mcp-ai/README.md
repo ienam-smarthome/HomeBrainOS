@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.43**.
+Current add-on version: **0.16.44**.
 
 ## Architecture
+
+0.16.44 makes bounded causal sensor selection topology-aware. After the existing capability and exposed-attribute-shape checks build the safe room candidate pool, configured source sensors for the requested external automation are ranked ahead of their derived/composite signals. For the Hallway Aqara route this means HomeBrain will prefer `Hallway FP300 sensor` + `Hallway Aqara P1` for the two live sensor-history slots when both are available; `Hallway Soft Sensor` remains a fallback when a configured source is not exposed. The read budget stays at two sensors, execution provenance rules are unchanged, and Technical Details expose `causal_topology_sensor_plan`.
 
 0.16.43 models derived/composite occupancy signals inside configured external automation topology. The Hallway deployment now records `Hallway Soft Sensor` as an Aqara M3-derived occupancy signal whose source sensors are `Hallway FP300` and `Hallway Aqara P1`. Causal matching can use that derived signal to support the known upstream route when a direct source-sensor edge is unavailable, but it never counts the soft sensor as an independent confirmation or claims which underlying sensor fired. Direct source-trigger timing remains stronger than composite timing. This release also registers the 0.16.42 known-automation metric in the fixed privacy-safe metric allowlist and adds a separate composite-topology metric.
 

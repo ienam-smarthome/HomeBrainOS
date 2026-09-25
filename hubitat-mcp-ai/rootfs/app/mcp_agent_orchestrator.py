@@ -81,7 +81,10 @@ from investigation_policy import (
     is_history_investigation,
     uses_known_history_evidence_path,
 )
-from known_automation_topology import parse_known_automations
+from known_automation_topology import (
+    parse_known_automations,
+    prioritize_known_automation_sensor_candidates,
+)
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from request_classification import (
@@ -906,10 +909,21 @@ class UnifiedMCPAgent:
             filter_data,
             limit=2,
         )
-        sensor_specs = trigger_sensor_history_candidates(
+        sensor_pool = trigger_sensor_history_candidates(
             filter_data,
-            limit=2,
+            limit=8,
         )
+        sensor_specs, topology_sensor_plan = (
+            prioritize_known_automation_sensor_candidates(
+                sensor_pool,
+                self.known_automations,
+                subject=subject_history.get("label"),
+                transition=transition,
+                limit=2,
+            )
+        )
+        if topology_sensor_plan:
+            increment_active_metric("causal_topology_sensor_plan")
 
         def grounded_history_arguments(
             spec: dict[str, Any],
