@@ -906,7 +906,7 @@ def render_command_producer_summary(
 
     lines.append(
         "- **Note:** The Hubitat producer identifies the app/action that issued "
-        "the command, not the person who initiated it."
+        "the command; it does not identify the person who initiated it."
     )
     return "\n".join(lines)
 
