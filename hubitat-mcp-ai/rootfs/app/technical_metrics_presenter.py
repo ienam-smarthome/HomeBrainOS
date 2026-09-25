@@ -48,6 +48,7 @@ _COUNTER_LABELS = (
     ("causal_reporting_source_correlation", "Reporting-source correlation passes"),
     ("causal_subject_pattern_read", "Subject pattern reads"),
     ("causal_level_recovery_pattern", "Level-recovery matches"),
+    ("causal_known_automation_match", "Known external automation matches"),
     ("causal_native_log_reads", "Causal native-log reads"),
     ("causal_native_log_correlations", "Causal native-log correlations"),
     ("causal_repeated_controller_pattern", "Repeated controller patterns"),

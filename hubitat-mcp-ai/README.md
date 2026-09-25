@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.41**.
+Current add-on version: **0.16.42**.
 
 ## Architecture
+
+0.16.42 adds explicit configured external-automation topology to causal investigations. A known upstream route can now name its platform, triggers, and target actions through `causal_known_automations_json`. HomeBrain matches that configuration only to the requested device transition and live requested-boundary sensor evidence, then distinguishes a timing-consistent route from a configured candidate whose Hubitat-visible trigger arrived later. This is configuration evidence, not execution provenance: the answer may identify a concrete Aqara/SmartThings route, but it still says Hubitat cannot prove the external automation executed that exact run. The shipped deployment mapping includes Aqara M3 `Hallway Lights ON` (Hallway FP300 or Hallway Aqara P1 -> Hallway Light 1/2 ON); other deployments can clear or replace the JSON option.
 
 0.16.41 fixes the live warm-cache miss exposed by repeated Hallway causal tests. A complete cached `hubitat://context` row can explicitly contain an empty attribute-state map for a broad-capability bridge child. HomeBrain now distinguishes that known-empty shape from genuinely missing/unknown structural metadata, so such children can be safely excluded from occupancy candidates without forcing another whole-home context refresh. Exact-ID matching, identity-TTL/generation checks, live per-device histories, and the safe fallback for truly unknown shape remain unchanged.
 
@@ -394,6 +396,13 @@ Hubitat records the sensor active edge, synthesis may treat that ordering as
 evidence against a Hubitat automation reacting to that recorded edge and as support
 for a possible upstream/outside-Hubitat trigger. It must not name a specific
 external hub or automation without independent topology/configuration evidence.
+When `causal_known_automations_json` supplies that topology, HomeBrain can name
+the configured upstream route while keeping the execution boundary explicit.
+For example, an Aqara M3 or SmartThings automation may be recorded as a set of
+trigger devices and ON/OFF target actions. A matching live transition can then be
+described as consistent with that configured route, or as a concrete configured
+candidate when Hubitat receives the trigger edge after the resulting light state.
+Neither case is promoted to proof that the external automation executed.
 
 0.14.0 adds a deterministic operational health layer independent of the
 conversation/model loop. `HealthAuditService` checks MCP/hub reachability, the

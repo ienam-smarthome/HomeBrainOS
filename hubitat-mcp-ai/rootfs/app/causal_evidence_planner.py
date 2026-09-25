@@ -10,6 +10,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from known_automation_topology import (
+    match_known_automations,
+    render_known_automation_conclusion,
+    render_known_automation_summary,
+)
 from natural_datetime import normalize_iso_offset
 
 
@@ -541,6 +546,7 @@ def build_reporting_source_secondary_analysis(
     controller_histories: list[dict[str, Any]] | None = None,
     sensor_histories: list[dict[str, Any]] | None = None,
     subject_event_history: dict[str, Any] | None = None,
+    known_automations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build bounded deterministic correlation around an external reporting source."""
 
@@ -598,7 +604,7 @@ def build_reporting_source_secondary_analysis(
         else {}
     )
 
-    return {
+    result = {
         "subject": subject_history.get("label"),
         "room": subject_history.get("room"),
         "transition": action,
@@ -631,6 +637,11 @@ def build_reporting_source_secondary_analysis(
         },
         "levelRecovery": recovery,
     }
+    result["knownAutomationMatches"] = match_known_automations(
+        result,
+        known_automations,
+    )
+    return result
 
 def _delta_phrase(row: dict[str, Any]) -> str:
     try:
@@ -922,6 +933,10 @@ def render_reporting_source_secondary_summary(
     transition_count = int(analysis.get("transitionCount") or 0)
     subject = str(analysis.get("subject") or "the device").strip()
     requested_time = _timestamp(analysis.get("requestedBoundary"))
+    known_matches = [
+        row for row in (analysis.get("knownAutomationMatches") or [])
+        if isinstance(row, dict)
+    ]
 
     sensors = [
         row for row in analysis.get("sensors", [])
@@ -1132,16 +1147,28 @@ def render_reporting_source_secondary_summary(
             "evidence."
         )
 
+    known_summary = render_known_automation_summary(
+        known_matches,
+        subject=subject,
+        role_word=role_word,
+    )
+    if known_summary:
+        lines.append(known_summary)
+
     if sensor_stats or controllers:
         lines.append(
             "- **Limit:** These timing correlations do not prove the exact "
             "automation/action that initiated the change."
         )
-        lines.append(
-            f"- **Conclusion:** Exact initiator unresolved. Hubitat did not record "
-            f"a direct {role_word} command producer for this transition; an "
-            "automation or action outside Hubitat remains possible."
-        )
+        known_conclusion = render_known_automation_conclusion(known_matches)
+        if known_conclusion:
+            lines.append(known_conclusion)
+        else:
+            lines.append(
+                f"- **Conclusion:** Exact initiator unresolved. Hubitat did not record "
+                f"a direct {role_word} command producer for this transition; an "
+                "automation or action outside Hubitat remains possible."
+            )
 
     if not lines:
         return None
