@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.36**.
+Current add-on version: **0.16.37**.
 
 ## Architecture
+
+0.16.37 fixes focal-transition drift in deterministic causal answers. A later secondary history read can legitimately add older intervals and command rows, but those rows may no longer replace the newest transition that the user asked about. Direct command provenance is now accepted and rendered only when it aligns with the same newest ON/OFF boundary being investigated. The command correlator also no longer applies the generic five-minute materiality threshold, so a short latest interval can still use authoritative command provenance when the command actually aligns with that boundary. This prevents an older Maker API command from being reported as the cause of a newer Matter/Hue transition while preserving direct-command precedence for the correct transition.
 
 0.16.36 makes deterministic causal answers much easier to read without weakening provenance rules. The main response now presents a compact conclusion-first summary (`Cause` or `Main finding`) followed by only the most useful status, motion/presence, shared-path, downstream-listener, recovery, and limitation bullets. Per-candidate timing deltas, repeated transition details, controller misses, and the full forensic correlation payload remain available in Technical Details/evidence instead of being repeated in the main answer. Direct command-producer answers are likewise reduced to cause, run/status, and the producer-scope note. The change is presentation-only: evidence collection, attribution thresholds, model-free finalization, and cache behavior are unchanged.
 
