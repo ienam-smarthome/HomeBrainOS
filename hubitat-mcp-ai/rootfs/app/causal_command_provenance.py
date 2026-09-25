@@ -41,22 +41,25 @@ def _duration_text(start: Any, end: Any) -> str:
     right = _parse_time(end)
     if left is None or right is None or right < left:
         return ""
+
     seconds = round((right - left).total_seconds())
+
+    def unit(value: int, singular: str) -> str:
+        return f"{value} {singular if value == 1 else singular + 's'}"
+
     if seconds < 60:
-        return f"{seconds} seconds"
+        return unit(seconds, "second")
 
-    rounded_minutes = max(1, round(seconds / 60))
-    exact_minute = seconds % 60 == 0
-    if rounded_minutes < 60:
-        prefix = "" if exact_minute else "approximately "
-        return f"{prefix}{rounded_minutes} minutes"
-
-    hours, remainder = divmod(rounded_minutes, 60)
-    hour_word = "hour" if hours == 1 else "hours"
-    prefix = "" if exact_minute else "approximately "
-    if remainder == 0:
-        return f"{prefix}{hours} {hour_word}"
-    return f"{prefix}{hours} {hour_word} {remainder} minutes"
+    hours, remainder = divmod(seconds, 3600)
+    minutes, trailing_seconds = divmod(remainder, 60)
+    parts: list[str] = []
+    if hours:
+        parts.append(unit(hours, "hour"))
+    if minutes:
+        parts.append(unit(minutes, "minute"))
+    if trailing_seconds:
+        parts.append(unit(trailing_seconds, "second"))
+    return " ".join(parts)
 
 
 def _subject_command_events(
