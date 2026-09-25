@@ -843,11 +843,6 @@ def render_reporting_source_secondary_analysis(
             "not the automation or action that initiated the light/device change."
         )
 
-    known_matches = [
-        row for row in (analysis.get("knownAutomationMatches") or [])
-        if isinstance(row, dict)
-    ]
-
     recovery = analysis.get("levelRecovery")
     if isinstance(recovery, dict) and recovery.get("matchCount"):
         count = int(recovery.get("matchCount") or 0)
@@ -938,6 +933,10 @@ def render_reporting_source_secondary_summary(
     transition_count = int(analysis.get("transitionCount") or 0)
     subject = str(analysis.get("subject") or "the device").strip()
     requested_time = _timestamp(analysis.get("requestedBoundary"))
+    known_matches = [
+        row for row in (analysis.get("knownAutomationMatches") or [])
+        if isinstance(row, dict)
+    ]
 
     sensors = [
         row for row in analysis.get("sensors", [])
