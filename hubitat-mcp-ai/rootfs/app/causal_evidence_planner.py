@@ -986,10 +986,10 @@ def render_reporting_source_secondary_summary(
                 delta_text = ""
             elif float(delta) > 0:
                 relation = "after"
-                delta_text = f"{abs(float(delta)):.1f}s "
+                delta_text = f"{abs(float(delta)):.2f}".rstrip("0").rstrip(".") + "s "
             else:
                 relation = "before"
-                delta_text = f"{abs(float(delta)):.1f}s "
+                delta_text = f"{abs(float(delta)):.2f}".rstrip("0").rstrip(".") + "s "
             requested_timings.append(
                 f"{row['label']} was reported {delta_text}{relation} "
                 f"{subject} changed {role_word}"
