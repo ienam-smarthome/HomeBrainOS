@@ -188,6 +188,93 @@ def _requested_sensor_edges(analysis: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+
+def prioritize_known_automation_sensor_candidates(
+    candidates: list[dict[str, Any]],
+    known_automations: list[dict[str, Any]] | None,
+    *,
+    subject: Any,
+    transition: Any,
+    limit: int = 2,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Prefer configured source sensors over their derived/composite signals.
+
+    Candidate discovery remains capability/attribute-shape grounded elsewhere.
+    This helper only reorders already-safe occupancy candidates for a configured
+    automation that targets the requested subject transition. If fewer source
+    sensors are available, a configured derived sensor can still fill a bounded
+    slot before unrelated room sensors.
+
+    Returns (selected_candidates, topology_plan_used).
+    """
+
+    rows = [dict(row) for row in candidates if isinstance(row, dict)]
+    bounded_limit = max(1, int(limit))
+    if not rows or not known_automations:
+        return rows[:bounded_limit], False
+
+    subject_key = _normalized_label(subject)
+    transition_key = _transition(transition)
+    if not subject_key or transition_key not in {"on", "off"}:
+        return rows[:bounded_limit], False
+
+    source_labels: set[str] = set()
+    derived_labels: set[str] = set()
+
+    for automation in known_automations:
+        if not isinstance(automation, dict):
+            continue
+        action_matches = any(
+            isinstance(action, dict)
+            and subject_key in _labels(action)
+            and _transition(action.get("transition")) == transition_key
+            for action in (automation.get("actions") or [])
+        )
+        if not action_matches:
+            continue
+
+        for trigger in automation.get("triggers") or []:
+            if isinstance(trigger, dict):
+                source_labels.update(_labels(trigger))
+
+        for derived in automation.get("derivedSensors") or []:
+            if not isinstance(derived, dict):
+                continue
+            derived_labels.update(_labels(derived))
+            for source in derived.get("sources") or []:
+                if isinstance(source, dict):
+                    source_labels.update(_labels(source))
+
+    if not source_labels and not derived_labels:
+        return rows[:bounded_limit], False
+
+    ranked: list[tuple[int, int, dict[str, Any]]] = []
+    topology_candidate_found = False
+    for index, row in enumerate(rows):
+        candidate = row.get("candidate")
+        candidate_data = candidate if isinstance(candidate, dict) else {}
+        label = (
+            row.get("name")
+            or candidate_data.get("label")
+            or candidate_data.get("name")
+        )
+        normalized = _normalized_label(label)
+        if normalized in source_labels:
+            role_rank = 0
+            topology_candidate_found = True
+        elif normalized in derived_labels:
+            role_rank = 1
+            topology_candidate_found = True
+        else:
+            role_rank = 2
+        ranked.append((role_rank, index, row))
+
+    if not topology_candidate_found:
+        return rows[:bounded_limit], False
+
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    return [item[2] for item in ranked[:bounded_limit]], True
+
 def match_known_automations(
     analysis: dict[str, Any],
     known_automations: list[dict[str, Any]] | None,
