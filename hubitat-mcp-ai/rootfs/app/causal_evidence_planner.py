@@ -906,6 +906,153 @@ def render_reporting_source_secondary_analysis(
         return None
     return "\n\n".join(paragraphs)
 
+def render_reporting_source_secondary_summary(
+    analysis: dict[str, Any],
+) -> str | None:
+    """Render a compact user-facing summary of bounded secondary evidence."""
+
+    if not isinstance(analysis, dict):
+        return None
+    transition = str(analysis.get("transition") or "").strip().casefold()
+    role_word = "ON" if transition == "on" else "OFF" if transition == "off" else ""
+    if not role_word:
+        return None
+
+    lines: list[str] = []
+    transition_count = int(analysis.get("transitionCount") or 0)
+
+    sensors = [
+        row for row in analysis.get("sensors", [])
+        if isinstance(row, dict)
+    ]
+    if not sensors and isinstance(analysis.get("sensor"), dict):
+        sensors = [analysis["sensor"]]
+
+    sensor_stats: list[tuple[str, int, int, bool]] = []
+    for sensor in sensors:
+        label = str(sensor.get("label") or "").strip()
+        relevant = [
+            row for row in sensor.get("relevantCorrelations", [])
+            if isinstance(row, dict)
+        ]
+        if label and relevant:
+            sensor_stats.append((
+                label,
+                len(relevant),
+                transition_count or len(relevant),
+                bool(sensor.get("requestedMatched")),
+            ))
+
+    if sensor_stats:
+        if (
+            len(sensor_stats) == 2
+            and sensor_stats[0][1:] == sensor_stats[1][1:]
+        ):
+            first, second = sensor_stats[0], sensor_stats[1]
+            motion_text = (
+                f"{first[0]} and {second[0]} each matched "
+                f"{first[1]}/{first[2]} recent {role_word} transitions"
+            )
+            if first[3]:
+                motion_text += ", including the requested transition"
+            motion_text += "."
+        else:
+            parts = [
+                f"{label}: {count}/{total}"
+                + (" including requested" if requested else "")
+                for label, count, total, requested in sensor_stats
+            ]
+            motion_text = (
+                f"{'; '.join(parts)} recent {role_word} transition correlations."
+            )
+        lines.append(f"- **Motion/presence:** {motion_text}")
+
+    shared_producers: dict[str, list[str]] = {}
+    for sensor in sensors:
+        label = str(sensor.get("label") or "").strip()
+        producers = [
+            str(value).strip()
+            for value in (sensor.get("producerLabels") or [])
+            if str(value).strip()
+        ]
+        if label and len(producers) == 1:
+            shared_producers.setdefault(producers[0], []).append(label)
+    for producer, labels in shared_producers.items():
+        unique_labels = list(dict.fromkeys(labels))
+        if len(unique_labels) >= 2:
+            joined = (
+                f"{unique_labels[0]} and {unique_labels[1]}"
+                if len(unique_labels) == 2
+                else ", ".join(unique_labels)
+            )
+            lines.append(
+                f"- **Shared path:** {joined} are both reported through "
+                f"{producer}, so they are not independent confirmations."
+            )
+            break
+
+    controllers = [
+        row for row in analysis.get("controllers", [])
+        if isinstance(row, dict)
+    ]
+    if not controllers and isinstance(analysis.get("controller"), dict):
+        controllers = [analysis["controller"]]
+    aligned_controllers: list[str] = []
+    for controller in controllers:
+        label = str(controller.get("label") or "").strip()
+        relevant = [
+            row for row in controller.get("relevantAlignments", [])
+            if isinstance(row, dict)
+        ]
+        if label and relevant:
+            aligned_controllers.append(
+                f"{label} ({len(relevant)} alignment"
+                + ("s" if len(relevant) != 1 else "")
+                + ")"
+            )
+    if aligned_controllers:
+        lines.append(
+            f"- **Controller timing:** {', '.join(aligned_controllers)}; timing "
+            "alone is not direct producer proof."
+        )
+
+    recovery = analysis.get("levelRecovery")
+    if isinstance(recovery, dict) and recovery.get("matchCount"):
+        count = int(recovery.get("matchCount") or 0)
+        total = int(recovery.get("transitionCount") or count)
+        producer = str(recovery.get("producerLabel") or "").strip()
+        producer_text = f" from {producer}" if producer else ""
+        lines.append(
+            f"- **After ON:** {count}/{total} transitions had nearby setLevel "
+            f"activity{producer_text}; this is post-ON adjustment, not trigger "
+            "evidence."
+        )
+
+    if sensor_stats or aligned_controllers:
+        lines.append(
+            "- **Limit:** These are timing correlations; they do not prove the "
+            "exact automation/action that initiated the change."
+        )
+
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
+def render_reporting_source_secondary_summary_evidence(
+    evidence: list[dict[str, Any]],
+) -> str | None:
+    for receipt in reversed(evidence):
+        if (
+            isinstance(receipt, dict)
+            and receipt.get("success") is True
+            and receipt.get("tool") == "homebrain_causal_secondary_correlation"
+            and isinstance(receipt.get("details"), dict)
+        ):
+            return render_reporting_source_secondary_summary(receipt["details"])
+    return None
+
+
 def render_reporting_source_secondary_evidence(
     evidence: list[dict[str, Any]],
 ) -> str | None:
