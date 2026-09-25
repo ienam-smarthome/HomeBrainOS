@@ -1034,23 +1034,31 @@ def render_reporting_source_secondary_summary(
     if not controllers and isinstance(analysis.get("controller"), dict):
         controllers = [analysis["controller"]]
 
-    aligned_controllers: list[str] = []
+    requested_controllers: list[str] = []
+    historical_controllers: list[str] = []
     for controller in controllers:
         label = str(controller.get("label") or "").strip()
         relevant = [
             row for row in controller.get("relevantAlignments", [])
             if isinstance(row, dict)
         ]
-        if label and relevant:
-            aligned_controllers.append(
-                f"{label} ({len(relevant)} alignment"
-                + ("s" if len(relevant) != 1 else "")
-                + ")"
-            )
-    if aligned_controllers:
+        if not label or not relevant:
+            continue
+        rendered = (
+            f"{label} ({len(relevant)} alignment"
+            + ("s" if len(relevant) != 1 else "")
+            + ")"
+        )
+        if controller.get("requestedMatched"):
+            requested_controllers.append(rendered)
+        else:
+            historical_controllers.append(rendered)
+
+    if requested_controllers:
         lines.append(
-            f"- **Controller timing:** {', '.join(aligned_controllers)}; timing "
-            "alone is not direct producer proof."
+            f"- **Controller timing:** {', '.join(requested_controllers)} matched "
+            f"the requested {role_word} boundary; timing alone is not direct "
+            "producer proof."
         )
     elif controllers:
         labels = [
@@ -1078,6 +1086,11 @@ def render_reporting_source_secondary_summary(
             lines.append(
                 f"- **Controller check:** No matching {event_text} event was found "
                 f"for {controller_text} at the requested {role_word} transition."
+            )
+        if historical_controllers:
+            lines.append(
+                f"- **Other controller timing:** {', '.join(historical_controllers)} "
+                "aligned with other recent boundaries, not the requested transition."
             )
 
     recovery = analysis.get("levelRecovery")
