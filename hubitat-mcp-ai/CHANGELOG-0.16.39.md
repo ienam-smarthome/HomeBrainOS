@@ -31,15 +31,15 @@ that motion could not have occurred earlier outside Hubitat.
 Completed causal runs no longer round a non-exact minute count to phrases such as
 `approximately 1 minutes`.
 
-Durations now preserve exact rounded seconds with correct singular/plural units,
-for example:
+Short completed runs under two minutes now preserve exact rounded seconds with
+correct singular/plural units, for example:
 
 - `1 second`
 - `1 minute`
 - `1 minute 7 seconds`
-- `2 hours 3 minutes 4 seconds`
 
-The underlying interval boundaries are unchanged.
+Longer runs keep the established compact rounded-minute/hour presentation for
+backwards compatibility. The underlying interval boundaries are unchanged.
 
 ### Aggregate queue-wait metric
 
