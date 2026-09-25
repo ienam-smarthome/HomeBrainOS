@@ -45,7 +45,11 @@ from causal_command_provenance import (
     render_command_producer_summary,
     render_command_producer_evidence,
 )
-from causal_subject_prefetch import causal_subject_seed
+from causal_subject_prefetch import (
+    causal_subject_history_arguments,
+    causal_subject_seed,
+    switch_transition_from_prompt,
+)
 from causal_native_logs import (
     causal_boundary_log_windows,
     correlate_native_log_boundaries,
@@ -2424,6 +2428,11 @@ class UnifiedMCPAgent:
                     arguments = json.loads(arguments or "{}")
                 arguments = dict(arguments)
                 if causal_request:
+                    if name == _LOCAL_DEVICE_HISTORY_TOOL:
+                        arguments = causal_subject_history_arguments(
+                            user_prompt,
+                            arguments,
+                        )
                     arguments = _normalize_causal_log_call(
                         name,
                         arguments,
@@ -2763,6 +2772,47 @@ class UnifiedMCPAgent:
                 causal_subject_to_expand is not None
                 and not causal_subject_evidence_expanded
             ):
+                requested_transition = switch_transition_from_prompt(user_prompt)
+                if requested_transition in {"on", "off"}:
+                    current_evidence = self.evidence.receipts()
+                    requested_boundary = focal_transition_boundary(
+                        current_evidence,
+                        requested_transition,
+                    )
+                    command_correlations = correlate_command_producers(
+                        current_evidence
+                    )
+                    if command_producer_transition_sufficient(
+                        command_correlations,
+                        requested_transition,
+                        requested_boundary=requested_boundary,
+                    ):
+                        increment_active_metric(
+                            "causal_command_producer_provenance"
+                        )
+                        deterministic_command_answer = (
+                            render_command_producer_summary(
+                                current_evidence,
+                                transition=requested_transition,
+                            )
+                            if self.causal_deterministic_final_enabled
+                            else None
+                        )
+                        if deterministic_command_answer:
+                            increment_active_metric(
+                                "causal_deterministic_finalization"
+                            )
+                            increment_active_metric("investigative_finalization")
+                            return deterministic_command_answer
+                        instruction = render_command_producer_evidence(
+                            command_correlations
+                        )
+                        if instruction:
+                            messages.append({
+                                "role": "user",
+                                "content": instruction,
+                            })
+
                 causal_subject_evidence_expanded = (
                     await self._expand_causal_subject_evidence(
                         causal_subject_to_expand,
