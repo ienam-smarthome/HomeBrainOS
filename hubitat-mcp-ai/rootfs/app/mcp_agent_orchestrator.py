@@ -81,6 +81,7 @@ from investigation_policy import (
     is_history_investigation,
     uses_known_history_evidence_path,
 )
+from known_automation_topology import parse_known_automations
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from model_context_policy import ModelContextPolicy
 from request_classification import (
@@ -353,6 +354,7 @@ class UnifiedMCPAgent:
         rule_write_enabled: bool = True,
         causal_subject_prefetch_enabled: bool = True,
         causal_deterministic_final_enabled: bool = True,
+        known_automations: Any | None = None,
         max_tool_result_chars: int = 24000,
         max_history_messages: int = 8,
         max_history_chars: int = 12000,
@@ -384,6 +386,7 @@ class UnifiedMCPAgent:
         self.causal_deterministic_final_enabled = bool(
             causal_deterministic_final_enabled
         )
+        self.known_automations = parse_known_automations(known_automations)
         self.confirmation_policy = ConfirmationPolicy(
             enabled=self.require_sensitive_confirmation
         )
@@ -1020,6 +1023,7 @@ class UnifiedMCPAgent:
             controller_histories=controller_data,
             sensor_histories=sensor_data,
             subject_event_history=subject_event_data,
+            known_automations=self.known_automations,
         )
         controller_rows = [
             row
@@ -1054,6 +1058,16 @@ class UnifiedMCPAgent:
             increment_active_metric(
                 "causal_level_recovery_pattern",
                 int(recovery.get("matchCount") or 0),
+            )
+        known_matches = [
+            row
+            for row in (analysis.get("knownAutomationMatches") or [])
+            if isinstance(row, dict)
+        ]
+        if known_matches:
+            increment_active_metric(
+                "causal_known_automation_match",
+                len(known_matches),
             )
 
         self.evidence.record(
