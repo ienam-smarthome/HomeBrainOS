@@ -968,14 +968,13 @@ def render_reporting_source_secondary_summary(
 
     if sensor_stats:
         parts = [
-            (
-                f"{row['label']} aligned with {row['count']}/{row['total']} recent "
-                f"{role_word} transitions"
-                + (", including the requested transition" if row["requested"] else "")
-            )
+            f"{row['label']}: {row['count']}/{row['total']}"
+            + (" including requested" if row["requested"] else "")
             for row in sensor_stats
         ]
-        motion_text = f"{'; '.join(parts)}."
+        motion_text = (
+            f"{'; '.join(parts)} recent {role_word} transition correlations."
+        )
 
         requested_timings: list[str] = []
         for row in sensor_stats:
