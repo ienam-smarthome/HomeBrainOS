@@ -99,7 +99,7 @@ def load_options() -> dict[str, Any]:
         "deterministic_reads_enabled": False,
         "causal_subject_prefetch_enabled": True,
         "causal_deterministic_final_enabled": True,
-        "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\"}],\"derivedSensors\":[{\"device\":\"Hallway Soft Sensor\",\"kind\":\"occupancy\",\"sourceMode\":\"combined\",\"sources\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\"}]}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
+        "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}],\"derivedSensors\":[{\"device\":\"Hallway Soft Sensor\",\"kind\":\"occupancy\",\"sourceMode\":\"combined\",\"sources\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\",\"aliases\":[\"Hallway Sensor P1\"]}]}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
         "semantic_default_temperature_step": 1.0,
