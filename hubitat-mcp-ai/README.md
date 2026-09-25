@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.46**.
+Current add-on version: **0.16.47**.
 
 ## Architecture
+
+0.16.47 makes subject command-producer history the universal first provenance check for explicit ON/OFF causal questions. Trailing transport/source qualifiers such as `(MQTT)` are treated as fail-closed deterministic aliases, so a request for `Microwave` can resolve uniquely to `Microwave (MQTT)` without a model round. If deterministic prefetch still cannot resolve the target, the first matching model-resolved subject history call is host-enriched with the same bounded `command-on`/`command-off` provenance read. An aligned Hubitat command producer now finalizes before native logs, room correlation, app navigation, or location evidence.
 
 0.16.46 recognizes Rule Machine/App native log lines such as `Action: On: <device>` as direct app execution provenance when they align to the requested device boundary. Same-app `Triggered:` and `Event:` rows immediately before the action are preserved as the bounded trigger chain, allowing deterministic zero-model finalization instead of downgrading the run to configuration-only evidence. The Hallway topology also aliases Hubitat label `Hallway Sensor P1` to configured `Hallway Aqara P1`, so topology-aware selection can choose the real P1 source when exposed.
 
