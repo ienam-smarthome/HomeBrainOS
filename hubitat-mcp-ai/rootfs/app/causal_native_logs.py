@@ -20,6 +20,11 @@ _COMMAND_ACTIONS = (
     (re.compile(r"\b(?:turn\s+on\s+command|command\s+called:\s*on\(\))\b", re.I), "on"),
     (re.compile(r"\b(?:turn\s+off\s+command|command\s+called:\s*off\(\))\b", re.I), "off"),
 )
+_APP_ACTION = re.compile(
+    r"^\s*Action:\s*(?P<action>On|Off)\s*:\s*(?P<target>.+?)\s*$",
+    re.I,
+)
+_APP_TRIGGER_CONTEXT = re.compile(r"^\s*(?:Triggered|Event):\s+.+", re.I)
 _APP_REACTION = re.compile(
     r"\b(?:manual\s+run|manual\s+activation|dev\s+lock|will\s+turn\s+off|"
     r"detected|external|takeover|timed\s+run)\b",
@@ -137,20 +142,79 @@ def _log_rows(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _normalized_device_label(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+
+
 def _command_action(row: dict[str, Any], *, subject: str) -> str | None:
-    if str(row.get("sourceKind") or "") != "dev":
-        return None
+    source_kind = str(row.get("sourceKind") or "")
     label = str(row.get("sourceLabel") or "").strip()
     payload = str(row.get("payload") or row.get("message") or "")
-    comparable_subject = re.sub(r"[^a-z0-9]", "", subject.casefold())
-    comparable_label = re.sub(r"[^a-z0-9]", "", label.casefold())
+    comparable_subject = _normalized_device_label(subject)
+
+    if source_kind == "app":
+        match = _APP_ACTION.match(payload)
+        if not match:
+            return None
+        target = _normalized_device_label(match.group("target"))
+        if comparable_subject and comparable_subject not in target:
+            return None
+        return match.group("action").casefold()
+
+    if source_kind != "dev":
+        return None
+
+    comparable_label = _normalized_device_label(label)
     if comparable_subject and comparable_label != comparable_subject:
-        if comparable_subject not in re.sub(r"[^a-z0-9]", "", payload.casefold()):
+        if comparable_subject not in _normalized_device_label(payload):
             return None
     for pattern, action in _COMMAND_ACTIONS:
         if pattern.search(payload):
             return action
     return None
+
+
+def _app_trigger_context(
+    logs: list[dict[str, Any]],
+    *,
+    command_row: dict[str, Any],
+    command_time: datetime,
+    boundary: datetime,
+    window_seconds: float = 2.0,
+) -> list[dict[str, Any]]:
+    if str(command_row.get("sourceKind") or "") != "app":
+        return []
+    source_id = str(command_row.get("sourceId") or "").strip()
+    source_label = str(command_row.get("sourceLabel") or "").strip()
+    rows: list[tuple[float, datetime, dict[str, Any]]] = []
+    for row in logs:
+        if str(row.get("sourceKind") or "") != "app":
+            continue
+        if source_id and str(row.get("sourceId") or "").strip() != source_id:
+            continue
+        if not source_id and str(row.get("sourceLabel") or "").strip() != source_label:
+            continue
+        event_time = _parse_log_time(row.get("date"), reference=boundary)
+        if event_time is None:
+            continue
+        signed = (event_time - command_time).total_seconds()
+        if not (-window_seconds <= signed <= 0):
+            continue
+        payload = str(row.get("payload") or row.get("message") or "").strip()
+        if not _APP_TRIGGER_CONTEXT.match(payload):
+            continue
+        rows.append((abs(signed), event_time, row))
+    rows.sort(key=lambda item: item[0])
+    return [
+        {
+            "date": event_time.isoformat(),
+            "sourceId": str(row.get("sourceId") or ""),
+            "sourceLabel": str(row.get("sourceLabel") or ""),
+            "message": str(row.get("payload") or row.get("message") or ""),
+            "beforeCommandMs": round(delta * 1000, 1),
+        }
+        for delta, event_time, row in rows[:4]
+    ]
 
 
 def _physical_controller(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -210,20 +274,21 @@ def correlate_native_log_boundaries(
             _distance, command_time, command_row = commands[0]
 
             controllers: list[tuple[float, datetime, dict[str, Any], dict[str, Any]]] = []
-            for row in logs:
-                event_time = _parse_log_time(row.get("date"), reference=boundary)
-                if event_time is None:
-                    continue
-                controller = _physical_controller(row)
-                if controller is None:
-                    continue
-                signed = (event_time - command_time).total_seconds()
-                # Prefer physical events immediately before the command. Allow a
-                # tiny positive skew for logger ordering jitter, but never a broad
-                # after-the-fact association.
-                if -controller_window_seconds <= signed <= 0.250:
-                    controllers.append((abs(signed), event_time, row, controller))
-            controllers.sort(key=lambda item: item[0])
+            if str(command_row.get("sourceKind") or "") == "dev":
+                for row in logs:
+                    event_time = _parse_log_time(row.get("date"), reference=boundary)
+                    if event_time is None:
+                        continue
+                    controller = _physical_controller(row)
+                    if controller is None:
+                        continue
+                    signed = (event_time - command_time).total_seconds()
+                    # Prefer physical events immediately before the command. Allow a
+                    # tiny positive skew for logger ordering jitter, but never a broad
+                    # after-the-fact association.
+                    if -controller_window_seconds <= signed <= 0.250:
+                        controllers.append((abs(signed), event_time, row, controller))
+                controllers.sort(key=lambda item: item[0])
 
             app_reactions: list[tuple[float, datetime, dict[str, Any]]] = []
             for row in logs:
@@ -249,10 +314,22 @@ def correlate_native_log_boundaries(
                     "date": command_time.isoformat(),
                     "sourceId": str(command_row.get("sourceId") or ""),
                     "sourceLabel": str(command_row.get("sourceLabel") or ""),
+                    "sourceKind": str(command_row.get("sourceKind") or ""),
+                    "provenanceKind": (
+                        "app-execution"
+                        if str(command_row.get("sourceKind") or "") == "app"
+                        else "device-command"
+                    ),
                     "message": str(command_row.get("payload") or command_row.get("message") or ""),
                     "commandToStateMs": round((boundary - command_time).total_seconds() * 1000, 1),
                 },
                 "controller": None,
+                "appTriggerContext": _app_trigger_context(
+                    logs,
+                    command_row=command_row,
+                    command_time=command_time,
+                    boundary=boundary,
+                ),
                 "appReactions": [],
             }
 
@@ -305,13 +382,18 @@ def correlate_native_log_boundaries(
     for row in correlations:
         repeated = str(row.get("timelineId") or "") in repeated_timelines
         row["repeatedControllerPattern"] = repeated
+        command = row.get("command") if isinstance(row.get("command"), dict) else {}
         row["provenanceStrength"] = (
-            "strong-repeated-temporal-provenance"
-            if repeated
+            "direct-app-execution"
+            if command.get("provenanceKind") == "app-execution"
             else (
-                "strong-single-boundary-temporal-provenance"
-                if row.get("controller")
-                else "subject-command-only"
+                "strong-repeated-temporal-provenance"
+                if repeated
+                else (
+                    "strong-single-boundary-temporal-provenance"
+                    if row.get("controller")
+                    else "subject-command-only"
+                )
             )
         )
     return correlations
@@ -372,13 +454,42 @@ def native_log_open_start_sufficient(
     return bool(candidates)
 
 
+def native_log_app_execution_sufficient(
+    correlations: list[dict[str, Any]],
+) -> bool:
+    """Accept a direct app Action: On line aligned to a subject ON boundary."""
+
+    for row in correlations:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("boundaryRole") or "") != "start":
+            continue
+        if str(row.get("expectedAction") or "") != "on":
+            continue
+        command = row.get("command")
+        if not isinstance(command, dict):
+            continue
+        if command.get("provenanceKind") != "app-execution":
+            continue
+        try:
+            delay_ms = float(command.get("commandToStateMs"))
+        except (TypeError, ValueError):
+            continue
+        # Require execution to precede the reported state, allowing only a tiny
+        # negative skew for logger ordering jitter.
+        if -250.0 <= delay_ms <= 2000.0:
+            return True
+    return False
+
+
 def native_log_causal_provenance_sufficient(
     correlations: list[dict[str, Any]],
 ) -> bool:
-    """Return strong causal sufficiency for closed or currently-open intervals."""
+    """Return strong causal sufficiency for direct app or controller provenance."""
 
     return bool(
-        native_log_provenance_sufficient(correlations)
+        native_log_app_execution_sufficient(correlations)
+        or native_log_provenance_sufficient(correlations)
         or native_log_open_start_sufficient(correlations)
     )
 
@@ -416,10 +527,67 @@ def render_strong_native_provenance_answer(
     """
 
     correlations = correlate_native_log_boundaries(evidence)
+    app_sufficient = native_log_app_execution_sufficient(correlations)
     closed_sufficient = native_log_provenance_sufficient(correlations)
     open_sufficient = native_log_open_start_sufficient(correlations)
-    if not (closed_sufficient or open_sufficient):
+    if not (app_sufficient or closed_sufficient or open_sufficient):
         return None
+
+    if app_sufficient:
+        app_rows = [
+            row
+            for row in correlations
+            if isinstance(row, dict)
+            and str(row.get("boundaryRole") or "") == "start"
+            and str(row.get("expectedAction") or "") == "on"
+            and isinstance(row.get("command"), dict)
+            and row["command"].get("provenanceKind") == "app-execution"
+        ]
+        app_rows.sort(
+            key=lambda row: _parse_time(row.get("stateBoundary"))
+            or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+        start = app_rows[0]
+        subject = str(start.get("subject") or "").strip()
+        command = start.get("command") or {}
+        app_label = str(command.get("sourceLabel") or "the automation").strip()
+        command_time = _clock_text(command.get("date"))
+        delay = command.get("commandToStateMs")
+        trigger_rows = [
+            row
+            for row in (start.get("appTriggerContext") or [])
+            if isinstance(row, dict)
+        ]
+
+        lines = [
+            (
+                f"**Cause:** {app_label} issued ON for {subject} at "
+                f"{command_time}, about {delay:g} ms before the device reported ON."
+            )
+        ]
+        if trigger_rows:
+            messages = [
+                str(row.get("message") or "").strip()
+                for row in reversed(trigger_rows)
+                if str(row.get("message") or "").strip()
+            ]
+            if messages:
+                lines.append(
+                    "- **Trigger chain:** The same app logged "
+                    + " → ".join(messages)
+                    + " immediately before the ON action."
+                )
+        if start.get("open") is True:
+            lines.append(
+                "- **Status:** The current ON interval is still open; no closing "
+                "OFF transition has been observed."
+            )
+        lines.append(
+            "- **Provenance:** This is direct app execution logging aligned to the "
+            "device transition, not merely automation configuration."
+        )
+        return "\n".join(lines)
 
     if open_sufficient:
         open_rows = [
@@ -643,6 +811,16 @@ def render_native_log_correlation(
             f"command at {command.get('date')} -> state boundary {row.get('stateBoundary')} "
             f"(command-to-state {command.get('commandToStateMs')} ms)."
         )
+        if command.get("provenanceKind") == "app-execution":
+            lines.append(
+                f"  direct-app-execution: {command.get('sourceLabel')} -> "
+                f"{command.get('message')}."
+            )
+            for trigger in row.get("appTriggerContext") or []:
+                lines.append(
+                    f"  app-trigger-context: {trigger.get('beforeCommandMs')} ms "
+                    f"before action: {trigger.get('message')}"
+                )
         if controller:
             lines.append(
                 f"  physical-controller: {controller.get('sourceLabel')} "
@@ -657,7 +835,15 @@ def render_native_log_correlation(
                 f"{reaction.get('message')}"
             )
 
-    if native_log_provenance_sufficient(correlations):
+    if native_log_app_execution_sufficient(correlations):
+        lines.append(
+            "DETERMINISTIC APP-EXECUTION RESULT: an app Action: On line directly "
+            "targeted the subject immediately before the ON state boundary. Present "
+            "that app as the direct execution producer. Same-app Triggered:/Event: "
+            "rows immediately before the action may describe the trigger chain. "
+            "Do not downgrade this to configuration-only evidence."
+        )
+    elif native_log_provenance_sufficient(correlations):
         lines.append(
             "DETERMINISTIC RESULT: the same physical controller/input immediately "
             "preceded both the subject ON command and the later OFF command. Present "
@@ -684,6 +870,7 @@ def render_native_log_correlation(
 __all__ = [
     "causal_boundary_log_windows",
     "correlate_native_log_boundaries",
+    "native_log_app_execution_sufficient",
     "native_log_causal_provenance_sufficient",
     "native_log_open_start_sufficient",
     "native_log_provenance_sufficient",
