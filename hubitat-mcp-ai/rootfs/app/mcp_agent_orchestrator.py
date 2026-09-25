@@ -26,6 +26,7 @@ from causal_evidence_planner import (
     controller_history_candidates,
     render_controller_alignment_instruction,
     render_reporting_source_secondary_evidence,
+    render_reporting_source_secondary_summary_evidence,
     render_sensor_correlation_instruction,
     sensor_transition_correlations,
     subject_has_observed_intervals,
@@ -41,7 +42,9 @@ from causal_command_provenance import (
     correlate_boundary_producers,
     correlate_command_producers,
     render_boundary_producer_answer,
+    render_boundary_producer_summary,
     render_command_producer_answer,
+    render_command_producer_summary,
     render_command_producer_evidence,
 )
 from causal_subject_prefetch import causal_subject_seed
@@ -1747,20 +1750,16 @@ class UnifiedMCPAgent:
         transition: str,
     ) -> str | None:
         evidence = self.evidence.receipts()
-        base = render_boundary_producer_answer(
+        base = render_boundary_producer_summary(
             evidence,
             transition=transition,
         )
         if base is None:
             return None
-        secondary = render_reporting_source_secondary_evidence(evidence)
+        secondary = render_reporting_source_secondary_summary_evidence(evidence)
         if not secondary:
             return base
-        return (
-            base
-            + "\n\n**Bounded secondary correlation**\n\n"
-            + secondary
-        )
+        return base + "\n" + secondary
 
     async def _process_user_request(
         self,
@@ -1928,7 +1927,7 @@ class UnifiedMCPAgent:
             if causal_prefetch == "sufficient":
                 deterministic_answer = (
                     (
-                        render_command_producer_answer(
+                        render_command_producer_summary(
                             self.evidence.receipts(),
                             transition=prefetched_transition or "on",
                         )
