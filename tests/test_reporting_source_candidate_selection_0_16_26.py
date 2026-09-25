@@ -151,6 +151,56 @@ def test_cached_candidate_plan_falls_back_when_occupancy_shape_is_unknown() -> N
     ) is None
 
 
+def _sparse_occupancy_identities() -> list[dict]:
+    rows: list[dict] = []
+    for item in ALL_DEVICES:
+        row = dict(item)
+        if str(row.get("id") or "") in {"7774", "7756"}:
+            row["attributes"] = {}
+        rows.append(row)
+    return rows
+
+
+def test_cached_context_enriches_only_missing_attribute_shape_by_device_id() -> None:
+    sparse = _sparse_occupancy_identities()
+
+    assert DeviceQueryService.cached_room_event_source_hints(
+        sparse,
+        "Bedroom 1",
+    ) is None
+
+    enriched = DeviceQueryService.enrich_identity_attribute_shape(
+        sparse,
+        ALL_DEVICES,
+    )
+    hints = DeviceQueryService.cached_room_event_source_hints(
+        enriched,
+        "Bedroom 1",
+    )
+
+    assert hints is not None
+    assert [
+        row["label"] for row in hints["triggerSensorCandidates"][:2]
+    ] == ["Bedroom 1 FP300 sensor", "Bedroom 1 Soft Sensor"]
+    assert "Bedroom 1 FP300 humidity" not in {
+        row["label"] for row in hints["triggerSensorCandidates"]
+    }
+    assert "Bedroom 1 FP300 lux" not in {
+        row["label"] for row in hints["triggerSensorCandidates"]
+    }
+
+    enriched_by_id = {
+        str(row.get("id") or ""): row
+        for row in enriched
+    }
+    assert enriched_by_id["7774"]["room"] == "Bedroom 1"
+    assert enriched_by_id["7774"]["capabilities"] == [
+        "PresenceSensor",
+        "MotionSensor",
+    ]
+    assert enriched_by_id["7774"]["attributes"]["motion"] == "active"
+
+
 _SWITCH_ROWS = [
     ("off", "2026-09-24T08:14:38.289+0100"),
     ("on", "2026-09-24T08:06:14.134+0100"),
@@ -445,6 +495,68 @@ async def test_morning_bridge_case_checks_two_candidates_and_downstream_recovery
     assert sum(1 for device_id, _attr in event_calls if device_id == "7774") == 1
     assert sum(1 for device_id, _attr in event_calls if device_id == "7773") == 0
     assert sum(1 for device_id, _attr in event_calls if device_id == "7775") == 0
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7756") == 1
+    assert not any(
+        name == "hub_read_devices"
+        and args.get("tool") == "hub_list_devices"
+        for name, args in mcp.calls
+    )
+    assert not any(name == "hub_read_diagnostics" for name, _ in mcp.calls)
+
+
+class _WarmContextSparseIdentityMCP(_MorningBedroomMCP):
+    def peek_device_identities(self):
+        return _sparse_occupancy_identities()
+
+    def peek_cached_live_context_devices(self):
+        return [dict(item) for item in ALL_DEVICES]
+
+
+@pytest.mark.asyncio
+async def test_warm_context_shape_avoids_causal_room_refresh() -> None:
+    mcp = _WarmContextSparseIdentityMCP()
+    ai = _NoProvider()
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Why did Bedroom 1 Light turn itself on?"
+    )
+
+    counters = outcome.metrics["counters"]
+    assert ai.requests == []
+    assert counters.get("model_rounds", 0) == 0
+    assert counters["causal_boundary_producer_provenance"] == 1
+    assert counters["causal_reporting_source_correlation"] == 1
+    assert counters["causal_cached_candidate_plan"] == 1
+    assert counters["causal_cached_context_shape_plan"] == 1
+    assert counters.get("causal_cached_candidate_plan_fallback", 0) == 0
+    assert counters["causal_provenance_read"] == 2
+    assert counters["causal_sensor_read"] == 2
+    assert counters["causal_subject_pattern_read"] == 1
+    assert counters["causal_deterministic_finalization"] == 1
+
+    assert "**Main finding:**" in outcome.message
+    assert "Matter Hue Bridge Pro" in outcome.message
+
+    event_calls = [
+        (
+            str(args.get("args", {}).get("deviceId") or ""),
+            args.get("args", {}).get("attribute"),
+        )
+        for name, args in mcp.calls
+        if name == "hub_read_devices"
+        and args.get("tool") == "hub_list_device_events"
+    ]
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7840") == 3
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7901") == 1
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7744") == 1
+    assert sum(1 for device_id, _attr in event_calls if device_id == "7774") == 1
     assert sum(1 for device_id, _attr in event_calls if device_id == "7756") == 1
     assert not any(
         name == "hub_read_devices"
