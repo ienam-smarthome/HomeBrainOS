@@ -87,7 +87,7 @@ def test_reporting_source_summary_exposes_requested_timing_and_negative_controll
 
     assert message is not None
     assert (
-        "- **Motion correlation:** Hallway FP300 sensor aligned with 5/6 recent ON "
+        "- **Motion/presence:** Hallway FP300 sensor aligned with 5/6 recent ON "
         "transitions, including the requested transition; Hallway Soft Sensor "
         "aligned with 6/6 recent ON transitions, including the requested transition."
     ) in message
