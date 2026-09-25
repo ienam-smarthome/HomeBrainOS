@@ -49,6 +49,7 @@ from causal_subject_prefetch import causal_subject_seed
 from causal_native_logs import (
     causal_boundary_log_windows,
     correlate_native_log_boundaries,
+    native_log_app_execution_sufficient,
     native_log_causal_provenance_sufficient,
     native_log_open_start_sufficient,
     native_log_provenance_sufficient,
@@ -1244,13 +1245,16 @@ class UnifiedMCPAgent:
             if instruction:
                 messages.append({"role": "user", "content": instruction})
 
+        app_sufficient = native_log_app_execution_sufficient(correlations)
         closed_sufficient = native_log_provenance_sufficient(correlations)
         open_sufficient = native_log_open_start_sufficient(correlations)
+        if app_sufficient:
+            increment_active_metric("causal_native_app_execution_provenance")
         if closed_sufficient:
             increment_active_metric("causal_repeated_controller_pattern")
         if open_sufficient:
             increment_active_metric("causal_open_start_provenance")
-        return bool(closed_sufficient or open_sufficient)
+        return bool(app_sufficient or closed_sufficient or open_sufficient)
 
     async def _expand_causal_subject_evidence(
         self,
@@ -1282,19 +1286,27 @@ class UnifiedMCPAgent:
             correlations = correlate_native_log_boundaries(
                 self.evidence.receipts()
             )
+            app_sufficient = native_log_app_execution_sufficient(correlations)
             open_sufficient = native_log_open_start_sufficient(correlations)
             closed_sufficient = native_log_provenance_sufficient(correlations)
             detail = (
-                "The subject interval is still OPEN. Native logs established a "
-                "physical controller/input immediately before the subject ON "
-                "command, with no closing OFF transition observed yet. This direct "
-                "start-boundary execution timing is sufficient for the turn-on "
-                "question; do not invent end-boundary corroboration or a duration."
-                if open_sufficient and not closed_sufficient
+                "Native logs contain a direct app Action: On execution targeting "
+                "the causal subject immediately before the ON state boundary. "
+                "Treat that app execution as direct producer provenance, not mere "
+                "configuration evidence."
+                if app_sufficient
                 else (
-                    "Repeated native-log provenance established the same physical "
-                    "controller/input immediately before both the subject ON command "
-                    "and the later OFF command."
+                    "The subject interval is still OPEN. Native logs established a "
+                    "physical controller/input immediately before the subject ON "
+                    "command, with no closing OFF transition observed yet. This direct "
+                    "start-boundary execution timing is sufficient for the turn-on "
+                    "question; do not invent end-boundary corroboration or a duration."
+                    if open_sufficient and not closed_sufficient
+                    else (
+                        "Repeated native-log provenance established the same physical "
+                        "controller/input immediately before both the subject ON command "
+                        "and the later OFF command."
+                    )
                 )
             )
             messages.append({
@@ -1302,13 +1314,14 @@ class UnifiedMCPAgent:
                 "content": (
                     "HOST CAUSAL EVIDENCE LAYER COMPLETE\n"
                     + detail
-                    + " This direct execution-timing evidence outranks room "
-                    "correlation and app configuration, so do not fan out to weaker "
-                    "device/sensor/location/config discovery. Final synthesis must "
-                    "present the controller/input as the strongest initiating-control "
-                    "candidate, distinguish downstream app reactions that occur after "
-                    "the command, and retain the caveat that timing alone does not "
-                    "independently prove the configured mapping or identify a person."
+                    + " This direct execution evidence outranks room correlation "
+                    "and app configuration, so do not fan out to weaker "
+                    "device/sensor/location/config discovery. If the evidence is a "
+                    "direct app Action: On, present that app as the execution producer "
+                    "and preserve same-app Triggered:/Event: context as the bounded "
+                    "trigger chain. Otherwise present the physical controller/input as "
+                    "the strongest initiating-control candidate and retain the mapping "
+                    "and person-identification caveats."
                 ),
             })
             return True
