@@ -240,7 +240,7 @@ async def test_selected_causal_choice_resumes_zero_model_boundary_path() -> None
     assert counters.get("causal_native_log_reads", 0) == 0
 
     assert "Matter Hue Bridge Pro" in outcome.message
-    assert "reporting path into Hubitat" in outcome.message
+    assert "**Reporting path:**" in outcome.message
     assert "Hallway (💡 1/2 On)" in outcome.message
     assert "reaction to the state change" in outcome.message
     assert "triggered by the Hallway (💡 1/2 On)" not in outcome.message
