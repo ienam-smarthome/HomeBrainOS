@@ -14,6 +14,7 @@ from known_automation_topology import (
     match_known_automations,
     render_composite_sensor_summary,
     render_known_automation_conclusion,
+    render_known_automation_sensor_visibility,
     render_known_automation_summary,
 )
 from natural_datetime import normalize_iso_offset
@@ -1049,7 +1050,14 @@ def render_reporting_source_secondary_summary(
     composite_summary = render_composite_sensor_summary(known_matches)
     if composite_summary:
         lines.append(composite_summary)
-    else:
+
+    topology_visibility_summary = render_known_automation_sensor_visibility(
+        analysis.get("knownAutomationSensorVisibility")
+    )
+    if topology_visibility_summary:
+        lines.append(topology_visibility_summary)
+
+    if not composite_summary:
         shared_producers: dict[str, list[str]] = {}
         for sensor in sensors:
             label = str(sensor.get("label") or "").strip()
