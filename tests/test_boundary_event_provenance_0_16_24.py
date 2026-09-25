@@ -430,3 +430,84 @@ async def test_short_bridge_interval_keeps_authoritative_boundary_provenance() -
         name == "hub_read_diagnostics"
         for name, _arguments in mcp.calls
     )
+
+def _open_hue_switch_events() -> list[dict]:
+    triggered = [
+        {
+            "name": "Hallway (💡 Lights On)",
+            "appId": 4012,
+            "handler": "lightSwitchHandler",
+        },
+        {
+            "name": "SenseCap D1 Settings",
+            "appId": 4129,
+            "handler": "liveDeviceEventHandler",
+        },
+    ]
+    return [
+        {
+            "name": "switch",
+            "value": "on",
+            "descriptionText": "Hallway Light 1 switch is on",
+            "date": "2026-09-25T10:15:22.176+0100",
+            "isStateChange": True,
+            "type": "physical",
+            "triggered": triggered,
+            "producedBy": {"name": "Matter Hue Bridge Pro", "deviceId": 7790},
+        },
+        {
+            "name": "switch",
+            "value": "off",
+            "descriptionText": "Hallway Light 1 switch is off",
+            "date": "2026-09-25T10:03:46.072+0100",
+            "isStateChange": True,
+            "type": "physical",
+            "triggered": triggered,
+            "producedBy": {"name": "Matter Hue Bridge Pro", "deviceId": 7790},
+        },
+        {
+            "name": "switch",
+            "value": "on",
+            "descriptionText": "Hallway Light 1 switch is on",
+            "date": "2026-09-25T10:02:59.535+0100",
+            "isStateChange": True,
+            "type": "physical",
+            "triggered": triggered,
+            "producedBy": {"name": "Matter Hue Bridge Pro", "deviceId": 7790},
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_latest_open_on_boundary_wins_over_previous_completed_interval() -> None:
+    device = _device("7829", "Hallway Light 1", "Hallway")
+    mcp = _BoundaryMCP(
+        device=device,
+        transition="on",
+        switch_events=_open_hue_switch_events(),
+        command_events=[],
+    )
+    ai = _NoProvider()
+    agent = UnifiedMCPAgent(
+        mcp,
+        "key",
+        "model",
+        ai_client=ai,
+        require_sensitive_confirmation=False,
+    )
+
+    outcome = await agent.process_user_request_result(
+        "Why did Hallway Light 1 turn on?"
+    )
+
+    counters = outcome.metrics["counters"]
+    assert ai.requests == []
+    assert counters.get("model_rounds", 0) == 0
+    assert counters["causal_boundary_producer_provenance"] == 1
+    assert counters["causal_deterministic_finalization"] == 1
+
+    assert "10:15:22 AM" in outcome.message
+    assert "10:02:59 AM" not in outcome.message
+    assert "observed ON interval ended" not in outcome.message
+    assert "Matter Hue Bridge Pro" in outcome.message
+

@@ -619,6 +619,15 @@ def boundary_event_evidence(
             parsed = _parse_timestamp(interval.get(key))
             if parsed is not None:
                 boundaries.append(parsed)
+
+    # An ongoing ON interval has no closing pair in `intervals`, but its
+    # recorded start is still a real state-transition boundary. Preserve that
+    # boundary so causal provenance can match the newest ON event instead of
+    # falling back to the most recent completed interval.
+    open_start = _parse_timestamp(temporal_analysis.get("openActiveStart"))
+    if open_start is not None:
+        boundaries.append(open_start)
+
     if not boundaries:
         return []
 

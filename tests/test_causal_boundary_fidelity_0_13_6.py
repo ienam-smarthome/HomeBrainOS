@@ -18,6 +18,7 @@ from causal_timeline import build_causal_timeline_rows, render_causal_timeline  
 from evidence_ledger import build_current_turn_evidence_ledger  # noqa: E402
 from history_temporal_analysis import (  # noqa: E402
     analyze_state_intervals_in_window,
+    boundary_event_evidence,
     history_temporal_evidence_details,
 )
 from request_metrics import RequestMetrics  # noqa: E402
@@ -215,6 +216,50 @@ def test_open_active_interval_is_preserved_without_inventing_duration() -> None:
     assert ledger is not None
     assert "ongoing-window open interval" in ledger
     assert "do not infer its duration" in ledger
+
+
+def test_boundary_evidence_includes_open_active_start() -> None:
+    temporal = {
+        "intervals": [{
+            "start": "2026-09-25T10:02:59.535+0100",
+            "end": "2026-09-25T10:03:46.072+0100",
+        }],
+        "openActiveInterval": True,
+        "openActiveStart": "2026-09-25T10:15:22.176+0100",
+    }
+    events = [
+        {
+            "name": "switch",
+            "value": "on",
+            "date": "2026-09-25T10:15:22.176+0100",
+            "type": "physical",
+            "producedBy": {"label": "Matter Hue Bridge Pro", "id": "7790"},
+        },
+        {
+            "name": "switch",
+            "value": "off",
+            "date": "2026-09-25T10:03:46.072+0100",
+            "type": "physical",
+            "producedBy": {"label": "Matter Hue Bridge Pro", "id": "7790"},
+        },
+        {
+            "name": "switch",
+            "value": "on",
+            "date": "2026-09-25T10:02:59.535+0100",
+            "type": "physical",
+            "producedBy": {"label": "Matter Hue Bridge Pro", "id": "7790"},
+        },
+    ]
+
+    rows = boundary_event_evidence(events, temporal)
+
+    assert any(
+        row["name"] == "switch"
+        and row["value"] == "on"
+        and row["date"] == "2026-09-25T10:15:22.176+0100"
+        and row["boundaryDeltaSeconds"] == 0
+        for row in rows
+    )
 
 
 def test_causal_app_navigation_metric_is_supported() -> None:
