@@ -353,10 +353,12 @@ async def test_agent_finalizes_from_command_producer_without_logs_or_provider() 
     assert counters["investigative_finalization"] == 1
     assert counters.get("causal_native_log_reads", 0) == 0
 
+    assert outcome.message.startswith("**Cause:**")
     assert "Ikea Rodret (Livingroom): button 2 pushed" in outcome.message
     assert "99 ms later" in outcome.message
-    assert "The observed run ended when the device reported OFF at 8:27:23 AM" in outcome.message
-    assert "after 1 hour 30 minutes" in outcome.message
+    assert "**Run:** The observed ON run lasted 1 hour 30 minutes." in outcome.message
+    assert "**Note:**" in outcome.message
+    assert "does not identify the person" in outcome.message
     assert "01. Humidity Controller" not in outcome.message
 
     assert not any(

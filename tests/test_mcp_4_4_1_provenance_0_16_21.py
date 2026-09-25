@@ -230,10 +230,10 @@ async def test_mcp_441_structured_command_provenance_finalizes_without_logs_or_m
     assert counters["causal_deterministic_finalization"] == 1
     assert counters.get("causal_native_log_reads", 0) == 0
 
+    assert outcome.message.startswith("**Cause:**")
     assert "Ikea Rodret (Livingroom): button 2 pushed" in outcome.message
     assert "99 ms later" in outcome.message
-    assert "The observed run ended when the device reported OFF at 8:27:23 AM" in outcome.message
-    assert "after 1 hour 30 minutes" in outcome.message
+    assert "**Run:** The observed ON run lasted 1 hour 30 minutes." in outcome.message
     assert "01. Humidity Controller" not in outcome.message
 
     assert not any(

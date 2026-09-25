@@ -330,18 +330,19 @@ async def test_bridge_reporting_source_runs_bounded_secondary_correlation_zero_m
     assert counters["causal_sensor_aligned"] == 2
     assert counters["causal_deterministic_finalization"] == 1
 
+    assert "**Main finding:**" in outcome.message
     assert "Matter Hue Bridge Pro" in outcome.message
-    assert "reporting path into Hubitat" in outcome.message
-    assert "**Bounded secondary correlation**" in outcome.message
-    assert "Bedroom 1 dimmer did not align with the ON boundaries" in outcome.message
-    assert "did align with 3 OFF boundary event(s)" in outcome.message
-    assert "2 of 3 observed ON transition(s)" in outcome.message
-    assert "1.2s after" in outcome.message
-    assert "4.4s after" in outcome.message
-    assert "specific requested transition does not have such an edge" in outcome.message
-    assert "consistent with an upstream or outside-Hubitat relationship" in outcome.message
-    assert "does not prove that Bedroom 1 FP300 sensor triggered" in outcome.message
-    assert "specific external hub or automation" in outcome.message
+    assert "**Reporting path:**" in outcome.message
+    assert "**Motion/presence:**" in outcome.message
+    assert "Bedroom 1 FP300 sensor: 2/3" in outcome.message
+    assert "**Limit:**" in outcome.message
+    assert "do not prove the exact automation/action" in outcome.message
+
+    # The long forensic narrative remains in evidence/Technical Details rather
+    # than the main answer.
+    assert "**Bounded secondary correlation**" not in outcome.message
+    assert "1.2s after" not in outcome.message
+    assert "4.4s after" not in outcome.message
 
     assert not any(name == "hub_read_diagnostics" for name, _args in mcp.calls)
     event_calls = [

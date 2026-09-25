@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.35**.
+Current add-on version: **0.16.36**.
 
 ## Architecture
+
+0.16.36 makes deterministic causal answers much easier to read without weakening provenance rules. The main response now presents a compact conclusion-first summary (`Cause` or `Main finding`) followed by only the most useful status, motion/presence, shared-path, downstream-listener, recovery, and limitation bullets. Per-candidate timing deltas, repeated transition details, controller misses, and the full forensic correlation payload remain available in Technical Details/evidence instead of being repeated in the main answer. Direct command-producer answers are likewise reduced to cause, run/status, and the producer-scope note. The change is presentation-only: evidence collection, attribution thresholds, model-free finalization, and cache behavior are unchanged.
 
 0.16.35 fixes two live issues from the 0.16.34 Hallway retest. First, deterministic boundary evidence now includes `openActiveStart`, so `Why did ... turn on?` investigates the newest currently-open ON transition instead of the previous completed interval when the device is still on. Second, the Web UI uses an explicit space before the exact-device clarification because its single-line input strips newline characters. No attribution thresholds or cache-fallback policy change in this release.
 

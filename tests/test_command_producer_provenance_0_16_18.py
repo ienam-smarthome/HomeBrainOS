@@ -271,13 +271,11 @@ async def test_agent_finalizes_off_producer_without_logs_or_provider() -> None:
     assert counters["investigative_finalization"] == 1
     assert counters.get("causal_native_log_reads", 0) == 0
 
-    assert outcome.message.startswith(
-        "Hubitat records the OFF command for Dehumidifier 2 as produced by "
-        "01. Humidity Controller."
-    )
+    assert outcome.message.startswith("**Cause:**")
+    assert "01. Humidity Controller issued the OFF command for Dehumidifier 2" in outcome.message
     assert "83 ms later" in outcome.message
-    assert "observed run of 1 hour 30 minutes" in outcome.message
-    assert "began when the device reported ON at 6:57:23 AM" in outcome.message
+    assert "**Run:** This ended an ON run of 1 hour 30 minutes." in outcome.message
+    assert "**Note:**" in outcome.message
     assert "Ikea Rodret (Livingroom): button 2 pushed" not in outcome.message
 
     assert not any(
