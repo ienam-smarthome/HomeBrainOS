@@ -12,6 +12,7 @@ from typing import Any
 
 from known_automation_topology import (
     match_known_automations,
+    render_composite_sensor_summary,
     render_known_automation_conclusion,
     render_known_automation_summary,
 )
@@ -1045,29 +1046,33 @@ def render_reporting_source_secondary_summary(
                 "and reported the states to Hubitat in a different order."
             )
 
-    shared_producers: dict[str, list[str]] = {}
-    for sensor in sensors:
-        label = str(sensor.get("label") or "").strip()
-        producers = [
-            str(value).strip()
-            for value in (sensor.get("producerLabels") or [])
-            if str(value).strip()
-        ]
-        if label and len(producers) == 1:
-            shared_producers.setdefault(producers[0], []).append(label)
-    for producer, labels in shared_producers.items():
-        unique_labels = list(dict.fromkeys(labels))
-        if len(unique_labels) >= 2:
-            joined = (
-                f"{unique_labels[0]} and {unique_labels[1]}"
-                if len(unique_labels) == 2
-                else ", ".join(unique_labels)
-            )
-            lines.append(
-                f"- **Shared path:** {joined} are both reported through "
-                f"{producer}, so they are not independent confirmations."
-            )
-            break
+    composite_summary = render_composite_sensor_summary(known_matches)
+    if composite_summary:
+        lines.append(composite_summary)
+    else:
+        shared_producers: dict[str, list[str]] = {}
+        for sensor in sensors:
+            label = str(sensor.get("label") or "").strip()
+            producers = [
+                str(value).strip()
+                for value in (sensor.get("producerLabels") or [])
+                if str(value).strip()
+            ]
+            if label and len(producers) == 1:
+                shared_producers.setdefault(producers[0], []).append(label)
+        for producer, labels in shared_producers.items():
+            unique_labels = list(dict.fromkeys(labels))
+            if len(unique_labels) >= 2:
+                joined = (
+                    f"{unique_labels[0]} and {unique_labels[1]}"
+                    if len(unique_labels) == 2
+                    else ", ".join(unique_labels[:-1]) + f", and {unique_labels[-1]}"
+                )
+                lines.append(
+                    f"- **Shared path:** {joined} are both reported through "
+                    f"{producer}, so they are not independent confirmations."
+                )
+                break
 
     controllers = [
         row for row in analysis.get("controllers", [])

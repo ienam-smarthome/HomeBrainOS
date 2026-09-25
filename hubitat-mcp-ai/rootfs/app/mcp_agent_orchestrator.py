@@ -1069,6 +1069,19 @@ class UnifiedMCPAgent:
                 "causal_known_automation_match",
                 len(known_matches),
             )
+        composite_sensor_matches = sum(
+            len([
+                item
+                for item in (row.get("matchedDerivedSensors") or [])
+                if isinstance(item, dict)
+            ])
+            for row in known_matches
+        )
+        if composite_sensor_matches:
+            increment_active_metric(
+                "causal_composite_sensor_match",
+                composite_sensor_matches,
+            )
 
         self.evidence.record(
             "homebrain_causal_secondary_correlation",
@@ -1085,7 +1098,9 @@ class UnifiedMCPAgent:
                 f"controller_alignments={len(controller_rows)}, "
                 f"sensors={len(sensor_data)}, "
                 f"sensor_correlations={len(sensor_rows)}, "
-                f"level_recoveries={int(recovery.get('matchCount') or 0)}"
+                f"level_recoveries={int(recovery.get('matchCount') or 0)}, "
+                f"known_automation_matches={len(known_matches)}, "
+                f"composite_sensor_matches={composite_sensor_matches}"
             ),
             supports_live_claim=True,
             evidence_kind="deterministic_causal_secondary_correlation",

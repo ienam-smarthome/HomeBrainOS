@@ -92,6 +92,32 @@ def parse_known_automations(value: Any) -> list[dict[str, Any]]:
             for row in (item.get("triggers") or [])
             if isinstance(row, dict) and _labels(row)
         ]
+
+        raw_derived = item.get("derivedSensors")
+        if not isinstance(raw_derived, list):
+            raw_derived = item.get("derived_sensors")
+        derived_sensors: list[dict[str, Any]] = []
+        for row in raw_derived or []:
+            if not isinstance(row, dict) or not _labels(row):
+                continue
+            sources: list[dict[str, Any]] = []
+            for source in row.get("sources") or row.get("inputs") or []:
+                if isinstance(source, str):
+                    source = {"device": source}
+                if isinstance(source, dict) and _labels(source):
+                    sources.append(dict(source))
+            if not sources:
+                continue
+            normalized = dict(row)
+            source_mode = str(
+                row.get("sourceMode") or row.get("source_mode") or "combined"
+            ).strip().casefold()
+            normalized["sourceMode"] = (
+                source_mode if source_mode in {"any", "all"} else "combined"
+            )
+            normalized["sources"] = sources
+            derived_sensors.append(normalized)
+
         actions: list[dict[str, Any]] = []
         for row in item.get("actions") or []:
             if not isinstance(row, dict) or not _labels(row):
@@ -112,6 +138,7 @@ def parse_known_automations(value: Any) -> list[dict[str, Any]]:
             "platform": platform or "External platform",
             "triggerMode": trigger_mode,
             "triggers": triggers,
+            "derivedSensors": derived_sensors,
             "actions": actions,
         })
     return result
@@ -210,7 +237,49 @@ def match_known_automations(
                     "producerLabels": edge.get("producerLabels") or [],
                 })
 
-        if not matched_triggers:
+        matched_derived_sensors: list[dict[str, Any]] = []
+        for derived in automation.get("derivedSensors") or []:
+            if not isinstance(derived, dict):
+                continue
+            derived_labels = _labels(derived)
+            source_names = [
+                str(
+                    source.get("device")
+                    or source.get("label")
+                    or source.get("name")
+                    or ""
+                ).strip()
+                for source in (derived.get("sources") or [])
+                if isinstance(source, dict)
+                and str(
+                    source.get("device")
+                    or source.get("label")
+                    or source.get("name")
+                    or ""
+                ).strip()
+            ]
+            if not source_names:
+                continue
+            for edge in requested_edges:
+                if edge.get("normalizedLabel") not in derived_labels:
+                    continue
+                matched_derived_sensors.append({
+                    "derivedSensor": (
+                        derived.get("device")
+                        or derived.get("label")
+                        or derived.get("name")
+                    ),
+                    "sensorLabel": edge.get("label"),
+                    "signedDeltaSeconds": edge.get("signedDeltaSeconds"),
+                    "producerLabels": edge.get("producerLabels") or [],
+                    "kind": str(derived.get("kind") or "sensor").strip(),
+                    "sourceMode": str(
+                        derived.get("sourceMode") or "combined"
+                    ).strip(),
+                    "sourceTriggers": source_names,
+                })
+
+        if not matched_triggers and not matched_derived_sensors:
             continue
 
         trigger_mode = (
@@ -233,16 +302,22 @@ def match_known_automations(
             if required_configured - matched_configured:
                 continue
 
-        deltas = [
+        direct_deltas = [
             float(row["signedDeltaSeconds"])
             for row in matched_triggers
             if isinstance(row.get("signedDeltaSeconds"), (int, float))
         ]
-        timing_status = (
-            "timing-consistent"
-            if any(delta <= 0.05 for delta in deltas)
-            else "configured-candidate"
-        )
+        derived_deltas = [
+            float(row["signedDeltaSeconds"])
+            for row in matched_derived_sensors
+            if isinstance(row.get("signedDeltaSeconds"), (int, float))
+        ]
+        if any(delta <= 0.05 for delta in direct_deltas):
+            timing_status = "timing-consistent"
+        elif any(delta <= 0.05 for delta in derived_deltas):
+            timing_status = "derived-signal-consistent"
+        else:
+            timing_status = "configured-candidate"
         matches.append({
             "name": str(automation.get("name") or "").strip(),
             "platform": str(automation.get("platform") or "External platform").strip(),
@@ -250,6 +325,7 @@ def match_known_automations(
             "subject": analysis.get("subject"),
             "transition": transition,
             "matchedTriggers": matched_triggers,
+            "matchedDerivedSensors": matched_derived_sensors,
             "configuredTriggers": [
                 str(
                     row.get("device")
@@ -267,8 +343,15 @@ def match_known_automations(
     return sorted(
         matches,
         key=lambda item: (
-            0 if item.get("timingStatus") == "timing-consistent" else 1,
+            (
+                0
+                if item.get("timingStatus") == "timing-consistent"
+                else 1
+                if item.get("timingStatus") == "derived-signal-consistent"
+                else 2
+            ),
             -len(item.get("matchedTriggers") or []),
+            -len(item.get("matchedDerivedSensors") or []),
             str(item.get("name") or ""),
         ),
     )
@@ -303,9 +386,19 @@ def render_known_automation_summary(
         row for row in (match.get("matchedTriggers") or [])
         if isinstance(row, dict)
     ]
-    before = [
+    direct_before = [
         row
         for row in matched
+        if isinstance(row.get("signedDeltaSeconds"), (int, float))
+        and float(row["signedDeltaSeconds"]) <= 0.05
+    ]
+    derived = [
+        row for row in (match.get("matchedDerivedSensors") or [])
+        if isinstance(row, dict)
+    ]
+    derived_before = [
+        row
+        for row in derived
         if isinstance(row.get("signedDeltaSeconds"), (int, float))
         and float(row["signedDeltaSeconds"]) <= 0.05
     ]
@@ -314,9 +407,9 @@ def render_known_automation_summary(
         f"- **Known automation:** {platform} “{name}” is configured to turn "
         f"{subject} {role_word}{trigger_text}."
     )
-    if timing_status == "timing-consistent" and before:
+    if timing_status == "timing-consistent" and direct_before:
         row = min(
-            before,
+            direct_before,
             key=lambda item: abs(float(item.get("signedDeltaSeconds") or 0)),
         )
         delta = float(row.get("signedDeltaSeconds") or 0)
@@ -332,12 +425,61 @@ def render_known_automation_summary(
             "route; Hubitat cannot prove the external automation executed this run."
         )
 
+    if timing_status == "derived-signal-consistent" and derived_before:
+        return (
+            prefix
+            + " A configured composite sensor aligned with this transition, which "
+            "supports the same upstream route but does not identify which source "
+            "sensor fired; Hubitat cannot prove the external automation executed "
+            "this run."
+        )
+
     return (
         prefix
-        + " The matching Hubitat-visible trigger report arrived after the device "
-        "transition, so received event order cannot prove this run; because the "
-        "automation is upstream, it remains a concrete configured candidate."
+        + " The matching Hubitat-visible trigger/composite report arrived after "
+        "the device transition, so received event order cannot prove this run; "
+        "because the automation is upstream, it remains a concrete configured "
+        "candidate."
     )
+
+
+def render_composite_sensor_summary(
+    matches: list[dict[str, Any]] | None,
+) -> str | None:
+    """Explain configured derived sensors without counting them independently."""
+
+    rows = [row for row in (matches or []) if isinstance(row, dict)]
+    for match in rows:
+        platform = str(match.get("platform") or "External platform").strip()
+        for derived in match.get("matchedDerivedSensors") or []:
+            if not isinstance(derived, dict):
+                continue
+            sensor = str(
+                derived.get("derivedSensor")
+                or derived.get("sensorLabel")
+                or "derived sensor"
+            ).strip()
+            sources = [
+                str(value).strip()
+                for value in (derived.get("sourceTriggers") or [])
+                if str(value).strip()
+            ]
+            if not sources:
+                continue
+            kind = str(derived.get("kind") or "sensor").strip().casefold()
+            descriptor = (
+                "occupancy signal"
+                if kind in {"occupancy", "presence"}
+                else "sensor signal"
+            )
+            source_text = "/".join(dict.fromkeys(sources))
+            return (
+                f"- **Composite signal:** {sensor} is configured on {platform} as "
+                f"a derived {descriptor} from {source_text}. Its nearby report is "
+                "part of the same upstream topology, not an independent "
+                "confirmation, and it does not identify which source sensor fired."
+            )
+    return None
 
 
 def render_known_automation_conclusion(
@@ -354,6 +496,13 @@ def render_known_automation_conclusion(
             f"- **Conclusion:** {platform} “{name}” is the configured external "
             "route that matches this light and trigger timing, but Hubitat cannot "
             "prove it executed this exact transition."
+        )
+    if match.get("timingStatus") == "derived-signal-consistent":
+        return (
+            f"- **Conclusion:** {platform} “{name}” is the configured external "
+            "route consistent with this light and composite-sensor timing, but "
+            "Hubitat cannot prove it executed this exact transition or which "
+            "source sensor fired."
         )
     return (
         f"- **Conclusion:** {platform} “{name}” is a configured external route "
