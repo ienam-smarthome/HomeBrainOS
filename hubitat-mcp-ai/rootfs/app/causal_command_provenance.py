@@ -50,16 +50,27 @@ def _duration_text(start: Any, end: Any) -> str:
     if seconds < 60:
         return unit(seconds, "second")
 
-    hours, remainder = divmod(seconds, 3600)
-    minutes, trailing_seconds = divmod(remainder, 60)
-    parts: list[str] = []
-    if hours:
-        parts.append(unit(hours, "hour"))
-    if minutes:
-        parts.append(unit(minutes, "minute"))
-    if trailing_seconds:
-        parts.append(unit(trailing_seconds, "second"))
-    return " ".join(parts)
+    # Keep short causal runs exact: rounding 67 seconds to "approximately
+    # 1 minutes" loses useful evidence and also produces bad grammar.
+    if seconds < 120:
+        minutes, trailing_seconds = divmod(seconds, 60)
+        parts = [unit(minutes, "minute")]
+        if trailing_seconds:
+            parts.append(unit(trailing_seconds, "second"))
+        return " ".join(parts)
+
+    # Preserve the established compact rounded presentation for longer runs.
+    rounded_minutes = max(1, round(seconds / 60))
+    exact_minute = seconds % 60 == 0
+    if rounded_minutes < 60:
+        prefix = "" if exact_minute else "approximately "
+        return f"{prefix}{unit(rounded_minutes, 'minute')}"
+
+    hours, remainder = divmod(rounded_minutes, 60)
+    prefix = "" if exact_minute else "approximately "
+    if remainder == 0:
+        return f"{prefix}{unit(hours, 'hour')}"
+    return f"{prefix}{unit(hours, 'hour')} {unit(remainder, 'minute')}"
 
 
 def _subject_command_events(
