@@ -747,6 +747,170 @@ def render_command_producer_answer(
     )
     return "\n\n".join(paragraphs)
 
+def render_boundary_producer_summary(
+    evidence: list[dict[str, Any]],
+    *,
+    transition: str,
+) -> str | None:
+    """Render a compact user-facing boundary provenance summary."""
+
+    action = str(transition or "").strip().casefold()
+    action_upper = action.upper()
+    if action not in {"on", "off"}:
+        return None
+
+    focus = boundary_producer_transition_match(
+        correlate_boundary_producers(evidence),
+        action,
+    )
+    if not isinstance(focus, dict):
+        return None
+
+    subject = str(focus.get("subject") or "the device").strip()
+    producer = focus.get("producer") or {}
+    producer_label = str(producer.get("label") or "").strip()
+    producer_type = str(producer.get("type") or "").strip().casefold()
+    if not producer_label:
+        return None
+
+    event = focus.get("event") or {}
+    state_time = _clock_text(focus.get("stateBoundary"))
+    lines: list[str] = []
+
+    if producer_type == "app":
+        lines.append(
+            f"**Main finding:** {producer_label} produced the {action_upper} "
+            f"state event for {subject} at {state_time}."
+        )
+        lines.append(
+            "- **Provenance:** This is direct state-event metadata; no separate "
+            f"aligned command-{action} row was recorded."
+        )
+    else:
+        lines.append(
+            f"**Main finding:** Hubitat has no direct command producer for this "
+            f"{action_upper} transition. {subject} reported {action_upper} at "
+            f"{state_time} via {producer_label}."
+        )
+        lines.append(
+            f"- **Reporting path:** {producer_label} carried the event into "
+            "Hubitat; it does not identify the exact initiating action."
+        )
+
+    triggered = [
+        str(item.get("name") or "").strip()
+        for item in event.get("triggered", [])
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    ]
+    if triggered:
+        unique_triggered = list(dict.fromkeys(triggered))
+        lines.append(
+            f"- **Downstream only:** {', '.join(unique_triggered)} reacted to "
+            "the state event; they are not proven initiators."
+        )
+
+    if action == "on":
+        if focus.get("open"):
+            lines.append("- **Status:** The current ON interval is still open.")
+        else:
+            duration = _duration_text(
+                focus.get("stateBoundary"),
+                focus.get("intervalEnd"),
+            )
+            if duration:
+                lines.append(f"- **Run:** The light/device stayed ON for {duration}.")
+    else:
+        duration = _duration_text(
+            focus.get("intervalStart"),
+            focus.get("stateBoundary"),
+        )
+        if duration:
+            lines.append(f"- **Run:** This ended an ON run of {duration}.")
+
+    return "\n".join(lines)
+
+
+def render_command_producer_summary(
+    evidence: list[dict[str, Any]],
+    *,
+    transition: str = "on",
+) -> str | None:
+    """Render a compact user-facing direct command-producer summary."""
+
+    action = str(transition or "").strip().casefold()
+    if action not in {"on", "off"}:
+        action = "on"
+    boundary_role = "start" if action == "on" else "end"
+
+    matches = [
+        row
+        for row in correlate_command_producers(evidence)
+        if str(row.get("boundaryRole") or "") == boundary_role
+        and str(row.get("action") or "") == action
+        and isinstance(row.get("producer"), dict)
+    ]
+    if not matches:
+        return None
+
+    matches.sort(
+        key=lambda row: _parse_time(row.get("stateBoundary"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    focus = matches[0]
+    subject = str(focus.get("subject") or "the device").strip()
+    producer = focus.get("producer") or {}
+    producer_label = str(producer.get("label") or "").strip()
+    command = focus.get("command") or {}
+    command_time = _clock_text(command.get("date"))
+    state_time = _clock_text(focus.get("stateBoundary"))
+    delay = command.get("commandToStateMs")
+    inverted = bool(command.get("recordingOrderInverted"))
+    action_upper = action.upper()
+
+    if inverted:
+        timing = (
+            f"{subject} reported {action_upper} at {state_time}; the matching "
+            f"command from {producer_label} was recorded "
+            f"{abs(float(delay or 0)):g} ms later (recording-order inversion)."
+        )
+    else:
+        timing = (
+            f"{producer_label} issued the {action_upper} command for {subject} "
+            f"at {command_time}; the device reported {action_upper} at "
+            f"{state_time}"
+        )
+        if delay not in {None, ""}:
+            timing += f" ({abs(float(delay)):g} ms later)"
+        timing += "."
+
+    lines = [f"**Cause:** {timing}"]
+
+    if action == "on":
+        if focus.get("open"):
+            lines.append("- **Status:** The current ON interval is still open.")
+        else:
+            duration = _duration_text(
+                focus.get("stateBoundary"),
+                focus.get("intervalEnd"),
+            )
+            if duration:
+                lines.append(f"- **Run:** The observed ON run lasted {duration}.")
+    else:
+        duration = _duration_text(
+            focus.get("intervalStart"),
+            focus.get("stateBoundary"),
+        )
+        if duration:
+            lines.append(f"- **Run:** This ended an ON run of {duration}.")
+
+    lines.append(
+        "- **Note:** The Hubitat producer identifies the app/action that issued "
+        "the command, not the person who initiated it."
+    )
+    return "\n".join(lines)
+
+
 def render_command_producer_evidence(
     correlations: list[dict[str, Any]],
 ) -> str | None:
