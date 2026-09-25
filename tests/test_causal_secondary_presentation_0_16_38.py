@@ -139,3 +139,38 @@ def test_requested_sensor_event_before_subject_is_described_as_before() -> None:
     assert (
         "Hallway FP300 sensor was reported 0.1s before Hallway Light 1 changed ON"
     ) in message
+
+def test_historical_controller_alignment_does_not_hide_requested_miss() -> None:
+    requested = "2026-09-25T14:35:45.734000+01:00"
+    message = render_reporting_source_secondary_summary({
+        "subject": "Hallway Light 1",
+        "transition": "on",
+        "requestedBoundary": requested,
+        "transitionCount": 2,
+        "controllers": [
+            {
+                "label": "Hallway dimmer",
+                "attribute": "pushed",
+                "relevantAlignments": [
+                    {
+                        "boundaryRole": "start",
+                        "subjectTransition": "2026-09-25T14:10:21.102000+01:00",
+                        "controllerEvent": "2026-09-25T14:10:21.000000+01:00",
+                    }
+                ],
+                "requestedMatched": False,
+            }
+        ],
+        "sensors": [],
+    })
+
+    assert message is not None
+    assert (
+        "No matching pushed event was found for Hallway dimmer at the requested "
+        "ON transition."
+    ) in message
+    assert (
+        "Hallway dimmer (1 alignment) aligned with other recent boundaries, not "
+        "the requested transition."
+    ) in message
+
