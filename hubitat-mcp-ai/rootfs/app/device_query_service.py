@@ -532,10 +532,11 @@ class DeviceQueryService:
         """Return safe room hints from a fresh identity cache, or None to refresh.
 
         A cached structural snapshot is sufficient for controller ranking. For
-        occupancy devices we additionally require the concrete occupancy
-        attribute advertised by the capability (motion and/or presence), not
-        merely any non-empty attribute map. This prevents a battery-only child
-        row from being mistaken for a complete occupancy candidate.
+        occupancy devices we additionally require some attribute-shape metadata
+        on every room/label-associated MotionSensor/PresenceSensor candidate.
+        A non-empty shape may legitimately exclude a broad-capability bridge child
+        (for example humidity/lux only); only a completely missing shape is
+        insufficient and requires a live refresh or cached-context enrichment.
         """
 
         if not devices:
@@ -549,9 +550,7 @@ class DeviceQueryService:
                 re.sub(r"[^a-z0-9]", "", value.casefold())
                 for value in cls._capability_names(device)
             }
-            has_motion = "motionsensor" in capabilities
-            has_presence = "presencesensor" in capabilities
-            if not (has_motion or has_presence):
+            if not ({"motionsensor", "presencesensor"} & capabilities):
                 continue
 
             label = str(device.get("label") or device.get("name") or "").strip()
@@ -560,16 +559,7 @@ class DeviceQueryService:
             normalized_label = " ".join(label.casefold().split())
             if normalized_room != wanted_room and wanted_room not in normalized_label:
                 continue
-
-            attributes = {
-                cls._normalized_attribute(str(name))
-                for name in device_attributes(device).keys()
-            }
-            exposes_occupancy = (
-                (has_presence and cls._normalized_attribute("presence") in attributes)
-                or (has_motion and cls._normalized_attribute("motion") in attributes)
-            )
-            if not exposes_occupancy:
+            if not device_attributes(device):
                 return None
 
         return cls.room_event_source_hints(devices, room_value)
