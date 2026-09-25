@@ -54,6 +54,7 @@ _COUNTER_LABELS = (
     ("causal_topology_sensor_fallback", "Topology sensor fallbacks"),
     ("causal_native_log_reads", "Causal native-log reads"),
     ("causal_native_log_correlations", "Causal native-log correlations"),
+    ("causal_native_app_execution_provenance", "Native app execution provenance"),
     ("causal_repeated_controller_pattern", "Repeated controller patterns"),
     ("causal_open_start_provenance", "Open-start controller provenance"),
     ("causal_deterministic_finalization", "Deterministic causal finalizations"),
