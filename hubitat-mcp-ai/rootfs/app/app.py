@@ -99,6 +99,7 @@ def load_options() -> dict[str, Any]:
         "deterministic_reads_enabled": False,
         "causal_subject_prefetch_enabled": True,
         "causal_deterministic_final_enabled": True,
+        "causal_known_automations_json": "[{\"name\":\"Hallway Lights ON\",\"platform\":\"Aqara M3\",\"triggerMode\":\"any\",\"triggers\":[{\"device\":\"Hallway FP300\",\"aliases\":[\"Hallway FP300 sensor\"]},{\"device\":\"Hallway Aqara P1\"}],\"actions\":[{\"device\":\"Hallway Light 1\",\"transition\":\"on\"},{\"device\":\"Hallway Light 2\",\"transition\":\"on\"}]}]",
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
         "semantic_default_temperature_step": 1.0,
@@ -248,6 +249,7 @@ agent = UnifiedMCPAgent(
     causal_deterministic_final_enabled=_bool(
         OPTIONS.get("causal_deterministic_final_enabled"), True
     ),
+    known_automations=OPTIONS.get("causal_known_automations_json"),
     semantic_agent_enabled=_bool(
         OPTIONS.get("semantic_agent_enabled"), True
     ),
