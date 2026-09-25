@@ -1001,7 +1001,7 @@ def render_reporting_source_secondary_summary(
                 + "; ".join(requested_timings)
                 + "."
             )
-        lines.append(f"- **Motion correlation:** {motion_text}")
+        lines.append(f"- **Motion/presence:** {motion_text}")
 
     shared_producers: dict[str, list[str]] = {}
     for sensor in sensors:
