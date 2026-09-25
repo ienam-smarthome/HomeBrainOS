@@ -78,7 +78,7 @@ _DURATION_LABELS = (
     ("mcp_queue_wait", "MCP queue wait"),
     ("mcp_session_lock_wait", "MCP session lock wait"),
     ("mcp_shared_wait", "MCP shared-read wait"),
-    ("mcp_http", "MCP HTTP"),
+    ("mcp_http", "Aggregate MCP HTTP"),
     ("local_tool", "Local tool path"),
     ("tool_discovery", "Discovery"),
     ("verification", "Verification"),
