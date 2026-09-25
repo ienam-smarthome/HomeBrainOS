@@ -1002,6 +1002,34 @@ def render_reporting_source_secondary_summary(
             )
         lines.append(f"- **Motion/presence:** {motion_text}")
 
+        requested_sensor_rows = [
+            row for row in sensor_stats
+            if row.get("requested")
+            and isinstance(row.get("requestedDelta"), (int, float))
+        ]
+        if (
+            requested_sensor_rows
+            and all(
+                float(row["requestedDelta"]) > 0.05
+                for row in requested_sensor_rows
+            )
+        ):
+            report_word = (
+                "report was" if len(requested_sensor_rows) == 1 else "reports were"
+            )
+            edge_word = (
+                "that recorded sensor edge"
+                if len(requested_sensor_rows) == 1
+                else "those recorded sensor edges"
+            )
+            lines.append(
+                f"- **Recorded order:** The requested motion/presence {report_word} "
+                f"recorded after {subject} changed {role_word}, so {edge_word} "
+                "cannot be the Hubitat-side trigger for this transition. An "
+                "upstream system may still have detected motion/presence earlier "
+                "and reported the states to Hubitat in a different order."
+            )
+
     shared_producers: dict[str, list[str]] = {}
     for sensor in sensors:
         label = str(sensor.get("label") or "").strip()

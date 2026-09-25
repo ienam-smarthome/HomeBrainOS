@@ -161,7 +161,7 @@ def test_mcp_concurrency_metrics_are_presented() -> None:
         },
     }) == [
         {"label": "MCP concurrent peak", "value": "2"},
-        {"label": "MCP queue wait", "value": "120 ms"},
+        {"label": "Aggregate MCP queue wait", "value": "120 ms"},
         {"label": "MCP session lock wait", "value": "15 ms"},
         {"label": "Outcome", "value": "success"},
     ]
@@ -173,6 +173,16 @@ def test_mcp_http_timing_is_labeled_as_aggregate_work() -> None:
     }) == [
         {"label": "Aggregate MCP HTTP", "value": "3.2 s"},
         {"label": "Total", "value": "2.7 s"},
+        {"label": "Outcome", "value": "success"},
+    ]
+
+def test_mcp_queue_wait_timing_is_labeled_as_aggregate_work() -> None:
+    assert present_request_metrics({
+        "outcome": "success",
+        "timings_ms": {"mcp_queue_wait": 1800, "total": 1400},
+    }) == [
+        {"label": "Aggregate MCP queue wait", "value": "1.8 s"},
+        {"label": "Total", "value": "1.4 s"},
         {"label": "Outcome", "value": "success"},
     ]
 
