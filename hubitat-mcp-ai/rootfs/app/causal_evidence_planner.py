@@ -819,6 +819,233 @@ def render_reporting_source_secondary_analysis(
                 "than direct producer evidence."
             )
 
+    shared_producers: dict[str, list[str]] = {}
+    for sensor in sensors:
+        label = str(sensor.get("label") or "").strip()
+        producers = [
+            str(value).strip()
+            for value in (sensor.get("producerLabels") or [])
+            if str(value).strip()
+        ]
+        if label and len(producers) == 1:
+            shared_producers.setdefault(producers[0], []).append(label)
+    for producer, labels in shared_producers.items():
+        unique_labels = list(dict.fromkeys(labels))
+        if len(unique_labels) < 2:
+            continue
+        if len(unique_labels) == 2:
+            joined = f"{unique_labels[0]} and {unique_labels[1]}"
+        else:
+            joined = ", ".join(unique_labels[:-1]) + f", and {unique_labels[-1]}"
+        paragraphs.append(
+            f"{joined} are both reported into Hubitat through {producer}. Their "
+            "matching timing therefore should not be treated as independent "
+            "upstream confirmations. This identifies a shared reporting path, "
+            "not the automation or action that initiated the light/device change."
+        )
+
+    recovery = analysis.get("levelRecovery")
+    if isinstance(recovery, dict) and recovery.get("matchCount"):
+        count = int(recovery.get("matchCount") or 0)
+        total = int(recovery.get("transitionCount") or count)
+        high = int(recovery.get("highInitialLevelCount") or 0)
+        level_first = int(recovery.get("levelBeforeCommandCount") or 0)
+        command_first = int(recovery.get("commandBeforeLevelCount") or 0)
+        producer = str(recovery.get("producerLabel") or "").strip()
+        examples = [
+            row for row in recovery.get("matches", [])
+            if isinstance(row, dict)
+        ][:4]
+
+        example_texts: list[str] = []
+        for row in examples:
+            sequence = str(row.get("sequence") or "")
+            level_delta = float(row.get("levelDeltaSeconds") or 0)
+            command_delta = float(row.get("commandDeltaSeconds") or 0)
+            if (
+                sequence == "level-before-command"
+                and isinstance(row.get("initialLevel"), (int, float))
+            ):
+                example_texts.append(
+                    f"level {row.get('initialLevel'):g} at {level_delta:g}s, "
+                    f"recovery command at {command_delta:g}s"
+                )
+            elif (
+                sequence == "command-before-level"
+                and isinstance(row.get("resultLevel"), (int, float))
+            ):
+                example_texts.append(
+                    f"recovery command at {command_delta:g}s, resulting level "
+                    f"{row.get('resultLevel'):g} at {level_delta:g}s"
+                )
+
+        producer_text = f" from {producer}" if producer else ""
+        sequence_parts: list[str] = []
+        if level_first:
+            sequence_parts.append(
+                f"{level_first} level-first sequence(s)"
+            )
+        if command_first:
+            sequence_parts.append(
+                f"{command_first} command-first sequence(s)"
+            )
+        sequence_text = (
+            "; " + ", ".join(sequence_parts)
+            if sequence_parts
+            else ""
+        )
+        paragraphs.append(
+            f"Downstream level-recovery pattern: {count} of {total} observed ON "
+            f"transition(s) had a setLevel command{producer_text} within 5 seconds "
+            f"and a nearby level event{sequence_text}; {high} began at about "
+            "level 100. "
+            + (
+                f"Examples: {', '.join(example_texts)}. "
+                if example_texts
+                else ""
+            )
+            + "Because those setLevel commands occur after the ON boundary, they "
+            "are evidence of recovery/adjustment after the light was already on, "
+            "not evidence that the app initiated the ON."
+        )
+        if recovery.get("requestedMatched"):
+            paragraphs.append(
+                "The specific requested ON transition also shows this downstream "
+                "level-recovery pattern."
+            )
+
+    if not paragraphs:
+        return None
+    return "\n\n".join(paragraphs)
+
+def render_reporting_source_secondary_summary(
+    analysis: dict[str, Any],
+) -> str | None:
+    """Render a compact user-facing summary of bounded secondary evidence."""
+
+    if not isinstance(analysis, dict):
+        return None
+    transition = str(analysis.get("transition") or "").strip().casefold()
+    role_word = "ON" if transition == "on" else "OFF" if transition == "off" else ""
+    if not role_word:
+        return None
+
+    lines: list[str] = []
+    transition_count = int(analysis.get("transitionCount") or 0)
+    subject = str(analysis.get("subject") or "the device").strip()
+    requested_time = _timestamp(analysis.get("requestedBoundary"))
+    known_matches = [
+        row for row in (analysis.get("knownAutomationMatches") or [])
+        if isinstance(row, dict)
+    ]
+
+    sensors = [
+        row for row in analysis.get("sensors", [])
+        if isinstance(row, dict)
+    ]
+    if not sensors and isinstance(analysis.get("sensor"), dict):
+        sensors = [analysis["sensor"]]
+
+    sensor_stats: list[dict[str, Any]] = []
+    for sensor in sensors:
+        label = str(sensor.get("label") or "").strip()
+        relevant = [
+            row for row in sensor.get("relevantCorrelations", [])
+            if isinstance(row, dict)
+        ]
+        if not label or not relevant:
+            continue
+
+        requested_row: dict[str, Any] | None = None
+        if requested_time is not None:
+            for row in relevant:
+                row_time = _timestamp(row.get("subjectTransition"))
+                if (
+                    row_time is not None
+                    and abs((row_time - requested_time).total_seconds()) <= 0.25
+                ):
+                    requested_row = row
+                    break
+
+        requested_delta: float | None = None
+        if isinstance(requested_row, dict):
+            try:
+                requested_delta = float(requested_row.get("signedDeltaSeconds"))
+            except (TypeError, ValueError):
+                requested_delta = None
+
+        sensor_stats.append({
+            "label": label,
+            "count": len(relevant),
+            "total": transition_count or len(relevant),
+            "requested": bool(sensor.get("requestedMatched")),
+            "requestedDelta": requested_delta,
+        })
+
+    if sensor_stats:
+        parts = [
+            f"{row['label']}: {row['count']}/{row['total']}"
+            + (" including requested" if row["requested"] else "")
+            for row in sensor_stats
+        ]
+        motion_text = (
+            f"{'; '.join(parts)} recent {role_word} transition correlations."
+        )
+
+        requested_timings: list[str] = []
+        for row in sensor_stats:
+            delta = row.get("requestedDelta")
+            if not isinstance(delta, (int, float)):
+                continue
+            if abs(float(delta)) < 0.05:
+                relation = "at effectively the same time as"
+                delta_text = ""
+            elif float(delta) > 0:
+                relation = "after"
+                delta_text = f"{abs(float(delta)):.2f}".rstrip("0").rstrip(".") + "s "
+            else:
+                relation = "before"
+                delta_text = f"{abs(float(delta)):.2f}".rstrip("0").rstrip(".") + "s "
+            requested_timings.append(
+                f"{row['label']} was reported {delta_text}{relation} "
+                f"{subject} changed {role_word}"
+            )
+        if requested_timings:
+            motion_text += (
+                " For the requested transition, "
+                + "; ".join(requested_timings)
+                + "."
+            )
+        lines.append(f"- **Motion/presence:** {motion_text}")
+
+        requested_sensor_rows = [
+            row for row in sensor_stats
+            if row.get("requested")
+            and isinstance(row.get("requestedDelta"), (int, float))
+        ]
+        if (
+            requested_sensor_rows
+            and all(
+                float(row["requestedDelta"]) > 0.05
+                for row in requested_sensor_rows
+            )
+        ):
+            report_word = (
+                "report was" if len(requested_sensor_rows) == 1 else "reports were"
+            )
+            edge_word = (
+                "that recorded sensor edge"
+                if len(requested_sensor_rows) == 1
+                else "those recorded sensor edges"
+            )
+            lines.append(
+                f"- **Recorded order:** The requested motion/presence {report_word} "
+                f"recorded after {subject} changed {role_word}, so {edge_word} "
+                "cannot be the Hubitat-side trigger for this transition. An "
+                "upstream system may still have detected motion/presence earlier "
+                "and reported the states to Hubitat in a different order."
+            )
+
     composite_summary = render_composite_sensor_summary(known_matches)
     if composite_summary:
         lines.append(composite_summary)
@@ -839,7 +1066,7 @@ def render_reporting_source_secondary_analysis(
                 joined = (
                     f"{unique_labels[0]} and {unique_labels[1]}"
                     if len(unique_labels) == 2
-                    else ", ".join(unique_labels)
+                    else ", ".join(unique_labels[:-1]) + f", and {unique_labels[-1]}"
                 )
                 lines.append(
                     f"- **Shared path:** {joined} are both reported through "
