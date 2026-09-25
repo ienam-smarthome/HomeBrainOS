@@ -25,7 +25,6 @@ from causal_evidence_planner import (
     controller_history_arguments,
     controller_history_candidates,
     render_controller_alignment_instruction,
-    render_reporting_source_secondary_evidence,
     render_reporting_source_secondary_summary_evidence,
     render_sensor_correlation_instruction,
     sensor_transition_correlations,
@@ -41,9 +40,7 @@ from causal_command_provenance import (
     command_producer_transition_sufficient,
     correlate_boundary_producers,
     correlate_command_producers,
-    render_boundary_producer_answer,
     render_boundary_producer_summary,
-    render_command_producer_answer,
     render_command_producer_summary,
     render_command_producer_evidence,
 )
