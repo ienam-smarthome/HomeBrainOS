@@ -484,6 +484,46 @@ class DeviceQueryService:
         }
 
     @classmethod
+    def enrich_identity_attribute_shape(
+        cls,
+        identities: list[dict[str, Any]],
+        live_devices: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Merge only cached attribute shape into fresher structural identities.
+
+        Device ID is the only join key. The identity row remains authoritative
+        for label, room, capabilities, and commands; cached live-context values
+        merely contribute attribute names so causal candidate planning can tell
+        whether a concrete occupancy child really exposes motion/presence.
+        """
+
+        live_by_id = {
+            str(item.get("id") or item.get("deviceId")): item
+            for item in live_devices
+            if isinstance(item, dict)
+            and (item.get("id") or item.get("deviceId"))
+        }
+        enriched: list[dict[str, Any]] = []
+        for identity in identities:
+            if not isinstance(identity, dict):
+                continue
+            row = dict(identity)
+            device_id = str(
+                identity.get("id") or identity.get("deviceId") or ""
+            ).strip()
+            live = live_by_id.get(device_id)
+            if isinstance(live, dict):
+                live_attributes = device_attributes(live)
+                if live_attributes:
+                    identity_attributes = device_attributes(identity)
+                    row["attributes"] = {
+                        **live_attributes,
+                        **identity_attributes,
+                    }
+            enriched.append(row)
+        return enriched
+
+    @classmethod
     def cached_room_event_source_hints(
         cls,
         devices: list[dict[str, Any]],
@@ -492,11 +532,10 @@ class DeviceQueryService:
         """Return safe room hints from a fresh identity cache, or None to refresh.
 
         A cached structural snapshot is sufficient for controller ranking. For
-        occupancy devices we additionally require some attribute-shape metadata
-        on every room/label-associated MotionSensor/PresenceSensor candidate.
-        If a candidate advertises occupancy capability but the cached row carries
-        no attributes at all, fall back to the live room filter rather than risk
-        dropping a real trigger source.
+        occupancy devices we additionally require the concrete occupancy
+        attribute advertised by the capability (motion and/or presence), not
+        merely any non-empty attribute map. This prevents a battery-only child
+        row from being mistaken for a complete occupancy candidate.
         """
 
         if not devices:
@@ -510,7 +549,9 @@ class DeviceQueryService:
                 re.sub(r"[^a-z0-9]", "", value.casefold())
                 for value in cls._capability_names(device)
             }
-            if not ({"motionsensor", "presencesensor"} & capabilities):
+            has_motion = "motionsensor" in capabilities
+            has_presence = "presencesensor" in capabilities
+            if not (has_motion or has_presence):
                 continue
 
             label = str(device.get("label") or device.get("name") or "").strip()
@@ -519,7 +560,16 @@ class DeviceQueryService:
             normalized_label = " ".join(label.casefold().split())
             if normalized_room != wanted_room and wanted_room not in normalized_label:
                 continue
-            if not device_attributes(device):
+
+            attributes = {
+                cls._normalized_attribute(str(name))
+                for name in device_attributes(device).keys()
+            }
+            exposes_occupancy = (
+                (has_presence and cls._normalized_attribute("presence") in attributes)
+                or (has_motion and cls._normalized_attribute("motion") in attributes)
+            )
+            if not exposes_occupancy:
                 return None
 
         return cls.room_event_source_hints(devices, room_value)
