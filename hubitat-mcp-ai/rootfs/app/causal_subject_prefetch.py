@@ -159,8 +159,20 @@ def _names(device: dict[str, Any]) -> list[str]:
     result: list[str] = []
     for field in _NAME_FIELDS:
         value = str(device.get(field) or "").strip()
-        if value and value not in result:
-            result.append(value)
+        if not value:
+            continue
+        aliases = [value]
+        # Hubitat deployment labels often keep a transport/source qualifier in a
+        # trailing parenthetical, for example "Microwave (MQTT)". Users commonly
+        # ask for the human device name ("Microwave"). Treat only that trailing
+        # parenthetical as a deterministic alias; collisions remain fail-closed
+        # because _best_prompt_match still requires a unique best identity.
+        base = re.sub(r"\s*\([^()]{1,48}\)\s*$", "", value).strip()
+        if base and base != value:
+            aliases.append(base)
+        for alias in aliases:
+            if alias not in result:
+                result.append(alias)
     return result
 
 
@@ -311,6 +323,48 @@ def _best_prompt_match(
     return best_device, matched, best_score
 
 
+def causal_subject_history_arguments(
+    prompt: str,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Enrich a resolved subject switch-history call with command provenance.
+
+    This is the model-routed safety net for causal turns whose deterministic
+    identity prefetch could not resolve the subject before the provider round.
+    It only applies when the prompt explicitly asks why one named switch subject
+    turned ON/OFF and the history call names that same subject (allowing only a
+    trailing parenthetical transport/source qualifier such as "(MQTT)").
+    """
+
+    normalized = dict(arguments)
+    transition = switch_transition_from_prompt(prompt)
+    subject = causal_switch_subject_phrase(prompt)
+    if transition not in {"on", "off"} or not subject:
+        return normalized
+
+    requested = str(normalized.get("name") or "").strip()
+    attribute = str(normalized.get("attribute") or "").strip().casefold()
+    if not requested or attribute not in {"", "switch"}:
+        return normalized
+
+    subject_key = "".join(_tokens(subject))
+    requested_key = "".join(_tokens(requested))
+    requested_base = re.sub(
+        r"\s*\([^()]{1,48}\)\s*$",
+        "",
+        requested,
+    ).strip()
+    requested_base_key = "".join(_tokens(requested_base))
+    if not subject_key or subject_key not in {requested_key, requested_base_key}:
+        return normalized
+
+    normalized["attribute"] = "switch"
+    normalized["_include_command_provenance"] = True
+    normalized["_causal_transition"] = transition
+    normalized["_causal_correlation_history"] = True
+    return normalized
+
+
 def causal_subject_seed(
     prompt: str,
     identities: list[dict[str, Any]],
@@ -348,6 +402,7 @@ def causal_subject_seed(
 
 __all__ = [
     "CausalSubjectSeed",
+    "causal_subject_history_arguments",
     "causal_subject_seed",
     "causal_switch_subject_phrase",
     "switch_transition_from_prompt",
