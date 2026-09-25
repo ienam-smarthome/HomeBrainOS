@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.34**.
+Current add-on version: **0.16.35**.
 
 ## Architecture
+
+0.16.35 fixes two live issues from the 0.16.34 Hallway retest. First, deterministic boundary evidence now includes `openActiveStart`, so `Why did ... turn on?` investigates the newest currently-open ON transition instead of the previous completed interval when the device is still on. Second, the Web UI uses an explicit space before the exact-device clarification because its single-line input strips newline characters. No attribution thresholds or cache-fallback policy change in this release.
 
 0.16.34 fixes Web UI device-choice intent preservation. The choice helper no longer treats any occurrence of `turn on`, `turn off`, or `toggle` as a control command. It only compacts clearly direct control requests (including polite `please` / `can you` forms); causal/history questions such as `Why did hallway lights turn on?` retain the original question and append an exact-device clarification when `Hallway Light 1` is selected. This keeps the visible question, conversation history, and backend request aligned with the user's original intent while preserving genuine control clarifications.
 
