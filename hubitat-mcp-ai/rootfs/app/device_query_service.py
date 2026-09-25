@@ -35,6 +35,8 @@ from request_metrics import active_request_identity, increment_active_metric
 
 logger = logging.getLogger("HomeBrainOS.DeviceQuery")
 
+_KNOWN_ATTRIBUTE_SHAPE_FIELD = "_homebrain_attribute_shape_known"
+
 DEVICE_FILTER_TOOL = "homebrain_filter_devices"
 DEVICE_QUERY_TOOL = "homebrain_query_devices"
 DEVICE_RESOLVE_TOOL = "homebrain_resolve_device"
@@ -513,6 +515,19 @@ class DeviceQueryService:
             ).strip()
             live = live_by_id.get(device_id)
             if isinstance(live, dict):
+                # A complete hubitat://context row may explicitly carry an empty
+                # state container. That is still authoritative *shape*: it proves
+                # this concrete child currently exposes none of the occupancy
+                # attributes HomeBrain is looking for. Keep that distinct from a
+                # detailed identity row where the state container is absent and
+                # the attribute shape is genuinely unknown.
+                shape_known = any(
+                    key in live and isinstance(live.get(key), (dict, list))
+                    for key in ("attributes", "states", "currentStates")
+                )
+                if shape_known:
+                    row[_KNOWN_ATTRIBUTE_SHAPE_FIELD] = True
+
                 live_attributes = device_attributes(live)
                 if live_attributes:
                     identity_attributes = device_attributes(identity)
@@ -535,8 +550,9 @@ class DeviceQueryService:
         occupancy devices we additionally require some attribute-shape metadata
         on every room/label-associated MotionSensor/PresenceSensor candidate.
         A non-empty shape may legitimately exclude a broad-capability bridge child
-        (for example humidity/lux only); only a completely missing shape is
-        insufficient and requires a live refresh or cached-context enrichment.
+        (for example humidity/lux only). A complete cached live-context row may
+        also explicitly prove an empty attribute shape; only genuinely unknown
+        shape requires a live refresh or cached-context enrichment.
         """
 
         if not devices:
@@ -559,7 +575,10 @@ class DeviceQueryService:
             normalized_label = " ".join(label.casefold().split())
             if normalized_room != wanted_room and wanted_room not in normalized_label:
                 continue
-            if not device_attributes(device):
+            if (
+                not device_attributes(device)
+                and device.get(_KNOWN_ATTRIBUTE_SHAPE_FIELD) is not True
+            ):
                 return None
 
         return cls.room_event_source_hints(devices, room_value)

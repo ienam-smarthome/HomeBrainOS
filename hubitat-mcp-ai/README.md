@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.40**.
+Current add-on version: **0.16.41**.
 
 ## Architecture
+
+0.16.41 fixes the live warm-cache miss exposed by repeated Hallway causal tests. A complete cached `hubitat://context` row can explicitly contain an empty attribute-state map for a broad-capability bridge child. HomeBrain now distinguishes that known-empty shape from genuinely missing/unknown structural metadata, so such children can be safely excluded from occupancy candidates without forcing another whole-home context refresh. Exact-ID matching, identity-TTL/generation checks, live per-device histories, and the safe fallback for truly unknown shape remain unchanged.
 
 0.16.40 reduces redundant reporting-source candidate discovery on warm caches without weakening live provenance. If the freshest structural identity snapshot is complete but lacks occupancy attribute shape, HomeBrain can now borrow only attribute names from a still identity-TTL-fresh cached live-context snapshot by exact device ID. The newer identity rows remain authoritative for IDs, labels, rooms, capabilities, and commands, and all controller, sensor, subject, and command event histories are still read live. If cached context is absent, stale, invalidated, or still insufficient, the existing whole-home live room-filter fallback remains unchanged. Technical metrics expose `causal_cached_context_shape_plan` when this recovery path is used.
 
