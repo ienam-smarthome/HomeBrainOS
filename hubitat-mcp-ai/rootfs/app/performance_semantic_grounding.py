@@ -212,6 +212,8 @@ def _localize_analysis_text(text: str) -> str:
             continue
         localized = _localize_mechanism_sentence(sentence)
         localized = _localize_outcome_sentence(localized)
+        if _unsafe_recommendation(localized):
+            localized = _configuration_guidance(localized)
         pieces[index] = localized
     return "".join(pieces)
 
