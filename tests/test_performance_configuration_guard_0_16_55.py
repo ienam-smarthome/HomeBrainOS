@@ -33,13 +33,13 @@ def test_live_01654_guard_preserves_distinct_recommendation_labels() -> None:
     corrected, changed = guard_performance_log_causality(draft, EVIDENCE)
 
     assert changed is True
-    assert "**Dampen Kitchen Sensor:**" in corrected
-    assert "**Adjust Energy Reporting:**" in corrected
+    assert "**Dampen Kitchen Sensor**:" in corrected
+    assert "**Adjust Energy Reporting**:" in corrected
     assert "Inspect the cited sensor configuration first." in corrected
     assert "Inspect the cited integration/device configuration first." in corrected
     assert "every 1–5 minutes" not in corrected
-    assert corrected.count("**Dampen Kitchen Sensor:**") == 1
-    assert corrected.count("**Adjust Energy Reporting:**") == 1
+    assert corrected.count("**Dampen Kitchen Sensor**:") == 1
+    assert corrected.count("**Adjust Energy Reporting**:") == 1
     assert len({line for line in corrected.splitlines() if line.startswith("*")}) == 2
 
 
@@ -51,6 +51,6 @@ def test_automation_replacement_keeps_original_recommendation_label() -> None:
     corrected, changed = guard_performance_log_causality(draft, EVIDENCE)
 
     assert changed is True
-    assert "**Fix the TV Power Rule:**" in corrected
+    assert "**Fix the TV Power Rule**:" in corrected
     assert "Inspect the cited automation configuration first." in corrected
     assert "2 minutes" not in corrected
