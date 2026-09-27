@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.47**.
+Current add-on version: **0.16.48**.
 
 ## Architecture
+
+0.16.48 hardens performance/optimisation reasoning and advisory routing. Hubitat performance statistics are treated as measured findings, recent logs as observations, and unproven explanations as hypotheses. A short log window is no longer allowed to explain multi-hour performance totals without direct linking evidence; high-cost components are investigated locally first, scheduler counts must be read before being quoted, and unrelated chatter is kept as secondary observation. Broad automation `improve`/`review` requests now remain in the reasoning path while explicit status/list and focused existing-automation selection requests retain the deterministic audit path.
 
 0.16.47 makes subject command-producer history the universal first provenance check for explicit ON/OFF causal questions. Trailing transport/source qualifiers such as `(MQTT)` are treated as fail-closed deterministic aliases, so a request for `Microwave` can resolve uniquely to `Microwave (MQTT)` without a model round. If deterministic prefetch still cannot resolve the target, the first matching model-resolved subject history call is host-enriched with the same bounded `command-on`/`command-off` provenance read. An aligned Hubitat command producer now finalizes before native logs, room correlation, app navigation, or location evidence.
 

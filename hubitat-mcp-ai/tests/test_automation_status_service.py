@@ -41,6 +41,23 @@ def test_tool_only_response_has_no_rules():
     assert AutomationStatusService._items_from_result(result, item_type="rule", source="hub_read_rules") == []
 
 
+def test_broad_automation_improvement_request_uses_reasoning_agent():
+    assert not AutomationStatusService.matches_request("What improvements can I make to my automations?")
+    assert not AutomationStatusService.matches_request("Review and improve my automations")
+
+
+def test_explicit_automation_status_request_keeps_deterministic_route():
+    assert AutomationStatusService.matches_request("Show disabled automations")
+    assert AutomationStatusService.matches_request("What is the status of my rules?")
+
+
+def test_explicit_new_automation_ideas_keep_creative_route():
+    prompt = "Recommend useful automations for my home"
+    assert AutomationStatusService.matches_request(prompt)
+    assert AutomationStatusService.is_advisory_request(prompt)
+    assert AutomationStatusService.wants_new_automation_ideas(prompt)
+
+
 @pytest.mark.asyncio
 async def test_snapshot_does_not_fabricate_rules():
     service = AutomationStatusService(FakeMCPClient({

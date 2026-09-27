@@ -16,14 +16,11 @@ _ADVISORY_WORDS = (
     "suggest", "suggestion", "suggestions",
     "advice", "improve", "review", "clean up", "cleanup", "audit",
 )
-# Distinguishes "recommend/suggest which of my EXISTING automations need
-# attention" (this service's own deterministic gap-analysis capability)
-# from "recommend/suggest NEW automation ideas for my home" (a genuinely
-# creative request that needs a model to synthesize across the whole
-# device inventory -- see automation_ideas_service.py). Both share the
-# same advisory vocabulary above, so a second, narrower signal is needed
-# to route the latter to the model instead of the plain gap-analysis
-# message.
+# Distinguishes genuinely creative new-automation requests from status reads.
+# Broad advisory wording such as "improve my automations" is intentionally NOT
+# enough to select the deterministic status shortcut: those requests need the
+# reasoning agent, which can inspect the user's actual objective and supporting
+# diagnostics instead of returning a broken/disabled inventory dump.
 _NEW_IDEA_SIGNAL = (
     "for my home", "for my house", "should i", "could i",
     "new automation", "new automations", "automation ideas",
@@ -33,24 +30,8 @@ _EXISTING_AUTOMATION_WORDS = (
     "broken", "existing", "current", "my automations", "my rules",
     "review", "clean up", "cleanup", "audit", "fix",
 )
-# Capabilities where an unmonitored device is a meaningful safety gap --
-# deliberately narrow and high-signal, not every capability a device has.
 _SAFETY_CAPABILITIES = ("WaterSensor", "SmokeDetector", "CarbonMonoxideDetector")
 
-# A broader, still-bounded set of capabilities where an automation is
-# commonly worth having -- not just safety-critical. Live test: "recommend
-# useful automations for my home" only ever found something to say when a
-# safety-capability device happened to be uncovered; when it wasn't (as on
-# this hub), the response fell back to a plain broken/disabled status dump
-# with an honest "I can't invent new ideas" caveat -- which is truthful but
-# not actually useful in response to "recommend automations". This mapping
-# extends the same grounded, name-match gap analysis (never invents a
-# device or automation, only cross-references real retrieved data) to a
-# few more device kinds where a specific, well-understood automation is
-# genuinely common, so a real, concrete suggestion is possible far more
-# often -- while still declining to invent creative ideas that aren't
-# reducible to "this device has capability X and nothing named for it
-# uses it".
 _COMMON_AUTOMATION_SUGGESTIONS: dict[str, str] = {
     "WaterSensor": "a water leak alert",
     "SmokeDetector": "a smoke alert",
@@ -73,10 +54,6 @@ class AutomationStatusOutcome:
     attention_count: int = 0
     conflict_count: int = 0
     route: str = "automation-status"
-    # Populated only when advisory=True (same gate as the extra
-    # hub_read_devices call below) -- exposed so a caller can reuse this
-    # already-fetched, live device data for a creative-suggestion follow-up
-    # without an extra hub round-trip.
     devices: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -88,41 +65,40 @@ class AutomationStatusService:
 
     @staticmethod
     def matches_request(prompt: str) -> bool:
+        """Route only explicit status/listing or explicit new-idea requests here.
+
+        The previous matcher treated any automation request containing broad
+        advisory words such as "improve", "recommend", or "review" as a status
+        request. That caused follow-up optimisation questions to bypass the
+        reasoning agent and return a deterministic broken/disabled inventory.
+        Keep the shortcut narrow: literal status/list queries stay deterministic;
+        explicit new-idea requests can use the creative advisory path; everything
+        else is left to the unified agent.
+        """
+
         value = " ".join(str(prompt).casefold().split())
         if any(word in value for word in ("enable ", "disable ", "pause ", "resume ")):
             return False
         subject = any(word in value for word in ("automation", "automations", "rule", "rules", "apps"))
-        read = any(word in value for word in ("list", "show", "which", "status", "active", "disabled", "paused", "broken"))
-        advisory = any(word in value for word in _ADVISORY_WORDS)
-        return subject and (read or advisory)
+        if not subject:
+            return False
+        explicit_status = any(
+            word in value
+            for word in ("list", "show", "which", "status", "active", "disabled", "paused", "broken")
+        )
+        explicit_new_ideas = (
+            any(word in value for word in _ADVISORY_WORDS)
+            and any(signal in value for signal in _NEW_IDEA_SIGNAL)
+        )
+        return explicit_status or explicit_new_ideas
 
     @staticmethod
     def is_advisory_request(prompt: str) -> bool:
-        """True when the request wants feedback on existing automations
-        ("recommend", "review", "clean up", ...) rather than a literal
-        status listing. Only meaningful when matches_request() is already
-        True; a request can match on `read` words alone with no advisory
-        words present, in which case this is False and the literal listing
-        applies as before.
-        """
-
         value = " ".join(str(prompt).casefold().split())
         return any(word in value for word in _ADVISORY_WORDS)
 
     @staticmethod
     def wants_new_automation_ideas(prompt: str) -> bool:
-        """True for a genuinely creative "suggest new automations" request
-        rather than a request to review what already exists.
-
-        Only meaningful when `is_advisory_request()` is already True.
-        Deliberately conservative: requires an explicit new-idea signal
-        ("for my home", "should I", "new automation", ...) AND the absence
-        of any existing-automation signal ("broken", "review", "my
-        automations", ...), so ambiguous phrasing falls back to the safe,
-        deterministic gap-analysis message rather than always trying the
-        model.
-        """
-
         value = " ".join(str(prompt).casefold().split())
         wants_new = any(signal in value for signal in _NEW_IDEA_SIGNAL)
         mentions_existing = any(
@@ -200,8 +176,6 @@ class AutomationStatusService:
         asserted = [status for status in _STATUS_PRECEDENCE if signals.get(status)]
         if len(asserted) < 2:
             return []
-        # Broken+paused is meaningful precedence, but it is still conflicting source
-        # evidence and should be visible to diagnostics/API consumers.
         return asserted
 
     @classmethod
@@ -226,8 +200,6 @@ class AutomationStatusService:
         item: dict[str, Any],
         signals: dict[str, bool],
     ) -> tuple[dict[str, Any], str | None]:
-        """Keep bounded source evidence so diagnostics can explain a status."""
-
         evidence: dict[str, Any] = {}
         for key in (
             "broken",
@@ -389,19 +361,6 @@ class AutomationStatusService:
         automation_items: list[dict[str, Any]],
         capabilities: "Iterable[str]",
     ) -> list[tuple[str, list[str]]]:
-        """Devices with one of `capabilities` but no automation whose name
-        references the device's label.
-
-        This is a name-match heuristic against the same automation names
-        already retrieved for the status listing -- not a certainty (an
-        automation could reference a device without naming it, or name-match
-        something unrelated), but a genuinely useful, fully grounded
-        starting point: every device and every automation name involved is
-        real, retrieved data, nothing is invented. Shared by both the
-        narrow safety-only view and the broader common-automation view
-        below -- only the capability set differs.
-        """
-
         automation_text = " | ".join(
             str(item.get("display_name") or item.get("name") or "").casefold()
             for item in automation_items
@@ -461,10 +420,6 @@ class AutomationStatusService:
             f"{counts['active']} active, {len(disabled)} disabled, "
             f"{len(broken)} broken."
         ]
-        # Genuine new-automation suggestions lead the response -- this is
-        # the direct answer to "recommend automations", so it must not be
-        # buried after a diagnostic dump of existing app/rule health that
-        # wasn't actually what was asked for.
         found_suggestions = False
         if devices:
             uncovered = cls._uncovered_common_automation_devices(devices, items)
