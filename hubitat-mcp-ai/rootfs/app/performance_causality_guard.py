@@ -130,7 +130,9 @@ def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
 
     This is intentionally narrow. It only activates when one app prefix exposes an
     explicit `Triggered: ... reported >=/<= N` line and at least two matching
-    `Event:`/`Wait Event:` values, all on the same qualifying side of N.
+    top-level `Event:`/`Wait Event:` values, all on the same qualifying side of N.
+    Rule action descriptions such as `Action: Wait for event ... 0:03:00` are not
+    event-value rows and must never contribute their trailing timer fields.
     """
 
     thresholds: dict[str, tuple[str, float]] = {}
@@ -149,7 +151,7 @@ def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
         if triggered:
             thresholds[prefix] = (triggered.group(1), float(triggered.group(2)))
         event_value = re.search(
-            r"(?:^|\b)(?:Wait\s+)?Event:.*?(-?\d+(?:\.\d+)?)\s*$",
+            r"^(?:Wait\s+)?Event:.*?(-?\d+(?:\.\d+)?)\s*$",
             body,
             re.IGNORECASE,
         )
