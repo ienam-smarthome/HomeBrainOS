@@ -60,8 +60,9 @@ def test_live_01653_exact_configuration_edits_are_blocked_without_config_read() 
     assert "wider **hysteresis gap**" not in corrected
     assert "increase the \"blind time\"" not in corrected
     assert "increase the reporting interval" not in corrected
-    assert "Inspect the cited automation configuration" in corrected
-    assert corrected.count("Inspect the cited component configuration") == 2
+    assert "Inspect the cited automation configuration first" in corrected
+    assert "Inspect the cited sensor configuration first" in corrected
+    assert "Inspect the cited integration/device configuration first" in corrected
 
 
 def test_configuration_read_allows_specific_configuration_recommendations() -> None:
