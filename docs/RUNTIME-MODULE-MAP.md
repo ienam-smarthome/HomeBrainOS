@@ -60,6 +60,7 @@ The repository drift test compares this table directly with the live directory. 
 | `location_correlation_guard.py` | Corrects categorical final no-correlation claims when current-turn location evidence contains a tightly adjacent subject transition, while preserving correlation-versus-causation. |
 | `location_event_queries.py` | Parses and presents bounded hub location-event (mode change) follow-ups. |
 | `location_privacy.py` | Redacts precise-location device attributes (GPS, address, map tiles, journey logs) from provider-bound tool results. |
+| `log_evidence_compactor.py` | Keeps log evidence receipts bounded while preserving compact full-result Rule Machine threshold samples for final causality validation. |
 | `mcp_agent_orchestrator.py` | Coordinates the native tool-calling agent loop. |
 | `mcp_client.py` | Implements Hubitat MCP JSON-RPC transport and tool access. |
 | `mcp_retry_metrics.py` | Records actual retry attempts begun at the MCP transport boundary. |

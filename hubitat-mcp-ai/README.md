@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.51**.
+Current add-on version: **0.16.52**.
 
 ## Architecture
+
+0.16.52 closes the remaining large-log performance evidence gap exposed by the 0.16.51 live retest. The provider may inspect up to 100 recent log rows while technical evidence deliberately retains only a small readable excerpt. HomeBrain now scans the complete log result once and preserves only compact structured Rule Machine threshold samples alongside the normal first-20-row excerpt, so final causality validation can audit the same threshold evidence the model used without expanding the receipt. Structured full-result samples outrank the excerpt when they disagree. The performance guard also keeps `likely hypothesis for the high busy percentage` / `hidden overload source` style language explicitly hypothetical without direct linking evidence, and blocks broader ungrounded prescriptions such as `needs a debounce` or a `larger gap between trigger actions` until the actual rule/app configuration has been read.
 
 0.16.51 fixes one-sided Rule Machine threshold analysis in performance diagnostics. The event-value parser now accepts only log bodies that start with `Event:` or `Wait Event:`, so an `Action: Wait for event ... stays that way for: 0:03:00` line cannot contribute its trailing timer field as a fake `0` power reading. Samples such as 76-86 W against a `>= 65 W` trigger therefore remain classified as repeated qualifying reports rather than threshold fluctuation, allowing the shared final-answer/API guard to remove unsupported `fluctuating slightly` wording.
 
