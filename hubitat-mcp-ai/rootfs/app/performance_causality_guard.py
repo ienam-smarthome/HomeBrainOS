@@ -269,7 +269,27 @@ def _configuration_replacement(line: str) -> str:
         prefix = "* " if line.lstrip().startswith("*") else ""
 
     folded = line.casefold()
-    if any(
+    if any(token in folded for token in ("blind time", "occupancy timeout")):
+        guidance = (
+            "Inspect the cited sensor configuration first. Recent activity can justify a tuning review, "
+            "but this turn did not read the device settings needed to prescribe an exact blind-time or "
+            "occupancy-timeout change."
+        )
+    elif any(
+        token in folded
+        for token in (
+            "polling interval",
+            "reporting interval",
+            "polling frequency",
+            "reporting frequency",
+        )
+    ):
+        guidance = (
+            "Inspect the cited integration/device configuration first. Recent activity can justify a tuning review, "
+            "but this turn did not read the relevant settings needed to prescribe an exact polling/reporting "
+            "interval or frequency."
+        )
+    elif any(
         token in folded
         for token in (
             "asynchronous",
@@ -292,26 +312,6 @@ def _configuration_replacement(line: str) -> str:
             "Inspect the cited automation configuration first. Recent logs can prove repeated execution, "
             "but this turn did not read the rule/app configuration needed to prescribe an exact trigger, "
             "threshold, debounce, hysteresis, gap, or duration edit."
-        )
-    elif any(token in folded for token in ("blind time", "occupancy timeout")):
-        guidance = (
-            "Inspect the cited sensor configuration first. Recent activity can justify a tuning review, "
-            "but this turn did not read the device settings needed to prescribe an exact blind-time or "
-            "occupancy-timeout change."
-        )
-    elif any(
-        token in folded
-        for token in (
-            "polling interval",
-            "reporting interval",
-            "polling frequency",
-            "reporting frequency",
-        )
-    ):
-        guidance = (
-            "Inspect the cited integration/device configuration first. Recent activity can justify a tuning review, "
-            "but this turn did not read the relevant settings needed to prescribe an exact polling/reporting "
-            "interval or frequency."
         )
     else:
         guidance = (
@@ -396,15 +396,23 @@ def guard_performance_log_causality(
 
     if not _has_configuration_evidence(evidence):
         lines: list[str] = []
+        line_changed = False
+        trailing_newline = corrected.endswith("\n")
         for line in corrected.splitlines():
+            replacement = line
             if (
                 _CONFIG_EDIT_LINE.search(line)
                 or _CONFIG_PRESCRIPTION_LINE.search(line)
                 or _IMPLEMENTATION_PRESCRIPTION_LINE.search(line)
             ):
-                line = _configuration_replacement(line)
-            lines.append(line)
-        corrected = "\n".join(lines)
+                replacement = _configuration_replacement(line)
+            if replacement != line:
+                line_changed = True
+            lines.append(replacement)
+        if line_changed:
+            corrected = "\n".join(lines)
+            if trailing_newline:
+                corrected += "\n"
 
     corrected = _ensure_grounded_next_actions(corrected)
     return corrected, corrected != original
