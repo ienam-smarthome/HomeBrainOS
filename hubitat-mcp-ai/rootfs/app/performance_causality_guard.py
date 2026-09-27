@@ -45,9 +45,10 @@ _THRESHOLD_OSCILLATION = re.compile(
     r"\b(?:threshold|mark)\b"
 )
 _ONE_SIDED_FLUCTUATION_CLAUSE = re.compile(
-    r"(?i)\b(?:because|as)\s+[^.\n]{0,100}\b(?:power|value|reading)s?\b"
-    r"[^.\n]{0,140}\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b"
-    r"[^.\n]{0,180}?,(?=\s+(?:the|this|that)\b)"
+    r"(?i)\b(?:because|as)\s+"
+    r"(?=[^\n]{0,160}\b(?:power|value|reading)s?\b)"
+    r"(?=[^\n]{0,220}\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b)"
+    r"[^\n]{0,320}?\),(?=\s+(?:the|this|that)\b)"
 )
 _EXACT_RULE_EDIT_LINE = re.compile(
     r"(?i)^(?=.*\b(?:modify|change|add|set)\b)"
