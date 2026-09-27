@@ -81,6 +81,12 @@ _CONFIG_PRESCRIPTION_LINE = re.compile(
     r"blind time|occupancy timeout|polling interval|reporting interval|polling frequency|"
     r"reporting frequency|gap between trigger actions|larger gap)\b).*$"
 )
+_IMPLEMENTATION_PRESCRIPTION_LINE = re.compile(
+    r"(?i)^(?=.*\b(?:ensure|use|switch|configure|set|increase|decrease|raise|lower|"
+    r"add|change|modify|edit|adjust)\b)"
+    r"(?=.*\b(?:async(?:hronous(?:ly)?)?|synchronous(?:ly)?|timeouts?|retries?|"
+    r"reconnect(?:ion|ions|s|ing)?|blocking network calls?)\b).*$"
+)
 _RECOMMENDATION_PREFIX = re.compile(r"^(\s*\*\s+\*\*[^*]+\*\*:\s*)")
 
 
@@ -119,13 +125,16 @@ def performance_validation_needed(evidence: list[dict[str, Any]]) -> bool:
 
 
 def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
-    """Recognize explicit rule/app/device configuration reads, never lists/logs."""
+    """Recognize explicit rule/app/device settings or implementation reads, never lists/logs."""
 
     for row in evidence:
         if not isinstance(row, dict) or not _successful(row):
             continue
         kind = str(row.get("evidence_kind") or "").casefold()
-        if any(token in kind for token in ("configuration", "preferences", "settings")):
+        if any(
+            token in kind
+            for token in ("configuration", "preferences", "settings", "code", "implementation")
+        ):
             return True
         sub_tool = _sub_tool(row).casefold()
         if not sub_tool or "list" in sub_tool or sub_tool == _LOG_TOOL:
@@ -137,6 +146,10 @@ def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
                 "get_rule",
                 "app_code",
                 "get_app",
+                "driver_code",
+                "device_code",
+                "get_driver",
+                "get_device_code",
                 "device_config",
                 "device_preferences",
                 "get_preferences",
@@ -252,7 +265,25 @@ def _configuration_replacement(line: str) -> str:
         prefix = "* " if line.lstrip().startswith("*") else ""
 
     folded = line.casefold()
-    if any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
+    if any(
+        token in folded
+        for token in (
+            "asynchronous",
+            "async ",
+            "synchronous",
+            "timeout",
+            "retry",
+            "retries",
+            "reconnect",
+            "blocking network",
+        )
+    ):
+        guidance = (
+            "Inspect the cited integration implementation/configuration first. The measured latency can justify "
+            "investigation, but this turn did not read the relevant driver/app code or settings needed to prescribe "
+            "async/sync, timeout, retry, or reconnect changes."
+        )
+    elif any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
         guidance = (
             "Inspect the cited automation configuration first. Recent logs can prove repeated execution, "
             "but this turn did not read the rule/app configuration needed to prescribe an exact trigger, "
@@ -343,7 +374,11 @@ def guard_performance_log_causality(
     if not _has_configuration_evidence(evidence):
         lines: list[str] = []
         for line in corrected.splitlines():
-            if _CONFIG_EDIT_LINE.search(line) or _CONFIG_PRESCRIPTION_LINE.search(line):
+            if (
+                _CONFIG_EDIT_LINE.search(line)
+                or _CONFIG_PRESCRIPTION_LINE.search(line)
+                or _IMPLEMENTATION_PRESCRIPTION_LINE.search(line)
+            ):
                 line = _configuration_replacement(line)
             lines.append(line)
         corrected = "\n".join(lines)
