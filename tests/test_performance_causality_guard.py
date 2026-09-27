@@ -90,7 +90,7 @@ def test_live_01648_log_causality_is_localized() -> None:
     assert "Recent log observations (not proven performance causes)" in corrected
     assert "likely driving the high busy percentage" not in corrected
     assert "do not establish that it causes the measured performance result" in corrected
-    assert "do not establish oscillation across the trigger threshold" in corrected
+    assert "qualifying values without evidence of threshold crossing" in corrected
     assert "did not read the rule/app configuration" in corrected
 
 
