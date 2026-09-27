@@ -68,6 +68,7 @@ The repository drift test compares this table directly with the live directory. 
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `performance_causality_guard.py` | Prevents recent log activity from being promoted into the cause of longer-window performance statistics without direct linking evidence, and blocks unsupported threshold/edit prescriptions. |
+| `performance_semantic_grounding.py` | Preserves measured performance facts while structurally localizing unsupported implementation mechanisms, outcome causality, and configuration prescriptions. |
 | `provider_token_estimator.py` | Estimates provider token usage conservatively. |
 | `pushover_notifier.py` | Formats and sends optional bounded scheduled System Check summaries through the Pushover Message API. |
 | `reasoning_policy.py` | Tracks native tool-round shape, selected-device clarification constraints, and generic evidence-review/synthesis contracts without question-specific routing. |

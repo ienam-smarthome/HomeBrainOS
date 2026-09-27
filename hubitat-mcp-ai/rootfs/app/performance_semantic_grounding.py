@@ -19,7 +19,7 @@ _BULLET_PREFIX = re.compile(r"^(\s*[*+-]\s+(?:\*\*[^*]+\*\*:\s*)?)(.*)$")
 
 _DIRECTIVE = re.compile(
     r"(?i)\b(?:edit|modify|change|add|include|set|adjust|increase|decrease|raise|lower|"
-    r"reduce|reduced|reducing|lengthen|shorten|ensure|use|switch|configure|review|"
+    r"reduce|reduced|reducing|need(?:s|ed)?|lengthen|shorten|ensure|use|switch|configure|review|"
     r"inspect|investigate|check|verify|audit|consider)\b"
 )
 _CONFIG_TOPIC = re.compile(
@@ -34,6 +34,11 @@ _RULE_EVENT_PRESCRIPTION = re.compile(
     r"[^.!?\n]{0,220}\brules?\b[^.!?\n]{0,220}"
     r"(?:every\s+time|each\s+time|on\s+every|whenever)\b[^.!?\n]{0,180}"
     r"(?:power|sensor|event|value|reading)"
+)
+_RULE_NUMERIC_CADENCE = re.compile(
+    r"(?i)\b(?:ensure|change|reduce|adjust|avoid|audit|review|inspect|check|verify)\b"
+    r"[^.!?\n]{0,220}\brules?\b[^.!?\n]{0,220}"
+    r"\bevery\s+\d+(?:\.\d+)?\s*(?:ms|s|sec(?:ond)?s?|m|min(?:ute)?s?|h|hours?)\b"
 )
 _NUMERIC_TUNING = re.compile(
     r"(?i)\b(?:threshold|interval|frequency|timeout|blind time|occupancy timeout|"
@@ -130,7 +135,7 @@ def _configuration_guidance(text: str) -> str:
 
 def _unsafe_recommendation(text: str) -> bool:
     comparable = re.sub(r"[*_`]", "", str(text or ""))
-    if _RULE_EVENT_PRESCRIPTION.search(comparable):
+    if _RULE_EVENT_PRESCRIPTION.search(comparable) or _RULE_NUMERIC_CADENCE.search(comparable):
         return True
     if _NUMERIC_TUNING.search(comparable) and _DIRECTIVE.search(comparable):
         return True
@@ -158,12 +163,12 @@ def _localize_mechanism_sentence(sentence: str) -> str:
         prefix = sentence[: raw_link.start()].rstrip(" ,;:-")
         if re.search(
             r"(?i)(?:\d[\d,.]*(?:-\d[\d,.]*)?\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"
-            r"\b(?:busy|calls?|call count|execution time|latency|free memory)\b)",
+            r"\d[\d,.]*\s+calls?\b|\bmeasured load\b)",
             re.sub(r"[*_`]", "", prefix),
         ):
             return (
                 prefix
-                + "; the implementation cause of that measured result is not established by the current "
+                + "; the implementation cause of that measured load is not established by the current "
                 + "performance statistics."
             )
 
