@@ -41,6 +41,13 @@ PERFORMANCE_AND_LOG_EVIDENCE = [
                 {
                     "message": (
                         "app|2817|Power saving: TV OFF (medium setting)|"
+                        "Action: Wait for event: Power level of TV(79) is <= 50.0 "
+                        "and stays that way for: 0:03:00"
+                    )
+                },
+                {
+                    "message": (
+                        "app|2817|Power saving: TV OFF (medium setting)|"
                         "Event: TV power 79"
                     )
                 },

@@ -166,6 +166,13 @@ def test_builder_blocks_live_performance_log_causality_even_if_orchestrator_retu
                         {
                             "message": (
                                 "app|2817|Power saving: TV OFF (medium setting)|"
+                                "Action: Wait for event: Power level of TV(81) is <= 50.0 "
+                                "and stays that way for: 0:03:00"
+                            )
+                        },
+                        {
+                            "message": (
+                                "app|2817|Power saving: TV OFF (medium setting)|"
                                 "Event: TV power 81"
                             )
                         },
@@ -182,7 +189,7 @@ def test_builder_blocks_live_performance_log_causality_even_if_orchestrator_retu
     )
 
     response = build_agent_response(
-        outcome, model="gemma4:31b", elapsed_ms=1000, version="0.16.50"
+        outcome, model="gemma4:31b", elapsed_ms=1000, version="0.16.51"
     )
     message = response["message"]
 

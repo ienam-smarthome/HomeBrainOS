@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.50**.
+Current add-on version: **0.16.51**.
 
 ## Architecture
+
+0.16.51 fixes one-sided Rule Machine threshold analysis in performance diagnostics. The event-value parser now accepts only log bodies that start with `Event:` or `Wait Event:`, so an `Action: Wait for event ... stays that way for: 0:03:00` line cannot contribute its trailing timer field as a fake `0` power reading. Samples such as 76-86 W against a `>= 65 W` trigger therefore remain classified as repeated qualifying reports rather than threshold fluctuation, allowing the shared final-answer/API guard to remove unsupported `fluctuating slightly` wording.
 
 0.16.50 closes the production performance-finalization bypass exposed by the 0.16.49 live retest. Ordinary non-investigative `live-read` completions can return provider prose without entering `FinalAnswerCoordinator`, so the shared `/api/ask` serialization boundary now applies the same performance/log causality guard before any unified-agent response reaches the Web UI or API client. A live draft cannot label recent logs as proven root causes of measured busy/load/latency/execution statistics without direct linking evidence, cannot describe a one-sided qualifying trigger sample as threshold oscillation (including wording such as `fluctuating slightly (e.g. 77W → 82W → 81W)`), and cannot prescribe an exact trigger/threshold/debounce/duration edit unless the current turn actually read the rule/app configuration. The final-answer repair path remains in place for routes that use it; serialization is the fail-closed backstop for routes that do not.
 
