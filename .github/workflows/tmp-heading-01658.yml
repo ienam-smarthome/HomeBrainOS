@@ -1,0 +1,33 @@
+name: Temporary patch 0.16.58 action headings
+on:
+  push:
+    paths:
+      - .github/workflows/tmp-heading-01658.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-semantic-grounding-0-16-58
+      - name: Patch decorated action heading support
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py')
+          text = path.read_text()
+          old = '    r"(?i)^\\s*(#{1,6})\\s*(?:recommended\\s+(?:optimizations?|optimisations?)|"\n'
+          new = '    r"(?i)^\\s*(#{1,6})\\s*(?:[^\\w\\n]*\\s*)?(?:recommended\\s+(?:optimizations?|optimisations?)|"\n'
+          if old not in text:
+              raise SystemExit('action heading anchor not found')
+          path.write_text(text.replace(old, new, 1))
+      - name: Remove temporary workflow and commit
+        run: |
+          git rm .github/workflows/tmp-heading-01658.yml
+          git add hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py
+          git config user.name "ienam-smarthome"
+          git config user.email "ienam.smarthome@gmail.com"
+          git commit -m "Support decorated performance action headings"
+          git push origin HEAD:agent/performance-semantic-grounding-0-16-58
