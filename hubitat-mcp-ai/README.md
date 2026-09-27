@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.52**.
+Current add-on version: **0.16.53**.
 
 ## Architecture
+
+0.16.53 closes the remaining performance-causality language gap exposed by the second 0.16.52 live retest. Recent Rule Machine logs may establish repeated triggering/restarts, and structured threshold samples may legitimately show readings on both sides of a trigger, but neither fact proves that the rule is the `primary driver`, `main cause`, `major contributor`, or equivalent explanation of a measured device/app busy/load/latency statistic. The shared performance guard now localizes noun-form causal claims such as `This is the primary driver for the high busy percentage`, and labels such as `Confirmed Hypothesis` are downgraded to explicitly unproven hypotheses. Measured ranking from performance statistics remains untouched, so wording such as `LG webOS TV is the primary device-side performance concern at 16.3% busy` remains valid when supported by current performance evidence.
 
 0.16.52 closes the remaining large-log performance evidence gap exposed by the 0.16.51 live retest. The provider may inspect up to 100 recent log rows while technical evidence deliberately retains only a small readable excerpt. HomeBrain now scans the complete log result once and preserves only compact structured Rule Machine threshold samples alongside the normal first-20-row excerpt, so final causality validation can audit the same threshold evidence the model used without expanding the receipt. Structured full-result samples outrank the excerpt when they disagree. The performance guard also keeps `likely hypothesis for the high busy percentage` / `hidden overload source` style language explicitly hypothetical without direct linking evidence, and blocks broader ungrounded prescriptions such as `needs a debounce` or a `larger gap between trigger actions` until the actual rule/app configuration has been read.
 

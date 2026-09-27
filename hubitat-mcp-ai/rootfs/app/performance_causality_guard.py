@@ -21,6 +21,7 @@ _PERF_TERM = (
 _ROOT_CAUSE_LOG_HEADING = re.compile(
     r"(?im)^#{1,6}\s*[^\n]*\broot causes?\b[^\n]*\blogs?\b[^\n]*$"
 )
+_CONFIRMED_HYPOTHESIS_LABEL = re.compile(r"(?i)\bConfirmed\s+Hypothesis\b")
 _LOG_CAUSE_PREAMBLE = re.compile(
     rf"(?i)\bThe logs\s+(?:reveal|show|identify)\s+[^\n:.]*"
     rf"(?:driv(?:e|es|ing)|caus(?:e|es|ing)|explain(?:s|ing)?)\s+"
@@ -38,6 +39,12 @@ _SENTENCE_PERF_CAUSE = re.compile(
     rf"(?:driv(?:e|es|ing)|caus(?:e|es|ing)|explain(?:s|ing)?|"
     rf"responsible\s+for)\s+(?:the\s+)?(?:high\s+)?"
     rf"{_PERF_TERM}[^.!?\n]*(?:[.!?]|$)"
+)
+_NOUN_PERF_CAUSE = re.compile(
+    rf"(?i)\b(?:this|that|it)\s+(?:is|was)\s+(?:the\s+)?"
+    rf"(?:(?:primary|main|major|significant|direct)\s+)?"
+    rf"(?:driver|cause|source|contributor)\s+(?:for|of|to|behind)\s+"
+    rf"(?:the\s+)?(?:high\s+)?{_PERF_TERM}[^.!?\n]*(?:[.!?]|$)"
 )
 _HYPOTHESIS_PERF_LINK = re.compile(
     rf"(?i)\b(?:this|that|it)\s+(?:is|was)\s+(?:a\s+)?"
@@ -235,6 +242,10 @@ def guard_performance_log_causality(
         "### Recent log observations (not proven performance causes)",
         original,
     )
+    corrected = _CONFIRMED_HYPOTHESIS_LABEL.sub(
+        "Hypothesis (cause unproven)",
+        corrected,
+    )
     corrected = _LOG_CAUSE_PREAMBLE.sub(
         "The recent logs show activity patterns; they are observations, not proven causes of the measured performance totals:",
         corrected,
@@ -245,6 +256,10 @@ def guard_performance_log_causality(
     )
     corrected = _SENTENCE_PERF_CAUSE.sub(
         "The recent logs show this activity, but they do not establish that it causes the measured performance result.",
+        corrected,
+    )
+    corrected = _NOUN_PERF_CAUSE.sub(
+        "The recent logs show this activity, but they do not establish that it is a primary cause or driver of the measured performance result.",
         corrected,
     )
     corrected = _HYPOTHESIS_PERF_LINK.sub(
