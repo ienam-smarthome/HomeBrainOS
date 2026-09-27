@@ -1,0 +1,20 @@
+# Hubitat MCP AI 0.16.58
+
+## Structural performance grounding
+
+- Performance synthesis now preserves measured facts while localizing only unsupported implementation-mechanism, outcome-causality, or tuning clauses.
+- Configuration advice is handled structurally instead of by global whole-line replacement: recommendation tables keep their Component and Expected Impact cells, while unsafe Action cells are replaced with inspection-first guidance.
+- Analysis bullets keep measured percentages, call counts, and execution times even when a later unsupported sentence is downgraded.
+- When a measured result and an unsupported mechanism share one sentence (for example `13-15% busy, likely due to cloud polling`), the measured prefix is retained and only the causal mechanism is localized.
+- Decorated action headings such as `### 🛠️ Recommended Optimisations` are recognized.
+- Recommendation detection covers review/inspect/investigate/check/verify/audit wording, `need/needs/needed`, passive reduction language, and direct edit/set/change verbs.
+- Unsupported timeout/API latency/polling/config-push/retry/reconnect/reporting mechanisms are localized independently of narrow lead-in phrases such as `often indicates`; variants such as `typically indicates` are covered.
+- Strong unsupported performance-outcome claims such as `primary source of hub stutter`, `common cause of event-bus congestion`, and `most likely candidates to cause lag` are downgraded while measured values remain visible.
+- Rule recommendations tied to every sensor/power event or an exact recurring cadence such as `every 10 seconds` are inspection-first unless the relevant rule configuration was read in the current turn.
+- Explicit conditional analysis such as `could block execution threads if calls are synchronous` remains allowed.
+- The canonical runtime-module map includes the new structural grounding module.
+- No additional Hubitat reads are introduced; evidence collection and threshold compaction are unchanged.
+
+## Live regression coverage
+
+Tests reproduce both 0.16.57 live response shapes, including LG `typically indicates` timeout/thread-blocking language, power-socket event-bus congestion, SenseCap polling/config-push variants, Life360/Octopus polling advice, LG sync/async investigation, and MCP rule advice tied to every power-value change. Existing 0.16.51-0.16.57 grounding contracts remain covered, and release metadata, changelog index, root component table, and add-on README are aligned to 0.16.58.

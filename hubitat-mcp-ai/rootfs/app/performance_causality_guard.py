@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from performance_semantic_grounding import ground_performance_semantics
+
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
 _LOG_TOOL = "hub_get_logs"
 
@@ -506,19 +508,7 @@ def guard_performance_log_causality(
             )
 
     if not has_configuration:
-        corrected = _guard_unproven_implementation_mechanisms(corrected)
-        lines: list[str] = []
-        line_changed = False
-        trailing_newline = corrected.endswith("\n")
-        for line in corrected.splitlines():
-            replacement = _configuration_replacement(line) if _needs_configuration_rewrite(line) else line
-            if replacement != line:
-                line_changed = True
-            lines.append(replacement)
-        if line_changed:
-            corrected = "\n".join(lines)
-            if trailing_newline:
-                corrected += "\n"
+        corrected = ground_performance_semantics(corrected)
 
     corrected = _ensure_grounded_next_actions(corrected)
     return corrected, corrected != original
