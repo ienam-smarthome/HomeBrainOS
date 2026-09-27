@@ -13,4 +13,4 @@
 
 ## Live regressions
 
-Coverage includes the 0.16.56 performance-only response that omitted all next actions and the table-form response that mixed measured LG/SenseCap/Halo/Octopus findings with unsupported async/timeout, polling, reporting-threshold, and cadence prescriptions.
+Coverage includes the 0.16.56 performance-only response that omitted all next actions and the table-form response that mixed measured LG/SenseCap/Halo/Octopus findings with unsupported async/timeout, polling, reporting-threshold, and cadence prescriptions. Release metadata and both repository/add-on README version references are aligned to 0.16.57.
