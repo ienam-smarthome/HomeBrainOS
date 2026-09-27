@@ -5,6 +5,7 @@
 - Performance synthesis now preserves measured facts while localizing only unsupported implementation-mechanism, outcome-causality, or tuning clauses.
 - Configuration advice is handled structurally instead of by global whole-line replacement: recommendation tables keep their Component and Expected Impact cells, while unsafe Action cells are replaced with inspection-first guidance.
 - Analysis bullets keep measured percentages, call counts, and execution times even when a later unsupported sentence is downgraded.
+- When a measured result and an unsupported mechanism share one sentence (for example `13-15% busy, likely due to cloud polling`), the measured prefix is retained and only the causal mechanism is localized.
 - Decorated action headings such as `### 🛠️ Recommended Optimisations` are recognized.
 - Recommendation detection covers review/inspect/investigate/check/verify/audit wording and passive reduction language as well as direct edit/set/change verbs.
 - Unsupported timeout/API latency/polling/config-push/retry/reconnect/reporting mechanisms are localized independently of narrow lead-in phrases such as `often indicates`; variants such as `typically indicates` are covered.
