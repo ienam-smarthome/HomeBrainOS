@@ -84,7 +84,7 @@ class AutomationStatusService:
             return False
         explicit_status = any(
             word in value
-            for word in ("list", "show", "status", "active", "disabled", "paused", "broken")
+            for word in ("list", "show", "which", "status", "active", "disabled", "paused", "broken")
         )
         explicit_new_ideas = (
             any(word in value for word in _ADVISORY_WORDS)
