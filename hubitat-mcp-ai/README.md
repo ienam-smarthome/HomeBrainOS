@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.48**.
+Current add-on version: **0.16.49**.
 
 ## Architecture
+
+0.16.49 makes the performance evidence boundary host-enforced rather than prompt-only. When a live turn combines performance statistics with recent logs, final synthesis is scoped to current-turn evidence and passes through deterministic validation, one no-tools repair attempt, and validation again. Recent log activity cannot be promoted into the cause of measured busy/load/latency/execution statistics without direct linking evidence; repeated reports all on one qualifying side of a threshold cannot be described as threshold oscillation; and an exact trigger/threshold/debounce/duration edit is not prescribed unless the turn actually read the rule/app configuration. A provider that ignores both the normal performance policy and repair instruction still cannot return the unsupported causal claim.
 
 0.16.48 hardens performance/optimisation reasoning and advisory routing. Hubitat performance statistics are treated as measured findings, recent logs as observations, and unproven explanations as hypotheses. A short log window is no longer allowed to explain multi-hour performance totals without direct linking evidence; high-cost components are investigated locally first, scheduler counts must be read before being quoted, and unrelated chatter is kept as secondary observation. Broad automation `improve`/`review` requests now remain in the reasoning path while explicit status/list and focused existing-automation selection requests retain the deterministic audit path.
 
