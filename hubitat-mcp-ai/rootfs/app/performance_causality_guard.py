@@ -81,7 +81,17 @@ _CONFIG_PRESCRIPTION_LINE = re.compile(
     r"blind time|occupancy timeout|polling interval|reporting interval|polling frequency|"
     r"reporting frequency|gap between trigger actions|larger gap)\b).*$"
 )
+_IMPLEMENTATION_PRESCRIPTION_LINE = re.compile(
+    r"(?i)^(?=.*\b(?:ensure|use|switch|configure|set|increase|decrease|raise|lower|"
+    r"add|change|modify|edit|adjust)\b)"
+    r"(?=.*\b(?:async(?:hronous(?:ly)?)?|synchronous(?:ly)?|timeouts?|retries?|"
+    r"reconnect(?:ion|ions|s|ing)?|blocking network calls?)\b).*$"
+)
 _RECOMMENDATION_PREFIX = re.compile(r"^(\s*\*\s+\*\*[^*]+\*\*:\s*)")
+_ACTION_SECTION_HEADING = re.compile(
+    r"(?im)^#{1,6}\s*(?:recommended\s+optimizations?|recommendations?|"
+    r"grounded\s+next\s+actions?|next\s+actions?|what\s+to\s+do\s+next)\b"
+)
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -119,13 +129,16 @@ def performance_validation_needed(evidence: list[dict[str, Any]]) -> bool:
 
 
 def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
-    """Recognize explicit rule/app/device configuration reads, never lists/logs."""
+    """Recognize explicit rule/app/device settings or implementation reads, never lists/logs."""
 
     for row in evidence:
         if not isinstance(row, dict) or not _successful(row):
             continue
         kind = str(row.get("evidence_kind") or "").casefold()
-        if any(token in kind for token in ("configuration", "preferences", "settings")):
+        if any(
+            token in kind
+            for token in ("configuration", "preferences", "settings", "code", "implementation")
+        ):
             return True
         sub_tool = _sub_tool(row).casefold()
         if not sub_tool or "list" in sub_tool or sub_tool == _LOG_TOOL:
@@ -137,6 +150,10 @@ def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
                 "get_rule",
                 "app_code",
                 "get_app",
+                "driver_code",
+                "device_code",
+                "get_driver",
+                "get_device_code",
                 "device_config",
                 "device_preferences",
                 "get_preferences",
@@ -252,13 +269,7 @@ def _configuration_replacement(line: str) -> str:
         prefix = "* " if line.lstrip().startswith("*") else ""
 
     folded = line.casefold()
-    if any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
-        guidance = (
-            "Inspect the cited automation configuration first. Recent logs can prove repeated execution, "
-            "but this turn did not read the rule/app configuration needed to prescribe an exact trigger, "
-            "threshold, debounce, hysteresis, gap, or duration edit."
-        )
-    elif any(token in folded for token in ("blind time", "occupancy timeout")):
+    if any(token in folded for token in ("blind time", "occupancy timeout")):
         guidance = (
             "Inspect the cited sensor configuration first. Recent activity can justify a tuning review, "
             "but this turn did not read the device settings needed to prescribe an exact blind-time or "
@@ -278,6 +289,30 @@ def _configuration_replacement(line: str) -> str:
             "but this turn did not read the relevant settings needed to prescribe an exact polling/reporting "
             "interval or frequency."
         )
+    elif any(
+        token in folded
+        for token in (
+            "asynchronous",
+            "async ",
+            "synchronous",
+            "timeout",
+            "retry",
+            "retries",
+            "reconnect",
+            "blocking network",
+        )
+    ):
+        guidance = (
+            "Inspect the cited integration implementation/configuration first. The measured latency can justify "
+            "investigation, but this turn did not read the relevant driver/app code or settings needed to prescribe "
+            "async/sync, timeout, retry, or reconnect changes."
+        )
+    elif any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
+        guidance = (
+            "Inspect the cited automation configuration first. Recent logs can prove repeated execution, "
+            "but this turn did not read the rule/app configuration needed to prescribe an exact trigger, "
+            "threshold, debounce, hysteresis, gap, or duration edit."
+        )
     else:
         guidance = (
             "Inspect the cited component configuration first. Recent activity can justify a tuning review, "
@@ -285,6 +320,25 @@ def _configuration_replacement(line: str) -> str:
         )
 
     return prefix + guidance
+
+
+def _ensure_grounded_next_actions(message: str) -> str:
+    """Keep diagnostic-style performance answers actionable without inventing tuning."""
+
+    text = str(message or "")
+    if not text or _ACTION_SECTION_HEADING.search(text):
+        return text
+    folded = re.sub(r"[*_`]", "", text).casefold()
+    if "top resource consumers" not in folded or "observations & hypotheses" not in folded:
+        return text
+    return (
+        text.rstrip()
+        + "\n\n### Grounded Next Actions\n"
+        + "* **High per-call latency:** Inspect the same high-latency app/driver implementation and settings first; "
+        + "only prescribe async/sync, timeout, retry, or reconnect changes after that code/configuration has been read.\n"
+        + "* **High call volume:** Inspect the same high-volume component's schedules, subscriptions, polling, or event cadence first; "
+        + "only prescribe a specific interval/frequency change after its current configuration has been read."
+    )
 
 
 def guard_performance_log_causality(
@@ -342,12 +396,25 @@ def guard_performance_log_causality(
 
     if not _has_configuration_evidence(evidence):
         lines: list[str] = []
+        line_changed = False
+        trailing_newline = corrected.endswith("\n")
         for line in corrected.splitlines():
-            if _CONFIG_EDIT_LINE.search(line) or _CONFIG_PRESCRIPTION_LINE.search(line):
-                line = _configuration_replacement(line)
-            lines.append(line)
-        corrected = "\n".join(lines)
+            replacement = line
+            if (
+                _CONFIG_EDIT_LINE.search(line)
+                or _CONFIG_PRESCRIPTION_LINE.search(line)
+                or _IMPLEMENTATION_PRESCRIPTION_LINE.search(line)
+            ):
+                replacement = _configuration_replacement(line)
+            if replacement != line:
+                line_changed = True
+            lines.append(replacement)
+        if line_changed:
+            corrected = "\n".join(lines)
+            if trailing_newline:
+                corrected += "\n"
 
+    corrected = _ensure_grounded_next_actions(corrected)
     return corrected, corrected != original
 
 
