@@ -1,0 +1,44 @@
+name: Temporary align 0.16.58 release indexes
+on:
+  push:
+    paths:
+      - .github/workflows/tmp-release-align-01658.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-semantic-grounding-0-16-58
+      - name: Align add-on README and changelog index
+        shell: python
+        run: |
+          from pathlib import Path
+
+          readme = Path('hubitat-mcp-ai/README.md')
+          text = readme.read_text()
+          old = 'Current add-on version: **0.16.57**.'
+          new = 'Current add-on version: **0.16.58**.'
+          if old not in text:
+              raise SystemExit('README version anchor not found')
+          readme.write_text(text.replace(old, new, 1))
+
+          index = Path('hubitat-mcp-ai/CHANGELOG-INDEX.md')
+          text = index.read_text()
+          anchor = '- [0.16.57](CHANGELOG-0.16.57.md)'
+          entry = '- [0.16.58](CHANGELOG-0.16.58.md)\n'
+          if entry.strip() not in text:
+              if anchor not in text:
+                  raise SystemExit('changelog index anchor not found')
+              text = text.replace(anchor, entry + anchor, 1)
+          index.write_text(text)
+      - name: Remove temporary workflow and commit
+        run: |
+          git rm .github/workflows/tmp-release-align-01658.yml
+          git add hubitat-mcp-ai/README.md hubitat-mcp-ai/CHANGELOG-INDEX.md
+          git config user.name "ienam-smarthome"
+          git config user.email "ienam.smarthome@gmail.com"
+          git commit -m "Align HomeBrain 0.16.58 release indexes"
+          git push origin HEAD:agent/performance-semantic-grounding-0-16-58
