@@ -92,15 +92,20 @@ def _threshold_samples(logs: list[Any]) -> list[dict[str, Any]]:
         if len(observed) < 2:
             continue
         bounded_values = observed[:12]
+        qualifying_count = sum(
+            1 for value in observed if _qualifies(operator, value, threshold)
+        )
         samples.append(
             {
                 "source": source,
                 "operator": operator,
                 "threshold": threshold,
                 "values": bounded_values,
-                "allQualifying": all(
-                    _qualifies(operator, value, threshold) for value in observed
-                ),
+                "minObserved": min(observed),
+                "maxObserved": max(observed),
+                "qualifyingCount": qualifying_count,
+                "nonQualifyingCount": len(observed) - qualifying_count,
+                "allQualifying": qualifying_count == len(observed),
                 "observedValueCount": len(observed),
             }
         )
