@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.49**.
+Current add-on version: **0.16.50**.
 
 ## Architecture
+
+0.16.50 closes the production performance-finalization bypass exposed by the 0.16.49 live retest. Ordinary non-investigative `live-read` completions can return provider prose without entering `FinalAnswerCoordinator`, so the shared `/api/ask` serialization boundary now applies the same performance/log causality guard before any unified-agent response reaches the Web UI or API client. A live draft cannot label recent logs as proven root causes of measured busy/load/latency/execution statistics without direct linking evidence, cannot describe a one-sided qualifying trigger sample as threshold oscillation (including wording such as `fluctuating slightly (e.g. 77W → 82W → 81W)`), and cannot prescribe an exact trigger/threshold/debounce/duration edit unless the current turn actually read the rule/app configuration. The final-answer repair path remains in place for routes that use it; serialization is the fail-closed backstop for routes that do not.
 
 0.16.49 makes the performance evidence boundary host-enforced rather than prompt-only. When a live turn combines performance statistics with recent logs, final synthesis is scoped to current-turn evidence and passes through deterministic validation, one no-tools repair attempt, and validation again. Recent log activity cannot be promoted into the cause of measured busy/load/latency/execution statistics without direct linking evidence; repeated reports all on one qualifying side of a threshold cannot be described as threshold oscillation; and an exact trigger/threshold/debounce/duration edit is not prescribed unless the turn actually read the rule/app configuration. A provider that ignores both the normal performance policy and repair instruction still cannot return the unsupported causal claim.
 
