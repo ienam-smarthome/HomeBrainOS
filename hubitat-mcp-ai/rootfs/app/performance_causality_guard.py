@@ -68,18 +68,23 @@ _ONE_SIDED_FLUCTUATION_CLAUSE = re.compile(
     r"(?=[^\n]{0,220}\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b)"
     r"[^\n]{0,320}?\),(?=\s+(?:the|this|that)\b)"
 )
+
 _CONFIG_EDIT_LINE = re.compile(
-    r"(?i)^(?=.*\b(?:edit|modify|change|add|include|set|adjust|increase|decrease|raise|lower)\b)"
+    r"(?i)^(?=.*\b(?:edit|modify|change|add|include|set|setting|adjust|increase|decrease|"
+    r"raise|lower|reduce|lengthen|shorten)\b)"
     r"(?=.*\b(?:trigger|triggering|threshold|debounce|duration|stays that way|"
-    r"hysteresis|blind time|occupancy timeout|polling interval|reporting interval|"
-    r"polling frequency|reporting frequency|gap between trigger actions|larger gap)\b).*$"
+    r"hysteresis|blind time|occupancy timeout|polling intervals?|reporting intervals?|"
+    r"polling frequency|reporting frequency|reporting thresholds?|config(?:uration)? pushes?|"
+    r"gap between trigger actions|larger gap)\b).*$"
 )
 _CONFIG_PRESCRIPTION_LINE = re.compile(
     r"(?i)^(?=.*\b(?:need(?:s|ed)?|should|must|require(?:s|d)?|increase|decrease|"
-    r"add|include|set|change|modify|edit|adjust|raise|lower)\b)"
+    r"add|include|set|setting|change|modify|edit|adjust|raise|lower|reduce|"
+    r"lengthen|shorten)\b)"
     r"(?=.*\b(?:debounce|threshold|trigger(?:ing)?|duration|stays that way|hysteresis|"
-    r"blind time|occupancy timeout|polling interval|reporting interval|polling frequency|"
-    r"reporting frequency|gap between trigger actions|larger gap)\b).*$"
+    r"blind time|occupancy timeout|polling intervals?|reporting intervals?|polling frequency|"
+    r"reporting frequency|reporting thresholds?|config(?:uration)? pushes?|"
+    r"gap between trigger actions|larger gap)\b).*$"
 )
 _IMPLEMENTATION_PRESCRIPTION_LINE = re.compile(
     r"(?i)^(?=.*\b(?:ensure|use|switch|configure|set|increase|decrease|raise|lower|"
@@ -87,10 +92,35 @@ _IMPLEMENTATION_PRESCRIPTION_LINE = re.compile(
     r"(?=.*\b(?:async(?:hronous(?:ly)?)?|synchronous(?:ly)?|timeouts?|retries?|"
     r"reconnect(?:ion|ions|s|ing)?|blocking network calls?)\b).*$"
 )
+_NUMERIC_TUNING_LINE = re.compile(
+    r"(?i)^(?=.*\b(?:threshold|interval|frequency|timeout|blind time|occupancy timeout|"
+    r"debounce|duration)\b)(?=.*\b(?:e\.g\.|instead|setting|set|longer|shorter)\b)"
+    r"(?=.*\b\d+(?:\.\d+)?\s*(?:w|%|ms|s|sec(?:ond)?s?|m|min(?:ute)?s?|h|hours?)\b).*$"
+)
+_RULE_CADENCE_PRESCRIPTION_LINE = re.compile(
+    r"(?i)^(?=.*\b(?:ensure|change|reduce|adjust|avoid)\b)(?=.*\brules?\b)"
+    r"(?=.*\bevery\s+\d+(?:\.\d+)?\s*(?:ms|s|sec(?:ond)?s?|m|min(?:ute)?s?|h|hours?)\b).*$"
+)
 _RECOMMENDATION_PREFIX = re.compile(r"^(\s*\*\s+\*\*[^*]+\*\*:\s*)")
 _ACTION_SECTION_HEADING = re.compile(
     r"(?im)^#{1,6}\s*(?:recommended\s+optimizations?|recommendations?|"
     r"grounded\s+next\s+actions?|next\s+actions?|what\s+to\s+do\s+next)\b"
+)
+_PERFORMANCE_SECTION_HEADING = re.compile(
+    r"(?im)^#{1,6}\s*(?:potential\s+(?:app|device)\s+culprits?|"
+    r"(?:top|primary)\s+resource\s+consumers?|performance\s+outliers?|"
+    r"observations\s*&\s*hypotheses)\b"
+)
+_MECHANISM_KEYWORD = re.compile(
+    r"(?i)\b(?:network timeouts?|slow api responses?|cloud polling|frequent polling|"
+    r"polling|config(?:uration)? pushes?|pushing configurations?|retries?|"
+    r"reconnect(?:ion|ions|s|ing)?|blocking network calls?|block hub execution threads?)\b"
+)
+_MECHANISM_INFERENCE = re.compile(
+    r"(?i)\b(?:often indicates?|suggests?|strongly suggests?|likely due to|probably due to)\b"
+)
+_LIKELY_DUE_MECHANISM_CLAUSE = re.compile(
+    r"(?i),\s*(?:likely|probably)\s+due\s+to\s+[^.!?\n]*(?:[.!?]|$)"
 )
 
 
@@ -110,22 +140,28 @@ def _successful(row: dict[str, Any]) -> bool:
     return row.get("success") is not False
 
 
-def performance_validation_needed(evidence: list[dict[str, Any]]) -> bool:
-    """True when the turn combines performance totals with recent logs."""
-
-    has_performance = any(
+def _has_performance_evidence(evidence: list[dict[str, Any]]) -> bool:
+    return any(
         isinstance(row, dict)
         and _successful(row)
         and _sub_tool(row) == _PERFORMANCE_TOOL
         for row in evidence
     )
-    has_logs = any(
+
+
+def _has_log_evidence(evidence: list[dict[str, Any]]) -> bool:
+    return any(
         isinstance(row, dict)
         and _successful(row)
         and _sub_tool(row) == _LOG_TOOL
         for row in evidence
     )
-    return has_performance and has_logs
+
+
+def performance_validation_needed(evidence: list[dict[str, Any]]) -> bool:
+    """True for the narrower log-to-performance causality validation path."""
+
+    return _has_performance_evidence(evidence) and _has_log_evidence(evidence)
 
 
 def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
@@ -210,16 +246,9 @@ def _structured_one_sided_trigger_sample(
 
 
 def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
-    """Detect repeated qualifying reports without evidence of threshold crossings.
+    """Detect repeated qualifying reports without evidence of threshold crossings."""
 
-    Prefer the compact full-result `thresholdSamples` proof carried by the log
-    evidence receipt. Fall back to the retained log excerpt for older receipts and
-    unit fixtures that predate the structured sample.
-    """
-
-    structured_seen, structured_one_sided = _structured_one_sided_trigger_sample(
-        evidence
-    )
+    structured_seen, structured_one_sided = _structured_one_sided_trigger_sample(evidence)
     if structured_seen:
         return structured_one_sided
 
@@ -261,35 +290,37 @@ def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
     return False
 
 
-def _configuration_replacement(line: str) -> str:
-    match = _RECOMMENDATION_PREFIX.match(line)
-    if match:
-        prefix = match.group(1)
-    else:
-        prefix = "* " if line.lstrip().startswith("*") else ""
-
-    folded = line.casefold()
+def _configuration_guidance(text: str) -> str:
+    folded = text.casefold()
     if any(token in folded for token in ("blind time", "occupancy timeout")):
-        guidance = (
+        return (
             "Inspect the cited sensor configuration first. Recent activity can justify a tuning review, "
             "but this turn did not read the device settings needed to prescribe an exact blind-time or "
             "occupancy-timeout change."
         )
-    elif any(
+    if any(
         token in folded
         for token in (
             "polling interval",
+            "polling intervals",
             "reporting interval",
+            "reporting intervals",
             "polling frequency",
             "reporting frequency",
+            "reporting threshold",
+            "reporting thresholds",
+            "config push",
+            "config pushes",
+            "configuration push",
+            "configuration pushes",
         )
     ):
-        guidance = (
+        return (
             "Inspect the cited integration/device configuration first. Recent activity can justify a tuning review, "
             "but this turn did not read the relevant settings needed to prescribe an exact polling/reporting "
-            "interval or frequency."
+            "threshold, interval, or frequency."
         )
-    elif any(
+    if any(
         token in folded
         for token in (
             "asynchronous",
@@ -302,24 +333,100 @@ def _configuration_replacement(line: str) -> str:
             "blocking network",
         )
     ):
-        guidance = (
+        return (
             "Inspect the cited integration implementation/configuration first. The measured latency can justify "
             "investigation, but this turn did not read the relevant driver/app code or settings needed to prescribe "
             "async/sync, timeout, retry, or reconnect changes."
         )
-    elif any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
-        guidance = (
-            "Inspect the cited automation configuration first. Recent logs can prove repeated execution, "
+    if any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
+        return (
+            "Inspect the cited automation configuration first. Recent activity can prove repeated execution, "
             "but this turn did not read the rule/app configuration needed to prescribe an exact trigger, "
-            "threshold, debounce, hysteresis, gap, or duration edit."
+            "threshold, debounce, hysteresis, gap, cadence, or duration edit."
         )
-    else:
-        guidance = (
-            "Inspect the cited component configuration first. Recent activity can justify a tuning review, "
-            "but this turn did not read the relevant settings needed to prescribe an exact numeric configuration change."
-        )
+    return (
+        "Inspect the cited component configuration first. Recent activity can justify a tuning review, "
+        "but this turn did not read the relevant settings needed to prescribe an exact numeric configuration change."
+    )
 
-    return prefix + guidance
+
+def _configuration_replacement(line: str) -> str:
+    stripped = line.strip()
+    if stripped.startswith("|") and stripped.endswith("|"):
+        cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+        if len(cells) >= 2:
+            cells[1] = _configuration_guidance(line)
+            return "| " + " | ".join(cells) + " |"
+
+    match = _RECOMMENDATION_PREFIX.match(line)
+    if match:
+        prefix = match.group(1)
+    else:
+        prefix = "* " if line.lstrip().startswith("*") else ""
+    return prefix + _configuration_guidance(line)
+
+
+def _needs_configuration_rewrite(line: str) -> bool:
+    return bool(
+        _CONFIG_EDIT_LINE.search(line)
+        or _CONFIG_PRESCRIPTION_LINE.search(line)
+        or _IMPLEMENTATION_PRESCRIPTION_LINE.search(line)
+        or _NUMERIC_TUNING_LINE.search(line)
+        or _RULE_CADENCE_PRESCRIPTION_LINE.search(line)
+    )
+
+
+def _localize_mechanism_text(text: str) -> str:
+    """Downgrade implementation mechanisms that performance totals do not prove."""
+
+    pieces = re.split(r"(?<=[.!?])(\s+)", text)
+    for index in range(0, len(pieces), 2):
+        sentence = pieces[index]
+        if not sentence:
+            continue
+
+        def _clause_replacement(match: re.Match[str]) -> str:
+            clause = match.group(0)
+            if not _MECHANISM_KEYWORD.search(clause):
+                return clause
+            return (
+                "; the implementation cause of that measured load is not established "
+                "by the current performance statistics."
+            )
+
+        localized = _LIKELY_DUE_MECHANISM_CLAUSE.sub(_clause_replacement, sentence)
+        comparable = re.sub(r"[*_`]", "", localized)
+        if (
+            localized == sentence
+            and _MECHANISM_INFERENCE.search(comparable)
+            and _MECHANISM_KEYWORD.search(comparable)
+        ):
+            localized = (
+                "This is an implementation hypothesis worth investigating; the current performance statistics "
+                "do not establish whether timeouts, API latency, polling/config pushes, retries, reconnects, "
+                "or another implementation mechanism is responsible."
+            )
+        pieces[index] = localized
+    return "".join(pieces)
+
+
+def _guard_unproven_implementation_mechanisms(message: str) -> str:
+    lines: list[str] = []
+    trailing_newline = message.endswith("\n")
+    for line in message.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+            if len(cells) >= 2:
+                cells[1] = _localize_mechanism_text(cells[1])
+                line = "| " + " | ".join(cells) + " |"
+        else:
+            line = _localize_mechanism_text(line)
+        lines.append(line)
+    corrected = "\n".join(lines)
+    if trailing_newline:
+        corrected += "\n"
+    return corrected
 
 
 def _ensure_grounded_next_actions(message: str) -> str:
@@ -328,8 +435,7 @@ def _ensure_grounded_next_actions(message: str) -> str:
     text = str(message or "")
     if not text or _ACTION_SECTION_HEADING.search(text):
         return text
-    folded = re.sub(r"[*_`]", "", text).casefold()
-    if "top resource consumers" not in folded or "observations & hypotheses" not in folded:
+    if not _PERFORMANCE_SECTION_HEADING.search(text):
         return text
     return (
         text.rstrip()
@@ -337,7 +443,7 @@ def _ensure_grounded_next_actions(message: str) -> str:
         + "* **High per-call latency:** Inspect the same high-latency app/driver implementation and settings first; "
         + "only prescribe async/sync, timeout, retry, or reconnect changes after that code/configuration has been read.\n"
         + "* **High call volume:** Inspect the same high-volume component's schedules, subscriptions, polling, or event cadence first; "
-        + "only prescribe a specific interval/frequency change after its current configuration has been read."
+        + "only prescribe a specific threshold/interval/frequency change after its current configuration has been read."
     )
 
 
@@ -345,67 +451,67 @@ def guard_performance_log_causality(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Localize unsupported log->performance claims and exact ungrounded edits."""
+    """Validate performance synthesis, with log-specific causality checks when logs exist."""
 
     original = str(message or "")
-    if not original or not performance_validation_needed(evidence):
+    if not original or not _has_performance_evidence(evidence):
         return original, False
 
-    corrected = _ROOT_CAUSE_LOG_HEADING.sub(
-        "### Recent log observations (not proven performance causes)",
-        original,
-    )
-    corrected = _CONFIRMED_HYPOTHESIS_LABEL.sub(
-        "Hypothesis (cause unproven)",
-        corrected,
-    )
-    corrected = _LOG_CAUSE_PREAMBLE.sub(
-        "The recent logs show activity patterns; they are observations, not proven causes of the measured performance totals:",
-        corrected,
-    )
-    corrected = _CLAUSAL_PERF_CAUSE.sub(
-        "; the recent logs show repeated activity, but they do not establish that it causes the measured performance result.",
-        corrected,
-    )
-    corrected = _SENTENCE_PERF_CAUSE.sub(
-        "The recent logs show this activity, but they do not establish that it causes the measured performance result.",
-        corrected,
-    )
-    corrected = _NOUN_PERF_CAUSE.sub(
-        "The recent logs show this activity, but they do not establish that it is a primary cause or driver of the measured performance result.",
-        corrected,
-    )
-    corrected = _HYPOTHESIS_PERF_LINK.sub(
-        "This is a hypothesis worth investigating, but the recent logs do not establish it as the cause of the measured performance result.",
-        corrected,
-    )
-    corrected = _OVERLOAD_SOURCE_SUGGESTION.sub(
-        "This is a plausible hypothesis to verify, not a proven source of the measured performance load.",
-        corrected,
-    )
+    corrected = original
+    has_logs = _has_log_evidence(evidence)
+    has_configuration = _has_configuration_evidence(evidence)
 
-    if _one_sided_trigger_sample(evidence):
-        corrected = _THRESHOLD_OSCILLATION.sub(
-            "reporting qualifying values without evidence of threshold crossing",
+    if has_logs:
+        corrected = _ROOT_CAUSE_LOG_HEADING.sub(
+            "### Recent log observations (not proven performance causes)",
             corrected,
         )
-        corrected = _ONE_SIDED_FLUCTUATION_CLAUSE.sub(
-            "The sampled trigger values in the recent logs stayed on one qualifying side of the threshold;",
+        corrected = _CONFIRMED_HYPOTHESIS_LABEL.sub(
+            "Hypothesis (cause unproven)",
+            corrected,
+        )
+        corrected = _LOG_CAUSE_PREAMBLE.sub(
+            "The recent logs show activity patterns; they are observations, not proven causes of the measured performance totals:",
+            corrected,
+        )
+        corrected = _CLAUSAL_PERF_CAUSE.sub(
+            "; the recent logs show repeated activity, but they do not establish that it causes the measured performance result.",
+            corrected,
+        )
+        corrected = _SENTENCE_PERF_CAUSE.sub(
+            "The recent logs show this activity, but they do not establish that it causes the measured performance result.",
+            corrected,
+        )
+        corrected = _NOUN_PERF_CAUSE.sub(
+            "The recent logs show this activity, but they do not establish that it is a primary cause or driver of the measured performance result.",
+            corrected,
+        )
+        corrected = _HYPOTHESIS_PERF_LINK.sub(
+            "This is a hypothesis worth investigating, but the recent logs do not establish it as the cause of the measured performance result.",
+            corrected,
+        )
+        corrected = _OVERLOAD_SOURCE_SUGGESTION.sub(
+            "This is a plausible hypothesis to verify, not a proven source of the measured performance load.",
             corrected,
         )
 
-    if not _has_configuration_evidence(evidence):
+        if _one_sided_trigger_sample(evidence):
+            corrected = _THRESHOLD_OSCILLATION.sub(
+                "reporting qualifying values without evidence of threshold crossing",
+                corrected,
+            )
+            corrected = _ONE_SIDED_FLUCTUATION_CLAUSE.sub(
+                "The sampled trigger values in the recent logs stayed on one qualifying side of the threshold;",
+                corrected,
+            )
+
+    if not has_configuration:
+        corrected = _guard_unproven_implementation_mechanisms(corrected)
         lines: list[str] = []
         line_changed = False
         trailing_newline = corrected.endswith("\n")
         for line in corrected.splitlines():
-            replacement = line
-            if (
-                _CONFIG_EDIT_LINE.search(line)
-                or _CONFIG_PRESCRIPTION_LINE.search(line)
-                or _IMPLEMENTATION_PRESCRIPTION_LINE.search(line)
-            ):
-                replacement = _configuration_replacement(line)
+            replacement = _configuration_replacement(line) if _needs_configuration_rewrite(line) else line
             if replacement != line:
                 line_changed = True
             lines.append(replacement)
