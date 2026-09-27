@@ -68,6 +68,33 @@ PERFORMANCE_AND_LOG_EVIDENCE = [
     },
 ]
 
+STRUCTURED_01651_EVIDENCE = [
+    PERFORMANCE_AND_LOG_EVIDENCE[0],
+    {
+        "tool": "hub_read_diagnostics",
+        "sub_tool": "hub_get_logs",
+        "success": True,
+        "arguments": {"tool": "hub_get_logs", "args": {"limit": 100}},
+        "details": {
+            "logCount": 100,
+            "logs": [
+                {"message": f"device|{index}|Noise|unrelated row {index}"}
+                for index in range(20)
+            ],
+            "thresholdSamples": [
+                {
+                    "source": "Power saving: TV OFF (medium setting)",
+                    "operator": ">=",
+                    "threshold": 65.0,
+                    "values": [87.0, 84.0, 80.0],
+                    "allQualifying": True,
+                    "observedValueCount": 3,
+                }
+            ],
+        },
+    },
+]
+
 BAD_01648_DRAFT = """The hub is not currently overloaded.
 
 ### Root Causes (from Logs)
@@ -77,6 +104,16 @@ The logs reveal three specific patterns driving this load:
 
 ### Recommended Optimizations
 * **Fix the TV Rule**: Modify `Power saving: TV OFF (medium setting)`. Instead of triggering immediately at 65W, add a **stays that way for** duration of 1 minute.
+"""
+
+BAD_01651_DRAFT = """LG webOS TV is still the main device-side concern at 16.3% busy and about 3 seconds per call.
+
+The recent TV rule logs show power moving 87 -> 84 -> 80 W, fluctuating around the 65 W threshold. This is a likely hypothesis for the high busy percentage.
+
+The TV rule needs a debounce or larger gap between trigger actions.
+"""
+
+CLAUDE_STYLE_CAUSAL_LEAP = """LG webOS TV is top device by load at 16.3% busy, averages 3,066 ms per call, and has been stale for 929 hours. This strongly suggests the driver is repeatedly trying to reach a TV that is not responding and timing out on each attempt, making it a hidden overload source.
 """
 
 
@@ -99,6 +136,63 @@ def test_live_01648_log_causality_is_localized() -> None:
     assert "do not establish that it causes the measured performance result" in corrected
     assert "qualifying values without evidence of threshold crossing" in corrected
     assert "did not read the rule/app configuration" in corrected
+
+
+def test_live_01651_structured_full_log_sample_repairs_threshold_and_prescription() -> None:
+    corrected, changed = guard_performance_log_causality(
+        BAD_01651_DRAFT,
+        STRUCTURED_01651_EVIDENCE,
+    )
+
+    assert changed is True
+    assert "fluctuating around the 65 W threshold" not in corrected
+    assert "qualifying values without evidence of threshold crossing" in corrected
+    assert "likely hypothesis for the high busy percentage" not in corrected
+    assert "hypothesis worth investigating" in corrected
+    assert "needs a debounce or larger gap" not in corrected
+    assert "did not read the rule/app configuration" in corrected
+
+
+def test_structured_full_sample_overrides_misleading_excerpt() -> None:
+    evidence = [
+        PERFORMANCE_AND_LOG_EVIDENCE[0],
+        {
+            "tool": "hub_read_diagnostics",
+            "sub_tool": "hub_get_logs",
+            "success": True,
+            "details": {
+                "logs": PERFORMANCE_AND_LOG_EVIDENCE[1]["details"]["logs"],
+                "thresholdSamples": [
+                    {
+                        "source": "Power saving: TV OFF (medium setting)",
+                        "operator": ">=",
+                        "threshold": 65.0,
+                        "values": [79.0, 75.0, 58.0],
+                        "allQualifying": False,
+                        "observedValueCount": 3,
+                    }
+                ],
+            },
+        },
+    ]
+    draft = "The TV power is fluctuating around the 65 W threshold."
+
+    corrected, changed = guard_performance_log_causality(draft, evidence)
+
+    assert changed is False
+    assert corrected == draft
+
+
+def test_claude_style_timeout_cause_is_kept_as_hypothesis_not_fact() -> None:
+    corrected, changed = guard_performance_log_causality(
+        CLAUDE_STYLE_CAUSAL_LEAP,
+        STRUCTURED_01651_EVIDENCE,
+    )
+
+    assert changed is True
+    assert "hidden overload source" not in corrected
+    assert "plausible hypothesis to verify" in corrected
+    assert "not a proven source" in corrected
 
 
 def test_safe_performance_observations_are_unchanged() -> None:
