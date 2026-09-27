@@ -44,6 +44,11 @@ _THRESHOLD_OSCILLATION = re.compile(
     r"[^,.;\n]{0,120}\b(?:around|across)\b[^,.;\n]{0,80}"
     r"\b(?:threshold|mark)\b"
 )
+_ONE_SIDED_FLUCTUATION_CLAUSE = re.compile(
+    r"(?i)\b(?:because|as)\s+[^.\n]{0,100}\b(?:power|value|reading)s?\b"
+    r"[^.\n]{0,140}\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b"
+    r"[^.\n]{0,180}?,(?=\s+(?:the|this|that)\b)"
+)
 _EXACT_RULE_EDIT_LINE = re.compile(
     r"(?i)^(?=.*\b(?:modify|change|add|set)\b)"
     r"(?=.*\b(?:trigger|triggering|threshold|debounce|duration|stays that way)\b)"
@@ -195,6 +200,10 @@ def guard_performance_log_causality(
     if _one_sided_trigger_sample(evidence):
         corrected = _THRESHOLD_OSCILLATION.sub(
             "reporting qualifying values without evidence of threshold crossing",
+            corrected,
+        )
+        corrected = _ONE_SIDED_FLUCTUATION_CLAUSE.sub(
+            "The sampled trigger values in the recent logs stayed on one qualifying side of the threshold;",
             corrected,
         )
 
