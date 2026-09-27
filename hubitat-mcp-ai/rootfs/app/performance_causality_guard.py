@@ -88,6 +88,10 @@ _IMPLEMENTATION_PRESCRIPTION_LINE = re.compile(
     r"reconnect(?:ion|ions|s|ing)?|blocking network calls?)\b).*$"
 )
 _RECOMMENDATION_PREFIX = re.compile(r"^(\s*\*\s+\*\*[^*]+\*\*:\s*)")
+_ACTION_SECTION_HEADING = re.compile(
+    r"(?im)^#{1,6}\s*(?:recommended\s+optimizations?|recommendations?|"
+    r"grounded\s+next\s+actions?|next\s+actions?|what\s+to\s+do\s+next)\b"
+)
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -318,6 +322,25 @@ def _configuration_replacement(line: str) -> str:
     return prefix + guidance
 
 
+def _ensure_grounded_next_actions(message: str) -> str:
+    """Keep diagnostic-style performance answers actionable without inventing tuning."""
+
+    text = str(message or "")
+    if not text or _ACTION_SECTION_HEADING.search(text):
+        return text
+    folded = re.sub(r"[*_`]", "", text).casefold()
+    if "top resource consumers" not in folded or "observations & hypotheses" not in folded:
+        return text
+    return (
+        text.rstrip()
+        + "\n\n### Grounded Next Actions\n"
+        + "* **High per-call latency:** Inspect the same high-latency app/driver implementation and settings first; "
+        + "only prescribe async/sync, timeout, retry, or reconnect changes after that code/configuration has been read.\n"
+        + "* **High call volume:** Inspect the same high-volume component's schedules, subscriptions, polling, or event cadence first; "
+        + "only prescribe a specific interval/frequency change after its current configuration has been read."
+    )
+
+
 def guard_performance_log_causality(
     message: str,
     evidence: list[dict[str, Any]],
@@ -383,6 +406,7 @@ def guard_performance_log_causality(
             lines.append(line)
         corrected = "\n".join(lines)
 
+    corrected = _ensure_grounded_next_actions(corrected)
     return corrected, corrected != original
 
 
