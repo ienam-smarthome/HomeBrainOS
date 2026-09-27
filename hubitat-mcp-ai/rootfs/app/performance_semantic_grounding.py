@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 _ACTION_SECTION_HEADING = re.compile(
-    r"(?i)^\s*(#{1,6})\s*(?:recommended\s+(?:optimizations?|optimisations?)|"
+    r"(?i)^\s*(#{1,6})\s*(?:[^\w\n]*\s*)?(?:recommended\s+(?:optimizations?|optimisations?)|"
     r"recommendations?|grounded\s+next\s+actions?|next\s+actions?|what\s+to\s+do\s+next)\b"
 )
 _ANY_HEADING = re.compile(r"^\s*(#{1,6})\s+")
