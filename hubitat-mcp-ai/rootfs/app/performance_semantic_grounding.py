@@ -149,8 +149,24 @@ def _localize_mechanism_sentence(sentence: str) -> str:
         r"(?i)\b(?:typically|often|commonly|generally)\s+indicat", comparable
     ):
         return sentence
-    if not _ASSERTIVE_MECHANISM_LINK.search(comparable):
+    link = _ASSERTIVE_MECHANISM_LINK.search(comparable)
+    if not link:
         return sentence
+
+    raw_link = _ASSERTIVE_MECHANISM_LINK.search(sentence)
+    if raw_link and raw_link.start() > 0:
+        prefix = sentence[: raw_link.start()].rstrip(" ,;:-")
+        if re.search(
+            r"(?i)(?:\d[\d,.]*(?:-\d[\d,.]*)?\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"
+            r"\b(?:busy|calls?|call count|execution time|latency|free memory)\b)",
+            re.sub(r"[*_`]", "", prefix),
+        ):
+            return (
+                prefix
+                + "; the implementation cause of that measured result is not established by the current "
+                + "performance statistics."
+            )
+
     return (
         "This is an implementation hypothesis worth investigating; the current performance statistics "
         "do not establish whether timeouts, API latency, polling/config pushes, retries, reconnects, "
