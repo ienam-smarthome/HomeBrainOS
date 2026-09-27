@@ -39,6 +39,17 @@ _SENTENCE_PERF_CAUSE = re.compile(
     rf"responsible\s+for)\s+(?:the\s+)?(?:high\s+)?"
     rf"{_PERF_TERM}[^.!?\n]*(?:[.!?]|$)"
 )
+_HYPOTHESIS_PERF_LINK = re.compile(
+    rf"(?i)\b(?:this|that|it)\s+(?:is|was)\s+(?:a\s+)?"
+    rf"(?:(?:very|strongly)\s+)?(?:likely|plausible|probable)\s+"
+    rf"hypothesis\s+(?:for|behind)\s+(?:the\s+)?(?:high\s+)?"
+    rf"{_PERF_TERM}[^.!?\n]*(?:[.!?]|$)"
+)
+_OVERLOAD_SOURCE_SUGGESTION = re.compile(
+    r"(?i)\b(?:this|that|it)\s+(?:strongly\s+)?suggests\b"
+    r"[^.!?\n]{0,260}\b(?:hidden\s+)?(?:overload|load)\s+source\b"
+    r"[^.!?\n]*(?:[.!?]|$)"
+)
 _THRESHOLD_OSCILLATION = re.compile(
     r"(?i)\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b"
     r"[^,.;\n]{0,120}\b(?:around|across)\b[^,.;\n]{0,80}"
@@ -50,10 +61,16 @@ _ONE_SIDED_FLUCTUATION_CLAUSE = re.compile(
     r"(?=[^\n]{0,220}\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b)"
     r"[^\n]{0,320}?\),(?=\s+(?:the|this|that)\b)"
 )
-_EXACT_RULE_EDIT_LINE = re.compile(
+_RULE_EDIT_LINE = re.compile(
     r"(?i)^(?=.*\b(?:modify|change|add|set)\b)"
     r"(?=.*\b(?:trigger|triggering|threshold|debounce|duration|stays that way)\b)"
     r".*$"
+)
+_RULE_PRESCRIPTION_LINE = re.compile(
+    r"(?i)^(?=.*\b(?:need(?:s|ed)?|should|must|require(?:s|d)?|increase|decrease|"
+    r"add|set|change|modify)\b)"
+    r"(?=.*\b(?:debounce|threshold|trigger(?:ing)?|duration|stays that way|"
+    r"gap between trigger actions|larger gap)\b).*$"
 )
 
 
@@ -125,15 +142,46 @@ def _log_messages(evidence: list[dict[str, Any]]) -> list[str]:
     return messages
 
 
-def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
-    """Detect a sample that shows repeated qualifying reports, not threshold crossings.
+def _structured_one_sided_trigger_sample(
+    evidence: list[dict[str, Any]],
+) -> tuple[bool, bool]:
+    """Return (structured_samples_seen, any_sample_all_on_qualifying_side)."""
 
-    This is intentionally narrow. It only activates when one app prefix exposes an
-    explicit `Triggered: ... reported >=/<= N` line and at least two matching
-    top-level `Event:`/`Wait Event:` values, all on the same qualifying side of N.
-    Rule action descriptions such as `Action: Wait for event ... 0:03:00` are not
-    event-value rows and must never contribute their trailing timer fields.
+    seen = False
+    for row in evidence:
+        if not isinstance(row, dict) or _sub_tool(row) != _LOG_TOOL:
+            continue
+        details = row.get("details")
+        if not isinstance(details, dict):
+            continue
+        samples = details.get("thresholdSamples")
+        if not isinstance(samples, list):
+            continue
+        for sample in samples:
+            if not isinstance(sample, dict):
+                continue
+            values = sample.get("values")
+            if not isinstance(values, list) or len(values) < 2:
+                continue
+            seen = True
+            if sample.get("allQualifying") is True:
+                return True, True
+    return seen, False
+
+
+def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
+    """Detect repeated qualifying reports without evidence of threshold crossings.
+
+    Prefer the compact full-result `thresholdSamples` proof carried by the log
+    evidence receipt. Fall back to the retained log excerpt for older receipts and
+    unit fixtures that predate the structured sample.
     """
+
+    structured_seen, structured_one_sided = _structured_one_sided_trigger_sample(
+        evidence
+    )
+    if structured_seen:
+        return structured_one_sided
 
     thresholds: dict[str, tuple[str, float]] = {}
     values: dict[str, list[float]] = {}
@@ -199,6 +247,14 @@ def guard_performance_log_causality(
         "The recent logs show this activity, but they do not establish that it causes the measured performance result.",
         corrected,
     )
+    corrected = _HYPOTHESIS_PERF_LINK.sub(
+        "This is a hypothesis worth investigating, but the recent logs do not establish it as the cause of the measured performance result.",
+        corrected,
+    )
+    corrected = _OVERLOAD_SOURCE_SUGGESTION.sub(
+        "This is a plausible hypothesis to verify, not a proven source of the measured performance load.",
+        corrected,
+    )
 
     if _one_sided_trigger_sample(evidence):
         corrected = _THRESHOLD_OSCILLATION.sub(
@@ -213,14 +269,24 @@ def guard_performance_log_causality(
     if not _has_rule_configuration_evidence(evidence):
         lines: list[str] = []
         for line in corrected.splitlines():
-            if _EXACT_RULE_EDIT_LINE.search(line) and any(
+            if (
+                _RULE_EDIT_LINE.search(line) or _RULE_PRESCRIPTION_LINE.search(line)
+            ) and any(
                 token in line.casefold()
-                for token in ("rule", "trigger", "stays that way", "debounce", "threshold")
+                for token in (
+                    "rule",
+                    "trigger",
+                    "stays that way",
+                    "debounce",
+                    "threshold",
+                    "larger gap",
+                    "gap between",
+                )
             ):
                 prefix = "* " if line.lstrip().startswith("*") else ""
                 line = (
                     prefix
-                    + "**Inspect the cited automation configuration:** Recent logs can prove repeated execution, but this turn did not read the rule/app configuration needed to prescribe an exact trigger, threshold, debounce, or duration edit."
+                    + "**Inspect the cited automation configuration:** Recent logs can prove repeated execution, but this turn did not read the rule/app configuration needed to prescribe an exact trigger, threshold, debounce, gap, or duration edit."
                 )
             lines.append(line)
         corrected = "\n".join(lines)
