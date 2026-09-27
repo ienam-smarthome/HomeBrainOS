@@ -81,6 +81,7 @@ _CONFIG_PRESCRIPTION_LINE = re.compile(
     r"blind time|occupancy timeout|polling interval|reporting interval|polling frequency|"
     r"reporting frequency|gap between trigger actions|larger gap)\b).*$"
 )
+_RECOMMENDATION_PREFIX = re.compile(r"^(\s*\*\s+\*\*[^*]+\*\*:\s*)")
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -244,17 +245,46 @@ def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
 
 
 def _configuration_replacement(line: str) -> str:
-    prefix = "* " if line.lstrip().startswith("*") else ""
+    match = _RECOMMENDATION_PREFIX.match(line)
+    if match:
+        prefix = match.group(1)
+    else:
+        prefix = "* " if line.lstrip().startswith("*") else ""
+
     folded = line.casefold()
     if any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
-        return (
-            prefix
-            + "**Inspect the cited automation configuration:** Recent logs can prove repeated execution, but this turn did not read the rule/app configuration needed to prescribe an exact trigger, threshold, debounce, hysteresis, gap, or duration edit."
+        guidance = (
+            "Inspect the cited automation configuration first. Recent logs can prove repeated execution, "
+            "but this turn did not read the rule/app configuration needed to prescribe an exact trigger, "
+            "threshold, debounce, hysteresis, gap, or duration edit."
         )
-    return (
-        prefix
-        + "**Inspect the cited component configuration:** Recent activity can justify a tuning review, but this turn did not read the relevant app/device settings needed to prescribe an exact blind time, occupancy timeout, polling/reporting interval, frequency, or other numeric configuration change."
-    )
+    elif any(token in folded for token in ("blind time", "occupancy timeout")):
+        guidance = (
+            "Inspect the cited sensor configuration first. Recent activity can justify a tuning review, "
+            "but this turn did not read the device settings needed to prescribe an exact blind-time or "
+            "occupancy-timeout change."
+        )
+    elif any(
+        token in folded
+        for token in (
+            "polling interval",
+            "reporting interval",
+            "polling frequency",
+            "reporting frequency",
+        )
+    ):
+        guidance = (
+            "Inspect the cited integration/device configuration first. Recent activity can justify a tuning review, "
+            "but this turn did not read the relevant settings needed to prescribe an exact polling/reporting "
+            "interval or frequency."
+        )
+    else:
+        guidance = (
+            "Inspect the cited component configuration first. Recent activity can justify a tuning review, "
+            "but this turn did not read the relevant settings needed to prescribe an exact numeric configuration change."
+        )
+
+    return prefix + guidance
 
 
 def guard_performance_log_causality(
