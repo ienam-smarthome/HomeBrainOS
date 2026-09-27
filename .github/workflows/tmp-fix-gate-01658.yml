@@ -1,0 +1,64 @@
+name: Temporary fix 0.16.58 release gate regressions
+on:
+  push:
+    paths:
+      - .github/workflows/tmp-fix-gate-01658.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-semantic-grounding-0-16-58
+      - name: Patch semantic grounding compatibility
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py')
+          text = path.read_text()
+
+          old = '''    r"reduce|reduced|reducing|lengthen|shorten|ensure|use|switch|configure|review|"\n'''
+          new = '''    r"reduce|reduced|reducing|need(?:s|ed)?|lengthen|shorten|ensure|use|switch|configure|review|"\n'''
+          if old not in text:
+              raise SystemExit('directive anchor not found')
+          text = text.replace(old, new, 1)
+
+          anchor = '''_RULE_EVENT_PRESCRIPTION = re.compile(\n    r"(?i)\\b(?:ensure|change|reduce|adjust|avoid|audit|review|inspect|check|verify)\\b"\n    r"[^.!?\\n]{0,220}\\brules?\\b[^.!?\\n]{0,220}"\n    r"(?:every\\s+time|each\\s+time|on\\s+every|whenever)\\b[^.!?\\n]{0,180}"\n    r"(?:power|sensor|event|value|reading)"\n)\n'''
+          addition = anchor + '''_RULE_NUMERIC_CADENCE = re.compile(\n    r"(?i)\\b(?:ensure|change|reduce|adjust|avoid|audit|review|inspect|check|verify)\\b"\n    r"[^.!?\\n]{0,220}\\brules?\\b[^.!?\\n]{0,220}"\n    r"\\bevery\\s+\\d+(?:\\.\\d+)?\\s*(?:ms|s|sec(?:ond)?s?|m|min(?:ute)?s?|h|hours?)\\b"\n)\n'''
+          if anchor not in text:
+              raise SystemExit('rule event anchor not found')
+          text = text.replace(anchor, addition, 1)
+
+          old = '''    if _RULE_EVENT_PRESCRIPTION.search(comparable):\n        return True\n'''
+          new = '''    if _RULE_EVENT_PRESCRIPTION.search(comparable) or _RULE_NUMERIC_CADENCE.search(comparable):\n        return True\n'''
+          if old not in text:
+              raise SystemExit('unsafe recommendation anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''        if re.search(\n            r"(?i)(?:\\d[\\d,.]*(?:-\\d[\\d,.]*)?\\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"\n            r"\\b(?:busy|calls?|call count|execution time|latency|free memory)\\b)",\n            re.sub(r"[*_`]", "", prefix),\n        ):\n            return (\n                prefix\n                + "; the implementation cause of that measured result is not established by the current "\n                + "performance statistics."\n            )\n'''
+          new = '''        if re.search(\n            r"(?i)(?:\\d[\\d,.]*(?:-\\d[\\d,.]*)?\\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"\n            r"\\d[\\d,.]*\\s+calls?\\b|\\bmeasured load\\b)",\n            re.sub(r"[*_`]", "", prefix),\n        ):\n            return (\n                prefix\n                + "; the implementation cause of that measured load is not established by the current "\n                + "performance statistics."\n            )\n'''
+          if old not in text:
+              raise SystemExit('measured prefix anchor not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          module_map = Path('docs/RUNTIME-MODULE-MAP.md')
+          text = module_map.read_text()
+          anchor = '| `performance_causality_guard.py` | Prevents recent log activity from being promoted into the cause of longer-window performance statistics without direct linking evidence, and blocks unsupported threshold/edit prescriptions. |'
+          row = '| `performance_semantic_grounding.py` | Preserves measured performance facts while structurally localizing unsupported implementation mechanisms, outcome causality, and configuration prescriptions. |'
+          if row not in text:
+              if anchor not in text:
+                  raise SystemExit('runtime module map anchor not found')
+              text = text.replace(anchor, anchor + '\n' + row, 1)
+          module_map.write_text(text)
+      - name: Remove temporary workflow and commit
+        run: |
+          git rm .github/workflows/tmp-fix-gate-01658.yml
+          git add hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py docs/RUNTIME-MODULE-MAP.md
+          git config user.name "ienam-smarthome"
+          git config user.email "ienam.smarthome@gmail.com"
+          git commit -m "Fix 0.16.58 semantic grounding release regressions"
+          git push origin HEAD:agent/performance-semantic-grounding-0-16-58
