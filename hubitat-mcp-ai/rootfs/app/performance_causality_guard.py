@@ -70,7 +70,7 @@ _ONE_SIDED_FLUCTUATION_CLAUSE = re.compile(
 )
 
 _CONFIG_EDIT_LINE = re.compile(
-    r"(?i)^(?=.*\b(?:edit|modify|change|add|include|set|setting|adjust|increase|decrease|"
+    r"(?i)^(?=.*\b(?:edit|modify|change|add|include|set|adjust|increase|decrease|"
     r"raise|lower|reduce|lengthen|shorten)\b)"
     r"(?=.*\b(?:trigger|triggering|threshold|debounce|duration|stays that way|"
     r"hysteresis|blind time|occupancy timeout|polling intervals?|reporting intervals?|"
@@ -79,7 +79,7 @@ _CONFIG_EDIT_LINE = re.compile(
 )
 _CONFIG_PRESCRIPTION_LINE = re.compile(
     r"(?i)^(?=.*\b(?:need(?:s|ed)?|should|must|require(?:s|d)?|increase|decrease|"
-    r"add|include|set|setting|change|modify|edit|adjust|raise|lower|reduce|"
+    r"add|include|set|change|modify|edit|adjust|raise|lower|reduce|"
     r"lengthen|shorten)\b)"
     r"(?=.*\b(?:debounce|threshold|trigger(?:ing)?|duration|stays that way|hysteresis|"
     r"blind time|occupancy timeout|polling intervals?|reporting intervals?|polling frequency|"
@@ -103,7 +103,7 @@ _RULE_CADENCE_PRESCRIPTION_LINE = re.compile(
 )
 _RECOMMENDATION_PREFIX = re.compile(r"^(\s*\*\s+\*\*[^*]+\*\*:\s*)")
 _ACTION_SECTION_HEADING = re.compile(
-    r"(?im)^#{1,6}\s*(?:recommended\s+optimizations?|recommendations?|"
+    r"(?im)^#{1,6}\s*(?:recommended\s+(?:optimizations?|optimisations?)|recommendations?|"
     r"grounded\s+next\s+actions?|next\s+actions?|what\s+to\s+do\s+next)\b"
 )
 _PERFORMANCE_SECTION_HEADING = re.compile(
@@ -443,7 +443,7 @@ def _ensure_grounded_next_actions(message: str) -> str:
         + "* **High per-call latency:** Inspect the same high-latency app/driver implementation and settings first; "
         + "only prescribe async/sync, timeout, retry, or reconnect changes after that code/configuration has been read.\n"
         + "* **High call volume:** Inspect the same high-volume component's schedules, subscriptions, polling, or event cadence first; "
-        + "only prescribe a specific threshold/interval/frequency change after its current configuration has been read."
+        + "only prescribe a specific interval/frequency change or numeric reporting threshold after its current configuration has been read."
     )
 
 
