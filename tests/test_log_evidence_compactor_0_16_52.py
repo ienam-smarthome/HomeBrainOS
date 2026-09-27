@@ -60,6 +60,10 @@ def test_threshold_sample_survives_outside_twenty_row_receipt_excerpt() -> None:
             "operator": ">=",
             "threshold": 65.0,
             "values": [87.0, 84.0, 80.0],
+            "minObserved": 80.0,
+            "maxObserved": 87.0,
+            "qualifyingCount": 3,
+            "nonQualifyingCount": 0,
             "allQualifying": True,
             "observedValueCount": 3,
         }
@@ -86,8 +90,13 @@ def test_action_timer_is_not_misread_as_event_value() -> None:
 
     details = compact_log_evidence({"logs": logs})
 
-    assert details["thresholdSamples"][0]["values"] == [70.0, 72.0]
-    assert details["thresholdSamples"][0]["allQualifying"] is True
+    sample = details["thresholdSamples"][0]
+    assert sample["values"] == [70.0, 72.0]
+    assert sample["allQualifying"] is True
+    assert sample["minObserved"] == 70.0
+    assert sample["maxObserved"] == 72.0
+    assert sample["qualifyingCount"] == 2
+    assert sample["nonQualifyingCount"] == 0
 
 
 def test_full_sample_crossing_prevents_one_sided_flag() -> None:
@@ -103,5 +112,38 @@ def test_full_sample_crossing_prevents_one_sided_flag() -> None:
     ]
 
     details = compact_log_evidence({"logs": logs})
+    sample = details["thresholdSamples"][0]
 
-    assert details["thresholdSamples"][0]["allQualifying"] is False
+    assert sample["allQualifying"] is False
+    assert sample["minObserved"] == 61.0
+    assert sample["maxObserved"] == 70.0
+    assert sample["qualifyingCount"] == 1
+    assert sample["nonQualifyingCount"] == 1
+
+
+def test_bounded_values_still_expose_crossing_outside_visible_sample() -> None:
+    observed = [83, 83, 80, 80, 84, 84, 77, 77, 82, 82, 79, 79, 62, 61]
+    logs = [
+        {
+            "message": (
+                "app|2817|TV Rule|"
+                "Triggered: Power level of TV(83) reported >= 65.0"
+            )
+        }
+    ]
+    logs.extend(
+        {"message": f"app|2817|TV Rule|Event: TV power {value}"}
+        for value in observed
+    )
+
+    details = compact_log_evidence({"logs": logs})
+    sample = details["thresholdSamples"][0]
+
+    assert sample["values"] == [float(value) for value in observed[:12]]
+    assert all(value >= 65 for value in sample["values"])
+    assert sample["allQualifying"] is False
+    assert sample["minObserved"] == 61.0
+    assert sample["maxObserved"] == 84.0
+    assert sample["qualifyingCount"] == 12
+    assert sample["nonQualifyingCount"] == 2
+    assert sample["observedValueCount"] == 14
