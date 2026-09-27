@@ -15,4 +15,4 @@
 
 ## Live regression coverage
 
-Tests reproduce both 0.16.57 live response shapes, including LG `typically indicates` timeout/thread-blocking language, power-socket event-bus congestion, SenseCap polling/config-push variants, Life360/Octopus polling advice, LG sync/async investigation, and MCP rule advice tied to every power-value change.
+Tests reproduce both 0.16.57 live response shapes, including LG `typically indicates` timeout/thread-blocking language, power-socket event-bus congestion, SenseCap polling/config-push variants, Life360/Octopus polling advice, LG sync/async investigation, and MCP rule advice tied to every power-value change. Release metadata, changelog index, root component table, and add-on README are aligned to 0.16.58.
