@@ -40,10 +40,9 @@ _SENTENCE_PERF_CAUSE = re.compile(
     rf"{_PERF_TERM}[^.!?\n]*(?:[.!?]|$)"
 )
 _THRESHOLD_OSCILLATION = re.compile(
-    r"(?i)(?:because|as)\s+[^.\n]{0,220}\b"
-    r"(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b"
-    r"[^.\n]{0,120}\b(?:around|across)\b[^.\n]{0,80}"
-    r"\b(?:threshold|mark)\b[^.\n]*(?:[.]|$)"
+    r"(?i)\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b"
+    r"[^,.;\n]{0,120}\b(?:around|across)\b[^,.;\n]{0,80}"
+    r"\b(?:threshold|mark)\b"
 )
 _EXACT_RULE_EDIT_LINE = re.compile(
     r"(?i)^(?=.*\b(?:modify|change|add|set)\b)"
@@ -195,7 +194,7 @@ def guard_performance_log_causality(
 
     if _one_sided_trigger_sample(evidence):
         corrected = _THRESHOLD_OSCILLATION.sub(
-            "The recent rule logs show repeated qualifying reports; they do not establish oscillation across the trigger threshold.",
+            "reporting qualifying values without evidence of threshold crossing",
             corrected,
         )
 
