@@ -17,6 +17,7 @@ from evidence_source_guard import (
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from location_correlation_guard import guard_location_correlation_claim
+from performance_causality_guard import guard_performance_log_causality
 
 
 def validate_synthesis(
@@ -60,6 +61,13 @@ def validate_synthesis(
     )
     if positive_source_changed:
         issues.append("positive_source_attribution")
+
+    corrected, performance_changed = guard_performance_log_causality(
+        corrected,
+        evidence,
+    )
+    if performance_changed:
+        issues.append("performance_log_causality")
 
     if causal:
         corrected, controller_boundary_changed = guard_controller_boundary_claim(
