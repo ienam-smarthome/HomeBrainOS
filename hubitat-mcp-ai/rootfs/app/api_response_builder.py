@@ -9,6 +9,7 @@ from evidence_ledger import checked_source_categories
 from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from location_correlation_guard import guard_location_correlation_claim
+from performance_causality_guard import guard_performance_log_causality
 from technical_metrics_presenter import (
     present_request_metrics,
     present_request_outcome,
@@ -386,6 +387,7 @@ def build_agent_response(
     )
     message, _ = guard_location_correlation_claim(message, evidence)
     message, _ = guard_checked_source_absence_claim(message, evidence)
+    message, _ = guard_performance_log_causality(message, evidence)
 
     return {
         "success": True,

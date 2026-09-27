@@ -128,3 +128,69 @@ def test_builder_does_not_add_prompt_or_session_fields() -> None:
     assert "session_id" not in response
     assert "request_id" not in response
     assert "Bedroom" not in repr(response["metric_rows"])
+
+
+def test_builder_blocks_live_performance_log_causality_even_if_orchestrator_returns_draft() -> None:
+    outcome = FakeOutcome(
+        message=(
+            "### Root Causes (from Logs)\n"
+            "The logs reveal three specific patterns driving this load:\n\n"
+            "1. **TV Power Trigger Loop**: Because the TV power is fluctuating slightly "
+            "(e.g., 77W → 82W → 81W), the rule is constantly restarting. This is likely "
+            "driving the high busy percentage for the LG TV.\n\n"
+            "### Recommended Optimizations\n"
+            "* **Fix the TV Rule**: Modify `Power saving: TV OFF (medium setting)`. "
+            "Instead of triggering immediately at 65W, add a **stays that way for** "
+            "duration of 1 minute."
+        ),
+        evidence=[
+            {
+                "tool": "hub_read_diagnostics",
+                "sub_tool": "hub_get_performance_stats",
+                "success": True,
+                "arguments": {"tool": "hub_get_performance_stats"},
+            },
+            {
+                "tool": "hub_read_diagnostics",
+                "sub_tool": "hub_get_logs",
+                "success": True,
+                "arguments": {"tool": "hub_get_logs"},
+                "details": {
+                    "logs": [
+                        {
+                            "message": (
+                                "app|2817|Power saving: TV OFF (medium setting)|"
+                                "Triggered: Power level of TV(81) reported >= 65.0"
+                            )
+                        },
+                        {
+                            "message": (
+                                "app|2817|Power saving: TV OFF (medium setting)|"
+                                "Event: TV power 81"
+                            )
+                        },
+                        {
+                            "message": (
+                                "app|2817|Power saving: TV OFF (medium setting)|"
+                                "Event: TV power 84"
+                            )
+                        },
+                    ]
+                },
+            },
+        ],
+    )
+
+    response = build_agent_response(
+        outcome, model="gemma4:31b", elapsed_ms=1000, version="0.16.50"
+    )
+    message = response["message"]
+
+    assert "Root Causes (from Logs)" not in message
+    assert "not proven performance causes" in message
+    assert "patterns driving this load" not in message
+    assert "fluctuating slightly" not in message
+    assert "stayed on one qualifying side of the threshold" in message
+    assert "likely driving the high busy percentage" not in message
+    assert "do not establish that it causes the measured performance result" in message
+    assert "did not read the rule/app configuration" in message
