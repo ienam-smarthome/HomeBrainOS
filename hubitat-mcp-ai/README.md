@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.53**.
+Current add-on version: **0.16.54**.
 
 ## Architecture
+
+0.16.54 closes the configuration-grounding and threshold-auditability gaps exposed by the 0.16.53 live retest. Exact recommendations to edit a Rule Machine trigger, threshold, debounce, hysteresis, gap, duration, sensor blind time/occupancy timeout, or app/device polling/reporting interval are now configuration-dependent: when the current turn has not read the relevant settings, HomeBrain replaces the exact edit with inspection-first guidance rather than inventing a value. Explicit configuration evidence still allows specific tuning. Compact Rule Machine threshold samples remain bounded to twelve displayed values but now also include full-sample `minObserved`, `maxObserved`, `qualifyingCount`, and `nonQualifyingCount`, so a hidden crossing remains auditable even when it falls outside the visible value list. These additions do not add Hubitat calls or change the raw provider-bound log result.
 
 0.16.53 closes the remaining performance-causality language gap exposed by the second 0.16.52 live retest. Recent Rule Machine logs may establish repeated triggering/restarts, and structured threshold samples may legitimately show readings on both sides of a trigger, but neither fact proves that the rule is the `primary driver`, `main cause`, `major contributor`, or equivalent explanation of a measured device/app busy/load/latency statistic. The shared performance guard now localizes noun-form causal claims such as `This is the primary driver for the high busy percentage`, and labels such as `Confirmed Hypothesis` are downgraded to explicitly unproven hypotheses. Measured ranking from performance statistics remains untouched, so wording such as `LG webOS TV is the primary device-side performance concern at 16.3% busy` remains valid when supported by current performance evidence.
 
@@ -517,7 +519,6 @@ clarification stays `unresolved` and repeats the choices before any provider cal
 Deterministic read and routine-control outcomes use `DirectOutcomeContext` to own
 request-local evidence, choices, request class, and mutation state, restoring every
 context token on both normal completion and failure.
-
 Contextual current-state follow-ups for temperature, humidity, battery, and power
 use the explicitly selected clarification device and bypass provider synthesis.
 Active and inactive motion-sensor list/count questions use deterministic live

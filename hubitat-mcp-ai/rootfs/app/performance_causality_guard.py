@@ -68,16 +68,18 @@ _ONE_SIDED_FLUCTUATION_CLAUSE = re.compile(
     r"(?=[^\n]{0,220}\b(?:fluctuat(?:e|es|ing|ed)|oscillat(?:e|es|ing|ed))\b)"
     r"[^\n]{0,320}?\),(?=\s+(?:the|this|that)\b)"
 )
-_RULE_EDIT_LINE = re.compile(
-    r"(?i)^(?=.*\b(?:modify|change|add|set)\b)"
-    r"(?=.*\b(?:trigger|triggering|threshold|debounce|duration|stays that way)\b)"
-    r".*$"
+_CONFIG_EDIT_LINE = re.compile(
+    r"(?i)^(?=.*\b(?:edit|modify|change|add|include|set|adjust|increase|decrease|raise|lower)\b)"
+    r"(?=.*\b(?:trigger|triggering|threshold|debounce|duration|stays that way|"
+    r"hysteresis|blind time|occupancy timeout|polling interval|reporting interval|"
+    r"polling frequency|reporting frequency|gap between trigger actions|larger gap)\b).*$"
 )
-_RULE_PRESCRIPTION_LINE = re.compile(
+_CONFIG_PRESCRIPTION_LINE = re.compile(
     r"(?i)^(?=.*\b(?:need(?:s|ed)?|should|must|require(?:s|d)?|increase|decrease|"
-    r"add|set|change|modify)\b)"
-    r"(?=.*\b(?:debounce|threshold|trigger(?:ing)?|duration|stays that way|"
-    r"gap between trigger actions|larger gap)\b).*$"
+    r"add|include|set|change|modify|edit|adjust|raise|lower)\b)"
+    r"(?=.*\b(?:debounce|threshold|trigger(?:ing)?|duration|stays that way|hysteresis|"
+    r"blind time|occupancy timeout|polling interval|reporting interval|polling frequency|"
+    r"reporting frequency|gap between trigger actions|larger gap)\b).*$"
 )
 
 
@@ -115,19 +117,32 @@ def performance_validation_needed(evidence: list[dict[str, Any]]) -> bool:
     return has_performance and has_logs
 
 
-def _has_rule_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
-    """Recognize only explicit configuration/detail reads, never list/log reads."""
+def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
+    """Recognize explicit rule/app/device configuration reads, never lists/logs."""
 
     for row in evidence:
         if not isinstance(row, dict) or not _successful(row):
             continue
         kind = str(row.get("evidence_kind") or "").casefold()
-        if "rule_configuration" in kind or "app_configuration" in kind:
+        if any(token in kind for token in ("configuration", "preferences", "settings")):
             return True
         sub_tool = _sub_tool(row).casefold()
         if not sub_tool or "list" in sub_tool or sub_tool == _LOG_TOOL:
             continue
-        if any(token in sub_tool for token in ("rule_detail", "get_rule", "app_code", "get_app")):
+        if any(
+            token in sub_tool
+            for token in (
+                "rule_detail",
+                "get_rule",
+                "app_code",
+                "get_app",
+                "device_config",
+                "device_preferences",
+                "get_preferences",
+                "get_settings",
+                "read_settings",
+            )
+        ):
             return True
     return False
 
@@ -228,6 +243,20 @@ def _one_sided_trigger_sample(evidence: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _configuration_replacement(line: str) -> str:
+    prefix = "* " if line.lstrip().startswith("*") else ""
+    folded = line.casefold()
+    if any(token in folded for token in ("rule", "automation", "trigger", "hysteresis")):
+        return (
+            prefix
+            + "**Inspect the cited automation configuration:** Recent logs can prove repeated execution, but this turn did not read the rule/app configuration needed to prescribe an exact trigger, threshold, debounce, hysteresis, gap, or duration edit."
+        )
+    return (
+        prefix
+        + "**Inspect the cited component configuration:** Recent activity can justify a tuning review, but this turn did not read the relevant app/device settings needed to prescribe an exact blind time, occupancy timeout, polling/reporting interval, frequency, or other numeric configuration change."
+    )
+
+
 def guard_performance_log_causality(
     message: str,
     evidence: list[dict[str, Any]],
@@ -281,28 +310,11 @@ def guard_performance_log_causality(
             corrected,
         )
 
-    if not _has_rule_configuration_evidence(evidence):
+    if not _has_configuration_evidence(evidence):
         lines: list[str] = []
         for line in corrected.splitlines():
-            if (
-                _RULE_EDIT_LINE.search(line) or _RULE_PRESCRIPTION_LINE.search(line)
-            ) and any(
-                token in line.casefold()
-                for token in (
-                    "rule",
-                    "trigger",
-                    "stays that way",
-                    "debounce",
-                    "threshold",
-                    "larger gap",
-                    "gap between",
-                )
-            ):
-                prefix = "* " if line.lstrip().startswith("*") else ""
-                line = (
-                    prefix
-                    + "**Inspect the cited automation configuration:** Recent logs can prove repeated execution, but this turn did not read the rule/app configuration needed to prescribe an exact trigger, threshold, debounce, gap, or duration edit."
-                )
+            if _CONFIG_EDIT_LINE.search(line) or _CONFIG_PRESCRIPTION_LINE.search(line):
+                line = _configuration_replacement(line)
             lines.append(line)
         corrected = "\n".join(lines)
 
