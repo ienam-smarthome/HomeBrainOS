@@ -13,6 +13,7 @@ from investigation_policy import (
     is_causal_investigation,
     is_history_investigation,
 )
+from performance_causality_guard import performance_validation_needed
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
 from synthesis_context import build_tool_evidence_packet
 from synthesis_validator import validate_synthesis
@@ -165,6 +166,8 @@ class FinalAnswerCoordinator:
         original_user = _original_user_request(messages)
         causal = is_causal_investigation(original_user)
         investigative = is_history_investigation(original_user)
+        performance_validation = performance_validation_needed(evidence)
+        evidence_scoped = investigative or performance_validation
         current_turn = _current_turn_messages(messages)
         brief = build_current_turn_evidence_ledger(evidence)
         causal_timeline = render_causal_timeline(evidence) if causal else None
@@ -177,15 +180,14 @@ class FinalAnswerCoordinator:
         )
         tool_packet = (
             build_tool_evidence_packet(current_turn)
-            if investigative
+            if evidence_scoped
             else None
         )
 
-        # Final investigative synthesis is evidence-scoped to this request. Prior
-        # user/assistant conversation remains available to earlier reasoning/tool
-        # selection but is intentionally excluded here so an old conclusion cannot
-        # resurrect facts absent from current-turn MCP evidence.
-        final_messages = [*current_turn] if investigative else [*messages]
+        # Final evidence-heavy synthesis is scoped to this request. Prior
+        # conversation remains available to earlier reasoning/tool selection but is
+        # intentionally excluded here so an old conclusion cannot become evidence.
+        final_messages = [*current_turn] if evidence_scoped else [*messages]
         if brief:
             final_messages.append({"role": "user", "content": brief})
         if causal_timeline:
@@ -204,9 +206,9 @@ class FinalAnswerCoordinator:
 
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
-        if not investigative:
-            # Simple factual/history answers keep their established one-pass
-            # behavior; API serialization still applies local safety guards.
+        if not investigative and not performance_validation:
+            # Ordinary simple answers keep their established one-pass behavior.
+            # Performance+log answers deliberately enter the validator below.
             return draft
 
         corrected, issues = validate_synthesis(
@@ -217,9 +219,22 @@ class FinalAnswerCoordinator:
         if not issues:
             return draft
 
+        performance_repair = ""
+        if performance_validation:
+            performance_repair = (
+                " Performance validation is fail-closed: keep measured performance "
+                "statistics separate from recent-log observations; do not say a "
+                "logged rule/device causes busy percentage, load, latency, or "
+                "execution time without direct linking evidence. Do not infer "
+                "threshold crossing/oscillation from repeated reports that all "
+                "remain on the same qualifying side. Do not prescribe an exact "
+                "rule trigger/threshold/debounce/duration edit unless current-turn "
+                "rule/app configuration was actually read."
+            )
+
         # Validators identify factual conflicts; they do not author the answer.
-        # Give the model one no-tools repair pass so supported causal analysis,
-        # timelines, and uncertainty survive a local correction.
+        # Give the model one no-tools repair pass so supported analysis and
+        # uncertainty survive a localized correction.
         repair_messages = [
             *final_messages,
             {"role": "assistant", "content": draft},
@@ -230,9 +245,11 @@ class FinalAnswerCoordinator:
                     f"Detected deterministic issues: {', '.join(issues)}.\n"
                     "Rewrite the draft answer, preserving every supported useful "
                     "explanation, timeline, and uncertainty statement while fixing "
-                    "only the factual conflicts. Do not request tools. The following "
-                    "is a deterministic localized baseline showing corrections that "
-                    "must be respected; it is NOT a replacement answer:\n"
+                    "only the factual conflicts. Do not request tools."
+                    + performance_repair
+                    + " The following is a deterministic localized baseline showing "
+                    "corrections that must be respected; it is NOT a replacement "
+                    "answer:\n"
                     + corrected
                 ),
             },
