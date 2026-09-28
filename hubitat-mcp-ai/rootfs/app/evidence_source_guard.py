@@ -43,6 +43,13 @@ _SOURCE_LABELS = {
     "device_history": "device history",
 }
 
+_PERFORMANCE_SOURCE_ABSENCE = re.compile(
+    r"(?i)(?:\bno\b|\bnot\b|\bdoes\s+not\b|\bdid\s+not\b|\bwithout\b|"
+    r"\bmissing\b|\bunavailable\b)[^.!?]{0,180}"
+    r"(?:metrics?|performance\s+(?:statistics?|stats?)|logs?|log\s+entries|necessary\s+data)"
+    r"|(?:metrics?|performance\s+(?:statistics?|stats?)|logs?|log\s+entries)[^.!?]{0,120}"
+    r"(?:not\s+returned|were\s+not\s+returned|was\s+not\s+returned)",
+)
 
 _POSITIVE_LOG_ATTRIBUTION = re.compile(
     r"\b(?P<article>the\s+)?logs?\s+"
@@ -55,6 +62,60 @@ def _sentence_pieces(text: str) -> list[str]:
     return re.split(r"(?<=[.!?])(?P<space>\s+)", str(text or ""))
 
 
+def _successful_performance_sources(evidence: list[dict[str, Any]]) -> list[str]:
+    found: list[str] = []
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        tool = str(receipt.get("tool") or "")
+        sub_tool = str(receipt.get("sub_tool") or "")
+        leaf = sub_tool or tool
+        if leaf == "hub_get_metrics" and "hub metrics" not in found:
+            found.append("hub metrics")
+        elif leaf == "hub_get_performance_stats" and "performance statistics" not in found:
+            found.append("performance statistics")
+        elif leaf == "hub_get_logs" and "logs" not in found:
+            found.append("logs")
+    return found
+
+
+def _guard_performance_source_absence(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Correct false claims that successful metrics/performance/log reads were absent."""
+
+    sources = _successful_performance_sources(evidence)
+    text = str(message or "")
+    if not sources or not _PERFORMANCE_SOURCE_ABSENCE.search(text):
+        return text, False
+
+    pieces = _sentence_pieces(text)
+    changed = False
+    for index in range(0, len(pieces), 2):
+        sentence = pieces[index]
+        if not _PERFORMANCE_SOURCE_ABSENCE.search(sentence):
+            continue
+        comparable = sentence.casefold()
+        relevant = False
+        if "hub metrics" in sources and ("metric" in comparable or "necessary data" in comparable):
+            relevant = True
+        if "performance statistics" in sources and ("performance" in comparable or "necessary data" in comparable):
+            relevant = True
+        if "logs" in sources and ("log" in comparable or "necessary data" in comparable):
+            relevant = True
+        if not relevant:
+            continue
+
+        rendered = sources[0] if len(sources) == 1 else ", ".join(sources[:-1]) + f" and {sources[-1]}"
+        pieces[index] = (
+            f"Current-turn evidence did include successful {rendered}; "
+            "those results should be used for the requested performance analysis."
+        )
+        changed = True
+    return "".join(pieces), changed
+
+
 def guard_checked_source_absence_claim(
     message: str,
     evidence: list[dict[str, Any]],
@@ -62,9 +123,10 @@ def guard_checked_source_absence_claim(
     """Replace only claims that a successfully checked source was not supplied."""
 
     text = str(message or "")
+    text, performance_changed = _guard_performance_source_absence(text, evidence)
     categories = checked_source_categories(evidence)
     if not categories or not _SOURCE_WAS_MISSING.search(text):
-        return text, False
+        return text, performance_changed
 
     pieces = _sentence_pieces(text)
     changed = False
@@ -89,7 +151,7 @@ def guard_checked_source_absence_claim(
             "those sources did not by themselves establish a specific cause."
         )
         changed = True
-    return "".join(pieces), changed
+    return "".join(pieces), changed or performance_changed
 
 
 def guard_positive_source_attribution(
