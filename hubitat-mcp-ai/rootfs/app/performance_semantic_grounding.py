@@ -239,7 +239,8 @@ def _localize_outcome_sentence(sentence: str) -> str:
         r"(?i)\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
         r"(?:source|cause|driver)\b|\b(?:primary|main|major|direct)\s+"
         r"(?:source|cause|driver)\s+(?:of|for)\b|\b(?:cause|causes|caused|causing|"
-        r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in)\b",
+        r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in|"
+            r"contribut(?:e|es|ed|ing)\s+to|creat(?:e|es|ed|ing))\b",
         comparable,
     )
     if relation:
@@ -247,7 +248,8 @@ def _localize_outcome_sentence(sentence: str) -> str:
             r"(?i)\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
             r"(?:source|cause|driver)\b|\b(?:primary|main|major|direct)\s+"
             r"(?:source|cause|driver)\s+(?:of|for)\b|\b(?:cause|causes|caused|causing|"
-            r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in)\b",
+            r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in|"
+            r"contribut(?:e|es|ed|ing)\s+to|creat(?:e|es|ed|ing))\b",
             sentence,
         )
         if raw_relation and raw_relation.start() > 0:
