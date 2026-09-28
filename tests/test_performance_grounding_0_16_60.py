@@ -22,6 +22,7 @@ def test_summary_table_grounds_recommendation_column_by_header() -> None:
     corrected = ground_performance_semantics(draft)
 
     assert "839MB / 152KB" in corrected
+    assert "No action needed." in corrected
     assert "220 Jobs" in corrected
     assert "19k calls" in corrected
     assert "3.1s avg" in corrected
