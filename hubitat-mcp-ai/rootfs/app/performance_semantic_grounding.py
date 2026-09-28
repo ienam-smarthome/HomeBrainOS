@@ -278,8 +278,11 @@ def _rewrite_action_line(line: str) -> str:
     bullet = _BULLET_PREFIX.match(line)
     if bullet:
         prefix, body = bullet.groups()
-        if _unsafe_recommendation(body):
-            return prefix + _configuration_guidance(body)
+        localized_body = _localize_analysis_text(body)
+        if _unsafe_recommendation(localized_body):
+            localized_body = _configuration_guidance(localized_body)
+        if localized_body != body:
+            return prefix + localized_body
         return line
 
     pieces = _split_sentences(line)
