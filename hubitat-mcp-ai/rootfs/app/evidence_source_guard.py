@@ -44,24 +44,24 @@ _SOURCE_LABELS = {
 }
 
 _PERFORMANCE_SOURCE_TERM = (
-    r"(?:metrics?|performance\\s+(?:statistics?|stats?)|logs?|log\\s+entries|necessary\\s+data)"
+    r"(?:metrics?|performance\s+(?:statistics?|stats?)|logs?|log\s+entries|necessary\s+data)"
 )
 _PERFORMANCE_SOURCE_ABSENCE = re.compile(
     rf"(?i)(?:"
-    rf"\\b(?:current-turn\\s+)?evidence\\b[^.!?]{{0,80}}\\b(?:does|do|did)\\s+not\\s+"
-    rf"(?:provide|include|contain|return|supply)\\b[^.!?]{{0,100}}\\b{_PERFORMANCE_SOURCE_TERM}\\b"
-    rf"|\\bno\\b[^.!?]{{0,160}}\\b{_PERFORMANCE_SOURCE_TERM}\\b[^.!?]{{0,100}}"
-    rf"\\b(?:was|were|is|are)?\\s*(?:returned|provided|supplied|available|retrieved|received|included|present)\\b"
-    rf"|\\b{_PERFORMANCE_SOURCE_TERM}\\b[^.!?]{{0,120}}\\b(?:was|were|is|are|did)\\s+not\\s+"
-    rf"(?:returned|provided|supplied|available|retrieved|received|included|present|checked|read|queried)\\b"
+    rf"\b(?:current-turn\s+)?evidence\b[^.!?]{{0,80}}\b(?:does|do|did)\s+not\s+"
+    rf"(?:provide|include|contain|return|supply)\b[^.!?]{{0,100}}\b{_PERFORMANCE_SOURCE_TERM}\b"
+    rf"|\bno\b[^.!?]{{0,160}}\b{_PERFORMANCE_SOURCE_TERM}\b[^.!?]{{0,100}}"
+    rf"\b(?:was|were|is|are)?\s*(?:returned|provided|supplied|available|retrieved|received|included|present)\b"
+    rf"|\b{_PERFORMANCE_SOURCE_TERM}\b[^.!?]{{0,120}}\b(?:was|were|is|are|did)\s+not\s+"
+    rf"(?:returned|provided|supplied|available|retrieved|received|included|present|checked|read|queried)\b"
     rf")"
 )
 
 _SUBSTANTIVE_PERFORMANCE_CONTENT = re.compile(
-    r"(?i)(?:\\b\\d[\\d,.]*\\s*(?:%|ms|mb|kb|°c)\\b|\\bcall count\\b|"
-    r"\\bresource consumers?\\b|\\bperformance analysis\\b|"
-    r"\\blogs?\\s+(?:show|shows|showed|indicate|indicates|indicated|record|records|recorded|contain|contains|contained)\\b|"
-    r"\\breporting\\b[^.!?\\n]{0,80}\\bevery\\s+\\d+)"
+    r"(?i)(?:\b\d[\d,.]*\s*(?:%|ms|mb|kb|°c)\b|\bcall count\b|"
+    r"\bresource consumers?\b|\bperformance analysis\b|"
+    r"\blogs?\s+(?:show|shows|showed|indicate|indicates|indicated|record|records|recorded|contain|contains|contained)\b|"
+    r"\breporting\b[^.!?\n]{0,80}\bevery\s+\d+)"
 )
 
 _POSITIVE_LOG_ATTRIBUTION = re.compile(
@@ -99,7 +99,7 @@ def _guard_performance_source_absence(
     """Correct false claims that successful metrics/performance/log reads were absent.
 
     In a substantive performance answer, remove only the contradicted refusal sentence.
-    Do not splice serializer repair prose into a valid device/log observation.  For a
+    Do not splice serializer repair prose into a valid device/log observation. For a
     pure source-absence refusal, retain one compact deterministic correction so the
     final response cannot falsely claim that successful current-turn reads were missing.
     """
