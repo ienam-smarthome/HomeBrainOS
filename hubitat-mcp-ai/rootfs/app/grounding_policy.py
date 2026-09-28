@@ -116,10 +116,12 @@ class GroundingPolicy:
 
     @staticmethod
     def is_live_log_call(name: str, arguments: dict[str, Any]) -> bool:
-        """Recognise only the authoritative diagnostics log sub-tool."""
+        """Recognise authoritative direct or gateway-backed Hubitat log reads."""
 
+        if name == "hub_get_logs":
+            return True
         return (
-            name == "hub_read_diagnostics"
+            name in {"hub_read_diagnostics", "hub_manage_logs"}
             and gateway_operation(arguments) == "hub_get_logs"
         )
 

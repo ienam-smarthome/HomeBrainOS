@@ -11,11 +11,12 @@ import re
 
 _ACTION_SECTION_HEADING = re.compile(
     r"(?i)^\s*(#{1,6})\s*(?:[^\w\n]*\s*)?(?:recommended\s+(?:optimizations?|optimisations?)|"
-    r"recommendations?|grounded\s+next\s+actions?|next\s+actions?|what\s+to\s+do\s+next)\b"
+    r"recommendations?|recommended\s+improvements?|grounded\s+next\s+actions?|"
+    r"next\s+actions?|what\s+to\s+do\s+next)\b"
 )
 _ANY_HEADING = re.compile(r"^\s*(#{1,6})\s+")
 _TABLE_SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$")
-_BULLET_PREFIX = re.compile(r"^(\s*[*+-]\s+(?:\*\*[^*]+\*\*:\s*)?)(.*)$")
+_BULLET_PREFIX = re.compile(r"^(\s*[*+-]\s+(?:\*\*[^*]+\*\*(?::\s*|\s+))?)(.*)$")
 
 _DIRECTIVE = re.compile(
     r"(?i)\b(?:edit|modify|change|add|include|set|adjust|increase|decrease|raise|lower|"
@@ -27,7 +28,7 @@ _CONFIG_TOPIC = re.compile(
     r"occupancy timeout|polling intervals?|reporting intervals?|polling frequency|"
     r"reporting frequency|reporting thresholds?|config(?:uration)?\s+push(?:es)?|"
     r"gap between trigger actions|larger gap|cadence|async(?:hronous(?:ly)?)?|"
-    r"synchronous(?:ly)?|timeouts?|retries?|reconnect(?:ion|ions|s|ing)?)\b"
+    r"synchronous(?:ly)?|timeouts?|retries?|reconnect(?:ion|ions|s|ing)?|non[- ]blocking)\b"
 )
 _RULE_EVENT_PRESCRIPTION = re.compile(
     r"(?i)\b(?:ensure|change|reduce|adjust|avoid|audit|review|inspect|check|verify)\b"
@@ -45,19 +46,26 @@ _NUMERIC_TUNING = re.compile(
     r"debounce|duration|cadence)\b[^.!?\n]{0,160}"
     r"\b\d+(?:\.\d+)?\s*(?:w|%|ms|s|sec(?:ond)?s?|m|min(?:ute)?s?|h|hours?)\b"
 )
+_IMPLEMENTATION_ADVICE = re.compile(
+    r"(?i)\b(?:check|ensure|review|inspect|audit|verify)\b[^.!?\n]{0,240}"
+    r"(?:complex loops?|external api calls?|trigger(?:ed)?\s+by|non[- ]blocking)"
+)
 
 _MECHANISM = re.compile(
     r"(?i)\b(?:network timeouts?|slow api responses?|api latency|cloud polling|"
     r"frequent polling|polling|config(?:uration)?\s+push(?:es)?|pushing configurations?|"
     r"retries?|reconnect(?:ion|ions|s|ing)?|blocking network calls?|"
-    r"block(?:ing)? hub execution threads?|execution threads?|frequent reporting)\b"
+    r"block(?:ing)? hub execution threads?|execution threads?|blocking calls?|"
+    r"pause(?:s|d|ing)? other hub activities?|synchronous http requests?|frequent reporting)\b"
 )
 _ASSERTIVE_MECHANISM_LINK = re.compile(
     r"(?i)\b(?:often|typically|commonly|generally)?\s*indicat(?:e|es|ed|ing)\b|"
     r"\b(?:strongly\s+)?suggest(?:s|ed|ing)?\b|"
-    r"\b(?:likely|probably)\s+due\s+to\b|"
+    r"\b(?:likely|probably)\s+(?:due\s+to|caused\s+by)\b|"
+    r"\b(?:is|are|was|were)\s+(?:typically\s+)?blocking\s+calls?\b|"
     r"\b(?:is|are|was|were)\s+(?:a\s+)?(?:common|primary|main|major|direct)\s+cause\b|"
     r"\bwhich\s+can\s+(?:block|cause|lead|result)\b|"
+    r"\bcan\s+pause\s+other\s+hub\s+activities\b|"
     r"\bcan\s+(?:block|cause|lead\s+to|result\s+in)\b"
 )
 _CONDITIONAL_MARKER = re.compile(
@@ -72,7 +80,8 @@ _STRONG_OUTCOME_LINK = re.compile(
     r"(?i)\b(?:primary|main|major|direct)\s+(?:source|cause|driver)\s+(?:of|for)\b|"
     r"\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
     r"(?:source|cause|driver)\b|"
-    r"\b(?:cause|causes|caused|causing|lead\s+to|leads\s+to|result\s+in|results\s+in)\b"
+    r"\b(?:cause|causes|caused|causing|lead\s+to|leads\s+to|leading\s+to|"
+    r"result\s+in|results\s+in)\b"
 )
 _LIKELY_CANDIDATE_OUTCOME = re.compile(
     r"(?i)\b(?:most\s+likely|likely)\s+candidates?\s+to\s+cause\b"
@@ -80,7 +89,7 @@ _LIKELY_CANDIDATE_OUTCOME = re.compile(
 
 
 def _configuration_guidance(text: str) -> str:
-    folded = text.casefold()
+    folded = text.casefold().replace('"', "").replace("“", "").replace("”", "")
     if "blind time" in folded or "occupancy timeout" in folded:
         return (
             "Inspect the cited sensor configuration first. Recent activity can justify a tuning review, "
@@ -114,12 +123,13 @@ def _configuration_guidance(text: str) -> str:
             "retry",
             "reconnect",
             "blocking network",
+            "non-blocking",
         )
     ):
         return (
             "Inspect the cited integration implementation/configuration first. The measured latency can justify "
             "investigation, but this turn did not read the relevant driver/app code or settings needed to prescribe "
-            "async/sync, timeout, retry, or reconnect changes."
+            "async/sync, timeout, retry, reconnect, or blocking-model changes."
         )
     if any(token in folded for token in ("rule", "automation", "trigger", "hysteresis", "cadence")):
         return (
@@ -134,8 +144,10 @@ def _configuration_guidance(text: str) -> str:
 
 
 def _unsafe_recommendation(text: str) -> bool:
-    comparable = re.sub(r"[*_`]", "", str(text or ""))
+    comparable = re.sub(r'[*_`"“”]', "", str(text or ""))
     if _RULE_EVENT_PRESCRIPTION.search(comparable) or _RULE_NUMERIC_CADENCE.search(comparable):
+        return True
+    if _IMPLEMENTATION_ADVICE.search(comparable):
         return True
     if _NUMERIC_TUNING.search(comparable) and _DIRECTIVE.search(comparable):
         return True
@@ -146,8 +158,18 @@ def _split_sentences(text: str) -> list[str]:
     return re.split(r"(?<=[.!?])(\s+)", text)
 
 
+def _dedupe_inspection_guidance(text: str) -> str:
+    first = text.find("Inspect the cited")
+    if first < 0:
+        return text
+    second = text.find("Inspect the cited", first + 1)
+    if second < 0:
+        return text
+    return text[:second].rstrip()
+
+
 def _localize_mechanism_sentence(sentence: str) -> str:
-    comparable = re.sub(r"[*_`]", "", sentence)
+    comparable = re.sub(r'[*_`"“”]', "", sentence)
     if not _MECHANISM.search(comparable):
         return sentence
     if _CONDITIONAL_MARKER.search(comparable) and not re.search(
@@ -158,9 +180,10 @@ def _localize_mechanism_sentence(sentence: str) -> str:
     if not link:
         return sentence
 
-    raw_link = _ASSERTIVE_MECHANISM_LINK.search(sentence)
+    raw_comparable = re.sub(r'["“”]', "", sentence)
+    raw_link = _ASSERTIVE_MECHANISM_LINK.search(raw_comparable)
     if raw_link and raw_link.start() > 0:
-        prefix = sentence[: raw_link.start()].rstrip(" ,;:-")
+        prefix = raw_comparable[: raw_link.start()].rstrip(" ,;:-")
         if re.search(
             r"(?i)(?:\d[\d,.]*(?:-\d[\d,.]*)?\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"
             r"\d[\d,.]*\s+calls?\b|\bmeasured load\b)",
@@ -175,7 +198,7 @@ def _localize_mechanism_sentence(sentence: str) -> str:
     return (
         "This is an implementation hypothesis worth investigating; the current performance statistics "
         "do not establish whether timeouts, API latency, polling/config pushes, retries, reconnects, "
-        "reporting cadence, or another implementation mechanism is responsible."
+        "reporting cadence, blocking calls, or another implementation mechanism is responsible."
     )
 
 
@@ -199,16 +222,15 @@ def _localize_outcome_sentence(sentence: str) -> str:
         r"(?i)\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
         r"(?:source|cause|driver)\b|\b(?:primary|main|major|direct)\s+"
         r"(?:source|cause|driver)\s+(?:of|for)\b|\b(?:cause|causes|caused|causing|"
-        r"lead\s+to|leads\s+to|result\s+in|results\s+in)\b",
+        r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in)\b",
         comparable,
     )
     if relation:
-        # Preserve the measured subject before the unsupported causal predicate.
         raw_relation = re.search(
             r"(?i)\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
             r"(?:source|cause|driver)\b|\b(?:primary|main|major|direct)\s+"
             r"(?:source|cause|driver)\s+(?:of|for)\b|\b(?:cause|causes|caused|causing|"
-            r"lead\s+to|leads\s+to|result\s+in|results\s+in)\b",
+            r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in)\b",
             sentence,
         )
         if raw_relation and raw_relation.start() > 0:
@@ -236,7 +258,7 @@ def _localize_analysis_text(text: str) -> str:
         if _unsafe_recommendation(localized):
             localized = _configuration_guidance(localized)
         pieces[index] = localized
-    return "".join(pieces)
+    return _dedupe_inspection_guidance("".join(pieces))
 
 
 def _rewrite_action_line(line: str) -> str:
@@ -256,8 +278,13 @@ def _rewrite_action_line(line: str) -> str:
     bullet = _BULLET_PREFIX.match(line)
     if bullet:
         prefix, body = bullet.groups()
+        if body.lstrip().startswith("Inspect the cited"):
+            return prefix + _dedupe_inspection_guidance(body)
         if _unsafe_recommendation(body):
             return prefix + _configuration_guidance(body)
+        localized_body = _localize_analysis_text(body)
+        if localized_body != body:
+            return prefix + localized_body
         return line
 
     pieces = _split_sentences(line)
@@ -267,7 +294,8 @@ def _rewrite_action_line(line: str) -> str:
         if sentence and _unsafe_recommendation(sentence):
             pieces[index] = _configuration_guidance(sentence)
             changed = True
-    return "".join(pieces) if changed else line
+    rewritten = "".join(pieces) if changed else line
+    return _dedupe_inspection_guidance(rewritten)
 
 
 def ground_performance_semantics(message: str) -> str:
