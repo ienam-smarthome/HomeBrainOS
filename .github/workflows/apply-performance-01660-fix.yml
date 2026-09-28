@@ -1,0 +1,27 @@
+name: Apply 0.16.60 compatibility fix
+
+on:
+  push:
+    branches:
+      - agent/performance-synthesis-0-16-60
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-synthesis-0-16-60
+      - name: Apply focused compatibility patch
+        run: python scripts/patch_performance_01660_fix.py
+      - name: Commit and remove helpers
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/apply-performance-01660-fix.yml scripts/patch_performance_01660_fix.py
+          git add hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py
+          git commit -m 'Preserve measured performance facts in 0.16.60 grounding'
+          git push origin HEAD:agent/performance-synthesis-0-16-60
