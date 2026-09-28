@@ -1,0 +1,65 @@
+name: Align release 0.16.59
+
+on:
+  push:
+    branches:
+      - agent/log-grounding-and-synthesis-0-16-59
+
+permissions:
+  contents: write
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/log-grounding-and-synthesis-0-16-59
+      - name: Align 0.16.59 release metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('hubitat-mcp-ai/config.yaml'): [('version: "0.16.58"', 'version: "0.16.59"')],
+              Path('README.md'): [('| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.58 |', '| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.59 |')],
+              Path('hubitat-mcp-ai/README.md'): [('Current add-on version: **0.16.58**.', 'Current add-on version: **0.16.59**.')],
+              Path('hubitat-mcp-ai/CHANGELOG-INDEX.md'): [('## Current release\n\n- [0.16.58]', '## Current release\n\n- [0.16.59](CHANGELOG-0.16.59.md)\n- [0.16.58]')],
+          }
+          for path, pairs in replacements.items():
+              text = path.read_text()
+              for old, new in pairs:
+                  assert old in text, (path, old)
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
+
+          Path('hubitat-mcp-ai/CHANGELOG-0.16.59.md').write_text('''# Hubitat MCP AI 0.16.59
+
+## Log grounding and performance-source consistency
+
+- Successful `hub_get_logs` reads now satisfy the request-local log grounding latch whether they are direct, routed through `hub_read_diagnostics`, or routed through `hub_manage_logs`.
+- A successful `hub_manage_logs -> hub_get_logs` call can no longer trigger a redundant log-evidence retry merely because the gateway name differs.
+- The API serialization boundary now rejects final claims that hub metrics, performance statistics, or logs were not returned when successful current-turn receipts prove those sources were read.
+- Performance synthesis recognizes `Recommended Improvements` as an action section and grounds quoted wording such as `"polling" intervals` before configuration matching.
+- Generic implementation claims such as `blocking calls`, `pause other hub activities`, synchronous HTTP/network-timeout explanations, and `non-blocking` driver prescriptions are localized unless the relevant implementation or configuration was read.
+- Unsupported app/rule implementation advice such as complex-loop, external-API, or triggered-by claims is inspection-first without same-turn implementation/config evidence.
+- Common Markdown labels such as `**Hypothesis:**` and `**Action:**` are parsed correctly inside action bullets so mechanism hypotheses receive the same grounding as analysis text.
+- Already-localized sensor/configuration guidance is not reclassified by a second generic pass, preserving the sensor-specific 0.16.54/0.16.55 contracts.
+- Adjacent duplicate inspection-first guidance is collapsed while measured performance facts remain intact.
+- No additional Hubitat reads are introduced.
+
+## Live regression coverage
+
+Regression tests reproduce both 0.16.58 live outputs: the performance-only LG/SenseCap/MCP wording and the successful metrics + performance + 100-log turn that incorrectly ended with a `no data` answer. Existing performance grounding contracts remain covered by the full release suite.
+''')
+          PY
+      - name: Commit release alignment and remove helper
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/release-align-0-16-59.yml
+          git add README.md hubitat-mcp-ai/config.yaml hubitat-mcp-ai/README.md hubitat-mcp-ai/CHANGELOG-INDEX.md hubitat-mcp-ai/CHANGELOG-0.16.59.md
+          git commit -m 'Align HomeBrain 0.16.59 release metadata'
+          git push origin HEAD:agent/log-grounding-and-synthesis-0-16-59
