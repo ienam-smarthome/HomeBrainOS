@@ -76,6 +76,7 @@ def test_dangling_which_is_removed_when_mechanism_clause_is_localized() -> None:
     assert "3,084ms" in corrected
     assert "which;" not in corrected
     assert "which can block" not in corrected
+    assert "implementation;" not in corrected
     assert "the implementation cause of that measured load is not established" in corrected
 
 
