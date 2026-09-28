@@ -1,0 +1,27 @@
+name: Run 0.16.60 performance patch
+
+on:
+  push:
+    branches:
+      - agent/performance-synthesis-0-16-60
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-synthesis-0-16-60
+      - name: Apply patch
+        run: python scripts/patch_performance_01660.py
+      - name: Commit patch and remove helpers
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/run-patch-0-16-60.yml scripts/patch_performance_01660.py
+          git add hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py
+          git commit -m 'Harden performance synthesis table and causal grounding'
+          git push origin HEAD:agent/performance-synthesis-0-16-60
