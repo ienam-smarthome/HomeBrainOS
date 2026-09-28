@@ -19,14 +19,15 @@ _TABLE_SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$")
 _BULLET_PREFIX = re.compile(r"^(\s*[*+-]\s+(?:\*\*[^*]+\*\*(?::\s*|\s+))?)(.*)$")
 
 _DIRECTIVE = re.compile(
-    r"(?i)\b(?:edit|modify|change|add|include|set|adjust|increase|decrease|raise|lower|"
-    r"reduce|reduced|reducing|need(?:s|ed)?|lengthen|shorten|ensure|use|switch|configure|review|"
-    r"inspect|investigate|check|verify|audit|consider)\b"
+    r"(?i)\b(?:edit|modify|change|add|include|set|adjust|increase|increasing|decrease|decreasing|"
+    r"raise|lower|reduce|reduced|reducing|need(?:s|ed)?|lengthen|shorten|ensure|use|using|"
+    r"switch|switching|configure|review|inspect|investigate|check|verify|audit|consider|"
+    r"disable|disabled|disabling|consolidate|consolidating|slow(?:ing)?\s+down|fix|fixing)\b"
 )
 _CONFIG_TOPIC = re.compile(
     r"(?i)\b(?:trigger(?:ing)?|thresholds?|debounce|duration|hysteresis|blind time|"
-    r"occupancy timeout|polling intervals?|reporting intervals?|polling frequency|"
-    r"reporting frequency|reporting thresholds?|config(?:uration)?\s+push(?:es)?|"
+    r"occupancy timeout|poll(?:ing)?(?:\s+intervals?)?|status polling|auto[- ]refresh|push model|"
+    r"reporting intervals?|reporting frequency|reporting thresholds?|config(?:uration)?\s+push(?:es)?|"
     r"gap between trigger actions|larger gap|cadence|async(?:hronous(?:ly)?)?|"
     r"synchronous(?:ly)?|timeouts?|retries?|reconnect(?:ion|ions|s|ing)?|non[- ]blocking)\b"
 )
@@ -55,7 +56,8 @@ _MECHANISM = re.compile(
     r"(?i)\b(?:network timeouts?|slow api responses?|api latency|cloud polling|"
     r"frequent polling|polling|config(?:uration)?\s+push(?:es)?|pushing configurations?|"
     r"retries?|reconnect(?:ion|ions|s|ing)?|blocking network calls?|"
-    r"block(?:ing)? hub execution threads?|execution threads?|blocking calls?|"
+    r"block(?:ing)? hub execution threads?|execution threads?|blocking calls?|blocking risk|"
+    r"block(?:ing)? other (?:hub )?(?:activities|automations)|"
     r"pause(?:s|d|ing)? other hub activities?|synchronous http requests?|frequent reporting)\b"
 )
 _ASSERTIVE_MECHANISM_LINK = re.compile(
@@ -73,15 +75,16 @@ _CONDITIONAL_MARKER = re.compile(
 )
 
 _PERFORMANCE_OUTCOME = re.compile(
-    r"(?i)\b(?:hub\s+lag|lag|stutter|sluggish(?:ness)?|instability|"
-    r"event[- ]bus\s+congestion|congestion|overload|crash(?:es|ing)?)\b"
+    r"(?i)\b(?:hub\s+lag|lag|stutter|micro[- ]stutters?|sluggish(?:ness)?|instability|"
+    r"event[- ]bus\s+congestion|congestion|inefficien(?:cy|cies)|overload|"
+    r"(?:unnecessary\s+)?load|busy(?:\s+(?:rate|percentage))?|crash(?:es|ing)?)\b"
 )
 _STRONG_OUTCOME_LINK = re.compile(
-    r"(?i)\b(?:primary|main|major|direct)\s+(?:source|cause|driver)\s+(?:of|for)\b|"
+    r"(?i)\b(?:primary|main|major|direct)\s+(?:sources?|causes?|drivers?)\s+(?:of|for)\b|"
     r"\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
-    r"(?:source|cause|driver)\b|"
+    r"(?:sources?|causes?|drivers?)\b|"
     r"\b(?:cause|causes|caused|causing|lead\s+to|leads\s+to|leading\s+to|"
-    r"result\s+in|results\s+in)\b"
+    r"result\s+in|results\s+in|contribut(?:e|es|ed|ing)\s+to|creat(?:e|es|ed|ing))\b"
 )
 _LIKELY_CANDIDATE_OUTCOME = re.compile(
     r"(?i)\b(?:most\s+likely|likely)\s+candidates?\s+to\s+cause\b"
@@ -184,6 +187,7 @@ def _localize_mechanism_sentence(sentence: str) -> str:
     raw_link = _ASSERTIVE_MECHANISM_LINK.search(raw_comparable)
     if raw_link and raw_link.start() > 0:
         prefix = raw_comparable[: raw_link.start()].rstrip(" ,;:-")
+        prefix = re.sub(r"(?i)\bwhich\s*$", "", prefix).rstrip(" ,;:-")
         if re.search(
             r"(?i)(?:\d[\d,.]*(?:-\d[\d,.]*)?\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"
             r"\d[\d,.]*\s+calls?\b|\bmeasured load\b)",
@@ -210,6 +214,11 @@ def _localize_outcome_sentence(sentence: str) -> str:
         return (
             "These are the highest measured consumers to investigate if hub lag or instability occurs; "
             "the current performance statistics do not establish that they will cause those outcomes."
+        )
+    if re.search(r"(?i)\brecent logs\b.*\bprimary sources?\b", comparable):
+        return (
+            "The recent logs show activity patterns worth investigating; they do not establish primary "
+            "sources of performance inefficiency."
         )
     if not _STRONG_OUTCOME_LINK.search(comparable):
         return sentence
@@ -261,6 +270,36 @@ def _localize_analysis_text(text: str) -> str:
     return _dedupe_inspection_guidance("".join(pieces))
 
 
+def _normalize_table_header(cell: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", re.sub(r"[*_`]", "", cell).casefold()).strip()
+
+
+def _table_action_column(cells: list[str]) -> int | None:
+    for index, cell in enumerate(cells):
+        normalized = _normalize_table_header(cell)
+        if normalized in {
+            "action",
+            "actions",
+            "recommendation",
+            "recommendations",
+            "recommended action",
+            "recommended actions",
+            "improvement",
+            "improvements",
+        }:
+            return index
+    return None
+
+
+def _rewrite_action_cell(text: str) -> str:
+    body = str(text or "")
+    if body.lstrip().startswith("Inspect the cited"):
+        return _dedupe_inspection_guidance(body)
+    if _unsafe_recommendation(body):
+        return _configuration_guidance(body)
+    return _localize_analysis_text(body)
+
+
 def _rewrite_action_line(line: str) -> str:
     stripped = line.strip()
     if not stripped:
@@ -270,32 +309,20 @@ def _rewrite_action_line(line: str) -> str:
     if stripped.startswith("|") and stripped.endswith("|"):
         cells = [cell.strip() for cell in stripped[1:-1].split("|")]
         if len(cells) >= 2 and cells[0].casefold() not in {"component", ":---", "---"}:
-            if _unsafe_recommendation(cells[1]):
-                cells[1] = _configuration_guidance(cells[1])
-                return "| " + " | ".join(cells) + " |"
+            cells[1] = _rewrite_action_cell(cells[1])
+            return "| " + " | ".join(cells) + " |"
         return line
 
     bullet = _BULLET_PREFIX.match(line)
     if bullet:
         prefix, body = bullet.groups()
-        if body.lstrip().startswith("Inspect the cited"):
-            return prefix + _dedupe_inspection_guidance(body)
-        if _unsafe_recommendation(body):
-            return prefix + _configuration_guidance(body)
-        localized_body = _localize_analysis_text(body)
-        if localized_body != body:
-            return prefix + localized_body
-        return line
+        return prefix + _rewrite_action_cell(body)
 
-    pieces = _split_sentences(line)
-    changed = False
-    for index in range(0, len(pieces), 2):
-        sentence = pieces[index]
-        if sentence and _unsafe_recommendation(sentence):
-            pieces[index] = _configuration_guidance(sentence)
-            changed = True
-    rewritten = "".join(pieces) if changed else line
-    return _dedupe_inspection_guidance(rewritten)
+    if line.lstrip().startswith("Inspect the cited"):
+        return _dedupe_inspection_guidance(line)
+    if _unsafe_recommendation(line):
+        return _configuration_guidance(line)
+    return _localize_analysis_text(line)
 
 
 def ground_performance_semantics(message: str) -> str:
@@ -308,6 +335,7 @@ def ground_performance_semantics(message: str) -> str:
     lines: list[str] = []
     in_action_section = False
     action_level: int | None = None
+    table_action_index: int | None = None
     trailing_newline = original.endswith("\n")
 
     for line in original.splitlines():
@@ -316,24 +344,42 @@ def ground_performance_semantics(message: str) -> str:
         if action_heading:
             in_action_section = True
             action_level = len(action_heading.group(1))
+            table_action_index = None
             lines.append(line)
             continue
         if in_action_section and any_heading and action_level is not None:
             if len(any_heading.group(1)) <= action_level:
                 in_action_section = False
                 action_level = None
+                table_action_index = None
 
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+            if _TABLE_SEPARATOR.match(line):
+                lines.append(line)
+                continue
+            detected_index = _table_action_column(cells)
+            if detected_index is not None:
+                table_action_index = detected_index
+                lines.append(line)
+                continue
+            if table_action_index is not None and table_action_index < len(cells):
+                cells[table_action_index] = _rewrite_action_cell(cells[table_action_index])
+                line = "| " + " | ".join(cells) + " |"
+            elif in_action_section:
+                line = _rewrite_action_line(line)
+            elif len(cells) >= 2:
+                cells[1] = _localize_analysis_text(cells[1])
+                line = "| " + " | ".join(cells) + " |"
+            lines.append(line)
+            continue
+
+        table_action_index = None
         if in_action_section:
             line = _rewrite_action_line(line)
         else:
-            stripped = line.strip()
-            if stripped.startswith("|") and stripped.endswith("|"):
-                cells = [cell.strip() for cell in stripped[1:-1].split("|")]
-                if len(cells) >= 2:
-                    cells[1] = _localize_analysis_text(cells[1])
-                    line = "| " + " | ".join(cells) + " |"
-            else:
-                line = _localize_analysis_text(line)
+            line = _localize_analysis_text(line)
         lines.append(line)
 
     corrected = "\n".join(lines)
