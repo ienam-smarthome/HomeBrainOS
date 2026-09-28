@@ -102,7 +102,12 @@ def _configuration_guidance(text: str) -> str:
     if any(
         token in folded
         for token in (
+            "polling",
+            "poll interval",
             "polling interval",
+            "status polling",
+            "auto-refresh",
+            "push model",
             "reporting interval",
             "polling frequency",
             "reporting frequency",
@@ -208,6 +213,9 @@ def _localize_mechanism_sentence(sentence: str) -> str:
 
 def _localize_outcome_sentence(sentence: str) -> str:
     comparable = re.sub(r"[*_`]", "", sentence)
+    folded = comparable.casefold()
+    if "implementation cause of that measured load is not established" in folded:
+        return sentence
     if not _PERFORMANCE_OUTCOME.search(comparable):
         return sentence
     if _LIKELY_CANDIDATE_OUTCOME.search(comparable):
@@ -243,6 +251,17 @@ def _localize_outcome_sentence(sentence: str) -> str:
             sentence,
         )
         if raw_relation and raw_relation.start() > 0:
+            measured_busy = re.search(
+                r"\*{0,2}\d[\d,.]*\s*%\s+busy(?:\s+(?:rate|percentage))?\*{0,2}",
+                sentence,
+                re.IGNORECASE,
+            )
+            if measured_busy:
+                return (
+                    measured_busy.group(0)
+                    + "; this is a measured result, but the current statistics do not establish "
+                    + "that the cited activity causes that busy rate."
+                )
             prefix = sentence[: raw_relation.start()].rstrip(" ,;:-")
             if prefix:
                 return (
