@@ -15,4 +15,4 @@
 
 ## Live regression coverage
 
-Regression tests reproduce both 0.16.58 live outputs: the performance-only LG/SenseCap/MCP wording and the successful metrics + performance + 100-log turn that incorrectly ended with a `no data` answer. Existing performance grounding contracts remain covered by the full release suite.
+Regression tests reproduce both 0.16.58 live outputs: the performance-only LG/SenseCap/MCP wording and the successful metrics + performance + 100-log turn that incorrectly ended with a `no data` answer. Existing performance grounding contracts remain covered by the full release suite, including the 0.16.54/0.16.55 sensor-specific guidance paths.
