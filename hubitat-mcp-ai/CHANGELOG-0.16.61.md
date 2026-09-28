@@ -11,4 +11,4 @@
 
 ## Live regression coverage
 
-The regression suite reproduces the 0.16.60 Halo evidence-repair leak and the residual LG responsiveness wording while preserving the earlier false-no-data protection. The full release suite contains 1,483 tests.
+The regression suite reproduces the 0.16.60 Halo evidence-repair leak and the residual LG responsiveness wording while preserving the earlier false-no-data protection. The full release suite contains 1,483 tests. Final release CI revalidates the same suite against the fully aligned 0.16.61 package.
