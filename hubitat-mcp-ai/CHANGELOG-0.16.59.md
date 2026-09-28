@@ -9,6 +9,7 @@
 - Generic implementation claims such as `blocking calls`, `pause other hub activities`, synchronous HTTP/network-timeout explanations, and `non-blocking` driver prescriptions are localized unless the relevant implementation or configuration was read.
 - Unsupported app/rule implementation advice such as complex-loop, external-API, or triggered-by claims is inspection-first without same-turn implementation/config evidence.
 - Common Markdown labels such as `**Hypothesis:**` and `**Action:**` are parsed correctly inside action bullets so mechanism hypotheses receive the same grounding as analysis text.
+- Unsafe configuration recommendations are replaced as whole actions before sentence splitting, so examples such as `e.g. 65W for 2 minutes` cannot leave an unsupported trailing fragment behind.
 - Already-localized sensor/configuration guidance is not reclassified by a second generic pass, preserving the sensor-specific 0.16.54/0.16.55 contracts.
 - Adjacent duplicate inspection-first guidance is collapsed while measured performance facts remain intact.
 - No additional Hubitat reads are introduced.
