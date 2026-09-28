@@ -1,0 +1,36 @@
+name: Fix 0.16.60 busy relation preservation
+
+on:
+  push:
+    branches:
+      - agent/performance-synthesis-0-16-60
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-synthesis-0-16-60
+      - name: Expand causal relation matcher
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py')
+          text = path.read_text()
+          old = 'r"lead\\s+to|leads\\s+to|leading\\s+to|result\\s+in|results\\s+in)\\b",'
+          new = 'r"lead\\s+to|leads\\s+to|leading\\s+to|result\\s+in|results\\s+in|"\n            r"contribut(?:e|es|ed|ing)\\s+to|creat(?:e|es|ed|ing))\\b",'
+          assert text.count(old) == 2, text.count(old)
+          path.write_text(text.replace(old, new, 2))
+          PY
+      - name: Commit and remove helper
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-busy-relation-01660.yml
+          git add hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py
+          git commit -m 'Preserve measured busy rate across causal localization'
+          git push origin HEAD:agent/performance-synthesis-0-16-60
