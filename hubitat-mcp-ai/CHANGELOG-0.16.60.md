@@ -1,21 +1,4 @@
-from pathlib import Path
-
-replacements = {
-    Path('hubitat-mcp-ai/config.yaml'): [('version: "0.16.59"', 'version: "0.16.60"')],
-    Path('README.md'): [('| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.59 |', '| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.60 |')],
-    Path('hubitat-mcp-ai/README.md'): [('Current add-on version: **0.16.59**.', 'Current add-on version: **0.16.60**.')],
-    Path('hubitat-mcp-ai/CHANGELOG-INDEX.md'): [('## Current release\n\n- [0.16.59]', '## Current release\n\n- [0.16.60](CHANGELOG-0.16.60.md)\n- [0.16.59]')],
-}
-
-for path, pairs in replacements.items():
-    text = path.read_text()
-    for old, new in pairs:
-        assert old in text, (path, old)
-        text = text.replace(old, new, 1)
-    path.write_text(text)
-
-Path('hubitat-mcp-ai/CHANGELOG-0.16.60.md').write_text(
-    '''# Hubitat MCP AI 0.16.60
+# Hubitat MCP AI 0.16.60
 
 ## Performance synthesis grounding
 
@@ -30,5 +13,3 @@ Path('hubitat-mcp-ai/CHANGELOG-0.16.60.md').write_text(
 ## Live regression coverage
 
 The regression suite reproduces the two 0.16.59 performance outputs, including four-column summary tables, LG blocking/polling wording, scheduler polling recommendations, and measured busy-rate causality. The full release suite contains 1,478 tests.
-'''
-)
