@@ -62,6 +62,7 @@ The recent logs reveal two primary sources of inefficiency:
     assert "~3.1 seconds" in corrected
     assert "19,103 executions" in corrected
     assert "14.8% busy rate" in corrected
+    assert "that the cited activity causes that busy rate" in corrected
     assert "which;" not in corrected
     assert "can block other automations" not in corrected
     assert "contributes to" not in corrected
