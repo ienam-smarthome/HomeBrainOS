@@ -278,11 +278,13 @@ def _rewrite_action_line(line: str) -> str:
     bullet = _BULLET_PREFIX.match(line)
     if bullet:
         prefix, body = bullet.groups()
+        if body.lstrip().startswith("Inspect the cited"):
+            return prefix + _dedupe_inspection_guidance(body)
+        if _unsafe_recommendation(body):
+            return prefix + _configuration_guidance(body)
         localized_body = _localize_analysis_text(body)
         if localized_body != body:
             return prefix + localized_body
-        if _unsafe_recommendation(body):
-            return prefix + _configuration_guidance(body)
         return line
 
     pieces = _split_sentences(line)
