@@ -12,4 +12,4 @@
 
 ## Live regression coverage
 
-The regression suite reproduces the two 0.16.59 performance outputs, including four-column summary tables, LG blocking/polling wording, scheduler polling recommendations, and measured busy-rate causality. The full release suite contains 1,478 tests.
+The regression suite reproduces the two 0.16.59 performance outputs, including four-column summary tables, LG blocking/polling wording, scheduler polling recommendations, and measured busy-rate causality. The full release suite contains 1,478 tests. Final release CI revalidates the same suite against the fully aligned 0.16.60 package.
