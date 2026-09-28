@@ -76,7 +76,7 @@ _CONDITIONAL_MARKER = re.compile(
 
 _PERFORMANCE_OUTCOME = re.compile(
     r"(?i)\b(?:hub\s+lag|lag|stutter|micro[- ]stutters?|sluggish(?:ness)?|instability|"
-    r"event[- ]bus\s+congestion|congestion|inefficien(?:cy|cies)|overload|"
+    r"event[- ]bus\s+congestion|congestion|inefficien(?:cy|cies)|overload|responsiveness|"
     r"(?:unnecessary\s+)?load|busy(?:\s+(?:rate|percentage))?|crash(?:es|ing)?)\b"
 )
 _STRONG_OUTCOME_LINK = re.compile(
@@ -227,6 +227,15 @@ def _localize_outcome_sentence(sentence: str) -> str:
         return (
             "The recent logs show activity patterns worth investigating; they do not establish primary "
             "sources of performance inefficiency."
+        )
+    if re.search(
+        r"(?i)\b(?:can|could|may|might)\s+(?:impact|affect|degrade|reduce|hurt)\b"
+        r"[^.!?]{0,120}\b(?:hub\s+)?responsiveness\b",
+        comparable,
+    ):
+        return (
+            "The measured latency is worth investigating as a possible contributor to responsiveness; "
+            "the current evidence does not establish that it affects overall hub responsiveness."
         )
     if not _STRONG_OUTCOME_LINK.search(comparable):
         return sentence

@@ -43,12 +43,25 @@ _SOURCE_LABELS = {
     "device_history": "device history",
 }
 
+_PERFORMANCE_SOURCE_TERM = (
+    r"(?:metrics?|performance\\s+(?:statistics?|stats?)|logs?|log\\s+entries|necessary\\s+data)"
+)
 _PERFORMANCE_SOURCE_ABSENCE = re.compile(
-    r"(?i)(?:\bno\b|\bnot\b|\bdoes\s+not\b|\bdid\s+not\b|\bwithout\b|"
-    r"\bmissing\b|\bunavailable\b)[^.!?]{0,180}"
-    r"(?:metrics?|performance\s+(?:statistics?|stats?)|logs?|log\s+entries|necessary\s+data)"
-    r"|(?:metrics?|performance\s+(?:statistics?|stats?)|logs?|log\s+entries)[^.!?]{0,120}"
-    r"(?:not\s+returned|were\s+not\s+returned|was\s+not\s+returned)",
+    rf"(?i)(?:"
+    rf"\\b(?:current-turn\\s+)?evidence\\b[^.!?]{{0,80}}\\b(?:does|do|did)\\s+not\\s+"
+    rf"(?:provide|include|contain|return|supply)\\b[^.!?]{{0,100}}\\b{_PERFORMANCE_SOURCE_TERM}\\b"
+    rf"|\\bno\\b[^.!?]{{0,160}}\\b{_PERFORMANCE_SOURCE_TERM}\\b[^.!?]{{0,100}}"
+    rf"\\b(?:was|were|is|are)?\\s*(?:returned|provided|supplied|available|retrieved|received|included|present)\\b"
+    rf"|\\b{_PERFORMANCE_SOURCE_TERM}\\b[^.!?]{{0,120}}\\b(?:was|were|is|are|did)\\s+not\\s+"
+    rf"(?:returned|provided|supplied|available|retrieved|received|included|present|checked|read|queried)\\b"
+    rf")"
+)
+
+_SUBSTANTIVE_PERFORMANCE_CONTENT = re.compile(
+    r"(?i)(?:\\b\\d[\\d,.]*\\s*(?:%|ms|mb|kb|°c)\\b|\\bcall count\\b|"
+    r"\\bresource consumers?\\b|\\bperformance analysis\\b|"
+    r"\\blogs?\\s+(?:show|shows|showed|indicate|indicates|indicated|record|records|recorded|contain|contains|contained)\\b|"
+    r"\\breporting\\b[^.!?\\n]{0,80}\\bevery\\s+\\d+)"
 )
 
 _POSITIVE_LOG_ATTRIBUTION = re.compile(
@@ -83,7 +96,13 @@ def _guard_performance_source_absence(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Correct false claims that successful metrics/performance/log reads were absent."""
+    """Correct false claims that successful metrics/performance/log reads were absent.
+
+    In a substantive performance answer, remove only the contradicted refusal sentence.
+    Do not splice serializer repair prose into a valid device/log observation.  For a
+    pure source-absence refusal, retain one compact deterministic correction so the
+    final response cannot falsely claim that successful current-turn reads were missing.
+    """
 
     sources = _successful_performance_sources(evidence)
     text = str(message or "")
@@ -91,7 +110,13 @@ def _guard_performance_source_absence(
         return text, False
 
     pieces = _sentence_pieces(text)
+    substantive = bool(
+        _SUBSTANTIVE_PERFORMANCE_CONTENT.search(
+            _PERFORMANCE_SOURCE_ABSENCE.sub("", text)
+        )
+    )
     changed = False
+    rendered_correction = False
     for index in range(0, len(pieces), 2):
         sentence = pieces[index]
         if not _PERFORMANCE_SOURCE_ABSENCE.search(sentence):
@@ -107,13 +132,25 @@ def _guard_performance_source_absence(
         if not relevant:
             continue
 
-        rendered = sources[0] if len(sources) == 1 else ", ".join(sources[:-1]) + f" and {sources[-1]}"
-        pieces[index] = (
-            f"Current-turn evidence did include successful {rendered}; "
-            "those results should be used for the requested performance analysis."
-        )
+        if substantive:
+            pieces[index] = ""
+        elif not rendered_correction:
+            rendered = sources[0] if len(sources) == 1 else ", ".join(sources[:-1]) + f" and {sources[-1]}"
+            pieces[index] = (
+                f"Current-turn evidence did include successful {rendered}; "
+                "those results should be used for the requested performance analysis."
+            )
+            rendered_correction = True
+        else:
+            pieces[index] = ""
         changed = True
-    return "".join(pieces), changed
+
+    corrected = "".join(pieces)
+    if substantive and changed:
+        corrected = re.sub(r"[ \t]+\n", "\n", corrected)
+        corrected = re.sub(r"\n{3,}", "\n\n", corrected)
+        corrected = corrected.rstrip()
+    return corrected, changed
 
 
 def guard_checked_source_absence_claim(
