@@ -16,7 +16,7 @@ _ACTION_SECTION_HEADING = re.compile(
 )
 _ANY_HEADING = re.compile(r"^\s*(#{1,6})\s+")
 _TABLE_SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$")
-_BULLET_PREFIX = re.compile(r"^(\s*[*+-]\s+(?:\*\*[^*]+\*\*:\s*)?)(.*)$")
+_BULLET_PREFIX = re.compile(r"^(\s*[*+-]\s+(?:\*\*[^*]+\*\*(?::\s*|\s+))?)(.*)$")
 
 _DIRECTIVE = re.compile(
     r"(?i)\b(?:edit|modify|change|add|include|set|adjust|increase|decrease|raise|lower|"
@@ -279,10 +279,10 @@ def _rewrite_action_line(line: str) -> str:
     if bullet:
         prefix, body = bullet.groups()
         localized_body = _localize_analysis_text(body)
-        if _unsafe_recommendation(localized_body):
-            localized_body = _configuration_guidance(localized_body)
         if localized_body != body:
             return prefix + localized_body
+        if _unsafe_recommendation(body):
+            return prefix + _configuration_guidance(body)
         return line
 
     pieces = _split_sentences(line)
