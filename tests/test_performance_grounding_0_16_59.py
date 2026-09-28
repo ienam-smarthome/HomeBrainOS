@@ -11,6 +11,8 @@ from api_response_builder import build_agent_response  # noqa: E402
 from grounding_policy import GroundingAction, GroundingPolicy  # noqa: E402
 from performance_semantic_grounding import ground_performance_semantics  # noqa: E402
 
+# These regressions reproduce the two 0.16.58 live performance response shapes.
+
 
 def _performance_evidence() -> list[dict[str, object]]:
     return [
