@@ -1,0 +1,38 @@
+name: Patch whole action 0.16.59
+
+on:
+  push:
+    branches:
+      - agent/log-grounding-and-synthesis-0-16-59
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/log-grounding-and-synthesis-0-16-59
+      - name: Patch whole unsafe action before sentence localization
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py')
+          text = path.read_text()
+          old = '''    bullet = _BULLET_PREFIX.match(line)\n    if bullet:\n        prefix, body = bullet.groups()\n        localized_body = _localize_analysis_text(body)\n        if localized_body != body:\n            return prefix + localized_body\n        if _unsafe_recommendation(body):\n            return prefix + _configuration_guidance(body)\n        return line\n'''
+          new = '''    bullet = _BULLET_PREFIX.match(line)\n    if bullet:\n        prefix, body = bullet.groups()\n        if body.lstrip().startswith("Inspect the cited"):\n            return prefix + _dedupe_inspection_guidance(body)\n        if _unsafe_recommendation(body):\n            return prefix + _configuration_guidance(body)\n        localized_body = _localize_analysis_text(body)\n        if localized_body != body:\n            return prefix + localized_body\n        return line\n'''
+          assert old in text
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit patch and remove helper
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/patch-whole-action-0-16-59.yml
+          git add hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py
+          git commit -m 'Ground unsafe recommendations as whole actions'
+          git push origin HEAD:agent/log-grounding-and-synthesis-0-16-59
