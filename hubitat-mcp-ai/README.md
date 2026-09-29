@@ -3,17 +3,17 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.72**.
+Current add-on version: **0.16.73**.
 
 ## Architecture
 
-0.16.72 keeps the 0.16.70 single-provider-pass performance finalization and the 0.16.71 Markdown-safe deterministic grounding path. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
+0.16.73 keeps the 0.16.70 single-provider-pass performance finalization, the 0.16.71 Markdown-safe deterministic grounding path, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
 
-The private performance synthesis packet now uses source-specific bounded budgets rather than FIFO eviction. `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` each retain a bounded payload slot inside the existing 32k packet, so later job/log payloads cannot silently evict the current metrics source. This fixes the 0.16.71 live contradiction where `hub_get_metrics` succeeded but final synthesis claimed memory, temperature, and database size were unavailable.
+This release only hardens deterministic performance-language variants exposed by the 0.16.72 live proof. The semantic guard now treats database “healthy limits” as an unsupported qualitative threshold, neutralizes generic “Performance Bottlenecks” and “Blocking Device Execution (High Latency)” headings, catches scheduler wording such as “Executing this many tasks ... creates CPU spikes”, and blocks activity-to-“constant background overhead” attribution. It also repairs the exact repeated “does not establish that it; this is a measured performance concern...” corruption and converts latency-to-timeout suggestions into an investigation-first statement that does not assert a mechanism.
+
+The private performance synthesis packet continues to use source-specific bounded budgets rather than FIFO eviction. `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` each retain a bounded payload slot inside the existing 32k packet, so later job/log payloads cannot silently evict the current metrics source. This fixes the 0.16.71 live contradiction where `hub_get_metrics` succeeded but final synthesis claimed memory, temperature, and database size were unavailable.
 
 When a successful metrics receipt is present, final synthesis is explicitly told to use retained memory/temperature/database fields when available. A deterministic contradiction repair also converts a false metrics-unavailable statement into the actual retained current values; if the detailed payload is genuinely missing, HomeBrain reports a synthesis-context limitation rather than claiming that the hub lacks those metrics.
-
-The 0.16.72 finalizer also fail-closes the remaining wording exposed by the 0.16.71 live proof: unsupported “bottlenecks identified” / “critical” / “severe” labels, activity-to-background-load claims, and prescriptive scheduler-offset wording such as “Stagger the Block Ticks” or “Shift System Tasks” when app/system-task configuration was not read. These repairs remain Markdown-cell-aware so recommendation tables retain every column.
 
 Z-Wave repair recommendations remain gated on Z-Wave-specific diagnostic evidence such as node, route, topology, mesh, or repair-status detail. A generic `zwHealthy:false` observation can justify inspection, but does not by itself establish that running a Z-Wave repair is required.
 
@@ -52,9 +52,10 @@ The final answer must keep these distinctions explicit:
 
 - High execution time or call volume is measured; an implementation mechanism is only a hypothesis unless directly established.
 - A scheduled-job list proves returned jobs/cadence, not CPU spikes, CPU load, UI stuttering, delayed automations, or hub overhead by itself.
-- Database size is reported numerically in MB; qualitative labels such as normal/small/large require a defined current-turn threshold.
+- Database size is reported numerically in MB; qualitative labels such as normal/healthy/small/large require a defined current-turn threshold.
 - Frequent device reporting proves activity, not material hub/background overhead or a performance cause by itself.
 - Repeated app triggers are observations; they do not by themselves establish an efficiency problem.
+- A high execution time does not by itself establish that an integration is timing out, unreachable, offline, or blocking another hub operation.
 - Recent connectivity/error logs are observations; they do not by themselves prove overall hub instability.
 - `zwHealthy:false` is a warning/health observation, not sufficient evidence by itself to prescribe a Z-Wave repair.
 - `NETWORK_BACKUP_FAILED` proves an active alert, not imminent data loss or the status of other backup methods.
