@@ -33,4 +33,4 @@ CHANGELOG-<version>.md
 
 Older `CHANGELOG-<version>.md` files remain in this directory and Git history; this index intentionally keeps the maintained current/recent path compact.
 
-The historical monolithic `CHANGELOG.md` is archived history, not the current release source of truth. Current releases use the versioned files above.
+The historical monolithic `CHANGELOG.md` is archived history and not the current release index. Current releases use the versioned files above.
