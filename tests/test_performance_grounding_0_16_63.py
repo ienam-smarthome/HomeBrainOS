@@ -33,13 +33,9 @@ def test_state_size_storage_inference_is_localized():
 
 
 def test_state_cache_recommendation_requires_configuration_evidence():
-    draft = (
-        "### Recommended Improvements
-"
-        "3. **Optimize App State:** Check the app settings to see if you can reduce the amount "
-        "of cached data or history stored within the app itself.
-"
-    )
+    draft = """### Recommended Improvements
+3. **Optimize App State:** Check the app settings to see if you can reduce the amount of cached data or history stored within the app itself.
+"""
     corrected = ground_performance_semantics(draft)
     assert "3. **Optimize App State:** Inspect the cited app implementation/configuration first." in corrected
     assert "whether cache/history retention is configurable" in corrected
