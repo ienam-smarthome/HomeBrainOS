@@ -75,6 +75,7 @@ _COUNTER_LABELS = (
     ("semantic_world_context", "Capability-grounded semantic contexts"),
     ("semantic_target_grounded", "Semantic targets host-grounded"),
     ("semantic_needs_input", "Semantic clarifications"),
+    ("performance_api_deterministic_repair", "Deterministic performance repairs"),
 )
 
 _DURATION_LABELS = (
@@ -88,7 +89,9 @@ _DURATION_LABELS = (
     ("local_tool", "Local tool path"),
     ("tool_discovery", "Discovery"),
     ("verification", "Verification"),
-    ("total", "Total"),
+    ("total", "Agent phase"),
+    ("performance_api_model", "Performance synthesis"),
+    ("performance_api_finalize", "Performance finalization"),
 )
 
 _OUTCOME_PRESENTATION = {
