@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.61**.
+Current add-on version: **0.16.62**.
 
 ## Architecture
+
+0.16.62 fixes two defects exposed by the 0.16.61 live performance retest. Outcome-causality localization now preserves only a complete measured prefix, so wording such as `is likely the primary source of hub stutter` cannot collapse into a dangling `is likely the;` fragment. The performance tool boundary also applies a narrow compatibility relabel for the upstream `databaseSizeKB` field: on the affected MCP server version `/hub/advanced/databaseSize` supplies the numeric MB value, so HomeBrain exposes `databaseSizeMB` without scaling and retains the legacy field/value as raw provenance. Future native `databaseSizeMB` results and non-numeric legacy values are left untouched. No additional Hubitat calls are introduced.
 
 0.16.54 closes the configuration-grounding and threshold-auditability gaps exposed by the 0.16.53 live retest. Exact recommendations to edit a Rule Machine trigger, threshold, debounce, hysteresis, gap, duration, sensor blind time/occupancy timeout, or app/device polling/reporting interval are now configuration-dependent: when the current turn has not read the relevant settings, HomeBrain replaces the exact edit with inspection-first guidance rather than inventing a value. Explicit configuration evidence still allows specific tuning. Compact Rule Machine threshold samples remain bounded to twelve displayed values but now also include full-sample `minObserved`, `maxObserved`, `qualifyingCount`, and `nonQualifyingCount`, so a hidden crossing remains auditable even when it falls outside the visible value list. These additions do not add Hubitat calls or change the raw provider-bound log result.
 

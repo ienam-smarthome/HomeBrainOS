@@ -245,7 +245,7 @@ def _localize_outcome_sentence(sentence: str) -> str:
         return sentence
 
     relation = re.search(
-        r"(?i)\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
+        r"(?i)\b(?:is|are|was|were)\s+(?:(?:likely|probably|clearly|directly)\s+)?(?:the\s+)?(?:primary|main|major|direct)\s+"
         r"(?:source|cause|driver)\b|\b(?:primary|main|major|direct)\s+"
         r"(?:source|cause|driver)\s+(?:of|for)\b|\b(?:cause|causes|caused|causing|"
         r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in|"
@@ -254,7 +254,7 @@ def _localize_outcome_sentence(sentence: str) -> str:
     )
     if relation:
         raw_relation = re.search(
-            r"(?i)\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"
+            r"(?i)\b(?:is|are|was|were)\s+(?:(?:likely|probably|clearly|directly)\s+)?(?:the\s+)?(?:primary|main|major|direct)\s+"
             r"(?:source|cause|driver)\b|\b(?:primary|main|major|direct)\s+"
             r"(?:source|cause|driver)\s+(?:of|for)\b|\b(?:cause|causes|caused|causing|"
             r"lead\s+to|leads\s+to|leading\s+to|result\s+in|results\s+in|"
@@ -274,7 +274,13 @@ def _localize_outcome_sentence(sentence: str) -> str:
                     + "that the cited activity causes that busy rate."
                 )
             prefix = sentence[: raw_relation.start()].rstrip(" ,;:-")
-            if prefix:
+            prefix = re.sub(r"(?i)\b(?:and|which|so|therefore|thus)\s*$", "", prefix).rstrip(" ,;:-")
+            has_measurement = re.search(
+                r"(?i)(?:\d[\d,.]*(?:-\d[\d,.]*)?\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"
+                r"\d[\d,.]*\s+calls?\b|\bmeasured load\b)",
+                re.sub(r"[*_`]", "", prefix),
+            )
+            if prefix and has_measurement:
                 return (
                     prefix
                     + "; this is a measured performance concern, but the current statistics do not establish "
