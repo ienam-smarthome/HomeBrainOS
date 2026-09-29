@@ -1,6 +1,6 @@
 """Focused fail-closed repairs for broad live performance synthesis.
 
-These guards cover wording exposed by the 0.16.63-0.16.72 live proofs. They
+These guards cover wording exposed by the 0.16.63-0.16.73 live proofs. They
 preserve measured facts while preventing scheduler/job observations, qualitative
 database labels, implementation mechanisms, and recommendations from being
 promoted beyond current-turn evidence. Repairs are Markdown-aware so tables,
@@ -21,7 +21,7 @@ _MECHANISM = re.compile(
     r"reconnect|blocking|thread|unreachable|asleep|offline)\b"
 )
 _SCHEDULER_SUBJECT = re.compile(
-    r"(?i)\b(?:sessionTick|scheduled\s+jobs?|recurring\s+(?:jobs?|tasks?)|jobs?|"
+    r"(?i)\b(?:sessionTick|autoPoll|scheduled\s+jobs?|recurring\s+(?:jobs?|tasks?)|jobs?|"
     r"scheduler|job\s+volume|synchroni[sz](?:ed|ation))\b"
 )
 _SCHEDULER_OUTCOME = re.compile(
@@ -40,12 +40,28 @@ _SCHEDULER_EXECUTION_CAUSAL = re.compile(
 )
 _SCHEDULER_TUNING = re.compile(
     r"(?i)\b(?:increase|decrease|raise|lower|lengthen|shorten|adjust|change|set)\b"
-    r"[^.!?\n]{0,160}\b(?:sessionTick|scheduler|scheduled\s+job|job|tick)\b"
+    r"[^.!?\n]{0,160}\b(?:sessionTick|autoPoll|scheduler|scheduled\s+job|job|tick)\b"
     r"[^.!?\n]{0,100}\b(?:interval|cadence|frequency)\b"
 )
 _SCHEDULER_STAGGER = re.compile(
-    r"(?i)\bstagger\b[^.!?\n]{0,180}\b(?:jobs?|sessionTick|start\s+times?|execution)\b|"
-    r"\b(?:jobs?|sessionTick|start\s+times?|execution)\b[^.!?\n]{0,180}\bstagger\b"
+    r"(?i)\bstagger\b[^.!?\n]{0,180}\b(?:jobs?|sessionTick|autoPoll|start\s+times?|execution)\b|"
+    r"\b(?:jobs?|sessionTick|autoPoll|start\s+times?|execution)\b[^.!?\n]{0,180}\bstagger\b"
+)
+_SCHEDULER_OFFSET = re.compile(
+    r"(?i)\b(?:shift|move|offset|spread)\b[^.!?\n]{0,180}"
+    r"\b(?:sessionTick|autoPoll|scheduled\s+jobs?|jobs?|tasks?|ticks?)\b|"
+    r"\b(?:sessionTick|autoPoll|scheduled\s+jobs?|jobs?|tasks?|ticks?)\b[^.!?\n]{0,180}"
+    r"\b(?:shift|move|offset|spread)\b"
+)
+_SCHEDULER_OFFSET_BENEFIT = re.compile(
+    r"(?i)\boffset(?:ting|s|ted)?\b[^.!?\n]{0,180}"
+    r"\b(?:flatten|reduce|avoid|smooth|spread)\b[^.!?\n]{0,140}"
+    r"\b(?:cpu\s+load|load\s+curve|cpu\s+spikes?|overhead|contention|lag)\b"
+)
+_SCHEDULER_OFFSET_REPAIR = (
+    "Review the observed job alignment. Inspect the responsible app configuration before changing scheduled "
+    "offsets; the current job evidence does not establish that offsetting is configurable, necessary, "
+    "behaviour-preserving, or performance-improving; the same applies to shifting or staggering."
 )
 _DATABASE_MB = re.compile(r"(?i)\b(?:database\s*(?:is|:|at|measured\s+at)?\s*)?(\d+(?:\.\d+)?)\s*MB\b")
 _DATABASE_QUALITATIVE = re.compile(
@@ -83,6 +99,16 @@ _PRIMARY_CAUSE = re.compile(r"(?i)\b(?:primary|main)\s+cause\b")
 _ACTIVITY_OVERHEAD = re.compile(
     r"(?i)\b(?:add(?:ing|s)?|create(?:s|d|ing)?)\s+"
     r"(?:constant\s+)?(?:background\s+)?overhead\b"
+)
+_RESOURCE_INTENSIVE_APP = re.compile(r"(?i)\bmost\s+resource-intensive\s+app\b")
+_BUSY_IMPLEMENTATION_CLAIM = re.compile(
+    r"(?i)(?:\d+(?:\.\d+)?\s*%[^.!?\n]{0,220}\bbusy\b|"
+    r"\bbusy\s+(?:time|percentage|share)\b[^.!?\n]{0,220}\d+(?:\.\d+)?\s*%)"
+    r"[^.!?\n]{0,260}\b(?:inefficient\s+loops?|overly\s+frequent\s+triggers?|"
+    r"frequent\s+triggers?|optimi[sz]e\s+logic)\b|"
+    r"\b(?:inefficient\s+loops?|overly\s+frequent\s+triggers?|frequent\s+triggers?|"
+    r"optimi[sz]e\s+logic)\b[^.!?\n]{0,260}"
+    r"(?:\d+(?:\.\d+)?\s*%[^.!?\n]{0,120}\bbusy\b|\bbusy\s+(?:time|percentage|share)\b)"
 )
 _ZWAVE_REPAIR = re.compile(r"(?i)\b(?:run|perform|start)\s+(?:a\s+)?z[- ]?wave\s+repair\b")
 _TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
@@ -185,6 +211,20 @@ def _database_replacement(comparable: str) -> str:
     )
 
 
+def _resource_intensive_replacement(comparable: str) -> str:
+    busy = re.search(r"(?i)(\d+(?:\.\d+)?)\s*%", comparable)
+    name = re.search(
+        r"(?i)(?:Apps:\s*)?(?:The\s+)?(.+?)\s+is\s+the\s+most\s+resource-intensive\s+app",
+        comparable,
+    )
+    label = name.group(1).strip() if name else "This app"
+    busy_text = f" at {busy.group(1)}%" if busy else ""
+    return (
+        f"{label} has the highest returned app busy percentage{busy_text}; this ranking is measured, but this "
+        "turn does not establish an implementation mechanism from it."
+    )
+
+
 def _guard_sentence(
     sentence: str,
     *,
@@ -229,11 +269,12 @@ def _guard_sentence(
             "material CPU load, a CPU spike, UI stuttering, delayed automations, hub overhead, or performance drag."
         )
 
-    if not has_configuration and _SCHEDULER_STAGGER.search(comparable):
-        return (
-            "Inspect the app responsible for the scheduled jobs before changing their alignment; the current "
-            "job evidence does not establish that staggering is configurable, necessary, or behaviour-preserving."
-        )
+    if not has_configuration and (
+        _SCHEDULER_STAGGER.search(comparable)
+        or _SCHEDULER_OFFSET.search(comparable)
+        or _SCHEDULER_OFFSET_BENEFIT.search(comparable)
+    ):
+        return _SCHEDULER_OFFSET_REPAIR
 
     if (
         not has_configuration
@@ -278,6 +319,16 @@ def _guard_sentence(
         return (
             "The frequent reporting is a measured activity worth reviewing; this turn does not establish that it "
             "adds material hub overhead or causes a performance problem."
+        )
+
+    if _RESOURCE_INTENSIVE_APP.search(comparable):
+        return _resource_intensive_replacement(comparable)
+
+    if not has_configuration and _BUSY_IMPLEMENTATION_CLAIM.search(comparable):
+        return (
+            "The measured busy percentage warrants investigation. Review the app activity, configuration, and "
+            "relevant logs; this turn does not establish inefficient loops, trigger frequency, or another "
+            "implementation mechanism from busy percentage alone."
         )
 
     if _PRIMARY_CAUSE.search(comparable) and any(
@@ -349,6 +400,15 @@ def _neutralize_causal_headings(text: str) -> str:
 
 def _neutralize_exact_overreach(text: str) -> str:
     text = re.sub(
+        r"(?i)\bThe\s+hub\s+is\s+currently\s+in\s+a\s+healthy\s+state\s+regarding\s+core\s+resources,\s*"
+        r"but\s+there\s+are\s+significant\s+inefficiencies\s+in\s+device\s+latency\s+and\s+job\s+scheduling\s+"
+        r"that\s+could\s+lead\s+to\s+intermittent\s+performance\s+degradation\.",
+        "Current resource readings show no active core-resource health alerts. Performance statistics show "
+        "device-latency and scheduling-alignment outliers; this turn does not establish that either causes "
+        "user-visible performance degradation.",
+        text,
+    )
+    text = re.sub(
         r"(?i)\bsignificant\s+bottlenecks\s+caused\s+by\s+blocking\s+device\s+calls\s+and\s+synchroni[sz]ed\s+scheduling\b",
         "measured device-latency and scheduling-alignment outliers worth investigating; this turn does not establish either as a proven performance cause",
         text,
@@ -361,6 +421,21 @@ def _neutralize_exact_overreach(text: str) -> str:
     text = re.sub(
         r"(?i)\bThere\s+is\s+a\s+severe\s+synchronization\s+of\s+scheduled\s+jobs\b",
         "Many scheduled jobs share the same scheduled timestamp",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\bThere\s+is\s+a\s+severe\s+clustering\s+of\s+scheduled\s+tasks\s+occurring\s+at\s+the\s+exact\s+same\s+second\.",
+        "Many scheduled tasks share the same scheduled second.",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\ba\s+massive\s+block\s+of\s+jobs\s+is\s+scheduled\s+simultaneously\b",
+        "many jobs are scheduled for the same second",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\bSeveral\s+devices\s+and\s+apps\s+are\s+consuming\s+a\s+disproportionate\s+amount\s+of\s+processing\s+time\b",
+        "The returned statistics show comparatively high busy percentages for several devices and apps",
         text,
     )
     text = re.sub(
@@ -422,6 +497,9 @@ def _collapse_duplicate_performance_repair(text: str) -> str:
         "",
         text,
     )
+    double_scheduler_repair = f"{_SCHEDULER_OFFSET_REPAIR} {_SCHEDULER_OFFSET_REPAIR}"
+    while double_scheduler_repair in text:
+        text = text.replace(double_scheduler_repair, _SCHEDULER_OFFSET_REPAIR)
     return text
 
 
@@ -441,6 +519,15 @@ def _repair_prose(
     match = _MARKDOWN_PREFIX.match(prepared)
     if match:
         prefix, body = match.groups()
+
+    comparable_body = re.sub(r"[*_`]", "", body)
+    if not has_configuration and _BUSY_IMPLEMENTATION_CLAIM.search(comparable_body):
+        return (
+            prefix
+            + "Review the measured app activity, configuration, and relevant logs. The current busy percentage "
+            "warrants investigation, but this turn does not establish inefficient loops, trigger frequency, or "
+            "another implementation mechanism from busy percentage alone."
+        )
 
     pieces = re.split(r"(?<=[.!?])(\s+)", body)
     for index in range(0, len(pieces), 2):
