@@ -1,6 +1,6 @@
 """Focused fail-closed repairs for broad live performance synthesis.
 
-These guards cover wording exposed by the 0.16.63/0.16.64 live proofs. They
+These guards cover wording exposed by the 0.16.63-0.16.68 live proofs. They
 preserve measured facts while preventing scheduler/job observations, qualitative
 database labels, hypotheses, and backup alerts from being promoted beyond
 current-turn evidence.
@@ -50,6 +50,7 @@ _BACKUP_ALARM = re.compile(
     r"(?i)\b(?:most\s+urgent|urgent|immediately|prevent\s+data\s+loss|"
     r"ensure\s+your\s+configuration\s+is\s+being\s+saved)\b"
 )
+_NOT_BOTTLENECK = re.compile(r"(?i)\b(?:is|are)\s+not\s+(?:currently\s+)?(?:a\s+)?bottleneck\b")
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -95,21 +96,18 @@ def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
 def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
     comparable = re.sub(r"[*_`]", "", sentence)
 
-    # A 'Hypothesis' heading is not permission to state a mechanism as likely.
     if _ASSERTIVE_HYPOTHESIS.search(comparable) and _MECHANISM.search(comparable):
         return (
             "**Possible hypothesis:** an implementation or connectivity mechanism could contribute to the "
             "observed latency, but the current evidence does not establish which mechanism is responsible."
         )
 
-    # A job list proves jobs/cadence, not CPU attribution.
     if _SCHEDULER_SUBJECT.search(comparable) and _SCHEDULER_OUTCOME.search(comparable):
         return (
             "The scheduled-job activity is worth reviewing; the current job evidence does not establish "
             "material CPU load, hub overhead, or performance drag."
         )
 
-    # Directional scheduler tuning is still a configuration prescription.
     if (
         not has_configuration
         and _SCHEDULER_SUBJECT.search(comparable)
@@ -121,7 +119,6 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
             "changing it would preserve required behaviour."
         )
 
-    # Report the DB measurement without inventing a qualitative threshold or causal conclusion.
     if _DATABASE_LABEL_ONLY.search(comparable):
         return (
             "**Database:** use the measured numeric size below; this turn did not establish a "
@@ -139,7 +136,6 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
             "performance impact from database size alone."
         )
 
-    # NETWORK_BACKUP_FAILED is an alert, not evidence of imminent data loss.
     if _BACKUP_ALERT.search(comparable) and _BACKUP_ALARM.search(comparable):
         return (
             "`NETWORK_BACKUP_FAILED` is active. Check the configured backup destination, credentials/permissions, "
@@ -147,14 +143,66 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
             "backup method is succeeding."
         )
 
-    # Follow-up sentences/table rows can carry alarm language without repeating the alert token.
     if _BACKUP_ALARM.search(comparable) and re.search(r"(?i)\b(?:backup|backups|data\s+loss)\b", comparable):
         return (
             "Check the active network-backup failure and its destination/settings. The current evidence does not "
             "establish imminent data loss or whether another backup method is succeeding."
         )
 
+    if _NOT_BOTTLENECK.search(comparable):
+        calls = re.search(r"(?i)\b([\d,]+\s+calls?)\b", comparable)
+        avg = re.search(r"(?i)\b(\d+(?:\.\d+)?\s*ms)\b", comparable)
+        prefix = sentence.split(":", 1)[0].strip() if ":" in sentence else "This component"
+        facts: list[str] = []
+        if calls:
+            facts.append(calls.group(1))
+        if avg:
+            facts.append(f"{avg.group(1)} average execution time")
+        measured = " and ".join(facts) if facts else "the measured activity"
+        return (
+            f"{prefix}: {measured}; this turn does not establish either a performance problem "
+            "or the absence of one from that activity alone."
+        )
+
     return sentence
+
+
+def _neutralize_causal_headings(text: str) -> str:
+    text = re.sub(
+        r"(?im)(High-Latency\s+Devices)\s*\([^\n)]*Blocking[^\n)]*\)",
+        r"\1",
+        text,
+    )
+    text = re.sub(
+        r"(?im)(Job\s+Volume)\s*&\s*(?:CPU|Scheduling)\s+Overhead",
+        r"\1 & Scheduling",
+        text,
+    )
+    text = re.sub(
+        r"(?im)(\*\*Recurring)\s+Overhead(\*\*\s*:)",
+        r"\1 Jobs\2",
+        text,
+    )
+    return text
+
+
+def _collapse_duplicate_performance_repair(text: str) -> str:
+    # 0.16.68 live proof exposed a repair-on-repair sentence where the same
+    # fail-closed clause was inserted multiple times after one measured log fact.
+    # Remove dangling intermediate clauses first, then collapse repeated markers.
+    text = re.sub(
+        r"(?i)(?:the current statistics do not establish that\s+(?:this specific activity|it)\s*;\s*)+"
+        r"(?=this is a measured performance concern)",
+        "",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(?:this is a measured performance concern, but the current statistics do not establish that it\s*;\s*)+"
+        r"(?=this is a measured performance concern)",
+        "",
+        text,
+    )
+    return text
 
 
 def guard_live_performance_semantics(
@@ -167,15 +215,18 @@ def guard_live_performance_semantics(
     if not original:
         return original, False
 
+    prepared = _collapse_duplicate_performance_repair(
+        _neutralize_causal_headings(original)
+    )
     has_configuration = _has_configuration_evidence(evidence)
-    pieces = re.split(r"(?<=[.!?])(\s+)", original)
+    pieces = re.split(r"(?<=[.!?])(\s+)", prepared)
     for index in range(0, len(pieces), 2):
         if pieces[index]:
             pieces[index] = _guard_sentence(
                 pieces[index],
                 has_configuration=has_configuration,
             )
-    corrected = "".join(pieces)
+    corrected = _collapse_duplicate_performance_repair("".join(pieces))
     return corrected, corrected != original
 
 
