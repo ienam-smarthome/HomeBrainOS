@@ -15,7 +15,14 @@ recent-log read and deterministic performance semantic validation.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from typing import Any
+
+
+_FINALIZER_USED: ContextVar[bool] = ContextVar(
+    "homebrain_performance_finalizer_used_01666",
+    default=False,
+)
 
 
 def _is_successful_performance_receipt(row: Any) -> bool:
@@ -36,7 +43,15 @@ def _install_performance_completion_router() -> None:
     if getattr(UnifiedMCPAgent, "_performance_completion_router_01666", False):
         return
 
-    original = UnifiedMCPAgent._process_user_request
+    original_process = UnifiedMCPAgent._process_user_request
+    original_final_answer = UnifiedMCPAgent._final_answer
+
+    async def tracked_final_answer(
+        self: UnifiedMCPAgent,
+        messages: list[dict[str, Any]],
+    ) -> str:
+        _FINALIZER_USED.set(True)
+        return await original_final_answer(self, messages)
 
     async def routed_process_user_request(
         self: UnifiedMCPAgent,
@@ -45,37 +60,41 @@ def _install_performance_completion_router() -> None:
         *,
         session_id: str = "default",
     ) -> str:
-        answer = await original(
-            self,
-            user_prompt,
-            conversation_history,
-            session_id=session_id,
-        )
-        evidence = self.evidence.receipts()
-        if not any(_is_successful_performance_receipt(row) for row in evidence):
-            return answer
+        token = _FINALIZER_USED.set(False)
+        try:
+            answer = await original_process(
+                self,
+                user_prompt,
+                conversation_history,
+                session_id=session_id,
+            )
+            evidence = self.evidence.receipts()
+            if not any(
+                _is_successful_performance_receipt(row) for row in evidence
+            ):
+                return answer
 
-        # If the base orchestrator already used FinalAnswerCoordinator, its
-        # host-enforced log evidence/counter will be present and a second final
-        # synthesis would only duplicate work.
-        if any(
-            isinstance(row, dict)
-            and row.get("success") is True
-            and str(row.get("sub_tool") or "") == "hub_get_logs"
-            for row in evidence
-        ):
-            return answer
+            # Some existing stop paths already enter FinalAnswerCoordinator.
+            # Track the actual finalizer call request-locally rather than using
+            # log presence as a proxy: a provider can itself fetch logs and then
+            # still hit the ordinary direct-return branch that caused 0.16.65.
+            if _FINALIZER_USED.get():
+                return answer
 
-        # Preserve the provider's first-pass analysis as current-turn draft
-        # context while forcing the same shared finalizer used by investigative
-        # requests. FinalAnswerCoordinator will add the bounded host log read,
-        # evidence ledger, semantic validation, and repair pass as needed.
-        messages = [
-            {"role": "user", "content": str(user_prompt).strip()},
-            {"role": "assistant", "content": str(answer)},
-        ]
-        return await self._final_answer(messages)
+            # Preserve the provider's first-pass analysis as current-turn draft
+            # context while forcing the same shared finalizer used by
+            # investigative requests. FinalAnswerCoordinator will reuse existing
+            # logs when present or add the bounded host log read when missing,
+            # then apply evidence-ledger synthesis and semantic validation.
+            messages = [
+                {"role": "user", "content": str(user_prompt).strip()},
+                {"role": "assistant", "content": str(answer)},
+            ]
+            return await self._final_answer(messages)
+        finally:
+            _FINALIZER_USED.reset(token)
 
+    UnifiedMCPAgent._final_answer = tracked_final_answer
     UnifiedMCPAgent._process_user_request = routed_process_user_request
     UnifiedMCPAgent._performance_completion_router_01666 = True
 
