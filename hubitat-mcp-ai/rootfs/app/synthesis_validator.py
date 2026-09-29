@@ -109,7 +109,10 @@ def validate_synthesis(
     if live_performance_changed:
         issues.append("performance_live_semantics")
 
-    corrected, evidence_first_changed = guard_evidence_first_performance(corrected)
+    corrected, evidence_first_changed = guard_evidence_first_performance(
+        corrected,
+        evidence,
+    )
     if evidence_first_changed:
         issues.append("performance_evidence_first")
 
