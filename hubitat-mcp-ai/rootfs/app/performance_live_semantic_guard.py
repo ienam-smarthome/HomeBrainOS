@@ -1,9 +1,9 @@
 """Focused fail-closed repairs for broad live performance synthesis.
 
-These guards cover wording exposed by the 0.16.63 live proof. They preserve
-measured facts while preventing scheduler/job observations, qualitative database
-labels, hypotheses, and backup alerts from being promoted beyond current-turn
-evidence.
+These guards cover wording exposed by the 0.16.63/0.16.64 live proofs. They
+preserve measured facts while preventing scheduler/job observations, qualitative
+database labels, hypotheses, and backup alerts from being promoted beyond
+current-turn evidence.
 """
 
 from __future__ import annotations
@@ -37,6 +37,10 @@ _DATABASE_MB = re.compile(r"(?i)\b(?:database\s*(?:is|:|at)?\s*)?(\d+(?:\.\d+)?)
 _DATABASE_QUALITATIVE = re.compile(
     r"(?i)\b(?:database|db)\b[^.!?\n]{0,220}\b(?:small|lean|large|bloated)\b|"
     r"\b(?:small|lean|large|bloated)\b[^.!?\n]{0,220}\b(?:database|db)\b"
+)
+_DATABASE_LABEL_ONLY = re.compile(
+    r"(?i)^\s*(?:[-*| ]+)?(?:#{1,6}\s*)?(?:database|db)\s*:\s*"
+    r"(?:\*\*)?(?:small|lean|large|bloated)(?:\*\*)?\s*[|.]*\s*$"
 )
 _DATABASE_PERF_INFERENCE = re.compile(
     r"(?i)\b(?:unlikely|not\s+likely)\b[^.!?\n]{0,120}\b(?:performance|drag|slow|latency|load)\b"
@@ -118,6 +122,11 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
         )
 
     # Report the DB measurement without inventing a qualitative threshold or causal conclusion.
+    if _DATABASE_LABEL_ONLY.search(comparable):
+        return (
+            "**Database:** use the measured numeric size below; this turn did not establish a "
+            "threshold for calling the database small, lean, large, or bloated."
+        )
     if _DATABASE_QUALITATIVE.search(comparable) or _DATABASE_PERF_INFERENCE.search(comparable):
         mb = _DATABASE_MB.search(comparable)
         if mb:
@@ -125,6 +134,10 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
                 f"**Database:** {mb.group(1)} MB. No evidence in this run attributes the identified "
                 "performance outliers to database size."
             )
+        return (
+            "**Database:** the current evidence does not establish a qualitative size threshold or "
+            "performance impact from database size alone."
+        )
 
     # NETWORK_BACKUP_FAILED is an alert, not evidence of imminent data loss.
     if _BACKUP_ALERT.search(comparable) and _BACKUP_ALARM.search(comparable):
@@ -134,7 +147,7 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
             "backup method is succeeding."
         )
 
-    # Follow-up sentences can carry the alarm language without repeating the alert token.
+    # Follow-up sentences/table rows can carry alarm language without repeating the alert token.
     if _BACKUP_ALARM.search(comparable) and re.search(r"(?i)\b(?:backup|backups|data\s+loss)\b", comparable):
         return (
             "Check the active network-backup failure and its destination/settings. The current evidence does not "
@@ -148,7 +161,7 @@ def guard_live_performance_semantics(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Localize the live 0.16.63 failure shapes while preserving the rest of the draft."""
+    """Localize the live performance failure shapes while preserving the rest."""
 
     original = str(message or "")
     if not original:
