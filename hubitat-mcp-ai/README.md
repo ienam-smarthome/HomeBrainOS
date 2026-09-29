@@ -3,13 +3,13 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.68**.
+Current add-on version: **0.16.69**.
 
 ## Architecture
 
-0.16.68 fixes the final-context handoff exposed by the 0.16.67 live performance proof. The production API finalizer now replays the already-selected read-only `hub_get_metrics`, `hub_get_performance_stats`, and `hub_get_jobs` calls into a bounded synthesis snapshot before the final model pass, while reusing the existing bounded recent-log evidence when available.
+0.16.69 keeps the production API finalization path from 0.16.68 but removes its three duplicate read-only synthesis replays. `performance_api_finalizer.py` now captures the normalized, privacy-redacted provider payloads already produced by `ToolExecutor` for `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` in request-local `ContextVar` storage. Final synthesis reuses those bounded payloads directly, so the upstream database-size compatibility normalization remains intact and measured values stay available without re-calling Hubitat.
 
-This means the second synthesis sees actual current-turn measured values instead of only evidence-receipt summaries such as `object fields: ...`. The first assistant draft remains context, not evidence. If the final model nevertheless falsely claims that no MCP tools/evidence exist while successful receipts are present, HomeBrain rejects that contradiction and falls back to the original measured draft after deterministic performance-semantic cleanup.
+If the original reasoning turn did not obtain recent logs, the finalizer still performs one bounded `hub_get_logs` read (`since=30m`, `limit=100`) before final synthesis. The semantic guard also neutralizes unsupported causal headings such as “Blocking Potential” or “Scheduling Overhead”, recalibrates unsupported “not a bottleneck” conclusions, and collapses the duplicate fail-closed sentence pattern exposed by the 0.16.68 Halo3000x live proof.
 
 The direct production wiring introduced in 0.16.67 remains unchanged: `_agent_request()` passes returned unified-agent outcomes through `performance_api_finalizer.finalize_performance_api_outcome()` before `/api/ask` or `/api/chat` serializes them. Turns without successful performance-stat evidence are returned unchanged.
 
@@ -34,7 +34,7 @@ A broad performance request that also asks for recommendations uses:
 2. `hub_get_performance_stats` for measured app/device execution statistics.
 3. One bounded recent `hub_get_logs` window (`30m`, maximum `100` rows) before final synthesis.
 4. Scheduler/job evidence only when job count or cadence materially affects a recommendation.
-5. A bounded API synthesis snapshot of the measured read-only sources so the final model pass retains their actual values.
+5. The original bounded, normalized, privacy-redacted tool payloads for final synthesis rather than duplicate API snapshot reads.
 6. Configuration/implementation evidence before prescribing exact polling, reporting, retry, timeout, or scheduler interval changes.
 
 The final answer must keep these distinctions explicit:
@@ -92,7 +92,7 @@ ollama_local_keep_alive_seconds: 120
 
 ## System Check and Pushover
 
-`HealthAuditService` performs read-only Hub/MCP/device/battery/automation/log checks and stores the latest snapshot under `/data`. The dashboard exposes the latest result, new/resolved findings, a manual **Run system check now** action, and **Send report to Pushover** when Pushover is configured.
+`HealthAuditService` performs read-only Hub/MCP/device/battery/automation/log health checks and stores the latest snapshot under `/data`. The dashboard exposes the latest result, new/resolved findings, a manual **Run system check now** action, and **Send report to Pushover** when Pushover is configured.
 
 Useful options include:
 
