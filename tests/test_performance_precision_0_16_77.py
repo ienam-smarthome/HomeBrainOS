@@ -11,6 +11,10 @@ from performance_evidence_first import (  # noqa: E402
     build_performance_synthesis_contract,
     guard_evidence_first_performance,
 )
+from synthesis_validator import (  # noqa: E402
+    consume_performance_repair_issues,
+    validate_synthesis,
+)
 from technical_metrics_presenter import present_request_metrics  # noqa: E402
 
 
@@ -60,6 +64,7 @@ def test_01677_contract_allows_literal_job_facts_when_job_source_exists() -> Non
 
 
 def test_01677_metric_rows_split_agent_and_finalizer_model_rounds() -> None:
+    consume_performance_repair_issues()
     rows = present_request_metrics(
         {
             "outcome": "success",
@@ -80,3 +85,31 @@ def test_01677_metric_rows_split_agent_and_finalizer_model_rounds() -> None:
     assert {"label": "Agent model rounds", "value": "3"} in rows
     assert {"label": "Performance synthesis model rounds", "value": "1"} in rows
     assert {"label": "Deterministic performance repairs", "value": "1"} in rows
+
+
+def test_01677_performance_repair_reason_is_fixed_vocabulary_and_consumed_once() -> None:
+    consume_performance_repair_issues()
+    evidence = [_receipt("hub_get_performance_stats")]
+    corrected, issues = validate_synthesis(
+        "Google Nest Hub is the primary consumer of execution time.",
+        evidence,
+    )
+    assert "primary consumer of execution time" not in corrected
+    assert "performance_evidence_first" in issues
+
+    metrics = {
+        "outcome": "success",
+        "counters": {
+            "model_rounds": 3,
+            "performance_api_deterministic_repair": 1,
+        },
+        "timings_ms": {"performance_api_model": 6000},
+    }
+    first_rows = present_request_metrics(metrics)
+    assert {
+        "label": "Performance repair reason",
+        "value": "Evidence-first performance contract",
+    } in first_rows
+
+    second_rows = present_request_metrics(metrics)
+    assert not any(row.get("label") == "Performance repair reason" for row in second_rows)
