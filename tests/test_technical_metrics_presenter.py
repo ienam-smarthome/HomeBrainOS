@@ -22,7 +22,7 @@ def test_presenter_formats_production_snapshot() -> None:
     assert rows == [
         {"label": "Model rounds", "value": "2"},
         {"label": "Tool calls", "value": "1"},
-        {"label": "Provider (agent phase)", "value": "1.8 s"},
+        {"label": "Provider", "value": "1.8 s"},
         {"label": "Agent phase", "value": "2.5 s"},
         {"label": "Outcome", "value": "success"},
     ]
