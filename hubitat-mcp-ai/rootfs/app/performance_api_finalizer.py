@@ -9,6 +9,7 @@ from typing import Any
 
 from final_answer_coordinator import FinalAnswerCoordinator
 from performance_live_semantic_guard import guard_live_performance_semantics
+from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
@@ -21,6 +22,12 @@ _CAPTURED_TOOLS = {
     _PERFORMANCE_TOOL,
     _JOBS_TOOL,
     _LOG_TOOL,
+}
+_REPAIR_REASON_COUNTERS = {
+    "performance_log_causality": "performance_api_repair_log_causality",
+    "performance_live_semantics": "performance_api_repair_live_semantics",
+    "performance_evidence_first": "performance_api_repair_evidence_first",
+    "performance_log_observation": "performance_api_repair_log_observation",
 }
 # 0.16.72: the old 12k-per-item / 32k FIFO packet could evict the metrics
 # payload simply because metrics was normally captured first. Keep the packet
@@ -664,6 +671,15 @@ async def finalize_performance_api_outcome(
     message = await coordinator.answer(messages)
     if provider_rounds:
         _counter(outcome, "model_rounds", provider_rounds)
+
+    # Validation runs inside the request-coordinator child task, while the API
+    # presenter runs in its parent task. ContextVar state does not flow back from
+    # child to parent, so copy the fixed-vocabulary repair reasons into the
+    # serializable outcome metrics before returning from this task.
+    for issue in consume_performance_repair_issues():
+        counter = _REPAIR_REASON_COUNTERS.get(issue)
+        if counter:
+            _counter(outcome, counter)
 
     guarded, _changed = guard_live_performance_semantics(message, evidence)
     guarded = _repair_01672_surface(guarded, evidence)

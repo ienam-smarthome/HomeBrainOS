@@ -40,6 +40,10 @@ from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp_client import HubitatMCPClient
 from performance_api_finalizer import finalize_performance_api_outcome
+from performance_host_plan import (
+    collect_broad_performance_outcome,
+    is_broad_performance_request,
+)
 from pushover_notifier import PushoverNotifier
 from webui import render_page
 
@@ -406,11 +410,14 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     try:
-        outcome = await agent.process_user_request_result(
-            request.message,
-            request.history,
-            session_id=request.session_id,
-        )
+        if is_broad_performance_request(request.message):
+            outcome = await collect_broad_performance_outcome(agent, request.message)
+        else:
+            outcome = await agent.process_user_request_result(
+                request.message,
+                request.history,
+                session_id=request.session_id,
+            )
         return await finalize_performance_api_outcome(
             agent,
             mcp,
