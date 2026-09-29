@@ -77,6 +77,8 @@ _COUNTER_LABELS = (
     ("semantic_world_context", "Capability-grounded semantic contexts"),
     ("semantic_target_grounded", "Semantic targets host-grounded"),
     ("semantic_needs_input", "Semantic clarifications"),
+    ("broad_performance_host_plan", "Host-planned performance paths"),
+    ("broad_performance_host_plan_jobs", "Host-planned scheduler reads"),
     ("performance_api_deterministic_repair", "Deterministic performance repairs"),
 )
 
@@ -100,7 +102,14 @@ _PERFORMANCE_REPAIR_LABELS = {
     "performance_log_causality": "Log/performance causality",
     "performance_live_semantics": "Live performance semantics",
     "performance_evidence_first": "Evidence-first performance contract",
+    "performance_log_observation": "Literal log observation preservation",
 }
+_PERFORMANCE_REPAIR_COUNTER_LABELS = (
+    ("performance_api_repair_log_causality", "Log/performance causality"),
+    ("performance_api_repair_live_semantics", "Live performance semantics"),
+    ("performance_api_repair_evidence_first", "Evidence-first performance contract"),
+    ("performance_api_repair_log_observation", "Literal log observation preservation"),
+)
 
 _OUTCOME_PRESENTATION = {
     "success": {"label": "Success", "tone": "positive"},
@@ -167,7 +176,7 @@ def _performance_round_rows(
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
     """Return stable, human-readable rows for a RequestMetrics snapshot."""
 
-    repair_issues = consume_performance_repair_issues()
+    fallback_repair_issues = consume_performance_repair_issues()
     if not isinstance(metrics, dict):
         return []
     counters = metrics.get("counters")
@@ -185,10 +194,18 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
         rows.append({"label": label, "value": str(int(number))})
     rows.extend(_performance_round_rows(counters, timings))
     if _non_negative_number(counters.get("performance_api_deterministic_repair")):
-        for issue in repair_issues:
-            label = _PERFORMANCE_REPAIR_LABELS.get(issue)
-            if label:
-                rows.append({"label": "Performance repair reason", "value": label})
+        reason_labels: list[str] = []
+        for key, label in _PERFORMANCE_REPAIR_COUNTER_LABELS:
+            number = _non_negative_number(counters.get(key))
+            if number is not None and number > 0 and label not in reason_labels:
+                reason_labels.append(label)
+        if not reason_labels:
+            for issue in fallback_repair_issues:
+                label = _PERFORMANCE_REPAIR_LABELS.get(issue)
+                if label and label not in reason_labels:
+                    reason_labels.append(label)
+        for label in reason_labels:
+            rows.append({"label": "Performance repair reason", "value": label})
     for key, label in _DURATION_LABELS:
         number = _non_negative_number(timings.get(key))
         if number is None:
