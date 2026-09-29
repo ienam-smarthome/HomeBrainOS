@@ -7,13 +7,16 @@ from typing import Any
 
 from final_answer_coordinator import FinalAnswerCoordinator
 from performance_live_semantic_guard import guard_live_performance_semantics
+from performance_synthesis_packet import (
+    consume_performance_synthesis_packet,
+    install_tool_executor_capture,
+)
 
-_METRICS_TOOL = "hub_get_metrics"
+install_tool_executor_capture()
+
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
-_JOBS_TOOL = "hub_get_jobs"
 _LOG_TOOL = "hub_get_logs"
 _LOG_ARGS = {"since": "30m", "limit": 100}
-_REPLAY_TOOLS = (_METRICS_TOOL, _PERFORMANCE_TOOL, _JOBS_TOOL)
 _FALSE_EVIDENCE_DENIAL = re.compile(
     r"(?:no\s+mcp\s+tools?\s+(?:were\s+)?executed|"
     r"no\s+(?:current-turn\s+)?(?:mcp\s+)?evidence|"
@@ -108,16 +111,10 @@ def _existing_log_content(evidence: list[dict[str, Any]]) -> str:
         return str(details)
 
 
-def _receipt_arguments(row: dict[str, Any]) -> dict[str, Any]:
-    arguments = row.get("arguments")
-    return dict(arguments) if isinstance(arguments, dict) else {}
-
-
-def _append_snapshot_receipt(
+def _append_log_receipt(
     evidence: list[dict[str, Any]],
     *,
     gateway: str,
-    sub_tool: str,
     arguments: dict[str, Any],
     elapsed_ms: int,
     success: bool,
@@ -126,12 +123,12 @@ def _append_snapshot_receipt(
     evidence.append(
         {
             "tool": gateway,
-            "sub_tool": sub_tool,
+            "sub_tool": _LOG_TOOL,
             "timestamp": None,
             "elapsed_ms": elapsed_ms,
             "success": success,
             "supports_live_claim": success,
-            "evidence_kind": "performance_api_synthesis_snapshot",
+            "evidence_kind": "performance_api_recent_logs",
             "mutates": False,
             "effect": "read",
             "arguments": arguments,
@@ -140,71 +137,14 @@ def _append_snapshot_receipt(
     )
 
 
-async def _replay_synthesis_sources(
-    agent: Any,
-    mcp: Any,
-    outcome: Any,
-    evidence: list[dict[str, Any]],
-) -> list[tuple[str, str]]:
-    """Re-read bounded measured sources so final synthesis receives actual values.
-
-    0.16.67 proved that evidence receipts alone are only source-presence metadata;
-    they do not preserve the measured performance payloads that the original model
-    saw. Replaying the same read-only calls at the API boundary gives the second
-    synthesis an authoritative, current-turn snapshot without treating the first
-    assistant draft as evidence.
-    """
-
-    packets: list[tuple[str, str]] = []
-    for sub_tool in _REPLAY_TOOLS:
-        row = _first_successful(evidence, sub_tool)
-        if row is None:
-            continue
-        gateway = str(row.get("tool") or "").strip()
-        arguments = _receipt_arguments(row)
-        if not gateway or not arguments:
-            continue
-        started = time.monotonic()
-        _counter(outcome, "performance_api_snapshot_attempt")
-        try:
-            result = await mcp.call_tool(gateway, arguments)
-            success = bool(agent._tool_succeeded(result))
-            elapsed_ms = round((time.monotonic() - started) * 1000)
-            _counter(outcome, "tool_calls")
-            _append_snapshot_receipt(
-                evidence,
-                gateway=gateway,
-                sub_tool=sub_tool,
-                arguments=arguments,
-                elapsed_ms=elapsed_ms,
-                success=success,
-                summary=_summary(
-                    result,
-                    success=success,
-                    fallback=f"{sub_tool} synthesis snapshot",
-                ),
-            )
-            if success:
-                content = _tool_content(result)
-                if content:
-                    packets.append((sub_tool, content[:24000]))
-                    _counter(outcome, "performance_api_snapshot_success")
-            else:
-                _counter(outcome, "performance_api_snapshot_failed")
-        except Exception as exc:
-            elapsed_ms = round((time.monotonic() - started) * 1000)
-            _counter(outcome, "tool_calls")
-            _counter(outcome, "performance_api_snapshot_failed")
-            _append_snapshot_receipt(
-                evidence,
-                gateway=gateway,
-                sub_tool=sub_tool,
-                arguments=arguments,
-                elapsed_ms=elapsed_ms,
-                success=False,
-                summary=f"{sub_tool} synthesis snapshot failed: {str(exc)[:300]}",
-            )
-    return packets
+def _packet_map(rows: list[tuple[str, str]]) -> dict[str, str]:
+    packet: dict[str, str] = {}
+    for sub_tool, content in rows:
+        name = str(sub_tool or "").strip()
+        text = str(content or "").strip()
+        if name and text:
+            packet[name] = text
+    return packet
 
 
 async def finalize_performance_api_outcome(
@@ -213,8 +153,15 @@ async def finalize_performance_api_outcome(
     outcome: Any,
     user_prompt: str,
 ) -> Any:
-    """Finalize measured performance answers on the actual `/api/ask` path."""
+    """Finalize measured performance answers on the actual `/api/ask` path.
 
+    0.16.69 reuses the normalized, privacy-redacted ToolExecutor payloads from the
+    original reasoning turn rather than re-reading metrics/performance/jobs at the
+    API boundary. Only the mandatory bounded recent-log read is added when the
+    original turn did not already obtain one.
+    """
+
+    captured = _packet_map(consume_performance_synthesis_packet())
     evidence = [
         dict(row)
         for row in (getattr(outcome, "evidence", None) or [])
@@ -225,7 +172,7 @@ async def finalize_performance_api_outcome(
 
     started = time.monotonic()
     original_message = str(getattr(outcome, "message", "") or "")
-    log_content = _existing_log_content(evidence)
+    log_content = captured.get(_LOG_TOOL) or _existing_log_content(evidence)
     log_attempts = 0
 
     if not _successful(evidence, _LOG_TOOL):
@@ -233,14 +180,13 @@ async def finalize_performance_api_outcome(
         for gateway in ("hub_manage_logs", "hub_read_diagnostics"):
             log_attempts += 1
             call_started = time.monotonic()
+            arguments = {"tool": _LOG_TOOL, "args": dict(_LOG_ARGS)}
             try:
-                arguments = {"tool": _LOG_TOOL, "args": dict(_LOG_ARGS)}
                 result = await mcp.call_tool(gateway, arguments)
                 success = bool(agent._tool_succeeded(result))
-                _append_snapshot_receipt(
+                _append_log_receipt(
                     evidence,
                     gateway=gateway,
-                    sub_tool=_LOG_TOOL,
                     arguments=arguments,
                     elapsed_ms=round((time.monotonic() - call_started) * 1000),
                     success=success,
@@ -255,11 +201,10 @@ async def finalize_performance_api_outcome(
                     _counter(outcome, "broad_performance_log_api_success")
                     break
             except Exception as exc:
-                _append_snapshot_receipt(
+                _append_log_receipt(
                     evidence,
                     gateway=gateway,
-                    sub_tool=_LOG_TOOL,
-                    arguments={"tool": _LOG_TOOL, "args": dict(_LOG_ARGS)},
+                    arguments=arguments,
                     elapsed_ms=round((time.monotonic() - call_started) * 1000),
                     success=False,
                     summary=f"bounded recent log read failed: {str(exc)[:300]}",
@@ -274,21 +219,23 @@ async def finalize_performance_api_outcome(
     if log_attempts:
         _counter(outcome, "tool_calls", log_attempts)
 
-    source_packets = await _replay_synthesis_sources(agent, mcp, outcome, evidence)
-
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": str(user_prompt).strip()},
         {"role": "assistant", "content": original_message},
     ]
-    for sub_tool, content in source_packets:
+
+    for sub_tool in ("hub_get_metrics", "hub_get_performance_stats", "hub_get_jobs"):
+        content = captured.get(sub_tool)
+        if not content:
+            continue
         messages.append(
             {
                 "role": "user",
                 "content": (
                     f"HOST CURRENT-TURN PERFORMANCE SOURCE: {sub_tool}\n"
-                    "This is a fresh read-only replay of a source already checked in "
-                    "this same request. Use its measured values as evidence; do not "
-                    "treat the earlier assistant draft as evidence:\n"
+                    "This is the normalized, privacy-redacted payload already read by "
+                    "the original tool turn. Use its measured values as current-turn "
+                    "evidence; do not treat the earlier assistant draft as evidence:\n"
                     + content
                 ),
             }
