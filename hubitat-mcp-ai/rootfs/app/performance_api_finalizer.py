@@ -3,26 +3,96 @@ from __future__ import annotations
 import json
 import re
 import time
+from contextvars import ContextVar
+from functools import wraps
 from typing import Any
 
 from final_answer_coordinator import FinalAnswerCoordinator
 from performance_live_semantic_guard import guard_live_performance_semantics
-from performance_synthesis_packet import (
-    consume_performance_synthesis_packet,
-    install_tool_executor_capture,
-)
-
-install_tool_executor_capture()
+from tool_executor import ToolExecutor
 
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
 _LOG_TOOL = "hub_get_logs"
 _LOG_ARGS = {"since": "30m", "limit": 100}
+_CAPTURED_TOOLS = {
+    "hub_get_metrics",
+    "hub_get_performance_stats",
+    "hub_get_jobs",
+    "hub_get_logs",
+}
+_MAX_ITEM_CHARS = 12000
+_MAX_PACKET_CHARS = 32000
+_PACKET: ContextVar[tuple[tuple[str, str], ...]] = ContextVar(
+    "performance_api_synthesis_packet",
+    default=(),
+)
 _FALSE_EVIDENCE_DENIAL = re.compile(
     r"(?:no\s+mcp\s+tools?\s+(?:were\s+)?executed|"
     r"no\s+(?:current-turn\s+)?(?:mcp\s+)?evidence|"
     r"available\s+evidence.*does\s+not\s+establish\s+any\s+facts)",
     re.I | re.S,
 )
+
+
+def _capture_sub_tool(name: str, arguments: dict[str, Any]) -> str:
+    leaf = str(arguments.get("tool") or "").strip()
+    return leaf or str(name or "").strip()
+
+
+def _append_packet(sub_tool: str, content: str) -> None:
+    if sub_tool not in _CAPTURED_TOOLS:
+        return
+    text = str(content or "").strip()
+    if not text:
+        return
+    text = text[:_MAX_ITEM_CHARS]
+    rows = [row for row in _PACKET.get() if row[0] != sub_tool]
+    rows.append((sub_tool, text))
+    while rows and sum(len(name) + len(value) for name, value in rows) > _MAX_PACKET_CHARS:
+        rows.pop(0)
+    _PACKET.set(tuple(rows))
+
+
+def _consume_packet() -> list[tuple[str, str]]:
+    rows = list(_PACKET.get())
+    _PACKET.set(())
+    return rows
+
+
+def _install_tool_executor_capture() -> None:
+    """Capture the exact normalized provider payloads already read this request."""
+
+    current = ToolExecutor.execute
+    if getattr(current, "_homebrain_performance_packet_capture", False):
+        return
+
+    @wraps(current)
+    async def wrapped(
+        self: ToolExecutor,
+        name: str,
+        arguments: dict[str, Any],
+        *args: Any,
+        **kwargs: Any,
+    ):
+        execution = await current(self, name, arguments, *args, **kwargs)
+        if getattr(execution, "success", False):
+            execution_arguments = getattr(execution, "arguments", None)
+            safe_arguments = (
+                dict(execution_arguments)
+                if isinstance(execution_arguments, dict)
+                else dict(arguments or {})
+            )
+            _append_packet(
+                _capture_sub_tool(name, safe_arguments),
+                str(getattr(execution, "content", "") or ""),
+            )
+        return execution
+
+    setattr(wrapped, "_homebrain_performance_packet_capture", True)
+    ToolExecutor.execute = wrapped
+
+
+_install_tool_executor_capture()
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -155,13 +225,13 @@ async def finalize_performance_api_outcome(
 ) -> Any:
     """Finalize measured performance answers on the actual `/api/ask` path.
 
-    0.16.69 reuses the normalized, privacy-redacted ToolExecutor payloads from the
-    original reasoning turn rather than re-reading metrics/performance/jobs at the
-    API boundary. Only the mandatory bounded recent-log read is added when the
-    original turn did not already obtain one.
+    Reuse the normalized, privacy-redacted ToolExecutor payloads from the original
+    reasoning turn rather than re-reading metrics/performance/jobs at the API
+    boundary. Only the mandatory bounded recent-log read is added when the original
+    turn did not already obtain one.
     """
 
-    captured = _packet_map(consume_performance_synthesis_packet())
+    captured = _packet_map(_consume_packet())
     evidence = [
         dict(row)
         for row in (getattr(outcome, "evidence", None) or [])
