@@ -3,13 +3,17 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.76**.
+Current add-on version: **0.16.77**.
 
 ## Architecture
 
-0.16.76 keeps the 0.16.75 evidence-first final performance synthesis, the 0.16.70 single-provider-pass finalizer, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
+0.16.77 keeps the 0.16.75 evidence-first final performance synthesis, the 0.16.76 canonical metric normalization, the 0.16.70 single-provider-pass finalizer, and the 0.16.72 source-budgeted evidence packet unchanged. It adds precision and observability around the remaining live-analysis edge cases rather than another reasoning architecture.
 
-The 0.16.76 change is at the evidence boundary: explicitly unit-labelled free-memory values are canonicalized to `freeMemoryMB` before final synthesis while preserving the raw upstream value for provenance. HomeBrain never infers a free-memory unit merely from numeric magnitude. The evidence-first contract also requires canonical normalized fields to outrank raw aliases, keeps `stateSize` numeric unless the source defines a threshold, describes returned rankings literally rather than as causal/resource-impact judgments, and reports job/log cadence as observations rather than invented qualitative thresholds.
+The 0.16.77 evidence contract now treats scheduler/job statements as source-bound: when no successful current-turn `hub_get_jobs` receipt exists, final synthesis must not state job counts, alignment, cadence, `sessionTick`/`autoPoll` scheduling, or scheduler conclusions. Raw log windows are also no longer a basis for model-authored exact event/update counts unless a tool or host-produced summary explicitly supplies the filtered count; otherwise HomeBrain reports multiple observations plus the measured time span/cadence.
+
+Performance metric rows now separate total model participation into pre-finalizer **Agent model rounds** and the single **Performance synthesis model round** whenever the finalizer timing proves that path. If deterministic validation is required, a privacy-safe fixed-vocabulary **Performance repair reason** row identifies whether the correction came from log/performance causality, live performance semantics, or the evidence-first contract. No prompt text, device names, credentials, session IDs, or tool arguments are used as metric dimensions.
+
+0.16.76 changed the evidence boundary: explicitly unit-labelled free-memory values are canonicalized to `freeMemoryMB` before final synthesis while preserving the raw upstream value for provenance. HomeBrain never infers a free-memory unit merely from numeric magnitude. The evidence-first contract also requires canonical normalized fields to outrank raw aliases, keeps `stateSize` numeric unless the source defines a threshold, describes returned rankings literally rather than as causal/resource-impact judgments, and reports job/log cadence as observations rather than invented qualitative thresholds.
 
 The key change in 0.16.75 is architectural rather than another phrase-specific patch: final performance synthesis is **evidence-first**. Prose-only assistant drafts from the earlier tool-selection/reasoning phase are excluded from the final performance synthesis context, while native assistant tool-call envelopes are retained so matching tool messages remain valid. The final model therefore reasons directly from the current-turn metrics, performance statistics, jobs, recent logs, evidence ledger, and an explicit performance evidence contract instead of being primed by an unsafe earlier draft.
 
@@ -47,15 +51,16 @@ A broad performance request that also asks for recommendations uses:
 1. `hub_get_metrics` for current hub resources and alerts.
 2. `hub_get_performance_stats` for measured app/device execution statistics.
 3. One bounded recent `hub_get_logs` window (`30m`, maximum `100` rows) before final synthesis.
-4. Scheduler/job evidence only when job count or cadence materially affects a recommendation.
+4. Scheduler/job evidence only when job count or cadence materially affects a recommendation; without a current-turn job receipt, scheduler-specific conclusions are omitted.
 5. The original bounded, normalized, privacy-redacted tool payloads for final synthesis rather than duplicate API snapshot reads; each source class retains its own bounded packet budget.
 6. One final performance provider synthesis pass; deterministic validators handle localized repairs without another cloud-model round.
 7. Prose-only assistant drafts from the earlier tool-selection/reasoning phase are excluded from final performance synthesis; only native tool-call envelopes are retained where required for tool-message validity.
 8. An evidence-first synthesis contract explicitly states what metrics, performance stats, jobs, and logs can and cannot establish.
 9. Canonical normalized metric fields take precedence over raw provenance aliases; explicitly unit-labelled free memory is normalized to MB without guessing unlabeled units.
 10. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, job offsets, or reductions in observed call/report volume.
-11. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
-12. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
+11. Raw log rows support observations and cadence; exact event/update counts require an explicit tool/host filtered count rather than manual model counting.
+12. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
+13. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
 
 The final answer must keep these distinctions explicit:
 
@@ -63,7 +68,7 @@ The final answer must keep these distinctions explicit:
 - Returned ordering/percentages may be described literally (for example highest returned `pctTotal`), but should not be promoted into “primary consumer”, “highest impact”, or other causal/resource judgments that the source does not define.
 - Numeric `stateSize` is a measured value; “large” requires a source-provided threshold or classification.
 - Conditional speculation such as “if the driver is synchronous/blocking, it can cause stutter/delays” is not allowed when the implementation was not inspected.
-- A scheduled-job list proves returned jobs/cadence/alignment, not CPU spikes, CPU load, UI stuttering, delayed automations, hub overhead, or that changing offsets will improve performance.
+- A scheduled-job list proves returned jobs/cadence/alignment, not CPU spikes, CPU load, UI stuttering, delayed automations, hub overhead, or that changing offsets will improve performance. Without a successful current-turn scheduler/job source, do not state scheduler-specific facts.
 - Database size is reported numerically in MB; qualitative labels such as normal/healthy/small/large require a defined current-turn threshold.
 - Frequent device reporting proves activity, not material hub/background overhead, log growth, history slowdown, or a performance cause by itself.
 - Repeated app triggers are observations; they do not by themselves establish an efficiency problem.
