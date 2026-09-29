@@ -68,9 +68,9 @@ def test_database_mb_is_preserved_without_small_or_performance_drag_inference():
     )
     assert changed is True
     assert "166 MB" in corrected
-    assert "No evidence in this run attributes" in corrected
+    assert "does not establish a normal-size threshold" in corrected
     assert "database is small" not in corrected
-    assert "performance drag" not in corrected.split("No evidence", 1)[0]
+    assert "unlikely to be causing any performance drag" not in corrected
 
 
 def test_network_backup_alert_does_not_imply_imminent_data_loss():
