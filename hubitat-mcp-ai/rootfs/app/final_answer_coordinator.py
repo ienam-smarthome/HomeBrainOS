@@ -15,12 +15,15 @@ from investigation_policy import (
 )
 from performance_causality_guard import performance_validation_needed
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
+from request_metrics import increment_active_metric
 from synthesis_context import build_tool_evidence_packet
 from synthesis_validator import validate_synthesis
 
 
 FINAL_ANSWER_INSTRUCTION = FINAL_SYNTHESIS_INSTRUCTION
 DEFAULT_FINAL_ANSWER = "The MCP request completed without a written answer."
+_PERFORMANCE_TOOL = "hub_get_performance_stats"
+_LOG_TOOL = "hub_get_logs"
 
 
 def _original_user_request(messages: list[dict[str, Any]]) -> str:
@@ -71,6 +74,61 @@ def _current_turn_messages(
         if isinstance(message, dict)
     ]
     return [*system_messages, *current]
+
+
+def _sub_tool(row: dict[str, Any]) -> str:
+    value = row.get("sub_tool")
+    if value:
+        return str(value)
+    arguments = row.get("arguments")
+    if isinstance(arguments, dict) and arguments.get("tool"):
+        return str(arguments.get("tool"))
+    return ""
+
+
+def _successful_evidence(evidence: list[dict[str, Any]], sub_tool: str) -> bool:
+    return any(
+        isinstance(row, dict)
+        and row.get("success") is not False
+        and _sub_tool(row) == sub_tool
+        for row in evidence
+    )
+
+
+def _performance_semantic_validation_needed(evidence: list[dict[str, Any]]) -> bool:
+    """Performance semantics must be guarded even when the log read failed."""
+
+    return _successful_evidence(evidence, _PERFORMANCE_TOOL)
+
+
+def _broad_performance_recommendation_request(text: str) -> bool:
+    """Conservative request classifier for the mandatory recent-log breadth path."""
+
+    folded = " ".join(str(text or "").casefold().split())
+    performance = any(
+        token in folded
+        for token in (
+            "performance",
+            "slow hub",
+            "hub load",
+            "resource consumer",
+            "resource consumers",
+            "optimisation",
+            "optimization",
+        )
+    )
+    recommendations = any(
+        token in folded
+        for token in (
+            "recommend",
+            "improve",
+            "improvement",
+            "optimise",
+            "optimize",
+            "what else can be improved",
+        )
+    )
+    return performance and recommendations
 
 
 def _synthesis_instruction(original_user: str) -> str:
@@ -157,6 +215,91 @@ class FinalAnswerCoordinator:
         self._chat = chat
         self._evidence_supplier = evidence_supplier
 
+    async def _ensure_broad_performance_logs(
+        self,
+        original_user: str,
+        evidence: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Host-enforce one bounded recent-log read before broad performance synthesis.
+
+        This deliberately runs after performance evidence exists and before the
+        no-more-tools synthesis round. It does not depend on the model selecting the
+        correct gateway. The production chat callable is a bound agent method, so the
+        same request-scoped executor/evidence recorder remains authoritative here.
+        """
+
+        if not _broad_performance_recommendation_request(original_user):
+            return evidence
+        if not _successful_evidence(evidence, _PERFORMANCE_TOOL):
+            return evidence
+        if _successful_evidence(evidence, _LOG_TOOL):
+            return evidence
+
+        agent = getattr(self._chat, "__self__", None)
+        executor = getattr(agent, "executor", None)
+        if executor is None:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST BROAD PERFORMANCE LOG STATUS\n"
+                    "The required bounded recent-log read could not be executed by the host. "
+                    "State this limitation explicitly and do not present the analysis as log-complete."
+                ),
+            })
+            increment_active_metric("broad_performance_log_host_unavailable")
+            return evidence
+
+        increment_active_metric("broad_performance_log_host_attempt")
+        attempts = (
+            "hub_manage_logs",
+            "hub_read_diagnostics",
+        )
+        successful_content = ""
+        for gateway in attempts:
+            execution = await executor.execute(
+                gateway,
+                {
+                    "tool": _LOG_TOOL,
+                    "args": {"since": "30m", "limit": 100},
+                },
+                supports_live_claim=True,
+                evidence_kind="authoritative_recent_performance_logs",
+            )
+            if execution.success and execution.result is not None:
+                successful_content = execution.content
+                increment_active_metric("broad_performance_log_host_success")
+                break
+            increment_active_metric("broad_performance_log_host_retry")
+
+        refreshed = (
+            list(self._evidence_supplier() or [])
+            if self._evidence_supplier is not None
+            else evidence
+        )
+        if successful_content and _successful_evidence(refreshed, _LOG_TOOL):
+            messages.append({
+                "role": "user",
+                "content": (
+                    "HOST BROAD PERFORMANCE LOG READ\n"
+                    "A bounded recent Hubitat log window was read host-side specifically for this "
+                    "performance analysis. Treat it as current observations, not automatic causation:\n"
+                    + successful_content
+                ),
+            })
+            return refreshed
+
+        messages.append({
+            "role": "user",
+            "content": (
+                "HOST BROAD PERFORMANCE LOG STATUS\n"
+                "The required bounded recent-log read was attempted host-side but did not succeed. "
+                "State this limitation explicitly and do not present the analysis as log-complete."
+            ),
+        })
+        increment_active_metric("broad_performance_log_host_failed")
+        return refreshed
+
     async def answer(self, messages: list[dict[str, Any]]) -> str:
         evidence = (
             list(self._evidence_supplier() or [])
@@ -164,10 +307,16 @@ class FinalAnswerCoordinator:
             else []
         )
         original_user = _original_user_request(messages)
+        evidence = await self._ensure_broad_performance_logs(
+            original_user,
+            evidence,
+            messages,
+        )
         causal = is_causal_investigation(original_user)
         investigative = is_history_investigation(original_user)
-        performance_validation = performance_validation_needed(evidence)
-        evidence_scoped = investigative or performance_validation
+        performance_semantic_validation = _performance_semantic_validation_needed(evidence)
+        performance_log_validation = performance_validation_needed(evidence)
+        evidence_scoped = investigative or performance_semantic_validation
         current_turn = _current_turn_messages(messages)
         brief = build_current_turn_evidence_ledger(evidence)
         causal_timeline = render_causal_timeline(evidence) if causal else None
@@ -206,9 +355,10 @@ class FinalAnswerCoordinator:
 
         response = await self._chat(final_messages, [])
         draft = str(response.get("content") or DEFAULT_FINAL_ANSWER)
-        if not investigative and not performance_validation:
+        if not investigative and not performance_semantic_validation:
             # Ordinary simple answers keep their established one-pass behavior.
-            # Performance+log answers deliberately enter the validator below.
+            # Any answer containing measured performance statistics enters the
+            # semantic validator even when a log call failed or was rejected.
             return draft
 
         corrected, issues = validate_synthesis(
@@ -220,16 +370,22 @@ class FinalAnswerCoordinator:
             return draft
 
         performance_repair = ""
-        if performance_validation:
+        if performance_semantic_validation:
             performance_repair = (
-                " Performance validation is fail-closed: keep measured performance "
-                "statistics separate from recent-log observations; do not say a "
-                "logged rule/device causes busy percentage, load, latency, or "
-                "execution time without direct linking evidence. Do not infer "
-                "threshold crossing/oscillation from repeated reports that all "
-                "remain on the same qualifying side. Do not prescribe an exact "
-                "rule trigger/threshold/debounce/duration edit unless current-turn "
-                "rule/app configuration was actually read."
+                " Performance semantic validation is fail-closed whenever current-turn "
+                "performance statistics exist, even if a recent-log read failed. Keep "
+                "measured performance facts separate from hypotheses and configuration "
+                "prescriptions. Do not promote job counts into CPU/load attribution, do "
+                "not describe database size qualitatively without an evidence-backed "
+                "threshold, do not make backup severity/data-loss claims beyond the alert, "
+                "and do not prescribe scheduler interval changes without configuration evidence."
+            )
+        if performance_log_validation:
+            performance_repair += (
+                " Recent logs are observations, not proof that a logged rule/device causes "
+                "busy percentage, load, latency, or execution time without direct linking "
+                "evidence. Do not infer threshold crossing/oscillation from repeated reports "
+                "that all remain on the same qualifying side."
             )
 
         # Validators identify factual conflicts; they do not author the answer.
@@ -271,7 +427,9 @@ __all__ = [
     "DEFAULT_FINAL_ANSWER",
     "FINAL_ANSWER_INSTRUCTION",
     "FinalAnswerCoordinator",
+    "_broad_performance_recommendation_request",
     "_current_turn_messages",
     "_original_user_request",
+    "_performance_semantic_validation_needed",
     "_synthesis_instruction",
 ]
