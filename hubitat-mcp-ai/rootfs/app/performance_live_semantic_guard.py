@@ -58,6 +58,11 @@ _SCHEDULER_OFFSET_BENEFIT = re.compile(
     r"\b(?:flatten|reduce|avoid|smooth|spread)\b[^.!?\n]{0,140}"
     r"\b(?:cpu\s+load|load\s+curve|cpu\s+spikes?|overhead|contention|lag)\b"
 )
+_SCHEDULER_OFFSET_REPAIR = (
+    "Review the observed job alignment. Inspect the responsible app configuration before changing scheduled "
+    "offsets; the current job evidence does not establish that offsetting is configurable, necessary, "
+    "behaviour-preserving, or performance-improving; the same applies to shifting or staggering."
+)
 _DATABASE_MB = re.compile(r"(?i)\b(?:database\s*(?:is|:|at|measured\s+at)?\s*)?(\d+(?:\.\d+)?)\s*MB\b")
 _DATABASE_QUALITATIVE = re.compile(
     r"(?i)\b(?:database|db)\b[^.!?\n]{0,220}\b(?:small|lean|large|bloated)\b|"
@@ -95,14 +100,15 @@ _ACTIVITY_OVERHEAD = re.compile(
     r"(?i)\b(?:add(?:ing|s)?|create(?:s|d|ing)?)\s+"
     r"(?:constant\s+)?(?:background\s+)?overhead\b"
 )
+_RESOURCE_INTENSIVE_APP = re.compile(r"(?i)\bmost\s+resource-intensive\s+app\b")
 _BUSY_IMPLEMENTATION_CLAIM = re.compile(
-    r"(?i)(?:\b\d+(?:\.\d+)?\s*%\b[^.!?\n]{0,220}\bbusy\b|"
-    r"\bbusy\s+(?:time|percentage|share)\b[^.!?\n]{0,220}\b\d+(?:\.\d+)?\s*%\b)"
+    r"(?i)(?:\d+(?:\.\d+)?\s*%[^.!?\n]{0,220}\bbusy\b|"
+    r"\bbusy\s+(?:time|percentage|share)\b[^.!?\n]{0,220}\d+(?:\.\d+)?\s*%)"
     r"[^.!?\n]{0,260}\b(?:inefficient\s+loops?|overly\s+frequent\s+triggers?|"
     r"frequent\s+triggers?|optimi[sz]e\s+logic)\b|"
     r"\b(?:inefficient\s+loops?|overly\s+frequent\s+triggers?|frequent\s+triggers?|"
     r"optimi[sz]e\s+logic)\b[^.!?\n]{0,260}"
-    r"(?:\b\d+(?:\.\d+)?\s*%\b[^.!?\n]{0,120}\bbusy\b|\bbusy\s+(?:time|percentage|share)\b)"
+    r"(?:\d+(?:\.\d+)?\s*%[^.!?\n]{0,120}\bbusy\b|\bbusy\s+(?:time|percentage|share)\b)"
 )
 _ZWAVE_REPAIR = re.compile(r"(?i)\b(?:run|perform|start)\s+(?:a\s+)?z[- ]?wave\s+repair\b")
 _TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
@@ -205,6 +211,20 @@ def _database_replacement(comparable: str) -> str:
     )
 
 
+def _resource_intensive_replacement(comparable: str) -> str:
+    busy = re.search(r"(?i)(\d+(?:\.\d+)?)\s*%", comparable)
+    name = re.search(
+        r"(?i)(?:Apps:\s*)?(?:The\s+)?(.+?)\s+is\s+the\s+most\s+resource-intensive\s+app",
+        comparable,
+    )
+    label = name.group(1).strip() if name else "This app"
+    busy_text = f" at {busy.group(1)}%" if busy else ""
+    return (
+        f"{label} has the highest returned app busy percentage{busy_text}; this ranking is measured, but this "
+        "turn does not establish an implementation mechanism from it."
+    )
+
+
 def _guard_sentence(
     sentence: str,
     *,
@@ -254,11 +274,7 @@ def _guard_sentence(
         or _SCHEDULER_OFFSET.search(comparable)
         or _SCHEDULER_OFFSET_BENEFIT.search(comparable)
     ):
-        return (
-            "Review the observed job alignment. Inspect the responsible app configuration before changing scheduled "
-            "offsets; the current job evidence does not establish that shifting, staggering, or offsetting is "
-            "configurable, necessary, behaviour-preserving, or performance-improving."
-        )
+        return _SCHEDULER_OFFSET_REPAIR
 
     if (
         not has_configuration
@@ -304,6 +320,9 @@ def _guard_sentence(
             "The frequent reporting is a measured activity worth reviewing; this turn does not establish that it "
             "adds material hub overhead or causes a performance problem."
         )
+
+    if _RESOURCE_INTENSIVE_APP.search(comparable):
+        return _resource_intensive_replacement(comparable)
 
     if not has_configuration and _BUSY_IMPLEMENTATION_CLAIM.search(comparable):
         return (
@@ -420,11 +439,6 @@ def _neutralize_exact_overreach(text: str) -> str:
         text,
     )
     text = re.sub(
-        r"(?i)\bis\s+the\s+most\s+resource-intensive\s+app,\s+accounting\s+for\s+([^.!?\n]+busy\s+time)\b",
-        r"has the highest returned app busy percentage, accounting for \1",
-        text,
-    )
-    text = re.sub(
         r"(?i)average\s+execution\s+times\s+that\s+can\s+block\s+(?:hub\s+)?threads",
         "average execution times that warrant investigation; the current evidence does not establish thread blocking",
         text,
@@ -483,6 +497,9 @@ def _collapse_duplicate_performance_repair(text: str) -> str:
         "",
         text,
     )
+    double_scheduler_repair = f"{_SCHEDULER_OFFSET_REPAIR} {_SCHEDULER_OFFSET_REPAIR}"
+    while double_scheduler_repair in text:
+        text = text.replace(double_scheduler_repair, _SCHEDULER_OFFSET_REPAIR)
     return text
 
 
