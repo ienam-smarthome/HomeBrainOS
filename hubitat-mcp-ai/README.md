@@ -3,17 +3,19 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.75**.
+Current add-on version: **0.16.76**.
 
 ## Architecture
 
-0.16.75 keeps the 0.16.70 single-provider-pass performance finalization, the 0.16.71 Markdown-safe deterministic grounding path, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
+0.16.76 keeps the 0.16.75 evidence-first final performance synthesis, the 0.16.70 single-provider-pass finalizer, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
 
-The key change in 0.16.75 is architectural rather than another phrase-specific patch: final performance synthesis is now **evidence-first**. Prose-only assistant drafts from the earlier tool-selection/reasoning phase are excluded from the final performance synthesis context, while native assistant tool-call envelopes are retained so matching tool messages remain valid. The final model therefore reasons directly from the current-turn metrics, performance statistics, jobs, recent logs, evidence ledger, and an explicit performance evidence contract instead of being primed by an unsafe earlier draft.
+The 0.16.76 change is at the evidence boundary: explicitly unit-labelled free-memory values are canonicalized to `freeMemoryMB` before final synthesis while preserving the raw upstream value for provenance. HomeBrain never infers a free-memory unit merely from numeric magnitude. The evidence-first contract also requires canonical normalized fields to outrank raw aliases, keeps `stateSize` numeric unless the source defines a threshold, describes returned rankings literally rather than as causal/resource-impact judgments, and reports job/log cadence as observations rather than invented qualitative thresholds.
 
-The performance evidence contract defines what each source class can establish. Metrics support numeric values and explicit alerts/states, not qualitative “healthy/normal/stable” thresholds unless the source itself provides them. Performance statistics support execution time, calls, busy percentage, and ranking, not synchronous/blocking/time-out mechanisms or user-visible impact. Job data supports returned scheduling facts, not CPU/load causality or benefits from moving jobs. Recent logs remain observations rather than automatic explanations for longer-window performance totals. When implementation/configuration was not read, recommendations must be inspection-first rather than exact setting/code/schedule changes.
+The key change in 0.16.75 is architectural rather than another phrase-specific patch: final performance synthesis is **evidence-first**. Prose-only assistant drafts from the earlier tool-selection/reasoning phase are excluded from the final performance synthesis context, while native assistant tool-call envelopes are retained so matching tool messages remain valid. The final model therefore reasons directly from the current-turn metrics, performance statistics, jobs, recent logs, evidence ledger, and an explicit performance evidence contract instead of being primed by an unsafe earlier draft.
 
-A generic evidence-first validator now backs up the model contract for unsupported conditional blocking claims, reporting-to-overhead/log/history causality, qualitative “major/exceptional/very healthy” wording, and categorical “no optimisation needed” conclusions. This is intentionally a backstop; the primary fix is removing the contaminated earlier prose draft and giving the final model a clean evidence-only synthesis context.
+The performance evidence contract defines what each source class can establish. Metrics support numeric values and explicit alerts/states, not qualitative “healthy/normal/stable” thresholds unless the source itself provides them. Performance statistics support execution time, calls, busy percentage, state size, and returned ordering, not synchronous/blocking/time-out mechanisms or user-visible impact. Job data supports returned scheduling facts, not CPU/load causality or benefits from moving jobs. Recent logs remain observations rather than automatic explanations for longer-window performance totals. When implementation/configuration was not read, recommendations must be inspection-first rather than exact setting/code/schedule changes.
+
+A generic evidence-first validator backs up the model contract for unsupported conditional blocking claims, reporting-to-overhead/log/history causality, qualitative “major/exceptional/very healthy” wording, unsupported ranking/size labels, and categorical “no optimisation needed” conclusions. This is intentionally a backstop; the primary fix is giving the final model normalized evidence and a clean evidence-only synthesis context.
 
 The private performance synthesis packet continues to use source-specific bounded budgets rather than FIFO eviction. `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` each retain a bounded payload slot inside the existing 32k packet, so later job/log payloads cannot silently evict the current metrics source.
 
@@ -50,13 +52,16 @@ A broad performance request that also asks for recommendations uses:
 6. One final performance provider synthesis pass; deterministic validators handle localized repairs without another cloud-model round.
 7. Prose-only assistant drafts from the earlier tool-selection/reasoning phase are excluded from final performance synthesis; only native tool-call envelopes are retained where required for tool-message validity.
 8. An evidence-first synthesis contract explicitly states what metrics, performance stats, jobs, and logs can and cannot establish.
-9. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, or job offsets.
-10. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
-11. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
+9. Canonical normalized metric fields take precedence over raw provenance aliases; explicitly unit-labelled free memory is normalized to MB without guessing unlabeled units.
+10. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, job offsets, or reductions in observed call/report volume.
+11. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
+12. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
 
 The final answer must keep these distinctions explicit:
 
 - High execution time or call volume is measured; an implementation mechanism is not established unless directly supported by current-turn implementation/configuration evidence.
+- Returned ordering/percentages may be described literally (for example highest returned `pctTotal`), but should not be promoted into “primary consumer”, “highest impact”, or other causal/resource judgments that the source does not define.
+- Numeric `stateSize` is a measured value; “large” requires a source-provided threshold or classification.
 - Conditional speculation such as “if the driver is synchronous/blocking, it can cause stutter/delays” is not allowed when the implementation was not inspected.
 - A scheduled-job list proves returned jobs/cadence/alignment, not CPU spikes, CPU load, UI stuttering, delayed automations, hub overhead, or that changing offsets will improve performance.
 - Database size is reported numerically in MB; qualitative labels such as normal/healthy/small/large require a defined current-turn threshold.
@@ -82,7 +87,7 @@ Typical configuration:
 hubitat_mcp_url: http://192.168.1.100/apps/api/123/mcp
 hubitat_mcp_token: YOUR_HUBITAT_TOKEN
 ollama_direct_cloud_enabled: true
-ollama_direct_cloud_base_url: https://ollama.com
+ollama_direct_cloud_base_url: "https://ollama.com"
 ollama_direct_cloud_api_key: YOUR_OLLAMA_API_KEY
 ollama_direct_cloud_model: gemma4:31b-cloud
 require_sensitive_confirmation: true
