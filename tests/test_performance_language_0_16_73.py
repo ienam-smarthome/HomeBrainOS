@@ -99,10 +99,12 @@ def test_01673_full_01672_live_fixture_closes_remaining_language_gaps() -> None:
         assert unsafe not in corrected
 
     assert "**Database:** 188 MB" in corrected
-    assert "does not establish a normal/healthy-size threshold" in corrected
+    assert "does not establish a normal-size threshold" in corrected
+    assert "a healthy-size threshold" in corrected
     assert "#### ⚠️ Performance Outliers" in corrected
     assert "**1. High-Latency Device Execution**" in corrected
-    assert "current job evidence does not establish a resulting CPU spike" in corrected
+    assert "does not establish material CPU load" in corrected
+    assert "a CPU spike" in corrected
     assert "does not establish that it adds material hub overhead" in corrected
     assert "does not establish whether a network timeout" in corrected
     assert "routing/connectivity failure to the configured endpoint" in corrected
@@ -129,7 +131,8 @@ def test_01673_scheduler_cross_sentence_variant_is_fail_closed() -> None:
     corrected, changed = guard_live_performance_semantics(message, _performance_evidence())
     assert changed is True
     assert "creates CPU spikes" not in corrected
-    assert "does not establish a resulting CPU spike" in corrected
+    assert "does not establish material CPU load" in corrected
+    assert "a CPU spike" in corrected
 
 
 def test_01673_latency_suggestion_stays_hypothesis_free() -> None:
