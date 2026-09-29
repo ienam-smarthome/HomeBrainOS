@@ -176,8 +176,8 @@ def _database_replacement(comparable: str) -> str:
     mb = _DATABASE_MB.search(comparable)
     if mb:
         return (
-            f"**Database:** {mb.group(1)} MB. The current turn does not establish a normal/healthy-size "
-            "threshold or performance impact from database size alone."
+            f"**Database:** {mb.group(1)} MB. The current turn does not establish a normal-size threshold, "
+            "a healthy-size threshold, or performance impact from database size alone."
         )
     return (
         "**Database:** the current evidence does not establish a qualitative size threshold or "
@@ -384,8 +384,8 @@ def _neutralize_exact_overreach(text: str) -> str:
         text,
     )
     text = re.sub(
-        r"(?i)\*\*Shift\s+System\s+Tasks\.\*\*\s*Move\s+[^.!?\n]{0,260}(?:different\s+offsets?|:\d+)[^.!?\n]*\.",
-        "Inspect the responsible app/system-task configuration before changing scheduled offsets; the current job evidence does not establish that shifting these tasks is configurable, necessary, or behaviour-preserving.",
+        r"(?is)\*\*Shift\s+System\s+Tasks\.\*\*\s*Move\s+.+",
+        "Inspect the responsible app/system-task configuration before changing scheduled offsets; the current job evidence does not establish that alternate offsets are configurable, necessary, or behaviour-preserving.",
         text,
     )
     text = re.sub(
