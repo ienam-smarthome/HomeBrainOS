@@ -267,8 +267,10 @@ async def test_actual_agent_request_calls_production_finalizer(monkeypatch) -> N
         fake_finalize,
     )
 
+    # Keep this legacy wiring assertion outside the 0.16.78 broad-performance
+    # host-plan classifier. Dedicated 0.16.78 tests cover the host-planned branch.
     request = production_app.ChatRequest(
-        prompt="Analyse my Hubitat performance and recommend improvements.",
+        prompt="Show my Hubitat performance statistics.",
         session_id="performance-production-test",
     )
     result = await production_app._answer_result(request, connection=None)
