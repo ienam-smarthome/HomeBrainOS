@@ -179,19 +179,22 @@ def _neutralize_causal_headings(text: str) -> str:
         text,
     )
     text = re.sub(
-        r"(?im)(\*\*Recurring)\s+Overhead(\*\*\s*:)",
-        r"\1 Jobs\2",
+        r"(?im)(\*\*Recurring)\s+Overhead(?::\*\*|\*\*:)",
+        r"\1 Jobs:**",
         text,
     )
     return text
 
 
 def _collapse_duplicate_performance_repair(text: str) -> str:
-    # 0.16.68 live proof exposed a repair-on-repair sentence where the same
-    # fail-closed clause was inserted multiple times after one measured log fact.
-    # Remove dangling intermediate clauses first, then collapse repeated markers.
     text = re.sub(
         r"(?i)(?:the current statistics do not establish that\s+(?:this specific activity|it)\s*;\s*)+"
+        r"(?=this is a measured performance concern)",
+        "",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(?:this is a measured performance concern,\s*but\s+)+"
         r"(?=this is a measured performance concern)",
         "",
         text,
