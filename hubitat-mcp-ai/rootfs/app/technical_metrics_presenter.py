@@ -135,6 +135,27 @@ def present_request_outcome(value: Any) -> dict[str, str] | None:
     return {"value": normalized, **presentation}
 
 
+def _performance_round_rows(
+    counters: dict[str, Any], timings: dict[str, Any]
+) -> list[dict[str, str]]:
+    """Split total model rounds into agent and final-synthesis phases when known.
+
+    The performance API finalizer is deliberately single-provider-pass. Presence
+    of performance_api_model therefore proves exactly one provider model round in
+    finalization; the remaining counted rounds belong to the pre-finalizer agent.
+    """
+
+    total = _non_negative_number(counters.get("model_rounds"))
+    finalizer_timing = _non_negative_number(timings.get("performance_api_model"))
+    if total is None or finalizer_timing is None or total < 1:
+        return []
+    total_int = int(total)
+    return [
+        {"label": "Agent model rounds", "value": str(max(0, total_int - 1))},
+        {"label": "Performance synthesis model rounds", "value": "1"},
+    ]
+
+
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
     """Return stable, human-readable rows for a RequestMetrics snapshot."""
 
@@ -153,6 +174,7 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
         if number is None or number == 0:
             continue
         rows.append({"label": label, "value": str(int(number))})
+    rows.extend(_performance_round_rows(counters, timings))
     for key, label in _DURATION_LABELS:
         number = _non_negative_number(timings.get(key))
         if number is None:
