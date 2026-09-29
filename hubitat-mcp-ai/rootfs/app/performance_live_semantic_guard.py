@@ -217,8 +217,8 @@ def _guard_sentence(
 
     if _SCHEDULER_EXECUTION_CAUSAL.search(comparable):
         return (
-            "Many jobs share the same scheduled second; the current job evidence does not establish a resulting "
-            "CPU spike, UI stuttering, delayed automations, hub overhead, or performance drag."
+            "The scheduled-job alignment is worth reviewing; the current job evidence does not establish "
+            "material CPU load, a CPU spike, UI stuttering, delayed automations, hub overhead, or performance drag."
         )
 
     if _SCHEDULER_SUBJECT.search(comparable) and (
@@ -380,7 +380,7 @@ def _neutralize_exact_overreach(text: str) -> str:
     )
     text = re.sub(
         r"(?i)\*\*Stagger\s+the\s+[\"“]?Block[\"”]?\s+Ticks\.\*\*",
-        "Review the scheduled-job alignment.",
+        'Review the "Block" tick alignment.',
         text,
     )
     text = re.sub(
