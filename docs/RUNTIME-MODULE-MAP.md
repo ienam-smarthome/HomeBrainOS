@@ -36,7 +36,7 @@ The repository drift test compares this table directly with the live directory. 
 | `device_read_contract.py` | Centralizes Hubitat device-list projection modes, state-field normalization, and projected-state shape validation. |
 | `device_state_summary.py` | Provides shared pure device-state summary helpers. |
 | `device_target_resolver.py` | Resolves natural-language targets to concrete devices. |
-| `time_expressions.py` | Shared deterministic clock-time recognition (parsing an isolated "at &lt;time&gt;" token, never scanning free text for meaning); used by `rule_authoring_service.py` and `device_control_service.py`. |
+| `time_expressions.py` | Shared deterministic clock-time recognition (parsing an isolated "at <time>" token, never scanning free text for meaning); used by `rule_authoring_service.py` and `device_control_service.py`. |
 | `direct_outcome_context.py` | Owns request-local evidence, choice, request-class, and mutation context. |
 | `evidence_ledger.py` | Builds a compact current-turn checked-source ledger for final synthesis. |
 | `evidence_recorder.py` | Stores sanitised request-scoped evidence receipts. |
@@ -85,6 +85,7 @@ The repository drift test compares this table directly with the live directory. 
 | `semantic_plan.py` | Defines and validates the typed goal/target/action intermediate representation shared by fast paths and AI planning. |
 | `semantic_planner.py` | Uses the reasoning model only for natural-language meaning, returning strict semantic plans without Hubitat wire details. |
 | `semantic_world_model.py` | Projects cached Hubitat identity/capabilities into bounded semantic room/device abilities without exposing IDs, wire commands, or live-state claims. |
+| `sitecustomize.py` | Installs the 0.16.66 performance live-read finalization router and serializer semantic backstop at Python startup. |
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
 | `synthesis_context.py` | Preserves bounded privacy-redacted current-turn tool-result excerpts for the final no-tools reasoning synthesis pass. |
 | `synthesis_validator.py` | Detects deterministic factual conflicts in model synthesis and supplies a localized repair baseline without replacing supported analysis. |
