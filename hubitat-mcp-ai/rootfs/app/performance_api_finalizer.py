@@ -159,13 +159,13 @@ def _counter(outcome: Any, name: str, amount: int = 1) -> None:
     counters[name] = int(counters.get(name) or 0) + int(amount)
 
 
-def _add_finalize_timing(outcome: Any, elapsed_ms: int) -> None:
+def _set_timing(outcome: Any, name: str, elapsed_ms: int) -> None:
     metrics = getattr(outcome, "metrics", None)
     if not isinstance(metrics, dict):
         return
     timings = metrics.setdefault("timings_ms", {})
     if isinstance(timings, dict):
-        timings["performance_api_finalize"] = int(elapsed_ms)
+        timings[name] = int(elapsed_ms)
 
 
 def _existing_log_content(evidence: list[dict[str, Any]]) -> str:
@@ -217,6 +217,16 @@ def _packet_map(rows: list[tuple[str, str]]) -> dict[str, str]:
     return packet
 
 
+def _latest_assistant_content(messages: list[dict[str, Any]], fallback: str) -> str:
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        content = str(message.get("content") or "").strip()
+        if content:
+            return content
+    return fallback
+
+
 async def finalize_performance_api_outcome(
     agent: Any,
     mcp: Any,
@@ -229,6 +239,11 @@ async def finalize_performance_api_outcome(
     reasoning turn rather than re-reading metrics/performance/jobs at the API
     boundary. Only the mandatory bounded recent-log read is added when the original
     turn did not already obtain one.
+
+    0.16.70 makes this path single-provider-pass: FinalAnswerCoordinator may ask for
+    a repair when deterministic validation detects wording conflicts, but that repair
+    cycle reuses the same first synthesis draft so the deterministic corrected
+    baseline is returned without a second cloud-model call.
     """
 
     captured = _packet_map(_consume_packet())
@@ -337,20 +352,36 @@ async def finalize_performance_api_outcome(
             }
         )
 
-    model_rounds = 0
+    provider_rounds = 0
+    first_synthesis = ""
 
-    async def counted_chat(
+    async def single_pass_chat(
         chat_messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        nonlocal model_rounds
-        model_rounds += 1
-        return await agent._chat(chat_messages, tools)
+        nonlocal provider_rounds, first_synthesis
+        if provider_rounds:
+            _counter(outcome, "performance_api_deterministic_repair")
+            return {
+                "content": first_synthesis
+                or _latest_assistant_content(chat_messages, original_message)
+            }
 
-    coordinator = FinalAnswerCoordinator(counted_chat, lambda: evidence)
+        model_started = time.monotonic()
+        response = await agent._chat(chat_messages, tools)
+        _set_timing(
+            outcome,
+            "performance_api_model",
+            round((time.monotonic() - model_started) * 1000),
+        )
+        provider_rounds = 1
+        first_synthesis = str(response.get("content") or "").strip()
+        return response
+
+    coordinator = FinalAnswerCoordinator(single_pass_chat, lambda: evidence)
     message = await coordinator.answer(messages)
-    if model_rounds:
-        _counter(outcome, "model_rounds", model_rounds)
+    if provider_rounds:
+        _counter(outcome, "model_rounds", provider_rounds)
 
     guarded, _changed = guard_live_performance_semantics(message, evidence)
     if _FALSE_EVIDENCE_DENIAL.search(guarded) and any(
@@ -361,7 +392,11 @@ async def finalize_performance_api_outcome(
 
     outcome.message = guarded
     outcome.evidence = evidence
-    _add_finalize_timing(outcome, round((time.monotonic() - started) * 1000))
+    _set_timing(
+        outcome,
+        "performance_api_finalize",
+        round((time.monotonic() - started) * 1000),
+    )
     return outcome
 
 
