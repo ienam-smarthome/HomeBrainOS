@@ -3,13 +3,15 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.69**.
+Current add-on version: **0.16.70**.
 
 ## Architecture
 
-0.16.69 keeps the production API finalization path from 0.16.68 but removes its three duplicate read-only synthesis replays. `performance_api_finalizer.py` now captures the normalized, privacy-redacted provider payloads already produced by `ToolExecutor` for `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` in request-local `ContextVar` storage. Final synthesis reuses those bounded payloads directly, so the upstream database-size compatibility normalization remains intact and measured values stay available without re-calling Hubitat.
+0.16.70 keeps the 0.16.69 request-local evidence packet and removes the second cloud-model repair round from broad performance finalization. The finalizer now makes one evidence-scoped provider synthesis call. If deterministic validation finds a factual or semantic conflict, HomeBrain reuses that same draft and returns the localized deterministic correction instead of sending another provider request.
 
-If the original reasoning turn did not obtain recent logs, the finalizer still performs one bounded `hub_get_logs` read (`since=30m`, `limit=100`) before final synthesis. The semantic guard also neutralizes unsupported causal headings such as “Blocking Potential” or “Scheduling Overhead”, recalibrates unsupported “not a bottleneck” conclusions, and collapses the duplicate fail-closed sentence pattern exposed by the 0.16.68 Halo3000x live proof.
+The request still reuses the normalized, privacy-redacted `ToolExecutor` payloads for `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs`, so measured values remain available without duplicate Hubitat reads and database-size compatibility normalization remains intact. If the original reasoning turn did not obtain recent logs, the finalizer performs one bounded `hub_get_logs` read (`since=30m`, `limit=100`) before synthesis.
+
+The 0.16.70 semantic guard also covers the exact overreach exposed by the 0.16.69 live proof: unsupported thread-blocking and CPU-spike claims, prescriptive job staggering without configuration evidence, qualitative “highly efficient” language, overall efficiency-impact claims, and stability headings inferred from recent error logs. Timing presentation now distinguishes the original **Agent phase**, the **Performance synthesis** model call, and total **Performance finalization** work.
 
 The direct production wiring introduced in 0.16.67 remains unchanged: `_agent_request()` passes returned unified-agent outcomes through `performance_api_finalizer.finalize_performance_api_outcome()` before `/api/ask` or `/api/chat` serializes them. Turns without successful performance-stat evidence are returned unchanged.
 
@@ -35,13 +37,15 @@ A broad performance request that also asks for recommendations uses:
 3. One bounded recent `hub_get_logs` window (`30m`, maximum `100` rows) before final synthesis.
 4. Scheduler/job evidence only when job count or cadence materially affects a recommendation.
 5. The original bounded, normalized, privacy-redacted tool payloads for final synthesis rather than duplicate API snapshot reads.
-6. Configuration/implementation evidence before prescribing exact polling, reporting, retry, timeout, or scheduler interval changes.
+6. One final performance provider synthesis pass; deterministic validators handle localized repairs without another cloud-model round.
+7. Configuration/implementation evidence before prescribing exact polling, reporting, retry, timeout, staggering, or scheduler interval changes.
 
 The final answer must keep these distinctions explicit:
 
 - High execution time or call volume is measured; an implementation mechanism is only a hypothesis unless directly established.
-- A scheduled-job list proves returned jobs/cadence, not CPU load or hub overhead by itself.
+- A scheduled-job list proves returned jobs/cadence, not CPU spikes, CPU load, or hub overhead by itself.
 - Database size is reported numerically in MB; qualitative labels require a defined current-turn threshold.
+- Recent connectivity/error logs are observations; they do not by themselves prove overall hub instability.
 - `NETWORK_BACKUP_FAILED` proves an active alert, not imminent data loss or the status of other backup methods.
 
 ## Setup
