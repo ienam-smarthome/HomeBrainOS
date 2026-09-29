@@ -1,6 +1,6 @@
 """Focused fail-closed repairs for broad live performance synthesis.
 
-These guards cover wording exposed by the 0.16.63-0.16.68 live proofs. They
+These guards cover wording exposed by the 0.16.63-0.16.69 live proofs. They
 preserve measured facts while preventing scheduler/job observations, qualitative
 database labels, hypotheses, and backup alerts from being promoted beyond
 current-turn evidence.
@@ -21,17 +21,21 @@ _MECHANISM = re.compile(
 )
 _SCHEDULER_SUBJECT = re.compile(
     r"(?i)\b(?:sessionTick|scheduled\s+jobs?|recurring\s+(?:jobs?|tasks?)|"
-    r"scheduler|job\s+volume)\b"
+    r"scheduler|job\s+volume|synchroni[sz](?:ed|ation))\b"
 )
 _SCHEDULER_OUTCOME = re.compile(
     r"(?i)\b(?:increase|increases|increased|increasing|cause|causes|caused|causing|"
     r"create|creates|created|creating|lead\s+to|leads\s+to|result\s+in|results\s+in)\b"
-    r"[^.!?\n]{0,180}\b(?:baseline\s+)?(?:cpu\s+)?(?:load|overhead|performance\s+drag)\b"
+    r"[^.!?\n]{0,180}\b(?:baseline\s+|momentary\s+)?(?:cpu\s+)?(?:load|spikes?|overhead|performance\s+drag)\b"
 )
 _SCHEDULER_TUNING = re.compile(
     r"(?i)\b(?:increase|decrease|raise|lower|lengthen|shorten|adjust|change|set)\b"
     r"[^.!?\n]{0,160}\b(?:sessionTick|scheduler|scheduled\s+job|job|tick)\b"
     r"[^.!?\n]{0,100}\b(?:interval|cadence|frequency)\b"
+)
+_SCHEDULER_STAGGER = re.compile(
+    r"(?i)\bstagger\b[^.!?\n]{0,180}\b(?:jobs?|sessionTick|start\s+times?|execution)\b|"
+    r"\b(?:jobs?|sessionTick|start\s+times?|execution)\b[^.!?\n]{0,180}\bstagger\b"
 )
 _DATABASE_MB = re.compile(r"(?i)\b(?:database\s*(?:is|:|at)?\s*)?(\d+(?:\.\d+)?)\s*MB\b")
 _DATABASE_QUALITATIVE = re.compile(
@@ -51,6 +55,7 @@ _BACKUP_ALARM = re.compile(
     r"ensure\s+your\s+configuration\s+is\s+being\s+saved)\b"
 )
 _NOT_BOTTLENECK = re.compile(r"(?i)\b(?:is|are)\s+not\s+(?:currently\s+)?(?:a\s+)?bottleneck\b")
+_HIGHLY_EFFICIENT = re.compile(r"(?i)\bhighly\s+efficient\b")
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -93,6 +98,22 @@ def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _measured_activity_replacement(sentence: str) -> str:
+    calls = re.search(r"(?i)\b([\d,]+\s+calls?)\b", sentence)
+    avg = re.search(r"(?i)\b(\d+(?:\.\d+)?\s*ms)\b", sentence)
+    prefix = sentence.split(":", 1)[0].strip() if ":" in sentence else "This component"
+    facts: list[str] = []
+    if calls:
+        facts.append(calls.group(1))
+    if avg:
+        facts.append(f"{avg.group(1)} average execution time")
+    measured = " and ".join(facts) if facts else "the measured activity"
+    return (
+        f"{prefix}: {measured}; this turn does not establish either a performance problem "
+        "or a qualitative efficiency/bottleneck conclusion from that activity alone."
+    )
+
+
 def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
     comparable = re.sub(r"[*_`]", "", sentence)
 
@@ -105,7 +126,13 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
     if _SCHEDULER_SUBJECT.search(comparable) and _SCHEDULER_OUTCOME.search(comparable):
         return (
             "The scheduled-job activity is worth reviewing; the current job evidence does not establish "
-            "material CPU load, hub overhead, or performance drag."
+            "a CPU spike, material CPU load, hub overhead, or performance drag."
+        )
+
+    if not has_configuration and _SCHEDULER_STAGGER.search(comparable):
+        return (
+            "Inspect the app responsible for the scheduled jobs before changing their alignment; the current "
+            "job evidence does not establish that staggering is configurable, necessary, or behaviour-preserving."
         )
 
     if (
@@ -149,20 +176,8 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
             "establish imminent data loss or whether another backup method is succeeding."
         )
 
-    if _NOT_BOTTLENECK.search(comparable):
-        calls = re.search(r"(?i)\b([\d,]+\s+calls?)\b", comparable)
-        avg = re.search(r"(?i)\b(\d+(?:\.\d+)?\s*ms)\b", comparable)
-        prefix = sentence.split(":", 1)[0].strip() if ":" in sentence else "This component"
-        facts: list[str] = []
-        if calls:
-            facts.append(calls.group(1))
-        if avg:
-            facts.append(f"{avg.group(1)} average execution time")
-        measured = " and ".join(facts) if facts else "the measured activity"
-        return (
-            f"{prefix}: {measured}; this turn does not establish either a performance problem "
-            "or the absence of one from that activity alone."
-        )
+    if _NOT_BOTTLENECK.search(comparable) or _HIGHLY_EFFICIENT.search(comparable):
+        return _measured_activity_replacement(sentence)
 
     return sentence
 
@@ -181,6 +196,35 @@ def _neutralize_causal_headings(text: str) -> str:
     text = re.sub(
         r"(?im)(\*\*Recurring)\s+Overhead(?::\*\*|\*\*:)",
         r"\1 Jobs:**",
+        text,
+    )
+    text = re.sub(
+        r"(?im)^\*\*(\d+\.\s*)?Stability\s*&\s*Connectivity\s+Issues\s*\(from\s+Logs\)\*\*$",
+        lambda match: f"**{match.group(1) or ''}Recent Connectivity/Error Observations (from Logs)**",
+        text,
+    )
+    return text
+
+
+def _neutralize_exact_overreach(text: str) -> str:
+    text = re.sub(
+        r"(?i)\boutliers\s+that\s+are\s+impacting\s+efficiency\b",
+        "outliers worth investigating; this turn does not establish an overall efficiency impact",
+        text,
+    )
+    text = re.sub(
+        r"(?i)average\s+execution\s+times\s+that\s+can\s+block\s+(?:hub\s+)?threads",
+        "average execution times that warrant investigation; the current evidence does not establish thread blocking",
+        text,
+    )
+    text = re.sub(
+        r"(?i)This\s+synchronization\s+can\s+cause\s+momentary\s+CPU\s+spikes\.",
+        "This synchronized schedule is worth reviewing; the current job evidence does not establish a momentary CPU spike.",
+        text,
+    )
+    text = re.sub(
+        r"(?i)Stagger\s+the\s+start\s+times\s+of\s+these\s+recurring\s+jobs\s+to\s+avoid\s+the\s+simultaneous\s+execution\s+spike\s+at\s+the\s+top\s+of\s+the\s+minute\.",
+        "Inspect the app responsible for these recurring jobs before changing their alignment; this turn does not establish that staggering is configurable, necessary, or behaviour-preserving.",
         text,
     )
     return text
@@ -219,7 +263,7 @@ def guard_live_performance_semantics(
         return original, False
 
     prepared = _collapse_duplicate_performance_repair(
-        _neutralize_causal_headings(original)
+        _neutralize_exact_overreach(_neutralize_causal_headings(original))
     )
     has_configuration = _has_configuration_evidence(evidence)
     pieces = re.split(r"(?<=[.!?])(\s+)", prepared)
