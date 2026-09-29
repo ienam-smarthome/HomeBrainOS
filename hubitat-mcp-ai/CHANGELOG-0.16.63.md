@@ -8,6 +8,7 @@
 - Broad performance answers are instructed to report the explicit database value/unit and avoid qualitative size labels without an evidence-backed threshold.
 - Ordered recommendation numbers/titles survive safety localization.
 - Unproven event-volume -> hub-overhead claims and state-size -> cache/history/memory interpretations are localized while measured figures are retained where available.
+- Already-localized safe overhead clauses are protected from being reprocessed by the generic performance-outcome guard.
 - Cache/history/state-retention tuning is inspection-first unless current-turn configuration or code supports a concrete change.
 
 ## Comparison target
