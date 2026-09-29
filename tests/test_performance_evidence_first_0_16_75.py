@@ -112,7 +112,7 @@ def test_01675_full_01674_live_fixture_is_evidence_first() -> None:
     assert "many jobs" in corrected
     assert "comparatively high returned call counts and busy percentages" in corrected
     assert "does not establish material background overhead, log growth, or slower history lookups" in corrected
-    assert "does not establish a need for or against memory/database optimisation" in corrected
+    assert "The current alerts alone do not establish a need for or against memory/database optimisation" in corrected
 
     for measured in (
         "~963MB",
