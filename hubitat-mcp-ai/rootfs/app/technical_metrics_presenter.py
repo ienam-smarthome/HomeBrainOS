@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from synthesis_validator import consume_performance_repair_issues
+
 
 _COUNTER_LABELS = (
     ("model_rounds", "Model rounds"),
@@ -94,6 +96,12 @@ _DURATION_LABELS = (
     ("performance_api_finalize", "Performance finalization"),
 )
 
+_PERFORMANCE_REPAIR_LABELS = {
+    "performance_log_causality": "Log/performance causality",
+    "performance_live_semantics": "Live performance semantics",
+    "performance_evidence_first": "Evidence-first performance contract",
+}
+
 _OUTCOME_PRESENTATION = {
     "success": {"label": "Success", "tone": "positive"},
     "needs_input": {"label": "Needs input", "tone": "warning"},
@@ -135,9 +143,31 @@ def present_request_outcome(value: Any) -> dict[str, str] | None:
     return {"value": normalized, **presentation}
 
 
+def _performance_round_rows(
+    counters: dict[str, Any], timings: dict[str, Any]
+) -> list[dict[str, str]]:
+    """Split total model rounds into agent and final-synthesis phases when known.
+
+    The performance API finalizer is deliberately single-provider-pass. Presence
+    of performance_api_model therefore proves exactly one provider model round in
+    finalization; the remaining counted rounds belong to the pre-finalizer agent.
+    """
+
+    total = _non_negative_number(counters.get("model_rounds"))
+    finalizer_timing = _non_negative_number(timings.get("performance_api_model"))
+    if total is None or finalizer_timing is None or total < 1:
+        return []
+    total_int = int(total)
+    return [
+        {"label": "Agent model rounds", "value": str(max(0, total_int - 1))},
+        {"label": "Performance synthesis model rounds", "value": "1"},
+    ]
+
+
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
     """Return stable, human-readable rows for a RequestMetrics snapshot."""
 
+    repair_issues = consume_performance_repair_issues()
     if not isinstance(metrics, dict):
         return []
     counters = metrics.get("counters")
@@ -153,6 +183,12 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
         if number is None or number == 0:
             continue
         rows.append({"label": label, "value": str(int(number))})
+    rows.extend(_performance_round_rows(counters, timings))
+    if _non_negative_number(counters.get("performance_api_deterministic_repair")):
+        for issue in repair_issues:
+            label = _PERFORMANCE_REPAIR_LABELS.get(issue)
+            if label:
+                rows.append({"label": "Performance repair reason", "value": label})
     for key, label in _DURATION_LABELS:
         number = _non_negative_number(timings.get(key))
         if number is None:
