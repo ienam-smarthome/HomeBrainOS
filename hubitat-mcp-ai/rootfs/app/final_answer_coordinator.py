@@ -14,6 +14,7 @@ from investigation_policy import (
     is_history_investigation,
 )
 from performance_causality_guard import performance_validation_needed
+from performance_evidence_first import build_performance_synthesis_contract
 from reasoning_policy import FINAL_SYNTHESIS_INSTRUCTION
 from request_metrics import increment_active_metric
 from synthesis_context import build_tool_evidence_packet
@@ -74,6 +75,32 @@ def _current_turn_messages(
         if isinstance(message, dict)
     ]
     return [*system_messages, *current]
+
+
+def _performance_evidence_only_messages(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop untrusted assistant prose while preserving native tool-call envelopes.
+
+    The production performance API performs an early provider pass to choose/read
+    tools and later performs one evidence-scoped synthesis pass. Feeding the prose
+    draft from that early pass back into final synthesis primes the final model with
+    unsupported mechanisms and recommendations. Tool-call assistant messages remain
+    because their matching tool messages require the native envelope; prose-only
+    assistant conclusions are context, not evidence, and are excluded.
+    """
+
+    filtered: list[dict[str, Any]] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") != "assistant":
+            filtered.append(dict(message))
+            continue
+        calls = message.get("tool_calls")
+        if isinstance(calls, list) and calls:
+            filtered.append(dict(message))
+    return filtered
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -318,6 +345,8 @@ class FinalAnswerCoordinator:
         performance_log_validation = performance_validation_needed(evidence)
         evidence_scoped = investigative or performance_semantic_validation
         current_turn = _current_turn_messages(messages)
+        if performance_semantic_validation:
+            current_turn = _performance_evidence_only_messages(current_turn)
         brief = build_current_turn_evidence_ledger(evidence)
         causal_timeline = render_causal_timeline(evidence) if causal else None
         native_log_correlation = (
@@ -348,6 +377,11 @@ class FinalAnswerCoordinator:
             })
         if tool_packet:
             final_messages.append({"role": "user", "content": tool_packet})
+        if performance_semantic_validation:
+            final_messages.append({
+                "role": "user",
+                "content": build_performance_synthesis_contract(evidence),
+            })
         final_messages.append({
             "role": "user",
             "content": _synthesis_instruction(original_user),
@@ -430,6 +464,7 @@ __all__ = [
     "_broad_performance_recommendation_request",
     "_current_turn_messages",
     "_original_user_request",
+    "_performance_evidence_only_messages",
     "_performance_semantic_validation_needed",
     "_synthesis_instruction",
 ]
