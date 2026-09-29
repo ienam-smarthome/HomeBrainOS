@@ -54,6 +54,8 @@ class RequestMetrics:
         "semantic_relative_controls", "semantic_temperature_controls",
         "semantic_world_context", "semantic_target_grounded",
         "semantic_needs_input",
+        "broad_performance_host_plan",
+        "broad_performance_host_plan_jobs",
         "broad_performance_log_host_attempt",
         "broad_performance_log_host_success",
         "broad_performance_log_host_retry",
