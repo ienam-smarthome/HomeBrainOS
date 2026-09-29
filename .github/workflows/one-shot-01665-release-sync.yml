@@ -1,0 +1,88 @@
+name: One-shot 0.16.65 release sync
+
+on:
+  push:
+    branches:
+      - agent/performance-grounding-0-16-65
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.event.head_commit.message == 'Run 0.16.65 release metadata'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-grounding-0-16-65
+          fetch-depth: 0
+      - name: Apply release metadata
+        shell: python
+        run: |
+          from pathlib import Path
+
+          version = "0.16.65"
+
+          config = Path("hubitat-mcp-ai/config.yaml")
+          text = config.read_text(encoding="utf-8")
+          text = text.replace('version: "0.16.64"', f'version: "{version}"', 1)
+          config.write_text(text, encoding="utf-8")
+
+          root = Path("README.md")
+          text = root.read_text(encoding="utf-8")
+          text = text.replace(
+              "| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.64 |",
+              f"| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | {version} |",
+              1,
+          )
+          root.write_text(text, encoding="utf-8")
+
+          addon = Path("hubitat-mcp-ai/README.md")
+          text = addon.read_text(encoding="utf-8")
+          text = text.replace(
+              "Current add-on version: **0.16.64**.",
+              f"Current add-on version: **{version}**.",
+              1,
+          )
+          architecture = (
+              "0.16.65 makes broad performance evidence fail closed after the 0.16.64 live proof. "
+              "Final synthesis now validates performance semantics whenever current-turn performance statistics exist, "
+              "even if the recent-log read was rejected or missing. Broad performance requests that ask for recommendations "
+              "host-enforce one bounded 30-minute/100-row `hub_get_logs` read at finalization, trying the logs gateway first "
+              "and one diagnostics fallback before reporting an explicit limitation. The live semantic guard also repairs "
+              "split qualitative database wording while retaining the existing hypothesis, scheduler/load, interval-tuning, "
+              "and backup-severity protections.\n\n"
+          )
+          marker = "## Architecture\n\n"
+          if architecture not in text:
+              text = text.replace(marker, marker + architecture, 1)
+          addon.write_text(text, encoding="utf-8")
+
+          changelog = Path(f"hubitat-mcp-ai/CHANGELOG-{version}.md")
+          changelog.write_text(
+              "# Hubitat MCP AI 0.16.65\n\n"
+              "## Performance evidence finalization\n\n"
+              "- Performance semantic validation now activates from `hub_get_performance_stats` evidence alone; a failed or rejected log read can no longer bypass the fail-closed semantic guard.\n"
+              "- Broad performance + recommendation requests host-enforce one bounded recent log read (`since=30m`, `limit=100`) before final synthesis.\n"
+              "- Host finalization tries `hub_manage_logs/hub_get_logs` first and one `hub_read_diagnostics` fallback; if both fail, the answer must state that the log review is incomplete.\n"
+              "- Split database wording such as `Database: Lean. At 168MB...` is localized so qualitative size/performance conclusions do not survive without a defined threshold.\n"
+              "- Exact regressions cover the 0.16.64 live failures: assertive LG mechanism hypotheses, scheduler-to-CPU attribution, unverified `sessionTick` interval tuning, qualitative database claims, and over-severe backup wording.\n"
+              "- New privacy-safe counters expose host log attempt, success, retry, unavailable, and failure outcomes.\n",
+              encoding="utf-8",
+          )
+
+          index = Path("hubitat-mcp-ai/CHANGELOG-INDEX.md")
+          text = index.read_text(encoding="utf-8")
+          entry = f"- [{version}](CHANGELOG-{version}.md)\n"
+          if entry not in text:
+              text = text.replace("## Current release\n\n", "## Current release\n\n" + entry, 1)
+          index.write_text(text, encoding="utf-8")
+      - name: Commit release metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md hubitat-mcp-ai/config.yaml hubitat-mcp-ai/README.md hubitat-mcp-ai/CHANGELOG-0.16.65.md hubitat-mcp-ai/CHANGELOG-INDEX.md
+          git commit -m "Apply 0.16.65 release metadata"
+          git push origin HEAD:agent/performance-grounding-0-16-65
