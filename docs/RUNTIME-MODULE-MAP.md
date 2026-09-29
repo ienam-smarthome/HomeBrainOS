@@ -69,6 +69,7 @@ The repository drift test compares this table directly with the live directory. 
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `performance_api_finalizer.py` | Runs the bounded recent-log read and evidence-scoped performance synthesis directly on the production `/api/ask`/`/api/chat` request path, then applies the fail-closed live semantic guard before serialization. |
 | `performance_causality_guard.py` | Prevents recent log activity from being promoted into the cause of longer-window performance statistics without direct linking evidence, and blocks unsupported threshold/edit prescriptions. |
+| `performance_evidence_first.py` | Supplies the evidence-first performance synthesis contract and a generic last-mile guard for unsupported qualitative, conditional-mechanism, reporting-overhead, and optimisation conclusions. |
 | `performance_live_semantic_guard.py` | Localizes unsupported live performance wording for assertive implementation hypotheses, scheduler/job-to-load causality, unverified scheduler tuning, qualitative database conclusions, and over-severe backup alerts. |
 | `performance_result_compat.py` | Applies narrow, provenance-preserving compatibility normalization to known malformed upstream performance result fields. |
 | `performance_semantic_grounding.py` | Preserves measured performance facts while structurally localizing unsupported implementation mechanisms, outcome causality, and configuration prescriptions. |
