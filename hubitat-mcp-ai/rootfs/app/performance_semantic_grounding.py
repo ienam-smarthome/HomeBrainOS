@@ -17,6 +17,7 @@ _ACTION_SECTION_HEADING = re.compile(
 _ANY_HEADING = re.compile(r"^\s*(#{1,6})\s+")
 _TABLE_SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$")
 _BULLET_PREFIX = re.compile(r"^(\s*[*+-]\s+(?:\*\*[^*]+\*\*(?::\s*|\s+))?)(.*)$")
+_ORDERED_PREFIX = re.compile(r"^(\s*\d+[.)]\s+(?:\*\*[^*]+\*\*(?::\s*|\s+))?)(.*)$")
 
 _DIRECTIVE = re.compile(
     r"(?i)\b(?:edit|modify|change|add|include|set|adjust|increase|increasing|decrease|decreasing|"
@@ -27,6 +28,7 @@ _DIRECTIVE = re.compile(
 _CONFIG_TOPIC = re.compile(
     r"(?i)\b(?:trigger(?:ing)?|thresholds?|debounce|duration|hysteresis|blind time|"
     r"occupancy timeout|poll(?:ing)?(?:\s+intervals?)?|status polling|auto[- ]refresh|push model|"
+    r"state sizes?|cach(?:e|ed|ing)|history (?:stored|retention)|"
     r"reporting intervals?|reporting frequency|reporting thresholds?|config(?:uration)?\s+push(?:es)?|"
     r"gap between trigger actions|larger gap|cadence|async(?:hronous(?:ly)?)?|"
     r"synchronous(?:ly)?|timeouts?|retries?|reconnect(?:ion|ions|s|ing)?|non[- ]blocking)\b"
@@ -77,7 +79,8 @@ _CONDITIONAL_MARKER = re.compile(
 _PERFORMANCE_OUTCOME = re.compile(
     r"(?i)\b(?:hub\s+lag|lag|stutter|micro[- ]stutters?|sluggish(?:ness)?|instability|"
     r"event[- ]bus\s+congestion|congestion|inefficien(?:cy|cies)|overload|responsiveness|"
-    r"(?:unnecessary\s+)?load|busy(?:\s+(?:rate|percentage))?|crash(?:es|ing)?)\b"
+    r"(?:unnecessary\s+)?load|(?:material\s+|unnecessary\s+)?(?:hub\s+)?overhead|"
+    r"busy(?:\s+(?:rate|percentage))?|crash(?:es|ing)?)\b"
 )
 _STRONG_OUTCOME_LINK = re.compile(
     r"(?i)\b(?:primary|main|major|direct)\s+(?:sources?|causes?|drivers?)\s+(?:of|for)\b|"
@@ -93,6 +96,15 @@ _LIKELY_CANDIDATE_OUTCOME = re.compile(
 
 def _configuration_guidance(text: str) -> str:
     folded = text.casefold().replace('"', "").replace("“", "").replace("”", "")
+    if any(
+        token in folded
+        for token in ("state size", "cached data", "cache", "history stored", "history retention")
+    ):
+        return (
+            "Inspect the cited app implementation/configuration first. The measured state size can justify "
+            "inspection, but this turn did not establish what data is retained, whether cache/history retention "
+            "is configurable, or its effect on hub memory."
+        )
     if "blind time" in folded or "occupancy timeout" in folded:
         return (
             "Inspect the cited sensor configuration first. Recent activity can justify a tuning review, "
@@ -292,13 +304,51 @@ def _localize_outcome_sentence(sentence: str) -> str:
     )
 
 
+def _localize_state_storage_sentence(sentence: str) -> str:
+    comparable = re.sub(r"[*_`]", "", sentence)
+    if not re.search(r"(?i)\bstate sizes?\b", comparable):
+        return sentence
+    if not re.search(r"(?i)\b(?:suggest|suggests|indicate|indicates|imply|implies)\b", comparable):
+        return sentence
+    if not re.search(r"(?i)\b(?:memory|cache|cached|history|stor(?:e|ed|ing)|data)\b", comparable):
+        return sentence
+    return (
+        "The measured state size is worth inspecting; the current performance statistics do not establish "
+        "what data is stored, whether cache/history retention is configurable, or its effect on hub memory."
+    )
+
+
+def _localize_overhead_sentence(sentence: str) -> str:
+    comparable = re.sub(r"[*_`]", "", sentence)
+    if not re.search(
+        r"(?i)\b(?:can|could|may|might)?\s*(?:create|cause|lead\s+to|result\s+in)\b"
+        r"[^.!?\n]{0,140}\b(?:material\s+|unnecessary\s+)?(?:hub\s+)?overhead\b",
+        comparable,
+    ):
+        return sentence
+    avg = re.search(r"(?i)\b(\d[\d,.]*\s*ms)\b", comparable)
+    calls = re.search(r"(?i)\b((?:over\s+)?\d[\d,.]*\s+(?:calls?|executions?))\b", comparable)
+    facts: list[str] = []
+    if avg:
+        facts.append(f"Average execution time is {avg.group(1)}.")
+    if calls:
+        facts.append(f"Measured activity is {calls.group(1)}.")
+    facts.append(
+        "The measured activity is worth reviewing; the current statistics do not establish that it creates "
+        "material hub overhead."
+    )
+    return " ".join(facts)
+
+
 def _localize_analysis_text(text: str) -> str:
     pieces = _split_sentences(text)
     for index in range(0, len(pieces), 2):
         sentence = pieces[index]
         if not sentence:
             continue
-        localized = _localize_mechanism_sentence(sentence)
+        localized = _localize_state_storage_sentence(sentence)
+        localized = _localize_overhead_sentence(localized)
+        localized = _localize_mechanism_sentence(localized)
         localized = _localize_outcome_sentence(localized)
         if _unsafe_recommendation(localized):
             localized = _configuration_guidance(localized)
@@ -352,6 +402,11 @@ def _rewrite_action_line(line: str) -> str:
     bullet = _BULLET_PREFIX.match(line)
     if bullet:
         prefix, body = bullet.groups()
+        return prefix + _rewrite_action_cell(body)
+
+    ordered = _ORDERED_PREFIX.match(line)
+    if ordered:
+        prefix, body = ordered.groups()
         return prefix + _rewrite_action_cell(body)
 
     if line.lstrip().startswith("Inspect the cited"):

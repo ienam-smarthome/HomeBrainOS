@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.62**.
+Current add-on version: **0.16.63**.
 
 ## Architecture
+
+0.16.63 broadens evidence for broad performance reviews without weakening causal grounding. After metrics and ranked app/device performance statistics, the model is instructed to inspect a bounded recent log window for current failure patterns, and to obtain scheduler or last-activity evidence only when cadence or staleness materially affects a recommendation. Ordered recommendation labels are preserved when unsafe tuning is localized; state-size storage/cache interpretations and unproven hub-overhead claims are grounded. The legacy database-size compatibility normalization now also covers hub_get_metrics, so the explicit MB value can reach synthesis. No deterministic root-cause claims are added.
 
 0.16.62 fixes two defects exposed by the 0.16.61 live performance retest. Outcome-causality localization now preserves only a complete measured prefix, so wording such as `is likely the primary source of hub stutter` cannot collapse into a dangling `is likely the;` fragment. The performance tool boundary also applies a narrow compatibility relabel for the upstream `databaseSizeKB` field: on the affected MCP server version `/hub/advanced/databaseSize` supplies the numeric MB value, so HomeBrain exposes `databaseSizeMB` without scaling and retains the legacy field/value as raw provenance. Future native `databaseSizeMB` results and non-numeric legacy values are left untouched. No additional Hubitat calls are introduced.
 
