@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from synthesis_validator import consume_performance_repair_issues
+
 
 _COUNTER_LABELS = (
     ("model_rounds", "Model rounds"),
@@ -94,6 +96,12 @@ _DURATION_LABELS = (
     ("performance_api_finalize", "Performance finalization"),
 )
 
+_PERFORMANCE_REPAIR_LABELS = {
+    "performance_log_causality": "Log/performance causality",
+    "performance_live_semantics": "Live performance semantics",
+    "performance_evidence_first": "Evidence-first performance contract",
+}
+
 _OUTCOME_PRESENTATION = {
     "success": {"label": "Success", "tone": "positive"},
     "needs_input": {"label": "Needs input", "tone": "warning"},
@@ -159,6 +167,7 @@ def _performance_round_rows(
 def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
     """Return stable, human-readable rows for a RequestMetrics snapshot."""
 
+    repair_issues = consume_performance_repair_issues()
     if not isinstance(metrics, dict):
         return []
     counters = metrics.get("counters")
@@ -175,6 +184,11 @@ def present_request_metrics(metrics: Any) -> list[dict[str, str]]:
             continue
         rows.append({"label": label, "value": str(int(number))})
     rows.extend(_performance_round_rows(counters, timings))
+    if _non_negative_number(counters.get("performance_api_deterministic_repair")):
+        for issue in repair_issues:
+            label = _PERFORMANCE_REPAIR_LABELS.get(issue)
+            if label:
+                rows.append({"label": "Performance repair reason", "value": label})
     for key, label in _DURATION_LABELS:
         number = _non_negative_number(timings.get(key))
         if number is None:
