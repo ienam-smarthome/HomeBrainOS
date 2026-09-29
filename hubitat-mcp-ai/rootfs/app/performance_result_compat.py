@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp_client import MCPToolResult
 
-_PERFORMANCE_TOOL = "hub_get_performance_stats"
+_PERFORMANCE_TOOLS = {"hub_get_metrics", "hub_get_performance_stats"}
 _NUMERIC = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
 
 
@@ -49,7 +49,7 @@ def normalize_performance_result(
 ) -> MCPToolResult:
     """Relabel the affected performance database metric without changing its value."""
     sub_tool = str(arguments.get("tool") or "") if isinstance(arguments, dict) else ""
-    if name != _PERFORMANCE_TOOL and sub_tool != _PERFORMANCE_TOOL:
+    if name not in _PERFORMANCE_TOOLS and sub_tool not in _PERFORMANCE_TOOLS:
         return result
     if result.is_error or not isinstance(result.data, dict):
         return result
