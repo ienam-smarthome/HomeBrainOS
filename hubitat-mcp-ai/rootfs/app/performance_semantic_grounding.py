@@ -228,6 +228,8 @@ def _localize_outcome_sentence(sentence: str) -> str:
     folded = comparable.casefold()
     if "implementation cause of that measured load is not established" in folded:
         return sentence
+    if "current statistics do not establish that it creates material hub overhead" in folded:
+        return sentence
     if not _PERFORMANCE_OUTCOME.search(comparable):
         return sentence
     if _LIKELY_CANDIDATE_OUTCOME.search(comparable):
