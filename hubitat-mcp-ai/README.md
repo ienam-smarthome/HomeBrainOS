@@ -3,15 +3,19 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.74**.
+Current add-on version: **0.16.75**.
 
 ## Architecture
 
-0.16.74 keeps the 0.16.70 single-provider-pass performance finalization, the 0.16.71 Markdown-safe deterministic grounding path, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
+0.16.75 keeps the 0.16.70 single-provider-pass performance finalization, the 0.16.71 Markdown-safe deterministic grounding path, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
 
-This release only hardens generic recommendation and summary variants exposed by the 0.16.73 live proof. Scheduler prescriptions such as shifting, moving, spreading, or offsetting `sessionTick`, `autoPoll`, or other jobs now require configuration evidence; claims that such offsets would flatten CPU load are fail-closed to an inspection-first statement. App busy percentages remain measured facts but cannot by themselves justify “Optimize Logic”, inefficient-loop, or overly-frequent-trigger explanations. Qualitative summary wording such as “significant inefficiencies”, “severe clustering”, “massive block”, and “disproportionate processing time” is normalized to measured observations rather than promoted into performance conclusions.
+The key change in 0.16.75 is architectural rather than another phrase-specific patch: final performance synthesis is now **evidence-first**. Prose-only assistant drafts from the earlier tool-selection/reasoning phase are excluded from the final performance synthesis context, while native assistant tool-call envelopes are retained so matching tool messages remain valid. The final model therefore reasons directly from the current-turn metrics, performance statistics, jobs, recent logs, evidence ledger, and an explicit performance evidence contract instead of being primed by an unsafe earlier draft.
 
-The private performance synthesis packet continues to use source-specific bounded budgets rather than FIFO eviction. `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` each retain a bounded payload slot inside the existing 32k packet, so later job/log payloads cannot silently evict the current metrics source. This fixes the 0.16.71 live contradiction where `hub_get_metrics` succeeded but final synthesis claimed memory, temperature, and database size were unavailable.
+The performance evidence contract defines what each source class can establish. Metrics support numeric values and explicit alerts/states, not qualitative “healthy/normal/stable” thresholds unless the source itself provides them. Performance statistics support execution time, calls, busy percentage, and ranking, not synchronous/blocking/time-out mechanisms or user-visible impact. Job data supports returned scheduling facts, not CPU/load causality or benefits from moving jobs. Recent logs remain observations rather than automatic explanations for longer-window performance totals. When implementation/configuration was not read, recommendations must be inspection-first rather than exact setting/code/schedule changes.
+
+A generic evidence-first validator now backs up the model contract for unsupported conditional blocking claims, reporting-to-overhead/log/history causality, qualitative “major/exceptional/very healthy” wording, and categorical “no optimisation needed” conclusions. This is intentionally a backstop; the primary fix is removing the contaminated earlier prose draft and giving the final model a clean evidence-only synthesis context.
+
+The private performance synthesis packet continues to use source-specific bounded budgets rather than FIFO eviction. `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` each retain a bounded payload slot inside the existing 32k packet, so later job/log payloads cannot silently evict the current metrics source.
 
 When a successful metrics receipt is present, final synthesis is explicitly told to use retained memory/temperature/database fields when available. A deterministic contradiction repair also converts a false metrics-unavailable statement into the actual retained current values; if the detailed payload is genuinely missing, HomeBrain reports a synthesis-context limitation rather than claiming that the hub lacks those metrics.
 
@@ -44,20 +48,23 @@ A broad performance request that also asks for recommendations uses:
 4. Scheduler/job evidence only when job count or cadence materially affects a recommendation.
 5. The original bounded, normalized, privacy-redacted tool payloads for final synthesis rather than duplicate API snapshot reads; each source class retains its own bounded packet budget.
 6. One final performance provider synthesis pass; deterministic validators handle localized repairs without another cloud-model round.
-7. Configuration/implementation evidence before prescribing exact polling, reporting, retry, timeout, staggering, shifting, moving, scheduler intervals, or job offsets.
-8. Z-Wave-specific diagnostic evidence before recommending a Z-Wave repair.
-9. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
+7. Prose-only assistant drafts from the earlier tool-selection/reasoning phase are excluded from final performance synthesis; only native tool-call envelopes are retained where required for tool-message validity.
+8. An evidence-first synthesis contract explicitly states what metrics, performance stats, jobs, and logs can and cannot establish.
+9. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, or job offsets.
+10. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
+11. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
 
 The final answer must keep these distinctions explicit:
 
-- High execution time or call volume is measured; an implementation mechanism is only a hypothesis unless directly established.
+- High execution time or call volume is measured; an implementation mechanism is not established unless directly supported by current-turn implementation/configuration evidence.
+- Conditional speculation such as “if the driver is synchronous/blocking, it can cause stutter/delays” is not allowed when the implementation was not inspected.
 - A scheduled-job list proves returned jobs/cadence/alignment, not CPU spikes, CPU load, UI stuttering, delayed automations, hub overhead, or that changing offsets will improve performance.
 - Database size is reported numerically in MB; qualitative labels such as normal/healthy/small/large require a defined current-turn threshold.
-- Frequent device reporting proves activity, not material hub/background overhead or a performance cause by itself.
+- Frequent device reporting proves activity, not material hub/background overhead, log growth, history slowdown, or a performance cause by itself.
 - Repeated app triggers are observations; they do not by themselves establish an efficiency problem.
 - A high app busy percentage is measured; it does not by itself establish inefficient loops, excessive trigger frequency, or another implementation mechanism.
-- A high execution time does not by itself establish that an integration is timing out, unreachable, offline, or blocking another hub operation.
-- Recent connectivity/error logs are observations; they do not by themselves prove overall hub instability.
+- Empty/no-active health alerts support “no active alert”, not categorical “very healthy” or “no optimisation needed” conclusions.
+- Recent connectivity/error logs are observations; they do not by themselves prove overall hub instability or explain longer-window performance statistics.
 - `zwHealthy:false` is a warning/health observation, not sufficient evidence by itself to prescribe a Z-Wave repair.
 - `NETWORK_BACKUP_FAILED` proves an active alert, not imminent data loss or the status of other backup methods.
 
