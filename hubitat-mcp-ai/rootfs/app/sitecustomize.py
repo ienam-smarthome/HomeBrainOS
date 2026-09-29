@@ -10,7 +10,8 @@ coordinator before the request scope closes.
 The wrapper is deliberately evidence-driven rather than prompt-driven. It adds
 no work to ordinary requests and it reuses the current request's evidence
 recorder/executor, allowing FinalAnswerCoordinator to host-enforce its bounded
-recent-log read and deterministic performance semantic validation.
+``hub_get_logs`` recent-log read and deterministic performance semantic
+validation.
 """
 
 from __future__ import annotations
