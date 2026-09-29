@@ -126,7 +126,7 @@ def _guard_sentence(sentence: str, *, has_configuration: bool) -> str:
     if _SCHEDULER_SUBJECT.search(comparable) and _SCHEDULER_OUTCOME.search(comparable):
         return (
             "The scheduled-job activity is worth reviewing; the current job evidence does not establish "
-            "a CPU spike, material CPU load, hub overhead, or performance drag."
+            "material CPU load, hub overhead, performance drag, or a momentary CPU spike."
         )
 
     if not has_configuration and _SCHEDULER_STAGGER.search(comparable):
