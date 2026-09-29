@@ -39,6 +39,12 @@ _NO_OPTIMIZATION_NEEDED = re.compile(
     r"(?i)\bno\s+(?:immediate\s+)?need\s+for\s+(?:memory\s+management|database\s+optimi[sz]ation)"
     r"(?:\s+or\s+(?:memory\s+management|database\s+optimi[sz]ation))?\b"
 )
+_EXACT_LOG_UPDATE_COUNT = re.compile(
+    r"(?i)\b(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+"
+    r"(?:separate\s+)?(?:device\s+)?(?:updates?|events?|entries|state\s+changes?)\s+"
+    r"(?:were\s+recorded|were\s+observed|occurred|happened)\s+within\s+"
+    r"(?:an?\s+)?(?:approximately\s+)?[^.!?\n]{1,80}(?:window|period|seconds?|milliseconds?|ms)"
+)
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -92,6 +98,17 @@ def build_performance_synthesis_contract(evidence: list[dict[str, Any]]) -> str:
         else
         "No configuration or implementation source was read in this turn. Recommendations must therefore be inspection-first, not exact setting/code/schedule changes."
     )
+    job_state = (
+        "A current-turn scheduler/job source is present; report only the returned job facts."
+        if any(
+            isinstance(row, dict)
+            and row.get("success") is not False
+            and _sub_tool(row) == "hub_get_jobs"
+            for row in evidence
+        )
+        else
+        "No current-turn scheduler/job source is present. Do not state job counts, alignment, cadence, sessionTick/autoPoll scheduling, or scheduler conclusions in the final answer."
+    )
     return (
         "HOST PERFORMANCE EVIDENCE-FIRST CONTRACT\n"
         "Synthesize directly from the HOST current-turn sources below. There is no trusted assistant draft in this synthesis context. "
@@ -99,8 +116,10 @@ def build_performance_synthesis_contract(evidence: list[dict[str, Any]]) -> str:
         "- CANONICAL VALUES: when a normalized canonical field such as freeMemoryMB or databaseSizeMB is present alongside a raw/provenance field, report the canonical field and its unit; do not prefer the raw alias.\n"
         "- METRICS: report numeric values and explicit alert/state fields. An empty/no-alert result supports 'no active alert', not qualitative labels such as healthy, very healthy, normal, safe, stable, excellent, major, severe, or exceptional unless the source itself supplies that classification or a threshold.\n"
         "- PERFORMANCE STATS: execution time, call count, busy percentage, stateSize, and returned ordering are measurements. Describe ordering literally (for example, highest returned pctTotal/busy value), not as 'primary consumer', 'highest impact', or a causal/resource judgment. A numeric stateSize is not 'large' or 'flagged large' unless the source supplies that classification/threshold. These measurements do not by themselves establish synchronous/blocking calls, timeouts, network reachability, hub stutter, delayed automations, background overhead, log growth, history slowdown, or another implementation mechanism. Do not introduce those mechanisms even conditionally as 'if X, it can Y' unless current-turn implementation evidence establishes X.\n"
-        "- JOBS: a job list establishes names/timestamps/cadence returned by the tool. Report shared timestamps directly rather than labeling the cluster high/severe/massive unless a source threshold does so. It does not establish CPU spikes/load, UI delay, contention, or a benefit from moving/staggering/offsetting jobs.\n"
-        "- LOGS: recent log rows are observations. Report observed cadence numerically when possible instead of inventing a 'high-frequency' threshold. An explicit error message can be reported as that error/failed endpoint operation, but it does not automatically explain longer-window performance statistics.\n"
+        "- JOBS: a job list establishes names/timestamps/cadence returned by the tool. Report shared timestamps directly rather than labeling the cluster high/severe/massive unless a source threshold does so. It does not establish CPU spikes/load, UI delay, contention, or a benefit from moving/staggering/offsetting jobs. "
+        + job_state
+        + "\n"
+        "- LOGS: recent log rows are observations. Report observed cadence numerically when possible instead of inventing a 'high-frequency' threshold. Do not manually derive an exact update/event count from raw log rows unless a current-turn tool or host-produced summary explicitly supplies that exact filtered count; otherwise say 'multiple' and report the observed time span/cadence. An explicit error message can be reported as that error/failed endpoint operation, but it does not automatically explain longer-window performance statistics.\n"
         "- RECOMMENDATIONS: preserve useful measured facts and recommend the next evidence-gathering/configuration inspection step. Without configuration evidence, do not say a call/report/job volume should or can be reduced; ask whether it is expected/configurable. Do not say optimisation is unnecessary merely because no alert is active.\n"
         + config_state
         + "\nDo not add an 'Impact' statement that depends on an unobserved mechanism. Do not use dramatic qualitative labels when the source provides only numbers. Separate measured observations from any genuinely evidence-backed interpretation."
@@ -194,6 +213,11 @@ def _repair_fragment(text: str) -> str:
         "and whether the observed call volume is expected or configurable",
         repaired,
     )
+    if _EXACT_LOG_UPDATE_COUNT.search(repaired):
+        repaired = _EXACT_LOG_UPDATE_COUNT.sub(
+            "Multiple updates were recorded within the cited time window",
+            repaired,
+        )
 
     repaired = re.sub(
         r"(?i)\bthe\s+hub\s+is\s+otherwise\s+very\s+healthy\b",
