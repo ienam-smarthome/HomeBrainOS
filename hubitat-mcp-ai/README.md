@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.63**.
+Current add-on version: **0.16.64**.
 
 ## Architecture
+
+0.16.64 tightens the broad performance path after the 0.16.63 live proof. Broad performance requests that also ask for recommendations must attempt one bounded recent `hub_get_logs` read before finalizing. Scheduler/job lists are kept separate from CPU/load attribution, assertive `likely caused by` mechanism wording remains unproven even under a Hypothesis label, `sessionTick`/job interval tuning is inspection-first without configuration evidence, database size remains a measured MB value rather than a qualitative performance diagnosis, and network backup alerts no longer imply imminent data loss without supporting evidence.
 
 0.16.63 broadens evidence for broad performance reviews without weakening causal grounding. After metrics and ranked app/device performance statistics, the model is instructed to inspect a bounded recent log window for current failure patterns, and to obtain scheduler or last-activity evidence only when cadence or staleness materially affects a recommendation. Ordered recommendation labels are preserved when unsafe tuning is localized; state-size storage/cache interpretations and unproven hub-overhead claims are grounded. The legacy database-size compatibility normalization now also covers hub_get_metrics, so the explicit MB value can reach synthesis. No deterministic root-cause claims are added.
 

@@ -68,6 +68,7 @@ The repository drift test compares this table directly with the live directory. 
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
 | `performance_causality_guard.py` | Prevents recent log activity from being promoted into the cause of longer-window performance statistics without direct linking evidence, and blocks unsupported threshold/edit prescriptions. |
+| `performance_live_semantic_guard.py` | Localizes unsupported live performance wording for assertive implementation hypotheses, scheduler/job-to-load causality, unverified scheduler tuning, qualitative database conclusions, and over-severe backup alerts. |
 | `performance_result_compat.py` | Applies narrow, provenance-preserving compatibility normalization to known malformed upstream performance result fields. |
 | `performance_semantic_grounding.py` | Preserves measured performance facts while structurally localizing unsupported implementation mechanisms, outcome causality, and configuration prescriptions. |
 | `provider_token_estimator.py` | Estimates provider token usage conservatively. |

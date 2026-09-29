@@ -18,6 +18,7 @@ from history_cardinality_guard import guard_history_interval_cardinality
 from history_temporal_analysis import guard_history_duration_claim
 from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
+from performance_live_semantic_guard import guard_live_performance_semantics
 
 
 def validate_synthesis(
@@ -68,6 +69,13 @@ def validate_synthesis(
     )
     if performance_changed:
         issues.append("performance_log_causality")
+
+    corrected, live_performance_changed = guard_live_performance_semantics(
+        corrected,
+        evidence,
+    )
+    if live_performance_changed:
+        issues.append("performance_live_semantics")
 
     if causal:
         corrected, controller_boundary_changed = guard_controller_boundary_claim(
