@@ -12,15 +12,26 @@ from performance_live_semantic_guard import guard_live_performance_semantics
 from tool_executor import ToolExecutor
 
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
+_METRICS_TOOL = "hub_get_metrics"
+_JOBS_TOOL = "hub_get_jobs"
 _LOG_TOOL = "hub_get_logs"
 _LOG_ARGS = {"since": "30m", "limit": 100}
 _CAPTURED_TOOLS = {
-    "hub_get_metrics",
-    "hub_get_performance_stats",
-    "hub_get_jobs",
-    "hub_get_logs",
+    _METRICS_TOOL,
+    _PERFORMANCE_TOOL,
+    _JOBS_TOOL,
+    _LOG_TOOL,
 }
-_MAX_ITEM_CHARS = 12000
+# 0.16.72: the old 12k-per-item / 32k FIFO packet could evict the metrics
+# payload simply because metrics was normally captured first. Keep the packet
+# bounded while reserving enough space for every performance source so later
+# jobs/log payloads cannot silently remove current memory/temperature/database.
+_CAPTURE_LIMITS = {
+    _METRICS_TOOL: 7500,
+    _PERFORMANCE_TOOL: 11500,
+    _JOBS_TOOL: 7500,
+    _LOG_TOOL: 4500,
+}
 _MAX_PACKET_CHARS = 32000
 _PACKET: ContextVar[tuple[tuple[str, str], ...]] = ContextVar(
     "performance_api_synthesis_packet",
@@ -32,11 +43,21 @@ _FALSE_EVIDENCE_DENIAL = re.compile(
     r"available\s+evidence.*does\s+not\s+establish\s+any\s+facts)",
     re.I | re.S,
 )
+_METRIC_DENIAL_LINE = re.compile(
+    r"(?im)^.*(?:available\s+evidence|current\s+evidence|this\s+turn).{0,100}"
+    r"does\s+not\s+establish.{0,120}(?:current\s+)?memory(?:\s+usage)?.{0,120}"
+    r"(?:internal\s+)?temperature.{0,120}database\s+size.*$"
+)
+_TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 
 
 def _capture_sub_tool(name: str, arguments: dict[str, Any]) -> str:
     leaf = str(arguments.get("tool") or "").strip()
     return leaf or str(name or "").strip()
+
+
+def _packet_chars(rows: list[tuple[str, str]]) -> int:
+    return sum(len(name) + len(value) for name, value in rows)
 
 
 def _append_packet(sub_tool: str, content: str) -> None:
@@ -45,11 +66,31 @@ def _append_packet(sub_tool: str, content: str) -> None:
     text = str(content or "").strip()
     if not text:
         return
-    text = text[:_MAX_ITEM_CHARS]
+    text = text[: _CAPTURE_LIMITS[sub_tool]]
     rows = [row for row in _PACKET.get() if row[0] != sub_tool]
     rows.append((sub_tool, text))
-    while rows and sum(len(name) + len(value) for name, value in rows) > _MAX_PACKET_CHARS:
-        rows.pop(0)
+
+    # The fixed source budgets fit below the packet ceiling. This defensive
+    # trim keeps every source present even if names/budgets change later; it
+    # never drops a whole source as the 0.16.69-0.16.71 FIFO implementation did.
+    overflow = _packet_chars(rows) - _MAX_PACKET_CHARS
+    if overflow > 0:
+        preferred = (_LOG_TOOL, _JOBS_TOOL, _PERFORMANCE_TOOL, _METRICS_TOOL)
+        mutable = list(rows)
+        for source in preferred:
+            if overflow <= 0:
+                break
+            for index, (name, value) in enumerate(mutable):
+                if name != source:
+                    continue
+                removable = max(0, len(value) - 512)
+                cut = min(removable, overflow)
+                if cut:
+                    mutable[index] = (name, value[: len(value) - cut])
+                    overflow -= cut
+                break
+        rows = mutable
+
     _PACKET.set(tuple(rows))
 
 
@@ -227,6 +268,219 @@ def _latest_assistant_content(messages: list[dict[str, Any]], fallback: str) -> 
     return fallback
 
 
+def _has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
+    for row in evidence:
+        if not isinstance(row, dict) or row.get("success") is False:
+            continue
+        kind = str(row.get("evidence_kind") or "").casefold()
+        if any(token in kind for token in ("configuration", "preferences", "settings", "code", "implementation")):
+            return True
+        sub_tool = _sub_tool(row).casefold()
+        if any(
+            token in sub_tool
+            for token in (
+                "get_rule",
+                "rule_detail",
+                "get_app",
+                "app_code",
+                "driver_code",
+                "get_driver",
+                "device_config",
+                "device_preferences",
+                "get_preferences",
+                "get_settings",
+                "read_settings",
+            )
+        ):
+            return True
+    return False
+
+
+def _repair_01672_fragment(text: str, *, has_configuration: bool) -> str:
+    """Repair exact semantic gaps exposed by the 0.16.71 live proof."""
+
+    repaired = str(text or "")
+    repaired = re.sub(
+        r"(?i)the\s+following\s+performance\s+bottlenecks\s+have\s+been\s+identified",
+        "the following performance observations and outliers were identified",
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)Critical\s+Performance\s+Issues",
+        "Performance Observations",
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)There\s+is\s+a\s+severe\s+synchronization\s+of\s+scheduled\s+tasks",
+        "Many scheduled tasks share the same scheduled timestamp",
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)scheduled\s+to\s+execute\s+(over\s+\d+\s+jobs?)\s+simultaneously",
+        r"has \1 scheduled for the same second",
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)The\s+logs\s+indicate\s+an\s+efficiency\s+issue\s+with",
+        "The logs show repeated activity from",
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)constant\s+reporting\s+adds\s+to\s+the\s+background\s+load",
+        "frequent reporting is an observed activity; this turn does not establish material background load from it",
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)\*\*Stagger\s+the\s+[\"“]?Block[\"”]?\s+Ticks?\.\*\*",
+        '**Review the "Block" tick alignment.**',
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)\*\*Shift\s+System\s+Tasks\.\*\*",
+        "**Review system-task timing.**",
+        repaired,
+    )
+    repaired = re.sub(
+        r"(?i)\*\*Top-of-Hour\s+Jobs\*\*",
+        "**Scheduled Job Cluster**",
+        repaired,
+    )
+
+    if not has_configuration:
+        repaired = re.sub(
+            r"(?i)The\s+high\s+volume\s+of\s+`?sessionTick`?\s+jobs\s+at\s+`?:00`?\s+seconds\s+should\s+be\s+offset\.",
+            "The `sessionTick` jobs share a common scheduled second; inspect the responsible app before changing their alignment because this turn does not establish that offsetting is configurable, necessary, or behaviour-preserving.",
+            repaired,
+        )
+        repaired = re.sub(
+            r"(?i)Move\s+the\s+14:30:00\s+cluster.*?to\s+different\s+offsets.*?flatten\s+the\s+load\s+curve\.",
+            "Inspect the responsible app/system-task configuration before changing this cluster's timing; this turn does not establish that alternate offsets are configurable, necessary, or behaviour-preserving.",
+            repaired,
+        )
+    return repaired
+
+
+def _repair_01672_surface(message: str, evidence: list[dict[str, Any]]) -> str:
+    """Apply 0.16.72 wording repairs without crossing Markdown table cells."""
+
+    has_configuration = _has_configuration_evidence(evidence)
+    repaired_lines: list[str] = []
+    for line in str(message or "").splitlines(keepends=True):
+        newline = "\n" if line.endswith("\n") else ""
+        core = line[:-1] if newline else line
+        stripped = core.strip()
+        if stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2:
+            indent = core[: len(core) - len(core.lstrip())]
+            cells = stripped[1:-1].split("|")
+            repaired_cells: list[str] = []
+            for raw in cells:
+                cell = raw.strip()
+                if _TABLE_SEPARATOR_CELL.fullmatch(cell):
+                    repaired_cells.append(cell)
+                else:
+                    repaired_cells.append(
+                        _repair_01672_fragment(
+                            cell,
+                            has_configuration=has_configuration,
+                        ).strip()
+                    )
+            core = indent + "| " + " | ".join(repaired_cells) + " |"
+        else:
+            core = _repair_01672_fragment(
+                core,
+                has_configuration=has_configuration,
+            )
+        repaired_lines.append(core + newline)
+    return "".join(repaired_lines)
+
+
+def _decode_payload(content: str) -> Any:
+    try:
+        payload = json.loads(str(content or ""))
+    except Exception:
+        return None
+    if isinstance(payload, dict) and "result" in payload:
+        return payload.get("result")
+    return payload
+
+
+def _find_metric_value(value: Any, keys: tuple[str, ...]) -> Any:
+    if isinstance(value, dict):
+        for key in keys:
+            if key in value and value[key] not in (None, ""):
+                return value[key]
+        for child in value.values():
+            found = _find_metric_value(child, keys)
+            if found not in (None, ""):
+                return found
+    elif isinstance(value, list):
+        for child in value[:20]:
+            found = _find_metric_value(child, keys)
+            if found not in (None, ""):
+                return found
+    return None
+
+
+def _format_metric_number(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _metric_fact_sentence(metrics_content: str) -> str:
+    payload = _decode_payload(metrics_content)
+    if payload is None:
+        return ""
+    free_memory = _find_metric_value(
+        payload,
+        ("freeMemoryMB", "free_memory_mb", "memoryFreeMB"),
+    )
+    temperature = _find_metric_value(
+        payload,
+        ("temperatureC", "internalTemperatureC", "hubTemperatureC"),
+    )
+    database = _find_metric_value(
+        payload,
+        ("databaseSizeMB", "databaseMB", "dbSizeMB"),
+    )
+    facts: list[str] = []
+    if free_memory not in (None, ""):
+        facts.append(f"free memory {_format_metric_number(free_memory)} MB")
+    if temperature not in (None, ""):
+        facts.append(f"internal temperature {_format_metric_number(temperature)}°C")
+    if database not in (None, ""):
+        facts.append(f"database {_format_metric_number(database)} MB")
+    if not facts:
+        return ""
+    return "**Current metrics:** " + "; ".join(facts) + "."
+
+
+def _repair_metric_denial(
+    message: str,
+    *,
+    metrics_content: str,
+    metrics_succeeded: bool,
+) -> tuple[str, bool]:
+    if not metrics_succeeded:
+        return message, False
+    match = _METRIC_DENIAL_LINE.search(str(message or ""))
+    if match is None:
+        return message, False
+    replacement = _metric_fact_sentence(metrics_content)
+    if not replacement:
+        replacement = (
+            "**Metrics context:** `hub_get_metrics` succeeded in this turn, but its detailed values were not "
+            "retained for final synthesis. This is a synthesis-context limitation, not evidence that memory, "
+            "temperature, or database metrics were unavailable from the hub."
+        )
+    repaired = _METRIC_DENIAL_LINE.sub(replacement, str(message or ""), count=1)
+    return repaired, repaired != message
+
+
 async def finalize_performance_api_outcome(
     agent: Any,
     mcp: Any,
@@ -240,10 +494,9 @@ async def finalize_performance_api_outcome(
     boundary. Only the mandatory bounded recent-log read is added when the original
     turn did not already obtain one.
 
-    0.16.70 makes this path single-provider-pass: FinalAnswerCoordinator may ask for
-    a repair when deterministic validation detects wording conflicts, but that repair
-    cycle reuses the same first synthesis draft so the deterministic corrected
-    baseline is returned without a second cloud-model call.
+    0.16.70 made this path single-provider-pass. 0.16.72 preserves every bounded
+    source class in that private packet and adds context-aware fail-closed repairs
+    for the exact semantic/metrics contradictions exposed by the 0.16.71 live proof.
     """
 
     captured = _packet_map(_consume_packet())
@@ -257,7 +510,16 @@ async def finalize_performance_api_outcome(
 
     started = time.monotonic()
     original_message = str(getattr(outcome, "message", "") or "")
-    log_content = captured.get(_LOG_TOOL) or _existing_log_content(evidence)
+    if captured:
+        _counter(outcome, "performance_api_packet_sources", len(captured))
+    if captured.get(_METRICS_TOOL):
+        _counter(outcome, "performance_api_metrics_payload_reused")
+    elif _successful(evidence, _METRICS_TOOL):
+        _counter(outcome, "performance_api_metrics_payload_missing")
+
+    # Prefer the compact evidence-log details when they are already available;
+    # fall back to the bounded private packet otherwise.
+    log_content = _existing_log_content(evidence) or captured.get(_LOG_TOOL, "")
     log_attempts = 0
 
     if not _successful(evidence, _LOG_TOOL):
@@ -309,10 +571,28 @@ async def finalize_performance_api_outcome(
         {"role": "assistant", "content": original_message},
     ]
 
-    for sub_tool in ("hub_get_metrics", "hub_get_performance_stats", "hub_get_jobs"):
+    for sub_tool in (_METRICS_TOOL, _PERFORMANCE_TOOL, _JOBS_TOOL):
         content = captured.get(sub_tool)
         if not content:
+            if sub_tool == _METRICS_TOOL and _successful(evidence, _METRICS_TOOL):
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "HOST CURRENT-TURN METRICS STATUS\n"
+                            "hub_get_metrics succeeded in this request, but its detailed private payload was not "
+                            "retained. Do not claim the metrics tool was not executed or that the hub lacks those "
+                            "metrics; state the synthesis-context limitation if the values are needed."
+                        ),
+                    }
+                )
             continue
+        extra = ""
+        if sub_tool == _METRICS_TOOL:
+            extra = (
+                " Memory, internal-temperature, database-size, and health fields in this source are current-turn "
+                "evidence. If those fields are present, do not state that those metrics are unavailable."
+            )
         messages.append(
             {
                 "role": "user",
@@ -320,7 +600,9 @@ async def finalize_performance_api_outcome(
                     f"HOST CURRENT-TURN PERFORMANCE SOURCE: {sub_tool}\n"
                     "This is the normalized, privacy-redacted payload already read by "
                     "the original tool turn. Use its measured values as current-turn "
-                    "evidence; do not treat the earlier assistant draft as evidence:\n"
+                    "evidence; do not treat the earlier assistant draft as evidence."
+                    + extra
+                    + "\n"
                     + content
                 ),
             }
@@ -384,11 +666,28 @@ async def finalize_performance_api_outcome(
         _counter(outcome, "model_rounds", provider_rounds)
 
     guarded, _changed = guard_live_performance_semantics(message, evidence)
+    guarded = _repair_01672_surface(guarded, evidence)
+    guarded, metric_denial_changed = _repair_metric_denial(
+        guarded,
+        metrics_content=captured.get(_METRICS_TOOL, ""),
+        metrics_succeeded=_successful(evidence, _METRICS_TOOL),
+    )
+    if metric_denial_changed:
+        _counter(outcome, "performance_api_metric_denial_repair")
+
     if _FALSE_EVIDENCE_DENIAL.search(guarded) and any(
         row.get("success") is True for row in evidence if isinstance(row, dict)
     ):
         _counter(outcome, "performance_api_false_evidence_fallback")
         guarded, _changed = guard_live_performance_semantics(original_message, evidence)
+        guarded = _repair_01672_surface(guarded, evidence)
+        guarded, metric_denial_changed = _repair_metric_denial(
+            guarded,
+            metrics_content=captured.get(_METRICS_TOOL, ""),
+            metrics_succeeded=_successful(evidence, _METRICS_TOOL),
+        )
+        if metric_denial_changed:
+            _counter(outcome, "performance_api_metric_denial_repair")
 
     outcome.message = guarded
     outcome.evidence = evidence
