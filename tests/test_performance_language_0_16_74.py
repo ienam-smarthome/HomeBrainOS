@@ -89,7 +89,7 @@ def test_01674_full_01673_live_fixture_closes_generic_recommendation_gaps() -> N
         "Shift the `sessionTick` and `autoPoll` jobs away",
         "flatten the CPU load curve",
         "Optimize Logic",
-        "inefficient loops",
+        "for inefficient loops or overly frequent triggers",
         "overly frequent triggers",
     ):
         assert unsafe not in corrected
@@ -99,7 +99,8 @@ def test_01674_full_01673_live_fixture_closes_generic_recommendation_gaps() -> N
     assert "many jobs are scheduled for the same second" in corrected
     assert "comparatively high busy percentages" in corrected
     assert "highest returned app busy percentage" in corrected
-    assert "does not establish that shifting, staggering, or offsetting is configurable" in corrected
+    assert "does not establish that offsetting is configurable" in corrected
+    assert "same applies to shifting or staggering" in corrected
     assert "does not establish inefficient loops, trigger frequency" in corrected
 
     for measured in (
@@ -134,6 +135,7 @@ def test_01674_generic_scheduler_offsets_require_configuration_evidence() -> Non
     assert changed is True
     assert "Shift the sessionTick" not in corrected
     assert "flatten the CPU load curve" not in corrected
+    assert "does not establish that offsetting is configurable" in corrected
     assert "performance-improving" in corrected
 
 
@@ -145,7 +147,7 @@ def test_01674_busy_percentage_does_not_invent_implementation_mechanism() -> Non
     corrected, changed = guard_live_performance_semantics(message, _performance_evidence())
     assert changed is True
     assert "Optimize Logic" not in corrected
-    assert "inefficient loops" not in corrected
+    assert "for inefficient loops or overly frequent triggers" not in corrected
     assert "overly frequent triggers" not in corrected
     assert "27.7%" not in corrected or "busy percentage" in corrected
     assert "does not establish inefficient loops, trigger frequency" in corrected
