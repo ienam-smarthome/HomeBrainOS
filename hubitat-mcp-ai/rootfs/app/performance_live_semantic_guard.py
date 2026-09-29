@@ -385,7 +385,7 @@ def _neutralize_exact_overreach(text: str) -> str:
     )
     text = re.sub(
         r"(?is)\*\*Shift\s+System\s+Tasks\.\*\*\s*Move\s+.+",
-        "Inspect the responsible app/system-task configuration before changing scheduled offsets; the current job evidence does not establish that alternate offsets are configurable, necessary, or behaviour-preserving.",
+        "Review system-task timing. Inspect the responsible app/system-task configuration before changing scheduled offsets; the current job evidence does not establish that alternate offsets are configurable, necessary, or behaviour-preserving.",
         text,
     )
     text = re.sub(
