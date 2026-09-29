@@ -92,4 +92,6 @@ def test_synthesis_validator_reports_live_performance_semantic_issue():
         _performance_and_log_evidence(),
     )
     assert "performance_live_semantics" in issues
-    assert "does not establish material CPU load" in corrected
+    assert "performance_evidence_first" in issues
+    assert "No current-turn scheduler/job source was read" in corrected
+    assert "increase the baseline CPU load" not in corrected
