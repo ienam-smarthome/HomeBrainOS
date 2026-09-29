@@ -8,10 +8,11 @@ CHANGELOG-<version>.md
 
 ## Current release
 
-- [0.16.70](CHANGELOG-0.16.70.md)
+- [0.16.71](CHANGELOG-0.16.71.md)
 
 ## Recent performance releases
 
+- [0.16.70](CHANGELOG-0.16.70.md)
 - [0.16.69](CHANGELOG-0.16.69.md)
 - [0.16.68](CHANGELOG-0.16.68.md)
 - [0.16.67](CHANGELOG-0.16.67.md)
@@ -32,7 +33,6 @@ CHANGELOG-<version>.md
 - [0.16.52](CHANGELOG-0.16.52.md)
 - [0.16.51](CHANGELOG-0.16.51.md)
 - [0.16.50](CHANGELOG-0.16.50.md)
-- [0.16.49](CHANGELOG-0.16.49.md)
 
 Older `CHANGELOG-<version>.md` files remain in this directory and Git history; this index intentionally keeps the maintained current/recent path compact.
 
