@@ -39,6 +39,7 @@ from homebrain_agent import UnifiedMCPAgent
 from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp_client import HubitatMCPClient
+from performance_api_finalizer import finalize_performance_api_outcome
 from pushover_notifier import PushoverNotifier
 from webui import render_page
 
@@ -405,10 +406,16 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     try:
-        return await agent.process_user_request_result(
+        outcome = await agent.process_user_request_result(
             request.message,
             request.history,
             session_id=request.session_id,
+        )
+        return await finalize_performance_api_outcome(
+            agent,
+            mcp,
+            outcome,
+            request.message,
         )
     finally:
         reset_history_window_request(token)

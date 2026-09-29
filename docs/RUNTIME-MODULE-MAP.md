@@ -67,6 +67,7 @@ The repository drift test compares this table directly with the live directory. 
 | `model_context_policy.py` | Bounds copied provider conversation and tool-result context. |
 | `natural_datetime.py` | Formats authoritative ISO event timestamps for natural-language answers. |
 | `observed_agent_outcome.py` | Builds the immutable production outcome with request metrics. |
+| `performance_api_finalizer.py` | Runs the bounded recent-log read and evidence-scoped performance synthesis directly on the production `/api/ask`/`/api/chat` request path, then applies the fail-closed live semantic guard before serialization. |
 | `performance_causality_guard.py` | Prevents recent log activity from being promoted into the cause of longer-window performance statistics without direct linking evidence, and blocks unsupported threshold/edit prescriptions. |
 | `performance_live_semantic_guard.py` | Localizes unsupported live performance wording for assertive implementation hypotheses, scheduler/job-to-load causality, unverified scheduler tuning, qualitative database conclusions, and over-severe backup alerts. |
 | `performance_result_compat.py` | Applies narrow, provenance-preserving compatibility normalization to known malformed upstream performance result fields. |
@@ -85,7 +86,6 @@ The repository drift test compares this table directly with the live directory. 
 | `semantic_plan.py` | Defines and validates the typed goal/target/action intermediate representation shared by fast paths and AI planning. |
 | `semantic_planner.py` | Uses the reasoning model only for natural-language meaning, returning strict semantic plans without Hubitat wire details. |
 | `semantic_world_model.py` | Projects cached Hubitat identity/capabilities into bounded semantic room/device abilities without exposing IDs, wire commands, or live-state claims. |
-| `sitecustomize.py` | Installs the 0.16.66 performance live-read finalization router and serializer semantic backstop at Python startup. |
 | `technical_metrics_presenter.py` | Converts fixed metrics and outcomes into UI-safe rows. |
 | `synthesis_context.py` | Preserves bounded privacy-redacted current-turn tool-result excerpts for the final no-tools reasoning synthesis pass. |
 | `synthesis_validator.py` | Detects deterministic factual conflicts in model synthesis and supplies a localized repair baseline without replacing supported analysis. |

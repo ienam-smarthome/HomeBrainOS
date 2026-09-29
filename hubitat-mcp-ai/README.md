@@ -3,15 +3,15 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.66**.
+Current add-on version: **0.16.67**.
 
 ## Architecture
 
-0.16.66 fixes the production completion bypass exposed by the 0.16.65 live performance proof. Ordinary live-read turns that already contain successful `hub_get_performance_stats` evidence are now routed through the shared `FinalAnswerCoordinator` before the request evidence scope closes. That activates the existing host-enforced bounded recent-log read (`since=30m`, `limit=100`), current-turn evidence ledger, performance semantic validation, and repair pass on the real production route rather than only on investigative/history routes.
+0.16.67 removes the interpreter-startup `sitecustomize.py` performance hook introduced in 0.16.66 and wires performance completion directly into the real FastAPI request path. `_agent_request()` now passes every returned unified-agent outcome through `performance_api_finalizer.finalize_performance_api_outcome()` before `/api/ask` or `/api/chat` can serialize it.
 
-The release also installs `guard_live_performance_semantics` at the API serialization boundary as a final fail-closed backstop. Unsupported qualitative database conclusions, over-severe backup/data-loss wording, assertive implementation hypotheses, scheduler/job-to-CPU causality, and unverified scheduler-interval prescriptions therefore cannot escape merely because another completion path bypasses synthesis.
+When successful `hub_get_performance_stats` evidence exists, that production-boundary finalizer performs the bounded recent `hub_get_logs` read (`since=30m`, `limit=100`) through the live MCP client if the turn does not already contain one, extends the outcome evidence explicitly, runs an evidence-scoped final synthesis/repair pass, and applies `guard_live_performance_semantics` before API serialization. The finalizer records API-path counters for log attempt/success/retry/failure and adds its elapsed time to the returned technical metrics.
 
-The 0.16.66 routing shim is isolated in `sitecustomize.py`, which Python loads from `/app` at startup. It is evidence-driven: turns without successful performance-stat evidence are unchanged. A request-local `ContextVar` records whether the shared finalizer already ran so the shim does not duplicate final synthesis, while performance turns that fetched logs themselves still receive final semantic validation. Request evidence, metrics, and grounding remain request-scoped.
+This design does not depend on Python startup import behavior and is exercised through the same `_answer_result()` path used by the shipped `/api/ask` endpoint. Turns without successful performance-stat evidence are returned unchanged.
 
 For complete release history, see [CHANGELOG-INDEX.md](CHANGELOG-INDEX.md).
 
