@@ -12,7 +12,11 @@ if str(APP_DIR) not in sys.path:
 
 
 from observed_agent_outcome import ObservedAgentOutcome  # noqa: E402
-from performance_api_finalizer import finalize_performance_api_outcome  # noqa: E402
+from performance_api_finalizer import (  # noqa: E402
+    _append_packet,
+    _consume_packet,
+    finalize_performance_api_outcome,
+)
 
 
 def _receipt(sub_tool: str, *, gateway: str = "hub_manage_logs", details=None) -> dict:
@@ -49,13 +53,6 @@ class _FakeMCP:
 
     async def call_tool(self, name: str, arguments: dict):
         self.calls.append((name, arguments))
-        leaf = arguments.get("tool")
-        if leaf == "hub_get_metrics":
-            return _FakeResult(data={"current": {"freeMemoryMb": 993}, "healthAlerts": ["NETWORK_BACKUP_FAILED"]})
-        if leaf == "hub_get_performance_stats":
-            return _FakeResult(data={"uptime": "13h", "deviceStats": [{"name": "LG webOS TV", "avgMs": 3035}]})
-        if leaf == "hub_get_jobs":
-            return _FakeResult(data={"scheduledJobs": [{"name": "sessionTick"}] * 3})
         return _FakeResult(
             data={
                 "logs": [
@@ -94,7 +91,12 @@ class _FakeAgent:
 
 
 @pytest.mark.asyncio
-async def test_api_finalizer_reads_logs_replays_performance_and_fail_closes_semantics() -> None:
+async def test_api_finalizer_reads_logs_reuses_performance_and_fail_closes_semantics() -> None:
+    _consume_packet()
+    _append_packet(
+        "hub_get_performance_stats",
+        '{"result":{"uptime":"13h","snapshot":{"databaseSizeMB":187},"deviceStats":[{"name":"LG webOS TV","avgMs":3035}]}}',
+    )
     outcome = ObservedAgentOutcome(
         message=(
             "**Database:** Lean. At 187MB, your database is small and unlikely to be causing any performance drag. "
@@ -122,28 +124,25 @@ async def test_api_finalizer_reads_logs_replays_performance_and_fail_closes_sema
         "Analyse my Hubitat performance and recommend improvements.",
     )
 
-    assert mcp.calls[0] == (
-        "hub_manage_logs",
-        {"tool": "hub_get_logs", "args": {"since": "30m", "limit": 100}},
-    )
-    assert mcp.calls[1] == (
-        "hub_manage_logs",
-        {"tool": "hub_get_performance_stats", "args": {"type": "both"}},
-    )
+    assert mcp.calls == [
+        (
+            "hub_manage_logs",
+            {"tool": "hub_get_logs", "args": {"since": "30m", "limit": 100}},
+        )
+    ]
     assert any(
         row.get("sub_tool") == "hub_get_logs" and row.get("success") is True
         for row in finalized.evidence
     )
-    assert any(
-        row.get("sub_tool") == "hub_get_performance_stats"
-        and row.get("evidence_kind") == "performance_api_synthesis_snapshot"
+    assert not any(
+        row.get("evidence_kind") == "performance_api_synthesis_snapshot"
         for row in finalized.evidence
     )
     counters = finalized.metrics["counters"]
     assert counters["broad_performance_log_api_attempt"] == 1
     assert counters["broad_performance_log_api_success"] == 1
-    assert counters["performance_api_snapshot_success"] == 1
-    assert counters["tool_calls"] == 5
+    assert "performance_api_snapshot_success" not in counters
+    assert counters["tool_calls"] == 4
     assert counters["model_rounds"] >= 3
     assert "performance_api_finalize" in finalized.metrics["timings_ms"]
 
@@ -156,7 +155,25 @@ async def test_api_finalizer_reads_logs_replays_performance_and_fail_closes_sema
 
 
 @pytest.mark.asyncio
-async def test_01668_replays_all_measured_sources_and_rejects_false_no_evidence_answer() -> None:
+async def test_01669_reuses_all_measured_sources_and_rejects_false_no_evidence_answer() -> None:
+    _consume_packet()
+    _append_packet(
+        "hub_get_metrics",
+        '{"result":{"current":{"freeMemoryMb":993,"databaseSizeMB":187},"healthAlerts":[]}}',
+    )
+    _append_packet(
+        "hub_get_performance_stats",
+        '{"result":{"deviceStats":[{"name":"LG webOS TV","avgMs":3035}]}}',
+    )
+    _append_packet(
+        "hub_get_jobs",
+        '{"result":{"scheduledJobs":[{"name":"sessionTick"}]}}',
+    )
+    _append_packet(
+        "hub_get_logs",
+        '{"result":{"logs":[{"level":"WARN","message":"SenseCap D1 Settings: No route to host"}]}}',
+    )
+
     original = (
         "At 187MB the database is small and unlikely to be causing any performance drag. "
         "LG webOS TV averages 3,035ms. There are 219 scheduled jobs. "
@@ -201,11 +218,7 @@ async def test_01668_replays_all_measured_sources_and_rejects_false_no_evidence_
         "Analyse my Hubitat performance and recommend improvements.",
     )
 
-    assert [arguments.get("tool") for _, arguments in mcp.calls] == [
-        "hub_get_metrics",
-        "hub_get_performance_stats",
-        "hub_get_jobs",
-    ]
+    assert mcp.calls == []
     flattened = "\n".join(
         str(message.get("content") or "")
         for call in agent.seen_messages
@@ -218,7 +231,7 @@ async def test_01668_replays_all_measured_sources_and_rejects_false_no_evidence_
     assert "no MCP tools were executed" not in finalized.message
     assert "3,035ms" in finalized.message
     assert finalized.metrics["counters"]["performance_api_false_evidence_fallback"] == 1
-    assert finalized.metrics["counters"]["performance_api_snapshot_success"] == 3
+    assert "performance_api_snapshot_success" not in finalized.metrics["counters"]
     assert finalized.metrics["counters"]["broad_performance_log_api_reused"] == 1
 
 
