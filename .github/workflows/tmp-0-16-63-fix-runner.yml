@@ -1,0 +1,55 @@
+name: Temporary 0.16.63 runner repair
+
+on:
+  push:
+    branches:
+      - agent/performance-diagnostic-breadth-0-16-63
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-diagnostic-breadth-0-16-63
+          fetch-depth: 0
+      - name: Repair patch runner syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/tmp-0-16-63-patch.yml')
+          text = p.read_text()
+          start_marker = "          architecture_note = (\\n"
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('broken architecture_note marker not found')
+          end = text.find("          if architecture_anchor not in addon_readme:\n", start)
+          if end < 0:
+              raise SystemExit('architecture_note end marker not found')
+          replacement = """          architecture_note = (
+              '0.16.63 broadens evidence for broad performance reviews without weakening causal grounding. '
+              'After metrics and ranked app/device performance statistics, the model is instructed to inspect '
+              'a bounded recent log window for current failure patterns, and to obtain scheduler or last-activity '
+              'evidence only when cadence or staleness materially affects a recommendation. Ordered recommendation '
+              'labels are preserved when unsafe tuning is localized; state-size storage/cache interpretations and '
+              'unproven hub-overhead claims are grounded. The legacy database-size compatibility normalization now '
+              'also covers hub_get_metrics, so the explicit MB value can reach synthesis. No deterministic root-cause '
+              'claims are added.\\n\\n'
+          )
+"""
+          p.write_text(text[:start] + replacement + text[end:])
+          Path('.github/workflows/tmp-0-16-63-fix-runner.yml').unlink()
+          PY
+      - name: Commit repaired runner and remove fixer
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "chore: repair 0.16.63 patch runner syntax"
+          git push origin HEAD:agent/performance-diagnostic-breadth-0-16-63
