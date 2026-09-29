@@ -11,3 +11,5 @@
 ## Regression coverage
 
 Focused tests reproduce the 0.16.61 dangling `is likely the;` failure and the live `databaseSizeKB: "166"` unit-label mismatch, and verify future-correct/non-numeric/unrelated payloads remain unchanged.
+
+Release metadata is aligned across the add-on version, release-note index, repository summary, and runtime module map.
