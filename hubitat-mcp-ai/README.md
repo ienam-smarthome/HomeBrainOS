@@ -3,13 +3,13 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.73**.
+Current add-on version: **0.16.74**.
 
 ## Architecture
 
-0.16.73 keeps the 0.16.70 single-provider-pass performance finalization, the 0.16.71 Markdown-safe deterministic grounding path, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
+0.16.74 keeps the 0.16.70 single-provider-pass performance finalization, the 0.16.71 Markdown-safe deterministic grounding path, and the 0.16.72 source-budgeted evidence packet unchanged. Broad performance requests therefore retain the same four-read evidence path and normally three total model rounds when the original agent uses two rounds.
 
-This release only hardens deterministic performance-language variants exposed by the 0.16.72 live proof. The semantic guard now treats database “healthy limits” as an unsupported qualitative threshold, neutralizes generic “Performance Bottlenecks” and “Blocking Device Execution (High Latency)” headings, catches scheduler wording such as “Executing this many tasks ... creates CPU spikes”, and blocks activity-to-“constant background overhead” attribution. It also repairs the exact repeated “does not establish that it; this is a measured performance concern...” corruption and converts latency-to-timeout suggestions into an investigation-first statement that does not assert a mechanism.
+This release only hardens generic recommendation and summary variants exposed by the 0.16.73 live proof. Scheduler prescriptions such as shifting, moving, spreading, or offsetting `sessionTick`, `autoPoll`, or other jobs now require configuration evidence; claims that such offsets would flatten CPU load are fail-closed to an inspection-first statement. App busy percentages remain measured facts but cannot by themselves justify “Optimize Logic”, inefficient-loop, or overly-frequent-trigger explanations. Qualitative summary wording such as “significant inefficiencies”, “severe clustering”, “massive block”, and “disproportionate processing time” is normalized to measured observations rather than promoted into performance conclusions.
 
 The private performance synthesis packet continues to use source-specific bounded budgets rather than FIFO eviction. `hub_get_metrics`, `hub_get_performance_stats`, `hub_get_jobs`, and `hub_get_logs` each retain a bounded payload slot inside the existing 32k packet, so later job/log payloads cannot silently evict the current metrics source. This fixes the 0.16.71 live contradiction where `hub_get_metrics` succeeded but final synthesis claimed memory, temperature, and database size were unavailable.
 
@@ -44,17 +44,18 @@ A broad performance request that also asks for recommendations uses:
 4. Scheduler/job evidence only when job count or cadence materially affects a recommendation.
 5. The original bounded, normalized, privacy-redacted tool payloads for final synthesis rather than duplicate API snapshot reads; each source class retains its own bounded packet budget.
 6. One final performance provider synthesis pass; deterministic validators handle localized repairs without another cloud-model round.
-7. Configuration/implementation evidence before prescribing exact polling, reporting, retry, timeout, staggering, scheduler intervals, or job offsets.
+7. Configuration/implementation evidence before prescribing exact polling, reporting, retry, timeout, staggering, shifting, moving, scheduler intervals, or job offsets.
 8. Z-Wave-specific diagnostic evidence before recommending a Z-Wave repair.
 9. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
 
 The final answer must keep these distinctions explicit:
 
 - High execution time or call volume is measured; an implementation mechanism is only a hypothesis unless directly established.
-- A scheduled-job list proves returned jobs/cadence, not CPU spikes, CPU load, UI stuttering, delayed automations, or hub overhead by itself.
+- A scheduled-job list proves returned jobs/cadence/alignment, not CPU spikes, CPU load, UI stuttering, delayed automations, hub overhead, or that changing offsets will improve performance.
 - Database size is reported numerically in MB; qualitative labels such as normal/healthy/small/large require a defined current-turn threshold.
 - Frequent device reporting proves activity, not material hub/background overhead or a performance cause by itself.
 - Repeated app triggers are observations; they do not by themselves establish an efficiency problem.
+- A high app busy percentage is measured; it does not by itself establish inefficient loops, excessive trigger frequency, or another implementation mechanism.
 - A high execution time does not by itself establish that an integration is timing out, unreachable, offline, or blocking another hub operation.
 - Recent connectivity/error logs are observations; they do not by themselves prove overall hub instability.
 - `zwHealthy:false` is a warning/health observation, not sufficient evidence by itself to prescribe a Z-Wave repair.
