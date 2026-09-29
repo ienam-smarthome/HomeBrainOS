@@ -21,12 +21,14 @@ from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from performance_evidence_first import guard_evidence_first_performance
 from performance_live_semantic_guard import guard_live_performance_semantics
+from performance_log_observation_guard import guard_performance_log_observations
 
 
 _PERFORMANCE_REPAIR_ISSUES = {
     "performance_log_causality",
     "performance_live_semantics",
     "performance_evidence_first",
+    "performance_log_observation",
 }
 _PERFORMANCE_REPAIR_TRACE: ContextVar[tuple[str, ...]] = ContextVar(
     "performance_validation_issue_trace",
@@ -94,6 +96,15 @@ def validate_synthesis(
     )
     if positive_source_changed:
         issues.append("positive_source_attribution")
+
+    # Preserve the literal current-turn WARN/ERROR observation before generic
+    # performance guards rewrite any unsupported conclusion around it.
+    corrected, log_observation_changed = guard_performance_log_observations(
+        corrected,
+        evidence,
+    )
+    if log_observation_changed:
+        issues.append("performance_log_observation")
 
     corrected, performance_changed = guard_performance_log_causality(
         corrected,
