@@ -63,6 +63,25 @@ def test_01677_contract_allows_literal_job_facts_when_job_source_exists() -> Non
     assert "report only the returned job facts" in contract
 
 
+def test_01677_validator_removes_scheduler_claim_when_job_source_is_absent() -> None:
+    evidence = [
+        _receipt("hub_get_metrics"),
+        _receipt("hub_get_performance_stats"),
+        _receipt("hub_get_logs"),
+    ]
+    draft = (
+        "**Job Clustering:** Many scheduled jobs fire at the same timestamp.\n"
+        "The LG webOS TV has a measured average execution time of 2822 ms."
+    )
+
+    corrected, issues = validate_synthesis(draft, evidence)
+
+    assert "Many scheduled jobs" not in corrected
+    assert "No current-turn scheduler/job source was read" in corrected
+    assert "LG webOS TV" in corrected
+    assert "performance_evidence_first" in issues
+
+
 def test_01677_metric_rows_split_agent_and_finalizer_model_rounds() -> None:
     consume_performance_repair_issues()
     rows = present_request_metrics(
