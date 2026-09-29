@@ -22,8 +22,8 @@ def test_presenter_formats_production_snapshot() -> None:
     assert rows == [
         {"label": "Model rounds", "value": "2"},
         {"label": "Tool calls", "value": "1"},
-        {"label": "Provider", "value": "1.8 s"},
-        {"label": "Total", "value": "2.5 s"},
+        {"label": "Provider (agent phase)", "value": "1.8 s"},
+        {"label": "Agent phase", "value": "2.5 s"},
         {"label": "Outcome", "value": "success"},
     ]
 
@@ -166,15 +166,17 @@ def test_mcp_concurrency_metrics_are_presented() -> None:
         {"label": "Outcome", "value": "success"},
     ]
 
+
 def test_mcp_http_timing_is_labeled_as_aggregate_work() -> None:
     assert present_request_metrics({
         "outcome": "success",
         "timings_ms": {"mcp_http": 3237, "total": 2710},
     }) == [
         {"label": "Aggregate MCP HTTP", "value": "3.2 s"},
-        {"label": "Total", "value": "2.7 s"},
+        {"label": "Agent phase", "value": "2.7 s"},
         {"label": "Outcome", "value": "success"},
     ]
+
 
 def test_mcp_queue_wait_timing_is_labeled_as_aggregate_work() -> None:
     assert present_request_metrics({
@@ -182,7 +184,24 @@ def test_mcp_queue_wait_timing_is_labeled_as_aggregate_work() -> None:
         "timings_ms": {"mcp_queue_wait": 1800, "total": 1400},
     }) == [
         {"label": "Aggregate MCP queue wait", "value": "1.8 s"},
-        {"label": "Total", "value": "1.4 s"},
+        {"label": "Agent phase", "value": "1.4 s"},
         {"label": "Outcome", "value": "success"},
     ]
 
+
+def test_performance_finalize_timings_and_deterministic_repair_are_explicit() -> None:
+    assert present_request_metrics({
+        "outcome": "success",
+        "counters": {"performance_api_deterministic_repair": 1},
+        "timings_ms": {
+            "total": 16118,
+            "performance_api_model": 6200,
+            "performance_api_finalize": 7000,
+        },
+    }) == [
+        {"label": "Deterministic performance repairs", "value": "1"},
+        {"label": "Agent phase", "value": "16.1 s"},
+        {"label": "Performance synthesis", "value": "6.2 s"},
+        {"label": "Performance finalization", "value": "7.0 s"},
+        {"label": "Outcome", "value": "success"},
+    ]
