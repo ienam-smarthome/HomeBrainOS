@@ -21,6 +21,7 @@ from location_privacy import redact_precise_location
 from log_evidence_compactor import compact_log_evidence
 from mcp_client import HubitatMCPClient, MCPTool, MCPToolResult
 from mcp_client import tool_succeeded as _shared_tool_succeeded
+from performance_result_compat import normalize_performance_result
 from reasoning_policy import (
     EVIDENCE_REVIEW_INSTRUCTION,
     FINAL_SYNTHESIS_INSTRUCTION,
@@ -418,6 +419,7 @@ class ToolExecutor:
                 if handler is not None
                 else await self.mcp.call_tool(name, safe_arguments)
             )
+            result = normalize_performance_result(name, safe_arguments, result)
             # Semantic history may be requested without an explicit binary state
             # attribute. Derive one only when the returned rows make exactly one
             # supported state-pair attribute unambiguous, and close an otherwise
