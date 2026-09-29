@@ -1,6 +1,6 @@
 """Focused fail-closed repairs for broad live performance synthesis.
 
-These guards cover wording exposed by the 0.16.63-0.16.70 live proofs. They
+These guards cover wording exposed by the 0.16.63-0.16.72 live proofs. They
 preserve measured facts while preventing scheduler/job observations, qualitative
 database labels, implementation mechanisms, and recommendations from being
 promoted beyond current-turn evidence. Repairs are Markdown-aware so tables,
@@ -33,6 +33,11 @@ _SCHEDULER_USER_IMPACT = re.compile(
     r"(?i)\b(?:cpu\s+spikes?|load|overhead)\b[^.!?\n]{0,180}"
     r"\b(?:ui\s+stutter(?:ing)?|stutter(?:ing)?|delayed\s+automation|automation\s+delays?|lag)\b"
 )
+_SCHEDULER_EXECUTION_CAUSAL = re.compile(
+    r"(?i)\bexecuting\s+this\s+many\s+(?:jobs?|tasks?)\b[^.!?\n]{0,180}"
+    r"\b(?:create|creates|created|creating|cause|causes|caused|causing)\s+"
+    r"(?:momentary\s+)?cpu\s+spikes?\b"
+)
 _SCHEDULER_TUNING = re.compile(
     r"(?i)\b(?:increase|decrease|raise|lower|lengthen|shorten|adjust|change|set)\b"
     r"[^.!?\n]{0,160}\b(?:sessionTick|scheduler|scheduled\s+job|job|tick)\b"
@@ -48,8 +53,8 @@ _DATABASE_QUALITATIVE = re.compile(
     r"\b(?:small|lean|large|bloated)\b[^.!?\n]{0,220}\b(?:database|db)\b"
 )
 _DATABASE_NORMAL_LIMIT = re.compile(
-    r"(?i)\b(?:well\s+)?within\s+(?:the\s+)?normal\s+(?:limits?|range)\b|"
-    r"\bnormal\s+(?:limits?|range)\b"
+    r"(?i)\b(?:well\s+)?within\s+(?:the\s+)?(?:normal|healthy)\s+(?:limits?|range)\b|"
+    r"\b(?:normal|healthy)\s+(?:limits?|range)\b"
 )
 _DATABASE_LABEL_ONLY = re.compile(
     r"(?i)^\s*(?:[-*| ]+)?(?:#{1,6}\s*)?(?:database|db)\s*:\s*"
@@ -69,9 +74,15 @@ _BLOCKING_THREAD_CLAIM = re.compile(
     r"(?i)\b(?:block(?:ing)?\s+(?:hub\s+)?threads?|thread\s+blocking|"
     r"blocking\s+(?:device\s+calls?|behaviou?rs?)|stall\s+other\s+hub\s+operations?)\b"
 )
+_LATENCY_MECHANISM_SUGGESTION = re.compile(
+    r"(?i)\b(?:execution\s+time|latency|delay|seconds?)\b[^.!?\n]{0,180}"
+    r"\bsuggests?\b[^.!?\n]{0,180}"
+    r"\b(?:tim(?:e|ing)\s*out|struggl(?:e|ing)\s+to\s+reach|unreachable|offline)\b"
+)
 _PRIMARY_CAUSE = re.compile(r"(?i)\b(?:primary|main)\s+cause\b")
 _ACTIVITY_OVERHEAD = re.compile(
-    r"(?i)\b(?:add(?:ing|s)?|create(?:s|d|ing)?)\s+(?:constant\s+)?overhead\b"
+    r"(?i)\b(?:add(?:ing|s)?|create(?:s|d|ing)?)\s+"
+    r"(?:constant\s+)?(?:background\s+)?overhead\b"
 )
 _ZWAVE_REPAIR = re.compile(r"(?i)\b(?:run|perform|start)\s+(?:a\s+)?z[- ]?wave\s+repair\b")
 _TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
@@ -165,7 +176,7 @@ def _database_replacement(comparable: str) -> str:
     mb = _DATABASE_MB.search(comparable)
     if mb:
         return (
-            f"**Database:** {mb.group(1)} MB. The current turn does not establish a normal-size "
+            f"**Database:** {mb.group(1)} MB. The current turn does not establish a normal/healthy-size "
             "threshold or performance impact from database size alone."
         )
     return (
@@ -188,6 +199,13 @@ def _guard_sentence(
             "observed latency, but the current evidence does not establish which mechanism is responsible."
         )
 
+    if _LATENCY_MECHANISM_SUGGESTION.search(comparable):
+        return (
+            "The measured latency warrants investigation. Check connectivity, driver settings, and relevant "
+            "logs to determine the mechanism; this turn does not establish whether a network timeout, device "
+            "availability, driver behaviour, or another mechanism is responsible."
+        )
+
     if _BLOCKING_THREAD_CLAIM.search(comparable):
         avg = re.search(r"(?i)\b(\d+(?:[,.]\d+)?\s*ms)\b", comparable)
         suffix = f" The measured execution time is {avg.group(1)}." if avg else ""
@@ -195,6 +213,12 @@ def _guard_sentence(
             "The measured execution time warrants investigation, but this turn does not establish thread "
             "blocking, stalled hub operations, or a blocking implementation mechanism."
             + suffix
+        )
+
+    if _SCHEDULER_EXECUTION_CAUSAL.search(comparable):
+        return (
+            "Many jobs share the same scheduled second; the current job evidence does not establish a resulting "
+            "CPU spike, UI stuttering, delayed automations, hub overhead, or performance drag."
         )
 
     if _SCHEDULER_SUBJECT.search(comparable) and (
@@ -276,6 +300,16 @@ def _guard_sentence(
 
 def _neutralize_causal_headings(text: str) -> str:
     text = re.sub(
+        r"(?i)(#{1,6}\s*(?:⚠️\s*)?)Performance\s+Bottlenecks\b",
+        r"\1Performance Outliers",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(#{1,6}\s*(?:⚠️\s*)?)Critical\s+Performance\s+Issues\b",
+        r"\1Performance Observations",
+        text,
+    )
+    text = re.sub(
         r"(?i)(High-Latency\s+Devices)\s*\([^)]*Blocking[^)]*\)",
         r"\1",
         text,
@@ -296,7 +330,7 @@ def _neutralize_causal_headings(text: str) -> str:
         text,
     )
     text = re.sub(
-        r"(?i)\*\*(\d+\.\s*)?Blocking\s+Device\s+Execution\*\*",
+        r"(?i)\*\*(\d+\.\s*)?Blocking\s+Device\s+Execution(?:\s*\([^)]*\))?\*\*",
         lambda match: f"**{match.group(1) or ''}High-Latency Device Execution**",
         text,
     )
@@ -344,10 +378,32 @@ def _neutralize_exact_overreach(text: str) -> str:
         "Inspect the app responsible for these recurring jobs before changing their alignment; this turn does not establish that staggering is configurable, necessary, or behaviour-preserving.",
         text,
     )
+    text = re.sub(
+        r"(?i)\*\*Stagger\s+the\s+[\"“]?Block[\"”]?\s+Ticks\.\*\*",
+        "Review the scheduled-job alignment.",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\*\*Shift\s+System\s+Tasks\.\*\*\s*Move\s+[^.!?\n]{0,260}(?:different\s+offsets?|:\d+)[^.!?\n]*\.",
+        "Inspect the responsible app/system-task configuration before changing scheduled offsets; the current job evidence does not establish that shifting these tasks is configurable, necessary, or behaviour-preserving.",
+        text,
+    )
+    text = re.sub(
+        r"(?i)The\s+[\"“]?No\s+route\s+to\s+host[\"”]?\s+error\s+indicates\s+a\s+network-level\s+connectivity\s+issue\s+between\s+the\s+hub\s+and\s+the\s+device\.",
+        "The `No route to host` error establishes a routing/connectivity failure to the configured endpoint at that moment; this turn does not establish which network component caused it.",
+        text,
+    )
     return text
 
 
 def _collapse_duplicate_performance_repair(text: str) -> str:
+    text = re.sub(
+        r"(?i)this is a measured performance concern,\s*but\s+the current statistics do not establish that it\s*;\s*"
+        r"this is a measured performance concern,\s*but\s+the current statistics do not establish that it"
+        r"(?=\s+causes?)",
+        "this is a measured performance concern, but the current statistics do not establish that it",
+        text,
+    )
     text = re.sub(
         r"(?i)(?:the current statistics do not establish that\s+(?:this specific activity|it)\s*;\s*)+"
         r"(?=this is a measured performance concern)",
