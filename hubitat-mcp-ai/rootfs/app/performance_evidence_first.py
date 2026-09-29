@@ -21,17 +21,19 @@ _CONDITIONAL_BLOCKING = re.compile(
     r"\b(?:stutter|delay(?:ed|s|ing)?|lag|stall)\b"
 )
 _REPORTING_CAUSAL = re.compile(
-    r"(?i)\b(?:reporting|reports?|calls?|activity|chatter)\b[^.!?\n]{0,220}"
+    r"(?i)(?:\*\*Impact:\*\*\s*)?(?:constant\s+high-frequency\s+)?"
+    r"\breporting\b[^.!?\n]{0,220}"
     r"\b(?:increase|increases|increased|increasing|add|adds|adding|fill|fills|filling|"
-    r"slow|slows|slowing)\b[^.!?\n]{0,220}"
+    r"slow|slows|slowing)\b[^.!?\n]{0,260}"
     r"\b(?:background\s+overhead|overhead|event\s+logs?|logs?|history\s+lookups?|history)\b"
+    r"[^.!?\n]*(?:[.!?]|$)"
 )
 _SUMMARY_OVERREACH = re.compile(
     r"(?i)\bsignificant\s+inefficienc(?:y|ies)\b[^.!?\n]{0,220}"
     r"\b(?:may|might|can|could)\b[^.!?\n]{0,160}\b(?:latency|performance\s+degradation|lag|stutter)\b"
 )
 _PROCESSING_LOAD_OVERREACH = re.compile(
-    r"(?i)\bcontribut(?:e|es|ing)\s+disproportionately\s+to\s+(?:the\s+)?hub(?:'s)?\s+processing\s+load\b"
+    r"(?i)\bare\s+contribut(?:ing|ed)?\s+disproportionately\s+to\s+(?:the\s+)?hub(?:'s)?\s+processing\s+load\b"
 )
 _NO_OPTIMIZATION_NEEDED = re.compile(
     r"(?i)\bno\s+(?:immediate\s+)?need\s+for\s+(?:memory\s+management|database\s+optimi[sz]ation)"
@@ -157,7 +159,7 @@ def _repair_fragment(text: str) -> str:
         )
     if _REPORTING_CAUSAL.search(repaired):
         repaired = _REPORTING_CAUSAL.sub(
-            "The returned activity is worth reviewing; this turn does not establish material background overhead, log growth, or slower history lookups from that activity",
+            "The returned activity is worth reviewing; this turn does not establish material background overhead, log growth, or slower history lookups from that activity.",
             repaired,
         )
 
