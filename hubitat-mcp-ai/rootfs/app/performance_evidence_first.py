@@ -45,6 +45,14 @@ _EXACT_LOG_UPDATE_COUNT = re.compile(
     r"(?:were\s+recorded|were\s+observed|occurred|happened)\s+within\s+"
     r"(?:an?\s+)?(?:approximately\s+)?[^.!?\n]{1,80}(?:window|period|seconds?|milliseconds?|ms)"
 )
+_JOB_CLAIM_LINE = re.compile(
+    r"(?i)\b(?:job\s+clustering|job\s+synchroni[sz]ation|job\s+alignment|"
+    r"scheduled\s+jobs?|sessiontick|autopoll|scheduledliveheartbeat|scheduler)\b"
+)
+_SCHEDULER_LIMIT = (
+    "**Scheduler evidence:** No current-turn scheduler/job source was read, so no "
+    "scheduler-specific conclusion is included."
+)
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -55,6 +63,15 @@ def _sub_tool(row: dict[str, Any]) -> str:
     if isinstance(arguments, dict) and arguments.get("tool"):
         return str(arguments.get("tool"))
     return ""
+
+
+def _has_job_evidence(evidence: list[dict[str, Any]]) -> bool:
+    return any(
+        isinstance(row, dict)
+        and row.get("success") is not False
+        and _sub_tool(row) == "hub_get_jobs"
+        for row in evidence
+    )
 
 
 def has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
@@ -100,12 +117,7 @@ def build_performance_synthesis_contract(evidence: list[dict[str, Any]]) -> str:
     )
     job_state = (
         "A current-turn scheduler/job source is present; report only the returned job facts."
-        if any(
-            isinstance(row, dict)
-            and row.get("success") is not False
-            and _sub_tool(row) == "hub_get_jobs"
-            for row in evidence
-        )
+        if _has_job_evidence(evidence)
         else
         "No current-turn scheduler/job source is present. Do not state job counts, alignment, cadence, sessionTick/autoPoll scheduling, or scheduler conclusions in the final answer."
     )
@@ -249,16 +261,31 @@ def _repair_table_row(line: str) -> str:
     return indent + "| " + " | ".join(repaired) + " |"
 
 
-def guard_evidence_first_performance(message: str) -> tuple[str, bool]:
-    """Generic last-mile backstop for evidence-first performance language."""
+def guard_evidence_first_performance(
+    message: str,
+    evidence: list[dict[str, Any]] | None = None,
+) -> tuple[str, bool]:
+    """Generic last-mile backstop for evidence-first performance language.
+
+    When current-turn evidence is supplied, scheduler-specific prose is also
+    fail-closed on an actual successful `hub_get_jobs` receipt.
+    """
 
     original = str(message or "")
     if not original:
         return original, False
+    enforce_job_source = evidence is not None
+    has_job_source = _has_job_evidence(evidence or []) if enforce_job_source else True
+    scheduler_limit_added = False
     lines: list[str] = []
     for line in original.splitlines(keepends=True):
         newline = "\n" if line.endswith("\n") else ""
         core = line[:-1] if newline else line
+        if enforce_job_source and not has_job_source and _JOB_CLAIM_LINE.search(core):
+            if not scheduler_limit_added:
+                lines.append(_SCHEDULER_LIMIT + newline)
+                scheduler_limit_added = True
+            continue
         if _is_table_row(core):
             repaired = _repair_table_row(core)
         else:
