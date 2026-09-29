@@ -45,7 +45,7 @@ def test_builder_preserves_contract_and_adds_metric_rows() -> None:
         {"label": "Model rounds", "value": "2"},
         {"label": "Tool calls", "value": "1"},
         {"label": "Provider", "value": "1.2 s"},
-        {"label": "Total", "value": "1.5 s"},
+        {"label": "Agent phase", "value": "1.5 s"},
         {"label": "Outcome", "value": "success"},
     ]
     assert response["outcome_presentation"] == {
