@@ -170,7 +170,7 @@ def _repair_fragment(text: str) -> str:
     )
     if _NO_OPTIMIZATION_NEEDED.search(repaired):
         repaired = _NO_OPTIMIZATION_NEEDED.sub(
-            "the current alerts alone do not establish a need for or against memory/database optimisation",
+            "The current alerts alone do not establish a need for or against memory/database optimisation",
             repaired,
         )
 
