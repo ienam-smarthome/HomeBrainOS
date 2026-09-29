@@ -1,0 +1,41 @@
+name: Temporary 0.16.63 safe overhead patch
+
+on:
+  push:
+    branches:
+      - agent/performance-diagnostic-breadth-0-16-63
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/performance-diagnostic-breadth-0-16-63
+          fetch-depth: 0
+      - name: Preserve already-localized overhead sentence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('hubitat-mcp-ai/rootfs/app/performance_semantic_grounding.py')
+          text = p.read_text()
+          old = '''    if "implementation cause of that measured load is not established" in folded:\n        return sentence\n    if not _PERFORMANCE_OUTCOME.search(comparable):\n'''
+          new = '''    if "implementation cause of that measured load is not established" in folded:\n        return sentence\n    if "current statistics do not establish that it creates material hub overhead" in folded:\n        return sentence\n    if not _PERFORMANCE_OUTCOME.search(comparable):\n'''
+          if old not in text:
+              raise SystemExit('outcome safe-boundary anchor missing')
+          p.write_text(text.replace(old, new, 1))
+          Path('.github/workflows/tmp-0-16-63-safe-overhead.yml').unlink()
+          PY
+      - name: Commit patch and remove helper
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: preserve localized performance overhead clause"
+          git push origin HEAD:agent/performance-diagnostic-breadth-0-16-63
