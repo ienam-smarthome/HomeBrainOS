@@ -79,7 +79,7 @@ _COUNTER_LABELS = (
 )
 
 _DURATION_LABELS = (
-    ("provider", "Provider (agent phase)"),
+    ("provider", "Provider"),
     ("mcp", "MCP"),
     ("mcp_lock_wait", "MCP lock wait"),
     ("mcp_queue_wait", "Aggregate MCP queue wait"),
