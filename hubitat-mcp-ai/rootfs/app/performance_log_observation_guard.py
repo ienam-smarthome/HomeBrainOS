@@ -17,6 +17,11 @@ _MARKDOWN_PREFIX = re.compile(
     re.S,
 )
 _WARNING_WORD = re.compile(r"(?i)\b(?:warn(?:ing)?|error)\b")
+_CAUSAL_OR_REPAIR = re.compile(
+    r"(?i)\b(?:cause|causes|caused|causing|impact|overhead|log\s+growth|"
+    r"history\s+lookup|history\s+lookups|slow(?:er|ing)?\s+history|"
+    r"returned\s+activity\s+is\s+worth\s+reviewing|performance\s+statistics)\b"
+)
 _NESTED_MESSAGE = re.compile(r'"message"\s*:\s*"(?P<message>[^"\\]*(?:\\.[^"\\]*)*)')
 
 
@@ -90,7 +95,7 @@ def guard_performance_log_observations(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Restore cited WARN/ERROR observations from authoritative current-turn logs."""
+    """Restore only warning lines whose prose has crossed into causal/repair text."""
 
     original = str(message or "")
     if not original:
@@ -106,7 +111,7 @@ def guard_performance_log_observations(
         core = line[:-1] if newline else line
         comparable = re.sub(r"[*_`]", "", core).casefold()
         replacement: str | None = None
-        if _WARNING_WORD.search(comparable):
+        if _WARNING_WORD.search(comparable) and _CAUSAL_OR_REPAIR.search(comparable):
             for observation in observations:
                 if observation["source"].casefold() not in comparable:
                     continue
