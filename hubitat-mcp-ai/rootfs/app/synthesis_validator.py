@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from typing import Any
 
 from causal_attribution_guard import (
@@ -20,6 +21,36 @@ from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from performance_evidence_first import guard_evidence_first_performance
 from performance_live_semantic_guard import guard_live_performance_semantics
+
+
+_PERFORMANCE_REPAIR_ISSUES = {
+    "performance_log_causality",
+    "performance_live_semantics",
+    "performance_evidence_first",
+}
+_PERFORMANCE_REPAIR_TRACE: ContextVar[tuple[str, ...]] = ContextVar(
+    "performance_validation_issue_trace",
+    default=(),
+)
+
+
+def _record_performance_repair_issues(issues: list[str]) -> None:
+    current = list(_PERFORMANCE_REPAIR_TRACE.get())
+    seen = set(current)
+    for issue in issues:
+        root = str(issue or "").split(":", 1)[0]
+        if root in _PERFORMANCE_REPAIR_ISSUES and root not in seen:
+            current.append(root)
+            seen.add(root)
+    _PERFORMANCE_REPAIR_TRACE.set(tuple(current))
+
+
+def consume_performance_repair_issues() -> tuple[str, ...]:
+    """Return and clear request-local fixed performance validator labels."""
+
+    issues = tuple(_PERFORMANCE_REPAIR_TRACE.get())
+    _PERFORMANCE_REPAIR_TRACE.set(())
+    return issues
 
 
 def validate_synthesis(
@@ -125,7 +156,11 @@ def validate_synthesis(
             f"causal_timeline_coverage:{missing_ids}:{missing_starts}"
         )
 
+    _record_performance_repair_issues(issues)
     return corrected, issues
 
 
-__all__ = ["validate_synthesis"]
+__all__ = [
+    "consume_performance_repair_issues",
+    "validate_synthesis",
+]
