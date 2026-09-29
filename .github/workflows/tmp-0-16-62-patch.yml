@@ -29,8 +29,8 @@ jobs:
           old_relation = r'''r"(?i)\b(?:is|are|was|were)\s+(?:the\s+)?(?:primary|main|major|direct)\s+"'''
           new_relation = r'''r"(?i)\b(?:is|are|was|were)\s+(?:(?:likely|probably|clearly|directly)\s+)?(?:the\s+)?(?:primary|main|major|direct)\s+"'''
           relation_count = semantic.count(old_relation)
-          if relation_count != 3:
-              raise SystemExit(f'expected 3 outcome relation patterns, found {relation_count}')
+          if relation_count != 2:
+              raise SystemExit(f'expected 2 outcome relation patterns, found {relation_count}')
           semantic = semantic.replace(old_relation, new_relation)
           old_prefix = '''            prefix = sentence[: raw_relation.start()].rstrip(" ,;:-")\n            if prefix:\n                return (\n                    prefix\n                    + "; this is a measured performance concern, but the current statistics do not establish "\n                    + "that it causes hub lag, stutter, congestion, or instability."\n                )'''
           new_prefix = '''            prefix = sentence[: raw_relation.start()].rstrip(" ,;:-")\n            prefix = re.sub(r"(?i)\\b(?:and|which|so|therefore|thus)\\s*$", "", prefix).rstrip(" ,;:-")\n            has_measurement = re.search(\n                r"(?i)(?:\\d[\\d,.]*(?:-\\d[\\d,.]*)?\\s*(?:%|ms|s|sec(?:ond)?s?|mb)|"\n                r"\\d[\\d,.]*\\s+calls?\\b|\\bmeasured load\\b)",\n                re.sub(r"[*_`]", "", prefix),\n            )\n            if prefix and has_measurement:\n                return (\n                    prefix\n                    + "; this is a measured performance concern, but the current statistics do not establish "\n                    + "that it causes hub lag, stutter, congestion, or instability."\n                )'''
