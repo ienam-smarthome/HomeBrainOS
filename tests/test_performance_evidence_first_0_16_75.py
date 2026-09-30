@@ -143,7 +143,8 @@ def test_01675_validator_adds_evidence_first_issue() -> None:
 def test_01675_contract_forbids_unobserved_mechanisms_without_config() -> None:
     contract = build_performance_synthesis_contract(_performance_evidence())
     assert "There is no trusted assistant draft" in contract
-    assert "Do not introduce those mechanisms even conditionally" in contract
+    assert "no bounded source-scoped adaptive log evidence" in contract
+    assert "Do not invent a deeper mechanism merely from the performance ranking" in contract
     assert "No configuration or implementation source was read" in contract
     assert "inspection-first" in contract
     assert "Do not say optimisation is unnecessary" in contract

@@ -79,6 +79,11 @@ _COUNTER_LABELS = (
     ("semantic_needs_input", "Semantic clarifications"),
     ("broad_performance_host_plan", "Host-planned performance paths"),
     ("broad_performance_host_plan_jobs", "Host-planned scheduler reads"),
+    ("performance_adaptive_expansion", "Adaptive diagnostic expansions"),
+    ("performance_adaptive_reads", "Adaptive diagnostic reads"),
+    ("performance_adaptive_device_target", "Adaptive device targets"),
+    ("performance_adaptive_app_target", "Adaptive app targets"),
+    ("performance_adaptive_read_failures", "Adaptive diagnostic read failures"),
     ("performance_api_deterministic_repair", "Deterministic performance repairs"),
 )
 

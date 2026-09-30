@@ -3,6 +3,12 @@
 The model still authors the final analysis. This module only chooses the bounded,
 authoritative source set before synthesis so broad performance requests do not pay
 for unrelated hub-health snapshots, tool discovery, or speculative evidence paths.
+
+0.16.81 adds one bounded adaptive stage after the accepted baseline reads. Numeric
+performance outliers are retrieval triggers only -- never health classifications.
+When a strong device/app outlier is present, HomeBrain may read a longer log window
+scoped server-side to at most one device and one app. No provider planning round is
+added and the final evidence-first synthesis remains the only model round.
 """
 
 from __future__ import annotations
@@ -40,6 +46,14 @@ _SCHEDULER_TERMS = (
     "polling",
 )
 
+# Retrieval-policy thresholds only. They decide whether a bounded diagnostic read
+# is worth its cost; they are not user-facing health/severity thresholds.
+_ADAPTIVE_BUSY_PCT = 20.0
+_ADAPTIVE_TOTAL_PCT = 15.0
+_ADAPTIVE_AVERAGE_MS = 2500.0
+_ADAPTIVE_SINCE = "6h"
+_ADAPTIVE_LIMIT = 120
+
 
 def is_broad_performance_request(text: str) -> bool:
     """Return True only for broad performance analysis that asks for improvements."""
@@ -57,13 +71,86 @@ def wants_scheduler_evidence(text: str) -> bool:
     return any(token in folded for token in _SCHEDULER_TERMS)
 
 
-async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
-    """Collect the bounded performance source set without a provider planning round.
+def _number(value: Any) -> float:
+    if isinstance(value, bool) or value in (None, ""):
+        return 0.0
+    text = str(value).strip().replace(",", "")
+    if text.endswith("%"):
+        text = text[:-1].strip()
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
 
-    The returned observed outcome deliberately contains only a placeholder message.
-    `performance_api_finalizer` consumes the normalized ToolExecutor packet and
-    performs the one evidence-first model synthesis that writes the user answer.
-    """
+
+def _adaptive_score(row: dict[str, Any]) -> tuple[bool, float]:
+    """Return retrieval eligibility/score without declaring the row unhealthy."""
+
+    busy = _number(row.get("pctBusy"))
+    total = _number(row.get("pctTotal"))
+    average = _number(row.get("averageMs"))
+    strong = (
+        busy >= _ADAPTIVE_BUSY_PCT
+        or total >= _ADAPTIVE_TOTAL_PCT
+        or average >= _ADAPTIVE_AVERAGE_MS
+    )
+    if not strong:
+        return False, 0.0
+
+    # Prefer broad/sustained busy share over one very long average call, while a
+    # multi-second average still independently qualifies for investigation.
+    score = busy * 4.0 + total * 3.0 + min(average / 1000.0, 30.0)
+    if busy >= _ADAPTIVE_BUSY_PCT:
+        score += 100.0
+    if total >= _ADAPTIVE_TOTAL_PCT:
+        score += 80.0
+    if average >= _ADAPTIVE_AVERAGE_MS:
+        score += 60.0
+    return True, score
+
+
+def _strongest_target(rows: Any, *, kind: str) -> dict[str, str] | None:
+    if not isinstance(rows, list):
+        return None
+    winner: dict[str, Any] | None = None
+    winner_score = -1.0
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        identifier = str(raw.get("id") or "").strip()
+        name = str(raw.get("name") or "").strip()
+        if not identifier or not name:
+            continue
+        eligible, score = _adaptive_score(raw)
+        if eligible and score > winner_score:
+            winner = raw
+            winner_score = score
+    if winner is None:
+        return None
+    return {
+        "kind": kind,
+        "id": str(winner.get("id") or "").strip(),
+        "name": str(winner.get("name") or "").strip(),
+    }
+
+
+def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, str]]:
+    """Select at most one strong device and one strong app for scoped log reads."""
+
+    if not isinstance(performance_data, dict):
+        return []
+    targets: list[dict[str, str]] = []
+    device = _strongest_target(performance_data.get("deviceStats"), kind="device")
+    app = _strongest_target(performance_data.get("appStats"), kind="app")
+    if device is not None:
+        targets.append(device)
+    if app is not None:
+        targets.append(app)
+    return targets
+
+
+async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
+    """Collect baseline evidence plus bounded strong-outlier diagnostics."""
 
     async def collect() -> str:
         agent.request_metrics.increment("broad_performance_host_plan")
@@ -88,6 +175,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
         )
 
         failed: list[str] = []
+        performance_data: Any = None
         for gateway, arguments in source_specs:
             execution = await agent.executor.execute(
                 gateway,
@@ -97,6 +185,38 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             )
             if not execution.success:
                 failed.append(str(arguments.get("tool") or gateway))
+                continue
+            result = getattr(execution, "result", None)
+            if arguments.get("tool") == "hub_get_performance_stats" and result is not None:
+                performance_data = getattr(result, "data", None)
+
+        targets = select_adaptive_log_targets(performance_data)
+        if targets:
+            agent.request_metrics.increment("performance_adaptive_expansion")
+        for target in targets:
+            scope_key = "deviceId" if target["kind"] == "device" else "appId"
+            metric_key = (
+                "performance_adaptive_device_target"
+                if target["kind"] == "device"
+                else "performance_adaptive_app_target"
+            )
+            agent.request_metrics.increment(metric_key)
+            agent.request_metrics.increment("performance_adaptive_reads")
+            execution = await agent.executor.execute(
+                "hub_manage_logs",
+                {
+                    "tool": "hub_get_logs",
+                    "args": {
+                        scope_key: target["id"],
+                        "since": _ADAPTIVE_SINCE,
+                        "limit": _ADAPTIVE_LIMIT,
+                    },
+                },
+                supports_live_claim=True,
+                evidence_kind="host_planned_performance_diagnostic",
+            )
+            if not execution.success:
+                agent.request_metrics.increment("performance_adaptive_read_failures")
 
         if failed:
             return (
@@ -114,5 +234,6 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
 __all__ = [
     "collect_broad_performance_outcome",
     "is_broad_performance_request",
+    "select_adaptive_log_targets",
     "wants_scheduler_evidence",
 ]

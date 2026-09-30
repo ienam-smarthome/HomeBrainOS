@@ -74,6 +74,52 @@ def _has_job_evidence(evidence: list[dict[str, Any]]) -> bool:
     )
 
 
+def _adaptive_log_excerpt(evidence: list[dict[str, Any]]) -> str:
+    """Render bounded scoped diagnostic rows for the one final synthesis pass."""
+
+    blocks: list[str] = []
+    for row in evidence:
+        if (
+            not isinstance(row, dict)
+            or row.get("success") is False
+            or str(row.get("evidence_kind") or "")
+            != "host_planned_performance_diagnostic"
+            or _sub_tool(row) != "hub_get_logs"
+        ):
+            continue
+        arguments = row.get("arguments")
+        arguments = arguments if isinstance(arguments, dict) else {}
+        inner = arguments.get("args")
+        inner = inner if isinstance(inner, dict) else arguments
+        scope = (
+            f"deviceId={inner.get('deviceId')}"
+            if inner.get("deviceId") not in (None, "")
+            else f"appId={inner.get('appId')}"
+            if inner.get("appId") not in (None, "")
+            else "scoped source"
+        )
+        details = row.get("details")
+        details = details if isinstance(details, dict) else {}
+        logs = details.get("logs")
+        rendered: list[str] = []
+        if isinstance(logs, list):
+            for item in logs[:10]:
+                if not isinstance(item, dict):
+                    continue
+                date = str(item.get("date") or "?").strip()
+                level = str(item.get("level") or "").strip().upper()
+                message = " ".join(str(item.get("message") or "").split())
+                if len(message) > 320:
+                    message = message[:317].rstrip() + "..."
+                if message:
+                    rendered.append(f"{date} [{level or 'LOG'}] {message}")
+        blocks.append(
+            f"SCOPED DIAGNOSTIC LOGS {scope} (requested window {inner.get('since') or '?'}):\n"
+            + ("\n".join(rendered) if rendered else "No bounded log rows were retained in the receipt.")
+        )
+    return "\n\n".join(blocks)
+
+
 def has_configuration_evidence(evidence: list[dict[str, Any]]) -> bool:
     """Return True only for an actual configuration/implementation read."""
 
@@ -121,20 +167,28 @@ def build_performance_synthesis_contract(evidence: list[dict[str, Any]]) -> str:
         else
         "No current-turn scheduler/job source is present. Do not state job counts, alignment, cadence, sessionTick/autoPoll scheduling, or scheduler conclusions in the final answer."
     )
+    adaptive_logs = _adaptive_log_excerpt(evidence)
+    adaptive_state = (
+        "\n- ADAPTIVE DIAGNOSTICS: the host performed bounded source-scoped follow-up reads because numeric performance rows crossed retrieval-policy thresholds. Those thresholds are not health/severity labels. Use the scoped rows to deepen the analysis. You may state a DIAGNOSTIC HYPOTHESIS only when multiple current-turn observations support a pattern. Label it as a hypothesis, use calibrated language such as 'consistent with', 'suggests', or 'possible', state what remains unproven, give a concrete verification step, and keep implementation mechanisms unconfirmed unless implementation/configuration evidence was actually read. A timeout/error/very long call can support a connectivity/stalled-I/O hypothesis; it does not by itself prove worker-thread blocking or the exact driver defect. For each material adaptively investigated outlier, prefer: Confirmed finding -> Diagnostic evidence -> Hypothesis -> Verification -> Action.\nHOST ADAPTIVE DIAGNOSTIC EVIDENCE\n"
+        + adaptive_logs
+        if adaptive_logs
+        else "\n- ADAPTIVE DIAGNOSTICS: no bounded source-scoped adaptive log evidence is present in this turn. Do not invent a deeper mechanism merely from the performance ranking."
+    )
     return (
         "HOST PERFORMANCE EVIDENCE-FIRST CONTRACT\n"
         "Synthesize directly from the HOST current-turn sources below. There is no trusted assistant draft in this synthesis context. "
-        "Every factual or causal statement must be supportable by one of these current-turn source classes.\n"
+        "Every confirmed factual or causal statement must be supportable by one of these current-turn source classes.\n"
         "- CANONICAL VALUES: when a normalized canonical field such as freeMemoryMB or databaseSizeMB is present alongside a raw/provenance field, report the canonical field and its unit; do not prefer the raw alias.\n"
         "- METRICS: report numeric values and explicit alert/state fields. An empty/no-alert result supports 'no active alert', not qualitative labels such as healthy, very healthy, normal, safe, stable, excellent, major, severe, or exceptional unless the source itself supplies that classification or a threshold.\n"
-        "- PERFORMANCE STATS: execution time, call count, busy percentage, stateSize, and returned ordering are measurements. Describe ordering literally (for example, highest returned pctTotal/busy value), not as 'primary consumer', 'highest impact', or a causal/resource judgment. A numeric stateSize is not 'large' or 'flagged large' unless the source supplies that classification/threshold. These measurements do not by themselves establish synchronous/blocking calls, timeouts, network reachability, hub stutter, delayed automations, background overhead, log growth, history slowdown, or another implementation mechanism. Do not introduce those mechanisms even conditionally as 'if X, it can Y' unless current-turn implementation evidence establishes X.\n"
+        "- PERFORMANCE STATS: execution time, call count, busy percentage, stateSize, and returned ordering are measurements. Describe ordering literally (for example, highest returned pctTotal/busy value), not as 'primary consumer', 'highest impact', or a causal/resource judgment. A numeric stateSize is not 'large' or 'flagged large' unless the source supplies that classification/threshold. These measurements do not by themselves establish synchronous/blocking calls, timeouts, network reachability, hub stutter, delayed automations, background overhead, log growth, history slowdown, or another implementation mechanism.\n"
         "- JOBS: a job list establishes names/timestamps/cadence returned by the tool. Report shared timestamps directly rather than labeling the cluster high/severe/massive unless a source threshold does so. It does not establish CPU spikes/load, UI delay, contention, or a benefit from moving/staggering/offsetting jobs. "
         + job_state
         + "\n"
         "- LOGS: recent log rows are observations. Report observed cadence numerically when possible instead of inventing a 'high-frequency' threshold. Do not manually derive an exact update/event count from raw log rows unless a current-turn tool or host-produced summary explicitly supplies that exact filtered count; otherwise say 'multiple' and report the observed time span/cadence. An explicit error message can be reported as that error/failed endpoint operation, but it does not automatically explain longer-window performance statistics.\n"
         "- RECOMMENDATIONS: preserve useful measured facts and recommend the next evidence-gathering/configuration inspection step. Without configuration evidence, do not say a call/report/job volume should or can be reduced; ask whether it is expected/configurable. Do not say optimisation is unnecessary merely because no alert is active.\n"
         + config_state
-        + "\nDo not add an 'Impact' statement that depends on an unobserved mechanism. Do not use dramatic qualitative labels when the source provides only numbers. Separate measured observations from any genuinely evidence-backed interpretation."
+        + adaptive_state
+        + "\nDo not add an unlabeled 'Impact' statement that depends on an unobserved mechanism. Do not use dramatic qualitative labels when the source provides only numbers. Keep confirmed findings distinct from diagnostic hypotheses and make the missing proof explicit."
     )
 
 
