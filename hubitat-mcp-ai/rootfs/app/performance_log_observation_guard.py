@@ -1,9 +1,9 @@
-"""Preserve literal WARN/ERROR observations during performance validation.
+"""Preserve literal log observations and host-derived timing facts.
 
 Generic semantic guards should correct conclusions around a log observation, not
-rewrite the log payload itself. This module recognizes a cited Hubitat log source
-against current-turn `hub_get_logs` evidence, restores a concise literal message,
-and appends the evidence boundary as a separate sentence.
+rewrite the log payload itself. This module restores cited WARN/ERROR facts from
+current-turn `hub_get_logs` evidence and validates cadence/same-second wording
+against host-derived timing summaries produced from the full bounded log result.
 """
 
 from __future__ import annotations
@@ -23,6 +23,10 @@ _CAUSAL_OR_REPAIR = re.compile(
     r"returned\s+activity\s+is\s+worth\s+reviewing|performance\s+statistics)\b"
 )
 _NESTED_MESSAGE = re.compile(r'"message"\s*:\s*"(?P<message>[^"\\]*(?:\\.[^"\\]*)*)')
+_CADENCE_CLAIM = re.compile(
+    r"(?i)(?:approximately\s+|about\s+|roughly\s+)?every\s+(?P<seconds>\d+(?:\.\d+)?)\s*seconds?"
+)
+_SIMULTANEOUS = re.compile(r"(?i)\bsimultaneously\b")
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -91,17 +95,106 @@ def _log_rows(evidence: list[dict[str, Any]]) -> list[dict[str, str]]:
     return rows
 
 
+def _timing_facts(evidence: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    cadence: list[dict[str, Any]] = []
+    clusters: list[dict[str, Any]] = []
+    for receipt in evidence:
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("success") is False
+            or _sub_tool(receipt) != "hub_get_logs"
+        ):
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict):
+            continue
+        timing = details.get("hostDerivedTiming")
+        if not isinstance(timing, dict):
+            continue
+        raw_cadence = timing.get("cadence")
+        raw_clusters = timing.get("sameSecondClusters")
+        if isinstance(raw_cadence, list):
+            cadence.extend(row for row in raw_cadence if isinstance(row, dict))
+        if isinstance(raw_clusters, list):
+            clusters.extend(row for row in raw_clusters if isinstance(row, dict))
+    return cadence, clusters
+
+
+def _format_seconds(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.3f}".rstrip("0").rstrip(".")
+
+
+def _repair_timing_line(
+    line: str,
+    cadence: list[dict[str, Any]],
+    clusters: list[dict[str, Any]],
+) -> str:
+    repaired = line
+    comparable = re.sub(r"[*_`]", "", repaired).casefold()
+
+    for fact in cadence:
+        source_ref = str(fact.get("sourceRef") or "")
+        source_id = source_ref.split("|", 1)[1] if "|" in source_ref else ""
+        source = str(fact.get("source") or "")
+        signal = str(fact.get("signal") or "")
+        if signal and signal.casefold() not in comparable:
+            continue
+        if not (
+            (source_id and source_id.casefold() in comparable)
+            or (source and source.casefold() in comparable)
+        ):
+            continue
+        match = _CADENCE_CLAIM.search(repaired)
+        if match is None:
+            continue
+        claimed = float(match.group("seconds"))
+        cadence_seconds = fact.get("approxCadenceSeconds")
+        if cadence_seconds not in (None, ""):
+            expected = float(cadence_seconds)
+            if abs(claimed - expected) > max(0.5, expected * 0.05):
+                repaired = _CADENCE_CLAIM.sub(
+                    f"approximately every {_format_seconds(expected)} seconds",
+                    repaired,
+                    count=1,
+                )
+            break
+        gap_seconds = fact.get("observedGapSeconds")
+        if gap_seconds not in (None, ""):
+            repaired = _CADENCE_CLAIM.sub(
+                f"with an observed gap of {_format_seconds(gap_seconds)} seconds between the cited observations",
+                repaired,
+                count=1,
+            )
+            break
+
+    if _SIMULTANEOUS.search(repaired):
+        for cluster in clusters:
+            second = str(cluster.get("second") or "")
+            clock = second.rsplit(" ", 1)[-1] if second else ""
+            if clock and clock in repaired:
+                repaired = _SIMULTANEOUS.sub("within the same reported second", repaired, count=1)
+                break
+    return repaired
+
+
 def guard_performance_log_observations(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Restore only warning lines whose prose has crossed into causal/repair text."""
+    """Protect WARN/ERROR facts and correct model-authored log timing arithmetic."""
 
     original = str(message or "")
     if not original:
         return original, False
     observations = _log_rows(evidence)
-    if not observations:
+    cadence, clusters = _timing_facts(evidence)
+    if not observations and not cadence and not clusters:
         return original, False
 
     changed = False
@@ -123,11 +216,11 @@ def guard_performance_log_observations(
                     "does not establish that it caused the longer-window performance statistics."
                 )
                 break
-        if replacement is not None and replacement != core:
-            output.append(replacement + newline)
+        candidate = replacement if replacement is not None else core
+        candidate = _repair_timing_line(candidate, cadence, clusters)
+        if candidate != core:
             changed = True
-        else:
-            output.append(core + newline)
+        output.append(candidate + newline)
     corrected = "".join(output)
     return corrected, changed
 
