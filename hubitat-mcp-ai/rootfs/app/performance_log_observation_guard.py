@@ -172,7 +172,7 @@ def _canonical_timing_text(fact: dict[str, Any]) -> str:
         if median_seconds not in (None, ""):
             pieces.append(f"median interval {_format_seconds(median_seconds)} seconds")
         if approx_seconds not in (None, ""):
-            pieces.append(f"approximate cadence {_format_seconds(approx_seconds)} seconds")
+            pieces.append(f"approximately every {_format_seconds(approx_seconds)} seconds")
         if min_seconds not in (None, "") and max_seconds not in (None, ""):
             pieces.append(
                 f"observed range {_format_seconds(min_seconds)}–{_format_seconds(max_seconds)} seconds"
