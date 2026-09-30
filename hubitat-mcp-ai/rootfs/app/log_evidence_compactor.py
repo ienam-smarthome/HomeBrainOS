@@ -155,6 +155,21 @@ def _round_seconds(milliseconds: float) -> float | int:
     return int(rounded) if rounded.is_integer() else rounded
 
 
+def _approx_cadence_seconds(milliseconds: float) -> float | int:
+    """Return a human-scale cadence while preserving precise interval provenance.
+
+    Cadence is explicitly approximate. Small timestamp jitter around a whole second
+    should therefore render as that whole second (for example 60.01 -> 60), while
+    min/max/median and one-off observed gaps keep their more precise values.
+    """
+
+    seconds = milliseconds / 1000.0
+    nearest = round(seconds)
+    if abs(seconds - nearest) <= 0.1:
+        return int(nearest)
+    return _round_seconds(milliseconds)
+
+
 def _timing_observations(logs: list[Any]) -> dict[str, Any]:
     """Derive bounded cadence/gap and same-second facts from authoritative timestamps."""
 
@@ -211,7 +226,7 @@ def _timing_observations(logs: list[Any]) -> dict[str, Any]:
                 }
             )
             if stable:
-                entry["approxCadenceSeconds"] = _round_seconds(median_ms)
+                entry["approxCadenceSeconds"] = _approx_cadence_seconds(median_ms)
         cadence.append(entry)
 
     cadence.sort(
