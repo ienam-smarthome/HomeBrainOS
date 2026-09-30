@@ -26,6 +26,8 @@ _NESTED_MESSAGE = re.compile(r'"message"\s*:\s*"(?P<message>[^"\\]*(?:\\.[^"\\]*
 _CADENCE_CLAIM = re.compile(
     r"(?i)(?:approximately\s+|about\s+|roughly\s+)?every\s+(?P<seconds>\d+(?:\.\d+)?)\s*seconds?"
 )
+_TIMING_WORD = re.compile(r"(?i)\b(?:cadence|interval|intervals|gap|every|seconds?)\b")
+_OBSERVED_CADENCE_HEADING = re.compile(r"(?i)observed\s+cadence")
 _SIMULTANEOUS = re.compile(r"(?i)\bsimultaneously\b")
 
 
@@ -130,6 +132,71 @@ def _format_seconds(value: Any) -> str:
     return f"{number:.3f}".rstrip("0").rstrip(".")
 
 
+def _timing_kind(fact: dict[str, Any]) -> str:
+    explicit = str(fact.get("timingKind") or "").strip().casefold()
+    if explicit in {"regular_cadence", "irregular_intervals", "observed_gap"}:
+        return explicit
+    if fact.get("observedGapSeconds") not in (None, ""):
+        return "observed_gap"
+    if fact.get("regularCadence") is True or fact.get("approxCadenceSeconds") not in (None, ""):
+        return "regular_cadence"
+    if fact.get("regularCadence") is False:
+        return "irregular_intervals"
+    return ""
+
+
+def _timing_subject_prefix(line: str) -> str:
+    """Preserve the model's bullet/source label while replacing only timing prose."""
+
+    marker = ":**"
+    if marker in line:
+        end = line.index(marker) + len(marker)
+        return line[:end]
+    colon = line.find(":")
+    if colon >= 0:
+        return line[: colon + 1]
+    match = _MARKDOWN_PREFIX.match(line)
+    return match.group("prefix").rstrip() if match is not None else ""
+
+
+def _canonical_timing_text(fact: dict[str, Any]) -> str:
+    kind = _timing_kind(fact)
+    median_seconds = fact.get("medianIntervalSeconds")
+    min_seconds = fact.get("minIntervalSeconds")
+    max_seconds = fact.get("maxIntervalSeconds")
+    approx_seconds = fact.get("approxCadenceSeconds")
+    gap_seconds = fact.get("observedGapSeconds")
+
+    if kind == "regular_cadence":
+        pieces = ["Regular cadence"]
+        if median_seconds not in (None, ""):
+            pieces.append(f"median interval {_format_seconds(median_seconds)} seconds")
+        if approx_seconds not in (None, ""):
+            pieces.append(f"approximate cadence {_format_seconds(approx_seconds)} seconds")
+        if min_seconds not in (None, "") and max_seconds not in (None, ""):
+            pieces.append(
+                f"observed range {_format_seconds(min_seconds)}–{_format_seconds(max_seconds)} seconds"
+            )
+        return "; ".join(pieces) + "."
+
+    if kind == "irregular_intervals":
+        pieces = ["Irregular observed intervals"]
+        if median_seconds not in (None, ""):
+            pieces.append(f"median {_format_seconds(median_seconds)} seconds")
+        if min_seconds not in (None, "") and max_seconds not in (None, ""):
+            pieces.append(
+                f"observed range {_format_seconds(min_seconds)}–{_format_seconds(max_seconds)} seconds"
+            )
+        return "; ".join(pieces) + ". No regular cadence was established."
+
+    if kind == "observed_gap" and gap_seconds not in (None, ""):
+        return (
+            f"Single observed gap: {_format_seconds(gap_seconds)} seconds between the cited observations. "
+            "This does not establish a recurring cadence."
+        )
+    return ""
+
+
 def _repair_timing_line(
     line: str,
     cadence: list[dict[str, Any]],
@@ -137,6 +204,14 @@ def _repair_timing_line(
 ) -> str:
     repaired = line
     comparable = re.sub(r"[*_`]", "", repaired).casefold()
+
+    plain = re.sub(r"[*_`]", "", repaired).strip().casefold()
+    if plain in {"observed cadence", "observed cadence:"} and any(
+        _timing_kind(fact) in {"irregular_intervals", "observed_gap"}
+        for fact in cadence
+    ):
+        repaired = _OBSERVED_CADENCE_HEADING.sub("Observed Timing", repaired, count=1)
+        comparable = re.sub(r"[*_`]", "", repaired).casefold()
 
     for fact in cadence:
         source_ref = str(fact.get("sourceRef") or "")
@@ -150,6 +225,15 @@ def _repair_timing_line(
             or (source and source.casefold() in comparable)
         ):
             continue
+        if not _TIMING_WORD.search(comparable):
+            continue
+
+        canonical = _canonical_timing_text(fact)
+        if canonical:
+            prefix = _timing_subject_prefix(repaired)
+            repaired = f"{prefix} {canonical}" if prefix else canonical
+            break
+
         match = _CADENCE_CLAIM.search(repaired)
         if match is None:
             continue
@@ -187,7 +271,7 @@ def guard_performance_log_observations(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Protect WARN/ERROR facts and correct model-authored log timing arithmetic."""
+    """Protect WARN/ERROR facts and correct model-authored log timing semantics."""
 
     original = str(message or "")
     if not original:
