@@ -155,19 +155,15 @@ def _round_seconds(milliseconds: float) -> float | int:
     return int(rounded) if rounded.is_integer() else rounded
 
 
-def _approx_cadence_seconds(milliseconds: float) -> float | int:
-    """Return a human-scale cadence while preserving precise interval provenance.
-
-    Cadence is explicitly approximate. Small timestamp jitter around a whole second
-    should therefore render as that whole second (for example 60.01 -> 60), while
-    min/max/median and one-off observed gaps keep their more precise values.
-    """
+def _approx_seconds(milliseconds: float) -> float | int:
+    """Return a human-scale cadence while retaining precise interval provenance."""
 
     seconds = milliseconds / 1000.0
     nearest = round(seconds)
     if abs(seconds - nearest) <= 0.1:
         return int(nearest)
-    return _round_seconds(milliseconds)
+    rounded = round(seconds, 2)
+    return int(rounded) if rounded.is_integer() else rounded
 
 
 def _timing_observations(logs: list[Any]) -> dict[str, Any]:
@@ -211,6 +207,7 @@ def _timing_observations(logs: list[Any]) -> dict[str, Any]:
             "last": ordered[-1].isoformat(sep=" ", timespec="milliseconds"),
         }
         if len(intervals_ms) == 1:
+            entry["timingKind"] = "observed_gap"
             entry["observedGapSeconds"] = _round_seconds(intervals_ms[0])
         else:
             median_ms = float(median(intervals_ms))
@@ -218,6 +215,7 @@ def _timing_observations(logs: list[Any]) -> dict[str, Any]:
             stable = all(abs(value - median_ms) <= tolerance_ms for value in intervals_ms)
             entry.update(
                 {
+                    "timingKind": "regular_cadence" if stable else "irregular_intervals",
                     "intervalCount": len(intervals_ms),
                     "medianIntervalSeconds": _round_seconds(median_ms),
                     "minIntervalSeconds": _round_seconds(min(intervals_ms)),
@@ -226,7 +224,7 @@ def _timing_observations(logs: list[Any]) -> dict[str, Any]:
                 }
             )
             if stable:
-                entry["approxCadenceSeconds"] = _approx_cadence_seconds(median_ms)
+                entry["approxCadenceSeconds"] = _approx_seconds(median_ms)
         cadence.append(entry)
 
     cadence.sort(
