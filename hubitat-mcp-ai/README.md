@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.78**.
+Current add-on version: **0.16.79**.
 
 ## Architecture
+
+0.16.79 keeps the accepted 0.16.78 host-planned three-read / one-synthesis performance path unchanged. The existing log evidence compactor now derives per-source/per-signal timing facts from the full bounded log result: stable cadence requires at least two observed intervals, two timestamps alone remain one observed gap, and same-second multi-source clusters carry their measured millisecond span. The log-observation guard uses those host facts as a precision backstop, so model-authored cadence arithmetic cannot silently turn a 60-second interval into 30 seconds and same-second observations are not promoted into literal simultaneity.
 
 0.16.78 keeps the 0.16.75 evidence-first final synthesis and 0.16.76-0.16.77 normalization/precision contracts, but moves evidence acquisition for broad performance+recommendation requests out of the exploratory model loop. The host now collects `hub_get_metrics`, `hub_get_performance_stats`, and one bounded `hub_get_logs` window directly through the existing `ToolExecutor`; `hub_get_jobs` is added only when the user's objective explicitly asks about scheduler/job/polling cadence. The model still authors the final analysis from those normalized sources.
 
@@ -64,10 +66,11 @@ A broad performance request that also asks for recommendations uses:
 8. An evidence-first synthesis contract explicitly states what metrics, performance stats, jobs, and logs can and cannot establish.
 9. Canonical normalized metric fields take precedence over raw provenance aliases; explicitly unit-labelled free memory is normalized to MB without guessing unlabeled units.
 10. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, job offsets, or reductions in observed call/report volume.
-11. Raw log rows support observations and cadence; exact event/update counts require an explicit tool/host filtered count rather than manual model counting.
-12. Literal WARN/ERROR observations cited in the answer are preserved from current-turn log evidence; causal boundaries are appended separately rather than replacing the observed message.
-13. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
-14. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
+11. Raw log rows support observations; host-derived timing summaries carry cadence/gap and same-second-cluster facts. Two timestamps alone establish one observed gap, not a recurring cadence.
+12. Exact event/update counts require an explicit tool/host filtered count rather than manual model counting.
+13. Literal WARN/ERROR observations cited in the answer are preserved from current-turn log evidence; causal boundaries are appended separately rather than replacing the observed message.
+14. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
+15. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
 
 The final answer must keep these distinctions explicit:
 
