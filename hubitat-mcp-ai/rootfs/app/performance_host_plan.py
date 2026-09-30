@@ -186,11 +186,9 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             if not execution.success:
                 failed.append(str(arguments.get("tool") or gateway))
                 continue
-            if (
-                arguments.get("tool") == "hub_get_performance_stats"
-                and execution.result is not None
-            ):
-                performance_data = execution.result.data
+            result = getattr(execution, "result", None)
+            if arguments.get("tool") == "hub_get_performance_stats" and result is not None:
+                performance_data = getattr(result, "data", None)
 
         targets = select_adaptive_log_targets(performance_data)
         if targets:
