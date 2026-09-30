@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.79**.
+Current add-on version: **0.16.80**.
 
 ## Architecture
+
+0.16.80 keeps the accepted 0.16.78 host-planned three-read / one-synthesis performance path and the 0.16.79 host-derived timing arithmetic unchanged. Host timing rows now carry an explicit `timingKind` classification: `regular_cadence`, `irregular_intervals`, or `observed_gap`. The final log-observation guard treats that host classification as authoritative: irregular series cannot be presented as cadence, a two-point sample remains one observed gap, and mixed timing sections use a neutral `Observed Timing` heading rather than grouping every median interval under `Observed Cadence`.
 
 0.16.79 keeps the accepted 0.16.78 host-planned three-read / one-synthesis performance path unchanged. The existing log evidence compactor now derives per-source/per-signal timing facts from the full bounded log result: stable cadence requires at least two observed intervals, two timestamps alone remain one observed gap, and same-second multi-source clusters carry their measured millisecond span. The log-observation guard uses those host facts as a precision backstop, so model-authored cadence arithmetic cannot silently turn a 60-second interval into 30 seconds and same-second observations are not promoted into literal simultaneity.
 
@@ -66,7 +68,7 @@ A broad performance request that also asks for recommendations uses:
 8. An evidence-first synthesis contract explicitly states what metrics, performance stats, jobs, and logs can and cannot establish.
 9. Canonical normalized metric fields take precedence over raw provenance aliases; explicitly unit-labelled free memory is normalized to MB without guessing unlabeled units.
 10. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, job offsets, or reductions in observed call/report volume.
-11. Raw log rows support observations; host-derived timing summaries carry cadence/gap and same-second-cluster facts. Two timestamps alone establish one observed gap, not a recurring cadence.
+11. Raw log rows support observations; host-derived timing summaries carry authoritative timing kinds: regular cadence, irregular repeated intervals, or a single observed gap. Only `regular_cadence` may be presented as recurring cadence; `irregular_intervals` must remain median/range observations, and `observed_gap` must not be promoted into recurrence.
 12. Exact event/update counts require an explicit tool/host filtered count rather than manual model counting.
 13. Literal WARN/ERROR observations cited in the answer are preserved from current-turn log evidence; causal boundaries are appended separately rather than replacing the observed message.
 14. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
