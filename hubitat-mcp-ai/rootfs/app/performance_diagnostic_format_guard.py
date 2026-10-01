@@ -5,9 +5,14 @@ child diagnostic fields are recognized by semantic role rather than exact label
 text, and timing statements are rendered atomically from one host timing record
 so a source/signal can never inherit another signal's cadence numbers.
 
-0.16.86 also treats the host's canonical "non-diagnostic observations" wording as
-a structural contradiction when the same scoped target is now classified as a
-real diagnostic signal (for example after parsing a comma-formatted long call).
+0.16.86 treats stale "non-diagnostic observations" wording as a structural
+contradiction once a scoped target upgrades to `diagnostic_signal`.
+
+0.16.87 distinguishes the signal before framing the hypothesis: timeout/reachability
+evidence may support connectivity/failure reasoning, while explicit very-long method
+WARNs support a stalled/excessively-long-running-operation hypothesis. Neither proves
+the exact implementation cause, worker-thread blocking, network cause, or downstream
+user impact.
 """
 
 from __future__ import annotations
@@ -22,12 +27,8 @@ from performance_diagnostic_evidence_gate import classify_adaptive_diagnostics
 _MARKDOWN_HEADING = re.compile(r"^\s*#{2,6}\s+(?P<title>.+?)\s*$")
 _BOLD_SECTION = re.compile(r"^\s*\*\*(?P<title>[^*]+?)\*\*\s*$")
 _NUMBERED_ENTITY_TITLE = re.compile(r"^\s*\d+[.)]\s+.+$")
-_BULLET_LABEL = re.compile(
-    r"^(?P<prefix>\s*[-*+]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$"
-)
-_NUMBERED_LABEL = re.compile(
-    r"^(?P<prefix>\s*\d+[.)]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$"
-)
+_BULLET_LABEL = re.compile(r"^(?P<prefix>\s*[-*+]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$")
+_NUMBERED_LABEL = re.compile(r"^(?P<prefix>\s*\d+[.)]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$")
 _INFERENCE_LANGUAGE = re.compile(
     r"(?i)\b(?:suggests?|indicates?|consistent\s+with|likely|possibly|possible\s+|"
     r"may\s+be\s+due\s+to|could\s+be\s+due\s+to|appears\s+to\s+be|points?\s+to)\b"
@@ -46,16 +47,12 @@ _MECHANISM_ACTION = re.compile(
     r"(?:network\s+connectivity|driver\s+settings?|poll(?:ing)?\s+interval|timeout|retries?|"
     r"api\s+response|api\s+response\s+logs?|mdns|vlan|dhcp)\b"
 )
-_FALSE_NO_SCOPED_EVIDENCE = re.compile(
-    r"(?i)\bno\s+target-scoped\s+diagnostic\s+evidence\s+was\s+read\b"
-)
+_FALSE_NO_SCOPED_EVIDENCE = re.compile(r"(?i)\bno\s+target-scoped\s+diagnostic\s+evidence\s+was\s+read\b")
 _CANONICAL_NON_DIAGNOSTIC_SCOPED = re.compile(
     r"(?i)\btarget-scoped\s+diagnostic\s+read\s+returned\s+\d+\s+non-diagnostic\s+log\s+observation"
 )
 _COLLECT_SCOPED_EVIDENCE = re.compile(r"(?i)\bcollect\s+target-scoped\s+diagnostic\s+evidence\b")
-_PER_SECOND_RATE = re.compile(
-    r"(?i)\b(?P<count>\d+)\s+(?:events?|updates?|rows?)\s+per\s+second\b"
-)
+_PER_SECOND_RATE = re.compile(r"(?i)\b(?P<count>\d+)\s+(?:events?|updates?|rows?)\s+per\s+second\b")
 _SIMULTANEOUS_REPORTING = re.compile(r"(?i)\bsimultaneous(?:ly)?\s+reporting\b")
 _SIMULTANEOUS = re.compile(r"(?i)\bsimultaneously\b")
 _MEMORY_TRIGGER_PROMOTION = re.compile(
@@ -114,8 +111,6 @@ def _render_with_label(line: str, body: str) -> str:
 
 
 def _child_role(label: str) -> str | None:
-    """Map free-form model labels to stable diagnostic field roles."""
-
     folded = re.sub(r"[^a-z0-9]+", " ", str(label or "").casefold()).strip()
     if not folded:
         return None
@@ -143,8 +138,7 @@ def _fmt_seconds(value: Any) -> str:
         number = float(value)
     except (TypeError, ValueError):
         return str(value)
-    rendered = f"{number:.3f}".rstrip("0").rstrip(".")
-    return rendered or "0"
+    return f"{number:.3f}".rstrip("0").rstrip(".") or "0"
 
 
 def _timing_facts(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -164,10 +158,8 @@ def _timing_facts(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _regular_cadence_facts(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
-        fact
-        for fact in _timing_facts(evidence)
-        if str(fact.get("timingKind") or "").casefold() == "regular_cadence"
-        or fact.get("regularCadence") is True
+        fact for fact in _timing_facts(evidence)
+        if str(fact.get("timingKind") or "").casefold() == "regular_cadence" or fact.get("regularCadence") is True
     ]
 
 
@@ -193,22 +185,35 @@ def _render_timing_fact(fact: dict[str, Any]) -> str:
         maximum = _fmt_seconds(fact.get("maxIntervalSeconds"))
         approx = fact.get("approxCadenceSeconds")
         approx_text = _fmt_seconds(approx if approx is not None else fact.get("medianIntervalSeconds"))
-        return (
-            f"{subject} — Regular cadence; median interval {median} seconds; approximately every "
-            f"{approx_text} seconds; observed range {minimum}–{maximum} seconds."
-        )
+        return f"{subject} — Regular cadence; median interval {median} seconds; approximately every {approx_text} seconds; observed range {minimum}–{maximum} seconds."
     if kind == "irregular_intervals":
         median = _fmt_seconds(fact.get("medianIntervalSeconds"))
         minimum = _fmt_seconds(fact.get("minIntervalSeconds"))
         maximum = _fmt_seconds(fact.get("maxIntervalSeconds"))
-        return (
-            f"{subject} — Irregular observed intervals; median {median} seconds; observed range "
-            f"{minimum}–{maximum} seconds. No regular cadence was established."
-        )
+        return f"{subject} — Irregular observed intervals; median {median} seconds; observed range {minimum}–{maximum} seconds. No regular cadence was established."
     if kind == "observed_gap":
         gap = _fmt_seconds(fact.get("observedGapSeconds"))
         return f"{subject} — Single observed gap of {gap} seconds; no recurring cadence is established."
     return subject
+
+
+def _diagnostic_signal_text(target: dict[str, Any]) -> tuple[str, str]:
+    failures = [str(item) for item in target.get("failureSignals") or [] if str(item)]
+    long_count = int(target.get("longCallCount") or 0)
+    long_min, long_max = target.get("longCallMinMs"), target.get("longCallMaxMs")
+    warn_count = int(target.get("longCallWarnCount") or 0)
+    parts = list(failures)
+    if long_count and long_min not in (None, "") and long_max not in (None, ""):
+        level = "WARN/ERROR " if warn_count else ""
+        parts.append(f"{level}very long operation durations {long_min}–{long_max} ms")
+    signal_text = ", ".join(dict.fromkeys(parts)) or "an explicit diagnostic signal"
+    if long_count and not failures:
+        hypothesis = "a calibrated stalled/excessively-long-running-operation hypothesis"
+    elif failures and not long_count:
+        hypothesis = "a calibrated connectivity/failure hypothesis"
+    else:
+        hypothesis = "a calibrated hypothesis consistent with the observed failure and long-operation signals"
+    return signal_text, hypothesis
 
 
 def _evidence_summary(target: dict[str, Any]) -> str:
@@ -217,33 +222,16 @@ def _evidence_summary(target: dict[str, Any]) -> str:
     classification = str(target.get("classification") or "")
     activity = str(target.get("activityLabel") or "repeated scoped activity")
     if classification == "diagnostic_signal":
-        signals = [str(item) for item in target.get("failureSignals") or [] if str(item)]
-        signals.extend(
-            f"very long call {value} ms" for value in (target.get("longCallMs") or [])[:3]
-        )
-        signal_text = ", ".join(dict.fromkeys(signals)) or "an explicit diagnostic signal"
+        signal_text, hypothesis = _diagnostic_signal_text(target)
         return (
-            f"The scoped diagnostic read returned {count} log rows in {window}, including "
-            f"explicit diagnostic signal(s): {signal_text}. These observations support a calibrated "
-            "failure/connectivity hypothesis, but do not prove the exact implementation mechanism "
-            "or how much it contributes to the measured performance statistics."
+            f"The scoped diagnostic read returned {count} log rows in {window}, including explicit diagnostic signal(s): {signal_text}. "
+            f"These observations support {hypothesis}, but do not prove the exact implementation mechanism, worker-thread blocking, network cause, or how much the signal contributes to the measured performance statistics."
         )
     if classification == "repeated_activity":
-        cadence = (
-            "Host-derived timing established a regular cadence for this target."
-            if target.get("hasRegularCadence")
-            else "No host-derived regular cadence was established for this target."
-        )
-        return (
-            f"The scoped diagnostic read returned {count} log rows in {window}, including repeated "
-            f"`{activity}` activity. {cadence} The repeated observations do not establish that this "
-            "activity caused the measured performance statistics or reveal the implementation mechanism."
-        )
+        cadence = "Host-derived timing established a regular cadence for this target." if target.get("hasRegularCadence") else "No host-derived regular cadence was established for this target."
+        return f"The scoped diagnostic read returned {count} log rows in {window}, including repeated `{activity}` activity. {cadence} The repeated observations do not establish that this activity caused the measured performance statistics or reveal the implementation mechanism."
     if classification in {"sparse_or_neutral", "no_observations"}:
-        return (
-            f"The target-scoped diagnostic read returned {count} non-diagnostic log observation(s) "
-            "and did not establish a mechanism for this measured outlier; the mechanism remains unresolved."
-        )
+        return f"The target-scoped diagnostic read returned {count} non-diagnostic log observation(s) and did not establish a mechanism for this measured outlier; the mechanism remains unresolved."
     return f"The scoped diagnostic read returned {count} log rows in {window}."
 
 
@@ -253,10 +241,7 @@ def _diagnostic_interpretation(target: dict[str, Any]) -> str:
         return _evidence_summary(target)
     if classification == "repeated_activity":
         activity = str(target.get("activityLabel") or "repeated scoped activity")
-        return (
-            f"The scoped logs show repeated `{activity}` activity, but they do not establish that "
-            "this activity caused the measured performance statistics or reveal the implementation mechanism."
-        )
+        return f"The scoped logs show repeated `{activity}` activity, but they do not establish that this activity caused the measured performance statistics or reveal the implementation mechanism."
     if classification in {"sparse_or_neutral", "no_observations"}:
         return _evidence_summary(target)
     return ""
@@ -289,23 +274,16 @@ def _memory_event_facts(evidence: list[dict[str, Any]]) -> list[dict[str, str]]:
     return facts
 
 
-def guard_format_independent_performance_diagnostics(
-    message: str,
-    evidence: list[dict[str, Any]],
-) -> tuple[str, bool]:
-    """Enforce adaptive evidence boundaries without depending on model formatting."""
-
+def guard_format_independent_performance_diagnostics(message: str, evidence: list[dict[str, Any]]) -> tuple[str, bool]:
     original = str(message or "")
     if not original:
         return original, False
-
     targets = classify_adaptive_diagnostics(evidence)
     timing_facts = _timing_facts(evidence)
     regular_cadence = _regular_cadence_facts(evidence)
     clusters = _same_second_clusters(evidence)
     cluster_counts = {int(item.get("rowCount") or 0) for item in clusters}
     memory_facts = _memory_event_facts(evidence)
-
     in_diagnostics = False
     in_recommendations = False
     current_target: dict[str, Any] | None = None
@@ -314,7 +292,6 @@ def guard_format_independent_performance_diagnostics(
     for raw_line in original.splitlines(keepends=True):
         newline = "\n" if raw_line.endswith("\n") else ""
         line = raw_line[:-1] if newline else raw_line
-
         markdown_heading = _MARKDOWN_HEADING.match(line)
         bold_heading = _BOLD_SECTION.match(line)
         heading = markdown_heading or bold_heading
@@ -340,12 +317,9 @@ def guard_format_independent_performance_diagnostics(
                 current_target = None
         elif line_target is not None:
             current_target = line_target
-
         candidate = line
         effective_target = line_target or current_target
 
-        # Timing statements are atomic host facts. Never attach a source/signal to
-        # model-authored numbers that may belong to another signal.
         if parsed is not None and "cadence" in parsed[1].casefold():
             matched_fact = _match_timing_fact(parsed[2], timing_facts)
             if matched_fact is None and len(regular_cadence) == 1:
@@ -354,37 +328,18 @@ def guard_format_independent_performance_diagnostics(
                 candidate = _render_with_label(candidate, _render_timing_fact(matched_fact))
 
         if effective_target is not None and _FALSE_NO_SCOPED_EVIDENCE.search(candidate):
-            body = (
-                _diagnostic_interpretation(effective_target)
-                if role in {"hypothesis", "conclusion", "interpretation"}
-                else _evidence_summary(effective_target)
-            )
+            body = _diagnostic_interpretation(effective_target) if role in {"hypothesis", "conclusion", "interpretation"} else _evidence_summary(effective_target)
             candidate = _render_with_label(candidate, body)
 
-        if (
-            effective_target is not None
-            and str(effective_target.get("classification") or "") == "diagnostic_signal"
-            and _CANONICAL_NON_DIAGNOSTIC_SCOPED.search(candidate)
-        ):
+        if effective_target is not None and str(effective_target.get("classification") or "") == "diagnostic_signal" and _CANONICAL_NON_DIAGNOSTIC_SCOPED.search(candidate):
             candidate = _render_with_label(candidate, _diagnostic_interpretation(effective_target))
 
-        if (
-            effective_target is not None
-            and not bool(effective_target.get("hasRegularCadence"))
-            and _CADENCE_CLAIM.search(candidate)
-        ):
+        if effective_target is not None and not bool(effective_target.get("hasRegularCadence")) and _CADENCE_CLAIM.search(candidate):
             candidate = _render_with_label(candidate, _evidence_summary(effective_target))
 
-        if (
-            in_diagnostics
-            and not action_child
-            and (_INFERENCE_LANGUAGE.search(candidate) or _MECHANISM_LANGUAGE.search(candidate))
-        ):
+        if in_diagnostics and not action_child and (_INFERENCE_LANGUAGE.search(candidate) or _MECHANISM_LANGUAGE.search(candidate)):
             if effective_target is None:
-                candidate = _render_with_label(
-                    candidate,
-                    "No target-scoped diagnostic evidence was read for this outlier in this turn, so the mechanism remains unresolved.",
-                )
+                candidate = _render_with_label(candidate, "No target-scoped diagnostic evidence was read for this outlier in this turn, so the mechanism remains unresolved.")
             else:
                 interpretation = _diagnostic_interpretation(effective_target)
                 if interpretation:
@@ -393,22 +348,21 @@ def guard_format_independent_performance_diagnostics(
         if action_child and effective_target is not None and _COLLECT_SCOPED_EVIDENCE.search(candidate):
             classification = str(effective_target.get("classification") or "")
             if classification == "diagnostic_signal":
-                candidate = _render_with_label(
-                    candidate,
-                    "Use the existing scoped failure evidence to verify reachability/recovery and correlate those failure timestamps with app executions before attributing the measured performance percentage to the failures.",
-                )
+                failures = bool(effective_target.get("failureSignals"))
+                long_calls = int(effective_target.get("longCallCount") or 0)
+                if long_calls and not failures:
+                    action = "Use the existing scoped long-operation evidence to correlate the WARN timestamps with the integration/driver execution path and identify which operation is stalled; do not assume a network cause without separate connectivity evidence."
+                elif failures:
+                    action = "Use the existing scoped failure evidence to verify reachability/recovery and correlate those failure timestamps with app/device executions before attributing the measured performance percentage to the failures."
+                else:
+                    action = "Use the existing scoped diagnostic evidence before choosing a mechanism-specific investigation."
+                candidate = _render_with_label(candidate, action)
             elif classification in {"repeated_activity", "sparse_or_neutral"}:
-                candidate = _render_with_label(
-                    candidate,
-                    "The target was already scoped in this turn; inspect a different evidence source only if a mechanism-specific conclusion is still required.",
-                )
+                candidate = _render_with_label(candidate, "The target was already scoped in this turn; inspect a different evidence source only if a mechanism-specific conclusion is still required.")
 
         if (in_recommendations or in_diagnostics) and _MECHANISM_ACTION.search(candidate):
             if effective_target is None or str(effective_target.get("classification") or "") in {"sparse_or_neutral", "no_observations"}:
-                candidate = _render_with_label(
-                    candidate,
-                    "Collect target-scoped diagnostic evidence for this outlier before choosing a mechanism-specific network, driver, polling, retry, timeout, or API investigation.",
-                )
+                candidate = _render_with_label(candidate, "Collect target-scoped diagnostic evidence for this outlier before choosing a mechanism-specific network, driver, polling, retry, timeout, or API investigation.")
 
         def _rate_replacement(match: re.Match[str]) -> str:
             count = int(match.group("count"))
@@ -421,11 +375,7 @@ def guard_format_independent_performance_diagnostics(
 
         if memory_facts and _MEMORY_TRIGGER_PROMOTION.search(candidate):
             fact = memory_facts[0]
-            candidate = _render_with_label(
-                candidate,
-                f"The current log row shows app {fact['appId']} processing/logging a freeMemory event of {fact['value']} MB; it does not establish that its <200MB condition evaluated true or that an alert action fired.",
-            )
-
+            candidate = _render_with_label(candidate, f"The current log row shows app {fact['appId']} processing/logging a freeMemory event of {fact['value']} MB; it does not establish that its <200MB condition evaluated true or that an alert action fired.")
         output.append(candidate + newline)
 
     corrected = "".join(output)
