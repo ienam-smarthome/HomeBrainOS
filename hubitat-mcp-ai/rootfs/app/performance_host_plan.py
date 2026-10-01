@@ -14,6 +14,10 @@ added and the final evidence-first synthesis remains the only model round.
 from retrieval eligibility. A sustained near-threshold busy leader may now compete
 for the single adaptive slot, while the higher 20% threshold remains a priority
 bonus rather than an all-or-nothing admission rule.
+
+0.16.87 preserves the exact triggering performance row with each adaptive receipt.
+That provenance remains available even when the scoped log query returns zero rows,
+so target identity never has to be inferred from later model prose.
 """
 
 from __future__ import annotations
@@ -105,8 +109,6 @@ def _adaptive_score(row: dict[str, Any]) -> tuple[bool, float]:
     if not strong:
         return False, 0.0
 
-    # Prefer broad/sustained busy share over one very long average call, while a
-    # multi-second average still independently qualifies for investigation.
     score = busy * 4.0 + total * 3.0 + min(average / 1000.0, 30.0)
     if busy >= _ADAPTIVE_BUSY_PRIORITY_PCT:
         score += 100.0
@@ -157,6 +159,84 @@ def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, str]]:
     return targets
 
 
+def _performance_row_for_target(performance_data: Any, target: dict[str, str]) -> dict[str, Any] | None:
+    if not isinstance(performance_data, dict):
+        return None
+    key = "deviceStats" if target.get("kind") == "device" else "appStats"
+    rows = performance_data.get(key)
+    if not isinstance(rows, list):
+        return None
+    target_id = str(target.get("id") or "").strip()
+    target_name = str(target.get("name") or "").strip()
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("id") or "").strip() != target_id:
+            continue
+        if str(raw.get("name") or "").strip() != target_name:
+            continue
+        return raw
+    return None
+
+
+def _adaptive_target_details(performance_data: Any, target: dict[str, str]) -> dict[str, Any]:
+    row = _performance_row_for_target(performance_data, target)
+    selected_row: dict[str, Any] = {}
+    if isinstance(row, dict):
+        for key in ("id", "name", "pctBusy", "pctTotal", "averageMs", "count", "stateSize", "totalMs"):
+            if key in row:
+                selected_row[key] = row.get(key)
+    return {
+        "kind": str(target.get("kind") or ""),
+        "id": str(target.get("id") or ""),
+        "name": str(target.get("name") or ""),
+        "selectionSource": "hub_get_performance_stats",
+        "selectedFromExactRow": row is not None,
+        "performanceRow": selected_row,
+    }
+
+
+def _record_adaptive_execution(
+    agent: Any,
+    arguments: dict[str, Any],
+    execution: Any,
+    target: dict[str, str],
+    performance_data: Any,
+) -> None:
+    executor = getattr(agent, "executor", None)
+    recorder = getattr(executor, "evidence", None)
+    record = getattr(recorder, "record", None)
+    if not callable(record):
+        return
+
+    details: dict[str, Any] = {}
+    result = getattr(execution, "result", None)
+    details_fn = getattr(executor, "result_details", None)
+    if result is not None and callable(details_fn):
+        result_details = details_fn(result)
+        if isinstance(result_details, dict):
+            details.update(result_details)
+    details["adaptiveTarget"] = _adaptive_target_details(performance_data, target)
+
+    summary = f"adaptive diagnostic logs for {target.get('kind')} {target.get('id')} ({target.get('name')})"
+    summary_fn = getattr(executor, "result_summary", None)
+    if result is not None and callable(summary_fn):
+        summary = summary_fn(result)
+
+    record(
+        "hub_manage_logs",
+        arguments,
+        success=bool(getattr(execution, "success", False)),
+        elapsed_ms=int(getattr(execution, "elapsed_ms", 0) or 0),
+        summary=summary,
+        supports_live_claim=True,
+        evidence_kind="host_planned_performance_diagnostic",
+        mutates=False,
+        effect=getattr(execution, "effect", "read"),
+        details=details,
+    )
+
+
 async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
     """Collect baseline evidence plus bounded strong-outlier diagnostics."""
 
@@ -175,12 +255,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
         if wants_scheduler_evidence(user_prompt):
             agent.request_metrics.increment("broad_performance_host_plan_jobs")
             source_specs.append(("hub_manage_logs", {"tool": "hub_get_jobs"}))
-        source_specs.append(
-            (
-                "hub_manage_logs",
-                {"tool": "hub_get_logs", "args": {"since": "30m", "limit": 100}},
-            )
-        )
+        source_specs.append(("hub_manage_logs", {"tool": "hub_get_logs", "args": {"since": "30m", "limit": 100}}))
 
         failed: list[str] = []
         performance_data: Any = None
@@ -203,34 +278,26 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             agent.request_metrics.increment("performance_adaptive_expansion")
         for target in targets:
             scope_key = "deviceId" if target["kind"] == "device" else "appId"
-            metric_key = (
-                "performance_adaptive_device_target"
-                if target["kind"] == "device"
-                else "performance_adaptive_app_target"
-            )
+            metric_key = "performance_adaptive_device_target" if target["kind"] == "device" else "performance_adaptive_app_target"
             agent.request_metrics.increment(metric_key)
             agent.request_metrics.increment("performance_adaptive_reads")
+            arguments = {
+                "tool": "hub_get_logs",
+                "args": {scope_key: target["id"], "since": _ADAPTIVE_SINCE, "limit": _ADAPTIVE_LIMIT},
+            }
             execution = await agent.executor.execute(
                 "hub_manage_logs",
-                {
-                    "tool": "hub_get_logs",
-                    "args": {
-                        scope_key: target["id"],
-                        "since": _ADAPTIVE_SINCE,
-                        "limit": _ADAPTIVE_LIMIT,
-                    },
-                },
+                arguments,
                 supports_live_claim=True,
                 evidence_kind="host_planned_performance_diagnostic",
+                record_evidence=False,
             )
+            _record_adaptive_execution(agent, arguments, execution, target, performance_data)
             if not execution.success:
                 agent.request_metrics.increment("performance_adaptive_read_failures")
 
         if failed:
-            return (
-                "Host-planned performance evidence collection completed with failed "
-                "sources: " + ", ".join(failed) + "."
-            )
+            return "Host-planned performance evidence collection completed with failed sources: " + ", ".join(failed) + "."
         return "Host-planned performance evidence collection completed."
 
     async def direct_outcome() -> Any:
