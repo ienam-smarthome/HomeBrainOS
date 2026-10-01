@@ -5,6 +5,11 @@ performance review. This module makes the result of those reads authoritative:
 scoped evidence may support a calibrated hypothesis, repeated neutral activity may
 support an observed-pattern interpretation, and sparse/no diagnostic evidence must
 remain explicitly unresolved rather than inviting a plausible model guess.
+
+0.16.86 also treats explicit long-running Hubitat method observations as real
+diagnostic signals, including comma-formatted millisecond values such as
+``ran for 166,621ms``. Adaptive target metadata retained by the host is used as the
+authoritative target identity when a scoped read returns no log rows.
 """
 
 from __future__ import annotations
@@ -35,8 +40,12 @@ _FAILURE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?i)\bunreachable\b"), "unreachable"),
     (re.compile(r"(?i)\bfailed\s+to\s+(?:connect|reach|open|confirm|play)\b"), "failed operation"),
 )
+# Explicit operation-duration language. Hubitat renders large values with commas in
+# WARN rows (for example "method runQ ... ran for 166,621ms"), so numeric parsing
+# must remove separators instead of silently downgrading those rows to neutral logs.
 _LONG_CALL = re.compile(
-    r"(?i)\b(?:completed|took|elapsed|duration|runq|setvolume)[^\n]{0,120}?\b(?P<ms>\d{4,})\s*ms\b"
+    r"(?i)\b(?:ran\s+for|completed\s+in|took|elapsed(?:\s+time)?|duration(?:\s+of)?)\s*[:=]?\s*"
+    r"(?P<ms>\d[\d,]{3,})\s*ms\b"
 )
 _SIMULTANEOUS_REPORTING = re.compile(r"(?i)\bsimultaneous(?:ly)?\s+reporting\b")
 _SIMULTANEOUS = re.compile(r"(?i)\bsimultaneously\b")
@@ -71,6 +80,14 @@ def _raw_logs(row: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in logs if isinstance(item, dict)]
 
 
+def _adaptive_target_metadata(row: dict[str, Any]) -> dict[str, Any] | None:
+    details = row.get("details")
+    if not isinstance(details, dict):
+        return None
+    target = details.get("adaptiveTarget")
+    return target if isinstance(target, dict) else None
+
+
 def _target_name(logs: list[dict[str, Any]], *, scope_kind: str, scope_id: str) -> str:
     expected = "dev" if scope_kind == "device" else "app"
     names: Counter[str] = Counter()
@@ -85,6 +102,22 @@ def _target_name(logs: list[dict[str, Any]], *, scope_kind: str, scope_id: str) 
         if name:
             names[name] += 1
     return names.most_common(1)[0][0] if names else ""
+
+
+def _metadata_target_name(
+    row: dict[str, Any],
+    *,
+    scope_kind: str,
+    scope_id: str,
+) -> str:
+    target = _adaptive_target_metadata(row)
+    if not isinstance(target, dict):
+        return ""
+    if str(target.get("kind") or "") != scope_kind:
+        return ""
+    if str(target.get("id") or "") != scope_id:
+        return ""
+    return " ".join(str(target.get("name") or "").split()).strip()
 
 
 def _detail(raw_message: str) -> str:
@@ -160,16 +193,25 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
         details = row.get("details") if isinstance(row.get("details"), dict) else {}
         log_count = int(details.get("logCount") or retained_count)
         name = _target_name(logs, scope_kind=scope_kind, scope_id=scope_id)
+        if not name:
+            name = _metadata_target_name(row, scope_kind=scope_kind, scope_id=scope_id)
         joined = "\n".join(str(item.get("message") or "") for item in logs)
         failure_signals = [label for pattern, label in _FAILURE_PATTERNS if pattern.search(joined)]
         long_calls: list[int] = []
-        for match in _LONG_CALL.finditer(joined):
-            try:
-                value = int(match.group("ms"))
-            except (TypeError, ValueError):
-                continue
-            if value >= 5000:
+        warn_long_calls = 0
+        for item in logs:
+            raw_message = str(item.get("message") or "")
+            level = str(item.get("level") or "").strip().upper()
+            for match in _LONG_CALL.finditer(raw_message):
+                try:
+                    value = int(match.group("ms").replace(",", ""))
+                except (TypeError, ValueError):
+                    continue
+                if value < 5000:
+                    continue
                 long_calls.append(value)
+                if level in {"WARN", "WARNING", "ERROR"}:
+                    warn_long_calls += 1
         label, repeated_count = _activity_label(logs, name)
         timing = _timing_for_scope(row, scope_kind=scope_kind, scope_id=scope_id)
         has_regular_cadence = any(
@@ -187,6 +229,8 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
         else:
             classification = "no_observations"
 
+        metadata = _adaptive_target_metadata(row) or {}
+        sorted_long_calls = sorted(long_calls)
         targets.append(
             {
                 "scopeKind": scope_kind,
@@ -198,12 +242,32 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
                 "activityLabel": label,
                 "activityCount": repeated_count,
                 "failureSignals": failure_signals,
-                "longCallMs": sorted(set(long_calls)),
+                "longCallMs": sorted(set(sorted_long_calls)),
+                "longCallCount": len(sorted_long_calls),
+                "longCallWarnCount": warn_long_calls,
+                "longCallMinMs": sorted_long_calls[0] if sorted_long_calls else None,
+                "longCallMaxMs": sorted_long_calls[-1] if sorted_long_calls else None,
                 "hasRegularCadence": has_regular_cadence,
                 "requestedWindow": str(inner.get("since") or ""),
+                "selectedPerformanceRow": metadata.get("performanceRow") if isinstance(metadata, dict) else None,
+                "selectedFromExactRow": metadata.get("selectedFromExactRow") if isinstance(metadata, dict) else None,
             }
         )
     return targets
+
+
+def _diagnostic_signal_summary(target: dict[str, Any]) -> str:
+    parts = [str(item) for item in target.get("failureSignals") or [] if str(item)]
+    long_count = int(target.get("longCallCount") or 0)
+    long_min = target.get("longCallMinMs")
+    long_max = target.get("longCallMaxMs")
+    warn_count = int(target.get("longCallWarnCount") or 0)
+    if long_count and long_min not in (None, "") and long_max not in (None, ""):
+        prefix = "WARN/ERROR " if warn_count else ""
+        parts.append(
+            f"{prefix}very long operation durations in retained rows: {long_min}–{long_max} ms"
+        )
+    return ", ".join(dict.fromkeys(parts)) or "diagnostic signal"
 
 
 def render_diagnostic_evidence_gate(evidence: list[dict[str, Any]]) -> str:
@@ -225,10 +289,8 @@ def render_diagnostic_evidence_gate(evidence: list[dict[str, Any]]) -> str:
         classification = target["classification"]
         count = target["logCount"]
         if classification == "diagnostic_signal":
-            signals = [*target["failureSignals"]]
-            signals.extend(f"very long call {value} ms" for value in target["longCallMs"][:3])
             lines.append(
-                f"- {label}: classification=diagnostic_signal; scoped rows={count}; observed signals={', '.join(signals) or 'diagnostic signal'}. A calibrated hypothesis consistent with those observed signals is allowed, but the exact implementation defect, worker-thread blocking, and user-visible delay remain unproven without stronger evidence."
+                f"- {label}: classification=diagnostic_signal; scoped rows={count}; observed signals={_diagnostic_signal_summary(target)}. A calibrated hypothesis consistent with those observed signals is allowed, but the exact implementation defect, worker-thread blocking, and user-visible delay remain unproven without stronger evidence."
             )
         elif classification == "repeated_activity":
             activity = target.get("activityLabel") or "repeated activity"
@@ -286,6 +348,12 @@ def _evidence_summary(target: dict[str, Any]) -> str:
     count = int(target.get("logCount") or 0)
     window = str(target.get("requestedWindow") or "the requested window")
     activity = str(target.get("activityLabel") or "repeated activity")
+    if target.get("classification") == "diagnostic_signal":
+        return (
+            f"The scoped diagnostic read returned {count} log rows in {window}, including "
+            f"{_diagnostic_signal_summary(target)}. The observations support a calibrated hypothesis "
+            "consistent with those signals, but do not prove the exact implementation mechanism."
+        )
     if target.get("classification") == "repeated_activity":
         cadence = (
             "Host-derived timing established a regular cadence for this target."
@@ -300,7 +368,7 @@ def guard_performance_diagnostic_hypotheses(
     message: str,
     evidence: list[dict[str, Any]],
 ) -> tuple[str, bool]:
-    """Fail closed when final diagnostic prose outruns adaptive scoped evidence."""
+    """Legacy fail-closed helper retained for direct tests; production uses the consolidated guard."""
 
     original = str(message or "")
     if not original:
