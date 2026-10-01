@@ -3,9 +3,13 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.82**.
+Current add-on version: **0.16.83**.
 
 ## Architecture
+
+0.16.83 keeps the accepted 0.16.81/0.16.82 adaptive retrieval architecture unchanged and removes the remaining Markdown-shape dependency from diagnostic validation. Adaptive diagnostic claims are now checked by entity and claim type, so inline bullet hypotheses receive the same evidence boundaries as numbered diagnostic subheadings. Cadence claims are validated anywhere in the answer, mechanism-specific recommendations require supporting target-scoped evidence, one observed same-second cluster cannot become an `events per second` rate, and threshold-labelled event rows cannot be promoted into proof that a condition or alert action fired.
+
+The 0.16.83 live regression is based on the exact 0.16.82 output shape: SenseCap's unsupported `every 5 to 10 minutes` cadence is replaced with the authoritative scoped row count and host timing limitation; LG's unscoped network/response-time hypothesis and network/driver recommendation are replaced with an unresolved/evidence-gathering conclusion; the Octopus 16-row same-second cluster remains one observed cluster rather than a recurring rate; and the `Low Memory <200MB>` app event is described as event processing/logging rather than a proven threshold trigger.
 
 0.16.82 keeps the accepted 0.16.81 adaptive retrieval architecture unchanged and adds a structural diagnostic evidence gate after synthesis. Each successful adaptive scoped log receipt is classified as `diagnostic_signal`, `repeated_activity`, `sparse_or_neutral`, or `no_observations`. A real timeout/connectivity/very-long-call signal may support a calibrated hypothesis; repeated neutral activity may be reported as an observed pattern but not as a causal mechanism; sparse/no diagnostic evidence must be stated as unresolved. An outlier that was not one of the scoped adaptive targets may not receive a mechanism hypothesis merely because it looks plausible from performance statistics.
 
@@ -78,11 +82,12 @@ A broad performance request that also asks for recommendations uses:
 10. Canonical normalized metric fields take precedence over raw provenance aliases; explicitly unit-labelled free memory is normalized to MB without guessing unlabeled units.
 11. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, job offsets, or reductions in observed call/report volume.
 12. Raw log rows support observations; host-derived timing summaries carry authoritative timing kinds: regular cadence, irregular repeated intervals, or a single observed gap. Only `regular_cadence` may be presented as recurring cadence; `irregular_intervals` must remain median/range observations, and `observed_gap` must not be promoted into recurrence.
-13. Adaptive scoped evidence is structurally classified before a diagnostic conclusion is accepted. `diagnostic_signal` may support a labeled calibrated hypothesis; `repeated_activity` supports only an observed-pattern interpretation unless stronger evidence exists; `sparse_or_neutral` and `no_observations` require an explicit unresolved conclusion. An outlier without a scoped adaptive receipt is also unresolved rather than assigned a plausible mechanism.
-14. Exact event/update counts require an explicit tool/host filtered count rather than manual model counting.
+13. Adaptive scoped evidence is structurally classified before a diagnostic conclusion is accepted. `diagnostic_signal` may support a labeled calibrated hypothesis; `repeated_activity` supports only an observed-pattern interpretation unless stronger evidence exists; `sparse_or_neutral` and `no_observations` require an explicit unresolved conclusion. An outlier without a scoped adaptive receipt is also unresolved rather than assigned a plausible mechanism. These boundaries apply regardless of whether the model uses numbered headings, inline bullets, prose paragraphs, or another Markdown shape.
+14. Exact event/update counts require an explicit tool/host filtered count rather than manual model counting. A one-second cluster is not a recurring events-per-second rate.
 15. Literal WARN/ERROR observations cited in the answer are preserved from current-turn log evidence; causal boundaries are appended separately rather than replacing the observed message.
 16. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
 17. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
+18. A threshold label in an app name plus an `Event:` payload proves event processing/logging, not that the threshold condition evaluated true or an alert action fired.
 
 The final answer must keep these distinctions explicit:
 
@@ -97,7 +102,8 @@ The final answer must keep these distinctions explicit:
 - A high app busy percentage is measured; it does not by itself establish inefficient loops, excessive trigger frequency, or another implementation mechanism.
 - Empty/no-active health alerts support “no active alert”, not categorical “very healthy” or “no optimisation needed” conclusions.
 - Recent connectivity/error logs are observations; they may support a labeled hypothesis when aligned with the measured outlier, but they do not by themselves prove overall hub instability or the exact mechanism behind longer-window performance statistics.
-- Same-second clusters prove bounded timestamp clustering, not literal simultaneity.
+- Same-second clusters prove bounded timestamp clustering, not literal simultaneity or a recurring per-second rate.
+- A threshold-labelled event proves the event was observed/processed, not that the threshold condition fired.
 - `zwHealthy:false` is a warning/health observation, not sufficient evidence by itself to prescribe a Z-Wave repair.
 - `NETWORK_BACKUP_FAILED` proves an active alert, not imminent data loss or the status of other backup methods.
 
