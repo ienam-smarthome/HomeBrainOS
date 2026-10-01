@@ -9,6 +9,11 @@ performance outliers are retrieval triggers only -- never health classifications
 When a strong device/app outlier is present, HomeBrain may read a longer log window
 scoped server-side to at most one device and one app. No provider planning round is
 added and the final evidence-first synthesis remains the only model round.
+
+0.16.86 keeps that bounded architecture but removes a hard 20% busy-share cliff
+from retrieval eligibility. A sustained near-threshold busy leader may now compete
+for the single adaptive slot, while the higher 20% threshold remains a priority
+bonus rather than an all-or-nothing admission rule.
 """
 
 from __future__ import annotations
@@ -47,8 +52,11 @@ _SCHEDULER_TERMS = (
 )
 
 # Retrieval-policy thresholds only. They decide whether a bounded diagnostic read
-# is worth its cost; they are not user-facing health/severity thresholds.
-_ADAPTIVE_BUSY_PCT = 20.0
+# is worth its cost; they are not user-facing health/severity thresholds. Keep the
+# admission threshold below the priority threshold so small snapshot variation
+# around 20% cannot discard a sustained busy-share leader entirely.
+_ADAPTIVE_BUSY_READ_PCT = 15.0
+_ADAPTIVE_BUSY_PRIORITY_PCT = 20.0
 _ADAPTIVE_TOTAL_PCT = 15.0
 _ADAPTIVE_AVERAGE_MS = 2500.0
 _ADAPTIVE_SINCE = "6h"
@@ -90,7 +98,7 @@ def _adaptive_score(row: dict[str, Any]) -> tuple[bool, float]:
     total = _number(row.get("pctTotal"))
     average = _number(row.get("averageMs"))
     strong = (
-        busy >= _ADAPTIVE_BUSY_PCT
+        busy >= _ADAPTIVE_BUSY_READ_PCT
         or total >= _ADAPTIVE_TOTAL_PCT
         or average >= _ADAPTIVE_AVERAGE_MS
     )
@@ -100,7 +108,7 @@ def _adaptive_score(row: dict[str, Any]) -> tuple[bool, float]:
     # Prefer broad/sustained busy share over one very long average call, while a
     # multi-second average still independently qualifies for investigation.
     score = busy * 4.0 + total * 3.0 + min(average / 1000.0, 30.0)
-    if busy >= _ADAPTIVE_BUSY_PCT:
+    if busy >= _ADAPTIVE_BUSY_PRIORITY_PCT:
         score += 100.0
     if total >= _ADAPTIVE_TOTAL_PCT:
         score += 80.0
