@@ -6,9 +6,10 @@ scoped evidence may support a calibrated hypothesis, repeated neutral activity m
 support an observed-pattern interpretation, and sparse/no diagnostic evidence must
 remain explicitly unresolved rather than inviting a plausible model guess.
 
-0.16.86 also treats Hubitat's comma-formatted execution durations (for example
-``166,621ms``) as numeric long-call evidence instead of silently classifying those
-WARN rows as neutral observations.
+0.16.86 treats Hubitat's comma-formatted execution durations as numeric long-call
+evidence. 0.16.87 additionally preserves the selected performance-row identity in
+the adaptive receipt and distinguishes WARN-level long-running operations from
+connectivity/failure signals when framing a diagnostic hypothesis.
 """
 
 from __future__ import annotations
@@ -40,8 +41,8 @@ _FAILURE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?i)\bfailed\s+to\s+(?:connect|reach|open|confirm|play)\b"), "failed operation"),
 )
 _LONG_CALL = re.compile(
-    r"(?i)\b(?:completed|took|elapsed|duration|runq|setvolume)[^\n]{0,120}?\b"
-    r"(?P<ms>(?:\d{1,3}(?:,\d{3})+|\d{4,}))\s*ms\b"
+    r"(?i)\b(?:ran\s+for|completed\s+in|took|elapsed(?:\s+time)?|duration(?:\s+of)?)\s*[:=]?\s*"
+    r"(?P<ms>\d[\d,]{3,})\s*ms\b"
 )
 _SIMULTANEOUS_REPORTING = re.compile(r"(?i)\bsimultaneous(?:ly)?\s+reporting\b")
 _SIMULTANEOUS = re.compile(r"(?i)\bsimultaneously\b")
@@ -76,6 +77,14 @@ def _raw_logs(row: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in logs if isinstance(item, dict)]
 
 
+def _adaptive_target_metadata(row: dict[str, Any]) -> dict[str, Any] | None:
+    details = row.get("details")
+    if not isinstance(details, dict):
+        return None
+    target = details.get("adaptiveTarget")
+    return target if isinstance(target, dict) else None
+
+
 def _target_name(logs: list[dict[str, Any]], *, scope_kind: str, scope_id: str) -> str:
     expected = "dev" if scope_kind == "device" else "app"
     names: Counter[str] = Counter()
@@ -90,6 +99,15 @@ def _target_name(logs: list[dict[str, Any]], *, scope_kind: str, scope_id: str) 
         if name:
             names[name] += 1
     return names.most_common(1)[0][0] if names else ""
+
+
+def _metadata_target_name(row: dict[str, Any], *, scope_kind: str, scope_id: str) -> str:
+    target = _adaptive_target_metadata(row)
+    if not isinstance(target, dict):
+        return ""
+    if str(target.get("kind") or "") != scope_kind or str(target.get("id") or "") != scope_id:
+        return ""
+    return " ".join(str(target.get("name") or "").split()).strip()
 
 
 def _detail(raw_message: str) -> str:
@@ -132,11 +150,7 @@ def _timing_for_scope(row: dict[str, Any], *, scope_kind: str, scope_id: str) ->
         return []
     prefix = "dev" if scope_kind == "device" else "app"
     expected = f"{prefix}|{scope_id}"
-    return [
-        fact
-        for fact in cadence
-        if isinstance(fact, dict) and str(fact.get("sourceRef") or "") == expected
-    ]
+    return [fact for fact in cadence if isinstance(fact, dict) and str(fact.get("sourceRef") or "") == expected]
 
 
 def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -153,11 +167,9 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
             continue
         inner = _inner_args(row)
         if inner.get("deviceId") not in (None, ""):
-            scope_kind = "device"
-            scope_id = str(inner.get("deviceId"))
+            scope_kind, scope_id = "device", str(inner.get("deviceId"))
         elif inner.get("appId") not in (None, ""):
-            scope_kind = "app"
-            scope_id = str(inner.get("appId"))
+            scope_kind, scope_id = "app", str(inner.get("appId"))
         else:
             continue
         logs = _raw_logs(row)
@@ -165,21 +177,29 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
         details = row.get("details") if isinstance(row.get("details"), dict) else {}
         log_count = int(details.get("logCount") or retained_count)
         name = _target_name(logs, scope_kind=scope_kind, scope_id=scope_id)
+        if not name:
+            name = _metadata_target_name(row, scope_kind=scope_kind, scope_id=scope_id)
         joined = "\n".join(str(item.get("message") or "") for item in logs)
         failure_signals = [label for pattern, label in _FAILURE_PATTERNS if pattern.search(joined)]
         long_calls: list[int] = []
-        for match in _LONG_CALL.finditer(joined):
-            try:
-                value = int(match.group("ms").replace(",", ""))
-            except (TypeError, ValueError):
-                continue
-            if value >= 5000:
+        warn_long_calls = 0
+        for item in logs:
+            raw_message = str(item.get("message") or "")
+            level = str(item.get("level") or "").strip().upper()
+            for match in _LONG_CALL.finditer(raw_message):
+                try:
+                    value = int(match.group("ms").replace(",", ""))
+                except (TypeError, ValueError):
+                    continue
+                if value < 5000:
+                    continue
                 long_calls.append(value)
+                if level in {"WARN", "WARNING", "ERROR"}:
+                    warn_long_calls += 1
         label, repeated_count = _activity_label(logs, name)
         timing = _timing_for_scope(row, scope_kind=scope_kind, scope_id=scope_id)
         has_regular_cadence = any(
-            str(fact.get("timingKind") or "").casefold() == "regular_cadence"
-            or fact.get("regularCadence") is True
+            str(fact.get("timingKind") or "").casefold() == "regular_cadence" or fact.get("regularCadence") is True
             for fact in timing
         )
 
@@ -192,6 +212,8 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
         else:
             classification = "no_observations"
 
+        metadata = _adaptive_target_metadata(row) or {}
+        ordered_long_calls = sorted(long_calls)
         targets.append(
             {
                 "scopeKind": scope_kind,
@@ -203,12 +225,29 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
                 "activityLabel": label,
                 "activityCount": repeated_count,
                 "failureSignals": failure_signals,
-                "longCallMs": sorted(set(long_calls)),
+                "longCallMs": sorted(set(ordered_long_calls)),
+                "longCallCount": len(ordered_long_calls),
+                "longCallWarnCount": warn_long_calls,
+                "longCallMinMs": ordered_long_calls[0] if ordered_long_calls else None,
+                "longCallMaxMs": ordered_long_calls[-1] if ordered_long_calls else None,
                 "hasRegularCadence": has_regular_cadence,
                 "requestedWindow": str(inner.get("since") or ""),
+                "selectedPerformanceRow": metadata.get("performanceRow") if isinstance(metadata, dict) else None,
+                "selectedFromExactRow": metadata.get("selectedFromExactRow") if isinstance(metadata, dict) else None,
             }
         )
     return targets
+
+
+def _diagnostic_signal_summary(target: dict[str, Any]) -> str:
+    parts = [str(item) for item in target.get("failureSignals") or [] if str(item)]
+    long_count = int(target.get("longCallCount") or 0)
+    long_min, long_max = target.get("longCallMinMs"), target.get("longCallMaxMs")
+    warn_count = int(target.get("longCallWarnCount") or 0)
+    if long_count and long_min not in (None, "") and long_max not in (None, ""):
+        level = "WARN/ERROR " if warn_count else ""
+        parts.append(f"{level}very long operation durations in retained rows: {long_min}–{long_max} ms")
+    return ", ".join(dict.fromkeys(parts)) or "diagnostic signal"
 
 
 def render_diagnostic_evidence_gate(evidence: list[dict[str, Any]]) -> str:
@@ -227,21 +266,14 @@ def render_diagnostic_evidence_gate(evidence: list[dict[str, Any]]) -> str:
     ]
     for target in targets:
         label = target.get("name") or f"{target['scopeKind']}Id={target['scopeId']}"
-        classification = target["classification"]
-        count = target["logCount"]
+        classification, count = target["classification"], target["logCount"]
         if classification == "diagnostic_signal":
-            signals = [*target["failureSignals"]]
-            signals.extend(f"very long call {value} ms" for value in target["longCallMs"][:3])
             lines.append(
-                f"- {label}: classification=diagnostic_signal; scoped rows={count}; observed signals={', '.join(signals) or 'diagnostic signal'}. A calibrated hypothesis consistent with those observed signals is allowed, but the exact implementation defect, worker-thread blocking, and user-visible delay remain unproven without stronger evidence."
+                f"- {label}: classification=diagnostic_signal; scoped rows={count}; observed signals={_diagnostic_signal_summary(target)}. A calibrated hypothesis consistent with those observed signals is allowed, but the exact implementation defect, worker-thread blocking, network cause, and user-visible delay remain unproven without stronger evidence."
             )
         elif classification == "repeated_activity":
             activity = target.get("activityLabel") or "repeated activity"
-            cadence = (
-                "A host-derived regular cadence exists and may be quoted exactly."
-                if target.get("hasRegularCadence")
-                else "No host-derived regular cadence exists for this scoped target; do not invent 'every X' timing from raw rows."
-            )
+            cadence = "A host-derived regular cadence exists and may be quoted exactly." if target.get("hasRegularCadence") else "No host-derived regular cadence exists for this scoped target; do not invent 'every X' timing from raw rows."
             lines.append(
                 f"- {label}: classification=repeated_activity; scoped rows={count}; repeated pattern={activity!r}. The activity pattern may be reported and compared with the measured statistics, but causality and the implementation mechanism remain unproven. {cadence}"
             )
@@ -291,21 +323,18 @@ def _evidence_summary(target: dict[str, Any]) -> str:
     count = int(target.get("logCount") or 0)
     window = str(target.get("requestedWindow") or "the requested window")
     activity = str(target.get("activityLabel") or "repeated activity")
-    if target.get("classification") == "repeated_activity":
-        cadence = (
-            "Host-derived timing established a regular cadence for this target."
-            if target.get("hasRegularCadence")
-            else "No host-derived regular cadence was established for this target."
+    if target.get("classification") == "diagnostic_signal":
+        return (
+            f"The scoped diagnostic read returned {count} log rows in {window}, including {_diagnostic_signal_summary(target)}. The observations support a calibrated hypothesis consistent with those signals, but do not prove the exact implementation mechanism."
         )
+    if target.get("classification") == "repeated_activity":
+        cadence = "Host-derived timing established a regular cadence for this target." if target.get("hasRegularCadence") else "No host-derived regular cadence was established for this target."
         return f"The scoped diagnostic read returned {count} log rows in {window}, including repeated `{activity}` activity. {cadence}"
     return f"The scoped diagnostic read returned {count} log rows in {window}."
 
 
-def guard_performance_diagnostic_hypotheses(
-    message: str,
-    evidence: list[dict[str, Any]],
-) -> tuple[str, bool]:
-    """Fail closed when final diagnostic prose outruns adaptive scoped evidence."""
+def guard_performance_diagnostic_hypotheses(message: str, evidence: list[dict[str, Any]]) -> tuple[str, bool]:
+    """Legacy fail-closed helper retained for direct tests; production uses the consolidated guard."""
 
     original = str(message or "")
     if not original:
@@ -318,12 +347,10 @@ def guard_performance_diagnostic_hypotheses(
         and bool(row["details"]["hostDerivedTiming"].get("sameSecondClusters"))
         for row in evidence
     )
-
     in_diagnostics = False
     current_target: dict[str, Any] | None = None
     current_scoped = False
     output: list[str] = []
-
     for raw_line in original.splitlines(keepends=True):
         newline = "\n" if raw_line.endswith("\n") else ""
         line = raw_line[:-1] if newline else raw_line
@@ -332,64 +359,38 @@ def guard_performance_diagnostic_hypotheses(
             title = heading.group("title")
             folded = title.casefold()
             if "diagnostic" in folded and ("hypoth" in folded or "analysis" in folded):
-                in_diagnostics = True
-                current_target = None
-                current_scoped = False
+                in_diagnostics, current_target, current_scoped = True, None, False
             elif in_diagnostics and not folded.startswith("diagnostic"):
-                in_diagnostics = False
-                current_target = None
-                current_scoped = False
-
+                in_diagnostics, current_target, current_scoped = False, None, False
         numbered = _NUMBERED_BOLD_HEADING.match(line)
         if in_diagnostics and numbered:
-            title = numbered.group("title")
-            current_target = _match_target(title, targets)
+            current_target = _match_target(numbered.group("title"), targets)
             current_scoped = current_target is not None
-
         candidate = line
         if in_diagnostics and _HYPOTHESIS_LINE.search(candidate):
             if not current_scoped:
-                candidate = (
-                    f"{_prefix(candidate)}**Conclusion:** No target-scoped diagnostic evidence was read for this outlier in this turn, so the mechanism remains unresolved."
-                )
+                candidate = f"{_prefix(candidate)}**Conclusion:** No target-scoped diagnostic evidence was read for this outlier in this turn, so the mechanism remains unresolved."
             elif current_target is not None:
                 classification = str(current_target.get("classification") or "")
                 if classification in {"sparse_or_neutral", "no_observations"}:
                     count = int(current_target.get("logCount") or 0)
-                    candidate = (
-                        f"{_prefix(candidate)}**Conclusion:** The target-scoped diagnostic read returned {count} non-diagnostic log observation(s) and did not establish a mechanism for this measured outlier; the mechanism remains unresolved."
-                    )
+                    candidate = f"{_prefix(candidate)}**Conclusion:** The target-scoped diagnostic read returned {count} non-diagnostic log observation(s) and did not establish a mechanism for this measured outlier; the mechanism remains unresolved."
                 elif classification == "repeated_activity":
                     activity = str(current_target.get("activityLabel") or "repeated activity")
-                    candidate = (
-                        f"{_prefix(candidate)}**Diagnostic interpretation:** The scoped logs show repeated `{activity}` activity, but they do not establish that this activity caused the measured performance statistics or reveal the implementation mechanism."
-                    )
-
-        if (
-            in_diagnostics
-            and current_target is not None
-            and _EVIDENCE_LINE.search(candidate)
-            and _CADENCE_LANGUAGE.search(candidate)
-            and not bool(current_target.get("hasRegularCadence"))
-        ):
+                    candidate = f"{_prefix(candidate)}**Diagnostic interpretation:** The scoped logs show repeated `{activity}` activity, but they do not establish that this activity caused the measured performance statistics or reveal the implementation mechanism."
+        if in_diagnostics and current_target is not None and _EVIDENCE_LINE.search(candidate) and _CADENCE_LANGUAGE.search(candidate) and not bool(current_target.get("hasRegularCadence")):
             candidate = f"{_prefix(candidate)}**Evidence:** {_evidence_summary(current_target)}"
-
         if in_diagnostics and current_target is not None:
             classification = str(current_target.get("classification") or "")
             if classification in {"sparse_or_neutral", "no_observations"} and _MECHANISM_LANGUAGE.search(candidate) and not _HYPOTHESIS_LINE.search(line):
                 if "finding" not in candidate.casefold() and "conclusion" not in candidate.casefold():
-                    candidate = (
-                        f"{_prefix(candidate)}The targeted diagnostic evidence did not establish a mechanism; this outlier remains unresolved."
-                    )
-
+                    candidate = f"{_prefix(candidate)}The targeted diagnostic evidence did not establish a mechanism; this outlier remains unresolved."
         candidate = _HIGHEST_RESOURCE_USAGE.sub("Highest returned performance percentages", candidate)
         candidate = _HIGH_AVERAGE_EXECUTION.sub("average execution time", candidate)
         if clusters_present:
             candidate = _SIMULTANEOUS_REPORTING.sub("same-second clustered reporting", candidate)
             candidate = _SIMULTANEOUS.sub("within the same reported second", candidate)
-
         output.append(candidate + newline)
-
     corrected = "".join(output)
     return corrected, corrected != original
 
