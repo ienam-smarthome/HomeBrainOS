@@ -8,7 +8,9 @@ against host-derived timing summaries produced from the full bounded log result.
 0.16.86 matches literal observations by structured source identity as well as the
 raw `app|id|name` token. Model prose normally says `MCP Rule Server (ID 4151)`, so
 requiring the raw source token allowed later generic performance repairs to mangle
-an otherwise concrete WARN observation.
+an otherwise concrete WARN observation. Same-second cluster observations are also
+kept inspection-first: a cluster does not establish that staggering/offsetting or
+changing report frequency is configurable, necessary, or performance-improving.
 """
 
 from __future__ import annotations
@@ -35,6 +37,17 @@ _CADENCE_CLAIM = re.compile(
 _TIMING_WORD = re.compile(r"(?i)\b(?:cadence|interval|intervals|gap|every|seconds?)\b")
 _OBSERVED_CADENCE_HEADING = re.compile(r"(?i)observed\s+cadence")
 _SIMULTANEOUS = re.compile(r"(?i)\bsimultaneously\b")
+_CLUSTER_REFERENCE = re.compile(r"(?i)\b(?:same-second|cluster(?:ed|ing)?|burst)\b")
+_CLUSTER_TUNING = re.compile(
+    r"(?i)\b(?:stagger(?:ed|ing)?|offset(?:ting)?|spread\s+out|change|reduce|increase|adjust|tune|review)\b"
+    r"[^\n]{0,180}\b(?:frequency|interval|reporting|updates?|schedule|timing|stagger|offset)\b"
+)
+_CLUSTER_INSPECTION = (
+    "Review the cited integration configuration to determine whether the observed same-second "
+    "cluster is expected and whether update scheduling/reporting is configurable; the current "
+    "evidence does not establish that staggering, offsetting, or changing frequency is necessary "
+    "or performance-improving."
+)
 
 
 def _sub_tool(row: dict[str, Any]) -> str:
@@ -129,8 +142,6 @@ def _observation_matches_line(
         rf"(?<!\d){re.escape(identifier)}(?!\d)", folded
     ):
         return True
-    # A unique source name is safe when the final prose names the entity but omits
-    # its ID. Never use this fallback when multiple WARN sources share that name.
     return bool(name and name_counts.get(name, 0) == 1 and name in folded)
 
 
@@ -183,8 +194,6 @@ def _timing_kind(fact: dict[str, Any]) -> str:
 
 
 def _timing_subject_prefix(line: str) -> str:
-    """Preserve the model's bullet/source label while replacing only timing prose."""
-
     marker = ":**"
     if marker in line:
         end = line.index(marker) + len(marker)
@@ -304,6 +313,14 @@ def _repair_timing_line(
     return repaired
 
 
+def _cluster_tuning_repair(line: str, clusters: list[dict[str, Any]]) -> str:
+    if not clusters or not _CLUSTER_REFERENCE.search(line) or not _CLUSTER_TUNING.search(line):
+        return line
+    match = _MARKDOWN_PREFIX.match(line)
+    prefix = match.group("prefix") if match is not None else ""
+    return prefix + _CLUSTER_INSPECTION
+
+
 def guard_performance_log_observations(
     message: str,
     evidence: list[dict[str, Any]],
@@ -318,7 +335,6 @@ def guard_performance_log_observations(
     if not observations and not cadence and not clusters:
         return original, False
 
-    # Count unique WARN/ERROR source names for the safe name-only fallback.
     name_counts = Counter(
         observation.get("name", "").casefold()
         for observation in observations
@@ -345,6 +361,7 @@ def guard_performance_log_observations(
                 break
         candidate = replacement if replacement is not None else core
         candidate = _repair_timing_line(candidate, cadence, clusters)
+        candidate = _cluster_tuning_repair(candidate, clusters)
         if candidate != core:
             changed = True
         output.append(candidate + newline)
