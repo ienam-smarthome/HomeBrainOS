@@ -4,6 +4,12 @@
 child diagnostic fields are recognized by semantic role rather than exact label
 text, and timing statements are rendered atomically from one host timing record
 so a source/signal can never inherit another signal's cadence numbers.
+
+0.16.86 distinguishes the kind of diagnostic signal before allowing a hypothesis:
+explicit timeouts/reachability failures can support a calibrated connectivity/failure
+hypothesis, while WARN-level multi-second/minute method durations support a
+stalled/excessively-long-running-operation hypothesis. Neither proves the exact
+implementation cause or downstream user impact.
 """
 
 from __future__ import annotations
@@ -204,22 +210,38 @@ def _render_timing_fact(fact: dict[str, Any]) -> str:
     return subject
 
 
+def _diagnostic_signal_text(target: dict[str, Any]) -> tuple[str, str]:
+    failures = [str(item) for item in target.get("failureSignals") or [] if str(item)]
+    long_count = int(target.get("longCallCount") or 0)
+    long_min = target.get("longCallMinMs")
+    long_max = target.get("longCallMaxMs")
+    warn_count = int(target.get("longCallWarnCount") or 0)
+    parts = list(failures)
+    if long_count and long_min not in (None, "") and long_max not in (None, ""):
+        level = "WARN/ERROR " if warn_count else ""
+        parts.append(f"{level}very long operation durations {long_min}–{long_max} ms")
+    signal_text = ", ".join(dict.fromkeys(parts)) or "an explicit diagnostic signal"
+    if long_count and not failures:
+        hypothesis = "a calibrated stalled/excessively-long-running-operation hypothesis"
+    elif failures and not long_count:
+        hypothesis = "a calibrated connectivity/failure hypothesis"
+    else:
+        hypothesis = "a calibrated hypothesis consistent with the observed failure and long-operation signals"
+    return signal_text, hypothesis
+
+
 def _evidence_summary(target: dict[str, Any]) -> str:
     count = int(target.get("logCount") or 0)
     window = str(target.get("requestedWindow") or "the requested window")
     classification = str(target.get("classification") or "")
     activity = str(target.get("activityLabel") or "repeated scoped activity")
     if classification == "diagnostic_signal":
-        signals = [str(item) for item in target.get("failureSignals") or [] if str(item)]
-        signals.extend(
-            f"very long call {value} ms" for value in (target.get("longCallMs") or [])[:3]
-        )
-        signal_text = ", ".join(dict.fromkeys(signals)) or "an explicit diagnostic signal"
+        signal_text, hypothesis = _diagnostic_signal_text(target)
         return (
             f"The scoped diagnostic read returned {count} log rows in {window}, including "
-            f"explicit diagnostic signal(s): {signal_text}. These observations support a calibrated "
-            "failure/connectivity hypothesis, but do not prove the exact implementation mechanism "
-            "or how much it contributes to the measured performance statistics."
+            f"explicit diagnostic signal(s): {signal_text}. These observations support {hypothesis}, "
+            "but do not prove the exact implementation mechanism, worker-thread blocking, network cause, "
+            "or how much the signal contributes to the measured performance statistics."
         )
     if classification == "repeated_activity":
         cadence = (
@@ -337,8 +359,6 @@ def guard_format_independent_performance_diagnostics(
         candidate = line
         effective_target = line_target or current_target
 
-        # Timing statements are atomic host facts. Never attach a source/signal to
-        # model-authored numbers that may belong to another signal.
         if parsed is not None and "cadence" in parsed[1].casefold():
             matched_fact = _match_timing_fact(parsed[2], timing_facts)
             if matched_fact is None and len(regular_cadence) == 1:
@@ -379,10 +399,23 @@ def guard_format_independent_performance_diagnostics(
         if action_child and effective_target is not None and _COLLECT_SCOPED_EVIDENCE.search(candidate):
             classification = str(effective_target.get("classification") or "")
             if classification == "diagnostic_signal":
-                candidate = _render_with_label(
-                    candidate,
-                    "Use the existing scoped failure evidence to verify reachability/recovery and correlate those failure timestamps with app executions before attributing the measured performance percentage to the failures.",
-                )
+                failures = bool(effective_target.get("failureSignals"))
+                long_calls = int(effective_target.get("longCallCount") or 0)
+                if long_calls and not failures:
+                    action = (
+                        "Use the existing scoped long-operation evidence to correlate the WARN timestamps "
+                        "with the integration/driver execution path and identify which operation is stalled; "
+                        "do not assume a network cause without separate connectivity evidence."
+                    )
+                elif failures:
+                    action = (
+                        "Use the existing scoped failure evidence to verify reachability/recovery and correlate "
+                        "those failure timestamps with app/device executions before attributing the measured "
+                        "performance percentage to the failures."
+                    )
+                else:
+                    action = "Use the existing scoped diagnostic evidence before choosing a mechanism-specific investigation."
+                candidate = _render_with_label(candidate, action)
             elif classification in {"repeated_activity", "sparse_or_neutral"}:
                 candidate = _render_with_label(
                     candidate,
