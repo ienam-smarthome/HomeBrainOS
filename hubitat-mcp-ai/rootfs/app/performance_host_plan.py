@@ -9,6 +9,11 @@ performance outliers are retrieval triggers only -- never health classifications
 When a strong device/app outlier is present, HomeBrain may read a longer log window
 scoped server-side to at most one device and one app. No provider planning round is
 added and the final evidence-first synthesis remains the only model round.
+
+0.16.86 preserves the exact triggering performance row alongside each adaptive log
+receipt. This makes target identity/provenance explicit even when the scoped log read
+returns zero rows, so later diagnosis never has to re-resolve or guess which app or
+device won adaptive selection.
 """
 
 from __future__ import annotations
@@ -149,6 +154,106 @@ def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, str]]:
     return targets
 
 
+def _performance_row_for_target(
+    performance_data: Any,
+    target: dict[str, str],
+) -> dict[str, Any] | None:
+    """Return the exact stats row that produced an already-selected target."""
+
+    if not isinstance(performance_data, dict):
+        return None
+    key = "deviceStats" if target.get("kind") == "device" else "appStats"
+    rows = performance_data.get(key)
+    if not isinstance(rows, list):
+        return None
+    target_id = str(target.get("id") or "").strip()
+    target_name = str(target.get("name") or "").strip()
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("id") or "").strip() != target_id:
+            continue
+        if str(raw.get("name") or "").strip() != target_name:
+            continue
+        return raw
+    return None
+
+
+def _adaptive_target_details(
+    performance_data: Any,
+    target: dict[str, str],
+) -> dict[str, Any]:
+    row = _performance_row_for_target(performance_data, target)
+    performance_row: dict[str, Any] = {}
+    if isinstance(row, dict):
+        for key in (
+            "id",
+            "name",
+            "pctBusy",
+            "pctTotal",
+            "averageMs",
+            "count",
+            "stateSize",
+            "totalMs",
+        ):
+            if key in row:
+                performance_row[key] = row.get(key)
+    return {
+        "kind": str(target.get("kind") or ""),
+        "id": str(target.get("id") or ""),
+        "name": str(target.get("name") or ""),
+        "selectionSource": "hub_get_performance_stats",
+        "selectedFromExactRow": row is not None,
+        "performanceRow": performance_row,
+    }
+
+
+def _record_adaptive_execution(
+    agent: Any,
+    arguments: dict[str, Any],
+    execution: Any,
+    target: dict[str, str],
+    performance_data: Any,
+) -> None:
+    """Record one normal evidence receipt enriched with immutable target provenance."""
+
+    executor = getattr(agent, "executor", None)
+    recorder = getattr(executor, "evidence", None)
+    record = getattr(recorder, "record", None)
+    if not callable(record):
+        return
+
+    details: dict[str, Any] = {}
+    result = getattr(execution, "result", None)
+    details_fn = getattr(executor, "result_details", None)
+    if result is not None and callable(details_fn):
+        result_details = details_fn(result)
+        if isinstance(result_details, dict):
+            details.update(result_details)
+    details["adaptiveTarget"] = _adaptive_target_details(performance_data, target)
+
+    summary = (
+        f"adaptive diagnostic logs for {target.get('kind')} "
+        f"{target.get('id')} ({target.get('name')})"
+    )
+    summary_fn = getattr(executor, "result_summary", None)
+    if result is not None and callable(summary_fn):
+        summary = summary_fn(result)
+
+    record(
+        "hub_manage_logs",
+        arguments,
+        success=bool(getattr(execution, "success", False)),
+        elapsed_ms=int(getattr(execution, "elapsed_ms", 0) or 0),
+        summary=summary,
+        supports_live_claim=True,
+        evidence_kind="host_planned_performance_diagnostic",
+        mutates=False,
+        effect=getattr(execution, "effect", "read"),
+        details=details,
+    )
+
+
 async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
     """Collect baseline evidence plus bounded strong-outlier diagnostics."""
 
@@ -202,18 +307,27 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             )
             agent.request_metrics.increment(metric_key)
             agent.request_metrics.increment("performance_adaptive_reads")
+            arguments = {
+                "tool": "hub_get_logs",
+                "args": {
+                    scope_key: target["id"],
+                    "since": _ADAPTIVE_SINCE,
+                    "limit": _ADAPTIVE_LIMIT,
+                },
+            }
             execution = await agent.executor.execute(
                 "hub_manage_logs",
-                {
-                    "tool": "hub_get_logs",
-                    "args": {
-                        scope_key: target["id"],
-                        "since": _ADAPTIVE_SINCE,
-                        "limit": _ADAPTIVE_LIMIT,
-                    },
-                },
+                arguments,
                 supports_live_claim=True,
                 evidence_kind="host_planned_performance_diagnostic",
+                record_evidence=False,
+            )
+            _record_adaptive_execution(
+                agent,
+                arguments,
+                execution,
+                target,
+                performance_data,
             )
             if not execution.success:
                 agent.request_metrics.increment("performance_adaptive_read_failures")
