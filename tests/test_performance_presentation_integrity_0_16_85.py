@@ -131,7 +131,7 @@ def _evidence() -> list[dict]:
                     {
                         "date": "2026-10-01 15:45:11.184",
                         "level": "WARN",
-                        "message": "app|4129|SenseCap D1 Settings|SenseCap D1 config push failed (Connect to 192.168.1.143:80 failed: connect timed out). Config pushes paused for 5 minutes; live updates are NOT suspended.",
+                        "message": "app|4129|SenseCap D1 Settings|SenseCap D1 config push failed (Connect to 192.168.1.143:80 failed: Connect to http://192.168.1.143:80 failed: connect timed out). Config pushes paused for 5 minutes; live updates are NOT suspended.",
                     },
                 ] + [
                     {
@@ -183,7 +183,7 @@ def test_semantic_child_roles_preserve_scoped_targets() -> None:
     assert "HTTP 408" in corrected
     assert "timeout" in corrected.casefold()
     assert "support a calibrated failure/connectivity hypothesis" in corrected
-    assert "contribution" in corrected
+    assert "how much it contributes" in corrected
     assert "Collect target-scoped diagnostic evidence for this outlier" not in corrected
     assert "Use the existing scoped failure evidence" in corrected
 
