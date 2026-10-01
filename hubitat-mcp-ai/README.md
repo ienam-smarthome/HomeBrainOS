@@ -3,9 +3,13 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.81**.
+Current add-on version: **0.16.82**.
 
 ## Architecture
+
+0.16.82 keeps the accepted 0.16.81 adaptive retrieval architecture unchanged and adds a structural diagnostic evidence gate after synthesis. Each successful adaptive scoped log receipt is classified as `diagnostic_signal`, `repeated_activity`, `sparse_or_neutral`, or `no_observations`. A real timeout/connectivity/very-long-call signal may support a calibrated hypothesis; repeated neutral activity may be reported as an observed pattern but not as a causal mechanism; sparse/no diagnostic evidence must be stated as unresolved. An outlier that was not one of the scoped adaptive targets may not receive a mechanism hypothesis merely because it looks plausible from performance statistics.
+
+The 0.16.82 gate also makes "unresolved" an explicit valid diagnostic conclusion. Model-authored cadence/frequency language from adaptive raw rows is rejected unless host-derived timing establishes a regular cadence, and same-second clustered log activity is not promoted into literal simultaneity. The validator uses this structural evidence classification under the existing evidence-first repair category rather than adding another phrase-specific diagnosis layer.
 
 0.16.81 keeps the accepted 0.16.78-0.16.80 host-planned baseline and one evidence-first synthesis round, but adds a bounded adaptive diagnostic stage after the baseline performance-stat read. Numeric outliers are retrieval triggers only, not health/severity classifications. When warranted, the host selects at most one device and one app and performs one server-side-scoped `hub_get_logs` read for each (`deviceId` or `appId`, `since=6h`, `limit=120`). A quiet case therefore remains three reads; a fully expanded case is capped at five reads, with zero exploratory agent rounds and one final synthesis round.
 
@@ -74,7 +78,7 @@ A broad performance request that also asks for recommendations uses:
 10. Canonical normalized metric fields take precedence over raw provenance aliases; explicitly unit-labelled free memory is normalized to MB without guessing unlabeled units.
 11. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, job offsets, or reductions in observed call/report volume.
 12. Raw log rows support observations; host-derived timing summaries carry authoritative timing kinds: regular cadence, irregular repeated intervals, or a single observed gap. Only `regular_cadence` may be presented as recurring cadence; `irregular_intervals` must remain median/range observations, and `observed_gap` must not be promoted into recurrence.
-13. Adaptive scoped logs may support an explicitly labeled diagnostic hypothesis when multiple current-turn observations align. The answer must state the supporting evidence, what remains unproven, a verification step, and an inspection-first action. A hypothesis is not a confirmed mechanism.
+13. Adaptive scoped evidence is structurally classified before a diagnostic conclusion is accepted. `diagnostic_signal` may support a labeled calibrated hypothesis; `repeated_activity` supports only an observed-pattern interpretation unless stronger evidence exists; `sparse_or_neutral` and `no_observations` require an explicit unresolved conclusion. An outlier without a scoped adaptive receipt is also unresolved rather than assigned a plausible mechanism.
 14. Exact event/update counts require an explicit tool/host filtered count rather than manual model counting.
 15. Literal WARN/ERROR observations cited in the answer are preserved from current-turn log evidence; causal boundaries are appended separately rather than replacing the observed message.
 16. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
@@ -83,9 +87,9 @@ A broad performance request that also asks for recommendations uses:
 The final answer must keep these distinctions explicit:
 
 - High execution time or call volume is measured; an implementation mechanism is not established unless directly supported by current-turn implementation/configuration evidence.
-- Returned ordering/percentages may be described literally (for example highest returned `pctTotal`), but should not be promoted into “primary consumer”, “highest impact”, or other causal/resource judgments that the source does not define.
+- Returned ordering/percentages may be described literally (for example highest returned `pctTotal`), but should not be promoted into “primary consumer”, “highest impact”, “highest resource usage”, or other causal/resource judgments that the source does not define.
 - Numeric `stateSize` is a measured value; “large” requires a source-provided threshold or classification.
-- Adaptive diagnostic evidence may justify a labeled, calibrated hypothesis such as “consistent with stalled I/O” or “suggests a connectivity problem”; it must not be restated as a proven driver defect, worker-thread blockage, or user-visible delay without stronger current-turn evidence.
+- Adaptive diagnostic evidence may justify a labeled, calibrated hypothesis only when the scoped evidence contains an actual diagnostic signal. Repeated neutral activity is an observation, not proof that it caused the busy percentage. Sparse neutral logs are positive evidence that the targeted read did not reveal the mechanism, and the answer should say so.
 - A scheduled-job list proves returned jobs/cadence/alignment, not CPU spikes, CPU load, UI stuttering, delayed automations, hub overhead, or that changing offsets will improve performance. Without a successful current-turn scheduler/job source, do not state scheduler-specific facts.
 - Database size is reported numerically in MB; qualitative labels such as normal/healthy/small/large require a defined current-turn threshold.
 - Frequent device reporting proves activity, not material hub/background overhead, log growth, history slowdown, or a performance cause by itself.
@@ -93,6 +97,7 @@ The final answer must keep these distinctions explicit:
 - A high app busy percentage is measured; it does not by itself establish inefficient loops, excessive trigger frequency, or another implementation mechanism.
 - Empty/no-active health alerts support “no active alert”, not categorical “very healthy” or “no optimisation needed” conclusions.
 - Recent connectivity/error logs are observations; they may support a labeled hypothesis when aligned with the measured outlier, but they do not by themselves prove overall hub instability or the exact mechanism behind longer-window performance statistics.
+- Same-second clusters prove bounded timestamp clustering, not literal simultaneity.
 - `zwHealthy:false` is a warning/health observation, not sufficient evidence by itself to prescribe a Z-Wave repair.
 - `NETWORK_BACKUP_FAILED` proves an active alert, not imminent data loss or the status of other backup methods.
 
