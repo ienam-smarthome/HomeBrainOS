@@ -4,10 +4,16 @@ Generic semantic guards should correct conclusions around a log observation, not
 rewrite the log payload itself. This module restores cited WARN/ERROR facts from
 current-turn `hub_get_logs` evidence and validates cadence/same-second wording
 against host-derived timing summaries produced from the full bounded log result.
+
+0.16.86 matches literal observations by structured source identity as well as the
+raw `app|id|name` token. Model prose normally says `MCP Rule Server (ID 4151)`, so
+requiring the raw source token allowed later generic performance repairs to mangle
+an otherwise concrete WARN observation.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 import re
 from typing import Any
 
@@ -41,11 +47,16 @@ def _sub_tool(row: dict[str, Any]) -> str:
     return ""
 
 
-def _source_key(raw_message: str) -> str:
+def _source_parts(raw_message: str) -> tuple[str, str, str] | None:
     parts = str(raw_message or "").split("|", 3)
     if len(parts) >= 3 and parts[0].casefold() in {"app", "dev"}:
-        return "|".join(parts[:3]).strip()
-    return ""
+        return parts[0].casefold(), parts[1].strip(), parts[2].strip()
+    return None
+
+
+def _source_key(raw_message: str) -> str:
+    parts = _source_parts(raw_message)
+    return "|".join(parts) if parts is not None else ""
 
 
 def _literal_detail(raw_message: str) -> str:
@@ -84,17 +95,43 @@ def _log_rows(evidence: list[dict[str, Any]]) -> list[dict[str, str]]:
                 continue
             level = str(item.get("level") or "").strip().upper()
             raw = str(item.get("message") or "").strip()
-            source = _source_key(raw)
-            if level not in {"WARN", "WARNING", "ERROR"} or not source or not raw:
+            parts = _source_parts(raw)
+            if level not in {"WARN", "WARNING", "ERROR"} or parts is None or not raw:
                 continue
+            kind, identifier, name = parts
             rows.append(
                 {
                     "level": "WARN" if level == "WARNING" else level,
-                    "source": source,
+                    "source": "|".join(parts),
+                    "kind": kind,
+                    "id": identifier,
+                    "name": name,
                     "detail": _literal_detail(raw),
                 }
             )
     return rows
+
+
+def _observation_matches_line(
+    observation: dict[str, str],
+    comparable: str,
+    name_counts: Counter[str],
+) -> bool:
+    """Match model prose to a current-turn WARN/ERROR without fuzzy attribution."""
+
+    folded = str(comparable or "").casefold()
+    raw_source = observation.get("source", "").casefold()
+    name = observation.get("name", "").strip().casefold()
+    identifier = observation.get("id", "").strip().casefold()
+    if raw_source and raw_source in folded:
+        return True
+    if name and identifier and name in folded and re.search(
+        rf"(?<!\d){re.escape(identifier)}(?!\d)", folded
+    ):
+        return True
+    # A unique source name is safe when the final prose names the entity but omits
+    # its ID. Never use this fallback when multiple WARN sources share that name.
+    return bool(name and name_counts.get(name, 0) == 1 and name in folded)
 
 
 def _timing_facts(evidence: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -281,6 +318,12 @@ def guard_performance_log_observations(
     if not observations and not cadence and not clusters:
         return original, False
 
+    # Count unique WARN/ERROR source names for the safe name-only fallback.
+    name_counts = Counter(
+        observation.get("name", "").casefold()
+        for observation in observations
+        if observation.get("name")
+    )
     changed = False
     output: list[str] = []
     for line in original.splitlines(keepends=True):
@@ -290,7 +333,7 @@ def guard_performance_log_observations(
         replacement: str | None = None
         if _WARNING_WORD.search(comparable) and _CAUSAL_OR_REPAIR.search(comparable):
             for observation in observations:
-                if observation["source"].casefold() not in comparable:
+                if not _observation_matches_line(observation, comparable, name_counts):
                     continue
                 match = _MARKDOWN_PREFIX.match(core)
                 prefix = match.group("prefix") if match is not None else ""
