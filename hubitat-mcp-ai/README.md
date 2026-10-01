@@ -3,9 +3,13 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.83**.
+Current add-on version: **0.16.84**.
 
 ## Architecture
+
+0.16.84 keeps the accepted 0.16.81-0.16.83 retrieval, adaptive expansion, host timing, and evidence-classification architecture unchanged. The post-synthesis diagnostic guard now preserves the enclosing diagnostic/recommendation mode across numbered bold entity subheadings and preserves the current entity across child fields such as Finding, Evidence, Conclusion, Diagnostic interpretation, Hypothesis, Verification, Action, and Next step unless a different entity is explicitly named. An unscoped entity subheading explicitly clears the previous scoped target, preventing evidence from one outlier leaking into another. Mechanism-specific Verification/Recommendation lines are therefore gated against the correct entity evidence even inside a combined `Diagnostic Hypotheses & Recommendations` section.
+
+The exact 0.16.83 live shape is covered: SenseCap child Evidence can no longer retain an invented `every 5 to 10 minutes` cadence when no host `regular_cadence` exists; LG webOS remains unresolved when not target-scoped and cannot immediately prescribe network/API-specific investigation; Google Nest Hub keeps its already-safe repeated-volume interpretation; and a generic `Cadence:` line is attributed to the source/signal when exactly one host-established regular cadence is available.
 
 0.16.83 keeps the accepted 0.16.81/0.16.82 adaptive retrieval architecture unchanged and removes the remaining Markdown-shape dependency from diagnostic validation. Adaptive diagnostic claims are now checked by entity and claim type, so inline bullet hypotheses receive the same evidence boundaries as numbered diagnostic subheadings. Cadence claims are validated anywhere in the answer, mechanism-specific recommendations require supporting target-scoped evidence, one observed same-second cluster cannot become an `events per second` rate, and threshold-labelled event rows cannot be promoted into proof that a condition or alert action fired.
 
@@ -82,12 +86,13 @@ A broad performance request that also asks for recommendations uses:
 10. Canonical normalized metric fields take precedence over raw provenance aliases; explicitly unit-labelled free memory is normalized to MB without guessing unlabeled units.
 11. Configuration/implementation evidence is required before prescribing exact polling, reporting, retry, timeout, blocking-model, staggering, shifting, moving, scheduler intervals, job offsets, or reductions in observed call/report volume.
 12. Raw log rows support observations; host-derived timing summaries carry authoritative timing kinds: regular cadence, irregular repeated intervals, or a single observed gap. Only `regular_cadence` may be presented as recurring cadence; `irregular_intervals` must remain median/range observations, and `observed_gap` must not be promoted into recurrence.
-13. Adaptive scoped evidence is structurally classified before a diagnostic conclusion is accepted. `diagnostic_signal` may support a labeled calibrated hypothesis; `repeated_activity` supports only an observed-pattern interpretation unless stronger evidence exists; `sparse_or_neutral` and `no_observations` require an explicit unresolved conclusion. An outlier without a scoped adaptive receipt is also unresolved rather than assigned a plausible mechanism. These boundaries apply regardless of whether the model uses numbered headings, inline bullets, prose paragraphs, or another Markdown shape.
+13. Adaptive scoped evidence is structurally classified before a diagnostic conclusion is accepted. `diagnostic_signal` may support a labeled calibrated hypothesis; `repeated_activity` supports only an observed-pattern interpretation unless stronger evidence exists; `sparse_or_neutral` and `no_observations` require an explicit unresolved conclusion. An outlier without a scoped adaptive receipt is also unresolved rather than assigned a plausible mechanism. These boundaries apply regardless of whether the model uses numbered headings, inline bullets, prose paragraphs, or another Markdown shape. Numbered entity subheadings preserve the enclosing diagnostic/recommendation mode, and child fields inherit the current entity unless another entity is explicitly named.
 14. Exact event/update counts require an explicit tool/host filtered count rather than manual model counting. A one-second cluster is not a recurring events-per-second rate.
 15. Literal WARN/ERROR observations cited in the answer are preserved from current-turn log evidence; causal boundaries are appended separately rather than replacing the observed message.
 16. Z-Wave-specific diagnostic evidence is required before recommending a Z-Wave repair.
 17. A successful `hub_get_metrics` receipt must not be contradicted by a final claim that memory, temperature, or database metrics were unavailable when the retained payload contains those fields.
 18. A threshold label in an app name plus an `Event:` payload proves event processing/logging, not that the threshold condition evaluated true or an alert action fired.
+19. A generic cadence statement should identify its source/signal when the host evidence contains exactly one established regular cadence.
 
 The final answer must keep these distinctions explicit:
 
