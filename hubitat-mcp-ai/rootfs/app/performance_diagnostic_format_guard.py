@@ -36,6 +36,12 @@ _CHILD_LABELS = {
     "next step",
     "recommended action",
 }
+_ACTION_CHILD_LABELS = {
+    "verification",
+    "action",
+    "next step",
+    "recommended action",
+}
 _INFERENCE_LANGUAGE = re.compile(
     r"(?i)\b(?:suggests?|indicates?|consistent\s+with|likely|possibly|possible\s+|"
     r"may\s+be\s+due\s+to|could\s+be\s+due\s+to|appears\s+to\s+be|points?\s+to)\b"
@@ -245,16 +251,12 @@ def guard_format_independent_performance_diagnostics(
         markdown_heading = _MARKDOWN_HEADING.match(line)
         bold_heading = _BOLD_SECTION.match(line)
         heading = markdown_heading or bold_heading
-        numbered_entity_heading = False
         if heading:
             title = heading.group("title").strip()
             numbered_entity_heading = bool(
                 bold_heading is not None and _NUMBERED_ENTITY_TITLE.match(title)
             )
             if numbered_entity_heading:
-                # This is an entity block inside the enclosing section, not a new
-                # section. Preserve diagnostic/recommendation mode, but bind (or
-                # explicitly clear) the scoped target for this entity.
                 current_target = _match_target(title, targets)
             else:
                 folded = title.casefold()
@@ -265,26 +267,21 @@ def guard_format_independent_performance_diagnostics(
                 current_target = None
 
         parsed = _line_label(line)
+        parsed_label = parsed[1].strip().casefold() if parsed is not None else ""
+        action_child = parsed_label in _ACTION_CHILD_LABELS
         line_target = _match_target(line, targets)
         if parsed is not None:
             _, label, _ = parsed
             if line_target is not None:
                 current_target = line_target
             elif not _is_child_label(label):
-                # A non-child labeled line starts a new subject. If it does not map
-                # to one of the scoped adaptive targets, clear inherited context so
-                # an unscoped entity cannot borrow the previous entity's evidence.
                 current_target = None
-            # Child fields (Finding/Evidence/Verification/...) inherit current_target
-            # unless they explicitly name a different target.
         elif line_target is not None:
             current_target = line_target
 
         candidate = line
         effective_target = line_target or current_target
 
-        # If there is exactly one host-established regular cadence, attribute a
-        # generic Cadence line to that source/signal rather than leaving it anonymous.
         if parsed is not None and parsed[1].strip().casefold() == "cadence" and len(regular_cadence) == 1:
             fact = regular_cadence[0]
             source = str(fact.get("source") or "").strip()
@@ -294,8 +291,6 @@ def guard_format_independent_performance_diagnostics(
                 body = parsed[2].strip()
                 candidate = _render_with_label(candidate, f"{attribution} — {body}")
 
-        # Adaptive cadence is an evidence property, not a prose-section property.
-        # Apply this anywhere the answer describes or inherits a scoped target.
         if (
             effective_target is not None
             and not bool(effective_target.get("hasRegularCadence"))
@@ -303,9 +298,14 @@ def guard_format_independent_performance_diagnostics(
         ):
             candidate = _render_with_label(candidate, _evidence_summary(effective_target))
 
-        # Diagnostic inference is entity/evidence gated even when Gemma emits one
-        # inline bullet rather than numbered subheadings.
-        if in_diagnostics and (_INFERENCE_LANGUAGE.search(candidate) or _MECHANISM_LANGUAGE.search(candidate)):
+        # Verification/Action children are handled by the action gate below so an
+        # unsupported mechanism-specific step becomes an evidence-gathering action,
+        # rather than being collapsed into a duplicate unresolved conclusion.
+        if (
+            in_diagnostics
+            and not action_child
+            and (_INFERENCE_LANGUAGE.search(candidate) or _MECHANISM_LANGUAGE.search(candidate))
+        ):
             if effective_target is None:
                 candidate = _render_with_label(
                     candidate,
@@ -320,9 +320,6 @@ def guard_format_independent_performance_diagnostics(
                         _diagnostic_interpretation(effective_target),
                     )
 
-        # A mechanism-specific recommendation/verification also needs target-scoped
-        # support. Combined headings such as "Diagnostic Hypotheses & Recommendations"
-        # intentionally set both modes; child Verification lines inherit that mode.
         if (in_recommendations or in_diagnostics) and _MECHANISM_ACTION.search(candidate):
             if effective_target is None or str(effective_target.get("classification") or "") in {
                 "sparse_or_neutral", "no_observations"
@@ -333,7 +330,6 @@ def guard_format_independent_performance_diagnostics(
                     "a mechanism-specific network, driver, polling, retry, timeout, or API investigation.",
                 )
 
-        # One observed same-second cluster is not a recurring events/second rate.
         def _rate_replacement(match: re.Match[str]) -> str:
             count = int(match.group("count"))
             if count in cluster_counts:
@@ -345,9 +341,6 @@ def guard_format_independent_performance_diagnostics(
             candidate = _SIMULTANEOUS_REPORTING.sub("same-second clustered reporting", candidate)
             candidate = _SIMULTANEOUS.sub("within the same reported second", candidate)
 
-        # A log row whose app name contains a threshold label and whose payload says
-        # Event: freeMemory <value> proves event processing/logging, not that the
-        # threshold condition evaluated true or an alert action fired.
         if memory_facts and _MEMORY_TRIGGER_PROMOTION.search(candidate):
             fact = memory_facts[0]
             candidate = _render_with_label(
