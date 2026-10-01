@@ -92,14 +92,16 @@ def validate_synthesis(
     if positive_source_changed:
         issues.append("positive_source_attribution")
 
+    # First pass protects literal log observations before higher-level semantic
+    # repair. A second final pass below restores them again if a later performance
+    # guard had to rewrite the surrounding sentence.
     corrected, log_observation_changed = guard_performance_log_observations(corrected, evidence)
     if log_observation_changed:
         issues.append("performance_log_observation")
 
-    # 0.16.85: one format-independent adaptive diagnostic guard owns target context,
-    # semantic child roles, cadence/source integrity, cluster-rate boundaries and
-    # mechanism-specific action gating. The older numbered-heading guard is no
-    # longer chained afterwards, avoiding a second shape-dependent rewrite pass.
+    # 0.16.85+: one format-independent adaptive diagnostic guard owns target
+    # context, semantic child roles, cadence/source integrity, cluster-rate
+    # boundaries and mechanism-specific action gating.
     corrected, format_independent_changed = guard_format_independent_performance_diagnostics(
         corrected,
         evidence,
@@ -118,6 +120,18 @@ def validate_synthesis(
     corrected, evidence_first_changed = guard_evidence_first_performance(corrected, evidence)
     if evidence_first_changed and "performance_evidence_first" not in issues:
         issues.append("performance_evidence_first")
+
+    # 0.16.86: literal WARN/ERROR evidence wins last. The live 0.16.85 answer
+    # showed a concrete MCP Rule Server `slow internal GET` warning being reduced
+    # to generic "returned activity" prose by a later semantic repair. Re-run the
+    # literal observation guard after every generic performance repair so the
+    # observed warning remains intact and the causal caveat is appended separately.
+    corrected, final_log_observation_changed = guard_performance_log_observations(
+        corrected,
+        evidence,
+    )
+    if final_log_observation_changed and "performance_log_observation" not in issues:
+        issues.append("performance_log_observation")
 
     if causal:
         corrected, controller_boundary_changed = guard_controller_boundary_claim(corrected, evidence)
