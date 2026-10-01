@@ -1,8 +1,9 @@
 """Format-independent evidence guard for adaptive performance diagnostics.
 
 0.16.82 introduced adaptive evidence classification, but its validator still
-expected model prose to use numbered diagnostic headings. This module applies the
-same evidence boundaries by entity and claim type instead of Markdown shape.
+expected model prose to use numbered diagnostic headings. 0.16.83 made the gate
+format-independent; 0.16.84 preserves diagnostic section/target context across
+numbered entity subheadings and child fields such as Evidence and Verification.
 """
 
 from __future__ import annotations
@@ -16,12 +17,25 @@ from performance_diagnostic_evidence_gate import classify_adaptive_diagnostics
 
 _MARKDOWN_HEADING = re.compile(r"^\s*#{2,6}\s+(?P<title>.+?)\s*$")
 _BOLD_SECTION = re.compile(r"^\s*\*\*(?P<title>[^*]+?)\*\*\s*$")
+_NUMBERED_ENTITY_TITLE = re.compile(r"^\s*\d+[.)]\s+.+$")
 _BULLET_LABEL = re.compile(
     r"^(?P<prefix>\s*[-*+]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$"
 )
 _NUMBERED_LABEL = re.compile(
     r"^(?P<prefix>\s*\d+[.)]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$"
 )
+_CHILD_LABELS = {
+    "finding",
+    "evidence",
+    "conclusion",
+    "diagnostic interpretation",
+    "diagnostic hypothesis",
+    "hypothesis",
+    "verification",
+    "action",
+    "next step",
+    "recommended action",
+}
 _INFERENCE_LANGUAGE = re.compile(
     r"(?i)\b(?:suggests?|indicates?|consistent\s+with|likely|possibly|possible\s+|"
     r"may\s+be\s+due\s+to|could\s+be\s+due\s+to|appears\s+to\s+be|points?\s+to)\b"
@@ -36,9 +50,9 @@ _MECHANISM_LANGUAGE = re.compile(
     r"unreachable|api\s+latency|stalled\s+i/?o|driver\s+defect)\b"
 )
 _MECHANISM_ACTION = re.compile(
-    r"(?i)\b(?:inspect|check|change|increase|reduce|lengthen|shorten|tune|adjust)\b[^\n]{0,120}\b"
+    r"(?i)\b(?:inspect|check|change|increase|reduce|lengthen|shorten|tune|adjust|review)\b[^\n]{0,160}\b"
     r"(?:network\s+connectivity|driver\s+settings?|poll(?:ing)?\s+interval|timeout|retries?|"
-    r"api\s+response|mdns|vlan|dhcp)\b"
+    r"api\s+response|api\s+response\s+logs?|mdns|vlan|dhcp)\b"
 )
 _PER_SECOND_RATE = re.compile(
     r"(?i)\b(?P<count>\d+)\s+(?:events?|updates?|rows?)\s+per\s+second\b"
@@ -60,6 +74,7 @@ def _normalize_words(text: str) -> set[str]:
     stop = {
         "the", "and", "settings", "configuration", "activity", "latency",
         "performance", "device", "app", "diagnostic", "hypothesis", "tv",
+        "resource", "usage", "execution", "time",
     }
     return {word for word in words if len(word) > 1 and word not in stop}
 
@@ -154,6 +169,26 @@ def _same_second_clusters(evidence: list[dict[str, Any]]) -> list[dict[str, Any]
     return clusters
 
 
+def _regular_cadence_facts(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
+    for row in evidence:
+        details = row.get("details") if isinstance(row, dict) else None
+        if not isinstance(details, dict):
+            continue
+        timing = details.get("hostDerivedTiming")
+        if not isinstance(timing, dict):
+            continue
+        cadence = timing.get("cadence")
+        if not isinstance(cadence, list):
+            continue
+        for fact in cadence:
+            if not isinstance(fact, dict):
+                continue
+            if str(fact.get("timingKind") or "").casefold() == "regular_cadence" or fact.get("regularCadence") is True:
+                facts.append(fact)
+    return facts
+
+
 def _memory_event_facts(evidence: list[dict[str, Any]]) -> list[dict[str, str]]:
     facts: list[dict[str, str]] = []
     for row in evidence:
@@ -178,6 +213,10 @@ def _memory_event_facts(evidence: list[dict[str, Any]]) -> list[dict[str, str]]:
     return facts
 
 
+def _is_child_label(label: str) -> bool:
+    return str(label or "").strip().casefold() in _CHILD_LABELS
+
+
 def guard_format_independent_performance_diagnostics(
     message: str,
     evidence: list[dict[str, Any]],
@@ -191,6 +230,7 @@ def guard_format_independent_performance_diagnostics(
     targets = classify_adaptive_diagnostics(evidence)
     clusters = _same_second_clusters(evidence)
     cluster_counts = {int(item.get("rowCount") or 0) for item in clusters}
+    regular_cadence = _regular_cadence_facts(evidence)
     memory_facts = _memory_event_facts(evidence)
 
     in_diagnostics = False
@@ -201,29 +241,61 @@ def guard_format_independent_performance_diagnostics(
     for raw_line in original.splitlines(keepends=True):
         newline = "\n" if raw_line.endswith("\n") else ""
         line = raw_line[:-1] if newline else raw_line
-        heading = _MARKDOWN_HEADING.match(line) or _BOLD_SECTION.match(line)
+
+        markdown_heading = _MARKDOWN_HEADING.match(line)
+        bold_heading = _BOLD_SECTION.match(line)
+        heading = markdown_heading or bold_heading
+        numbered_entity_heading = False
         if heading:
-            folded = heading.group("title").casefold()
-            in_diagnostics = "diagnostic" in folded or "hypoth" in folded
-            in_recommendations = (
-                "recommend" in folded or "next step" in folded or "inspection" in folded
+            title = heading.group("title").strip()
+            numbered_entity_heading = bool(
+                bold_heading is not None and _NUMBERED_ENTITY_TITLE.match(title)
             )
-            current_target = None
+            if numbered_entity_heading:
+                # This is an entity block inside the enclosing section, not a new
+                # section. Preserve diagnostic/recommendation mode, but bind (or
+                # explicitly clear) the scoped target for this entity.
+                current_target = _match_target(title, targets)
+            else:
+                folded = title.casefold()
+                in_diagnostics = "diagnostic" in folded or "hypoth" in folded
+                in_recommendations = (
+                    "recommend" in folded or "next step" in folded or "inspection" in folded
+                )
+                current_target = None
 
         parsed = _line_label(line)
         line_target = _match_target(line, targets)
         if parsed is not None:
-            # A new labeled bullet/step starts a new subject. Do not accidentally
-            # carry the previous scoped target into an unrelated inline diagnostic.
-            current_target = line_target
+            _, label, _ = parsed
+            if line_target is not None:
+                current_target = line_target
+            elif not _is_child_label(label):
+                # A non-child labeled line starts a new subject. If it does not map
+                # to one of the scoped adaptive targets, clear inherited context so
+                # an unscoped entity cannot borrow the previous entity's evidence.
+                current_target = None
+            # Child fields (Finding/Evidence/Verification/...) inherit current_target
+            # unless they explicitly name a different target.
         elif line_target is not None:
             current_target = line_target
 
         candidate = line
+        effective_target = line_target or current_target
+
+        # If there is exactly one host-established regular cadence, attribute a
+        # generic Cadence line to that source/signal rather than leaving it anonymous.
+        if parsed is not None and parsed[1].strip().casefold() == "cadence" and len(regular_cadence) == 1:
+            fact = regular_cadence[0]
+            source = str(fact.get("source") or "").strip()
+            signal = str(fact.get("signal") or "").strip()
+            if source and source.casefold() not in candidate.casefold():
+                attribution = " ".join(part for part in (source, signal) if part).strip()
+                body = parsed[2].strip()
+                candidate = _render_with_label(candidate, f"{attribution} — {body}")
 
         # Adaptive cadence is an evidence property, not a prose-section property.
-        # Apply this anywhere the answer describes a scoped target.
-        effective_target = line_target or current_target
+        # Apply this anywhere the answer describes or inherits a scoped target.
         if (
             effective_target is not None
             and not bool(effective_target.get("hasRegularCadence"))
@@ -248,15 +320,17 @@ def guard_format_independent_performance_diagnostics(
                         _diagnostic_interpretation(effective_target),
                     )
 
-        # A mechanism-specific recommendation also needs target-scoped support.
-        if in_recommendations and _MECHANISM_ACTION.search(candidate):
+        # A mechanism-specific recommendation/verification also needs target-scoped
+        # support. Combined headings such as "Diagnostic Hypotheses & Recommendations"
+        # intentionally set both modes; child Verification lines inherit that mode.
+        if (in_recommendations or in_diagnostics) and _MECHANISM_ACTION.search(candidate):
             if effective_target is None or str(effective_target.get("classification") or "") in {
                 "sparse_or_neutral", "no_observations"
             }:
                 candidate = _render_with_label(
                     candidate,
                     "Collect target-scoped diagnostic evidence for this outlier before choosing "
-                    "a mechanism-specific network, driver, polling, retry, or timeout change.",
+                    "a mechanism-specific network, driver, polling, retry, timeout, or API investigation.",
                 )
 
         # One observed same-second cluster is not a recurring events/second rate.
