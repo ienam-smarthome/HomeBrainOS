@@ -5,6 +5,10 @@ performance review. This module makes the result of those reads authoritative:
 scoped evidence may support a calibrated hypothesis, repeated neutral activity may
 support an observed-pattern interpretation, and sparse/no diagnostic evidence must
 remain explicitly unresolved rather than inviting a plausible model guess.
+
+0.16.86 also treats Hubitat's comma-formatted execution durations (for example
+``166,621ms``) as numeric long-call evidence instead of silently classifying those
+WARN rows as neutral observations.
 """
 
 from __future__ import annotations
@@ -36,7 +40,8 @@ _FAILURE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?i)\bfailed\s+to\s+(?:connect|reach|open|confirm|play)\b"), "failed operation"),
 )
 _LONG_CALL = re.compile(
-    r"(?i)\b(?:completed|took|elapsed|duration|runq|setvolume)[^\n]{0,120}?\b(?P<ms>\d{4,})\s*ms\b"
+    r"(?i)\b(?:completed|took|elapsed|duration|runq|setvolume)[^\n]{0,120}?\b"
+    r"(?P<ms>(?:\d{1,3}(?:,\d{3})+|\d{4,}))\s*ms\b"
 )
 _SIMULTANEOUS_REPORTING = re.compile(r"(?i)\bsimultaneous(?:ly)?\s+reporting\b")
 _SIMULTANEOUS = re.compile(r"(?i)\bsimultaneously\b")
@@ -165,7 +170,7 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
         long_calls: list[int] = []
         for match in _LONG_CALL.finditer(joined):
             try:
-                value = int(match.group("ms"))
+                value = int(match.group("ms").replace(",", ""))
             except (TypeError, ValueError):
                 continue
             if value >= 5000:
