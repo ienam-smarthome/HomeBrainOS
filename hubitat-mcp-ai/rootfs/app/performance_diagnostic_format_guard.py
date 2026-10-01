@@ -15,8 +15,13 @@ from performance_diagnostic_evidence_gate import classify_adaptive_diagnostics
 
 
 _MARKDOWN_HEADING = re.compile(r"^\s*#{2,6}\s+(?P<title>.+?)\s*$")
-_BULLET_LABEL = re.compile(r"^(?P<prefix>\s*[-*+]\s+)\*\*(?P<label>[^*]+)\*\*:\s*(?P<body>.*)$")
-_NUMBERED_LABEL = re.compile(r"^(?P<prefix>\s*\d+[.)]\s+)\*\*(?P<label>[^*]+)\*\*:\s*(?P<body>.*)$")
+_BOLD_SECTION = re.compile(r"^\s*\*\*(?P<title>[^*]+?)\*\*\s*$")
+_BULLET_LABEL = re.compile(
+    r"^(?P<prefix>\s*[-*+]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$"
+)
+_NUMBERED_LABEL = re.compile(
+    r"^(?P<prefix>\s*\d+[.)]\s+)\*\*(?P<label>[^*]+?)\*\*(?::)?\s*(?P<body>.*)$"
+)
 _INFERENCE_LANGUAGE = re.compile(
     r"(?i)\b(?:suggests?|indicates?|consistent\s+with|likely|possibly|possible\s+|"
     r"may\s+be\s+due\s+to|could\s+be\s+due\s+to|appears\s+to\s+be|points?\s+to)\b"
@@ -80,7 +85,8 @@ def _line_label(line: str) -> tuple[str, str, str] | None:
     for pattern in (_BULLET_LABEL, _NUMBERED_LABEL):
         match = pattern.match(line)
         if match:
-            return match.group("prefix"), match.group("label"), match.group("body")
+            label = match.group("label").strip().rstrip(":").strip()
+            return match.group("prefix"), label, match.group("body")
     return None
 
 
@@ -107,7 +113,9 @@ def _evidence_summary(target: dict[str, Any]) -> str:
         )
         return (
             f"The scoped diagnostic read returned {count} log rows in {window}, including "
-            f"repeated `{activity}` activity. {cadence}"
+            f"repeated `{activity}` activity. {cadence} The repeated observations do not "
+            "establish that this activity caused the measured performance statistics or "
+            "reveal the implementation mechanism."
         )
     return f"The scoped diagnostic read returned {count} log rows in {window}."
 
@@ -193,7 +201,7 @@ def guard_format_independent_performance_diagnostics(
     for raw_line in original.splitlines(keepends=True):
         newline = "\n" if raw_line.endswith("\n") else ""
         line = raw_line[:-1] if newline else raw_line
-        heading = _MARKDOWN_HEADING.match(line)
+        heading = _MARKDOWN_HEADING.match(line) or _BOLD_SECTION.match(line)
         if heading:
             folded = heading.group("title").casefold()
             in_diagnostics = "diagnostic" in folded or "hypoth" in folded
