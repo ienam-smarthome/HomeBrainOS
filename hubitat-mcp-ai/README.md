@@ -3,19 +3,15 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.85**.
+Current add-on version: **0.16.86**.
 
 ## Architecture
 
-0.16.85 keeps the accepted performance retrieval architecture unchanged and consolidates the last presentation-integrity boundary. The broad performance path remains host-planned: a quiet case uses metrics, performance stats and one bounded recent-log read; a strong-outlier case may add at most one device-scoped and one app-scoped six-hour diagnostic log read. The normal path still uses zero exploratory agent model rounds and one final synthesis round.
+0.16.86 keeps the accepted host-planned/adaptive performance architecture unchanged and closes two evidence-intelligence gaps exposed by the 0.16.85 live proof. Hubitat long-call WARN durations may contain thousands separators such as `166,621ms`; these are now normalized and classified as real `diagnostic_signal` evidence instead of falling through to neutral observations. Adaptive busy-share eligibility also uses a 15% retrieval threshold with the existing 20% value retained as a stronger priority bonus, preventing a sustained near-threshold busy leader from being excluded by a hard cutoff while an isolated high-average row consumes the only app/device diagnostic slot.
 
-The diagnostic validator now recognizes child fields by semantic role instead of exact model labels. `Finding`, `Confirmed Finding`, `Diagnostic Finding`, `Evidence`, `Diagnostic Evidence`, `Observed Evidence`, `Conclusion`, `Hypothesis`, `Diagnostic Hypothesis`, `Verification`, `Action` and `Next step` preserve the current diagnostic target unless another entity is explicitly named. This prevents a model wording variation from erasing a real scoped Nest/SenseCap investigation and then falsely claiming that no target-scoped evidence was read.
+The broad performance path remains bounded: a quiet case uses metrics, performance stats and one bounded recent-log read; a strong-outlier case may add at most one device-scoped and one app-scoped six-hour diagnostic log read. The normal path still uses zero exploratory agent model rounds and one final synthesis round. Retrieval thresholds choose evidence only; they are not user-facing health/severity labels.
 
-Host timing is now rendered atomically from one timing record. A source/signal name is never prefixed onto model-authored cadence numbers from another signal. If the answer discusses a host timing fact, the source, signal, timing kind, median/range and approximate cadence are rebuilt together from the same record. This specifically prevents a `CumulativeEnergyImported` label from inheriting `ActivePower` interval statistics.
-
-The 0.16.85 validator also treats an existing scoped diagnostic read as authoritative. A `diagnostic_signal` receipt containing HTTP 408, connection timeout or similar failure evidence may support a calibrated failure/connectivity hypothesis while preserving the boundary that the exact implementation defect and contribution to longer-window busy percentages remain unproven. A repeated neutral activity receipt remains an observation rather than a causal mechanism, and sparse/no diagnostic evidence remains explicitly unresolved.
-
-The older numbered-heading diagnostic rewrite is no longer chained after the format-independent validator. One consolidated guard now owns entity context, semantic child roles, timing/source integrity, same-second cluster boundaries, threshold-event wording and mechanism-specific action gating. This removes a second shape-dependent rewrite pass that could contradict an already-correct repair.
+0.16.85 consolidated the presentation-integrity boundary. The diagnostic validator recognizes child fields by semantic role instead of exact model labels, successful scoped evidence remains authoritative, source/signal timing facts are rendered atomically from one host record, and the older shape-dependent diagnostic rewrite is no longer chained after the format-independent validator.
 
 For complete release history, see [CHANGELOG-INDEX.md](CHANGELOG-INDEX.md).
 
@@ -37,7 +33,7 @@ A broad performance request that also asks for recommendations uses:
 1. Host-planned `hub_get_metrics` for current hub resources and alerts.
 2. Host-planned `hub_get_performance_stats` for measured app/device execution statistics.
 3. One bounded recent `hub_get_logs` window (`30m`, maximum `100` rows).
-4. If numeric performance rows cross internal retrieval-policy thresholds, at most one device-scoped and one app-scoped `hub_get_logs` read (`since=6h`, `limit=120`). These thresholds choose evidence; they are not health/severity classifications.
+4. If numeric performance rows cross internal retrieval-policy thresholds, at most one device-scoped and one app-scoped `hub_get_logs` read (`since=6h`, `limit=120`). Near-threshold busy-share leaders may enter the bounded ranking before the stronger priority threshold; these thresholds choose evidence and are not health/severity classifications.
 5. `hub_get_jobs` only when the user's objective explicitly asks about scheduler/job/polling cadence.
 6. Zero exploratory pre-synthesis provider rounds for the normal broad performance+recommendation path.
 7. One final performance provider synthesis pass; deterministic validators handle localized repairs without another cloud-model round.
@@ -45,7 +41,8 @@ A broad performance request that also asks for recommendations uses:
 The final answer must keep these distinctions explicit:
 
 - High execution time, call volume, `pctTotal`, `pctBusy` and `stateSize` are measured values; they do not establish an implementation mechanism by themselves.
-- Adaptive diagnostic evidence is classified before a mechanism conclusion is accepted. Explicit timeout/connectivity/failure evidence may support a calibrated hypothesis; repeated neutral activity does not prove causality; sparse/no observations remain unresolved.
+- Adaptive diagnostic evidence is classified before a mechanism conclusion is accepted. Explicit timeout/connectivity/failure evidence or directly observed very long calls may support a calibrated hypothesis; repeated neutral activity does not prove causality; sparse/no observations remain unresolved.
+- Hubitat millisecond durations may be comma-formatted; normalization must not discard an otherwise explicit long-call diagnostic signal.
 - A successful target-scoped diagnostic read must never be described as "no target-scoped evidence" merely because the model changed label wording.
 - Host-derived timing is authoritative. `regular_cadence`, `irregular_intervals` and `observed_gap` must remain distinct, and timing source/signal plus numeric interval values must come from the same host timing record.
 - Exact event/update counts require an explicit tool/host count. A one-second cluster is not a recurring events-per-second rate and is not proof of literal simultaneity.
