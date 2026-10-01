@@ -156,8 +156,9 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
         else:
             continue
         logs = _raw_logs(row)
+        retained_count = len(logs)
         details = row.get("details") if isinstance(row.get("details"), dict) else {}
-        log_count = int(details.get("logCount") or len(logs))
+        log_count = int(details.get("logCount") or retained_count)
         name = _target_name(logs, scope_kind=scope_kind, scope_id=scope_id)
         joined = "\n".join(str(item.get("message") or "") for item in logs)
         failure_signals = [label for pattern, label in _FAILURE_PATTERNS if pattern.search(joined)]
@@ -179,7 +180,7 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
 
         if failure_signals or long_calls:
             classification = "diagnostic_signal"
-        elif log_count >= 4 and repeated_count >= max(3, int(log_count * 0.5)):
+        elif retained_count >= 4 and repeated_count >= max(3, int(retained_count * 0.5)):
             classification = "repeated_activity"
         elif log_count:
             classification = "sparse_or_neutral"
@@ -193,6 +194,7 @@ def classify_adaptive_diagnostics(evidence: list[dict[str, Any]]) -> list[dict[s
                 "name": name,
                 "classification": classification,
                 "logCount": log_count,
+                "retainedLogCount": retained_count,
                 "activityLabel": label,
                 "activityCount": repeated_count,
                 "failureSignals": failure_signals,
