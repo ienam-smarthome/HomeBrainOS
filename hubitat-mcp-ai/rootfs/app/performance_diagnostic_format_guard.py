@@ -4,6 +4,10 @@
 child diagnostic fields are recognized by semantic role rather than exact label
 text, and timing statements are rendered atomically from one host timing record
 so a source/signal can never inherit another signal's cadence numbers.
+
+0.16.86 also treats the host's canonical "non-diagnostic observations" wording as
+a structural contradiction when the same scoped target is now classified as a
+real diagnostic signal (for example after parsing a comma-formatted long call).
 """
 
 from __future__ import annotations
@@ -44,6 +48,9 @@ _MECHANISM_ACTION = re.compile(
 )
 _FALSE_NO_SCOPED_EVIDENCE = re.compile(
     r"(?i)\bno\s+target-scoped\s+diagnostic\s+evidence\s+was\s+read\b"
+)
+_CANONICAL_NON_DIAGNOSTIC_SCOPED = re.compile(
+    r"(?i)\btarget-scoped\s+diagnostic\s+read\s+returned\s+\d+\s+non-diagnostic\s+log\s+observation"
 )
 _COLLECT_SCOPED_EVIDENCE = re.compile(r"(?i)\bcollect\s+target-scoped\s+diagnostic\s+evidence\b")
 _PER_SECOND_RATE = re.compile(
@@ -353,6 +360,13 @@ def guard_format_independent_performance_diagnostics(
                 else _evidence_summary(effective_target)
             )
             candidate = _render_with_label(candidate, body)
+
+        if (
+            effective_target is not None
+            and str(effective_target.get("classification") or "") == "diagnostic_signal"
+            and _CANONICAL_NON_DIAGNOSTIC_SCOPED.search(candidate)
+        ):
+            candidate = _render_with_label(candidate, _diagnostic_interpretation(effective_target))
 
         if (
             effective_target is not None
