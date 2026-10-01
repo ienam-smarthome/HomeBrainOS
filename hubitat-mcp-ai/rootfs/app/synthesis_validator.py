@@ -20,6 +20,7 @@ from history_temporal_analysis import guard_history_duration_claim
 from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from performance_diagnostic_evidence_gate import guard_performance_diagnostic_hypotheses
+from performance_diagnostic_format_guard import guard_format_independent_performance_diagnostics
 from performance_evidence_first import guard_evidence_first_performance
 from performance_live_semantic_guard import guard_live_performance_semantics
 from performance_log_observation_guard import guard_performance_log_observations
@@ -107,15 +108,24 @@ def validate_synthesis(
     if log_observation_changed:
         issues.append("performance_log_observation")
 
-    # 0.16.82: adaptive source-scoped diagnostics are conclusion boundaries, not
-    # an invitation to fill missing mechanisms with plausible guesses. Sparse or
-    # neutral scoped evidence must remain unresolved; repeated neutral activity
-    # may be reported as an observed pattern but not promoted into a mechanism.
+    # 0.16.83: apply adaptive evidence boundaries by entity/claim rather than by
+    # one expected Markdown layout. This catches inline diagnostic bullets,
+    # cadence claims outside a Diagnostic Hypotheses section, same-second cluster
+    # promotion into a rate, and threshold-label events promoted into triggers.
+    corrected, format_independent_changed = guard_format_independent_performance_diagnostics(
+        corrected,
+        evidence,
+    )
+    if format_independent_changed:
+        issues.append("performance_evidence_first")
+
+    # 0.16.82 legacy structural guard remains as a compatible backstop for the
+    # numbered-heading shape used by earlier synthesis output.
     corrected, diagnostic_gate_changed = guard_performance_diagnostic_hypotheses(
         corrected,
         evidence,
     )
-    if diagnostic_gate_changed:
+    if diagnostic_gate_changed and "performance_evidence_first" not in issues:
         issues.append("performance_evidence_first")
 
     corrected, performance_changed = guard_performance_log_causality(
