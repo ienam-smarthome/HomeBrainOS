@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 from contextual_read_fast_path import is_pronoun_reference
-from time_expressions import AT_TIME
+from time_expressions import AT_TIME, parse_clock
 
 _STRONG_CONTROL_VERBS = {
     "create", "delete", "disable", "enable", "install", "pause", "reboot", "remove",
@@ -221,11 +221,52 @@ def parse_hub_health_intent(prompt: str) -> bool:
     return _HUB_HEALTH_STATUS.fullmatch(str(prompt).strip()) is not None
 
 
+_FUTURE_ROUTINE_CONTROL = re.compile(
+    r"(?:"
+    r"\b(?:tomorrow|tonight|later)\b"
+    r"|\b(?:daily|weekdays?|weekends?)\b"
+    r"|\bevery\s+(?:day|night|morning|evening|weekday|weekend|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+    r"|\b(?:next|on)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+    r"|\bat\s+(?:sunrise|sunset)\b"
+    r"|\b(?:in|after|for)\s+(?:\d+|a|an)\s*"
+    r"(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)\b"
+    r"|\b(?:until|till)\s+(?:noon|midnight|\d{1,2}(?:[:.]\d{2})?\s*"
+    r"(?:a\.?m\.?|p\.?m\.?)?)\b"
+    r")",
+    re.I,
+)
+
+
+def _has_future_routine_timing(value: str) -> bool:
+    """Return True when a routine control contains future/recurring timing.
+
+    The immediate-control compatibility parser runs before the semantic/model
+    scheduling path. It must therefore fail closed on temporal qualifiers so a
+    request such as "turn on X at 10pm" cannot be compiled as an immediate
+    switch command with "at 10pm" swallowed into the device target.
+
+    Clock validation uses the shared parser rather than AT_TIME alone. This is
+    important because an immediate brightness phrase such as "set lamp at 50%"
+    should remain a level command, not be mistaken for a 50:00 clock time.
+    """
+
+    clock = AT_TIME.search(value)
+    if clock is not None and parse_clock(str(clock.group("time") or "")) is not None:
+        following = value[clock.end():].lstrip()
+        if not following.startswith("%"):
+            return True
+    return _FUTURE_ROUTINE_CONTROL.search(value) is not None
+
+
 def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
-    """Parse routine switch/light controls without model-dependent payload shaping."""
+    """Parse immediate switch/light controls without model-dependent payload shaping."""
 
     value = " ".join(str(prompt).strip().split())
 
+    # Preserve the established immediate brightness grammar first. In
+    # particular, "set lamp at 50%" is a level request even though it contains
+    # the token "at" followed by a number.
     level_patterns = (
         r"^(?:please\s+)?(?:set|dim|change)\s+(?P<target>.+?)\s+"
         r"(?:to|at)\s+(?P<level>\d{1,3})\s*%?\s*[.!?]*$",
@@ -245,6 +286,9 @@ def routine_control_arguments(prompt: str) -> dict[str, Any] | None:
                 "command": "set_level",
                 "level": level,
             }
+        return None
+
+    if _has_future_routine_timing(value):
         return None
 
     patterns = (
