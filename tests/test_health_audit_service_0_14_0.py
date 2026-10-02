@@ -187,7 +187,11 @@ async def test_health_audit_is_deterministic_persistent_and_problem_first(tmp_pa
     mcp.devices = [
         mcp.devices[0],
         {"id": "door", "label": "Fridge Door", "attributes": {"battery": 88}},
-        {"id": "vac", "label": "Roborock Q7 Max", "attributes": {"healthStatus": "online"}},
+        {
+            "id": "vac",
+            "label": "Roborock Q7 Max",
+            "attributes": {"healthStatus": "online"},
+        },
     ]
     mcp.log_rows = []
     automations.items = [automations.items[0], automations.items[2]]
@@ -243,7 +247,7 @@ def test_log_findings_group_recurring_warnings() -> None:
     assert issues[0]["count"] == 2
 
 
-def test_stale_analysis_is_conservative_and_clusters_mqtt_telemetry() -> None:
+def test_old_activity_is_neutral_and_mqtt_cluster_is_observation_only() -> None:
     now = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
     devices = [
         *[
@@ -303,20 +307,30 @@ def test_stale_analysis_is_conservative_and_clusters_mqtt_telemetry() -> None:
         now=now,
     )
 
-    assert section["suspicious_stale_count"] == 3
-    assert section["stale_cluster_count"] == 1
-    assert section["stale_clusters"][0]["subsystem"] == "MQTT"
-    assert section["stale_clusters"][0]["count"] == 3
-    assert section["motion_active_too_long"][0]["label"] == "Hallway Motion"
-    assert section["occupied_long"][0]["label"] == "Bedroom 1 FP300"
+    labels = {row["label"] for row in section["no_recent_activity"]}
+    assert {
+        "Bedroom 1 (MQTT)",
+        "Bedroom 2 (MQTT)",
+        "Bedroom 3 (MQTT)",
+        "Aqara Mini Switch",
+        "Bedroom Battery Meter",
+        "Bedroom 1 FP300",
+    }.issubset(labels)
+    assert "Hallway Motion" not in labels
+    assert section["suspicious_stale_count"] == 0
+    assert section["stale_cluster_count"] == 0
+    assert section["motion_active_too_long_count"] == 0
+    assert section["occupied_long_count"] == 0
     assert section["never_reported"][0]["label"] == "New temperature sensor"
-    assert any(row["label"] == "Aqara Mini Switch" for row in section["passive_quiet"])
-    assert any(row["label"] == "Bedroom Battery Meter" for row in section["passive_quiet"])
-    assert any(item["category"] == "device-stale-cluster" for item in issues)
+    assert section["activity_cluster_count"] == 1
+    cluster = section["activity_clusters"][0]
+    assert cluster["subsystem"] == "MQTT"
+    assert cluster["count"] == 3
+    assert cluster["interpretation"] == "timestamp_cluster_only"
+    assert cluster["common_failure_proven"] is False
+    assert not any(item["category"] == "device-stale-cluster" for item in issues)
     assert not any(item["category"] == "device-stale" for item in issues)
-    assert any(item["category"] == "device-motion-active" for item in issues)
-    assert not any(item["category"] == "device-never-reported" for item in issues)
-    assert not any("FP300" in item["title"] and item["severity"] == "warning" for item in issues)
+    assert not any(item["category"] == "device-motion-active" for item in issues)
 
 
 def test_log_fingerprint_removes_volatile_ids_and_groups_vrb_warning() -> None:
@@ -352,7 +366,7 @@ def test_log_fingerprint_removes_volatile_ids_and_groups_vrb_warning() -> None:
     assert issues[0]["count"] == 2
 
 
-def test_long_term_stale_is_separate_and_new_staleness_waits_for_confirmation() -> None:
+def test_age_alone_never_becomes_stale_even_after_repeat_observation() -> None:
     now = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
     devices = [
         {
@@ -378,15 +392,14 @@ def test_long_term_stale_is_separate_and_new_staleness_waits_for_confirmation() 
         now=now,
     )
 
-    assert section["stale_candidate_count"] == 1
+    assert section["no_recent_activity_count"] == 2
+    assert section["stale_candidate_count"] == 0
     assert section["suspicious_stale_count"] == 0
-    assert section["long_term_stale_count"] == 1
-    assert not any("Fridge Meter" in item["title"] for item in issues)
-    assert any(item["category"] == "device-long-stale" for item in issues)
-    assert "possibly" not in issues[-1]["detail"].casefold()
-    assert "may be unused" in issues[-1]["detail"].casefold()
+    assert section["long_term_stale_count"] == 0
+    assert section["expected_update_overdue_count"] == 0
+    assert not any(item["category"].startswith("device-stale") for item in issues)
 
-    confirmed, confirmed_issues = _device_findings(
+    repeated, repeated_issues = _device_findings(
         devices[:1],
         low_battery_threshold=20,
         stale_hours=24,
@@ -394,8 +407,30 @@ def test_long_term_stale_is_separate_and_new_staleness_waits_for_confirmation() 
         previously_stale_ids={"recent-stale"},
         now=now,
     )
-    assert confirmed["suspicious_stale_count"] == 1
-    assert any(item["category"] == "device-stale" for item in confirmed_issues)
+    assert repeated["no_recent_activity_count"] == 1
+    assert repeated["suspicious_stale_count"] == 0
+    assert not any(item["category"] == "device-stale" for item in repeated_issues)
+
+
+def test_explicit_freshness_contract_is_required_for_overdue_warning() -> None:
+    now = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
+    section, issues = _device_findings(
+        [
+            {
+                "id": "contracted",
+                "label": "Contracted telemetry",
+                "capabilities": ["PowerMeter"],
+                "attributes": {"expectedUpdateSeconds": 3600},
+                "lastActivity": "2026-09-19T06:00:00+00:00",
+            }
+        ],
+        low_battery_threshold=20,
+        now=now,
+    )
+
+    assert section["expected_update_overdue_count"] == 1
+    assert issues[0]["category"] == "device-update-overdue"
+    assert "does not establish the cause" in issues[0]["detail"]
 
 
 def test_google_tv_adb_timeout_is_normalised_and_grouped() -> None:
@@ -456,4 +491,4 @@ async def test_snapshot_schema_change_resets_new_resolved_baseline(tmp_path) -> 
     assert result["change_tracking_state"] == "baseline-reset"
     assert result["new_count"] == 0
     assert result["resolved_count"] == 0
-    assert result["snapshot_schema_version"] == 2
+    assert result["snapshot_schema_version"] == 3
