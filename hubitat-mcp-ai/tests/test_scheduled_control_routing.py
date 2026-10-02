@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -59,3 +60,53 @@ def test_clock_scheduled_control_hands_off_to_rule_authoring() -> None:
 
     assert routine_control_arguments(prompt) is None
     assert service.matches_request(prompt) is True
+
+
+@pytest.mark.parametrize(
+    ("prompt", "command", "expected_time"),
+    [
+        (
+            f"block {TARGET} after 1 minute",
+            "blockInternet",
+            "2026-10-02T22:26:12",
+        ),
+        (
+            f"turn on {TARGET} in 30 mins",
+            "on",
+            "2026-10-02T22:55:12",
+        ),
+        (
+            f"turn off {TARGET} 2 hours later",
+            "off",
+            "2026-10-03T00:25:12",
+        ),
+    ],
+)
+def test_relative_delay_compiles_to_one_time_trigger(
+    prompt: str,
+    command: str,
+    expected_time: str,
+) -> None:
+    service = RuleAuthoringService(
+        None,
+        lambda *args, **kwargs: None,
+        now=lambda: datetime(2026, 10, 2, 22, 25, 12),
+    )  # type: ignore[arg-type]
+
+    intent = service._intent(prompt)
+
+    assert intent is not None
+    assert intent.target == TARGET
+    assert intent.start_command == command
+    assert intent.start_time == expected_time
+    assert intent.recurring is False
+
+
+def test_duration_request_is_not_reinterpreted_as_delayed_start() -> None:
+    service = RuleAuthoringService(
+        None,
+        lambda *args, **kwargs: None,
+        now=lambda: datetime(2026, 10, 2, 22, 25, 12),
+    )  # type: ignore[arg-type]
+
+    assert service.matches_request(f"turn on {TARGET} for 30 minutes") is False
