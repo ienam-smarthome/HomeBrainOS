@@ -24,6 +24,8 @@ _LABEL = re.compile(
     r"^(?P<prefix>\s*(?:[-*+]\s+|\d+[.)]\s+)?)"
     r"(?:\*\*(?P<label>[^*]+?)\*\*(?::)?\s*)?(?P<body>.*)$"
 )
+_MARKDOWN_HEADING = re.compile(r"^\s*#{1,6}\s+.+$")
+_NUMBERED_BOLD_ENTITY = re.compile(r"^\s*\*\*\s*\d+[.)]?\s*(?P<title>.+?)\s*\*\*\s*$")
 _NETWORK_LANGUAGE = re.compile(
     r"(?i)\b(?:network|connectivity|reachability|api\s+latency|api\s+response|"
     r"mdns|vlan|dhcp|connection)\b"
@@ -135,12 +137,11 @@ def _match_target(text: str, targets: list[dict[str, Any]]) -> dict[str, Any] | 
 
 
 def _long_operation_summary(target: dict[str, Any]) -> str:
-    values = [int(value) for value in target.get("longCallMs") or []]
-    values = sorted(set(values))
-    if values:
-        range_text = f"{values[0]}–{values[-1]} ms" if len(values) > 1 else f"{values[0]} ms"
-    else:
-        range_text = "very long operation durations"
+    values = sorted(set(int(value) for value in target.get("longCallMs") or []))
+    range_text = (
+        f"{values[0]}–{values[-1]} ms" if len(values) > 1 else f"{values[0]} ms"
+        if values else "very long operation durations"
+    )
     return (
         f"The scoped diagnostic logs contain explicit very long operation durations ({range_text}). "
         "That supports a calibrated long-running/stalled-operation hypothesis. The current evidence "
@@ -152,8 +153,7 @@ def _long_operation_summary(target: dict[str, Any]) -> str:
 def _failure_summary(target: dict[str, Any]) -> str:
     signals = [str(value) for value in target.get("failureSignals") or [] if str(value)]
     signal_text = ", ".join(dict.fromkeys(signals)) or "explicit failure evidence"
-    long_values = target.get("longCallMs") or []
-    extra = " Very long operation durations were also observed." if long_values else ""
+    extra = " Very long operation durations were also observed." if target.get("longCallMs") else ""
     return (
         f"The scoped diagnostic logs contain explicit failure signal(s): {signal_text}.{extra} "
         "These observations support a calibrated failure/connectivity hypothesis, but they do not "
@@ -246,12 +246,23 @@ def guard_direct_performance_evidence_use(
     name_counts = Counter(row["name"].casefold() for row in warnings if row.get("name"))
     clusters_present = _has_cluster(evidence)
 
+    current_target: dict[str, Any] | None = None
     output: list[str] = []
     for raw_line in original.splitlines(keepends=True):
         newline = "\n" if raw_line.endswith("\n") else ""
         line = raw_line[:-1] if newline else raw_line
         candidate = line
-        target = _match_target(candidate, targets)
+
+        if _MARKDOWN_HEADING.match(candidate):
+            current_target = None
+        numbered = _NUMBERED_BOLD_ENTITY.match(candidate)
+        if numbered is not None:
+            current_target = _match_target(numbered.group("title"), targets)
+
+        line_target = _match_target(candidate, targets)
+        if line_target is not None:
+            current_target = line_target
+        target = line_target or current_target
 
         if target is not None and str(target.get("classification") or "") == "diagnostic_signal":
             failures = target.get("failureSignals") or []
