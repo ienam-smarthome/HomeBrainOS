@@ -106,10 +106,34 @@ def is_light_device(device: dict[str, Any]) -> bool:
     ) or any(word in label for word in (" light", "lamp", "bulb"))
 
 
+def internet_access_state(device: dict[str, Any]) -> str | None:
+    """Return the user-facing Internet access meaning for Internet-room switches.
+
+    The authoritative Hubitat room/group is the semantic contract. Device labels
+    such as ``Block ...`` are intentionally ignored so an unrelated device name
+    can never silently acquire inverted access semantics.
+    """
+
+    if str(room_name(device) or "").casefold() != "internet":
+        return None
+    attributes = device_attributes(device)
+    switch = str(attributes.get("switch") or device.get("switch") or "").casefold()
+    if switch == "on":
+        return "allowed"
+    if switch == "off":
+        return "blocked"
+    return None
+
+
 def active_non_light_switches(
     devices: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Return switched-on devices, excluding every light/bulb device."""
+    """Return switched-on devices, excluding every light/bulb device.
+
+    Internet-room access controls keep their literal Hubitat ``switch=on`` state
+    for compatibility, while carrying deterministic presentation metadata that
+    means Internet access is allowed. This does not invert or rewrite commands.
+    """
 
     matches = []
     for device in devices:
@@ -117,14 +141,22 @@ def active_non_light_switches(
         switch = str(attributes.get("switch") or device.get("switch") or "").lower()
         if switch != "on" or is_light_device(device):
             continue
-        matches.append(
-            {
-                "id": device.get("id") or device.get("deviceId"),
-                "label": device.get("label") or device.get("name"),
-                "room": room_name(device) or "Unassigned",
-                "switch": "on",
-            }
-        )
+        item = {
+            "id": device.get("id") or device.get("deviceId"),
+            "label": device.get("label") or device.get("name"),
+            "room": room_name(device) or "Unassigned",
+            "switch": "on",
+        }
+        access_state = internet_access_state(device)
+        if access_state is not None:
+            item.update(
+                {
+                    "semantic_role": "internet_access_control",
+                    "internet_access": access_state,
+                    "state_label": f"Internet {access_state}",
+                }
+            )
+        matches.append(item)
     return sorted(
         matches,
         key=lambda item: str(item.get("label") or "").lower(),
@@ -181,6 +213,7 @@ __all__ = [
     "active_room_summary",
     "capability_names",
     "device_attributes",
+    "internet_access_state",
     "is_light_device",
     "room_name",
 ]
