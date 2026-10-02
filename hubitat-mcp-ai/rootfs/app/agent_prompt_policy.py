@@ -23,19 +23,31 @@ DEVICE FRESHNESS SEMANTICS
 """
 
 
+_INTERNET_ACCESS_POLICY = """
+
+INTERNET ACCESS SWITCH SEMANTICS
+- A device whose authoritative Hubitat room/group is exactly "Internet" is an Internet access control.
+- For those Internet-group devices only, switch=on means Internet allowed and switch=off means Internet blocked.
+- Present those states as "Internet allowed" or "Internet blocked". Do not describe switch=on as blocking being enabled, and do not describe switch=off as the Internet being allowed.
+- Authoritative room/group membership establishes this meaning. Never infer it merely from a label prefix such as "Block"; a similarly named device outside the Internet group keeps ordinary switch semantics.
+- If a switch row carries semantic_role=internet_access_control, internet_access, or state_label, prefer that semantic state over generic "switch on/off" wording in home summaries.
+- This is presentation semantics only. Keep the literal Hubitat switch state and underlying on/off commands unchanged; never invert a command or mutate a device merely to render its state.
+"""
+
+
 def build_system_prompt(
     device_manifest: str,
     app_manifest_section: str = "",
     *,
     now: datetime | None = None,
 ) -> str:
-    """Build the normal HomeBrain prompt plus evidence-bounded freshness rules."""
+    """Build the normal HomeBrain prompt plus evidence-bounded semantic rules."""
     base = _core.build_system_prompt(
         device_manifest,
         app_manifest_section,
         now=now,
     )
-    return base + _FRESHNESS_POLICY
+    return base + _FRESHNESS_POLICY + _INTERNET_ACCESS_POLICY
 
 
 __all__ = [
