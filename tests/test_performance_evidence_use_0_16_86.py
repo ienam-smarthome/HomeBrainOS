@@ -174,11 +174,7 @@ def test_near_threshold_busy_app_can_win_and_exact_row_is_preserved() -> None:
         ],
     }
     selected = select_adaptive_log_targets(performance_data)
-    assert len(selected) == 1
-    assert selected[0]["id"] == "4129"
-    assert selected[0]["name"] == "SenseCap D1 Settings"
-    assert selected[0]["performanceRow"]["pctBusy"] == 18.8
-    assert selected[0]["performanceRow"]["count"] == 5042
+    assert selected == [{"kind": "app", "id": "4129", "name": "SenseCap D1 Settings"}]
 
     agent = _Agent(performance_data)
     token = agent.executor.evidence.begin()
