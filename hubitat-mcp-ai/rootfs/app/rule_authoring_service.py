@@ -83,6 +83,13 @@ class RuleAuthoringService:
         r"(?P<end>\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\b",
         re.I,
     )
+    _RELATIVE_DELAY = re.compile(
+        r"\b(?:"
+        r"(?:in|after)\s+(?P<amount>\d+)\s*(?P<unit>minutes?|mins?|hours?|hrs?)"
+        r"|(?P<later_amount>\d+)\s*(?P<later_unit>minutes?|mins?|hours?|hrs?)\s+later"
+        r")\s*[.!?]*$",
+        re.I,
+    )
     # "every single day" is at least as natural as "every day" and must not
     # be left to fall through to the daily-vs-one-time branch undetected --
     # see _clean_goal, which strips whichever of these actually matched.
@@ -165,15 +172,15 @@ class RuleAuthoringService:
     def _intent(self, prompt: str) -> _ScheduleIntent | None:
         text = " ".join(str(prompt).strip().split())
         authored = self._AUTHORING.search(text) is not None
-        # Plain control phrasing is recognised via either an "at <time>"
-        # clause ("turn on X at 7am") or a "from X to Y" window clause
-        # ("block internet for X from 10pm to 6am") -- the window form has
-        # no "at" clause at all, so gating on _AT_TIME alone silently
-        # rejected every window-style command before it ever reached the
-        # window-intent branch below.
+        relative = self._RELATIVE_DELAY.search(text)
+        # Plain control phrasing is recognised via a clock clause, a recurring
+        # window, or a bounded relative delay. Relative delays are compiled
+        # into a dated one-time trigger instead of leaving the model to invent
+        # a Delay action inside the rule.
         plain_control = self._CONTROL_LEAD.match(text) is not None and (
             self._AT_TIME.search(text) is not None
             or self._WINDOW.search(text) is not None
+            or relative is not None
         )
         if not authored and not plain_control:
             return None
@@ -187,6 +194,10 @@ class RuleAuthoringService:
             if not daily:
                 return None
             return self._window_intent(text, window)
+        if relative is not None:
+            if daily:
+                return None
+            return self._relative_intent(text, relative)
         return self._single_intent(text, daily=daily)
 
     @classmethod
@@ -280,6 +291,45 @@ class RuleAuthoringService:
         if lead_state != match.group("trail").casefold():
             return goal
         return f"{match.group('lead')} {match.group('target')}"
+
+    @staticmethod
+    def _relative_minutes(match: re.Match[str]) -> int | None:
+        amount_text = match.group("amount") or match.group("later_amount")
+        unit = match.group("unit") or match.group("later_unit") or "minutes"
+        if not amount_text:
+            return None
+        amount = int(amount_text)
+        if amount <= 0:
+            return None
+        return amount * (60 if unit.casefold().startswith(("hour", "hr")) else 1)
+
+    def _relative_intent(
+        self,
+        text: str,
+        relative: re.Match[str],
+    ) -> _ScheduleIntent | None:
+        minutes = self._relative_minutes(relative)
+        if minutes is None:
+            return None
+        goal = self._clean_goal(text, relative.start())
+        goal = self._drop_redundant_trailing_state(goal)
+        for pattern, command, label in self._SINGLE_PATTERNS:
+            match = pattern.fullmatch(goal)
+            if match is None:
+                continue
+            target = match.group("target").strip(" ,.-")
+            target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
+            if not target:
+                continue
+            trigger = self._now().replace(microsecond=0) + timedelta(minutes=minutes)
+            return _ScheduleIntent(
+                target=target,
+                start_time=trigger.strftime("%Y-%m-%dT%H:%M:%S"),
+                start_command=command,
+                start_label=label,
+                recurring=False,
+            )
+        return None
 
     def _single_intent(self, text: str, *, daily: bool) -> _ScheduleIntent | None:
         """Recognise a single trigger with no auto-revert window.
