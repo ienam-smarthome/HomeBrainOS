@@ -13,7 +13,9 @@ added and the final evidence-first synthesis remains the only model round.
 0.16.86 keeps that bounded architecture but removes a hard 20% busy-share cliff
 from retrieval eligibility. A sustained near-threshold busy leader may now compete
 for the single adaptive slot, while the higher 20% threshold remains a priority
-bonus rather than an all-or-nothing admission rule.
+bonus rather than an all-or-nothing admission rule. Adaptive receipts also retain
+the exact performance-stat row that selected each scoped target so identity and
+selection rationale are auditable without re-resolving a name.
 """
 
 from __future__ import annotations
@@ -61,6 +63,16 @@ _ADAPTIVE_TOTAL_PCT = 15.0
 _ADAPTIVE_AVERAGE_MS = 2500.0
 _ADAPTIVE_SINCE = "6h"
 _ADAPTIVE_LIMIT = 120
+_ADAPTIVE_ROW_FIELDS = (
+    "id",
+    "name",
+    "pctBusy",
+    "pctTotal",
+    "averageMs",
+    "count",
+    "stateSize",
+    "totalMs",
+)
 
 
 def is_broad_performance_request(text: str) -> bool:
@@ -117,7 +129,11 @@ def _adaptive_score(row: dict[str, Any]) -> tuple[bool, float]:
     return True, score
 
 
-def _strongest_target(rows: Any, *, kind: str) -> dict[str, str] | None:
+def _compact_performance_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {field: row.get(field) for field in _ADAPTIVE_ROW_FIELDS if field in row}
+
+
+def _strongest_target(rows: Any, *, kind: str) -> dict[str, Any] | None:
     if not isinstance(rows, list):
         return None
     winner: dict[str, Any] | None = None
@@ -139,15 +155,17 @@ def _strongest_target(rows: Any, *, kind: str) -> dict[str, str] | None:
         "kind": kind,
         "id": str(winner.get("id") or "").strip(),
         "name": str(winner.get("name") or "").strip(),
+        "performanceRow": _compact_performance_row(winner),
+        "selectionScore": round(winner_score, 3),
     }
 
 
-def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, str]]:
+def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, Any]]:
     """Select at most one strong device and one strong app for scoped log reads."""
 
     if not isinstance(performance_data, dict):
         return []
-    targets: list[dict[str, str]] = []
+    targets: list[dict[str, Any]] = []
     device = _strongest_target(performance_data.get("deviceStats"), kind="device")
     app = _strongest_target(performance_data.get("appStats"), kind="app")
     if device is not None:
@@ -155,6 +173,26 @@ def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, str]]:
     if app is not None:
         targets.append(app)
     return targets
+
+
+def _adaptive_target_details(target: dict[str, Any]) -> dict[str, Any]:
+    row = target.get("performanceRow")
+    row = row if isinstance(row, dict) else {}
+    return {
+        "adaptiveTarget": {
+            "kind": str(target.get("kind") or ""),
+            "id": str(target.get("id") or ""),
+            "name": str(target.get("name") or ""),
+            "selectionSource": "hub_get_performance_stats",
+            "selectedFromExactRow": bool(
+                row
+                and str(row.get("id") or "") == str(target.get("id") or "")
+                and str(row.get("name") or "") == str(target.get("name") or "")
+            ),
+            "selectionScore": target.get("selectionScore"),
+            "performanceRow": row,
+        }
+    }
 
 
 async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
@@ -210,18 +248,44 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             )
             agent.request_metrics.increment(metric_key)
             agent.request_metrics.increment("performance_adaptive_reads")
+            adaptive_arguments = {
+                "tool": "hub_get_logs",
+                "args": {
+                    scope_key: target["id"],
+                    "since": _ADAPTIVE_SINCE,
+                    "limit": _ADAPTIVE_LIMIT,
+                },
+            }
+            # Record this receipt ourselves so it carries the exact performance row
+            # that selected the target. The MCP call still receives only public
+            # arguments; no private name re-resolution is introduced.
             execution = await agent.executor.execute(
                 "hub_manage_logs",
-                {
-                    "tool": "hub_get_logs",
-                    "args": {
-                        scope_key: target["id"],
-                        "since": _ADAPTIVE_SINCE,
-                        "limit": _ADAPTIVE_LIMIT,
-                    },
-                },
+                adaptive_arguments,
                 supports_live_claim=True,
                 evidence_kind="host_planned_performance_diagnostic",
+                record_evidence=False,
+            )
+            result = getattr(execution, "result", None)
+            details = agent.executor.result_details(result) if result is not None else None
+            enriched_details = dict(details or {})
+            enriched_details.update(_adaptive_target_details(target))
+            summary = (
+                agent.executor.result_summary(result)
+                if result is not None
+                else f"adaptive target {target['kind']}:{target['id']} read failed"
+            )
+            agent.executor.evidence.record(
+                "hub_manage_logs",
+                adaptive_arguments,
+                success=execution.success,
+                elapsed_ms=execution.elapsed_ms,
+                summary=summary,
+                supports_live_claim=True,
+                evidence_kind="host_planned_performance_diagnostic",
+                mutates=False,
+                effect=execution.effect,
+                details=enriched_details,
             )
             if not execution.success:
                 agent.request_metrics.increment("performance_adaptive_read_failures")
