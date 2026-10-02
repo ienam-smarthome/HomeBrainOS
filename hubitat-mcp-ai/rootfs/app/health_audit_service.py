@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-import health_audit_service_core as _core
+from frozen_core import health_audit_service_core as _core
 
 
 # Freshness contracts must be explicit data supplied by a device/integration.
