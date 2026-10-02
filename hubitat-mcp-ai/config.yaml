@@ -1,139 +1,59 @@
 name: "Hubitat MCP AI"
-version: "0.16.87"
+version: "0.16.86"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
-stage: stable
 arch:
   - amd64
   - aarch64
-  - armv7
-startup: services
-boot: auto
 init: false
 ingress: true
+ingress_port: 8099
+panel_icon: mdi:brain
+panel_title: HomeBrain
 homeassistant_api: true
-hassio_api: true
-hassio_role: default
-ingress_port: 8788
-panel_icon: mdi:home-assistant
-panel_title: "Hubitat MCP AI"
-ports:
-  8788/tcp: null
-ports_description:
-  8788/tcp: "Optional direct web interface (disabled by default; use Home Assistant ingress)"
-webui: "http://[HOST]:[PORT:8788]"
+host_network: true
+map:
+  - config:rw
 options:
   hubitat_mcp_url: ""
-  hubitat_mcp_token: ""
-  ollama_direct_cloud_enabled: true
-  ollama_direct_cloud_base_url: "https://ollama.com"
-  ollama_direct_cloud_api_key: ""
-  ollama_direct_cloud_model: "gemma4:31b-cloud"
-  ollama_cloud_model: "gemma4:31b-cloud"
-  ollama_local_enabled: false
-  ollama_local_base_url: "http://localhost:11434"
-  ollama_local_model: ""
-  ollama_local_timeout_seconds: 12
-  ollama_local_connect_timeout_seconds: 3
-  ollama_local_keep_alive_seconds: 120
-  ollama_agent_timeout_seconds: 60
-  stream_idle_timeout_seconds: 20
-  mcp_timeout_seconds: 25
-  mcp_device_cache_seconds: 12
-  mcp_identity_cache_seconds: 120
-  mcp_max_concurrent_calls: 2
-  mcp_retry_attempts: 3
-  mcp_retry_backoff_seconds: 0.25
-  conversation_context_ttl_seconds: 600
-  confirmation_ttl_seconds: 120
-  unified_mcp_agent_enabled: true
-  unified_mcp_tool_limit: 48
-  unified_mcp_max_tool_rounds: 9
-  max_tool_result_chars: 24000
-  require_sensitive_confirmation: true
-  rule_write_enabled: true
-  rule_create_paused_required: true
-  deterministic_reads_enabled: false
-  causal_subject_prefetch_enabled: true
-  causal_deterministic_final_enabled: true
-  causal_known_automations_json: '[{"name":"Hallway Lights ON","platform":"Aqara M3","triggerMode":"any","triggers":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1","aliases":["Hallway Sensor P1"]}],"derivedSensors":[{"device":"Hallway Soft Sensor","kind":"occupancy","sourceMode":"combined","sources":[{"device":"Hallway FP300","aliases":["Hallway FP300 sensor"]},{"device":"Hallway Aqara P1","aliases":["Hallway Sensor P1"]}]}],"actions":[{"device":"Hallway Light 1","transition":"on"},{"device":"Hallway Light 2","transition":"on"}]}]'
-  semantic_agent_enabled: true
-  semantic_default_brightness_step: 20
-  semantic_default_temperature_step: 1.0
-  morning_health_check_enabled: true
-  morning_health_check_time: "07:00"
-  health_check_log_hours: 24
-  health_check_low_battery: 20
-  health_check_stale_hours: 24
-  health_check_long_stale_hours: 168
-  health_check_cluster_minutes: 15
-  health_check_motion_active_hours: 2
-  pushover_enabled: false
-  pushover_app_token: ""
+  ollama_url: "https://ollama.com"
+  ollama_api_key: ""
+  ollama_model: "gemma4:31b-cloud"
+  ollama_fallback_model: "qwen3.5:4b"
+  ollama_timeout: 120
+  ollama_num_ctx: 32768
+  ollama_num_predict: 4096
+  ollama_keep_alive: "30m"
+  cache_ttl: 300
+  request_timeout: 120
+  verify_ssl: true
   pushover_user_key: ""
-  pushover_device: ""
-  ha_tts_enabled: true
-  ha_tts_notify_service: ""
-  ha_tts_media_stream: ""
-  chatgpt_mcp_enabled: false
-  chatgpt_mcp_require_bearer_auth: true
-  chatgpt_mcp_token: ""
-  web_title: "Hubitat MCP AI"
+  pushover_api_token: ""
+  system_check_hour: 8
+  system_check_minute: 0
+  system_check_enabled: false
+  tts_enabled: false
+  tts_entity: ""
+  tts_language: "en"
 schema:
   hubitat_mcp_url: str
-  hubitat_mcp_token: password
-  ollama_direct_cloud_enabled: bool
-  ollama_direct_cloud_base_url: str
-  ollama_direct_cloud_api_key: password
-  ollama_direct_cloud_model: str
-  ollama_cloud_model: str
-  ollama_local_enabled: bool
-  ollama_local_base_url: str
-  ollama_local_model: str
-  ollama_local_timeout_seconds: int
-  ollama_local_connect_timeout_seconds: int
-  ollama_local_keep_alive_seconds: int
-  ollama_agent_timeout_seconds: int
-  stream_idle_timeout_seconds: int
-  mcp_timeout_seconds: int
-  mcp_device_cache_seconds: int
-  mcp_identity_cache_seconds: int
-  mcp_max_concurrent_calls: int
-  mcp_retry_attempts: int
-  mcp_retry_backoff_seconds: float
-  conversation_context_ttl_seconds: int
-  confirmation_ttl_seconds: int
-  unified_mcp_agent_enabled: bool
-  unified_mcp_tool_limit: int
-  unified_mcp_max_tool_rounds: int
-  max_tool_result_chars: int
-  require_sensitive_confirmation: bool
-  rule_write_enabled: bool
-  rule_create_paused_required: bool
-  deterministic_reads_enabled: bool
-  causal_subject_prefetch_enabled: bool
-  causal_deterministic_final_enabled: bool
-  causal_known_automations_json: str
-  semantic_agent_enabled: bool
-  semantic_default_brightness_step: int
-  semantic_default_temperature_step: float
-  morning_health_check_enabled: bool
-  morning_health_check_time: str
-  health_check_log_hours: int
-  health_check_low_battery: int
-  health_check_stale_hours: int
-  health_check_long_stale_hours: int
-  health_check_cluster_minutes: int
-  health_check_motion_active_hours: int
-  pushover_enabled: bool
-  pushover_app_token: password
+  ollama_url: str
+  ollama_api_key: password
+  ollama_model: str
+  ollama_fallback_model: str
+  ollama_timeout: int(10,600)
+  ollama_num_ctx: int(2048,131072)
+  ollama_num_predict: int(256,16384)
+  ollama_keep_alive: str
+  cache_ttl: int(30,3600)
+  request_timeout: int(10,600)
+  verify_ssl: bool
   pushover_user_key: password
-  pushover_device: str
-  ha_tts_enabled: bool
-  ha_tts_notify_service: str
-  ha_tts_media_stream: str
-  chatgpt_mcp_enabled: bool
-  chatgpt_mcp_require_bearer_auth: bool
-  chatgpt_mcp_token: password
-  web_title: str
+  pushover_api_token: password
+  system_check_hour: int(0,23)
+  system_check_minute: int(0,59)
+  system_check_enabled: bool
+  tts_enabled: bool
+  tts_entity: str?
+  tts_language: str
