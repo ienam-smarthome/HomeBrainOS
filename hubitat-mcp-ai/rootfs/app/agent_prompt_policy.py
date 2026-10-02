@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import agent_prompt_policy_core as _core
+from frozen_core import agent_prompt_policy_core as _core
 
 
 render_device_manifest = _core.render_device_manifest
