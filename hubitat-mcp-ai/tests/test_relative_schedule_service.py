@@ -17,11 +17,24 @@ from rule_authoring_service import RULE_MACHINE_GATEWAY, RuleAuthoringService
 TARGET = "Block Media-Google-TV-Streamer"
 
 
+def result(name: str, arguments: dict[str, Any], data: Any) -> MCPToolResult:
+    return MCPToolResult(
+        name=name,
+        arguments=arguments,
+        raw={},
+        text="",
+        data=data,
+        is_error=False,
+    )
+
+
 class FakeMCP:
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
         if name == "hub_read_devices":
-            return MCPToolResult(
-                data={
+            return result(
+                name,
+                arguments,
+                {
                     "success": True,
                     "devices": [
                         {
@@ -33,10 +46,9 @@ class FakeMCP:
                         }
                     ],
                 },
-                is_error=False,
             )
         if name == "hub_read_rules":
-            return MCPToolResult(data={"success": True, "rules": []}, is_error=False)
+            return result(name, arguments, {"success": True, "rules": []})
         raise AssertionError(f"Unexpected tool: {name} {arguments}")
 
 
