@@ -53,10 +53,6 @@ _SCHEDULER_TERMS = (
     "polling",
 )
 
-# Retrieval-policy thresholds only. They decide whether a bounded diagnostic read
-# is worth its cost; they are not user-facing health/severity thresholds. Keep the
-# admission threshold below the priority threshold so small snapshot variation
-# around 20% cannot discard a sustained busy-share leader entirely.
 _ADAPTIVE_BUSY_READ_PCT = 15.0
 _ADAPTIVE_BUSY_PRIORITY_PCT = 20.0
 _ADAPTIVE_TOTAL_PCT = 15.0
@@ -64,20 +60,11 @@ _ADAPTIVE_AVERAGE_MS = 2500.0
 _ADAPTIVE_SINCE = "6h"
 _ADAPTIVE_LIMIT = 120
 _ADAPTIVE_ROW_FIELDS = (
-    "id",
-    "name",
-    "pctBusy",
-    "pctTotal",
-    "averageMs",
-    "count",
-    "stateSize",
-    "totalMs",
+    "id", "name", "pctBusy", "pctTotal", "averageMs", "count", "stateSize", "totalMs"
 )
 
 
 def is_broad_performance_request(text: str) -> bool:
-    """Return True only for broad performance analysis that asks for improvements."""
-
     folded = " ".join(str(text or "").casefold().split())
     return any(token in folded for token in _PERFORMANCE_TERMS) and any(
         token in folded for token in _RECOMMENDATION_TERMS
@@ -85,8 +72,6 @@ def is_broad_performance_request(text: str) -> bool:
 
 
 def wants_scheduler_evidence(text: str) -> bool:
-    """Only add the scheduler source when the user's objective actually mentions it."""
-
     folded = " ".join(str(text or "").casefold().split())
     return any(token in folded for token in _SCHEDULER_TERMS)
 
@@ -104,8 +89,6 @@ def _number(value: Any) -> float:
 
 
 def _adaptive_score(row: dict[str, Any]) -> tuple[bool, float]:
-    """Return retrieval eligibility/score without declaring the row unhealthy."""
-
     busy = _number(row.get("pctBusy"))
     total = _number(row.get("pctTotal"))
     average = _number(row.get("averageMs"))
@@ -116,9 +99,6 @@ def _adaptive_score(row: dict[str, Any]) -> tuple[bool, float]:
     )
     if not strong:
         return False, 0.0
-
-    # Prefer broad/sustained busy share over one very long average call, while a
-    # multi-second average still independently qualifies for investigation.
     score = busy * 4.0 + total * 3.0 + min(average / 1000.0, 30.0)
     if busy >= _ADAPTIVE_BUSY_PRIORITY_PCT:
         score += 100.0
@@ -160,9 +140,7 @@ def _strongest_target(rows: Any, *, kind: str) -> dict[str, Any] | None:
     }
 
 
-def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, Any]]:
-    """Select at most one strong device and one strong app for scoped log reads."""
-
+def _select_adaptive_log_target_records(performance_data: Any) -> list[dict[str, Any]]:
     if not isinstance(performance_data, dict):
         return []
     targets: list[dict[str, Any]] = []
@@ -173,6 +151,14 @@ def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, Any]]:
     if app is not None:
         targets.append(app)
     return targets
+
+
+def select_adaptive_log_targets(performance_data: Any) -> list[dict[str, str]]:
+    """Public target selection keeps its historical compact return shape."""
+    return [
+        {"kind": str(row["kind"]), "id": str(row["id"]), "name": str(row["name"])}
+        for row in _select_adaptive_log_target_records(performance_data)
+    ]
 
 
 def _adaptive_target_details(target: dict[str, Any]) -> dict[str, Any]:
@@ -196,29 +182,19 @@ def _adaptive_target_details(target: dict[str, Any]) -> dict[str, Any]:
 
 
 async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any:
-    """Collect baseline evidence plus bounded strong-outlier diagnostics."""
-
     async def collect() -> str:
         agent.request_metrics.increment("broad_performance_host_plan")
         source_specs: list[tuple[str, dict[str, Any]]] = [
             ("hub_read_diagnostics", {"tool": "hub_get_metrics"}),
             (
                 "hub_manage_logs",
-                {
-                    "tool": "hub_get_performance_stats",
-                    "args": {"limit": 20, "sortBy": "pct", "type": "both"},
-                },
+                {"tool": "hub_get_performance_stats", "args": {"limit": 20, "sortBy": "pct", "type": "both"}},
             ),
         ]
         if wants_scheduler_evidence(user_prompt):
             agent.request_metrics.increment("broad_performance_host_plan_jobs")
             source_specs.append(("hub_manage_logs", {"tool": "hub_get_jobs"}))
-        source_specs.append(
-            (
-                "hub_manage_logs",
-                {"tool": "hub_get_logs", "args": {"since": "30m", "limit": 100}},
-            )
-        )
+        source_specs.append(("hub_manage_logs", {"tool": "hub_get_logs", "args": {"since": "30m", "limit": 100}}))
 
         failed: list[str] = []
         performance_data: Any = None
@@ -236,29 +212,18 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             if arguments.get("tool") == "hub_get_performance_stats" and result is not None:
                 performance_data = getattr(result, "data", None)
 
-        targets = select_adaptive_log_targets(performance_data)
+        targets = _select_adaptive_log_target_records(performance_data)
         if targets:
             agent.request_metrics.increment("performance_adaptive_expansion")
         for target in targets:
             scope_key = "deviceId" if target["kind"] == "device" else "appId"
-            metric_key = (
-                "performance_adaptive_device_target"
-                if target["kind"] == "device"
-                else "performance_adaptive_app_target"
-            )
+            metric_key = "performance_adaptive_device_target" if target["kind"] == "device" else "performance_adaptive_app_target"
             agent.request_metrics.increment(metric_key)
             agent.request_metrics.increment("performance_adaptive_reads")
             adaptive_arguments = {
                 "tool": "hub_get_logs",
-                "args": {
-                    scope_key: target["id"],
-                    "since": _ADAPTIVE_SINCE,
-                    "limit": _ADAPTIVE_LIMIT,
-                },
+                "args": {scope_key: target["id"], "since": _ADAPTIVE_SINCE, "limit": _ADAPTIVE_LIMIT},
             }
-            # Record this receipt ourselves so it carries the exact performance row
-            # that selected the target. The MCP call still receives only public
-            # arguments; no private name re-resolution is introduced.
             execution = await agent.executor.execute(
                 "hub_manage_logs",
                 adaptive_arguments,
@@ -267,34 +232,35 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                 record_evidence=False,
             )
             result = getattr(execution, "result", None)
-            details = agent.executor.result_details(result) if result is not None else None
+            details_builder = getattr(agent.executor, "result_details", None)
+            details = details_builder(result) if result is not None and callable(details_builder) else None
             enriched_details = dict(details or {})
             enriched_details.update(_adaptive_target_details(target))
+            summary_builder = getattr(agent.executor, "result_summary", None)
             summary = (
-                agent.executor.result_summary(result)
-                if result is not None
-                else f"adaptive target {target['kind']}:{target['id']} read failed"
+                summary_builder(result)
+                if result is not None and callable(summary_builder)
+                else f"adaptive target {target['kind']}:{target['id']} {'read succeeded' if execution.success else 'read failed'}"
             )
-            agent.executor.evidence.record(
-                "hub_manage_logs",
-                adaptive_arguments,
-                success=execution.success,
-                elapsed_ms=execution.elapsed_ms,
-                summary=summary,
-                supports_live_claim=True,
-                evidence_kind="host_planned_performance_diagnostic",
-                mutates=False,
-                effect=execution.effect,
-                details=enriched_details,
-            )
+            recorder = getattr(agent.executor, "evidence", None)
+            if recorder is not None and callable(getattr(recorder, "record", None)):
+                recorder.record(
+                    "hub_manage_logs",
+                    adaptive_arguments,
+                    success=execution.success,
+                    elapsed_ms=int(getattr(execution, "elapsed_ms", 0) or 0),
+                    summary=summary,
+                    supports_live_claim=True,
+                    evidence_kind="host_planned_performance_diagnostic",
+                    mutates=False,
+                    effect=getattr(execution, "effect", "read"),
+                    details=enriched_details,
+                )
             if not execution.success:
                 agent.request_metrics.increment("performance_adaptive_read_failures")
 
         if failed:
-            return (
-                "Host-planned performance evidence collection completed with failed "
-                "sources: " + ", ".join(failed) + "."
-            )
+            return "Host-planned performance evidence collection completed with failed sources: " + ", ".join(failed) + "."
         return "Host-planned performance evidence collection completed."
 
     async def direct_outcome() -> Any:
