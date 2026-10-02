@@ -21,6 +21,7 @@ from location_correlation_guard import guard_location_correlation_claim
 from performance_causality_guard import guard_performance_log_causality
 from performance_diagnostic_format_guard import guard_format_independent_performance_diagnostics
 from performance_evidence_first import guard_evidence_first_performance
+from performance_evidence_use_guard import guard_direct_performance_evidence_use
 from performance_live_semantic_guard import guard_live_performance_semantics
 from performance_log_observation_guard import guard_performance_log_observations
 
@@ -96,7 +97,7 @@ def validate_synthesis(
     if log_observation_changed:
         issues.append("performance_log_observation")
 
-    # 0.16.85: one format-independent adaptive diagnostic guard owns target context,
+    # One format-independent adaptive diagnostic guard owns target context,
     # semantic child roles, cadence/source integrity, cluster-rate boundaries and
     # mechanism-specific action gating. The older numbered-heading guard is no
     # longer chained afterwards, avoiding a second shape-dependent rewrite pass.
@@ -117,6 +118,17 @@ def validate_synthesis(
 
     corrected, evidence_first_changed = guard_evidence_first_performance(corrected, evidence)
     if evidence_first_changed and "performance_evidence_first" not in issues:
+        issues.append("performance_evidence_first")
+
+    # 0.16.86 final evidence-use integrity runs after the generic semantic stack so
+    # later repairs cannot erase literal WARN evidence, conflate a long-running
+    # operation with a connectivity failure, or turn a same-second cluster into a
+    # prescriptive staggering/frequency recommendation.
+    corrected, direct_evidence_changed = guard_direct_performance_evidence_use(
+        corrected,
+        evidence,
+    )
+    if direct_evidence_changed and "performance_evidence_first" not in issues:
         issues.append("performance_evidence_first")
 
     if causal:
