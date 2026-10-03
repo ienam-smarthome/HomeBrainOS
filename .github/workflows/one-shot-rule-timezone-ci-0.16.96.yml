@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/rule-authoring-hub-timezone-0.16.96
-      - name: Apply CI cleanup
+      - name: Apply corrected CI cleanup
         run: python .github/scripts/fix_rule_timezone_ci_01696.py
       - name: Remove one-shot files
         run: |
