@@ -6,6 +6,7 @@
 - Bare one-time clock requests use the same hub-local clock when deciding whether the next occurrence is today or tomorrow.
 - The fix reuses `HubTimezoneResolver`, so DST changes such as GMT/BST are handled by timezone data rather than a fixed offset.
 - Non-scheduling requests do not pay for timezone lookup; a lightweight grammar pass remains the no-I/O gate.
+- Recurring daily schedules keep their existing bare `HH:MM` Rule Machine triggers and do not add a timezone lookup.
 - The timezone value is cached by the existing resolver.
 
 ## Accurate confirmation wording
