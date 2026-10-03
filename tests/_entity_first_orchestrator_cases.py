@@ -926,7 +926,7 @@ async def test_one_time_rule_end_to_end_creates_then_self_pauses():
 
     assert "Created **Turn on Livingroom Light 1" in outcome.message
     assert "appId: 9001" in outcome.message
-    assert "was paused immediately after its one-time trigger" in outcome.message
+    assert "was configured to pause itself after its one-time trigger executes" in outcome.message
     assert ai.requests == []
 
 

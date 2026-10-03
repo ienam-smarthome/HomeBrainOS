@@ -746,16 +746,19 @@ class RuleAuthoringService:
         if RULE_MACHINE_GATEWAY not in available_gateways:
             return RuleAuthoringDecision(False)
 
-        hub_now, _timezone_name, _timezone_source = (
-            await self._hub_timezone.now_in_hub_timezone(
-                lambda: self._now()
-                if self._now().tzinfo is not None
-                else self._now().replace(tzinfo=timezone.utc)
+        if not intent.recurring:
+            runtime_now = self._now()
+            if runtime_now.tzinfo is None:
+                # The Home Assistant add-on container runs UTC in production.
+                # Treat a naive injected/runtime clock as UTC before converting
+                # it through the authoritative Hubitat location timezone.
+                runtime_now = runtime_now.replace(tzinfo=timezone.utc)
+            hub_now, _timezone_name, _timezone_source = (
+                await self._hub_timezone.now_in_hub_timezone(lambda: runtime_now)
             )
-        )
-        intent = self._intent(prompt, now=hub_now)
-        if intent is None:
-            return RuleAuthoringDecision(False)
+            intent = self._intent(prompt, now=hub_now)
+            if intent is None:
+                return RuleAuthoringDecision(False)
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
         internet_access = intent.start_command.casefold() in {

@@ -640,8 +640,8 @@ async def test_one_time_rule_pause_followup_resolves_placeholder_to_real_appid()
 
     assert "Created **Turn on Bedroom 1 Lamp (One-time 2026-08-07)** (appId: 4171)" in report
     assert (
-        "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was paused "
-        "immediately after its one-time trigger so it cannot fire again."
+        "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was configured to "
+        "pause itself after its one-time trigger executes, so it cannot fire again."
     ) in report
     # The pause line must reuse the rule's real name, not the generic
     # "Rule Machine rule" fallback queued_rule_name() would otherwise
@@ -692,8 +692,8 @@ async def test_one_time_rule_pause_followup_failure_is_reported_distinctly():
 
     assert "Created **Turn on Bedroom 1 Lamp (One-time 2026-08-07)** (appId: 4171)" in report
     assert (
-        "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was created but "
-        "could not be confirmed paused afterward: Rule 4171 not found."
+        "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was created but its "
+        "self-pause action could not be confirmed: Rule 4171 not found."
     ) in report
 
 @pytest.mark.parametrize(
