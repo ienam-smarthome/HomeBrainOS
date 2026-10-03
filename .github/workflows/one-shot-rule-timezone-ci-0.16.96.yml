@@ -1,0 +1,27 @@
+name: One-shot 0.16.96 timezone CI cleanup
+on:
+  push:
+    paths:
+      - '.github/workflows/one-shot-rule-timezone-ci-0.16.96.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rule-authoring-hub-timezone-0.16.96
+      - name: Apply CI cleanup
+        run: python .github/scripts/fix_rule_timezone_ci_01696.py
+      - name: Remove one-shot files
+        run: |
+          rm .github/scripts/fix_rule_timezone_ci_01696.py
+          rm .github/workflows/one-shot-rule-timezone-ci-0.16.96.yml
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix 0.16.96 timezone release regressions"
+          git push origin HEAD:fix/rule-authoring-hub-timezone-0.16.96
