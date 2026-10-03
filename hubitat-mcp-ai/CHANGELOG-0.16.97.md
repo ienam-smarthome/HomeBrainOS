@@ -9,6 +9,7 @@
 - Each eligible rule is removed through MCP `hub_delete_native_app` using **soft delete only** (`force=false`, `confirm=true`), preserving the MCP server's backup/safety checks.
 - If the rule-list read fails, cleanup deletes nothing. If one individual delete fails, cleanup records the failure and continues with the remaining eligible rules.
 - The scheduler uses the same authoritative Hubitat-local timezone resolver as one-time authoring, so the 01:00 run follows GMT/BST and other DST transitions without a fixed offset.
+- Destructive cleanup has no startup catch-up run: if HomeBrain is restarted after 01:00, expired rules wait for the next scheduled 01:00 pass rather than being deleted unexpectedly during startup.
 
 ## One-time rule lifecycle
 
