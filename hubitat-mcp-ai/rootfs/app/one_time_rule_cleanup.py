@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from automation_status_service import AutomationStatusService
 from health_audit_scheduler import next_daily_run, parse_daily_time
 from mcp_client import HubitatMCPClient, tool_succeeded
 
@@ -77,6 +76,28 @@ class OneTimeRuleCleanupService:
         scheduled = scheduled.replace(tzinfo=now.tzinfo)
         return scheduled + timedelta(minutes=grace_minutes) <= now
 
+    @staticmethod
+    def _authoritative_rule_rows(data: Any) -> list[dict[str, Any]] | None:
+        """Return only an explicit hub_list_rules ``rules`` collection.
+
+        Destructive cleanup must distinguish a genuinely empty authoritative
+        rule list from an unrelated/schemaless gateway response. Only the
+        ``rules`` field is accepted; common MCP wrapper objects may contain it.
+        """
+        if not isinstance(data, dict):
+            return None
+        if "rules" in data:
+            rows = data.get("rules")
+            if not isinstance(rows, list):
+                return None
+            return [dict(row) for row in rows if isinstance(row, dict)]
+        for key in ("result", "data", "output", "structuredContent"):
+            child = data.get(key)
+            rows = OneTimeRuleCleanupService._authoritative_rule_rows(child)
+            if rows is not None:
+                return rows
+        return None
+
     async def run(self) -> OneTimeRuleCleanupResult:
         now = await self._local_now()
         if now.tzinfo is None:
@@ -84,7 +105,10 @@ class OneTimeRuleCleanupService:
         outcome = OneTimeRuleCleanupResult(checked_at=now.isoformat())
 
         try:
-            listed = await self.mcp.call_tool("hub_read_rules", {})
+            listed = await self.mcp.call_tool(
+                "hub_read_rules",
+                {"tool": "hub_list_rules", "args": {}},
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -97,23 +121,31 @@ class OneTimeRuleCleanupService:
             logger.warning("One-time cleanup list read failed; refusing deletion")
             return outcome
 
-        rules = AutomationStatusService._items_from_result(
-            listed,
-            item_type="rule",
-            source="hub_read_rules",
-        )
-        outcome.scanned = len(rules)
-
-        candidates = [
-            item
-            for item in rules
-            if self._candidate(
-                str(item.get("name") or ""),
-                str(item.get("id")) if item.get("id") is not None else None,
-                now,
-                self.grace_minutes,
+        rows = self._authoritative_rule_rows(listed.data)
+        if rows is None:
+            outcome.list_error = (
+                "hub_list_rules returned no authoritative rules list; "
+                "no rules were deleted"
             )
-        ]
+            logger.warning(
+                "One-time cleanup rule-list response was not authoritative; refusing deletion"
+            )
+            return outcome
+
+        outcome.scanned = len(rows)
+        candidates: list[dict[str, str]] = []
+        for row in rows:
+            identifier = row.get("appId") or row.get("id") or row.get("ruleId")
+            name = str(
+                row.get("label")
+                or row.get("name")
+                or row.get("displayName")
+                or row.get("title")
+                or ""
+            ).strip()
+            app_id = str(identifier) if identifier is not None else None
+            if self._candidate(name, app_id, now, self.grace_minutes):
+                candidates.append({"id": str(app_id), "name": name})
         outcome.eligible = len(candidates)
 
         for item in candidates:

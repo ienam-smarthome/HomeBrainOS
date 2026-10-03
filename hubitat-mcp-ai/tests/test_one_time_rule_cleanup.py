@@ -27,16 +27,20 @@ def result(name: str, arguments: dict[str, Any], data: Any, *, error: bool = Fal
 
 
 class FakeMCP:
-    def __init__(self, *, fail_app: str | None = None, list_failure: bool = False) -> None:
+    def __init__(self, *, fail_app: str | None = None, list_failure: bool = False, malformed_list: bool = False) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.fail_app = fail_app
         self.list_failure = list_failure
+        self.malformed_list = malformed_list
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
         self.calls.append((name, arguments))
         if name == "hub_read_rules":
+            assert arguments == {"tool": "hub_list_rules", "args": {}}
             if self.list_failure:
                 return result(name, arguments, {"success": False, "error": "unavailable"}, error=True)
+            if self.malformed_list:
+                return result(name, arguments, {"success": True, "count": 39})
             return result(
                 name,
                 arguments,
@@ -140,6 +144,39 @@ async def test_cleanup_refuses_all_deletes_when_rule_list_fails() -> None:
     assert outcome.list_error
     assert not outcome.deleted
     assert [name for name, _args in mcp.calls] == ["hub_read_rules"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_fails_closed_when_gateway_omits_authoritative_rules_list() -> None:
+    mcp = FakeMCP(malformed_list=True)
+    service = OneTimeRuleCleanupService(mcp, local_now=local_now, grace_minutes=10)
+
+    outcome = await service.run()
+
+    assert outcome.scanned == 0
+    assert outcome.list_error == (
+        "hub_list_rules returned no authoritative rules list; no rules were deleted"
+    )
+    assert not outcome.deleted
+    assert [name for name, _args in mcp.calls] == ["hub_read_rules"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_accepts_explicit_empty_authoritative_rules_list() -> None:
+    class EmptyRulesMCP(FakeMCP):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
+            self.calls.append((name, arguments))
+            assert name == "hub_read_rules"
+            assert arguments == {"tool": "hub_list_rules", "args": {}}
+            return result(name, arguments, {"success": True, "rules": []})
+
+    mcp = EmptyRulesMCP()
+    service = OneTimeRuleCleanupService(mcp, local_now=local_now, grace_minutes=10)
+    outcome = await service.run()
+
+    assert outcome.scanned == 0
+    assert outcome.list_error is None
+    assert not outcome.deleted
 
 
 @pytest.mark.asyncio
