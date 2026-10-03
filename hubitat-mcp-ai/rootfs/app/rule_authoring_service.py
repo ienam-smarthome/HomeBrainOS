@@ -697,7 +697,16 @@ class RuleAuthoringService:
             # (ADB)" cannot win merely because its label is a closer match.
             identity_started = time.monotonic()
             try:
-                identities = list(await self.mcp.get_device_identities() or [])
+                # get_cached_devices() is the long-established enriched identity
+                # interface used by the control/query paths and by older MCP
+                # clients/test doubles. Prefer it here; fall back to the newer
+                # get_device_identities() helper when only that interface exists.
+                identity_reader = getattr(self.mcp, "get_cached_devices", None)
+                if not callable(identity_reader):
+                    identity_reader = getattr(self.mcp, "get_device_identities", None)
+                if not callable(identity_reader):
+                    raise AttributeError("No device identity reader is available")
+                identities = list(await identity_reader() or [])
             except Exception as exc:
                 self._record_evidence(
                     "homebrain_device_inventory",
