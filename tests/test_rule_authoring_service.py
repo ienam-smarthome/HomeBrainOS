@@ -659,7 +659,7 @@ async def test_two_one_time_requests_for_different_times_the_same_day_are_not_du
     assert decision.handled is True
     assert decision.message is None
     assert decision.rule_names == ("Turn on Bedroom 1 Lamp (One-time 2026-08-07 07:00)",)
-    assert len(decision.actions) == 2
+    assert len(decision.actions) == 1
     assert decision.actions[0]["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
 
 
@@ -695,16 +695,11 @@ async def test_mismatched_trailing_state_word_is_left_untouched():
 
 
 @pytest.mark.asyncio
-async def test_one_time_proposal_queues_a_self_pause_followup_action():
-    """A one-time rule proposal must queue exactly two actions: the create,
-    and a follow-up edit that pauses the rule via Hubitat's native
-    pauseRule capability -- a safety net in case the "Certain Time (and
-    optional date)" trigger's underlying scheduler job (observed live to
-    carry a "recurring": true label despite the dated trigger) ever does
-    fire again. The follow-up can't know the real appId yet (the rule
-    doesn't exist until the first action runs), so both its edit target and
-    its own pause target use NEW_RULE_ID_TOKEN, resolved later by
-    ConfirmedActionCoordinator.
+async def test_one_time_proposal_queues_only_create_for_nightly_cleanup():
+    """One-time authoring creates the dated rule only.
+
+    Expiry is owned by the guarded 01:00 HomeBrain cleanup service, so a
+    proposal must not append a pauseRule edit to the newly-created rule.
     """
 
     lamp = {
@@ -721,15 +716,12 @@ async def test_one_time_proposal_queues_a_self_pause_followup_action():
         available_gateways={RULE_MACHINE_GATEWAY},
     )
 
-    assert len(decision.actions) == 2
-    create, pause = decision.actions
+    assert len(decision.actions) == 1
+    create = decision.actions[0]
     assert create["args"]["addTrigger"]["atTime"] == "2026-08-07T07:00:00"
-    assert pause["args"]["appId"] == NEW_RULE_ID_TOKEN
-    assert pause["args"]["addAction"] == {
-        "capability": "pauseRule",
-        "action": "pause",
-        "ruleIds": [NEW_RULE_ID_TOKEN],
-    }
+    assert create["args"]["addAction"]["capability"] == "runCommand"
+    assert create["args"]["addAction"]["command"] == "on"
+    assert create["args"]["addAction"]["capability"] != "pauseRule"
 
 
 @pytest.mark.asyncio

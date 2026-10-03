@@ -833,13 +833,11 @@ async def test_confirmed_rule_authoring_injects_upstream_approval_and_reports_ve
 
 
 @pytest.mark.asyncio
-async def test_one_time_rule_end_to_end_creates_then_self_pauses():
-    """Full round trip for a one-time schedule request: propose -> confirm
-    -> the coordinator resolves the create action's real appId and injects
-    it into the queued self-pause follow-up before executing it. Regression
-    coverage for the auto-pause feature at the level the user actually
-    interacts with it (a plain prompt, then "confirm"), not just the
-    coordinator's substitution mechanics in isolation.
+async def test_one_time_rule_end_to_end_creates_without_self_pause():
+    """Full prompt -> confirm path creates one dated rule and no pause edit.
+
+    Nightly cleanup owns expiry, so confirmation must not enqueue or execute a
+    second Rule Machine write for pauseRule.
     """
 
     class OneTimeRuleMCP(FakeMCP):
@@ -892,19 +890,10 @@ async def test_one_time_rule_end_to_end_creates_then_self_pauses():
                 )
             if name == "hub_manage_rule_machine":
                 assert arguments["args"]["confirm"] is True
-                is_pause = (
+                assert (
                     arguments["args"].get("addAction", {}).get("capability")
-                    == "pauseRule"
-                )
-                if is_pause:
-                    # The real fix under test: the placeholder must already
-                    # be gone by the time this reaches the fake "hub".
-                    assert arguments["args"]["appId"] == "9001"
-                    assert arguments["args"]["addAction"]["ruleIds"] == ["9001"]
-                    return MCPToolResult(
-                        name, arguments, {}, "",
-                        {"success": True, "appId": 9001, "health": {"ok": True}},
-                    )
+                    != "pauseRule"
+                ), "nightly cleanup owns expiry; self-pause must not be queued"
                 return MCPToolResult(
                     name, arguments, {}, "",
                     {"success": True, "appId": 9001, "health": {"ok": True}},
@@ -920,13 +909,16 @@ async def test_one_time_rule_end_to_end_creates_then_self_pauses():
         session_id="one-time-e2e",
     )
     assert propose_outcome.confirmation_required is True
-    assert propose_outcome.confirmation_count == 2
+    assert propose_outcome.confirmation_count == 1
 
     outcome = await agent.process_user_request_result("confirm", session_id="one-time-e2e")
 
     assert "Created **Turn on Livingroom Light 1" in outcome.message
     assert "appId: 9001" in outcome.message
-    assert "was configured to pause itself after its one-time trigger executes" in outcome.message
+    assert "pause itself" not in outcome.message
+    writes = [arguments for name, arguments in mcp.calls if name == "hub_manage_rule_machine"]
+    assert len(writes) == 1
+    assert writes[0]["args"]["addAction"]["capability"] == "runCommand"
     assert ai.requests == []
 
 
