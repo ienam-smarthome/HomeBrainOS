@@ -1,0 +1,179 @@
+name: One-shot 0.16.93 capability resolver fix
+
+on:
+  push:
+    branches:
+      - fix/capability-resolver-fallback-0.16.93
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/capability-resolver-fallback-0.16.93
+          fetch-depth: 0
+      - name: Apply resolver fix, regressions, and release metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # 1) Correct required-command narrowing. An exact label match that
+          # lacks the required command must not prevent the existing
+          # authoritative identity fallback from running.
+          path = Path('hubitat-mcp-ai/rootfs/app/device_query_service.py')
+          text = path.read_text()
+          old = '''        if required_command:\n            capable = [\n                device\n                for device in scoped_candidates\n                if required_command.casefold() in device_commands(device)\n            ]\n            if capable:\n                scoped_candidates = capable\n'''
+          new = '''        if required_command:\n            # Required-command resolution is capability-first. A narrow\n            # labelFilter can legitimately return an exact-name device that\n            # is not the control surface for the requested command (for\n            # example, "Google TV Streamer (ADB)" versus the separate\n            # "Block Media-Google-TV-Streamer" Internet-control device).\n            # Keep the capable subset even when it is empty: an empty set\n            # deliberately drives the existing authoritative-identity\n            # fallback below, where required_command is applied again before\n            # fuzzy name resolution. Retaining incapable targeted rows here\n            # would incorrectly make an exact name match terminal.\n            scoped_candidates = [\n                device\n                for device in scoped_candidates\n                if required_command.casefold() in device_commands(device)\n            ]\n'''
+          if old not in text:
+              raise SystemExit('device_query_service required-command block not found')
+          path.write_text(text.replace(old, new, 1))
+
+          # 2) Regression for exact-but-incapable targeted lookup followed by
+          # capability-grounded authoritative fallback.
+          test = Path('hubitat-mcp-ai/tests/test_required_command_resolution_fallback.py')
+          test.write_text(r'''from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+APP_DIR = Path(__file__).resolve().parents[1] / "rootfs" / "app"
+sys.path.insert(0, str(APP_DIR))
+
+from device_query_service import DeviceQueryService
+from mcp_client import MCPToolResult
+
+
+ADB = {
+    "id": "7000",
+    "label": "Google TV Streamer (ADB)",
+    "name": "Google TV Streamer (ADB)",
+    "room": "Living Room",
+    "capabilities": ["Switch"],
+    "commands": ["on", "off"],
+}
+
+BLOCKER = {
+    "id": "6923",
+    "label": "Block Media-Google-TV-Streamer",
+    "name": "Block Media-Google-TV-Streamer",
+    "room": "Internet",
+    "capabilities": ["Switch"],
+    "commands": ["on", "off", "blockInternet", "allowInternet"],
+}
+
+
+class FakeMCP:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPToolResult:
+        self.calls.append((name, arguments))
+        assert name == "hub_read_devices"
+        assert arguments["tool"] == "hub_list_devices"
+        assert arguments["args"]["labelFilter"] == "Google-TV-Streamer"
+        data = {"success": True, "devices": [ADB]}
+        return MCPToolResult(name, arguments, {}, json.dumps(data), data)
+
+    def peek_device_identities(self) -> list[dict[str, Any]]:
+        return [ADB, BLOCKER]
+
+
+@pytest.mark.asyncio
+async def test_required_command_broadens_past_exact_incapable_label_match() -> None:
+    mcp = FakeMCP()
+    evidence: list[tuple[Any, ...]] = []
+    service = DeviceQueryService(
+        mcp,
+        lambda *args, **kwargs: evidence.append((args, kwargs)),
+    )
+
+    result = await service.resolve_device({
+        "name": "Google-TV-Streamer",
+        "required_command": "blockInternet",
+    })
+
+    assert result.is_error is False
+    assert result.data["matched"] is True
+    assert result.data["deviceId"] == "6923"
+    assert result.data["label"] == "Block Media-Google-TV-Streamer"
+    assert result.data["attempts"] == [
+        {"source": "label_filter", "count": 1},
+        {"source": "authoritative_identity_fuzzy", "count": 1},
+    ]
+    assert len(mcp.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_without_required_command_exact_name_behavior_is_unchanged() -> None:
+    mcp = FakeMCP()
+    service = DeviceQueryService(mcp, lambda *args, **kwargs: None)
+
+    result = await service.resolve_device({"name": "Google-TV-Streamer"})
+
+    assert result.is_error is False
+    assert result.data["matched"] is True
+    assert result.data["deviceId"] == "7000"
+    assert result.data["label"] == "Google TV Streamer (ADB)"
+    assert result.data["attempts"] == [{"source": "label_filter", "count": 1}]
+''')
+
+          # 3) Release metadata.
+          config = Path('hubitat-mcp-ai/config.yaml')
+          value = config.read_text().replace('version: "0.16.92"', 'version: "0.16.93"', 1)
+          config.write_text(value)
+
+          root_readme = Path('README.md')
+          value = root_readme.read_text().replace(
+              '| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.92 |',
+              '| [Hubitat MCP AI](hubitat-mcp-ai/README.md) | 0.16.93 |',
+              1,
+          )
+          root_readme.write_text(value)
+
+          addon_readme = Path('hubitat-mcp-ai/README.md')
+          value = addon_readme.read_text()
+          value = value.replace('Current add-on version: **0.16.92**.', 'Current add-on version: **0.16.93**.', 1)
+          marker = '0.16.92 fixes scheduled Internet-control handoff'
+          paragraph = (
+              '0.16.93 fixes capability-grounded target resolution when a narrow exact-name lookup finds the wrong control surface. '
+              'When a caller supplies `required_command`, targeted candidates are now strictly narrowed to devices that advertise that command; '
+              'if none do, HomeBrain uses the existing authoritative identity fallback rather than accepting an exact-but-incapable device. '
+              'This lets scheduled Internet requests such as `block Google-TV-Streamer after 1 min` select `Block Media-Google-TV-Streamer` '
+              'instead of the similarly named `Google TV Streamer (ADB)`, while ordinary name resolution without a required command is unchanged.\n\n'
+          )
+          if paragraph not in value:
+              idx = value.find(marker)
+              if idx < 0:
+                  marker = '0.16.92'
+                  idx = value.find(marker)
+              if idx < 0:
+                  raise SystemExit('README 0.16.92 marker not found')
+              value = value[:idx] + paragraph + value[idx:]
+          addon_readme.write_text(value)
+
+          index = Path('hubitat-mcp-ai/CHANGELOG-INDEX.md')
+          value = index.read_text()
+          value = value.replace('- [0.16.92](CHANGELOG-0.16.92.md)', '- [0.16.93](CHANGELOG-0.16.93.md)', 1)
+          recent = '## Recent performance releases\n\n'
+          if recent in value and '- [0.16.92](CHANGELOG-0.16.92.md)' not in value.split(recent, 1)[1].split('\n', 2)[0:2]:
+              value = value.replace(recent, recent + '- [0.16.92](CHANGELOG-0.16.92.md)\n', 1)
+          index.write_text(value)
+
+          Path('hubitat-mcp-ai/CHANGELOG-0.16.93.md').write_text('''# Hubitat MCP AI 0.16.93\n\n## Capability-grounded device resolution\n\n- Fixes scheduled Internet-control requests that resolved a similarly named ordinary device instead of the dedicated Internet-control device.\n- When `required_command` is supplied, a targeted exact-name row that does not advertise that command is no longer accepted as terminal.\n- An empty capable subset now deliberately activates the existing authoritative identity fallback, which is itself filtered by the required command before fuzzy name matching.\n- Live regression covered: `Google TV Streamer (ADB)` must not win a `blockInternet` request over `Block Media-Google-TV-Streamer`.\n- Ordinary device resolution with no required command is unchanged.\n- No change to scheduling grammar, Rule Machine payloads, or Internet switch semantics (`on` = Internet allowed, `off` = Internet blocked).\n''')
+          PY
+
+          git rm .github/workflows/one-shot-0.16.93.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md hubitat-mcp-ai
+          git commit -m "HomeBrain 0.16.93: capability-grounded resolver fallback"
+          git push origin HEAD:fix/capability-resolver-fallback-0.16.93
