@@ -1,0 +1,31 @@
+name: Apply 0.16.98 patch
+
+on:
+  push:
+    branches:
+      - fix/internet-local-name-matching-0.16.98
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/internet-local-name-matching-0.16.98
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply patch
+        run: python scripts/apply_0_16_98.py
+      - name: Remove one-shot patch files and commit
+        run: |
+          rm -f scripts/apply_0_16_98.py .github/workflows/apply_0_16_98.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "HomeBrain 0.16.98: improve Internet target matching"
+          git push origin HEAD:fix/internet-local-name-matching-0.16.98
