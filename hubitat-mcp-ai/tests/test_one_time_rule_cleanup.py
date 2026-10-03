@@ -221,3 +221,57 @@ def test_cleanup_result_serialises_counts_and_details() -> None:
     assert payload["deleted_count"] == 1
     assert payload["failed_count"] == 1
     assert payload["deleted"][0]["appId"] == "4210"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_history_survives_scheduler_restart(tmp_path) -> None:
+    state_path = tmp_path / "cleanup-state.json"
+    mcp = FakeMCP()
+    service = OneTimeRuleCleanupService(mcp, local_now=local_now, grace_minutes=10)
+    first = OneTimeRuleCleanupScheduler(
+        service,
+        enabled=True,
+        daily_time="15:15",
+        local_now=local_now,
+        state_path=state_path,
+    )
+
+    result = await first.run_now()
+    assert state_path.exists()
+    assert result.deleted
+
+    restarted = OneTimeRuleCleanupScheduler(
+        service,
+        enabled=True,
+        daily_time="17:15",
+        local_now=local_now,
+        state_path=state_path,
+    )
+    status = restarted.status()
+
+    assert status["time"] == "17:15"
+    assert status["last_run"] == result.checked_at
+    assert status["last_trigger"] == "manual"
+    assert status["last_result"]["deleted_count"] == 2
+    assert status["last_result"]["failed_count"] == 0
+    assert status["history_persisted"] is True
+    assert status["persistence_error"] is None
+
+
+def test_cleanup_corrupt_persisted_state_does_not_block_scheduler(tmp_path) -> None:
+    state_path = tmp_path / "cleanup-state.json"
+    state_path.write_text("not-json", encoding="utf-8")
+    mcp = FakeMCP()
+    service = OneTimeRuleCleanupService(mcp, local_now=local_now, grace_minutes=10)
+    scheduler = OneTimeRuleCleanupScheduler(
+        service,
+        enabled=True,
+        daily_time="17:15",
+        local_now=local_now,
+        state_path=state_path,
+    )
+
+    status = scheduler.status()
+    assert status["last_run"] is None
+    assert status["persistence_error"]
+    assert status["time"] == "17:15"
