@@ -13,23 +13,14 @@ CHANGELOG-<version>.md
 ## Recent performance releases
 
 - [0.16.99](CHANGELOG-0.16.99.md)
-
-## Recent performance releases
-
 - [0.16.98](CHANGELOG-0.16.98.md)
-
 - [0.16.97](CHANGELOG-0.16.97.md)
-
 - [0.16.96](CHANGELOG-0.16.96.md)
-
 - [0.16.95](CHANGELOG-0.16.95.md)
-
 - [0.16.94](CHANGELOG-0.16.94.md)
-
 - [0.16.93](CHANGELOG-0.16.93.md)
 - [0.16.92](CHANGELOG-0.16.92.md)
 - [0.16.91](CHANGELOG-0.16.91.md)
-
 - [0.16.90](CHANGELOG-0.16.90.md)
 - [0.16.89](CHANGELOG-0.16.89.md)
 - [0.16.88](CHANGELOG-0.16.88.md)
