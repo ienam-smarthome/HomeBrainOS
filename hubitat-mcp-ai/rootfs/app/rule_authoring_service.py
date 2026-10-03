@@ -14,12 +14,13 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
 from device_state_summary import room_name
 from device_target_resolver import normalized_name, resolve_device_candidate
+from hub_timezone import HubTimezoneResolver
 from mcp_client import HubitatMCPClient
 
 logger = logging.getLogger("HomeBrainOS.RuleAuthoringService")
@@ -126,6 +127,7 @@ class RuleAuthoringService:
         self.mcp = mcp_client
         self._record_evidence = record_evidence
         self._now = now
+        self._hub_timezone = HubTimezoneResolver(mcp_client, record_evidence)
         self.internet_control_aliases = self._parse_internet_control_aliases(
             internet_control_aliases
         )
@@ -222,7 +224,9 @@ class RuleAuthoringService:
 
         return self._intent(prompt) is not None
 
-    def _intent(self, prompt: str) -> _ScheduleIntent | None:
+    def _intent(
+        self, prompt: str, *, now: datetime | None = None
+    ) -> _ScheduleIntent | None:
         text = " ".join(str(prompt).strip().split())
         authored = self._AUTHORING.search(text) is not None
         relative = self._RELATIVE_DELAY.search(text)
@@ -250,8 +254,8 @@ class RuleAuthoringService:
         if relative is not None:
             if daily:
                 return None
-            return self._relative_intent(text, relative)
-        return self._single_intent(text, daily=daily)
+            return self._relative_intent(text, relative, now=now)
+        return self._single_intent(text, daily=daily, now=now)
 
     @classmethod
     def _window_intent(cls, text: str, window: re.Match[str]) -> _ScheduleIntent | None:
@@ -360,6 +364,8 @@ class RuleAuthoringService:
         self,
         text: str,
         relative: re.Match[str],
+        *,
+        now: datetime | None = None,
     ) -> _ScheduleIntent | None:
         minutes = self._relative_minutes(relative)
         if minutes is None:
@@ -374,7 +380,8 @@ class RuleAuthoringService:
             target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
             if not target:
                 continue
-            trigger = self._now().replace(microsecond=0) + timedelta(minutes=minutes)
+            current = now if now is not None else self._now()
+            trigger = current.replace(microsecond=0) + timedelta(minutes=minutes)
             return _ScheduleIntent(
                 target=target,
                 start_time=trigger.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -384,7 +391,9 @@ class RuleAuthoringService:
             )
         return None
 
-    def _single_intent(self, text: str, *, daily: bool) -> _ScheduleIntent | None:
+    def _single_intent(
+        self, text: str, *, daily: bool, now: datetime | None = None
+    ) -> _ScheduleIntent | None:
         """Recognise a single trigger with no auto-revert window.
 
         Deliberately narrow: exactly one advertised command is required and
@@ -417,7 +426,11 @@ class RuleAuthoringService:
             target = re.sub(r"^(?:the\s+)", "", target, flags=re.I)
             if target:
                 trigger_time = (
-                    at_time if daily else self._next_occurrence_iso(at_time, self._now())
+                    at_time
+                    if daily
+                    else self._next_occurrence_iso(
+                        at_time, now if now is not None else self._now()
+                    )
                 )
                 return _ScheduleIntent(
                     target=target,
@@ -725,10 +738,23 @@ class RuleAuthoringService:
         the call genuinely errors.
         """
 
+        # First pass is a no-I/O grammar gate. Only genuine deterministic
+        # scheduling requests pay for authoritative timezone resolution.
         intent = self._intent(prompt)
         if intent is None:
             return RuleAuthoringDecision(False)
         if RULE_MACHINE_GATEWAY not in available_gateways:
+            return RuleAuthoringDecision(False)
+
+        hub_now, _timezone_name, _timezone_source = (
+            await self._hub_timezone.now_in_hub_timezone(
+                lambda: self._now()
+                if self._now().tzinfo is not None
+                else self._now().replace(tzinfo=timezone.utc)
+            )
+        )
+        intent = self._intent(prompt, now=hub_now)
+        if intent is None:
             return RuleAuthoringDecision(False)
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
