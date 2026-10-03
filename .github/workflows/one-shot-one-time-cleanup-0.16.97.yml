@@ -1,0 +1,27 @@
+name: One-shot 0.16.97 one-time cleanup patch
+on:
+  push:
+    paths:
+      - '.github/workflows/one-shot-one-time-cleanup-0.16.97.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/one-time-rule-cleanup-0.16.97
+      - name: Apply release patch
+        run: python .github/scripts/apply_one_time_cleanup_01697.py
+      - name: Remove one-shot files
+        run: |
+          rm .github/scripts/apply_one_time_cleanup_01697.py
+          rm .github/workflows/one-shot-one-time-cleanup-0.16.97.yml
+      - name: Commit release patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "HomeBrain 0.16.97: add nightly one-time rule cleanup"
+          git push origin HEAD:feat/one-time-rule-cleanup-0.16.97
