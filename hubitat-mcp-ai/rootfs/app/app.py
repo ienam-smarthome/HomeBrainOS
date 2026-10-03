@@ -221,6 +221,12 @@ one_time_rule_cleanup_scheduler = OneTimeRuleCleanupScheduler(
     enabled=_bool(OPTIONS.get("one_time_rule_cleanup_enabled"), True),
     daily_time=str(OPTIONS.get("one_time_rule_cleanup_time") or "01:00"),
     local_now=_health_scheduler_now,
+    state_path=Path(
+        os.getenv(
+            "ONE_TIME_RULE_CLEANUP_STATE_PATH",
+            "/data/homebrain-one-time-rule-cleanup.json",
+        )
+    ),
 )
 
 agent = UnifiedMCPAgent(

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from health_audit_scheduler import next_daily_run, parse_daily_time
@@ -194,6 +196,7 @@ class OneTimeRuleCleanupScheduler:
         enabled: bool,
         daily_time: str,
         local_now: Callable[[], Awaitable[datetime]],
+        state_path: Path | str | None = None,
     ) -> None:
         self.service = service
         self.enabled = bool(enabled)
@@ -212,6 +215,82 @@ class OneTimeRuleCleanupScheduler:
         self.last_run: str | None = None
         self.last_trigger: str | None = None
         self.last_result: OneTimeRuleCleanupResult | None = None
+        self.state_path = Path(state_path) if state_path else None
+        self.persistence_error: str | None = None
+        self._configuration_error = self.last_error
+        self._restore_state()
+
+    @staticmethod
+    def _result_from_payload(value: Any) -> OneTimeRuleCleanupResult | None:
+        if not isinstance(value, dict):
+            return None
+        checked_at = str(value.get("checked_at") or "").strip()
+        if not checked_at:
+            return None
+        deleted = [dict(item) for item in value.get("deleted", []) if isinstance(item, dict)]
+        failed = [dict(item) for item in value.get("failed", []) if isinstance(item, dict)]
+        try:
+            scanned = max(0, int(value.get("scanned") or 0))
+            eligible = max(0, int(value.get("eligible") or 0))
+        except (TypeError, ValueError):
+            return None
+        list_error = str(value.get("list_error") or "").strip() or None
+        return OneTimeRuleCleanupResult(
+            checked_at=checked_at,
+            scanned=scanned,
+            eligible=eligible,
+            deleted=deleted,
+            failed=failed,
+            list_error=list_error,
+        )
+
+    def _restore_state(self) -> None:
+        if self.state_path is None or not self.state_path.exists():
+            return
+        try:
+            payload = json.loads(self.state_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+                raise ValueError("unsupported cleanup state schema")
+            restored = self._result_from_payload(payload.get("last_result"))
+            self.last_result = restored
+            self.last_run = str(payload.get("last_run") or "").strip() or (restored.checked_at if restored else None)
+            self.last_trigger = str(payload.get("last_trigger") or "").strip() or None
+            if self._configuration_error is None:
+                self.last_error = str(payload.get("last_error") or "").strip() or None
+            self.persistence_error = None
+            logger.info(
+                "One-time cleanup history restored: last_run=%s trigger=%s deleted=%s failed=%s",
+                self.last_run or "none",
+                self.last_trigger or "none",
+                len(restored.deleted) if restored else 0,
+                len(restored.failed) if restored else 0,
+            )
+        except Exception as exc:
+            self.persistence_error = f"{type(exc).__name__}: {str(exc)[:300]}"
+            logger.warning("Could not restore one-time cleanup history: %s", exc)
+
+    def _persist_state(self) -> None:
+        if self.state_path is None:
+            return
+        payload = {
+            "schema_version": 1,
+            "last_run": self.last_run,
+            "last_trigger": self.last_trigger,
+            "last_error": self.last_error,
+            "last_result": self.last_result.as_dict() if self.last_result else None,
+        }
+        try:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            temp = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
+            temp.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temp.replace(self.state_path)
+            self.persistence_error = None
+        except Exception as exc:
+            self.persistence_error = f"{type(exc).__name__}: {str(exc)[:300]}"
+            logger.warning("Could not persist one-time cleanup history: %s", exc)
 
     def status(self) -> dict[str, Any]:
         return {
@@ -221,6 +300,8 @@ class OneTimeRuleCleanupScheduler:
             "last_run": self.last_run,
             "last_trigger": self.last_trigger,
             "last_error": self.last_error,
+            "persistence_error": self.persistence_error,
+            "history_persisted": bool(self.state_path),
             "running": self._run_lock.locked(),
             "task_active": bool(self._task is not None and not self._task.done()),
             "last_result": self.last_result.as_dict() if self.last_result else None,
@@ -262,6 +343,7 @@ class OneTimeRuleCleanupScheduler:
             except Exception as exc:
                 self.last_error = f"{type(exc).__name__}: {str(exc)[:300]}"
                 self.last_trigger = trigger
+                self._persist_state()
                 logger.exception("One-time rule cleanup failed: trigger=%s", trigger)
                 raise
 
@@ -269,6 +351,7 @@ class OneTimeRuleCleanupScheduler:
             self.last_run = result.checked_at
             self.last_trigger = trigger
             self.last_error = result.list_error
+            self._persist_state()
             logger.info(
                 "One-time cleanup completed: trigger=%s scanned=%s eligible=%s deleted=%s failed=%s list_error=%s",
                 trigger,
