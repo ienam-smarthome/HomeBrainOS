@@ -225,8 +225,8 @@ class ConfirmedActionCoordinator:
             if cls.verified_rule_execution(execution, arguments):
                 if is_self_pause:
                     lines.append(
-                        f"- **{name}** was paused immediately after its "
-                        "one-time trigger so it cannot fire again."
+                        f"- **{name}** was configured to pause itself after its "
+                        "one-time trigger executes, so it cannot fire again."
                     )
                 else:
                     lines.append(
@@ -255,9 +255,8 @@ class ConfirmedActionCoordinator:
             )
             if is_self_pause:
                 lines.append(
-                    f"- **{name}** was created but could not be confirmed "
-                    f"paused afterward: {detail}. It may still fire again -- "
-                    "check Rule Machine directly."
+                    f"- **{name}** was created but its self-pause action "
+                    f"could not be confirmed: {detail}. Check Rule Machine directly."
                 )
             elif (
                 data.get("partial") is True or data.get("success") is False
