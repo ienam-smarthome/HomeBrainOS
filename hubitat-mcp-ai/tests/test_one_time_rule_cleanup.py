@@ -12,7 +12,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from mcp_client import MCPToolResult
-from one_time_rule_cleanup import OneTimeRuleCleanupService
+from one_time_rule_cleanup import OneTimeRuleCleanupResult, OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 
 
 def result(name: str, arguments: dict[str, Any], data: Any, *, error: bool = False) -> MCPToolResult:
@@ -140,3 +140,47 @@ async def test_cleanup_refuses_all_deletes_when_rule_list_fails() -> None:
     assert outcome.list_error
     assert not outcome.deleted
     assert [name for name, _args in mcp.calls] == ["hub_read_rules"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_status_and_manual_run_are_observable() -> None:
+    mcp = FakeMCP()
+    service = OneTimeRuleCleanupService(mcp, local_now=local_now, grace_minutes=10)
+    scheduler = OneTimeRuleCleanupScheduler(
+        service,
+        enabled=True,
+        daily_time="15:15",
+        local_now=local_now,
+    )
+
+    initial = scheduler.status()
+    assert initial["enabled"] is True
+    assert initial["time"] == "15:15"
+    assert initial["last_run"] is None
+    assert initial["last_result"] is None
+
+    result = await scheduler.run_now()
+
+    assert [item["appId"] for item in result.deleted] == ["4210", "4211"]
+    status = scheduler.status()
+    assert status["last_trigger"] == "manual"
+    assert status["last_run"] == result.checked_at
+    assert status["last_error"] is None
+    assert status["last_result"]["scanned"] == 5
+    assert status["last_result"]["eligible"] == 2
+    assert status["last_result"]["deleted_count"] == 2
+    assert status["last_result"]["failed_count"] == 0
+
+
+def test_cleanup_result_serialises_counts_and_details() -> None:
+    outcome = OneTimeRuleCleanupResult(
+        checked_at="2026-10-03T15:15:00+01:00",
+        scanned=4,
+        eligible=2,
+        deleted=[{"appId": "4210", "name": "Example"}],
+        failed=[{"appId": "4211", "name": "Example 2", "error": "blocked"}],
+    )
+    payload = outcome.as_dict()
+    assert payload["deleted_count"] == 1
+    assert payload["failed_count"] == 1
+    assert payload["deleted"][0]["appId"] == "4210"

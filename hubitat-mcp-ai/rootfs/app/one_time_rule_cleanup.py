@@ -29,6 +29,18 @@ class OneTimeRuleCleanupResult:
     failed: list[dict[str, str]] = field(default_factory=list)
     list_error: str | None = None
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "checked_at": self.checked_at,
+            "scanned": self.scanned,
+            "eligible": self.eligible,
+            "deleted": list(self.deleted),
+            "deleted_count": len(self.deleted),
+            "failed": list(self.failed),
+            "failed_count": len(self.failed),
+            "list_error": self.list_error,
+        }
+
 
 class OneTimeRuleCleanupService:
     """Soft-delete expired HomeBrain one-time Rule Machine rules only.
@@ -163,12 +175,40 @@ class OneTimeRuleCleanupScheduler:
             self.last_error = f"Invalid one_time_rule_cleanup_time {requested!r}; using 01:00"
         self._local_now = local_now
         self._task: asyncio.Task[Any] | None = None
+        self._run_lock = asyncio.Lock()
         self.next_run: str | None = None
+        self.last_run: str | None = None
+        self.last_trigger: str | None = None
         self.last_result: OneTimeRuleCleanupResult | None = None
 
+    def status(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "time": self.daily_time,
+            "next_run": self.next_run,
+            "last_run": self.last_run,
+            "last_trigger": self.last_trigger,
+            "last_error": self.last_error,
+            "running": self._run_lock.locked(),
+            "task_active": bool(self._task is not None and not self._task.done()),
+            "last_result": self.last_result.as_dict() if self.last_result else None,
+        }
+
+    async def run_now(self) -> OneTimeRuleCleanupResult:
+        """Run the same guarded cleanup path immediately on explicit request."""
+        return await self._run_once(trigger="manual")
+
     def start(self) -> None:
-        if not self.enabled or self._task is not None:
+        if not self.enabled:
+            logger.info("One-time cleanup scheduler disabled")
             return
+        if self._task is not None:
+            return
+        logger.info(
+            "One-time cleanup scheduler started: daily_time=%s grace_minutes=%s",
+            self.daily_time,
+            self.service.grace_minutes,
+        )
         self._task = asyncio.create_task(self._run(), name="homebrain-one-time-rule-cleanup")
 
     async def close(self) -> None:
@@ -180,15 +220,33 @@ class OneTimeRuleCleanupScheduler:
         with suppress(asyncio.CancelledError):
             await task
 
-    async def _run_once(self) -> None:
-        try:
-            self.last_result = await self.service.run()
-            self.last_error = self.last_result.list_error
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self.last_error = f"{type(exc).__name__}: {str(exc)[:300]}"
-            logger.exception("Scheduled one-time rule cleanup failed")
+    async def _run_once(self, *, trigger: str) -> OneTimeRuleCleanupResult:
+        async with self._run_lock:
+            logger.info("One-time cleanup starting: trigger=%s", trigger)
+            try:
+                result = await self.service.run()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.last_error = f"{type(exc).__name__}: {str(exc)[:300]}"
+                self.last_trigger = trigger
+                logger.exception("One-time rule cleanup failed: trigger=%s", trigger)
+                raise
+
+            self.last_result = result
+            self.last_run = result.checked_at
+            self.last_trigger = trigger
+            self.last_error = result.list_error
+            logger.info(
+                "One-time cleanup completed: trigger=%s scanned=%s eligible=%s deleted=%s failed=%s list_error=%s",
+                trigger,
+                result.scanned,
+                result.eligible,
+                len(result.deleted),
+                len(result.failed),
+                result.list_error or "none",
+            )
+            return result
 
     async def _run(self) -> None:
         while True:
@@ -198,9 +256,14 @@ class OneTimeRuleCleanupScheduler:
                     raise ValueError("One-time cleanup scheduler requires an aware datetime")
                 target = next_daily_run(now, self.daily_time)
                 self.next_run = target.isoformat()
+                logger.info(
+                    "One-time cleanup next run: configured_time=%s next_run=%s",
+                    self.daily_time,
+                    self.next_run,
+                )
                 delay = max(1.0, (target - now).total_seconds())
                 await asyncio.sleep(delay)
-                await self._run_once()
+                await self._run_once(trigger="scheduled")
                 self.next_run = None
                 await asyncio.sleep(1)
             except asyncio.CancelledError:

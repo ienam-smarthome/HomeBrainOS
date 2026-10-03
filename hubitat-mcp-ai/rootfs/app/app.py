@@ -505,6 +505,7 @@ async def health() -> dict[str, Any]:
             "local_model": agent.local_model_name or None,
         },
         "tts": home_assistant_tts.status(),
+        "one_time_rule_cleanup": one_time_rule_cleanup_scheduler.status(),
     }
 
 
@@ -668,6 +669,32 @@ async def run_health_audit() -> dict[str, Any]:
         "success": True,
         "latest": latest,
         "schedule": health_scheduler.status(),
+    }
+
+
+@app.get("/api/one-time-rule-cleanup")
+async def one_time_rule_cleanup_status() -> dict[str, Any]:
+    return {
+        "success": True,
+        "schedule": one_time_rule_cleanup_scheduler.status(),
+    }
+
+
+@app.post("/api/one-time-rule-cleanup/run")
+async def run_one_time_rule_cleanup() -> dict[str, Any]:
+    try:
+        result = await request_coordinator.run(
+            "one-time-rule-cleanup",
+            one_time_rule_cleanup_scheduler.run_now(),
+        )
+    except Exception as exc:
+        logger.exception("Manual one-time rule cleanup failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    payload = result.as_dict()
+    return {
+        "success": not bool(result.list_error),
+        "result": payload,
+        "schedule": one_time_rule_cleanup_scheduler.status(),
     }
 
 
