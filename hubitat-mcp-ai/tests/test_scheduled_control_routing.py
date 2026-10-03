@@ -9,7 +9,7 @@ import pytest
 APP_DIR = Path(__file__).resolve().parents[1] / "rootfs" / "app"
 sys.path.insert(0, str(APP_DIR))
 
-from request_classification import routine_control_arguments
+from request_classification import parse_immediate_internet_access_intent, routine_control_arguments
 from rule_authoring_service import RuleAuthoringService
 
 
@@ -110,3 +110,35 @@ def test_duration_request_is_not_reinterpreted_as_delayed_start() -> None:
     )  # type: ignore[arg-type]
 
     assert service.matches_request(f"turn on {TARGET} for 30 minutes") is False
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        f"block {TARGET} after 1 min",
+        f"block {TARGET} in 30 mins",
+        f"block {TARGET} 2 hours later",
+        f"block {TARGET} at 10pm",
+        f"block {TARGET} every day at 10pm",
+    ],
+)
+def test_scheduled_internet_control_never_uses_immediate_access_parser(prompt: str) -> None:
+    assert parse_immediate_internet_access_intent(prompt) is None
+
+
+def test_immediate_internet_control_still_uses_immediate_access_parser() -> None:
+    assert parse_immediate_internet_access_intent(f"block {TARGET}") == (
+        TARGET,
+        "blockInternet",
+    )
+
+
+def test_live_regression_after_one_min_hands_off_to_rule_authoring() -> None:
+    service = RuleAuthoringService(None, lambda *args, **kwargs: None)  # type: ignore[arg-type]
+    prompt = "block Google-TV-Streamer after 1 min"
+    assert parse_immediate_internet_access_intent(prompt) is None
+    assert service.matches_request(prompt) is True
+    intent = service._intent(prompt)
+    assert intent is not None
+    assert intent.target == "Google-TV-Streamer"
+    assert intent.start_command == "blockInternet"
+
