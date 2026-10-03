@@ -23,7 +23,7 @@ jobs:
         run: python -m py_compile hubitat-mcp-ai/rootfs/app/homebrain_agent.py
       - name: Run focused regressions
         run: |
-          python -m pip install -q pytest pytest-asyncio httpx
+          python -m pip install -q pytest pytest-asyncio httpx pydantic
           pytest -q tests/test_homebrain_agent.py -k 'immediate_block_request or immediate_allow_request or live_unblock_m6_ultra_pc or unconverged_block or scheduled_block_request or no_capable_device'
       - name: Commit release patch
         run: |
