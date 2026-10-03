@@ -1,0 +1,46 @@
+name: One-shot 0.16.94 Internet schedule patch
+on:
+  push:
+    branches: [fix/internet-switch-scheduling-0.16.94]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/internet-switch-scheduling-0.16.94
+          fetch-depth: 0
+      - name: Patch scheduled Internet switch semantics
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('hubitat-mcp-ai/rootfs/app/rule_authoring_service.py')
+          text = path.read_text()
+          old_import = 'from device_query_service import DeviceQueryService\n'
+          new_import = (
+              'from device_query_service import DeviceQueryService\n'
+              'from device_state_summary import room_name\n'
+              'from device_target_resolver import resolve_device_candidate\n'
+          )
+          if old_import not in text:
+              raise SystemExit('rule_authoring import anchor missing')
+          text = text.replace(old_import, new_import, 1)
+
+          old = '''        resolver = DeviceQueryService(self.mcp, self._record_evidence)\n        resolve_arguments: dict[str, Any] = {"name": intent.target}\n        # Scope resolution to devices that actually support blockInternet/\n        # allowInternet before matching by name. Live regression: a house\n        # can have both a plain power-switch and a separate network-\n        # integration device sharing a name like "tv" -- ordinary name\n        # resolution always prefers an exact label match, so a scheduled\n        # "block the tv at 10pm" request used to resolve the switch and\n        # then get flatly rejected with "does not advertise the required\n        # command" instead of finding the capable device sitting right\n        # there in the same candidate list. Deliberately scoped to just\n        # these two commands -- on/off scheduled rules are unaffected.\n        if intent.start_command.casefold() in {"blockinternet", "allowinternet"}:\n            resolve_arguments["required_command"] = intent.start_command\n        result = await resolver.resolve_device(resolve_arguments)\n'''
+          new = '''        resolver = DeviceQueryService(self.mcp, self._record_evidence)\n        internet_access = intent.start_command.casefold() in {\n            "blockinternet", "allowinternet"\n        }\n        resolve_arguments: dict[str, Any] = {"name": intent.target}\n\n        if internet_access:\n            # Internet access controls are ordinary Hubitat Switch devices in\n            # the authoritative Internet room. Their user-facing semantics are\n            # intentionally inverted from the literal switch wording:\n            # switch=on means Internet allowed; switch=off means Internet\n            # blocked. Do not require synthetic blockInternet/allowInternet\n            # driver commands. First scope fuzzy identity matching to the\n            # Internet room so a normal device such as "Google TV Streamer\n            # (ADB)" cannot win merely because its label is a closer match.\n            identity_started = time.monotonic()\n            try:\n                identities = list(await self.mcp.get_device_identities() or [])\n            except Exception as exc:\n                self._record_evidence(\n                    "homebrain_device_inventory",\n                    {"group": "Internet"},\n                    success=False,\n                    elapsed_ms=round((time.monotonic() - identity_started) * 1000),\n                    summary=f"Internet-group identity lookup failed: {type(exc).__name__}",\n                    supports_live_claim=True,\n                    evidence_kind="deterministic_internet_target_scope",\n                )\n                return RuleAuthoringDecision(\n                    True,\n                    "I could not read the authoritative **Internet** device group. "\n                    "Nothing was queued.",\n                )\n\n            internet_candidates = [\n                item\n                for item in identities\n                if isinstance(item, dict)\n                and str(room_name(item) or "").casefold() == "internet"\n            ]\n            scoped = resolve_device_candidate(intent.target, internet_candidates)\n            self._record_evidence(\n                "homebrain_device_inventory",\n                {"group": "Internet"},\n                success=scoped.target is not None,\n                elapsed_ms=round((time.monotonic() - identity_started) * 1000),\n                summary=(\n                    f"{len(internet_candidates)} Internet-group candidates; "\n                    f"target={'resolved' if scoped.target is not None else 'unresolved'}"\n                ),\n                supports_live_claim=True,\n                evidence_kind="deterministic_internet_target_scope",\n            )\n            if scoped.target is None:\n                if scoped.alternatives:\n                    return RuleAuthoringDecision(\n                        True,\n                        "I could not uniquely match that request to an Internet-control "\n                        "device. Possible matches: "\n                        + ", ".join(scoped.alternatives[:3])\n                        + ". Nothing was queued.",\n                    )\n                return RuleAuthoringDecision(\n                    True,\n                    f"I could not match **{intent.target}** to a device in the "\n                    "authoritative **Internet** group. Nothing was queued.",\n                )\n\n            selected_label = str(\n                scoped.target.get("label")\n                or scoped.target.get("name")\n                or intent.target\n            ).strip()\n            actual_start_command = (\n                "off"\n                if intent.start_command.casefold() == "blockinternet"\n                else "on"\n            )\n            actual_end_command = intent.end_command\n            if intent.end_command is not None:\n                if intent.end_command.casefold() == "blockinternet":\n                    actual_end_command = "off"\n                elif intent.end_command.casefold() == "allowinternet":\n                    actual_end_command = "on"\n\n            # Re-read the selected control surface by its authoritative label\n            # and verify the real Switch command we will schedule. This keeps\n            # command verification intact while avoiding any fake capability.\n            resolve_arguments = {\n                "name": selected_label,\n                "required_command": actual_start_command,\n            }\n            result = await resolver.resolve_device(resolve_arguments)\n            intent = _ScheduleIntent(\n                target=intent.target,\n                start_time=intent.start_time,\n                start_command=actual_start_command,\n                start_label=intent.start_label,\n                end_time=intent.end_time,\n                end_command=actual_end_command,\n                end_label=intent.end_label,\n                recurring=intent.recurring,\n            )\n        else:\n            result = await resolver.resolve_device(resolve_arguments)\n'''
+          if old not in text:
+              raise SystemExit('rule_authoring resolver anchor missing')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-internet-switch-schedule-0.16.94.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hubitat-mcp-ai/rootfs/app/rule_authoring_service.py .github/workflows/one-shot-internet-switch-schedule-0.16.94.yml
+          git commit -m "Use real switch semantics for scheduled Internet access"
+          git push origin HEAD:fix/internet-switch-scheduling-0.16.94
