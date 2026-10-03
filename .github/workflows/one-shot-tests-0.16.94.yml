@@ -1,0 +1,78 @@
+name: One-shot 0.16.94 test-contract patch
+on:
+  push:
+    branches: [fix/internet-switch-scheduling-0.16.94]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/internet-switch-scheduling-0.16.94
+          fetch-depth: 0
+      - name: Align legacy schedule tests to Internet switch contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('tests/test_rule_authoring_service.py')
+          text = p.read_text()
+          replacements = [
+              (
+                  '''def tab_device(label="Block Tab-S9-FE"):\n    return {\n        "id": "6916",\n        "label": label,\n        "commands": ["blockInternet", "allowInternet", "addTime"],\n        "capabilities": ["Switch"],\n    }\n''',
+                  '''def tab_device(label="Block Tab-S9-FE"):\n    return {\n        "id": "6916",\n        "label": label,\n        "room": "Internet",\n        "commands": ["on", "off", "addTime"],\n        "capabilities": ["Switch"],\n    }\n''',
+              ),
+              ('"command": "blockInternet",', '"command": "off",'),
+              ('assert second["args"]["addAction"]["command"] == "allowInternet"', 'assert second["args"]["addAction"]["command"] == "on"'),
+              (
+                  '''    assert inventory_calls[0]["args"]["labelFilter"].casefold() in {\n        "tab s9", "tab-s9-fe"\n    }\n''',
+                  '''    assert inventory_calls[0]["args"]["labelFilter"] == "Block Tab-S9-FE"\n''',
+              ),
+              ('device["commands"] = ["on", "off"]', 'device["commands"] = ["on"]', 1),
+              ('assert "blockinternet" in str(decision.message)', 'assert "off" in str(decision.message)', 1),
+              (
+                  '''    tv_switch = {"id": "4221", "label": "TV", "commands": ["on", "off"]}\n    tv_streamer = {\n        "id": "6923",\n        "label": "Block Google-TV-Streamer",\n        "commands": ["on", "off", "blockInternet", "allowInternet"],\n        "capabilities": ["Switch"],\n    }\n''',
+                  '''    tv_switch = {\n        "id": "4221",\n        "label": "TV",\n        "room": "Living Room",\n        "commands": ["on", "off"],\n        "capabilities": ["Switch"],\n    }\n    tv_streamer = {\n        "id": "6923",\n        "label": "Block Google-TV-Streamer",\n        "room": "Internet",\n        "commands": ["on", "off"],\n        "capabilities": ["Switch"],\n    }\n''',
+              ),
+              ('assert create_action["args"]["addAction"]["command"] == "blockInternet"', 'assert create_action["args"]["addAction"]["command"] == "off"'),
+              (
+                  '''async def test_capability_filter_falls_back_to_fixed_priority_for_unmapped_commands():\n    """blockInternet/allowInternet aren't part of any standard capability's\n    documented command set, so no capability can be matched by command --\n    this must still fall back to the original fixed-priority selection\n    (unchanged behaviour for the internet-access grammar)."""\n''',
+                  '''async def test_internet_access_schedule_uses_switch_capability_for_real_on_off_commands():\n    """Internet access scheduling compiles semantic block/allow into the\n    control surface's real Switch off/on commands, so the Rule Machine\n    capability filter must remain the standard Switch capability."""\n''',
+              ),
+          ]
+          for item in replacements:
+              old, new, *count = item
+              if old not in text:
+                  raise SystemExit(f'missing test anchor: {old[:100]!r}')
+              text = text.replace(old, new, count[0] if count else 1)
+          p.write_text(text)
+
+          p = Path('tests/test_entity_first_orchestrator_contracts.py')
+          text = p.read_text()
+          old = '''        async def get_cached_devices(self):\n            return [{\n                "id": "6916",\n                "label": "Block Tab-S9-FE",\n                "commands": ["blockInternet", "allowInternet", "addTime"],\n                "capabilities": ["Switch"],\n            }]\n'''
+          new = '''        async def get_cached_devices(self):\n            return [{\n                "id": "6916",\n                "label": "Block Tab-S9-FE",\n                "room": "Internet",\n                "commands": ["on", "off", "addTime"],\n                "capabilities": ["Switch"],\n            }]\n'''
+          if old not in text:
+              raise SystemExit('entity fixture anchor missing')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              'assert arguments["args"]["labelFilter"] == "tab s9"',
+              'assert arguments["args"]["labelFilter"] == "Block Tab-S9-FE"',
+              1,
+          )
+          text = text.replace(
+              '"labelFilter": "tab s9",',
+              '"labelFilter": "Block Tab-S9-FE",',
+              1,
+          )
+          p.write_text(text)
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-tests-0.16.94.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_rule_authoring_service.py tests/test_entity_first_orchestrator_contracts.py .github/workflows/one-shot-tests-0.16.94.yml
+          git commit -m "Align Internet scheduling regressions with switch semantics"
+          git push origin HEAD:fix/internet-switch-scheduling-0.16.94
