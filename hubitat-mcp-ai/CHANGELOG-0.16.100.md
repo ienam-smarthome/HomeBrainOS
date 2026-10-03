@@ -7,6 +7,7 @@
 - Adds guarded `POST /api/one-time-rule-cleanup/run` to execute the exact same strict cleanup service immediately.
 - HomeBrain Web UI now shows cleanup status, next/last run, last deleted/failed counts and per-rule details, plus **Run cleanup now** with a confirmation prompt.
 - Scheduler logs now state when it starts, the exact next Hubitat-local run time, when a cleanup begins and the scanned/eligible/deleted/failed result.
+- The displayed schedule is the value actually loaded by the running add-on. If an add-on option is changed, restart Hubitat MCP AI so the running process loads the new time; the card then makes that effective value visible.
 - Automatic cleanup safety is unchanged: only exact expired `(One-time YYYY-MM-DD HH:MM)` HomeBrain rules are eligible; soft delete remains `force=false`, `confirm=true`; there is no startup catch-up deletion.
 
 ## Why
