@@ -12,6 +12,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/internet-control-aliases-0.16.95
+      - name: Remove optional README insertion from patch script
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/scripts/patch_internet_aliases_01695.py')
+          s = p.read_text()
+          old = '''replace_once(
+              path,
+              "semantic_default_temperature_step: 1.0\\n",
+              "semantic_default_temperature_step: 1.0\\ninternet_control_aliases_json: '{\\\"Google TV\\\":\\\"Block Media-Google-TV-Streamer\\\"}'\\n",
+          )
+          '''
+          if old not in s:
+              raise SystemExit('README optional insertion block not found')
+          p.write_text(s.replace(old, '', 1))
+          PY
       - name: Apply patch
         run: python .github/scripts/patch_internet_aliases_01695.py
       - name: Commit patch
