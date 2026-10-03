@@ -41,7 +41,8 @@ from causal_subject_prefetch import (
 )
 from deterministic_tool_presenter import present_tool_result
 from device_query_service import DeviceQueryService
-from device_target_resolver import resolve_capable_device_candidate
+from device_state_summary import room_name
+from device_target_resolver import resolve_device_candidate
 from direct_outcome_context import DirectOutcomeContext
 from grounding_policy import reset_grounding_policy_factory, set_grounding_policy_factory
 from hub_timezone import HubTimezoneResolver
@@ -67,6 +68,7 @@ from request_classification import (
     parse_immediate_internet_access_intent,
 )
 from request_metrics import RequestMetrics
+from rule_authoring_service import RuleAuthoringService
 from request_observation import RequestObservationCoordinator
 from semantic_agent_core import SemanticAgentCore
 from semantic_planner import SemanticPlanner, is_semantic_control_candidate
@@ -1213,54 +1215,118 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
     async def _internet_access_outcome(
         self, target_name: str, command: str, *, session_key: str
     ) -> AgentOutcome:
-        """Deterministically execute an immediate (non-scheduled)
-        block/allow-internet request against a device that actually
-        advertises the command (see parse_immediate_internet_access_intent's
-        docstring for the live failure this closes).
+        """Execute immediate Internet access against authoritative room controls.
 
-        `command` is always "blockInternet" or "allowInternet". Resolution
-        is scoped to devices that advertise the command first
-        (resolve_capable_device_candidate), then executed directly via
-        hub_call_device_command with waitFor-based verification against
-        the internetAccess attribute -- the same pattern already used for
-        on/off/toggle device control, just with the attribute name real
-        network-integration devices actually report instead of "switch".
+        ``blockInternet`` / ``allowInternet`` are semantic intent labels only.
+        Hubitat devices assigned to the authoritative ``Internet`` room are
+        ordinary Switch controls: ``off`` means Internet blocked and ``on``
+        means Internet allowed. Resolve inside that room first, verify the real
+        Switch command on the selected device, then execute and verify the
+        literal ``switch`` state. Never infer Internet semantics from a
+        ``Block ...`` label prefix.
         """
 
         async def operation() -> str:
             started = time.monotonic()
-            try:
-                candidates = await self.mcp.get_cached_devices()
-            except Exception as exc:
-                return f"I could not read the device list: {exc}"
-            resolution = resolve_capable_device_candidate(
-                target_name, list(candidates or []), required_command=command
+            identities: list[dict[str, Any]] = []
+            identity_source = "identity refresh"
+            peek = getattr(self.mcp, "peek_device_identities", None)
+            if callable(peek):
+                try:
+                    identities = [
+                        dict(item) for item in (peek() or []) if isinstance(item, dict)
+                    ]
+                except Exception:
+                    identities = []
+                if identities:
+                    identity_source = "identity cache"
+                    self.request_metrics.increment("identity_cache_hit")
+            if not identities:
+                reader = getattr(self.mcp, "get_cached_devices", None)
+                if not callable(reader):
+                    reader = getattr(self.mcp, "get_device_identities", None)
+                if not callable(reader):
+                    return "I could not read the authoritative Internet device group."
+                try:
+                    identities = [
+                        dict(item)
+                        for item in (await reader() or [])
+                        if isinstance(item, dict)
+                    ]
+                    self.request_metrics.increment("identity_refresh")
+                except Exception as exc:
+                    return f"I could not read the device list: {exc}"
+
+            internet_candidates = [
+                item
+                for item in identities
+                if str(room_name(item) or "").casefold() == "internet"
+            ]
+            scoped_target, scoped_alternatives = RuleAuthoringService._internet_local_target(
+                target_name, internet_candidates
             )
+            scope_source = "Internet room local-token match"
+            if scoped_target is None and not scoped_alternatives:
+                scoped = resolve_device_candidate(target_name, internet_candidates)
+                scoped_target = scoped.target
+                scoped_alternatives = scoped.alternatives
+                scope_source = "Internet room fuzzy fallback"
+            elif scoped_target is None:
+                scope_source = "Internet room local-token ambiguity"
+
             self.evidence.record(
-                LOCAL_RESOLVE_TOOL,
-                {"name": target_name, "required_command": command},
-                success=resolution.target is not None,
+                "homebrain_device_inventory",
+                {"group": "Internet"},
+                success=scoped_target is not None,
                 elapsed_ms=round((time.monotonic() - started) * 1000),
-                summary=resolution.reason,
-                evidence_kind=EVIDENCE_KINDS[LOCAL_RESOLVE_TOOL],
+                summary=(
+                    f"{len(internet_candidates)} Internet-group candidates; "
+                    f"identity_source={identity_source}; source={scope_source}; "
+                    f"target={'resolved' if scoped_target is not None else 'unresolved'}"
+                ),
+                supports_live_claim=True,
+                evidence_kind="deterministic_internet_target_scope",
             )
-            verb = "block" if command == "blockInternet" else "allow"
-            if resolution.target is None:
-                if resolution.alternatives:
-                    alternatives = list(resolution.alternatives)
+
+            if scoped_target is None:
+                if scoped_alternatives:
+                    alternatives = list(scoped_alternatives)
                     self._choices.set(alternatives)
                     self.request_metrics.increment("device_resolution_ambiguous")
                     return self._choice_message(alternatives)
                 return (
-                    f'I could not find a device that supports {verb}ing '
-                    f'internet access matching "{target_name}".'
+                    f'I could not match **{target_name}** to a device in the '
+                    "authoritative **Internet** group. Nothing was sent."
                 )
-            device = resolution.target
+
+            semantic_block = command.casefold() == "blockinternet"
+            real_command = "off" if semantic_block else "on"
+            expected_switch = real_command
+            expected_access = "blocked" if semantic_block else "allowed"
+            selected_label = str(
+                scoped_target.get("label") or scoped_target.get("name") or target_name
+            ).strip()
+
+            # Re-read the selected control surface by authoritative label and
+            # verify the real command immediately before the write.
+            resolver = DeviceQueryService(self.mcp, self.evidence.record)
+            resolved = await resolver.resolve_device(
+                {"name": selected_label, "required_command": real_command}
+            )
+            data = resolved.data if isinstance(resolved.data, dict) else {}
+            device = data.get("target") if isinstance(data.get("target"), dict) else None
+            if device is None:
+                return (
+                    f"I matched **{selected_label}** as the Internet control, but it "
+                    f"does not currently advertise the required Switch command: {real_command}. "
+                    "Nothing was sent."
+                )
+
             device_id = str(device.get("id") or device.get("deviceId") or "")
-            label = str(device.get("label") or device.get("name") or target_name)
+            label = str(device.get("label") or device.get("name") or selected_label)
             if not device_id:
                 return f"The resolved device **{label}** has no stable Hubitat ID."
-            expected_value = "blocked" if command == "blockInternet" else "allowed"
+
             call_started = time.monotonic()
             result = await self.mcp.call_tool(
                 "hub_manage_devices",
@@ -1268,42 +1334,42 @@ class UnifiedMCPAgent(BaseUnifiedMCPAgent):
                     "tool": "hub_call_device_command",
                     "args": {
                         "deviceId": device_id,
-                        "command": command,
+                        "command": real_command,
                         "waitFor": {
-                            "attribute": "internetAccess",
-                            "expectedValue": expected_value,
+                            "attribute": "switch",
+                            "expectedValue": expected_switch,
                             "timeoutMs": 5000,
                         },
                     },
                 },
             )
             command_success = self._tool_succeeded(result)
-            wait_for = (
-                result.data.get("waitFor") if isinstance(result.data, dict) else None
-            )
+            wait_for = result.data.get("waitFor") if isinstance(result.data, dict) else None
             verified = bool(wait_for.get("converged")) if isinstance(wait_for, dict) else False
             self.evidence.record(
                 "hub_manage_devices",
                 {
                     "tool": "hub_call_device_command",
-                    "args": {"deviceId": device_id, "command": command},
+                    "args": {"deviceId": device_id, "command": real_command},
                 },
                 success=command_success and verified,
                 elapsed_ms=round((time.monotonic() - call_started) * 1000),
                 summary=(
-                    f"{command} {label}: "
+                    f"Internet {expected_access}: {real_command} {label}: "
                     f"{'verified' if verified else 'sent' if command_success else 'failed'}"
                 ),
                 evidence_kind="device_command_result",
             )
             if command_success and verified:
-                verb_past = "blocked" if command == "blockInternet" else "unblocked"
+                self._selected_devices[session_key] = label
+                verb_past = "blocked" if semantic_block else "unblocked"
                 return f"{label} internet access {verb_past}."
             if command_success:
                 return (
-                    f"Sent the {command} command to {label}, but could not verify "
-                    "internet access actually changed within 5 seconds."
+                    f"Sent the {real_command} command to {label}, but could not verify "
+                    f"Internet access became {expected_access} within 5 seconds."
                 )
+            verb = "block" if semantic_block else "allow"
             return (
                 f"Could not {verb} internet access for {label}: "
                 f"{result.text or 'unknown error'}"
