@@ -147,8 +147,8 @@ async def test_rejects_unverified_commands_instead_of_guessing():
 
     assert decision.handled is True
     assert decision.actions == ()
-    assert "does not advertise" in str(decision.message)
-    assert "allowinternet" in str(decision.message)
+    assert "could not resolve" in str(decision.message)
+    assert "required command" in str(decision.message)
     assert "blockinternet" in str(decision.message)
 
 
