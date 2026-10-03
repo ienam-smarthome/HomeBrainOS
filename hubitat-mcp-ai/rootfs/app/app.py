@@ -39,6 +39,7 @@ from homebrain_agent import UnifiedMCPAgent
 from hub_timezone import HubTimezoneResolver
 from home_assistant_tts import HomeAssistantTTS, HomeAssistantTTSConfigurationError
 from mcp_client import HubitatMCPClient
+from one_time_rule_cleanup import OneTimeRuleCleanupScheduler, OneTimeRuleCleanupService
 from performance_api_finalizer import finalize_performance_api_outcome
 from performance_host_plan import (
     collect_broad_performance_outcome,
@@ -111,6 +112,9 @@ def load_options() -> dict[str, Any]:
         "internet_control_aliases_json": "{}",
         "morning_health_check_enabled": True,
         "morning_health_check_time": "07:00",
+        "one_time_rule_cleanup_enabled": True,
+        "one_time_rule_cleanup_time": "01:00",
+        "one_time_rule_cleanup_grace_minutes": 10,
         "health_check_log_hours": 24,
         "health_check_low_battery": 20,
         "health_check_stale_hours": 24,
@@ -206,6 +210,17 @@ health_scheduler = MorningHealthScheduler(
     daily_time=str(OPTIONS.get("morning_health_check_time") or "07:00"),
     local_now=_health_scheduler_now,
     notifier=pushover_notifier,
+)
+one_time_rule_cleanup = OneTimeRuleCleanupService(
+    mcp,
+    local_now=_health_scheduler_now,
+    grace_minutes=int(OPTIONS.get("one_time_rule_cleanup_grace_minutes") or 10),
+)
+one_time_rule_cleanup_scheduler = OneTimeRuleCleanupScheduler(
+    one_time_rule_cleanup,
+    enabled=_bool(OPTIONS.get("one_time_rule_cleanup_enabled"), True),
+    daily_time=str(OPTIONS.get("one_time_rule_cleanup_time") or "01:00"),
+    local_now=_health_scheduler_now,
 )
 
 agent = UnifiedMCPAgent(
@@ -332,9 +347,11 @@ request_coordinator = RequestCoordinator()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     health_scheduler.start()
+    one_time_rule_cleanup_scheduler.start()
     try:
         yield
     finally:
+        await one_time_rule_cleanup_scheduler.close()
         await health_scheduler.close()
         await request_coordinator.close()
         await home_assistant_tts.close()

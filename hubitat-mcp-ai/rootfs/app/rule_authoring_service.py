@@ -982,11 +982,11 @@ class RuleAuthoringService:
                 capability_filter=capability_filter,
                 command=intent.start_command,
             )
-            actions = (
-                (create_action, self._self_pause_action())
-                if not intent.recurring
-                else (create_action,)
-            )
+            # One-time rules are deliberately left with only their dated
+            # trigger and device action. The nightly HomeBrain cleanup removes
+            # expired generated rules after the safety grace period; self-pause
+            # proved unreliable on the live hub and is no longer required.
+            actions = (create_action,)
             return RuleAuthoringDecision(
                 True,
                 actions=actions,
