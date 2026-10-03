@@ -58,7 +58,8 @@ def tab_device(label="Block Tab-S9-FE"):
     return {
         "id": "6916",
         "label": label,
-        "commands": ["blockInternet", "allowInternet", "addTime"],
+        "room": "Internet",
+        "commands": ["on", "off", "addTime"],
         "capabilities": ["Switch"],
     }
 
@@ -97,18 +98,16 @@ async def test_compiles_daily_block_window_into_two_atomic_rules(prompt):
         "capability": "runCommand",
         "deviceIds": ["6916"],
         "capabilityFilter": "Switch",
-        "command": "blockInternet",
+        "command": "off",
     }
-    assert second["args"]["addAction"]["command"] == "allowInternet"
+    assert second["args"]["addAction"]["command"] == "on"
     inventory_calls = [
         arguments
         for name, arguments in mcp.calls
         if name == "hub_read_devices"
     ]
     assert len(inventory_calls) == 1
-    assert inventory_calls[0]["args"]["labelFilter"].casefold() in {
-        "tab s9", "tab-s9-fe"
-    }
+    assert inventory_calls[0]["args"]["labelFilter"] == "Block Tab-S9-FE"
 
 
 @pytest.mark.asyncio
@@ -137,7 +136,7 @@ async def test_compiles_switch_off_window_using_verified_commands():
 @pytest.mark.asyncio
 async def test_rejects_unverified_commands_instead_of_guessing():
     device = tab_device()
-    device["commands"] = ["on", "off"]
+    device["commands"] = ["on"]
     service = RuleAuthoringService(RuleMCP([device]), recorder)
 
     decision = await service.propose(
@@ -149,7 +148,7 @@ async def test_rejects_unverified_commands_instead_of_guessing():
     assert decision.actions == ()
     assert "could not resolve" in str(decision.message)
     assert "required command" in str(decision.message)
-    assert "blockinternet" in str(decision.message)
+    assert "off" in str(decision.message)
 
 
 @pytest.mark.asyncio
@@ -165,11 +164,18 @@ async def test_scheduled_block_finds_the_capable_device_not_the_exact_name_match
     device, exactly like the immediate (non-scheduled) case already does.
     """
 
-    tv_switch = {"id": "4221", "label": "TV", "commands": ["on", "off"]}
+    tv_switch = {
+        "id": "4221",
+        "label": "TV",
+        "room": "Living Room",
+        "commands": ["on", "off"],
+        "capabilities": ["Switch"],
+    }
     tv_streamer = {
         "id": "6923",
         "label": "Block Google-TV-Streamer",
-        "commands": ["on", "off", "blockInternet", "allowInternet"],
+        "room": "Internet",
+        "commands": ["on", "off"],
         "capabilities": ["Switch"],
     }
     service = RuleAuthoringService(RuleMCP([tv_switch, tv_streamer]), recorder)
@@ -183,7 +189,7 @@ async def test_scheduled_block_finds_the_capable_device_not_the_exact_name_match
     assert decision.message is None
     assert decision.target["id"] == "6923"
     create_action = decision.actions[0]
-    assert create_action["args"]["addAction"]["command"] == "blockInternet"
+    assert create_action["args"]["addAction"]["command"] == "off"
     assert create_action["args"]["addAction"]["deviceIds"] == ["6923"]
 
 
@@ -295,11 +301,10 @@ async def test_capability_filter_prefers_lock_for_lock_commands_over_switch():
 
 
 @pytest.mark.asyncio
-async def test_capability_filter_falls_back_to_fixed_priority_for_unmapped_commands():
-    """blockInternet/allowInternet aren't part of any standard capability's
-    documented command set, so no capability can be matched by command --
-    this must still fall back to the original fixed-priority selection
-    (unchanged behaviour for the internet-access grammar)."""
+async def test_internet_access_schedule_uses_switch_capability_for_real_on_off_commands():
+    """Internet access scheduling compiles semantic block/allow into the
+    control surface's real Switch off/on commands, so the Rule Machine
+    capability filter must remain the standard Switch capability."""
 
     device = tab_device()
     device["capabilities"] = ["Switch", "Actuator"]
