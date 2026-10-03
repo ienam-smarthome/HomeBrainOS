@@ -42,7 +42,7 @@ new = '''        if not intent.recurring:
 replace_once(path, old, new)
 
 # Update existing regression expectations to the evidence-safe wording.
-path = "hubitat-mcp-ai/tests/test_confirmed_action_coordinator.py"
+path = "tests/test_confirmed_action_coordinator.py"
 replace_once(
     path,
     '''        "**Turn on Bedroom 1 Lamp (One-time 2026-08-07)** was paused "
@@ -62,7 +62,7 @@ replace_once(
 ''',
 )
 
-path = "hubitat-mcp-ai/tests/_entity_first_orchestrator_cases.py"
+path = "tests/_entity_first_orchestrator_cases.py"
 replace_once(
     path,
     '    assert "was paused immediately after its one-time trigger" in outcome.message\n',
