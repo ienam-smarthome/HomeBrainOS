@@ -104,12 +104,12 @@ def test_cam_alone_is_genuinely_ambiguous_between_the_two_real_cameras():
 
 
 def test_immediate_parser_recognises_restrict_and_explicit_unblock_restore():
-    """Hardening pass addition: "restrict" is an unambiguous internet-access
-    synonym for "block" and is safe to accept the same way "disable"
-    already is. "unblock"/"restore" are NOT safe to accept as loosely --
-    both words are heavily overloaded elsewhere (a hub backup can be
-    "restored") -- so they only count as internet-access requests when
-    "internet"/"access" is stated explicitly.
+    """Restrict remains a block synonym; explicit unblock/restore wording
+    must strip its internet/access clause before returning the target.
+
+    Bare `unblock <target>` is covered separately because 0.16.99 moves its
+    safety boundary to authoritative Internet-room resolution. Bare `restore`
+    remains excluded because restore is overloaded with backups/defaults.
     """
 
     assert parse_immediate_internet_access_intent("restrict the tv") == (
@@ -129,17 +129,18 @@ def test_immediate_parser_recognises_restrict_and_explicit_unblock_restore():
     ) == ("tv", "allowInternet")
 
 
-def test_bare_unblock_or_restore_without_internet_wording_is_never_hijacked():
-    """The exact failure mode the stricter explicit-clause requirement
-    exists to prevent: "restore the backup" (a real, unrelated hub
-    operation) must never be reinterpreted as "unblock a device named
-    backup" just because "restore" is also a valid internet-access verb
-    when paired with explicit "internet"/"access" wording.
+def test_bare_restore_stays_explicit_while_bare_unblock_enters_room_scoped_path():
+    """`restore` remains explicit-only because it is overloaded with backup
+    and settings operations. Bare `unblock`, however, may enter the immediate
+    Internet path because 0.16.99 then scopes execution to the authoritative
+    Internet room and fails closed for ordinary devices outside that room.
     """
 
     assert parse_immediate_internet_access_intent("restore the backup") is None
     assert parse_immediate_internet_access_intent("restore default settings") is None
-    assert parse_immediate_internet_access_intent("unblock the front door") is None
+    assert parse_immediate_internet_access_intent("unblock the front door") == (
+        "front door", "allowInternet",
+    )
 
 
 def test_disable_enable_app_wording_is_never_hijacked_into_a_device_lookup():

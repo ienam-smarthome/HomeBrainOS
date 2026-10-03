@@ -1414,11 +1414,9 @@ async def test_hub_health_query_falls_back_to_healthy_binary_without_a_status_at
     assert ai.requests == []
 
 
-# Real device shapes pulled live from the hub this bug was found against:
-# two devices both plausibly named "tv" -- a plain power-switch labelled
-# exactly "TV", and a separate network-integration device labelled "Block
-# Google-TV-Streamer" that is the only one of the two that actually
-# advertises blockInternet/allowInternet.
+# Internet controls are ordinary Switch devices in the authoritative
+# Internet room. A similarly named ordinary device outside that room must
+# never steal block/unblock intent.
 TV_SWITCH_DEVICE = {
     "id": "4221", "label": "TV", "name": "Innr SP 242 Power Metering SmartPlug",
     "roomName": "Multimedia",
@@ -1429,29 +1427,44 @@ TV_SWITCH_DEVICE = {
 }
 TV_STREAMER_BLOCK_DEVICE = {
     "id": "6923", "label": "Block Google-TV-Streamer", "name": "Cudy Device-192.168.1.108",
-    "roomName": "Multimedia",
-    "commands": [
-        "addTime", "allowInternet", "blockInternet", "off", "on", "refresh",
-        "resetUsage", "setDeviceIP", "setDeviceMAC",
-    ],
+    "roomName": "Internet",
+    "capabilities": ["Switch"],
+    "commands": ["off", "on", "refresh"],
+}
+M6_BLOCK_DEVICE = {
+    "id": "6999", "label": "Block PC-NucBox-M6Ultra", "name": "Cudy Device-M6Ultra",
+    "roomName": "Internet",
+    "capabilities": ["Switch"],
+    "commands": ["off", "on", "refresh"],
 }
 
 
 class InternetAccessMCP:
-    """Fake MCP exposing exactly the two real device shapes above, plus
-    hub_call_device_command handling for block/allowInternet.
-    """
+    """Fake MCP exposing an ordinary TV plus authoritative Internet switches."""
 
     def __init__(self, *, converged: bool = True) -> None:
-        self.devices = [TV_SWITCH_DEVICE, TV_STREAMER_BLOCK_DEVICE]
+        self.devices = [TV_SWITCH_DEVICE, TV_STREAMER_BLOCK_DEVICE, M6_BLOCK_DEVICE]
         self.converged = converged
         self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def peek_device_identities(self) -> list[dict[str, object]]:
+        return list(self.devices)
 
     async def get_cached_devices(self) -> list[dict[str, object]]:
         return list(self.devices)
 
     async def call_tool(self, gateway: str, arguments: dict[str, object]) -> MCPToolResult:
         self.calls.append((gateway, arguments))
+        if gateway == "hub_read_devices" and arguments.get("tool") == "hub_list_devices":
+            args = arguments.get("args") or {}
+            label_filter = str(args.get("labelFilter") or "").casefold()
+            devices = [
+                item for item in self.devices
+                if not label_filter
+                or label_filter in str(item.get("label") or "").casefold()
+                or label_filter in str(item.get("name") or "").casefold()
+            ]
+            return MCPToolResult(gateway, arguments, {}, "ok", {"success": True, "devices": devices})
         if arguments.get("tool") == "hub_call_device_command":
             wait_for = (arguments.get("args") or {}).get("waitFor")
             expected = wait_for.get("expectedValue") if isinstance(wait_for, dict) else None
@@ -1470,9 +1483,9 @@ async def test_immediate_block_request_finds_the_capable_device_not_the_switch()
     no deterministic immediate path for blockInternet at all, so the
     request reached the model, which interpreted "block" as "turn off".
 
-    This must now resolve to the device that actually advertises
-    blockInternet (id 6923, not the switch at 4221), dispatch the real
-    command, and never touch the model at all.
+    This must resolve inside the authoritative Internet room (id 6923,
+    not the ordinary TV switch at 4221), dispatch real Switch off, and
+    never touch the model at all.
     """
 
     mcp = InternetAccessMCP(converged=True)
@@ -1489,8 +1502,9 @@ async def test_immediate_block_request_finds_the_capable_device_not_the_switch()
     ]
     assert len(dispatch_calls) == 1
     assert dispatch_calls[0]["args"]["deviceId"] == "6923"
-    assert dispatch_calls[0]["args"]["command"] == "blockInternet"
-    assert dispatch_calls[0]["args"]["waitFor"]["expectedValue"] == "blocked"
+    assert dispatch_calls[0]["args"]["command"] == "off"
+    assert dispatch_calls[0]["args"]["waitFor"]["attribute"] == "switch"
+    assert dispatch_calls[0]["args"]["waitFor"]["expectedValue"] == "off"
     assert ai.requests == []
 
 
@@ -1508,8 +1522,46 @@ async def test_immediate_allow_request_targets_the_same_capable_device() -> None
         args for _, args in mcp.calls if args.get("tool") == "hub_call_device_command"
     ]
     assert dispatch_calls[0]["args"]["deviceId"] == "6923"
-    assert dispatch_calls[0]["args"]["command"] == "allowInternet"
-    assert dispatch_calls[0]["args"]["waitFor"]["expectedValue"] == "allowed"
+    assert dispatch_calls[0]["args"]["command"] == "on"
+    assert dispatch_calls[0]["args"]["waitFor"]["attribute"] == "switch"
+    assert dispatch_calls[0]["args"]["waitFor"]["expectedValue"] == "on"
+
+
+@pytest.mark.asyncio
+async def test_live_unblock_m6_ultra_pc_uses_internet_room_switch_on() -> None:
+    mcp = InternetAccessMCP(converged=True)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "unblock M6 ultra PC", session_id="unblock-m6-live-regression"
+    )
+
+    assert outcome.message == "Block PC-NucBox-M6Ultra internet access unblocked."
+    dispatch_calls = [
+        args for _, args in mcp.calls if args.get("tool") == "hub_call_device_command"
+    ]
+    assert len(dispatch_calls) == 1
+    assert dispatch_calls[0]["args"]["deviceId"] == "6999"
+    assert dispatch_calls[0]["args"]["command"] == "on"
+    assert dispatch_calls[0]["args"]["waitFor"] == {
+        "attribute": "switch", "expectedValue": "on", "timeoutMs": 5000
+    }
+
+
+@pytest.mark.asyncio
+async def test_bare_unblock_non_internet_target_fails_closed_without_command() -> None:
+    mcp = InternetAccessMCP(converged=True)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "unblock the front door", session_id="unblock-front-door-safety"
+    )
+
+    assert "authoritative **Internet** group" in outcome.message
+    dispatch_calls = [
+        args for _, args in mcp.calls if args.get("tool") == "hub_call_device_command"
+    ]
+    assert dispatch_calls == []
 
 
 @pytest.mark.asyncio
@@ -1567,7 +1619,7 @@ async def test_no_capable_device_reports_a_clear_error_not_a_wrong_device() -> N
         "block the tv", session_id="block-tv-no-capable-test"
     )
 
-    assert "could not find a device that supports blocking internet access" in outcome.message
+    assert "authoritative **Internet** group" in outcome.message
     assert mcp.calls == []
 
 

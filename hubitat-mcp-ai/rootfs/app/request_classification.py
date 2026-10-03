@@ -349,13 +349,15 @@ _ALLOW_INTERNET = re.compile(
     r"(?P<target>.+?)\s*[.!?]*$",
     re.I,
 )
-# "unblock"/"restore" are only safe to treat as internet-access verbs when
-# "internet"/"access" is stated explicitly -- unlike block/disable/allow/
-# enable (specific enough on their own), both words are heavily overloaded
-# elsewhere in this codebase ("restore the backup", "restore default
-# settings") and a bare "restore the backup" must never be reinterpreted as
-# "unblock a device named backup". These are deliberately a separate,
-# stricter pair rather than folded into _ALLOW_INTERNET's optional clause.
+_UNBLOCK_INTERNET = re.compile(
+    r"^(?:please\s+)?unblock\s+(?P<target>.+?)\s*[.!?]*$",
+    re.I,
+)
+# Bare `unblock <target>` is safe to admit here because execution is now scoped
+# to the authoritative Internet room and fails closed outside it. `restore`
+# remains explicit-only because it is heavily overloaded (restore backup,
+# restore defaults) and must never be interpreted as Internet control unless
+# the user says internet/access.
 _ALLOW_INTERNET_EXPLICIT = re.compile(
     r"^(?:please\s+)?(?:unblock|restore)\s+"
     r"(?:internet\s+(?:access\s+)?(?:for\s+)?|access\s+for\s+)"
@@ -419,6 +421,7 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
         (_BLOCK_INTERNET, "blockInternet"),
         (_ALLOW_INTERNET, "allowInternet"),
         (_ALLOW_INTERNET_EXPLICIT, "allowInternet"),
+        (_UNBLOCK_INTERNET, "allowInternet"),
     ):
         match = pattern.fullmatch(text)
         if match is None:
