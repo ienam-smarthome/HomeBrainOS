@@ -364,6 +364,7 @@ class UnifiedMCPAgent:
         causal_subject_prefetch_enabled: bool = True,
         causal_deterministic_final_enabled: bool = True,
         known_automations: Any | None = None,
+        internet_control_aliases: Any | None = None,
         max_tool_result_chars: int = 24000,
         max_history_messages: int = 8,
         max_history_chars: int = 12000,
@@ -419,6 +420,7 @@ class UnifiedMCPAgent:
         self.rule_authoring = RuleAuthoringService(
             self.mcp,
             self.evidence.record,
+            internet_control_aliases=internet_control_aliases,
         )
         self.device_history = DeviceHistoryService(
             self.mcp,

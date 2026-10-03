@@ -9,6 +9,7 @@ Rule Machine calls for the existing confirmation pipeline.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -18,7 +19,7 @@ from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
 from device_state_summary import room_name
-from device_target_resolver import resolve_device_candidate
+from device_target_resolver import normalized_name, resolve_device_candidate
 from mcp_client import HubitatMCPClient
 
 logger = logging.getLogger("HomeBrainOS.RuleAuthoringService")
@@ -120,10 +121,60 @@ class RuleAuthoringService:
         record_evidence: Callable[..., None],
         *,
         now: Callable[[], datetime] = datetime.now,
+        internet_control_aliases: Any | None = None,
     ) -> None:
         self.mcp = mcp_client
         self._record_evidence = record_evidence
         self._now = now
+        self.internet_control_aliases = self._parse_internet_control_aliases(
+            internet_control_aliases
+        )
+
+    @staticmethod
+    def _parse_internet_control_aliases(value: Any | None) -> dict[str, str]:
+        if value in {None, ""}:
+            return {}
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                return {}
+        if not isinstance(value, dict):
+            return {}
+        aliases: dict[str, str] = {}
+        for alias, label in value.items():
+            alias_text = str(alias or "").strip()
+            label_text = str(label or "").strip()
+            if alias_text and label_text:
+                aliases[normalized_name(alias_text)] = label_text
+        return aliases
+
+    def _configured_internet_target(
+        self, requested: str, identities: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        requested_key = normalized_name(requested)
+        configured_label = self.internet_control_aliases.get(requested_key)
+        if configured_label is None:
+            for label in self.internet_control_aliases.values():
+                if normalized_name(label) == requested_key:
+                    configured_label = label
+                    break
+        if not configured_label:
+            return None
+        wanted = normalized_name(configured_label)
+        matches = []
+        for item in identities:
+            if not isinstance(item, dict):
+                continue
+            names = (
+                item.get("label"),
+                item.get("name"),
+                item.get("displayName"),
+                item.get("deviceLabel"),
+            )
+            if any(normalized_name(name) == wanted for name in names if name):
+                matches.append(dict(item))
+        return matches[0] if len(matches) == 1 else None
 
     @staticmethod
     def _clock(value: str) -> str | None:
@@ -729,37 +780,52 @@ class RuleAuthoringService:
                 if isinstance(item, dict)
                 and str(room_name(item) or "").casefold() == "internet"
             ]
-            scoped = resolve_device_candidate(intent.target, internet_candidates)
+            configured_target = self._configured_internet_target(
+                intent.target,
+                [item for item in identities if isinstance(item, dict)],
+            )
+            if configured_target is not None:
+                scoped_target = configured_target
+                scoped_alternatives: tuple[str, ...] = ()
+                scope_source = "configured alias"
+            else:
+                scoped = resolve_device_candidate(intent.target, internet_candidates)
+                scoped_target = scoped.target
+                scoped_alternatives = scoped.alternatives
+                scope_source = "Internet room"
             self._record_evidence(
                 "homebrain_device_inventory",
                 {"group": "Internet"},
-                success=scoped.target is not None,
+                success=scoped_target is not None,
                 elapsed_ms=round((time.monotonic() - identity_started) * 1000),
                 summary=(
                     f"{len(internet_candidates)} Internet-group candidates; "
-                    f"target={'resolved' if scoped.target is not None else 'unresolved'}"
+                    f"configured_aliases={len(self.internet_control_aliases)}; "
+                    f"source={scope_source}; "
+                    f"target={'resolved' if scoped_target is not None else 'unresolved'}"
                 ),
                 supports_live_claim=True,
                 evidence_kind="deterministic_internet_target_scope",
             )
-            if scoped.target is None:
-                if scoped.alternatives:
+            if scoped_target is None:
+                if scoped_alternatives:
                     return RuleAuthoringDecision(
                         True,
                         "I could not uniquely match that request to an Internet-control "
                         "device. Possible matches: "
-                        + ", ".join(scoped.alternatives[:3])
+                        + ", ".join(scoped_alternatives[:3])
                         + ". Nothing was queued.",
                     )
                 return RuleAuthoringDecision(
                     True,
                     f"I could not match **{intent.target}** to a device in the "
-                    "authoritative **Internet** group. Nothing was queued.",
+                    "authoritative **Internet** group or configured Internet aliases. "
+                    "Nothing was queued.",
                 )
 
             selected_label = str(
-                scoped.target.get("label")
-                or scoped.target.get("name")
+                scoped_target.get("label")
+                or scoped_target.get("name")
                 or intent.target
             ).strip()
             actual_start_command = (

@@ -108,6 +108,7 @@ def load_options() -> dict[str, Any]:
         "semantic_agent_enabled": True,
         "semantic_default_brightness_step": 20,
         "semantic_default_temperature_step": 1.0,
+        "internet_control_aliases_json": "{}",
         "morning_health_check_enabled": True,
         "morning_health_check_time": "07:00",
         "health_check_log_hours": 24,
@@ -255,6 +256,7 @@ agent = UnifiedMCPAgent(
         OPTIONS.get("causal_deterministic_final_enabled"), True
     ),
     known_automations=OPTIONS.get("causal_known_automations_json"),
+    internet_control_aliases=OPTIONS.get("internet_control_aliases_json"),
     semantic_agent_enabled=_bool(
         OPTIONS.get("semantic_agent_enabled"), True
     ),
