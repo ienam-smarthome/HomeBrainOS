@@ -420,8 +420,8 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
     for pattern, command in (
         (_BLOCK_INTERNET, "blockInternet"),
         (_ALLOW_INTERNET, "allowInternet"),
-        (_UNBLOCK_INTERNET, "allowInternet"),
         (_ALLOW_INTERNET_EXPLICIT, "allowInternet"),
+        (_UNBLOCK_INTERNET, "allowInternet"),
     ):
         match = pattern.fullmatch(text)
         if match is None:

@@ -1549,6 +1549,22 @@ async def test_live_unblock_m6_ultra_pc_uses_internet_room_switch_on() -> None:
 
 
 @pytest.mark.asyncio
+async def test_bare_unblock_non_internet_target_fails_closed_without_command() -> None:
+    mcp = InternetAccessMCP(converged=True)
+    agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
+
+    outcome = await agent.process_user_request_result(
+        "unblock the front door", session_id="unblock-front-door-safety"
+    )
+
+    assert "authoritative **Internet** group" in outcome.message
+    dispatch_calls = [
+        args for _, args in mcp.calls if args.get("tool") == "hub_call_device_command"
+    ]
+    assert dispatch_calls == []
+
+
+@pytest.mark.asyncio
 async def test_unconverged_block_reports_uncertainty_not_silent_success() -> None:
     mcp = InternetAccessMCP(converged=False)
     agent = UnifiedMCPAgent(mcp, "key", ai_client=FakeAI("unused"))
