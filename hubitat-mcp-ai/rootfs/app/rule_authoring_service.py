@@ -179,6 +179,71 @@ class RuleAuthoringService:
         return matches[0] if len(matches) == 1 else None
 
     @staticmethod
+    def _internet_identity_tokens(value: Any) -> set[str]:
+        """Return order-independent identity tokens for Internet controls only.
+
+        This intentionally does not change the global device resolver. Internet
+        control labels commonly contain control/presentation prefixes and compact
+        model names (for example ``Block PC-NucBox-M6Ultra``), while users naturally
+        say the same identity as ``M6 Ultra PC``. Split camel/digit boundaries,
+        ignore only non-identifying Internet-control words, and let extra candidate
+        tokens remain harmless.
+        """
+
+        text = str(value or "").strip()
+        if not text:
+            return set()
+        text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
+        text = re.sub(r"(?<=\d)(?=[A-Za-z])", " ", text)
+        text = re.sub(r"[^A-Za-z0-9]+", " ", text).casefold()
+        ignored = {"block", "internet", "access", "control", "the", "a", "an"}
+        return {token for token in text.split() if token not in ignored}
+
+    @classmethod
+    def _internet_local_target(
+        cls, requested: str, identities: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any] | None, tuple[str, ...]]:
+        """Resolve a unique token-subset match inside the Internet room.
+
+        The match is intentionally scope-local and conservative: every identifying
+        token supplied by the user must be present in one candidate name after the
+        bounded normalization above. If more than one Internet control satisfies
+        that condition, surface the ambiguity rather than guessing.
+        """
+
+        wanted = cls._internet_identity_tokens(requested)
+        if not wanted:
+            return None, ()
+        matches: list[tuple[str, dict[str, Any]]] = []
+        for item in identities:
+            if not isinstance(item, dict):
+                continue
+            names = [
+                str(item.get(field) or "").strip()
+                for field in ("label", "name", "displayName", "deviceLabel")
+            ]
+            names = [name for name in names if name]
+            matched_name = next(
+                (
+                    name
+                    for name in names
+                    if wanted.issubset(cls._internet_identity_tokens(name))
+                ),
+                None,
+            )
+            if matched_name is not None:
+                matches.append((matched_name, dict(item)))
+        if len(matches) == 1:
+            return matches[0][1], ()
+        if len(matches) > 1:
+            alternatives: list[str] = []
+            for name, _item in matches:
+                if name not in alternatives:
+                    alternatives.append(name)
+            return None, tuple(alternatives[:3])
+        return None, ()
+
+    @staticmethod
     def _clock(value: str) -> str | None:
         return _shared_parse_clock(value)
 
@@ -777,16 +842,30 @@ class RuleAuthoringService:
             # (ADB)" cannot win merely because its label is a closer match.
             identity_started = time.monotonic()
             try:
-                # get_cached_devices() is the long-established enriched identity
-                # interface used by the control/query paths and by older MCP
-                # clients/test doubles. Prefer it here; fall back to the newer
-                # get_device_identities() helper when only that interface exists.
-                identity_reader = getattr(self.mcp, "get_cached_devices", None)
-                if not callable(identity_reader):
-                    identity_reader = getattr(self.mcp, "get_device_identities", None)
-                if not callable(identity_reader):
-                    raise AttributeError("No device identity reader is available")
-                identities = list(await identity_reader() or [])
+                # Identity metadata remains authoritative for longer than live
+                # state. Reuse a fresh complete structural snapshot first instead
+                # of forcing the 12-second device-manifest cache to refresh. This
+                # keeps scheduled Internet resolution fast after any recent
+                # inventory/live-context read while still falling back to one
+                # bounded refresh when no fresh identity snapshot exists.
+                identities: list[dict[str, Any]] = []
+                identity_source = "identity refresh"
+                identity_peek = getattr(self.mcp, "peek_device_identities", None)
+                if callable(identity_peek):
+                    try:
+                        identities = list(identity_peek() or [])
+                    except Exception:
+                        identities = []
+                    if identities:
+                        identity_source = "identity cache"
+                if not identities:
+                    identity_reader = getattr(self.mcp, "get_cached_devices", None)
+                    if not callable(identity_reader):
+                        identity_reader = getattr(self.mcp, "get_device_identities", None)
+                    if not callable(identity_reader):
+                        raise AttributeError("No device identity reader is available")
+                    identities = list(await identity_reader() or [])
+                    identity_source = "identity refresh"
             except Exception as exc:
                 self._record_evidence(
                     "homebrain_device_inventory",
@@ -818,10 +897,22 @@ class RuleAuthoringService:
                 scoped_alternatives: tuple[str, ...] = ()
                 scope_source = "configured alias"
             else:
-                scoped = resolve_device_candidate(intent.target, internet_candidates)
-                scoped_target = scoped.target
-                scoped_alternatives = scoped.alternatives
-                scope_source = "Internet room"
+                local_target, local_alternatives = self._internet_local_target(
+                    intent.target, internet_candidates
+                )
+                if local_target is not None:
+                    scoped_target = local_target
+                    scoped_alternatives = ()
+                    scope_source = "Internet room local-token match"
+                elif local_alternatives:
+                    scoped_target = None
+                    scoped_alternatives = local_alternatives
+                    scope_source = "Internet room local-token ambiguity"
+                else:
+                    scoped = resolve_device_candidate(intent.target, internet_candidates)
+                    scoped_target = scoped.target
+                    scoped_alternatives = scoped.alternatives
+                    scope_source = "Internet room fuzzy fallback"
             self._record_evidence(
                 "homebrain_device_inventory",
                 {"group": "Internet"},
@@ -830,6 +921,7 @@ class RuleAuthoringService:
                 summary=(
                     f"{len(internet_candidates)} Internet-group candidates; "
                     f"configured_aliases={len(self.internet_control_aliases)}; "
+                    f"identity_source={identity_source}; "
                     f"source={scope_source}; "
                     f"target={'resolved' if scoped_target is not None else 'unresolved'}"
                 ),
