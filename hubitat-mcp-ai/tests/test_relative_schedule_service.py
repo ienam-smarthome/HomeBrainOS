@@ -98,7 +98,7 @@ async def test_relative_block_schedule_uses_internet_group_and_real_switch_off()
     assert decision.rule_names == (
         "Block Media Google TV Streamer (One-time 2026-10-02 22:26)",
     )
-    assert len(decision.actions) == 2
+    assert len(decision.actions) == 1
 
     create = decision.actions[0]
     payload = create["args"]
@@ -114,9 +114,6 @@ async def test_relative_block_schedule_uses_internet_group_and_real_switch_off()
         "command": "off",
     }
     assert payload["addAction"].get("minutes") is None
-
-    pause = decision.actions[1]["args"]["addAction"]
-    assert pause["capability"] == "pauseRule"
 
     inventory_receipts = [
         item for item in evidence

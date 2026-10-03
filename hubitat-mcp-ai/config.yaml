@@ -1,5 +1,5 @@
 name: "Hubitat MCP AI"
-version: "0.16.96"
+version: "0.16.97"
 slug: hubitat_mcp_ai
 description: "HomeBrainOS native Ollama Online function-calling bridge for Hubitat MCP"
 url: "https://github.com/ienam-smarthome/HomeBrainOS"
@@ -64,6 +64,9 @@ options:
   internet_control_aliases_json: "{}"
   morning_health_check_enabled: true
   morning_health_check_time: "07:00"
+  one_time_rule_cleanup_enabled: true
+  one_time_rule_cleanup_time: "01:00"
+  one_time_rule_cleanup_grace_minutes: 10
   health_check_log_hours: 24
   health_check_low_battery: 20
   health_check_stale_hours: 24
@@ -122,6 +125,9 @@ schema:
   internet_control_aliases_json: str
   morning_health_check_enabled: bool
   morning_health_check_time: str
+  one_time_rule_cleanup_enabled: bool
+  one_time_rule_cleanup_time: str
+  one_time_rule_cleanup_grace_minutes: int
   health_check_log_hours: int
   health_check_low_battery: int
   health_check_stale_hours: int
