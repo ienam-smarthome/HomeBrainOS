@@ -337,9 +337,6 @@ _RULE_AUTHORING_WORDS = re.compile(r"\b(?:automation|rule|schedule)\b", re.I)
 # it fall through to that loop instead of being hijacked into a doomed
 # device lookup.
 _APP_OR_AUTOMATION_TARGET = re.compile(r"\bapps?\b", re.I)
-_RELATIVE_DELAY = re.compile(
-    r"\bin\s+(?:\d+|a|an)\s*(?:min(?:ute)?s?|hours?|hrs?)\b", re.I,
-)
 _BLOCK_INTERNET = re.compile(
     r"^(?:please\s+)?(?:block|disable|restrict)\s+"
     r"(?:internet\s+(?:access\s+)?(?:for\s+)?|access\s+for\s+)?"
@@ -393,17 +390,12 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
     block..."), so this only ever catches the immediate case that
     previously had no deterministic handling at all.
 
-    Also excludes a relative-delay clause ("in 30 mins", "in an hour"):
-    live regression found immediately after 0.10.377 shipped -- neither
-    `AT_TIME` nor the window pattern recognise that phrasing (both only
-    match a clock time), so "block the tv in 30 mins" was falling through
-    to this parser and having the entire "tv in 30 mins" swallowed as the
-    device name, producing a confusing "no candidate is similar enough"
-    resolution failure instead of a clean result. Nothing in the codebase
-    implements a relative-delay schedule today, so excluding it here just
-    restores the pre-0.10.377 behaviour of falling through to the model
-    for this specific, currently-unsupported phrasing rather than
-    mishandling it deterministically.
+    Uses the same future/recurring timing guard as the ordinary immediate
+    device-control parser. This keeps Internet commands such as "block the tv
+    after 1 min", "block the tv in 30 mins", absolute clock schedules, and
+    recurring requests out of this immediate-only path so RuleAuthoringService
+    can deterministically compile the schedule without the timing suffix being
+    swallowed into the device name.
 
     Also excludes any "app"/"apps" wording: "disable humidity controller
     app" names a Hubitat app/automation, not a device, and this parser has
@@ -419,7 +411,7 @@ def parse_immediate_internet_access_intent(prompt: str) -> tuple[str, str] | Non
         AT_TIME.search(text) is not None
         or _INTERNET_ACCESS_WINDOW.search(text) is not None
         or _RULE_AUTHORING_WORDS.search(text) is not None
-        or _RELATIVE_DELAY.search(text) is not None
+        or _has_future_routine_timing(text)
         or _APP_OR_AUTOMATION_TARGET.search(text) is not None
     ):
         return None
