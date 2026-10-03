@@ -1,0 +1,61 @@
+name: One-shot 0.16.92 routing patch
+
+on:
+  push:
+    branches:
+      - fix/internet-relative-routing-0.16.92
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/internet-relative-routing-0.16.92
+          fetch-depth: 0
+      - name: Apply bounded routing fix and regression
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hubitat-mcp-ai/rootfs/app/request_classification.py')
+          text = path.read_text()
+          old_block = '''_RELATIVE_DELAY = re.compile(\n    r"\\bin\\s+(?:\\d+|a|an)\\s*(?:min(?:ute)?s?|hours?|hrs?)\\b", re.I,\n)\n'''
+          if old_block not in text:
+              raise SystemExit('expected legacy relative-delay block not found')
+          text = text.replace(old_block, '')
+          old_guard = '''        or _RULE_AUTHORING_WORDS.search(text) is not None\n        or _RELATIVE_DELAY.search(text) is not None\n        or _APP_OR_AUTOMATION_TARGET.search(text) is not None\n'''
+          new_guard = '''        or _RULE_AUTHORING_WORDS.search(text) is not None\n        or _has_future_routine_timing(text)\n        or _APP_OR_AUTOMATION_TARGET.search(text) is not None\n'''
+          if old_guard not in text:
+              raise SystemExit('expected Internet timing guard not found')
+          text = text.replace(old_guard, new_guard)
+          old_doc = '''    Also excludes a relative-delay clause ("in 30 mins", "in an hour"):\n    live regression found immediately after 0.10.377 shipped -- neither\n    `AT_TIME` nor the window pattern recognise that phrasing (both only\n    match a clock time), so "block the tv in 30 mins" was falling through\n    to this parser and having the entire "tv in 30 mins" swallowed as the\n    device name, producing a confusing "no candidate is similar enough"\n    resolution failure instead of a clean result. Nothing in the codebase\n    implements a relative-delay schedule today, so excluding it here just\n    restores the pre-0.10.377 behaviour of falling through to the model\n    for this specific, currently-unsupported phrasing rather than\n    mishandling it deterministically.\n'''
+          new_doc = '''    Uses the same future/recurring timing guard as the ordinary immediate\n    device-control parser. This keeps Internet commands such as "block the tv\n    after 1 min", "block the tv in 30 mins", absolute clock schedules, and\n    recurring requests out of this immediate-only path so RuleAuthoringService\n    can deterministically compile the schedule without the timing suffix being\n    swallowed into the device name.\n'''
+          if old_doc not in text:
+              raise SystemExit('expected legacy Internet relative-delay doc not found')
+          text = text.replace(old_doc, new_doc)
+          path.write_text(text)
+
+          test_path = Path('hubitat-mcp-ai/tests/test_scheduled_control_routing.py')
+          test = test_path.read_text()
+          old_import = 'from request_classification import routine_control_arguments\n'
+          new_import = 'from request_classification import parse_immediate_internet_access_intent, routine_control_arguments\n'
+          if old_import not in test:
+              raise SystemExit('expected request_classification import not found')
+          test = test.replace(old_import, new_import)
+          addition = '''\n\n@pytest.mark.parametrize(\n    "prompt",\n    [\n        f"block {TARGET} after 1 min",\n        f"block {TARGET} in 30 mins",\n        f"block {TARGET} 2 hours later",\n        f"block {TARGET} at 10pm",\n        f"block {TARGET} every day at 10pm",\n    ],\n)\ndef test_scheduled_internet_control_never_uses_immediate_access_parser(prompt: str) -> None:\n    assert parse_immediate_internet_access_intent(prompt) is None\n\n\ndef test_immediate_internet_control_still_uses_immediate_access_parser() -> None:\n    assert parse_immediate_internet_access_intent(f"block {TARGET}") == (\n        TARGET,\n        "blockInternet",\n    )\n\n\ndef test_live_regression_after_one_min_hands_off_to_rule_authoring() -> None:\n    service = RuleAuthoringService(None, lambda *args, **kwargs: None)  # type: ignore[arg-type]\n    prompt = "block Google-TV-Streamer after 1 min"\n    assert parse_immediate_internet_access_intent(prompt) is None\n    assert service.matches_request(prompt) is True\n    intent = service._intent(prompt)\n    assert intent is not None\n    assert intent.target == "Google-TV-Streamer"\n    assert intent.start_command == "blockInternet"\n'''
+          if 'test_live_regression_after_one_min_hands_off_to_rule_authoring' in test:
+              raise SystemExit('regression already present')
+          test_path.write_text(test.rstrip() + addition + '\n')
+          PY
+          rm .github/workflows/one-shot-patch-0.16.92.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add hubitat-mcp-ai/rootfs/app/request_classification.py hubitat-mcp-ai/tests/test_scheduled_control_routing.py .github/workflows/one-shot-patch-0.16.92.yml
+          git commit -m "Fix scheduled Internet control handoff"
+          git push origin HEAD:fix/internet-relative-routing-0.16.92
