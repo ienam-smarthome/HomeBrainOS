@@ -1175,13 +1175,21 @@ class DeviceQueryService:
                 scoped_candidates = kind_filtered
 
         if required_command:
-            capable = [
+            # Required-command resolution is capability-first. A narrow
+            # labelFilter can legitimately return an exact-name device that
+            # is not the control surface for the requested command (for
+            # example, "Google TV Streamer (ADB)" versus the separate
+            # "Block Media-Google-TV-Streamer" Internet-control device).
+            # Keep the capable subset even when it is empty: an empty set
+            # deliberately drives the existing authoritative-identity
+            # fallback below, where required_command is applied again before
+            # fuzzy name resolution. Retaining incapable targeted rows here
+            # would incorrectly make an exact name match terminal.
+            scoped_candidates = [
                 device
                 for device in scoped_candidates
                 if required_command.casefold() in device_commands(device)
             ]
-            if capable:
-                scoped_candidates = capable
 
         resolution = resolve_device_candidate(requested, scoped_candidates)
         exact_match_reasons = {

@@ -704,6 +704,14 @@ class RuleAuthoringService:
                     + ", ".join(alternatives[:3])
                     + ". Nothing was queued.",
                 )
+            required_command = str(resolve_arguments.get("required_command") or "").strip()
+            if required_command:
+                return RuleAuthoringDecision(
+                    True,
+                    f"I could not resolve a Hubitat device matching **{intent.target}** "
+                    f"that advertises the required command: {required_command.casefold()}. "
+                    "Nothing was queued.",
+                )
             return RuleAuthoringDecision(
                 True,
                 f"I could not resolve **{intent.target}** to one Hubitat device. "
