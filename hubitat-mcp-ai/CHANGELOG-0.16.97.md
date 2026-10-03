@@ -16,6 +16,7 @@
 - Newly authored one-time schedules no longer add `Pause Rules: **This Rule**` after their device action.
 - The lifecycle is now: create -> execute once -> remain inert -> nightly cleanup removes the expired generated rule.
 - Existing one-time rules created by older HomeBrain versions remain eligible for the same nightly cleanup once expired.
+- Regression coverage verifies the prompt-to-confirmation path queues exactly one Rule Machine create write for a one-time request and no `pauseRule` follow-up.
 
 ## Configuration
 
