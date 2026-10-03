@@ -126,7 +126,8 @@ async def test_rule_authoring_uses_complete_inventory_before_model():
             return [{
                 "id": "6916",
                 "label": "Block Tab-S9-FE",
-                "commands": ["blockInternet", "allowInternet", "addTime"],
+                "room": "Internet",
+                "commands": ["on", "off", "addTime"],
                 "capabilities": ["Switch"],
             }]
 
@@ -134,7 +135,7 @@ async def test_rule_authoring_uses_complete_inventory_before_model():
             self.calls.append((name, arguments))
             if name == "hub_read_devices":
                 assert arguments["tool"] == "hub_list_devices"
-                assert arguments["args"]["labelFilter"] == "tab s9"
+                assert arguments["args"]["labelFilter"] == "Block Tab-S9-FE"
                 return _suite.MCPToolResult(
                     name,
                     arguments,
@@ -188,7 +189,7 @@ async def test_rule_authoring_uses_complete_inventory_before_model():
             {
                 "tool": "hub_list_devices",
                 "args": {
-                    "labelFilter": "tab s9",
+                    "labelFilter": "Block Tab-S9-FE",
                     "fields": [
                         "id", "name", "label", "room", "capabilities",
                         "attributes", "commands",

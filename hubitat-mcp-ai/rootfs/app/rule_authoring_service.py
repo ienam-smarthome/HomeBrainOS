@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from device_query_service import DeviceQueryService
+from device_state_summary import room_name
+from device_target_resolver import resolve_device_candidate
 from mcp_client import HubitatMCPClient
 
 logger = logging.getLogger("HomeBrainOS.RuleAuthoringService")
@@ -679,20 +681,119 @@ class RuleAuthoringService:
             return RuleAuthoringDecision(False)
 
         resolver = DeviceQueryService(self.mcp, self._record_evidence)
+        internet_access = intent.start_command.casefold() in {
+            "blockinternet", "allowinternet"
+        }
         resolve_arguments: dict[str, Any] = {"name": intent.target}
-        # Scope resolution to devices that actually support blockInternet/
-        # allowInternet before matching by name. Live regression: a house
-        # can have both a plain power-switch and a separate network-
-        # integration device sharing a name like "tv" -- ordinary name
-        # resolution always prefers an exact label match, so a scheduled
-        # "block the tv at 10pm" request used to resolve the switch and
-        # then get flatly rejected with "does not advertise the required
-        # command" instead of finding the capable device sitting right
-        # there in the same candidate list. Deliberately scoped to just
-        # these two commands -- on/off scheduled rules are unaffected.
-        if intent.start_command.casefold() in {"blockinternet", "allowinternet"}:
-            resolve_arguments["required_command"] = intent.start_command
-        result = await resolver.resolve_device(resolve_arguments)
+
+        if internet_access:
+            # Internet access controls are ordinary Hubitat Switch devices in
+            # the authoritative Internet room. Their user-facing semantics are
+            # intentionally inverted from the literal switch wording:
+            # switch=on means Internet allowed; switch=off means Internet
+            # blocked. Do not require synthetic blockInternet/allowInternet
+            # driver commands. First scope fuzzy identity matching to the
+            # Internet room so a normal device such as "Google TV Streamer
+            # (ADB)" cannot win merely because its label is a closer match.
+            identity_started = time.monotonic()
+            try:
+                # get_cached_devices() is the long-established enriched identity
+                # interface used by the control/query paths and by older MCP
+                # clients/test doubles. Prefer it here; fall back to the newer
+                # get_device_identities() helper when only that interface exists.
+                identity_reader = getattr(self.mcp, "get_cached_devices", None)
+                if not callable(identity_reader):
+                    identity_reader = getattr(self.mcp, "get_device_identities", None)
+                if not callable(identity_reader):
+                    raise AttributeError("No device identity reader is available")
+                identities = list(await identity_reader() or [])
+            except Exception as exc:
+                self._record_evidence(
+                    "homebrain_device_inventory",
+                    {"group": "Internet"},
+                    success=False,
+                    elapsed_ms=round((time.monotonic() - identity_started) * 1000),
+                    summary=f"Internet-group identity lookup failed: {type(exc).__name__}",
+                    supports_live_claim=True,
+                    evidence_kind="deterministic_internet_target_scope",
+                )
+                return RuleAuthoringDecision(
+                    True,
+                    "I could not read the authoritative **Internet** device group. "
+                    "Nothing was queued.",
+                )
+
+            internet_candidates = [
+                item
+                for item in identities
+                if isinstance(item, dict)
+                and str(room_name(item) or "").casefold() == "internet"
+            ]
+            scoped = resolve_device_candidate(intent.target, internet_candidates)
+            self._record_evidence(
+                "homebrain_device_inventory",
+                {"group": "Internet"},
+                success=scoped.target is not None,
+                elapsed_ms=round((time.monotonic() - identity_started) * 1000),
+                summary=(
+                    f"{len(internet_candidates)} Internet-group candidates; "
+                    f"target={'resolved' if scoped.target is not None else 'unresolved'}"
+                ),
+                supports_live_claim=True,
+                evidence_kind="deterministic_internet_target_scope",
+            )
+            if scoped.target is None:
+                if scoped.alternatives:
+                    return RuleAuthoringDecision(
+                        True,
+                        "I could not uniquely match that request to an Internet-control "
+                        "device. Possible matches: "
+                        + ", ".join(scoped.alternatives[:3])
+                        + ". Nothing was queued.",
+                    )
+                return RuleAuthoringDecision(
+                    True,
+                    f"I could not match **{intent.target}** to a device in the "
+                    "authoritative **Internet** group. Nothing was queued.",
+                )
+
+            selected_label = str(
+                scoped.target.get("label")
+                or scoped.target.get("name")
+                or intent.target
+            ).strip()
+            actual_start_command = (
+                "off"
+                if intent.start_command.casefold() == "blockinternet"
+                else "on"
+            )
+            actual_end_command = intent.end_command
+            if intent.end_command is not None:
+                if intent.end_command.casefold() == "blockinternet":
+                    actual_end_command = "off"
+                elif intent.end_command.casefold() == "allowinternet":
+                    actual_end_command = "on"
+
+            # Re-read the selected control surface by its authoritative label
+            # and verify the real Switch command we will schedule. This keeps
+            # command verification intact while avoiding any fake capability.
+            resolve_arguments = {
+                "name": selected_label,
+                "required_command": actual_start_command,
+            }
+            result = await resolver.resolve_device(resolve_arguments)
+            intent = _ScheduleIntent(
+                target=intent.target,
+                start_time=intent.start_time,
+                start_command=actual_start_command,
+                start_label=intent.start_label,
+                end_time=intent.end_time,
+                end_command=actual_end_command,
+                end_label=intent.end_label,
+                recurring=intent.recurring,
+            )
+        else:
+            result = await resolver.resolve_device(resolve_arguments)
         data = result.data if isinstance(result.data, dict) else {}
         target = data.get("target") if isinstance(data.get("target"), dict) else None
         if target is None:
