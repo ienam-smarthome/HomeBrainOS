@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.102**.
+Current add-on version: **0.16.103**.
 
 ## Architecture
+
+0.16.103 fixes open temporal-history semantics. A definite observed active transition with no later inactive row now exposes its elapsed open span separately from completed-pair totals, so an ON event is no longer collapsed into a misleading `0s` / “No bounded on interval” answer. Ongoing-window analysis also distinguishes a transition observed inside the window from a verified state that was already active when the window began. Event-stream completeness remains a separate caveat: observed open spans are not promoted to proof of uninterrupted physical state or an exact total when source integrity is unverified.
 
 0.16.101 fixes one-time cleanup rule discovery on live MCP servers. Cleanup now calls the Rule Machine gateway explicitly as `hub_read_rules -> hub_list_rules`, requires an authoritative `rules` collection before considering any deletion, and extracts only rule identity/name fields for the strict `(One-time YYYY-MM-DD HH:MM)` eligibility check. Missing or malformed list structure fails closed instead of being reported as a successful zero-rule scan.
 
