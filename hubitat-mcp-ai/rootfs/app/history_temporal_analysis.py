@@ -321,8 +321,10 @@ def analyze_state_intervals(
         "continuous": len(intervals) == 1 and coverage_complete,
         "coverage": "complete" if coverage_complete else "partial",
         "totalIsLowerBound": not coverage_complete,
+        "openIntervalCount": 1 if open_interval else 0,
         "openActiveInterval": open_interval,
         "unboundedActiveInterval": open_interval,
+        "openActiveStartObserved": open_interval,
         "openActiveStart": (
             str(open_start_raw or open_start.isoformat())
             if open_start is not None
@@ -454,6 +456,9 @@ def analyze_state_intervals_in_window(
         if open_active_interval and active_start is not None
         else None
     )
+    open_active_start_observed = bool(
+        open_active_interval and not active_start_clipped and active_start_raw
+    )
     if source_integrity_verified and open_active_interval:
         intervals.append(
             _interval(
@@ -495,8 +500,10 @@ def analyze_state_intervals_in_window(
         # observed closing transition before the analysed window ended. It is
         # useful evidence even for a historical/closed window, but it is not a
         # duration claim. openActiveInterval is the stronger ongoing-window form.
+        "openIntervalCount": 1 if open_active_interval else 0,
         "unboundedActiveInterval": open_active_interval,
         "openActiveInterval": bool(window_ongoing and open_active_interval),
+        "openActiveStartObserved": open_active_start_observed,
         "openActiveStart": open_active_start_text,
         "openActiveStartNatural": (
             format_natural_datetime(open_active_start_text)
@@ -535,6 +542,7 @@ def analyze_state_intervals_in_window(
         "boundaryBasis": boundary_basis,
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
+
 def window_event_evidence(
     events: list[dict[str, Any]],
     time_window: dict[str, Any] | None,
@@ -625,7 +633,7 @@ def boundary_event_evidence(
     # boundary so causal provenance can match the newest ON event instead of
     # falling back to the most recent completed interval.
     open_start = _parse_timestamp(temporal_analysis.get("openActiveStart"))
-    if open_start is not None:
+    if open_start is not None and temporal_analysis.get("openActiveStartObserved") is not False:
         boundaries.append(open_start)
 
     if not boundaries:
@@ -708,8 +716,10 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "sourceIntegrityVerified",
         "durationReliability",
         "observedBoundedIntervalsOnly",
+        "openIntervalCount",
         "unboundedActiveInterval",
         "openActiveInterval",
+        "openActiveStartObserved",
         "openActiveStart",
         "openActiveStartNatural",
         "inferredBoundaryState",
@@ -1017,6 +1027,24 @@ def guard_history_duration_claim(
         ):
             return text, False
         if interval_count == 0:
+            open_start_observed = temporal.get("openActiveStartObserved") is True
+            unbounded_open = bool(temporal.get("unboundedActiveInterval"))
+            open_start_natural = str(
+                temporal.get("openActiveStartNatural") or ""
+            ).strip()
+            if open_start_observed and unbounded_open:
+                transition_suffix = (
+                    f" at {open_start_natural}" if open_start_natural else ""
+                )
+                corrected = (
+                    f"{label} has a recorded {active_state} transition"
+                    f"{transition_suffix}{window_suffix}, with no subsequent "
+                    f"{inactive_state} transition in the returned history. The "
+                    "event stream has not been independently verified as complete, "
+                    "so this does not prove uninterrupted activity or the device's "
+                    "current state."
+                )
+                return corrected, True
             corrected = (
                 f"No bounded {active_state} interval was established for {label}"
                 f"{window_suffix} by the recorded device-event rows. The event "
