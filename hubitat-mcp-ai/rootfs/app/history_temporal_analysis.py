@@ -256,8 +256,10 @@ def _interval(
 def analyze_state_intervals(
     attribute: str,
     events: list[dict[str, Any]],
+    *,
+    as_of: datetime | None = None,
 ) -> dict[str, Any] | None:
-    """Derive complete active-state intervals from newest-first event rows."""
+    """Derive completed intervals plus an observed open-state span, when present."""
 
     parsed_result = _parsed_state_rows(attribute, events)
     if parsed_result is None:
@@ -301,10 +303,24 @@ def analyze_state_intervals(
         if active_start is not None and isinstance(active_start[1], dict)
         else None
     )
-    total_seconds = sum(int(item.get("durationSeconds") or 0) for item in intervals)
+    completed_seconds = sum(int(item.get("durationSeconds") or 0) for item in intervals)
+    open_seconds = 0
+    if open_interval and open_start is not None:
+        effective_as_of = as_of or datetime.now().astimezone()
+        if effective_as_of.tzinfo is None and open_start.tzinfo is not None:
+            effective_as_of = effective_as_of.replace(tzinfo=open_start.tzinfo)
+        try:
+            open_seconds = max(
+                0,
+                int(round((effective_as_of - open_start).total_seconds())),
+            )
+        except TypeError:
+            open_seconds = 0
+
+    active_seconds_so_far = completed_seconds + open_seconds
     longest_seconds = max(
-        (int(item.get("durationSeconds") or 0) for item in intervals),
-        default=0,
+        [int(item.get("durationSeconds") or 0) for item in intervals]
+        + ([open_seconds] if open_interval else [0])
     )
     coverage_complete = not open_interval and unmatched_inactive_rows == 0
 
@@ -313,14 +329,23 @@ def analyze_state_intervals(
         "activeState": active_state,
         "inactiveState": inactive_state,
         "intervalCount": len(intervals),
+        "completedIntervalCount": len(intervals),
+        "openIntervalCount": 1 if open_interval else 0,
         "intervals": intervals,
-        "totalActiveSeconds": total_seconds,
-        "totalActiveDuration": _duration_text(total_seconds),
+        "totalActiveSeconds": completed_seconds,
+        "totalActiveDuration": _duration_text(completed_seconds),
+        "completedActiveSeconds": completed_seconds,
+        "completedActiveDuration": _duration_text(completed_seconds),
+        "openActiveSeconds": open_seconds,
+        "openActiveDuration": _duration_text(open_seconds),
+        "activeSecondsSoFar": active_seconds_so_far,
+        "activeDurationSoFar": _duration_text(active_seconds_so_far),
         "longestActiveSeconds": longest_seconds,
         "longestActiveDuration": _duration_text(longest_seconds),
         "continuous": len(intervals) == 1 and coverage_complete,
         "coverage": "complete" if coverage_complete else "partial",
         "totalIsLowerBound": not coverage_complete,
+        "durationReliability": "observed-open-span" if open_interval else "bounded-pairs",
         "openActiveInterval": open_interval,
         "unboundedActiveInterval": open_interval,
         "openActiveStart": (
@@ -357,13 +382,10 @@ def analyze_state_intervals_in_window(
     stream contains every physical transition. Unless an independent source has
     verified event-stream integrity, HomeBrain must not extend a predecessor state
     to the window start, infer a missing boundary from the first row, or extend an
-    open interval to the window end. Those operations can turn omitted transitions
-    into many hours of invented activity.
-
-    With unverified source integrity this function therefore reports only intervals
-    bounded by observed active/inactive rows and marks the duration as an
-    unverified-event-stream estimate rather than an exact total or mathematical
-    lower bound.
+    open interval to the window end as an exact duration. A real active transition
+    observed inside the window can still establish an open observed span through
+    the end of the analysed window; that span is kept separate from completed
+    active-time totals when source integrity is unverified.
     """
 
     if start.tzinfo is None or end.tzinfo is None or end <= start:
@@ -454,6 +476,19 @@ def analyze_state_intervals_in_window(
         if open_active_interval and active_start is not None
         else None
     )
+    open_effective_start_text = (
+        active_start.isoformat()
+        if open_active_interval and active_start is not None
+        else None
+    )
+    open_active_seconds = (
+        max(0, int(round((end - active_start).total_seconds())))
+        if open_active_interval and active_start is not None
+        else 0
+    )
+    completed_interval_count = len(intervals)
+    completed_seconds = sum(int(item.get("durationSeconds") or 0) for item in intervals)
+
     if source_integrity_verified and open_active_interval:
         intervals.append(
             _interval(
@@ -466,9 +501,10 @@ def analyze_state_intervals_in_window(
         )
 
     total_seconds = sum(int(item.get("durationSeconds") or 0) for item in intervals)
+    active_seconds_so_far = completed_seconds + open_active_seconds
     longest_seconds = max(
-        (int(item.get("durationSeconds") or 0) for item in intervals),
-        default=0,
+        [int(item.get("durationSeconds") or 0) for item in intervals]
+        + ([open_active_seconds] if open_active_interval else [0])
     )
     coverage_complete = bool(source_integrity_verified and boundary_known)
     reliability = "exact" if coverage_complete else "unverified-event-stream"
@@ -478,9 +514,17 @@ def analyze_state_intervals_in_window(
         "activeState": active_state,
         "inactiveState": inactive_state,
         "intervalCount": len(intervals),
+        "completedIntervalCount": completed_interval_count,
+        "openIntervalCount": 1 if open_active_interval else 0,
         "intervals": intervals,
         "totalActiveSeconds": total_seconds,
         "totalActiveDuration": _duration_text(total_seconds),
+        "completedActiveSeconds": completed_seconds,
+        "completedActiveDuration": _duration_text(completed_seconds),
+        "openActiveSeconds": open_active_seconds,
+        "openActiveDuration": _duration_text(open_active_seconds),
+        "activeSecondsSoFar": active_seconds_so_far,
+        "activeDurationSoFar": _duration_text(active_seconds_so_far),
         "longestActiveSeconds": longest_seconds,
         "longestActiveDuration": _duration_text(longest_seconds),
         "continuous": len(intervals) == 1 and coverage_complete,
@@ -492,9 +536,9 @@ def analyze_state_intervals_in_window(
         "pageCompleteToWindowStart": bool(source_complete_to_start),
         "observedBoundedIntervalsOnly": not bool(source_integrity_verified),
         # An unbounded active interval means a recorded active transition had no
-        # observed closing transition before the analysed window ended. It is
-        # useful evidence even for a historical/closed window, but it is not a
-        # duration claim. openActiveInterval is the stronger ongoing-window form.
+        # observed closing transition before the analysed window ended. The
+        # open span is reported separately and is not promoted to an exact total
+        # when event-stream integrity remains unverified.
         "unboundedActiveInterval": open_active_interval,
         "openActiveInterval": bool(window_ongoing and open_active_interval),
         "openActiveStart": open_active_start_text,
@@ -502,6 +546,15 @@ def analyze_state_intervals_in_window(
             format_natural_datetime(open_active_start_text)
             if open_active_start_text
             else None
+        ),
+        "openActiveEffectiveStart": open_effective_start_text,
+        "openActiveEffectiveStartNatural": (
+            format_natural_datetime(open_effective_start_text)
+            if open_effective_start_text
+            else None
+        ),
+        "openActiveStartedBeforeWindow": bool(
+            open_active_interval and active_start_clipped
         ),
         "unmatchedInactiveRows": 0,
         "duplicateStateRowsIgnored": duplicate_state_rows,
@@ -535,6 +588,8 @@ def analyze_state_intervals_in_window(
         "boundaryBasis": boundary_basis,
         "sourceCompleteToWindowStart": bool(source_complete_to_start),
     }
+
+
 def window_event_evidence(
     events: list[dict[str, Any]],
     time_window: dict[str, Any] | None,
@@ -689,7 +744,15 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "inactiveState",
         "totalActiveDuration",
         "totalActiveSeconds",
+        "completedActiveDuration",
+        "completedActiveSeconds",
+        "openActiveDuration",
+        "openActiveSeconds",
+        "activeDurationSoFar",
+        "activeSecondsSoFar",
         "intervalCount",
+        "completedIntervalCount",
+        "openIntervalCount",
         "longestActiveDuration",
         "longestActiveSeconds",
         "continuous",
@@ -712,6 +775,9 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "openActiveInterval",
         "openActiveStart",
         "openActiveStartNatural",
+        "openActiveEffectiveStart",
+        "openActiveEffectiveStartNatural",
+        "openActiveStartedBeforeWindow",
         "inferredBoundaryState",
         "analyzedStateEventCount",
         "firstWindowStateEvent",
@@ -1017,6 +1083,59 @@ def guard_history_duration_claim(
         ):
             return text, False
         if interval_count == 0:
+            open_active = bool(
+                temporal.get("openActiveInterval")
+                or temporal.get("unboundedActiveInterval")
+            )
+            if open_active:
+                open_start = str(
+                    temporal.get("openActiveStartNatural")
+                    or temporal.get("openActiveStart")
+                    or ""
+                ).strip()
+                started_before_window = bool(
+                    temporal.get("openActiveStartedBeforeWindow")
+                )
+                try:
+                    open_seconds = int(temporal.get("openActiveSeconds") or 0)
+                except (TypeError, ValueError):
+                    open_seconds = 0
+                open_duration = str(
+                    temporal.get("openActiveDuration")
+                    or _duration_text(open_seconds)
+                ).strip()
+
+                if started_before_window:
+                    where = window_label or "the requested window"
+                    corrected = (
+                        f"{label} was already {active_state} at the start of {where}. "
+                    )
+                elif open_start:
+                    if active_state == "on":
+                        corrected = f"{label} switched on at {open_start}. "
+                    else:
+                        corrected = (
+                            f"{label} entered the {active_state} state at {open_start}. "
+                        )
+                else:
+                    corrected = (
+                        f"An observed {active_state} transition for {label} has no "
+                        f"subsequent {inactive_state} row in the available history. "
+                    )
+
+                corrected += (
+                    f"No subsequent {inactive_state} event was found in the available "
+                    "device-event rows"
+                )
+                if open_seconds > 0 and open_duration:
+                    corrected += f", giving an observed open span of about {open_duration} so far"
+                corrected += (
+                    ". The event stream has not been independently verified as complete, "
+                    f"so this does not prove uninterrupted {active_state} state or establish "
+                    "an exact total."
+                )
+                return corrected, True
+
             corrected = (
                 f"No bounded {active_state} interval was established for {label}"
                 f"{window_suffix} by the recorded device-event rows. The event "
@@ -1084,6 +1203,7 @@ def guard_history_duration_claim(
             "a lower bound."
         )
     return corrected, True
+
 
 __all__ = [
     "analyze_state_intervals",
