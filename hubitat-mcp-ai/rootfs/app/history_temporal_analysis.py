@@ -623,7 +623,12 @@ def boundary_event_evidence(
     for interval in intervals:
         if not isinstance(interval, dict):
             continue
-        for key in ("start", "end"):
+        for key, clipped_key in (
+            ("start", "clippedAtWindowStart"),
+            ("end", "clippedAtWindowEnd"),
+        ):
+            if bool(interval.get(clipped_key)):
+                continue
             parsed = _parse_timestamp(interval.get(key))
             if parsed is not None:
                 boundaries.append(parsed)
@@ -631,7 +636,8 @@ def boundary_event_evidence(
     # An ongoing ON interval has no closing pair in `intervals`, but its
     # recorded start is still a real state-transition boundary. Preserve that
     # boundary so causal provenance can match the newest ON event instead of
-    # falling back to the most recent completed interval.
+    # falling back to the most recent completed interval. A clipped window start
+    # is synthetic analysis context, not a recorded event boundary.
     open_start = _parse_timestamp(temporal_analysis.get("openActiveStart"))
     if open_start is not None and temporal_analysis.get("openActiveStartObserved") is not False:
         boundaries.append(open_start)
