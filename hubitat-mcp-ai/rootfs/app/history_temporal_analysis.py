@@ -70,6 +70,13 @@ _REDUNDANT_UNVERIFIED_DURATION_CAVEAT = re.compile(
     r".*\b(?:unverified\s+event\s+stream|event\s+stream(?:\s+integrity)?\s+is\s+unverified)\b",
     re.I | re.S,
 )
+_ROUTINE_COMPLETE_WINDOW_CAVEAT = re.compile(
+    r"(?:\*\*Note:\*\*\s*)?"
+    r"(?:this|that)\s+is\s+an?\s+estimate\s+based\s+on\s+recorded\s+state\s+pairs"
+    r"\s*[;,]\s*the\s+device-event\s+stream\s+has\s+not\s+been\s+"
+    r"independently\s+verified\s+as\s+complete\.?\s*",
+    re.I,
+)
 
 
 def _explicit_false(value: Any) -> bool:
@@ -254,6 +261,72 @@ def _first_unmatched_inactive_note(
     )
 
 
+def _transition_label(state: str) -> str:
+    """Return a concise human label for one recorded state transition."""
+
+    value = str(state or "").strip().casefold()
+    return {
+        "on": "switch-on",
+        "off": "switch-off",
+        "open": "open",
+        "closed": "close",
+        "active": "active transition",
+        "inactive": "inactive transition",
+        "unlocked": "unlock",
+        "locked": "lock",
+    }.get(value, f"{value} transition" if value else "state transition")
+
+
+def _practical_history_context(
+    *,
+    label: str,
+    temporal: dict[str, Any],
+    window_label: str,
+) -> str:
+    """Summarise window scope and latest recorded state without boilerplate."""
+
+    last = temporal.get("lastWindowStateEvent")
+    if not isinstance(last, dict):
+        return ""
+
+    state = str(last.get("state") or "").strip().casefold()
+    at = _compact_clock(last.get("timestamp"))
+    if not state or not at:
+        return ""
+
+    parts = [f"The latest recorded state for {label} is {state}."]
+    start = _compact_clock(temporal.get("windowStart"))
+    if window_label and start:
+        parts.append(f"I counted {window_label} from {start},")
+    else:
+        parts.append("The")
+    transition = _transition_label(state)
+    parts[-1] += f" and the last recorded event was the {at} {transition}." if window_label and start else f" last recorded event was the {at} {transition}."
+    return " ".join(parts)
+
+
+def _replace_routine_complete_window_caveat(
+    text: str,
+    *,
+    practical_context: str,
+) -> tuple[str, bool]:
+    """Replace generic source-integrity boilerplate with useful window context."""
+
+    if not practical_context:
+        return str(text or ""), False
+    original = str(text or "")
+    cleaned, count = _ROUTINE_COMPLETE_WINDOW_CAVEAT.subn(
+        practical_context,
+        original,
+        count=1,
+    )
+    if not count:
+        return original, False
+    # Keep presentation tidy if a standalone Note paragraph was replaced.
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned, True
+
+
 def _formatted_unverified_duration_summary(
     *,
     label: str,
@@ -264,6 +337,7 @@ def _formatted_unverified_duration_summary(
     interval_count: int,
     window_label: str,
     temporal: dict[str, Any],
+    page_complete_to_start: bool,
     page_incomplete_to_start: bool,
 ) -> str:
     """Create a readable deterministic duration answer with table and caveat."""
@@ -290,16 +364,30 @@ def _formatted_unverified_duration_summary(
             f"The retained device-event history does not reach the start of "
             f"{window_name}, so earlier in-window transitions may be missing."
         )
-    notes.append(
-        "The device-event stream has not been independently verified as complete, "
-        "so this is an estimate from the recorded state pairs, not an exact total "
-        "or a mathematical lower bound."
-    )
+        notes.append(
+            "The available event stream is not independently verified as complete, "
+            "so this is not an exact total or a mathematical lower bound."
+        )
+    elif not page_complete_to_start:
+        # Unknown page coverage keeps the conservative historical safeguard.
+        notes.append(
+            "The available event stream is not independently verified as complete, "
+            "so this is not an exact total or a mathematical lower bound."
+        )
 
     sections = [headline]
     if table:
         sections.extend(["", table])
-    sections.extend(["", "**Note:** " + " ".join(notes)])
+    if notes:
+        sections.extend(["", "**Note:** " + " ".join(notes)])
+    else:
+        practical = _practical_history_context(
+            label=label,
+            temporal=temporal,
+            window_label=window_label,
+        )
+        if practical:
+            sections.extend(["", practical])
     return "\n".join(sections)
 
 
@@ -831,6 +919,15 @@ def analyze_state_intervals_in_window(
             if inside
             else None
         ),
+        "lastWindowStateEvent": (
+            {
+                "timestamp": inside[-1][0].isoformat(),
+                "state": inside[-1][2],
+                "isStateChange": inside[-1][3].get("isStateChange"),
+            }
+            if inside
+            else None
+        ),
         "predecessorStateEvent": (
             {
                 "timestamp": predecessor[0].isoformat(),
@@ -1043,6 +1140,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "inferredBoundaryState",
         "analyzedStateEventCount",
         "firstWindowStateEvent",
+        "lastWindowStateEvent",
         "predecessorStateEvent",
     )
     temporal_details: dict[str, Any] = {}
@@ -1337,6 +1435,10 @@ def guard_history_duration_claim(
         time_window = details.get("timeWindow")
         if isinstance(time_window, dict):
             page_complete_to_start = time_window.get("sourcePageCompleteToStart")
+    page_complete_to_start_proven = bool(
+        temporal.get("windowed")
+        and page_complete_to_start is True
+    )
     page_incomplete_to_start = bool(
         temporal.get("windowed")
         and page_complete_to_start is False
@@ -1425,6 +1527,7 @@ def guard_history_duration_claim(
             interval_count=interval_count,
             window_label=window_label,
             temporal=temporal,
+            page_complete_to_start=page_complete_to_start_proven,
             page_incomplete_to_start=page_incomplete_to_start,
         )
         expected = _display_duration_seconds(total_seconds)
@@ -1435,6 +1538,17 @@ def guard_history_duration_claim(
             and _UNVERIFIED_EXACTNESS_CLAIM.search(text) is None
             and not page_incomplete_to_start
         ):
+            if page_complete_to_start_proven:
+                practical = _practical_history_context(
+                    label=label,
+                    temporal=temporal,
+                    window_label=window_label,
+                )
+                cleaned, presentation_changed = _replace_routine_complete_window_caveat(
+                    text,
+                    practical_context=practical,
+                )
+                return cleaned, presentation_changed
             return text, False
         localized, changed = _replace_unverified_totalish_sentences(
             text,
