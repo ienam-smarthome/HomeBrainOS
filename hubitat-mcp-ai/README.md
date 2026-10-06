@@ -7,6 +7,8 @@ Current add-on version: **0.16.111**.
 
 ## Architecture
 
+0.16.111 adds `this afternoon` as a first-class deterministic history window. It resolves to 12:00–18:00 in the authoritative Hubitat local timezone, capped at the current time while the afternoon is in progress. Explicit clock ranges mentioning `this afternoon` are anchored to today. This prevents a rolling `hours_back` fetch from leaking late-morning sessions into an answer labelled as afternoon.
+
 0.16.110 fixes duplicate temporal-history presentation when a model draft already contains an interval table and the deterministic history safety guard inserts its canonical table. The repair path now keeps the first canonical history table, removes only later duplicate On/Off/Duration blocks and their matching retention/completeness note, and preserves unrelated analysis paragraphs or tables.
 
 0.16.109 makes user-facing temporal durations more natural without changing stored/debug units: summary prose uses words such as `10 minutes` and `1 hour 44 minutes`, while interval tables use readable compact units such as `5 min 36 sec`. It also removes a redundant second unverified-stream estimate caveat when the deterministic history guard has already supplied the complete uncertainty note.
