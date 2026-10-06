@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.106**.
+Current add-on version: **0.16.107**.
 
 ## Architecture
+
+0.16.107 fixes semantic history-window coverage when Hubitat returns a retained native event list shorter than HomeBrain's requested row limit. A short retained list is no longer treated as proof that the requested window start was reached; HomeBrain now requires an event timestamp at or before that boundary. When a duration answer is based on a retained page that does not reach the window start, final synthesis explicitly says that earlier in-window transitions may be missing while preserving the existing unverified-stream estimate semantics.
 
 0.16.106 closes a final recorded-event wording gap in synthesis validation. When a model lists timestamps that are directly present in returned device-event rows and then refers back to them with the deictic phrase `These are estimates based on recorded events`, HomeBrain now repairs that wording to preserve the timestamps as recorded observations. Source-integrity uncertainty still applies to completeness and continuity, and derived duration totals may still be described as estimates when the event stream is unverified.
 

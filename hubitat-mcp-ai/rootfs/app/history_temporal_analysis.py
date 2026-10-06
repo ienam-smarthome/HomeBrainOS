@@ -151,6 +151,7 @@ def _replace_unverified_totalish_sentences(
     *,
     replacement: str,
     expected_seconds: int,
+    force_qualified: bool = False,
 ) -> tuple[str, bool]:
     """Correct only unsafe duration sentences and preserve other analysis.
 
@@ -181,7 +182,7 @@ def _replace_unverified_totalish_sentences(
         has_expected = expected_seconds in mentions
         qualified = _UNVERIFIED_ESTIMATE_QUALIFIER.search(sentence) is not None
         exactness = _UNVERIFIED_EXACTNESS_CLAIM.search(sentence) is not None
-        if has_expected and qualified and not exactness:
+        if has_expected and qualified and not exactness and not force_qualified:
             continue
         if not replacement_used:
             pieces[index] = replacement
@@ -1070,6 +1071,15 @@ def guard_history_duration_claim(
     inactive_state = str(temporal.get("inactiveState") or "inactive").strip() or "inactive"
     window_label = str(temporal.get("windowLabel") or "").strip()
     window_suffix = f" {window_label}" if window_label else ""
+    page_complete_to_start = temporal.get("pageCompleteToWindowStart")
+    if page_complete_to_start is None:
+        time_window = details.get("timeWindow")
+        if isinstance(time_window, dict):
+            page_complete_to_start = time_window.get("sourcePageCompleteToStart")
+    page_incomplete_to_start = bool(
+        temporal.get("windowed")
+        and page_complete_to_start is False
+    )
 
     if unverified_stream:
         # Interval-count prose such as "five observed intervals in total" is
@@ -1149,9 +1159,17 @@ def guard_history_duration_claim(
         corrected = (
             f"Pairing the recorded state rows gives an {active_state}-time "
             f"estimate of {total_duration} for {label}{window_suffix} across "
-            f"{interval_count} observed {interval_word}. The device-event "
-            "stream has not been independently verified as complete, so this "
-            "is not an exact total or a mathematical lower bound."
+            f"{interval_count} observed {interval_word}."
+        )
+        if page_incomplete_to_start:
+            where = window_label or "the requested window"
+            corrected += (
+                f" The retained device-event page does not reach the start of {where}, "
+                "so earlier in-window transitions may be missing."
+            )
+        corrected += (
+            " The device-event stream has not been independently verified as complete, "
+            "so this is not an exact total or a mathematical lower bound."
         )
         expected = _display_duration_seconds(total_seconds)
         mentions = _duration_mentions_seconds(text)
@@ -1159,12 +1177,14 @@ def guard_history_duration_claim(
             expected in mentions
             and _UNVERIFIED_ESTIMATE_QUALIFIER.search(text) is not None
             and _UNVERIFIED_EXACTNESS_CLAIM.search(text) is None
+            and not page_incomplete_to_start
         ):
             return text, False
         localized, changed = _replace_unverified_totalish_sentences(
             text,
             replacement=corrected,
             expected_seconds=expected,
+            force_qualified=page_incomplete_to_start,
         )
         # A totalish claim was detected at function entry. If sentence
         # segmentation somehow could not isolate it, retain the original
