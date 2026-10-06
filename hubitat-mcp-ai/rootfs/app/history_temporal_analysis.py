@@ -265,7 +265,8 @@ def _formatted_unverified_duration_summary(
         )
     notes.append(
         "The device-event stream has not been independently verified as complete, "
-        "so this is an estimate from the recorded state pairs rather than an exact total."
+        "so this is an estimate from the recorded state pairs, not an exact total "
+        "or a mathematical lower bound."
     )
 
     sections = [headline]
