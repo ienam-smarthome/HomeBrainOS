@@ -215,9 +215,14 @@ def _synthesis_instruction(original_user: str) -> str:
     text += (
         "Synthesize rather than dump raw fields. For unverified device-event "
         "streams, describe durations/counts as recorded-event estimates rather "
-        "than exact physical history. Preserve useful supported analysis instead "
-        "of reducing the answer to a duration or event list. Be concise but "
-        "complete and do not reveal hidden reasoning."
+        "than exact physical history. A timestamp present in a returned event row "
+        "is itself a recorded observation, not an estimated timestamp; source "
+        "integrity uncertainty applies to completeness and continuity. If the "
+        "original user explicitly asks how long, for a duration, or for total time, "
+        "lead with the deterministic temporal duration when current-turn evidence "
+        "provides it. Preserve useful supported analysis instead of reducing the "
+        "answer to a duration or event list. Be concise but complete and do not "
+        "reveal hidden reasoning."
     )
     return text
 
@@ -398,6 +403,7 @@ class FinalAnswerCoordinator:
         corrected, issues = validate_synthesis(
             draft,
             evidence,
+            original_user=original_user,
             causal=causal,
         )
         if not issues:
@@ -452,6 +458,7 @@ class FinalAnswerCoordinator:
         repaired_corrected, remaining = validate_synthesis(
             repaired_content,
             evidence,
+            original_user=original_user,
             causal=causal,
         )
         return repaired_content if not remaining else repaired_corrected

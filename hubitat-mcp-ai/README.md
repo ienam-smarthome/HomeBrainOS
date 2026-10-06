@@ -3,13 +3,15 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.104**.
+Current add-on version: **0.16.105**.
 
 ## Architecture
 
+0.16.105 preserves semantic history intent end-to-end. Parsed time windows such as `this morning` are copied into deterministic history-tool arguments even when the model already supplied the state attribute, making the resolved `timeWindow` auditable instead of relying only on request-local context. Final synthesis now receives the original user objective: explicit duration questions cannot silently lose the deterministic temporal total, and timestamps that are actually present in returned event rows are described as recorded observations rather than estimates. Source-integrity caveats still apply to completeness, continuity, and exact physical-history claims.
+
 0.16.104 fixes deterministic device-history duration analysis when a caller uses a small presentation limit such as `limit: 1`. The service still returns only the requested newest event rows, but interval arithmetic now uses every matching state row from the authoritative fetched page. This prevents cases where `analysisEventCount` reports many switch events while `intervalCount` and duration incorrectly collapse to zero. Temporal source-integrity caveats and bounded presentation remain unchanged.
 
-0.16.103 fixes open temporal-history semantics. A definite observed active transition with no later inactive row now exposes its elapsed open span separately from completed-pair totals, so an ON event is no longer collapsed into a misleading `0s` / “No bounded on interval” answer. Ongoing-window analysis also distinguishes a transition observed inside the window from a verified state that was already active when the window began. Event-stream completeness remains a separate caveat: observed open spans are not promoted to proof of uninterrupted physical state or an exact total when source integrity is unverified.
+0.16.103 fixes open temporal-history semantics. A definite observed active transition with no later inactive row now exposes its elapsed open span separately from completed-pair totals, so an ON event is no longer collapsed into a misleading `0s` / “No bounded on interval” answer. Ongoing-window analysis also distinguishes a transition observed inside the window from a verified active state that already existed when the requested window began. Event-stream completeness remains a separate caveat: observed open spans are not promoted to proof of uninterrupted physical state or an exact total when source integrity is unverified.
 
 0.16.101 fixes one-time cleanup rule discovery on live MCP servers. Cleanup now calls the Rule Machine gateway explicitly as `hub_read_rules -> hub_list_rules`, requires an authoritative `rules` collection before considering any deletion, and extracts only rule identity/name fields for the strict `(One-time YYYY-MM-DD HH:MM)` eligibility check. Missing or malformed list structure fails closed instead of being reported as a successful zero-rule scan.
 
@@ -66,7 +68,7 @@ A broad performance request that also asks for recommendations uses:
 
 1. Host-planned `hub_get_metrics` for current hub resources and alerts.
 2. Host-planned `hub_get_performance_stats` for measured app/device execution statistics.
-3. One bounded recent-log window (`30m`, maximum `100` rows).
+3. One bounded recent `hub_get_logs` window (`30m`, maximum `100` rows).
 4. If numeric performance rows cross internal retrieval-policy thresholds, at most one device-scoped and one app-scoped six-hour diagnostic log read (`since=6h`, `limit=120`). Near-threshold busy-share leaders may enter the bounded ranking before the stronger priority threshold; these thresholds choose evidence and are not health/severity classifications.
 5. `hub_get_jobs` only when the user's objective explicitly asks about scheduler/job/polling cadence.
 6. Zero exploratory pre-synthesis provider rounds for the normal broad performance+recommendation path.

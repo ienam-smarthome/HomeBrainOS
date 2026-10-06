@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
+import re
 from typing import Any
 
 from causal_attribution_guard import (
@@ -36,6 +37,19 @@ _PERFORMANCE_REPAIR_TRACE: ContextVar[tuple[str, ...]] = ContextVar(
     "performance_validation_issue_trace",
     default=(),
 )
+_DURATION_REQUEST_RE = re.compile(
+    r"\bhow\s+long\b"
+    r"|\bduration\b"
+    r"|\btotal\s+(?:on\s+)?time\b"
+    r"|\bhow\s+much\s+time\b"
+    r"|\bhow\s+many\s+(?:seconds?|minutes?|hours?)\b",
+    re.IGNORECASE,
+)
+_DURATION_GUARD_SEED = "The device was on for a total of 0 seconds."
+_RECORDED_EVENT_ESTIMATE_RE = re.compile(
+    r"\b(?:these|the)\s+(?:times|timestamps)\s+are\s+estimates\s+based\s+on\s+recorded\s+events\b",
+    re.IGNORECASE,
+)
 
 
 def _record_performance_repair_issues(issues: list[str]) -> None:
@@ -61,6 +75,7 @@ def validate_synthesis(
     message: str,
     evidence: list[dict[str, Any]],
     *,
+    original_user: str = "",
     causal: bool = False,
 ) -> tuple[str, list[str]]:
     """Return a localized deterministic baseline plus issue labels.
@@ -78,8 +93,32 @@ def validate_synthesis(
         issues.append("history_interval_cardinality")
 
     corrected, duration_changed = guard_history_duration_claim(corrected, evidence)
+    if not duration_changed and _DURATION_REQUEST_RE.search(str(original_user or "")):
+        # The ordinary duration guard corrects a wrong numeric claim. A model can
+        # also omit duration entirely (for example, list five ON timestamps for a
+        # "how long" question). Seed the same deterministic guard only when the
+        # original user explicitly requested a duration, so the evidence-backed
+        # temporal total cannot disappear during synthesis.
+        requested_duration, requested_changed = guard_history_duration_claim(
+            _DURATION_GUARD_SEED,
+            evidence,
+        )
+        if requested_changed:
+            corrected = requested_duration
+            duration_changed = True
     if duration_changed:
         issues.append("history_duration_reliability")
+
+    # Recorded event timestamps are direct observations from the returned rows.
+    # Unverified source integrity limits completeness/continuity claims; it does
+    # not turn a timestamp that is actually present into an estimate.
+    timestamp_semantics_changed = bool(_RECORDED_EVENT_ESTIMATE_RE.search(corrected))
+    if timestamp_semantics_changed:
+        corrected = _RECORDED_EVENT_ESTIMATE_RE.sub(
+            "These timestamps are recorded event observations",
+            corrected,
+        )
+        issues.append("history_recorded_timestamp_semantics")
 
     corrected, correlation_changed = guard_location_correlation_claim(corrected, evidence)
     if correlation_changed:
