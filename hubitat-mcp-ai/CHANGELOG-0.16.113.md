@@ -8,3 +8,4 @@
 - Runs on the safe complete-window path as well as corrected answers, so an otherwise acceptable headline no longer lets rounded table values escape normalization.
 - Preserves surrounding prose and unrelated Markdown tables.
 - Adds regressions for the exact 0.16.112 Bathroom Light 1 table and for unrelated-table preservation.
+- Canonicalisation is presentation-only; total duration arithmetic, semantic windows, and retained-history completeness logic are unchanged.
