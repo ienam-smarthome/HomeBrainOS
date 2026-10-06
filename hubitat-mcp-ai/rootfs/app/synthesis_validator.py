@@ -47,7 +47,7 @@ _DURATION_REQUEST_RE = re.compile(
 )
 _DURATION_GUARD_SEED = "The device was on for a total of 0 seconds."
 _RECORDED_EVENT_ESTIMATE_RE = re.compile(
-    r"\b(?:these|the)\s+(?:times|timestamps)\s+are\s+estimates\s+based\s+on\s+recorded\s+events\b",
+    r"\b(?:(?:these|the)\s+(?:times|timestamps)|these)\s+are\s+estimates\s+based\s+on\s+recorded\s+events\b",
     re.IGNORECASE,
 )
 
@@ -111,7 +111,10 @@ def validate_synthesis(
 
     # Recorded event timestamps are direct observations from the returned rows.
     # Unverified source integrity limits completeness/continuity claims; it does
-    # not turn a timestamp that is actually present into an estimate.
+    # not turn a timestamp that is actually present into an estimate. The deictic
+    # "These are estimates ..." form is included because models may refer back to
+    # an immediately preceding list of recorded event times without repeating the
+    # noun "times" or "timestamps".
     timestamp_semantics_changed = bool(_RECORDED_EVENT_ESTIMATE_RE.search(corrected))
     if timestamp_semantics_changed:
         corrected = _RECORDED_EVENT_ESTIMATE_RE.sub(

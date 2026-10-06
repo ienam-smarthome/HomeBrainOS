@@ -135,3 +135,33 @@ def test_recorded_event_timestamps_are_not_described_as_estimates() -> None:
     assert "history_recorded_timestamp_semantics" in issues
     assert "recorded event observations" in corrected
     assert "timestamps are estimates" not in corrected.casefold()
+
+
+def test_live_deictic_recorded_event_times_are_not_described_as_estimates() -> None:
+    draft = (
+        "Bathroom Light 1 turned on several times today: at 7:51 am, 8:20 am, 9:22 am, "
+        "9:25 am, and 9:34 am. These are estimates based on recorded events, as the event "
+        "stream integrity is unverified."
+    )
+
+    corrected, issues = validate_synthesis(draft, [_history_receipt()])
+
+    assert "history_recorded_timestamp_semantics" in issues
+    assert "7:51 am" in corrected
+    assert "9:34 am" in corrected
+    assert "These timestamps are recorded event observations" in corrected
+    assert "These are estimates based on recorded events" not in corrected
+    assert "event stream integrity is unverified" in corrected
+
+
+def test_derived_duration_estimate_wording_remains_allowed() -> None:
+    draft = (
+        "Bathroom Light 1 was on for an estimated total of 10 minutes this morning, "
+        "based on recorded events. This is an estimate as the event stream integrity is unverified."
+    )
+
+    corrected, issues = validate_synthesis(draft, [_history_receipt()])
+
+    assert "history_recorded_timestamp_semantics" not in issues
+    assert "estimated total of 10 minutes" in corrected
+    assert "This is an estimate" in corrected
