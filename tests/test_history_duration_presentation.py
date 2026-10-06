@@ -271,3 +271,57 @@ def test_live_0_16_111_routine_note_is_replaced_by_practical_context() -> None:
     assert "I counted this afternoon from 12:00" in corrected
     assert "last recorded event was the 14:50 switch-off" in corrected
 
+def test_live_0_16_112_safe_table_is_canonicalised_from_observed_intervals() -> None:
+    draft = (
+        "**Bathroom Light 1 was on for about 3 minutes in total this afternoon, "
+        "across 2 recorded intervals.**\n\n"
+        "| On | Off | Duration |\n"
+        "| :--- | :--- | :--- |\n"
+        "| 1:17 pm | 1:18 pm | 17s |\n"
+        "| 2:47 pm | 2:50 pm | 3m |\n\n"
+        "The latest recorded state for Bathroom Light 1 is off. "
+        "I counted this afternoon from 12:00, and the last recorded event was "
+        "the 14:50 switch-off."
+    )
+
+    corrected, changed = guard_history_duration_claim(
+        draft,
+        [_complete_afternoon_receipt()],
+    )
+
+    assert changed is True
+    assert corrected.count("| On | Off | Duration |") == 1
+    assert "| 13:17 | 13:18 | 17 sec |" in corrected
+    assert "| 14:47 | 14:50 | 2 min 50 sec |" in corrected
+    assert "| 1:17 pm | 1:18 pm | 17s |" not in corrected
+    assert "| 2:47 pm | 2:50 pm | 3m |" not in corrected
+    assert "latest recorded state for Bathroom Light 1 is off" in corrected
+    assert "last recorded event was the 14:50 switch-off" in corrected
+
+
+def test_safe_table_normalisation_preserves_unrelated_markdown_table() -> None:
+    draft = (
+        "**Bathroom Light 1 was on for about 3 minutes in total this afternoon, "
+        "across 2 recorded intervals.**\n\n"
+        "| On | Off | Duration |\n"
+        "| --- | --- | ---: |\n"
+        "| 1:17 pm | 1:18 pm | 17s |\n"
+        "| 2:47 pm | 2:50 pm | 3m |\n\n"
+        "| Observation | Meaning |\n"
+        "| --- | --- |\n"
+        "| Motion overlap | Correlation only |\n\n"
+        "The latest recorded state for Bathroom Light 1 is off. "
+        "I counted this afternoon from 12:00, and the last recorded event was "
+        "the 14:50 switch-off."
+    )
+
+    corrected, changed = guard_history_duration_claim(
+        draft,
+        [_complete_afternoon_receipt()],
+    )
+
+    assert changed is True
+    assert "| 14:47 | 14:50 | 2 min 50 sec |" in corrected
+    assert "| Observation | Meaning |" in corrected
+    assert "| Motion overlap | Correlation only |" in corrected
+

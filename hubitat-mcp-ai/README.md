@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.112**.
+Current add-on version: **0.16.113**.
 
 ## Architecture
+
+0.16.113 canonicalises model-authored temporal-history interval tables whenever deterministic `observedIntervals` are available on an otherwise safe duration answer. The first On/Off/Duration table is replaced with HomeBrain's exact 24-hour clock and `sec`/`min` rendering, preventing model rounding such as `170s -> 3m` while preserving surrounding prose and unrelated Markdown tables.
 
 0.16.112 refines temporal-history presentation for complete semantic windows. When the retained page reaches the requested window start, HomeBrain no longer appends routine source-integrity boilerplate after an already qualified duration such as `about 3 minutes`. It instead surfaces practical scope/context such as the window start and latest recorded state/event. Strong missing-history warnings remain when retained history is known not to reach the requested start. `Currently on/off` wording is reserved for separate live-state evidence; deterministic history fallback says `latest recorded state`.
 

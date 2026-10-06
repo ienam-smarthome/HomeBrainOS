@@ -400,6 +400,48 @@ _HISTORY_INTERVAL_TABLE_HEADER = re.compile(
 _HISTORY_TABLE_SEPARATOR = re.compile(
     r"^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*$"
 )
+
+
+def _replace_first_history_interval_table(
+    text: str,
+    *,
+    canonical_table: str,
+) -> tuple[str, bool]:
+    """Replace the first model-authored history interval table deterministically.
+
+    Keep all surrounding prose and unrelated tables intact. This closes the safe
+    synthesis path where the model may round an exact interval (for example 170s
+    to 3m) or switch clock/unit style even though deterministic observed intervals
+    are available.
+    """
+
+    source = str(text or "")
+    if not source or not canonical_table:
+        return source, False
+
+    lines = source.splitlines()
+    canonical_lines = canonical_table.splitlines()
+    for index, line in enumerate(lines):
+        if not _HISTORY_INTERVAL_TABLE_HEADER.match(line.strip()):
+            continue
+        if (
+            index + 1 >= len(lines)
+            or _HISTORY_TABLE_SEPARATOR.match(lines[index + 1].strip()) is None
+        ):
+            continue
+
+        end = index + 2
+        while end < len(lines) and lines[end].strip().startswith("|"):
+            end += 1
+
+        existing = "\n".join(lines[index:end])
+        if existing == canonical_table:
+            return source, False
+
+        replaced = [*lines[:index], *canonical_lines, *lines[end:]]
+        return "\n".join(replaced).strip(), True
+
+    return source, False
 _HISTORY_DUPLICATE_NOTE_HINT = re.compile(
     r"\b(?:earlier\s+(?:in-window\s+)?transitions?\s+may\s+be\s+missing"
     r"|does\s+not\s+reach\s+the\s+start"
@@ -1539,16 +1581,21 @@ def guard_history_duration_claim(
             and not page_incomplete_to_start
         ):
             if page_complete_to_start_proven:
+                canonical_table = _history_interval_table(temporal)
+                cleaned, table_changed = _replace_first_history_interval_table(
+                    text,
+                    canonical_table=canonical_table,
+                )
                 practical = _practical_history_context(
                     label=label,
                     temporal=temporal,
                     window_label=window_label,
                 )
-                cleaned, presentation_changed = _replace_routine_complete_window_caveat(
-                    text,
+                cleaned, context_changed = _replace_routine_complete_window_caveat(
+                    cleaned,
                     practical_context=practical,
                 )
-                return cleaned, presentation_changed
+                return cleaned, bool(table_changed or context_changed)
             return text, False
         localized, changed = _replace_unverified_totalish_sentences(
             text,
