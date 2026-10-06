@@ -318,10 +318,12 @@ class DeviceHistoryService:
         fetch_limit: int,
         window_start: datetime,
     ) -> bool:
-        """Whether the returned newest-first page reaches the window boundary."""
+        """Whether returned timestamps demonstrably reach the window boundary."""
 
-        if len(events) < fetch_limit:
-            return True
+        # Hubitat's native retained event list may contain fewer rows than the
+        # requested limit. A short response therefore does not prove that history
+        # reaches the requested semantic boundary.
+        del fetch_limit  # Retained in the signature for caller compatibility.
         timestamps = [
             parsed
             for parsed in (cls._event_datetime(item.get("date")) for item in events)
