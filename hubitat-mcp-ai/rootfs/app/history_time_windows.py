@@ -7,7 +7,9 @@ the add-on's local timezone into explicit aware datetimes.
 
 The stable policy for ``last night`` is 18:00 on the previous local calendar
 day through 08:00 today, capped at ``now`` when that overnight window is still
-in progress. Common equivalent wording (``during the night``, ``overnight``,
+in progress. ``this afternoon`` is 12:00 through 18:00 on the current local
+calendar day, likewise capped at ``now`` while that window is in progress.
+Common equivalent wording (``during the night``, ``overnight``,
 ``through the night``) maps to that same auditable window. Explicit
 ``between X and Y`` clock ranges override that default and are resolved to
 yesterday/today/last-night when those anchors are present, or to the most
