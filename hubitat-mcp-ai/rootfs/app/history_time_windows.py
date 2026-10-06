@@ -7,7 +7,9 @@ the add-on's local timezone into explicit aware datetimes.
 
 The stable policy for ``last night`` is 18:00 on the previous local calendar
 day through 08:00 today, capped at ``now`` when that overnight window is still
-in progress. Common equivalent wording (``during the night``, ``overnight``,
+in progress. ``this afternoon`` is 12:00 through 18:00 on the current local
+calendar day, likewise capped at ``now`` while that window is in progress.
+Common equivalent wording (``during the night``, ``overnight``,
 ``through the night``) maps to that same auditable window. Explicit
 ``between X and Y`` clock ranges override that default and are resolved to
 yesterday/today/last-night when those anchors are present, or to the most
@@ -141,7 +143,12 @@ def parse_history_window_request(prompt: str) -> dict[str, Any] | None:
                 anchor = "yesterday"
             elif _night_phrase_present(text):
                 anchor = "last_night"
-            elif "today" in text or "this morning" in text or "since midnight" in text:
+            elif (
+                "today" in text
+                or "this morning" in text
+                or "this afternoon" in text
+                or "since midnight" in text
+            ):
                 anchor = "today"
             else:
                 anchor = "most_recent"
@@ -159,6 +166,8 @@ def parse_history_window_request(prompt: str) -> dict[str, Any] | None:
         return {"kind": "yesterday", "label": "yesterday"}
     if "this morning" in text:
         return {"kind": "this_morning", "label": "this morning"}
+    if "this afternoon" in text:
+        return {"kind": "this_afternoon", "label": "this afternoon"}
     if "since midnight" in text:
         return {"kind": "since_midnight", "label": "since midnight"}
     if re.search(r"\btoday\b", text):
@@ -230,6 +239,20 @@ def resolve_history_window(
         if end <= start:
             return None
         return HistoryWindow(kind, label or "this morning", start, end, local_now < natural_end)
+
+    if kind == "this_afternoon":
+        start = today + timedelta(hours=12)
+        natural_end = today + timedelta(hours=18)
+        end = min(local_now, natural_end)
+        if end <= start:
+            return None
+        return HistoryWindow(
+            kind,
+            label or "this afternoon",
+            start,
+            end,
+            local_now < natural_end,
+        )
 
     if kind in {"since_midnight", "today"}:
         if local_now <= today:

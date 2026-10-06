@@ -81,6 +81,56 @@ def test_calendar_phrases_resolve_to_local_calendar_boundaries() -> None:
     assert today.end == _now(20)
 
 
+def test_this_afternoon_is_noon_to_six_capped_at_now() -> None:
+    request = parse_history_window_request(
+        "How long was Bathroom Light 1 on this afternoon?"
+    )
+    window = resolve_history_window(request, now=_now(15, 5))
+
+    assert request == {"kind": "this_afternoon", "label": "this afternoon"}
+    assert window is not None
+    assert window.kind == "this_afternoon"
+    assert window.label == "this afternoon"
+    assert window.start == datetime(2026, 9, 17, 12, 0, tzinfo=LOCAL)
+    assert window.end == _now(15, 5)
+    assert window.ongoing is True
+    assert required_history_hours(window, now=_now(15, 5)) == 5
+
+
+def test_this_afternoon_ends_at_six_after_the_window_has_finished() -> None:
+    window = resolve_history_window(
+        parse_history_window_request("what happened this afternoon?"),
+        now=_now(20),
+    )
+
+    assert window is not None
+    assert window.start == datetime(2026, 9, 17, 12, 0, tzinfo=LOCAL)
+    assert window.end == datetime(2026, 9, 17, 18, 0, tzinfo=LOCAL)
+    assert window.ongoing is False
+
+
+def test_this_afternoon_is_not_available_before_noon() -> None:
+    window = resolve_history_window(
+        parse_history_window_request("how long this afternoon"),
+        now=_now(10),
+    )
+
+    assert window is None
+
+
+def test_explicit_clock_range_this_afternoon_anchors_to_today() -> None:
+    request = parse_history_window_request(
+        "How long was the light on between 1pm and 3pm this afternoon?"
+    )
+    window = resolve_history_window(request, now=_now(15, 5))
+
+    assert request is not None
+    assert request["anchor"] == "today"
+    assert window is not None
+    assert window.start == datetime(2026, 9, 17, 13, 0, tzinfo=LOCAL)
+    assert window.end == datetime(2026, 9, 17, 15, 0, tzinfo=LOCAL)
+
+
 def test_explicit_clock_range_overrides_last_night_default() -> None:
     request = parse_history_window_request(
         "How long was Big lamp on between 10pm and 6am last night?"

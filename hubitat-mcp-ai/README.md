@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.110**.
+Current add-on version: **0.16.111**.
 
 ## Architecture
+
+0.16.111 adds `this afternoon` as a first-class deterministic history window. It resolves to 12:00–18:00 in the authoritative Hubitat local timezone, capped at the current time while the afternoon is in progress. Explicit clock ranges mentioning `this afternoon` are anchored to today. This prevents a rolling `hours_back` fetch from leaking late-morning sessions into an answer labelled as afternoon.
 
 0.16.110 fixes duplicate temporal-history presentation when a model draft already contains an interval table and the deterministic history safety guard inserts its canonical table. The repair path now keeps the first canonical history table, removes only later duplicate On/Off/Duration blocks and their matching retention/completeness note, and preserves unrelated analysis paragraphs or tables.
 

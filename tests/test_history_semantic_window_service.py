@@ -192,3 +192,63 @@ async def test_full_event_page_that_does_not_reach_window_start_stays_partial() 
     assert analysis["totalIsLowerBound"] is False
     assert analysis["durationReliability"] == "unverified-event-stream"
     assert analysis["sourceIntegrityVerified"] is False
+
+@pytest.mark.asyncio
+async def test_this_afternoon_excludes_live_1128_morning_interval() -> None:
+    live_now = datetime(2026, 10, 6, 15, 5, tzinfo=LOCAL)
+    events = [
+        _event("off", "2026-10-06T14:50:03.297+0100"),
+        _event("on", "2026-10-06T14:47:13.756+0100"),
+        _event("off", "2026-10-06T13:18:02.091+0100"),
+        _event("on", "2026-10-06T13:17:44.968+0100"),
+        _event("off", "2026-10-06T11:28:48.174+0100"),
+        _event("on", "2026-10-06T11:28:31.407+0100"),
+    ]
+    mcp = SemanticWindowMCP(events)
+    service = DeviceHistoryService(
+        mcp,
+        lambda *args, **kwargs: None,
+        now=lambda: live_now,
+    )
+    token = set_history_window_request(
+        parse_history_window_request(
+            "How long was Big lamp on this afternoon?"
+        )
+    )
+    try:
+        result = await service.history({
+            "name": "big lamp",
+            "attribute": "switch",
+            "hours_back": 4,
+        })
+    finally:
+        reset_history_window_request(token)
+
+    assert result.is_error is False
+    assert isinstance(result.data, dict)
+    data = result.data
+
+    # Noon is 3h05m before this request, plus the one-hour boundary margin.
+    assert _event_call(mcp)["args"]["hoursBack"] == 5
+    assert data["timeWindow"]["kind"] == "this_afternoon"
+    assert data["timeWindow"]["label"] == "this afternoon"
+    assert data["timeWindow"]["start"] == "2026-10-06T12:00:00+01:00"
+    assert data["timeWindow"]["end"] == "2026-10-06T15:05:00+01:00"
+    assert data["timeWindow"]["ongoing"] is True
+
+    analysis = data["temporalAnalysis"]
+    assert analysis["windowed"] is True
+    assert analysis["windowLabel"] == "this afternoon"
+    assert analysis["intervalCount"] == 2
+    assert analysis["totalActiveSeconds"] == 187
+
+    window_dates = [item["date"] for item in data["windowEvents"]]
+    assert "2026-10-06T11:28:31.407+0100" not in window_dates
+    assert "2026-10-06T11:28:48.174+0100" not in window_dates
+    assert window_dates == [
+        "2026-10-06T13:17:44.968+0100",
+        "2026-10-06T13:18:02.091+0100",
+        "2026-10-06T14:47:13.756+0100",
+        "2026-10-06T14:50:03.297+0100",
+    ]
+
