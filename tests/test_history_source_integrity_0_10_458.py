@@ -191,7 +191,8 @@ def test_unverified_exact_duration_claim_is_rewritten_as_estimate() -> None:
         version="0.10.458",
     )
 
-    assert "estimate of 8m" in response["message"]
+    assert "about 8m in total last night" in response["message"]
+    assert "6 recorded intervals" in response["message"]
     assert "not an exact total or a mathematical lower bound" in response["message"]
     assert response["evidence"][0]["details"]["finalAnswerCorrectionApplied"] is True
 
