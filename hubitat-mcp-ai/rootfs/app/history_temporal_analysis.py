@@ -151,6 +151,7 @@ def _replace_unverified_totalish_sentences(
     *,
     replacement: str,
     expected_seconds: int,
+    force_qualified: bool = False,
 ) -> tuple[str, bool]:
     """Correct only unsafe duration sentences and preserve other analysis.
 
@@ -181,7 +182,7 @@ def _replace_unverified_totalish_sentences(
         has_expected = expected_seconds in mentions
         qualified = _UNVERIFIED_ESTIMATE_QUALIFIER.search(sentence) is not None
         exactness = _UNVERIFIED_EXACTNESS_CLAIM.search(sentence) is not None
-        if has_expected and qualified and not exactness:
+        if has_expected and qualified and not exactness and not force_qualified:
             continue
         if not replacement_used:
             pieces[index] = replacement
@@ -1183,6 +1184,7 @@ def guard_history_duration_claim(
             text,
             replacement=corrected,
             expected_seconds=expected,
+            force_qualified=page_incomplete_to_start,
         )
         # A totalish claim was detected at function entry. If sentence
         # segmentation somehow could not isolate it, retain the original
