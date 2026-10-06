@@ -65,6 +65,11 @@ _UNVERIFIED_EXACTNESS_CLAIM = re.compile(
     r"throughout|all\s+night|entire\s+night)\b",
     re.I,
 )
+_REDUNDANT_UNVERIFIED_DURATION_CAVEAT = re.compile(
+    r"^\s*(?:this|that)\s+is\s+(?:only\s+)?an?\s+estimate\b"
+    r".*\b(?:unverified\s+event\s+stream|event\s+stream(?:\s+integrity)?\s+is\s+unverified)\b",
+    re.I | re.S,
+)
 
 
 def _explicit_false(value: Any) -> bool:
@@ -104,6 +109,26 @@ def _duration_text(seconds: int) -> str:
     if hours:
         return f"{hours}h"
     return f"{minutes}m"
+
+
+def _human_rounded_duration_text(seconds: int) -> str:
+    """Render the rounded user-facing duration with words, not wire abbreviations."""
+
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        unit = "second" if seconds == 1 else "seconds"
+        return f"{seconds} {unit}"
+    rounded_minutes = (seconds + 30) // 60
+    hours, minutes = divmod(rounded_minutes, 60)
+    if hours and minutes:
+        hour_unit = "hour" if hours == 1 else "hours"
+        minute_unit = "minute" if minutes == 1 else "minutes"
+        return f"{hours} {hour_unit} {minutes} {minute_unit}"
+    if hours:
+        unit = "hour" if hours == 1 else "hours"
+        return f"{hours} {unit}"
+    unit = "minute" if rounded_minutes == 1 else "minutes"
+    return f"{rounded_minutes} {unit}"
 
 
 def _display_duration_seconds(seconds: int) -> int:
@@ -166,11 +191,11 @@ def _exact_duration_text(seconds: Any) -> str:
     hours, minutes = divmod(minutes, 60)
     parts: list[str] = []
     if hours:
-        parts.append(f"{hours}h")
+        parts.append(f"{hours} hr")
     if minutes:
-        parts.append(f"{minutes}m")
+        parts.append(f"{minutes} min")
     if secs or not parts:
-        parts.append(f"{secs}s")
+        parts.append(f"{secs} sec")
     return " ".join(parts)
 
 
@@ -235,6 +260,7 @@ def _formatted_unverified_duration_summary(
     active_state: str,
     inactive_state: str,
     total_duration: str,
+    total_seconds: int,
     interval_count: int,
     window_label: str,
     temporal: dict[str, Any],
@@ -244,8 +270,9 @@ def _formatted_unverified_duration_summary(
 
     where = f" {window_label}" if window_label else ""
     interval_word = "recorded interval" if interval_count == 1 else "recorded intervals"
+    display_duration = _human_rounded_duration_text(total_seconds)
     headline = (
-        f"**{label} was {active_state} for about {total_duration} in total"
+        f"**{label} was {active_state} for about {display_duration} in total"
         f"{where}, across {interval_count} {interval_word}.**"
     )
     table = _history_interval_table(temporal)
@@ -321,8 +348,18 @@ def _replace_unverified_totalish_sentences(
             pieces[index] = ""
         changed = True
 
+    if replacement_used:
+        for index in range(0, len(pieces), 2):
+            sentence = pieces[index]
+            if not _REDUNDANT_UNVERIFIED_DURATION_CAVEAT.search(sentence):
+                continue
+            pieces[index] = ""
+            if index > 0:
+                pieces[index - 1] = ""
+            changed = True
+
     if changed:
-        return "".join(pieces), True
+        return "".join(pieces).strip(), True
     return str(text or ""), False
 
 
@@ -1290,6 +1327,7 @@ def guard_history_duration_claim(
             active_state=active_state,
             inactive_state=inactive_state,
             total_duration=total_duration,
+            total_seconds=total_seconds,
             interval_count=interval_count,
             window_label=window_label,
             temporal=temporal,
@@ -1327,20 +1365,27 @@ def guard_history_duration_claim(
 
     lower_bound = bool(temporal.get("totalIsLowerBound"))
     qualifier = "at least " if lower_bound else ""
+    display_total = _human_rounded_duration_text(total_seconds)
     if interval_count == 0:
         corrected = (
-            f"{label} had a total of {qualifier}{total_duration} in the "
+            f"{label} had a total of {qualifier}{display_total} in the "
             f"{active_state} state{window_suffix}."
         )
     else:
         interval_word = "interval" if interval_count == 1 else "separate intervals"
         corrected = (
-            f"{label} was {active_state} for a total of {qualifier}{total_duration}"
+            f"{label} was {active_state} for a total of {qualifier}{display_total}"
             f"{window_suffix} across {interval_count} {interval_word}."
         )
-    longest = str(temporal.get("longestActiveDuration") or "").strip()
-    if longest and interval_count > 1:
-        corrected += f" The longest interval was {longest}."
+    try:
+        longest_seconds = int(temporal.get("longestActiveSeconds"))
+    except (TypeError, ValueError):
+        longest_seconds = 0
+    if longest_seconds > 0 and interval_count > 1:
+        corrected += (
+            f" The longest interval was "
+            f"{_human_rounded_duration_text(longest_seconds)}."
+        )
     if lower_bound:
         corrected += (
             " The observed history has an incomplete boundary, so that total is "
