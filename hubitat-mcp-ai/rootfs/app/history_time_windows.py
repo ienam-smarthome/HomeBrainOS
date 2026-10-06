@@ -141,7 +141,12 @@ def parse_history_window_request(prompt: str) -> dict[str, Any] | None:
                 anchor = "yesterday"
             elif _night_phrase_present(text):
                 anchor = "last_night"
-            elif "today" in text or "this morning" in text or "since midnight" in text:
+            elif (
+                "today" in text
+                or "this morning" in text
+                or "this afternoon" in text
+                or "since midnight" in text
+            ):
                 anchor = "today"
             else:
                 anchor = "most_recent"
@@ -159,6 +164,8 @@ def parse_history_window_request(prompt: str) -> dict[str, Any] | None:
         return {"kind": "yesterday", "label": "yesterday"}
     if "this morning" in text:
         return {"kind": "this_morning", "label": "this morning"}
+    if "this afternoon" in text:
+        return {"kind": "this_afternoon", "label": "this afternoon"}
     if "since midnight" in text:
         return {"kind": "since_midnight", "label": "since midnight"}
     if re.search(r"\btoday\b", text):
@@ -230,6 +237,20 @@ def resolve_history_window(
         if end <= start:
             return None
         return HistoryWindow(kind, label or "this morning", start, end, local_now < natural_end)
+
+    if kind == "this_afternoon":
+        start = today + timedelta(hours=12)
+        natural_end = today + timedelta(hours=18)
+        end = min(local_now, natural_end)
+        if end <= start:
+            return None
+        return HistoryWindow(
+            kind,
+            label or "this afternoon",
+            start,
+            end,
+            local_now < natural_end,
+        )
 
     if kind in {"since_midnight", "today"}:
         if local_now <= today:
