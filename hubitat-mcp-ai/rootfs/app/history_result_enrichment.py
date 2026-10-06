@@ -4,6 +4,7 @@ The model is allowed to omit a state attribute when asking for a named device's
 history.  Semantic history questions still need deterministic interval evidence,
 so this module repairs only what can be established from the returned event rows:
 
+* carry the request-scoped semantic time window into deterministic history args;
 * widen an attribute-less semantic history read to the local 50-row ceiling;
 * infer a state-pair attribute only when exactly one supported binary attribute is
   present in the returned rows; and
@@ -42,12 +43,20 @@ _STATE_PAIRS: dict[str, tuple[str, str]] = {
 
 
 def prepare_history_arguments(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Use the full bounded page for semantic history when no attribute was given."""
+    """Preserve semantic window intent and widen only attribute-less history reads."""
 
     prepared = deepcopy(arguments)
-    if name != DEVICE_HISTORY_TOOL or prepared.get("attribute"):
+    if name != DEVICE_HISTORY_TOOL:
         return prepared
-    if active_history_window_request() is None:
+
+    window_request = active_history_window_request()
+    if window_request is not None and not isinstance(prepared.get("time_window"), dict):
+        # Make the request-scoped semantic window explicit on the local tool call.
+        # This keeps the resolved `timeWindow` auditable even if execution crosses
+        # a context boundary later in the request pipeline. Explicit caller args win.
+        prepared["time_window"] = deepcopy(window_request)
+
+    if prepared.get("attribute") or window_request is None:
         return prepared
     try:
         current_limit = int(prepared.get("limit") or 0)
