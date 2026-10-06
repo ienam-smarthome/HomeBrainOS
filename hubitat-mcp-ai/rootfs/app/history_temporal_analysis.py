@@ -254,6 +254,50 @@ def _first_unmatched_inactive_note(
     )
 
 
+def _transition_label(state: str) -> str:
+    """Return a concise human label for one recorded state transition."""
+
+    value = str(state or "").strip().casefold()
+    return {
+        "on": "switch-on",
+        "off": "switch-off",
+        "open": "open",
+        "closed": "close",
+        "active": "active transition",
+        "inactive": "inactive transition",
+        "unlocked": "unlock",
+        "locked": "lock",
+    }.get(value, f"{value} transition" if value else "state transition")
+
+
+def _practical_history_context(
+    *,
+    label: str,
+    temporal: dict[str, Any],
+    window_label: str,
+) -> str:
+    """Summarise window scope and latest recorded state without boilerplate."""
+
+    last = temporal.get("lastWindowStateEvent")
+    if not isinstance(last, dict):
+        return ""
+
+    state = str(last.get("state") or "").strip().casefold()
+    at = _compact_clock(last.get("timestamp"))
+    if not state or not at:
+        return ""
+
+    parts = [f"The latest recorded state for {label} is {state}."]
+    start = _compact_clock(temporal.get("windowStart"))
+    if window_label and start:
+        parts.append(f"I counted {window_label} from {start},")
+    else:
+        parts.append("The")
+    transition = _transition_label(state)
+    parts[-1] += f" and the last recorded event was the {at} {transition}." if window_label and start else f" last recorded event was the {at} {transition}."
+    return " ".join(parts)
+
+
 def _formatted_unverified_duration_summary(
     *,
     label: str,
@@ -290,16 +334,24 @@ def _formatted_unverified_duration_summary(
             f"The retained device-event history does not reach the start of "
             f"{window_name}, so earlier in-window transitions may be missing."
         )
-    notes.append(
-        "The device-event stream has not been independently verified as complete, "
-        "so this is an estimate from the recorded state pairs, not an exact total "
-        "or a mathematical lower bound."
-    )
+        notes.append(
+            "The available event stream is not independently verified as complete, "
+            "so this is not an exact total or a mathematical lower bound."
+        )
 
     sections = [headline]
     if table:
         sections.extend(["", table])
-    sections.extend(["", "**Note:** " + " ".join(notes)])
+    if notes:
+        sections.extend(["", "**Note:** " + " ".join(notes)])
+    else:
+        practical = _practical_history_context(
+            label=label,
+            temporal=temporal,
+            window_label=window_label,
+        )
+        if practical:
+            sections.extend(["", practical])
     return "\n".join(sections)
 
 
@@ -831,6 +883,15 @@ def analyze_state_intervals_in_window(
             if inside
             else None
         ),
+        "lastWindowStateEvent": (
+            {
+                "timestamp": inside[-1][0].isoformat(),
+                "state": inside[-1][2],
+                "isStateChange": inside[-1][3].get("isStateChange"),
+            }
+            if inside
+            else None
+        ),
         "predecessorStateEvent": (
             {
                 "timestamp": predecessor[0].isoformat(),
@@ -1043,6 +1104,7 @@ def history_temporal_evidence_details(result_data: Any) -> dict[str, Any] | None
         "inferredBoundaryState",
         "analyzedStateEventCount",
         "firstWindowStateEvent",
+        "lastWindowStateEvent",
         "predecessorStateEvent",
     )
     temporal_details: dict[str, Any] = {}
