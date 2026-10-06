@@ -206,7 +206,7 @@ def test_unverified_duration_guard_preserves_non_duration_investigative_analysis
     assert response["message"].startswith(
         "Several rapid toggles stand out in the recorded event pattern."
     )
-    assert "about 1h 44m in total last night" in response["message"]
+    assert "about 1 hour 44 minutes in total last night" in response["message"]
     assert "not an exact total or a mathematical lower bound" in response["message"]
     assert response["message"].endswith(
         "The timing overlaps with motion, but that does not prove the cause."

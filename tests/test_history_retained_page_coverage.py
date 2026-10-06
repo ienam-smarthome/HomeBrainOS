@@ -98,7 +98,7 @@ def test_duration_guard_discloses_retained_page_gap_for_live_morning_shape() -> 
     corrected, changed = guard_history_duration_claim(draft, [receipt])
 
     assert changed is True
-    assert "about 11m in total this morning" in corrected
+    assert "about 11 minutes in total this morning" in corrected
     assert "5 recorded intervals" in corrected
     assert "does not reach the start of this morning" in corrected
     assert "earlier in-window transitions may be missing" in corrected

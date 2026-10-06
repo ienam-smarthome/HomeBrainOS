@@ -176,8 +176,8 @@ def test_wrong_model_total_is_replaced_with_deterministic_history_summary() -> N
 
     assert applied is True
     assert message == (
-        "Big lamp was on for a total of 4h 31m across 5 separate intervals. "
-        "The longest interval was 2h 38m."
+        "Big lamp was on for a total of 4 hours 31 minutes across 5 separate intervals. "
+        "The longest interval was 2 hours 38 minutes."
     )
 
 

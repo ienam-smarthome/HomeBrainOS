@@ -120,7 +120,7 @@ def test_duration_request_cannot_lose_deterministic_total_when_model_omits_it() 
     )
 
     assert "history_duration_reliability" in issues
-    assert "10m" in corrected
+    assert "10 minutes" in corrected
     assert "1" in corrected
 
 

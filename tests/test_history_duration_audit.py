@@ -143,8 +143,8 @@ def test_api_response_corrects_wrong_model_total_from_temporal_proof() -> None:
     )
 
     assert response["message"] == (
-        "Big lamp was on for a total of 4h 31m across 5 separate intervals. "
-        "The longest interval was 2h 38m."
+        "Big lamp was on for a total of 4 hours 31 minutes across 5 separate intervals. "
+        "The longest interval was 2 hours 38 minutes."
     )
     assert response["evidence"][0]["details"]["finalAnswerCorrectionApplied"] is True
 

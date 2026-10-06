@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.108**.
+Current add-on version: **0.16.109**.
 
 ## Architecture
+
+0.16.109 makes user-facing temporal durations more natural without changing stored/debug units: summary prose uses words such as `10 minutes` and `1 hour 44 minutes`, while interval tables use readable compact units such as `5 min 36 sec`. It also removes a redundant second unverified-stream estimate caveat when the deterministic history guard has already supplied the complete uncertainty note.
 
 0.16.108 improves temporal-history answer presentation without changing history arithmetic or evidence semantics. Duration questions now prefer a concise result followed by a compact Markdown interval table and a short caveat. The deterministic duration guard uses the same structured presentation when it must repair a model answer, including retained-page boundary gaps and leading unmatched inactive events, so safety corrections no longer collapse a readable answer into one dense paragraph.
 

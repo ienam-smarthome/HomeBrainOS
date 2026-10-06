@@ -77,14 +77,14 @@ def test_incomplete_duration_repair_uses_readable_summary_table_and_note() -> No
 
     assert changed is True
     assert corrected.startswith(
-        "**Bathroom Light 1 was on for about 10m in total this morning, "
+        "**Bathroom Light 1 was on for about 10 minutes in total this morning, "
         "across 4 recorded intervals.**"
     )
     assert "| On | Off | Duration |" in corrected
-    assert "| 09:22 | 09:23 | 52s |" in corrected
-    assert "| 09:25 | 09:30 | 5m 36s |" in corrected
-    assert "| 09:34 | 09:38 | 3m 30s |" in corrected
-    assert "| 11:28 | 11:28 | 17s |" in corrected
+    assert "| 09:22 | 09:23 | 52 sec |" in corrected
+    assert "| 09:25 | 09:30 | 5 min 36 sec |" in corrected
+    assert "| 09:34 | 09:38 | 3 min 30 sec |" in corrected
+    assert "| 11:28 | 11:28 | 17 sec |" in corrected
     assert "**Note:**" in corrected
     assert "off at 08:21" in corrected
     assert "does not reach the start of this morning" in corrected
@@ -110,5 +110,23 @@ def test_interval_table_is_derived_only_from_deterministic_observed_intervals() 
     )
 
     assert changed is True
-    assert "| 10:01 | 10:02 | 1m 3s |" in corrected
+    assert "| 10:01 | 10:02 | 1 min 3 sec |" in corrected
     assert "09:22" not in corrected
+
+def test_live_duplicate_unverified_caveat_is_removed_after_duration_repair() -> None:
+    draft = (
+        "Bathroom Light 1 was on for an estimated total of 10 minutes this morning, "
+        "based on recorded events. "
+        "This is an estimate based on an unverified event stream, and because the "
+        "available history is partial and does not reach the start of the morning, "
+        "earlier transitions may be missing."
+    )
+
+    corrected, changed = guard_history_duration_claim(draft, [_receipt()])
+
+    assert changed is True
+    assert "about 10 minutes in total this morning" in corrected
+    assert "This is an estimate based on an unverified event stream" not in corrected
+    assert corrected.count("earlier in-window transitions may be missing") == 1
+    assert corrected.count("not an exact total or a mathematical lower bound") == 1
+
