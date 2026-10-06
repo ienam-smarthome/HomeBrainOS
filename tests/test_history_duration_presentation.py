@@ -130,3 +130,48 @@ def test_live_duplicate_unverified_caveat_is_removed_after_duration_repair() -> 
     assert corrected.count("earlier in-window transitions may be missing") == 1
     assert corrected.count("not an exact total or a mathematical lower bound") == 1
 
+def test_live_0_16_109_duplicate_history_table_and_note_are_removed() -> None:
+    draft = (
+        "Bathroom Light 1 was on for an estimated total of 10 minutes this morning.\n\n"
+        "| On | Off | Duration |\n"
+        "| :--- | :--- | :--- |\n"
+        "| 09:22 | 09:23 | 52s |\n"
+        "| 09:25 | 09:30 | 5m 36s |\n"
+        "| 09:34 | 09:38 | 3m 30s |\n"
+        "| 11:28 | 11:28 | 17s |\n\n"
+        "**Note:** The earliest recorded event in the window is **off at 08:21**, "
+        "and the available history does not reach the start of the morning, so "
+        "earlier transitions may be missing."
+    )
+
+    corrected, changed = guard_history_duration_claim(draft, [_receipt()])
+
+    assert changed is True
+    assert corrected.count("| On | Off | Duration |") == 1
+    assert corrected.count("**Note:**") == 1
+    assert "| 09:25 | 09:30 | 5 min 36 sec |" in corrected
+    assert "| 09:25 | 09:30 | 5m 36s |" not in corrected
+    assert "earliest recorded event in the window" not in corrected
+    assert "earliest retained in-window state is **off at 08:21**" in corrected
+
+
+def test_duplicate_history_cleanup_preserves_unrelated_analysis_table() -> None:
+    draft = (
+        "Bathroom Light 1 was on for an estimated total of 10 minutes this morning.\n\n"
+        "| On | Off | Duration |\n"
+        "| --- | --- | ---: |\n"
+        "| 09:22 | 09:23 | 52s |\n\n"
+        "**Note:** The available history does not reach the start of the morning, "
+        "so earlier transitions may be missing.\n\n"
+        "| Observation | Meaning |\n"
+        "| --- | --- |\n"
+        "| Motion overlap | Correlation only |"
+    )
+
+    corrected, changed = guard_history_duration_claim(draft, [_receipt()])
+
+    assert changed is True
+    assert corrected.count("| On | Off | Duration |") == 1
+    assert "| Observation | Meaning |" in corrected
+    assert "| Motion overlap | Correlation only |" in corrected
+
