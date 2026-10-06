@@ -71,3 +71,24 @@ async def test_parallel_agent_requests_keep_semantic_windows_isolated(monkeypatc
     assert seen["last-night"] == {"kind": "last_night", "label": "last night"}
     assert seen["yesterday"] == {"kind": "yesterday", "label": "yesterday"}
     assert active_history_window_request() is None
+
+@pytest.mark.asyncio
+async def test_agent_request_binds_this_afternoon_window(monkeypatch) -> None:
+    seen: list[dict | None] = []
+
+    async def fake_process(*args, **kwargs):
+        seen.append(active_history_window_request())
+        return SimpleNamespace(message="ok")
+
+    monkeypatch.setattr(app_module.agent, "process_user_request_result", fake_process)
+    request = app_module.ChatRequest(
+        prompt="How long was Bathroom Light 1 on this afternoon?",
+        session_id="this-afternoon",
+    )
+
+    outcome = await app_module._agent_request(request)
+
+    assert outcome.message == "ok"
+    assert seen == [{"kind": "this_afternoon", "label": "this afternoon"}]
+    assert active_history_window_request() is None
+
