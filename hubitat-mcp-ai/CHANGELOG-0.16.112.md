@@ -8,3 +8,4 @@
 - Reserves `currently on/off` wording for separate current-turn live-state evidence; history-only fallback says `latest recorded state`.
 - Keeps the stronger retained-history warning when the event page does not reach the requested window start.
 - Adds regression coverage for the exact 0.16.111 Bathroom Light 1 routine Note and for complete-window deterministic repair.
+- The routine-note replacement is deterministic, so the practical context is enforced even if the model still emits the old boilerplate.
