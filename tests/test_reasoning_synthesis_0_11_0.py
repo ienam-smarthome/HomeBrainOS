@@ -129,7 +129,8 @@ def test_duration_guard_never_erases_other_supported_analysis() -> None:
     corrected, changed = guard_history_duration_claim(message, [_subject_receipt()])
 
     assert changed is True
-    assert "Pairing the recorded state rows gives an on-time estimate" in corrected
+    assert "Bedroom 3 Light was on for about 1h 44m in total last night" in corrected
+    assert "not an exact total or a mathematical lower bound" in corrected
     assert "button-1 event" in corrected
     assert "controller-trigger hypothesis" in corrected
 
