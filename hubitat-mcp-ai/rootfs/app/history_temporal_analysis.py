@@ -337,6 +337,7 @@ def _formatted_unverified_duration_summary(
     interval_count: int,
     window_label: str,
     temporal: dict[str, Any],
+    page_complete_to_start: bool,
     page_incomplete_to_start: bool,
 ) -> str:
     """Create a readable deterministic duration answer with table and caveat."""
@@ -363,6 +364,12 @@ def _formatted_unverified_duration_summary(
             f"The retained device-event history does not reach the start of "
             f"{window_name}, so earlier in-window transitions may be missing."
         )
+        notes.append(
+            "The available event stream is not independently verified as complete, "
+            "so this is not an exact total or a mathematical lower bound."
+        )
+    elif not page_complete_to_start:
+        # Unknown page coverage keeps the conservative historical safeguard.
         notes.append(
             "The available event stream is not independently verified as complete, "
             "so this is not an exact total or a mathematical lower bound."
@@ -1428,6 +1435,10 @@ def guard_history_duration_claim(
         time_window = details.get("timeWindow")
         if isinstance(time_window, dict):
             page_complete_to_start = time_window.get("sourcePageCompleteToStart")
+    page_complete_to_start_proven = bool(
+        temporal.get("windowed")
+        and page_complete_to_start is True
+    )
     page_incomplete_to_start = bool(
         temporal.get("windowed")
         and page_complete_to_start is False
@@ -1516,6 +1527,7 @@ def guard_history_duration_claim(
             interval_count=interval_count,
             window_label=window_label,
             temporal=temporal,
+            page_complete_to_start=page_complete_to_start_proven,
             page_incomplete_to_start=page_incomplete_to_start,
         )
         expected = _display_duration_seconds(total_seconds)
@@ -1526,16 +1538,18 @@ def guard_history_duration_claim(
             and _UNVERIFIED_EXACTNESS_CLAIM.search(text) is None
             and not page_incomplete_to_start
         ):
-            practical = _practical_history_context(
-                label=label,
-                temporal=temporal,
-                window_label=window_label,
-            )
-            cleaned, presentation_changed = _replace_routine_complete_window_caveat(
-                text,
-                practical_context=practical,
-            )
-            return cleaned, presentation_changed
+            if page_complete_to_start_proven:
+                practical = _practical_history_context(
+                    label=label,
+                    temporal=temporal,
+                    window_label=window_label,
+                )
+                cleaned, presentation_changed = _replace_routine_complete_window_caveat(
+                    text,
+                    practical_context=practical,
+                )
+                return cleaned, presentation_changed
+            return text, False
         localized, changed = _replace_unverified_totalish_sentences(
             text,
             replacement=corrected,
