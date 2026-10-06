@@ -303,6 +303,98 @@ def _formatted_unverified_duration_summary(
     return "\n".join(sections)
 
 
+_HISTORY_INTERVAL_TABLE_HEADER = re.compile(
+    r"^\|\s*(?:on|open|active|unlocked|start)\s*"
+    r"\|\s*(?:off|closed|inactive|locked|end)\s*"
+    r"\|\s*duration\s*\|\s*$",
+    re.I,
+)
+_HISTORY_TABLE_SEPARATOR = re.compile(
+    r"^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*$"
+)
+_HISTORY_DUPLICATE_NOTE_HINT = re.compile(
+    r"\b(?:earlier\s+(?:in-window\s+)?transitions?\s+may\s+be\s+missing"
+    r"|does\s+not\s+reach\s+the\s+start"
+    r"|earliest\s+(?:recorded|retained)"
+    r"|available\s+history"
+    r"|event\s+stream\s+has\s+not\s+been\s+independently\s+verified)\b",
+    re.I,
+)
+
+
+def _remove_duplicate_history_presentation(text: str) -> tuple[str, bool]:
+    """Remove only repeated interval-table/caveat blocks from repaired history prose.
+
+    The deterministic replacement can itself contain the canonical interval table.
+    If the model draft already contained another On/Off/Duration table, localized
+    sentence repair used to keep that second table and its matching history caveat.
+    Preserve the first table plus every unrelated paragraph/table, while dropping
+    later copies of the same history presentation shape.
+    """
+
+    lines = str(text or "").splitlines()
+    if not lines:
+        return str(text or ""), False
+
+    seen_history_table = False
+    changed = False
+    kept: list[str] = []
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        if not _HISTORY_INTERVAL_TABLE_HEADER.match(line.strip()):
+            kept.append(line)
+            index += 1
+            continue
+
+        separator_ok = (
+            index + 1 < len(lines)
+            and _HISTORY_TABLE_SEPARATOR.match(lines[index + 1].strip()) is not None
+        )
+        if not separator_ok:
+            kept.append(line)
+            index += 1
+            continue
+
+        if not seen_history_table:
+            seen_history_table = True
+            kept.append(line)
+            index += 1
+            continue
+
+        # Drop the repeated history table: header, separator, and contiguous rows.
+        changed = True
+        index += 2
+        while index < len(lines) and lines[index].strip().startswith("|"):
+            index += 1
+
+        # Consume blank spacing immediately after the removed table.
+        while index < len(lines) and not lines[index].strip():
+            index += 1
+
+        # Drop the repeated history caveat only when it is clearly the same
+        # completeness/retention note. Preserve unrelated notes or analysis.
+        if index < len(lines) and lines[index].lstrip().startswith("**Note:**"):
+            note_start = index
+            note_lines: list[str] = []
+            while index < len(lines) and lines[index].strip():
+                note_lines.append(lines[index])
+                index += 1
+            note_text = " ".join(note_lines)
+            if _HISTORY_DUPLICATE_NOTE_HINT.search(note_text):
+                while index < len(lines) and not lines[index].strip():
+                    index += 1
+            else:
+                kept.extend(lines[note_start:index])
+                if index < len(lines):
+                    kept.append("")
+                    index += 1
+
+    cleaned = "\n".join(kept).strip()
+    return cleaned, changed
+
+
 def _replace_unverified_totalish_sentences(
     text: str,
     *,
@@ -359,7 +451,9 @@ def _replace_unverified_totalish_sentences(
             changed = True
 
     if changed:
-        return "".join(pieces).strip(), True
+        joined = "".join(pieces).strip()
+        joined, duplicate_presentation_removed = _remove_duplicate_history_presentation(joined)
+        return joined, bool(changed or duplicate_presentation_removed)
     return str(text or ""), False
 
 
