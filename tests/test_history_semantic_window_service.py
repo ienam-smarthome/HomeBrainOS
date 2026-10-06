@@ -242,10 +242,13 @@ async def test_this_afternoon_excludes_live_1128_morning_interval() -> None:
     assert analysis["intervalCount"] == 2
     assert analysis["totalActiveSeconds"] == 187
 
-    starts = [item["start"] for item in analysis["observedIntervals"]]
-    assert "2026-10-06T11:28:31.407+0100" not in starts
-    assert starts == [
-        "2026-10-06T13:17:44.968+0100",
+    window_dates = [item["date"] for item in data["windowEvents"]]
+    assert "2026-10-06T11:28:31.407+0100" not in window_dates
+    assert "2026-10-06T11:28:48.174+0100" not in window_dates
+    assert window_dates == [
+        "2026-10-06T14:50:03.297+0100",
         "2026-10-06T14:47:13.756+0100",
+        "2026-10-06T13:18:02.091+0100",
+        "2026-10-06T13:17:44.968+0100",
     ]
 
