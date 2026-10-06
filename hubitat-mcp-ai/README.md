@@ -7,6 +7,8 @@ Current add-on version: **0.16.113**.
 
 ## Architecture
 
+0.16.113 canonicalises model-authored temporal-history interval tables whenever deterministic `observedIntervals` are available on an otherwise safe duration answer. The first On/Off/Duration table is replaced with HomeBrain's exact 24-hour clock and `sec`/`min` rendering, preventing model rounding such as `170s -> 3m` while preserving surrounding prose and unrelated Markdown tables.
+
 0.16.112 refines temporal-history presentation for complete semantic windows. When the retained page reaches the requested window start, HomeBrain no longer appends routine source-integrity boilerplate after an already qualified duration such as `about 3 minutes`. It instead surfaces practical scope/context such as the window start and latest recorded state/event. Strong missing-history warnings remain when retained history is known not to reach the requested start. `Currently on/off` wording is reserved for separate live-state evidence; deterministic history fallback says `latest recorded state`.
 
 0.16.111 adds `this afternoon` as a first-class deterministic history window. It resolves to 12:00–18:00 in the authoritative Hubitat local timezone, capped at the current time while the afternoon is in progress. Explicit clock ranges mentioning `this afternoon` are anchored to today. This prevents a rolling `hours_back` fetch from leaking late-morning sessions into an answer labelled as afternoon.
