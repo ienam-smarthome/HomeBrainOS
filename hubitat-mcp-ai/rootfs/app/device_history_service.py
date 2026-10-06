@@ -1055,7 +1055,10 @@ class DeviceHistoryService:
                     source_integrity_verified=False,
                 )
             else:
-                temporal_analysis = analyze_state_intervals(attribute, events)
+                # Presentation limits must not truncate deterministic temporal
+                # arithmetic. Analyze every matching row from the fetched page,
+                # while `events` remains the bounded user-facing sample.
+                temporal_analysis = analyze_state_intervals(attribute, filtered_events)
 
         prefetched_command_events: list[dict[str, Any]] | None = None
         if command_prefetch_task is not None:
