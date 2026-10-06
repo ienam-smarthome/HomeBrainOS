@@ -146,6 +146,135 @@ def _duration_mentions_seconds(text: str) -> list[int]:
     return values
 
 
+def _compact_clock(value: Any) -> str:
+    """Render one recorded timestamp as a compact local clock value."""
+
+    parsed = _parse_timestamp(value)
+    if parsed is None:
+        return str(value or "").strip()
+    return parsed.strftime("%H:%M")
+
+
+def _exact_duration_text(seconds: Any) -> str:
+    """Render interval seconds without rounding away short-event detail."""
+
+    try:
+        total = max(0, int(seconds))
+    except (TypeError, ValueError):
+        return ""
+    minutes, secs = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts)
+
+
+def _history_interval_table(temporal: dict[str, Any]) -> str:
+    """Render bounded intervals as a compact Markdown table."""
+
+    raw = temporal.get("observedIntervals")
+    if not isinstance(raw, list) or not raw:
+        raw = temporal.get("intervals")
+    if not isinstance(raw, list) or not raw:
+        return ""
+
+    active = str(temporal.get("activeState") or "start").strip().title() or "Start"
+    inactive = str(temporal.get("inactiveState") or "end").strip().title() or "End"
+    rows: list[str] = []
+    for item in raw[:12]:
+        if not isinstance(item, dict):
+            continue
+        start = _compact_clock(item.get("start"))
+        end = _compact_clock(item.get("end"))
+        duration = _exact_duration_text(item.get("durationSeconds"))
+        if not start or not end or not duration:
+            continue
+        rows.append(f"| {start} | {end} | {duration} |")
+    if not rows:
+        return ""
+    return "\n".join([
+        f"| {active} | {inactive} | Duration |",
+        "| --- | --- | ---: |",
+        *rows,
+    ])
+
+
+def _first_unmatched_inactive_note(
+    temporal: dict[str, Any],
+    *,
+    inactive_state: str,
+) -> str:
+    """Explain a leading inactive row whose opening edge is no longer retained."""
+
+    first = temporal.get("firstWindowStateEvent")
+    predecessor = temporal.get("predecessorStateEvent")
+    if (
+        not isinstance(first, dict)
+        or predecessor is not None
+        or str(first.get("state") or "").casefold() != inactive_state.casefold()
+    ):
+        return ""
+    at = _compact_clock(first.get("timestamp"))
+    if not at:
+        return ""
+    return (
+        f"The earliest retained in-window state is **{inactive_state} at {at}**, "
+        f"with no matching earlier active transition retained, so that earlier "
+        "period cannot be measured from the available rows."
+    )
+
+
+def _formatted_unverified_duration_summary(
+    *,
+    label: str,
+    active_state: str,
+    inactive_state: str,
+    total_duration: str,
+    interval_count: int,
+    window_label: str,
+    temporal: dict[str, Any],
+    page_incomplete_to_start: bool,
+) -> str:
+    """Create a readable deterministic duration answer with table and caveat."""
+
+    where = f" {window_label}" if window_label else ""
+    interval_word = "recorded interval" if interval_count == 1 else "recorded intervals"
+    headline = (
+        f"**{label} was {active_state} for about {total_duration} in total"
+        f"{where}, across {interval_count} {interval_word}.**"
+    )
+    table = _history_interval_table(temporal)
+
+    notes: list[str] = []
+    unmatched = _first_unmatched_inactive_note(
+        temporal,
+        inactive_state=inactive_state,
+    )
+    if unmatched:
+        notes.append(unmatched)
+    if page_incomplete_to_start:
+        window_name = window_label or "the requested window"
+        notes.append(
+            f"The retained device-event history does not reach the start of "
+            f"{window_name}, so earlier in-window transitions may be missing."
+        )
+    notes.append(
+        "The device-event stream has not been independently verified as complete, "
+        "so this is an estimate from the recorded state pairs rather than an exact total."
+    )
+
+    sections = [headline]
+    if table:
+        sections.extend(["", table])
+    sections.extend(["", "**Note:** " + " ".join(notes)])
+    return "\n".join(sections)
+
+
 def _replace_unverified_totalish_sentences(
     text: str,
     *,
@@ -1155,21 +1284,15 @@ def guard_history_duration_claim(
             )
             return corrected, True
 
-        interval_word = "interval" if interval_count == 1 else "intervals"
-        corrected = (
-            f"Pairing the recorded state rows gives an {active_state}-time "
-            f"estimate of {total_duration} for {label}{window_suffix} across "
-            f"{interval_count} observed {interval_word}."
-        )
-        if page_incomplete_to_start:
-            where = window_label or "the requested window"
-            corrected += (
-                f" The retained device-event page does not reach the start of {where}, "
-                "so earlier in-window transitions may be missing."
-            )
-        corrected += (
-            " The device-event stream has not been independently verified as complete, "
-            "so this is not an exact total or a mathematical lower bound."
+        corrected = _formatted_unverified_duration_summary(
+            label=label,
+            active_state=active_state,
+            inactive_state=inactive_state,
+            total_duration=total_duration,
+            interval_count=interval_count,
+            window_label=window_label,
+            temporal=temporal,
+            page_incomplete_to_start=page_incomplete_to_start,
         )
         expected = _display_duration_seconds(total_seconds)
         mentions = _duration_mentions_seconds(text)
