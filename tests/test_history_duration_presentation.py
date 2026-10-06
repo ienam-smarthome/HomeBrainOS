@@ -88,7 +88,7 @@ def test_incomplete_duration_repair_uses_readable_summary_table_and_note() -> No
     assert "**Note:**" in corrected
     assert "off at 08:21" in corrected
     assert "does not reach the start of this morning" in corrected
-    assert "estimate from the recorded state pairs" in corrected
+    assert "not an exact total or a mathematical lower bound" in corrected
 
 
 def test_interval_table_is_derived_only_from_deterministic_observed_intervals() -> None:
@@ -174,4 +174,100 @@ def test_duplicate_history_cleanup_preserves_unrelated_analysis_table() -> None:
     assert corrected.count("| On | Off | Duration |") == 1
     assert "| Observation | Meaning |" in corrected
     assert "| Motion overlap | Correlation only |" in corrected
+
+def _complete_afternoon_receipt() -> dict:
+    return {
+        "tool": "homebrain_device_history",
+        "success": True,
+        "details": {
+            "label": "Bathroom Light 1",
+            "historySourceIntegrity": "unverified",
+            "historySourceIntegrityVerified": False,
+            "timeWindow": {
+                "kind": "this_afternoon",
+                "label": "this afternoon",
+                "start": "2026-10-06T12:00:00+01:00",
+                "end": "2026-10-06T15:25:49+01:00",
+                "ongoing": True,
+                "sourcePageCompleteToStart": True,
+            },
+            "temporalAnalysis": {
+                "activeState": "on",
+                "inactiveState": "off",
+                "totalActiveDuration": "3m",
+                "totalActiveSeconds": 187,
+                "intervalCount": 2,
+                "windowed": True,
+                "windowLabel": "this afternoon",
+                "windowStart": "2026-10-06T12:00:00+01:00",
+                "windowEnd": "2026-10-06T15:25:49+01:00",
+                "windowOngoing": True,
+                "pageCompleteToWindowStart": True,
+                "sourceIntegrity": "unverified",
+                "sourceIntegrityVerified": False,
+                "durationReliability": "unverified-event-stream",
+                "lastWindowStateEvent": {
+                    "timestamp": "2026-10-06T14:50:03.297000+01:00",
+                    "state": "off",
+                    "isStateChange": True,
+                },
+                "observedIntervals": [
+                    {
+                        "start": "2026-10-06T13:17:44.968+0100",
+                        "end": "2026-10-06T13:18:02.091+0100",
+                        "durationSeconds": 17,
+                    },
+                    {
+                        "start": "2026-10-06T14:47:13.756+0100",
+                        "end": "2026-10-06T14:50:03.297+0100",
+                        "durationSeconds": 170,
+                    },
+                ],
+            },
+        },
+    }
+
+
+def test_complete_window_repair_uses_practical_context_not_routine_warning() -> None:
+    corrected, changed = guard_history_duration_claim(
+        "Bathroom Light 1 was on for exactly 3 minutes this afternoon.",
+        [_complete_afternoon_receipt()],
+    )
+
+    assert changed is True
+    assert "about 3 minutes in total this afternoon" in corrected
+    assert "| 13:17 | 13:18 | 17 sec |" in corrected
+    assert "| 14:47 | 14:50 | 2 min 50 sec |" in corrected
+    assert "**Note:**" not in corrected
+    assert "latest recorded state for Bathroom Light 1 is off" in corrected
+    assert "I counted this afternoon from 12:00" in corrected
+    assert "last recorded event was the 14:50 switch-off" in corrected
+    assert "currently off" not in corrected
+    assert "not independently verified as complete" not in corrected
+
+
+def test_live_0_16_111_routine_note_is_replaced_by_practical_context() -> None:
+    draft = (
+        "**Bathroom Light 1 was on for about 3 minutes in total this afternoon, "
+        "across 2 recorded intervals.**\n\n"
+        "| On | Off | Duration |\n"
+        "| :--- | :--- | :--- |\n"
+        "| 13:17 | 13:18 | 17 sec |\n"
+        "| 14:47 | 14:50 | 2 min 50 sec |\n\n"
+        "**Note:** This is an estimate based on recorded state pairs; "
+        "the device-event stream has not been independently verified as complete."
+    )
+
+    corrected, changed = guard_history_duration_claim(
+        draft,
+        [_complete_afternoon_receipt()],
+    )
+
+    assert changed is True
+    assert corrected.count("| On | Off | Duration |") == 1
+    assert "**Note:**" not in corrected
+    assert "not independently verified as complete" not in corrected
+    assert "latest recorded state for Bathroom Light 1 is off" in corrected
+    assert "I counted this afternoon from 12:00" in corrected
+    assert "last recorded event was the 14:50 switch-off" in corrected
 
