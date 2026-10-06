@@ -220,9 +220,11 @@ def _synthesis_instruction(original_user: str) -> str:
         "integrity uncertainty applies to completeness and continuity. If the "
         "original user explicitly asks how long, for a duration, or for total time, "
         "lead with the deterministic temporal duration when current-turn evidence "
-        "provides it. Preserve useful supported analysis instead of reducing the "
-        "answer to a duration or event list. Be concise but complete and do not "
-        "reveal hidden reasoning."
+        "provides it. When several bounded intervals are available, prefer a compact "
+        "Markdown table with start state/time, end state/time, and duration, followed "
+        "by one short caveat paragraph; do not dump raw JSON fields. Preserve useful "
+        "supported analysis instead of reducing the answer to a duration or event list. "
+        "Be concise but complete and do not reveal hidden reasoning."
     )
     return text
 

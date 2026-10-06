@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.107**.
+Current add-on version: **0.16.108**.
 
 ## Architecture
+
+0.16.108 improves temporal-history answer presentation without changing history arithmetic or evidence semantics. Duration questions now prefer a concise result followed by a compact Markdown interval table and a short caveat. The deterministic duration guard uses the same structured presentation when it must repair a model answer, including retained-page boundary gaps and leading unmatched inactive events, so safety corrections no longer collapse a readable answer into one dense paragraph.
 
 0.16.107 fixes semantic history-window coverage when Hubitat returns a retained native event list shorter than HomeBrain's requested row limit. A short retained list is no longer treated as proof that the requested window start was reached; HomeBrain now requires an event timestamp at or before that boundary. When a duration answer is based on a retained page that does not reach the window start, final synthesis explicitly says that earlier in-window transitions may be missing while preserving the existing unverified-stream estimate semantics.
 
