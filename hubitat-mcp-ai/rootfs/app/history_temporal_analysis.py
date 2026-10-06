@@ -70,6 +70,13 @@ _REDUNDANT_UNVERIFIED_DURATION_CAVEAT = re.compile(
     r".*\b(?:unverified\s+event\s+stream|event\s+stream(?:\s+integrity)?\s+is\s+unverified)\b",
     re.I | re.S,
 )
+_ROUTINE_COMPLETE_WINDOW_CAVEAT = re.compile(
+    r"(?:\*\*Note:\*\*\s*)?"
+    r"(?:this|that)\s+is\s+an?\s+estimate\s+based\s+on\s+recorded\s+state\s+pairs"
+    r"\s*[;,]\s*the\s+device-event\s+stream\s+has\s+not\s+been\s+"
+    r"independently\s+verified\s+as\s+complete\.?\s*",
+    re.I,
+)
 
 
 def _explicit_false(value: Any) -> bool:
@@ -296,6 +303,28 @@ def _practical_history_context(
     transition = _transition_label(state)
     parts[-1] += f" and the last recorded event was the {at} {transition}." if window_label and start else f" last recorded event was the {at} {transition}."
     return " ".join(parts)
+
+
+def _replace_routine_complete_window_caveat(
+    text: str,
+    *,
+    practical_context: str,
+) -> tuple[str, bool]:
+    """Replace generic source-integrity boilerplate with useful window context."""
+
+    if not practical_context:
+        return str(text or ""), False
+    original = str(text or "")
+    cleaned, count = _ROUTINE_COMPLETE_WINDOW_CAVEAT.subn(
+        practical_context,
+        original,
+        count=1,
+    )
+    if not count:
+        return original, False
+    # Keep presentation tidy if a standalone Note paragraph was replaced.
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned, True
 
 
 def _formatted_unverified_duration_summary(
@@ -1497,7 +1526,16 @@ def guard_history_duration_claim(
             and _UNVERIFIED_EXACTNESS_CLAIM.search(text) is None
             and not page_incomplete_to_start
         ):
-            return text, False
+            practical = _practical_history_context(
+                label=label,
+                temporal=temporal,
+                window_label=window_label,
+            )
+            cleaned, presentation_changed = _replace_routine_complete_window_caveat(
+                text,
+                practical_context=practical,
+            )
+            return cleaned, presentation_changed
         localized, changed = _replace_unverified_totalish_sentences(
             text,
             replacement=corrected,
