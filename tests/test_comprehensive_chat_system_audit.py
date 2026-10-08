@@ -172,9 +172,9 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
     assert result.request_class == "live-read"
     assert result.request_class == "live-read"
     assert result.evidence[0]["mutates"] is False
-    assert len(mcp.calls) == 3
+    assert len(mcp.calls) == 4
     assert [call[1]["args"]["tool"] for call in mcp.calls] == [
-        "hub_get_performance_stats", "hub_get_logs", "hub_get_logs",
+        "hub_get_performance_stats", "hub_get_logs", "hub_get_logs", "hub_get_logs",
     ]
     assert mcp.calls[1][1]["args"]["args"]["deviceId"] == "7001"
     assert mcp.calls[2][1]["args"]["args"]["appId"] == "9001"
@@ -186,7 +186,7 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
 def test_audit_remains_available_when_performance_gateway_fails() -> None:
     mcp = _FakeMCP(performance_ok=False)
     result = asyncio.run(run_comprehensive_chat_audit(_FakeAudit(), mcp))
-    assert len(mcp.calls) == 1
+    assert len(mcp.calls) == 2
     assert "Low battery: Livingroom TRV" in result.message
     assert "Performance statistics unavailable" in result.message
     assert "No repairs performed" in result.message
@@ -290,7 +290,7 @@ def test_diagnostic_receipts_track_each_source_without_claiming_mutation() -> No
     assert ("health_audit.run", "automations") in kinds
     assert ("health_audit.run", "logs") in kinds
     assert ("hub_manage_logs", "hub_get_performance_stats") in kinds
-    assert kinds.count(("hub_manage_logs", "hub_get_logs")) == 2
+    assert kinds.count(("hub_manage_logs", "hub_get_logs")) == 3
     assert all(row["effect"] == "read" and row["mutates"] is False for row in result.evidence)
     assert result.evidence[0]["summary"].endswith("flagged findings")
 
@@ -313,3 +313,106 @@ def test_incomplete_audit_sources_have_unsuccessful_receipts() -> None:
     assert not by_section["logs"]["supports_live_claim"]
     assert by_section["automations"]["success"]
     assert "Incomplete sources: device inventory, logs" in result.message
+
+
+
+def test_headline_counts_exclude_unverified_broken_name_markers() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"].append({
+        "domain": "automations", "category": "automation",
+        "severity": "warning",
+        "title": "Automation broken: Tuya Button: button 3 pushed",
+        "detail": "Hubitat marked the automation name *BROKEN*.",
+    })
+    snapshot["sections"]["automations"]["attention_count"] = 1
+    report = render_comprehensive_system_audit(snapshot, _performance())
+    assert "Alert signals: 2 from current health/log/automation data; 1 name-only" in report
+    assert "1 name-only markers and 0 other automation alerts" in report
+    assert "3 flagged for attention" not in report
+
+
+def test_headline_with_only_name_markers_is_not_unqualified_attention() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"] = [{
+        "domain": "automations", "category": "automation",
+        "severity": "warning", "title": "Automation broken: Example",
+        "detail": "Hubitat marked the automation name *BROKEN*.",
+    }]
+    report = render_comprehensive_system_audit(snapshot, _performance())
+    assert "audit — REVIEW NAME MARKERS" in report
+    assert "Alert signals: 0 from current health/log/automation data; 1 name-only" in report
+
+
+def test_bounded_historical_logs_after_full_initial_page() -> None:
+    mcp = _FakeMCP()
+    result = asyncio.run(run_comprehensive_chat_audit(_FakeAudit(), mcp))
+    args = mcp.calls[-1][1]["args"]["args"]
+    assert args["limit"] == 200
+    assert args["since"] == "2026-10-07T11:40:00+00:00"
+    assert args["until"] == "2026-10-08T05:40:00+00:00"
+    assert "Older-log follow-up (24h to 6h before audit)" in result.message
+    assert any(
+        r.get("evidence_kind") == "chat_audit_historical_logs" and r["success"]
+        for r in result.evidence
+    )
+    assert all(r["mutates"] is False for r in result.evidence)
+
+
+def test_unsaturated_sample_skips_historical_request() -> None:
+    class FewLogs:
+        async def run(self, *, reason):
+            snapshot = _snapshot()
+            snapshot["sections"]["logs"]["entries_checked"] = 3
+            return snapshot
+    mcp = _FakeMCP()
+    result = asyncio.run(run_comprehensive_chat_audit(FewLogs(), mcp))
+    assert len(mcp.calls) == 3
+    assert "Older-log follow-up" not in result.message
+
+
+def test_complete_live_context_reconciles_unlisted_device_ids() -> None:
+    class CrosscheckAudit:
+        async def run(self, *, reason):
+            snapshot = _snapshot()
+            snapshot["sections"]["logs"]["entries_checked"] = 5
+            snapshot["sections"]["devices"]["inventory_ids"] = ["1000"]
+            return snapshot
+    class MCPWithContext(_FakeMCP):
+        async def get_live_context(self, refresh=False):
+            return {
+                "devices": [
+                    {"id": "7001", "label": "LG webOS TV"},
+                    {"id": "1000", "label": "Another"},
+                ],
+                "totalDevices": 2,
+                "idsComplete": True,
+                "truncated": False,
+                "partial": False,
+            }
+    result = asyncio.run(run_comprehensive_chat_audit(CrosscheckAudit(), MCPWithContext()))
+    assert "Independent live-context cross-check: 1 of 1" in result.message
+    assert "IDs found in live context: LG webOS TV" in result.message
+    assert any(
+        r.get("evidence_kind") == "chat_audit_inventory_crosscheck" and r["success"]
+        for r in result.evidence
+    )
+
+
+def test_incomplete_live_context_never_claims_device_absence() -> None:
+    class CrosscheckAudit:
+        async def run(self, *, reason):
+            snapshot = _snapshot()
+            snapshot["sections"]["logs"]["entries_checked"] = 5
+            snapshot["sections"]["devices"]["inventory_ids"] = ["1000"]
+            return snapshot
+    class MCPWithPartialContext(_FakeMCP):
+        async def get_live_context(self, refresh=False):
+            return {"devices": [], "idsComplete": False, "truncated": True}
+    result = asyncio.run(
+        run_comprehensive_chat_audit(CrosscheckAudit(), MCPWithPartialContext())
+    )
+    assert "live-context cross-check unavailable or incomplete" in result.message
+    assert not any(
+        r.get("evidence_kind") == "chat_audit_inventory_crosscheck" and r["success"]
+        for r in result.evidence
+    )
