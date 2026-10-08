@@ -488,11 +488,14 @@ def render_comprehensive_system_audit(
         "**Read-only:** no devices, rules, apps or settings have been changed.",
         "",
         "### Coverage",
-        f"- Devices: {devices.get('total', 'unavailable')} inventoried; "
+        f"- Devices: {devices.get('total', 'unavailable')} in the MCP-visible "
+        "detailed device inventory; "
         f"{devices.get('offline_count', 'unknown')} explicitly reported unavailable; "
         f"{devices.get('low_battery_count', 'unknown')} low-battery reports.",
-        f"- Automations: {automations.get('total', 'unavailable')} checked; "
-        f"{automations.get('attention_count', 'unknown')} broken, paused or unknown.",
+        f"- Automations: {automations.get('total', 'unavailable')} distinct "
+        "apps/rules normalised from the automation sources; "
+        f"{automations.get('attention_count', 'unknown')} flagged for attention "
+        "(including unverified name markers).",
         f"- Logs: {logs.get('entries_checked', 'unavailable')} returned rows "
         f"(requested lookback: {logs.get('checked_hours', 'unknown')} hours, "
         "at most 200 rows). This is not proof that older or omitted events are absent.",
@@ -505,7 +508,13 @@ def render_comprehensive_system_audit(
     ]
     if unavailable:
         lines.append("- Incomplete sources: " + ", ".join(unavailable) + ".")
-    lines.extend(("", "### Findings requiring attention"))
+    if logs.get("entries_checked") == 200:
+        lines.append(
+            "- **Log window saturated:** all 200 requested rows were returned. "
+            "Older errors in the 24-hour period may have been displaced by newer events; "
+            "this does not verify complete 24-hour log coverage."
+        )
+    lines.extend(("", "### Observed alerts (not necessarily proven causes)"))
     lines.extend(_audit_issue_lines(snapshot))
 
     quiet = devices.get("no_recent_activity") or []
@@ -536,6 +545,56 @@ def render_comprehensive_system_audit(
             f"\nExplicit reporting expectations missed: {len(overdue)}. "
             "A missed update does not by itself identify the cause."
         )
+
+    lines.extend(("", "### Source scope and ID reconciliation"))
+    if isinstance(performance, dict):
+        for kind, label, source_key in (
+            ("device", "Device", "deviceStats"),
+            ("app", "App", "appStats"),
+        ):
+            total = _performance_population_total(performance, kind)
+            listed = performance.get(source_key)
+            sample_size = len(listed) if isinstance(listed, list) else 0
+            source_total = str(total) if total is not None else "not supplied"
+            lines.append(
+                f"- {label} performance source: {source_total} reported total; "
+                f"{sample_size} top-ranked rows returned. The top-ranked sample "
+                "must not be treated as a full inventory."
+            )
+        inventory_ids = devices.get("inventory_ids")
+        if isinstance(inventory_ids, list):
+            ids = set(map(str, inventory_ids))
+            performance_rows = performance.get("deviceStats") or []
+            selected = [
+                row for row in performance_rows
+                if isinstance(row, dict) and row.get("id") not in (None, "")
+            ]
+            matched = [row for row in selected if str(row.get("id")) in ids]
+            unlisted = [row for row in selected if str(row.get("id")) not in ids]
+            lines.append(
+                f"- Exact ID overlap: {len(matched)} of {len(selected)} sampled "
+                "performance-device IDs appear in the MCP detailed inventory."
+            )
+            if unlisted:
+                example = ", ".join(
+                    str(row.get("name") or row["id"]) for row in unlisted[:4]
+                )
+                lines.append(
+                    f"- Performance IDs outside this MCP inventory sample: {example}. "
+                    "Different visibility/scope or paging could explain this; "
+                    "it does NOT prove these devices are missing from Hubitat."
+                )
+        else:
+            lines.append(
+                "- Full inventory IDs were not provided; exact device population "
+                "reconciliation is unverified."
+            )
+        lines.append(
+            "- App performance statistics and normalised automation app/rule items "
+            "are not equivalent populations; a count difference alone is not a fault."
+        )
+    else:
+        lines.append("- Performance scope is unknown because that source was unavailable.")
 
     lines.extend(("", "### Performance leaders (not automatic faults)"))
     if isinstance(performance, dict):
@@ -578,7 +637,8 @@ def render_comprehensive_system_audit(
             )
             for group in item["groups"][:3]:
                 lines.append(
-                    f"  - [{group.get('level')}] {group.get('summary')} "
+                    f"  - [{group.get('level')}] "
+                    f"{_concise_log_message(group.get('summary'))} "
                     f"({group.get('count')} rows)"
                 )
         else:
@@ -587,14 +647,18 @@ def render_comprehensive_system_audit(
                 "in the returned 6h sample (not proof of no earlier issues)."
             )
 
+    lines.extend(("", "### Evidence-based next checks"))
+    lines.extend(_audit_followups(snapshot, performance) or [
+        "- No specific fix is justified from the currently returned fault evidence."
+    ])
     lines.extend((
         "",
-        "### Repair status and next action",
-        "- No repairs performed. Confirmed log symptoms are not proof of a root cause.",
-        "- Check affected device reachability, driver configuration and recent "
-        "events before changing or disabling anything.",
-        "- For any repair that changes Hubitat state, request the specific "
-        "action and use the existing verification/confirmation workflow.",
+        "### Repair status",
+        "- No repairs performed; current and historical co-observations do not prove causality.",
+        "- Any Hubitat mutation requires a separate explicitly targeted request, "
+        "verified capability and the existing confirmation safeguards.",
+        "- This report is host-assembled from MCP reads; no Gemma reasoning round "
+        "was used to infer missing evidence.",
     ))
     return "\n".join(lines)
 
