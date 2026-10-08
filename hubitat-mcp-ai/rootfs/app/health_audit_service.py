@@ -821,6 +821,8 @@ def _scoped_log_pattern_summary(targeted_logs: list[dict[str, Any]] | None) -> d
                     group.get("summary") or group.get("message")
                 ),
                 "rows": max(0, int(group.get("count") or 0)),
+                "duration_min_ms": group.get("duration_min_ms"),
+                "duration_max_ms": group.get("duration_max_ms"),
                 "first_seen": group.get("first_seen"),
                 "last_seen": group.get("last_seen"),
             })
@@ -1098,9 +1100,16 @@ def render_comprehensive_system_audit(
                 if pattern.get("first_seen") and pattern.get("last_seen")
                 else "; event timestamps unavailable"
             )
+            duration = (
+                f"; observed request duration "
+                f"{pattern['duration_min_ms']}–{pattern['duration_max_ms']} ms"
+                if pattern.get("duration_min_ms") is not None
+                and pattern.get("duration_max_ms") is not None else ""
+            )
             lines.append(
                 f"- [{pattern['level']}] {pattern['name']} (ID {pattern['id']}): "
-                f"{pattern['rows']} matching log rows — {pattern['detail']}{window}."
+                f"{pattern['rows']} matching log rows — {pattern['detail']}"
+                f"{duration}{window}."
             )
 
     if historical_logs is not None:
