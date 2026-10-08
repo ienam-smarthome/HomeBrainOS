@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from frozen_core import health_audit_service_core as _core
@@ -486,15 +486,28 @@ def render_comprehensive_system_audit(
     *,
     performance_error: str | None = None,
     targeted_logs: list[dict[str, Any]] | None = None,
+    historical_logs: dict[str, Any] | None = None,
+    context_reconciliation: dict[str, Any] | None = None,
 ) -> str:
     """Render checked data, neutral quiet-device observations and repair status."""
     sections = snapshot.get("sections") or {}
     devices = sections.get("devices") or {}
     automations = sections.get("automations") or {}
     logs = sections.get("logs") or {}
-    status = str(snapshot.get("status") or "unknown").upper()
+    alert_issues = [
+        item for item in snapshot.get("issues", [])
+        if isinstance(item, dict)
+        and item.get("severity") in ("critical", "warning")
+    ]
+    marker_count = sum(_name_only_broken_marker(item) for item in alert_issues)
+    other_count = len(alert_issues) - marker_count
+    status = "ATTENTION" if other_count else (
+        "REVIEW NAME MARKERS" if marker_count else "NO ALERTS OBSERVED"
+    )
     lines = [
         f"## Comprehensive Hubitat audit — {status}",
+        f"Alert signals: {other_count} from current health/log/automation data; "
+        f"{marker_count} name-only *BROKEN* markers (not verified failures).",
         f"Checked: {snapshot.get('checked_at') or 'time not available'} (hub report).",
         "**Read-only:** no devices, rules, apps or settings have been changed.",
         "",
@@ -505,8 +518,10 @@ def render_comprehensive_system_audit(
         f"{devices.get('low_battery_count', 'unknown')} low-battery reports.",
         f"- Automations: {automations.get('total', 'unavailable')} distinct "
         "apps/rules normalised from the automation sources; "
-        f"{automations.get('attention_count', 'unknown')} flagged for attention "
-        "(including unverified name markers).",
+        f"{marker_count} name-only markers and "
+        f"{sum(item.get('domain') == 'automations' and not _name_only_broken_marker(item) for item in alert_issues)} "
+        "other automation alerts. The underlying System Check retains its "
+        "original flagged-item total.",
         f"- Logs: {logs.get('entries_checked', 'unavailable')} returned rows "
         f"(requested lookback: {logs.get('checked_hours', 'unknown')} hours, "
         "at most 200 rows). This is not proof that older or omitted events are absent.",
@@ -595,6 +610,27 @@ def render_comprehensive_system_audit(
                     "Different visibility/scope or paging could explain this; "
                     "it does NOT prove these devices are missing from Hubitat."
                 )
+                if context_reconciliation is not None:
+                    if context_reconciliation.get("complete") is True:
+                        found = context_reconciliation.get("found") or []
+                        absent = context_reconciliation.get("absent") or []
+                        lines.append(
+                            f"- Independent live-context cross-check: {len(found)} of "
+                            f"{len(unlisted)} unmatched performance IDs appear in a "
+                            "complete live-context identity response."
+                        )
+                        if found:
+                            lines.append("- IDs found in live context: " + ", ".join(found) + ".")
+                        if absent:
+                            lines.append(
+                                "- IDs still unexplained after live-context cross-check: "
+                                + ", ".join(absent) + "."
+                            )
+                    else:
+                        lines.append(
+                            "- Independent live-context cross-check unavailable or "
+                            "incomplete; unmatched IDs remain unresolved."
+                        )
         else:
             lines.append(
                 "- Full inventory IDs were not provided; exact device population "
@@ -635,6 +671,31 @@ def render_comprehensive_system_audit(
         lines.append(
             f"- Performance statistics unavailable: {performance_error or 'source did not return usable data'}."
         )
+
+    if historical_logs is not None:
+        lines.extend(("", "### Older-log follow-up (24h to 6h before audit)"))
+        if historical_logs.get("error"):
+            lines.append(
+                "- Historical bounded log read failed: "
+                + str(historical_logs["error"]) + ". No historical claims made."
+            )
+        else:
+            count = int(historical_logs.get("entries_checked") or 0)
+            lines.append(
+                f"- {count} returned rows in a separate older-log window "
+                "(maximum 200). This does not certify complete historical coverage."
+            )
+            if count >= 200:
+                lines.append(
+                    "- Older-window sample also saturated: some historical "
+                    "errors may remain hidden."
+                )
+            for group in (historical_logs.get("groups") or [])[:5]:
+                lines.append(
+                    f"- [{group.get('level')}] "
+                    f"{_concise_log_message(group.get('summary'))} "
+                    f"({group.get('count')} rows)."
+                )
 
     for item in targeted_logs or []:
         kind = item.get("kind") or "target"
