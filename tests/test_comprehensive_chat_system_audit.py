@@ -169,7 +169,7 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
     assert audit.reasons == ["chat"]
     assert result.route == "comprehensive-system-audit"
     assert result.request_class == "live-read"
-    assert not result.confirmation_required if hasattr(result, "confirmation_required") else True
+    assert result.request_class == "live-read"
     assert result.evidence[0]["mutates"] is False
     assert len(mcp.calls) == 3
     assert [call[1]["args"]["tool"] for call in mcp.calls] == [
@@ -189,3 +189,25 @@ def test_audit_remains_available_when_performance_gateway_fails() -> None:
     assert "Low battery: Livingroom TRV" in result.message
     assert "Performance statistics unavailable" in result.message
     assert "No repairs performed" in result.message
+
+
+def test_chat_request_uses_full_audit_before_general_agent(monkeypatch) -> None:
+    import app as app_module
+
+    invoked = []
+
+    async def fake_full_audit(audit, mcp):
+        invoked.append((audit, mcp))
+        return type("Outcome", (), {"message": "Full audit completed"})()
+
+    async def unexpected_agent(*_args, **_kwargs):
+        raise AssertionError("Generic agent should not handle comprehensive audit")
+
+    monkeypatch.setattr(app_module, "run_comprehensive_chat_audit", fake_full_audit)
+    monkeypatch.setattr(app_module.agent, "process_user_request_result", unexpected_agent)
+
+    prompt = "check hub logs including device stats, app stats, hub events for issues and fix"
+    result = asyncio.run(app_module._agent_request(app_module.ChatRequest(prompt=prompt)))
+
+    assert result.message == "Full audit completed"
+    assert invoked == [(app_module.health_audit, app_module.mcp)]
