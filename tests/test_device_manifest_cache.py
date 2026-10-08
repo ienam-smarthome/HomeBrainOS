@@ -356,3 +356,161 @@ async def test_device_manifest_pagination_is_bounded_by_a_hard_page_cap(monkeypa
     assert len(calls) == HubitatMCPClient._MAX_DEVICE_PAGES
     assert len(devices) == HubitatMCPClient._MAX_DEVICE_PAGES
     await client.close()
+
+
+
+@pytest.mark.asyncio
+async def test_health_audit_uses_fresh_lean_projection_and_concurrent_verified_pages(monkeypatch):
+    """Fresh state survives, while command-bearing global cache is unchanged."""
+    import asyncio
+
+    client = HubitatMCPClient("http://hub/mcp", max_concurrent_calls=2)
+    client._cached_devices = [{
+        "id": "existing", "label": "Legacy device", "commands": ["on", "off"]
+    }]
+    peak = active = 0
+    requests = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "gateway", {"type": "object"})]
+
+    async def call_tool(name, arguments):
+        nonlocal active, peak
+        assert name == "hub_read_devices"
+        assert arguments["tool"] == "hub_list_devices"
+        args = arguments["args"]
+        assert args["detailed"] is True
+        assert args["fields"] == [
+            "id", "name", "label", "room", "capabilities", "attributes",
+            "lastActivity",
+        ]
+        offset = args["offset"]
+        requests.append(offset)
+        active += 1
+        peak = max(peak, active)
+        if offset != 0:
+            await asyncio.sleep(0.02)
+        active -= 1
+        count = min(50, 120 - offset)
+        page = {
+            "devices": [
+                {"id": str(i), "label": f"Device {i}",
+                 "capabilities": ["Battery"],
+                 "attributes": [{"name": "battery", "currentValue": 85}],
+                 "lastActivity": "2026-10-08T13:00:00Z"}
+                for i in range(offset, offset + count)
+            ],
+            "total": 120,
+            "hasMore": offset + count < 120,
+            "nextOffset": offset + count if offset + count < 120 else None,
+        }
+        return MCPToolResult(name, arguments, {}, "", {"result": page})
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+    devices, metrics = await client.get_audit_devices()
+    assert len(devices) == 120
+    assert requests[0] == 0
+    assert set(requests) == {0, 50, 100}
+    assert peak == 2
+    assert metrics["source"] == "fresh_projected_gateway"
+    assert metrics["mode"] == "bounded_parallel_pages"
+    assert metrics["complete"] is True
+    assert metrics["pages"] == 3
+    assert client._cached_devices[0]["commands"] == ["on", "off"]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_health_audit_rejects_missing_state_on_any_page_and_falls_back(monkeypatch):
+    client = HubitatMCPClient("http://hub/mcp")
+    full_reads = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "gateway", {"type": "object"})]
+
+    async def call_tool(name, args):
+        return MCPToolResult(name, args, {}, "", {"result": {
+            "devices": [{"id": "1", "label": "Contact"}],
+            "total": 1, "hasMore": False,
+        }})
+
+    async def full_read(*, refresh=False):
+        full_reads.append(refresh)
+        return [{
+            "id": "1", "label": "Contact",
+            "attributes": [{"name": "contact", "currentValue": "open"}],
+            "commands": ["refresh"],
+        }]
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+    monkeypatch.setattr(client, "get_cached_devices", full_read)
+    devices, metrics = await client.get_audit_devices()
+    assert full_reads == [True]
+    assert devices[0]["commands"] == ["refresh"]
+    assert metrics["source"] == "full_detailed_fallback"
+    assert metrics["complete"] is False
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_health_audit_rejects_duplicate_page_ids_and_falls_back(monkeypatch):
+    client = HubitatMCPClient("http://hub/mcp")
+    fallbacks = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "gateway", {"type": "object"})]
+
+    async def call_tool(name, args):
+        offset = args["args"]["offset"]
+        page = {
+            "devices": [
+                {"id": str(i if offset == 0 else i - 50),
+                 "attributes": []}
+                for i in range(offset, offset + 50)
+            ],
+            "total": 100, "hasMore": offset == 0,
+            "nextOffset": 50 if offset == 0 else None,
+        }
+        return MCPToolResult(name, args, {}, "", page)
+
+    async def full_read(*, refresh=False):
+        fallbacks.append(refresh)
+        return [{"id": "stable", "label": "Safe full result", "attributes": []}]
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+    monkeypatch.setattr(client, "get_cached_devices", full_read)
+    devices, metrics = await client.get_audit_devices()
+    assert fallbacks == [True]
+    assert len(devices) == 1 and devices[0]["id"] == "stable"
+    assert metrics["source"] == "full_detailed_fallback"
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_health_audit_serial_pages_when_total_not_reported(monkeypatch):
+    client = HubitatMCPClient("http://hub/mcp", max_concurrent_calls=2)
+    requests = []
+
+    async def list_tools():
+        return [MCPTool("hub_read_devices", "gateway", {"type": "object"})]
+
+    async def call_tool(name, args):
+        offset = args["args"]["offset"]
+        requests.append(offset)
+        return MCPToolResult(name, args, {}, "", {
+            "devices": [{"id": str(offset), "attributes": []}],
+            "hasMore": offset == 0,
+            "nextOffset": 50 if offset == 0 else None,
+        })
+
+    monkeypatch.setattr(client, "list_tools", list_tools)
+    monkeypatch.setattr(client, "call_tool", call_tool)
+    devices, metrics = await client.get_audit_devices()
+    assert [item["id"] for item in devices] == ["0", "50"]
+    assert requests == [0, 50]
+    assert metrics["mode"] == "verified_serial_pages"
+    assert metrics["complete"] is True
+    await client.close()
