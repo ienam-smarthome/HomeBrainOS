@@ -29,7 +29,11 @@ from device_state_summary import (
     room_name,
 )
 from health_audit_scheduler import MorningHealthScheduler
-from health_audit_service import HealthAuditService
+from health_audit_service import (
+    HealthAuditService,
+    is_comprehensive_system_audit_request,
+    run_comprehensive_chat_audit,
+)
 from history_time_windows import (
     parse_history_window_request,
     reset_history_window_request,
@@ -435,6 +439,11 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     try:
+        if is_comprehensive_system_audit_request(request.message):
+            # Reuse the existing full System Check instead of stopping after a
+            # brief performance/log snapshot. This route is read-only, even if
+            # a broad request also asks to "fix" discovered problems.
+            return await run_comprehensive_chat_audit(health_audit, mcp)
         if is_broad_performance_request(request.message):
             outcome = await collect_broad_performance_outcome(agent, request.message)
         else:
