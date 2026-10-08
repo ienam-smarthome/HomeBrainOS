@@ -480,6 +480,83 @@ def _audit_followups(
     return rows[:6]
 
 
+_AUDIT_SOURCE_PREFIX = re.compile(r"\b(?P<kind>app|dev)\|(?P<id>\d+)\|(?P<name>[^|]{2,100})\|")
+
+
+def _fault_first_log_targets(
+    snapshot: dict[str, Any], performance: dict[str, Any] | None
+) -> list[dict[str, str]]:
+    """Choose a bounded set of read-only follow-ups from observed alerts first.
+
+    Keep the existing strongest performance device and app as secondary leads.
+    Do not infer a device ID from a name or invent unsupported MCP tools.
+    """
+    from performance_host_plan import select_adaptive_log_targets
+
+    targets: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def append(kind: str, identifier: str, name: str) -> None:
+        if kind not in {"device", "app"} or not identifier.isdecimal():
+            return
+        key = (kind, identifier)
+        if key not in seen and len(targets) < 4:
+            seen.add(key)
+            targets.append({
+                "kind": kind, "id": identifier, "name": name[:100],
+                "selection": "observed fault" if checking_issues else "performance outlier",
+            })
+
+    checking_issues = True
+    for item in snapshot.get("issues", []) or []:
+        if not isinstance(item, dict) or item.get("severity") not in ("critical", "warning"):
+            continue
+        if _name_only_broken_marker(item):
+            continue
+        content = " ".join(str(item.get(key) or "") for key in ("title", "detail"))
+        for match in _AUDIT_SOURCE_PREFIX.finditer(content):
+            append(
+                "app" if match.group("kind") == "app" else "device",
+                match.group("id"), match.group("name").strip(),
+            )
+        if len(targets) >= 2:
+            break  # reserve slots for independent performance leads
+
+    checking_issues = False
+    for target in select_adaptive_log_targets(performance or {}):
+        append(str(target["kind"]), str(target["id"]), str(target["name"]))
+    return targets[:4]
+
+
+def _bounded_log_window_evidence(
+    rows: list[dict[str, Any]], *, start: datetime, end: datetime
+) -> dict[str, Any]:
+    """Verify returned timestamps, never confuse a successful call with coverage."""
+    parsed = [
+        _core._log_timestamp(row)
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    dated = [ts for ts in parsed if ts is not None]
+    within = [
+        ts for ts in dated if start <= ts <= end
+    ]
+    complete_timestamps = bool(rows) and len(dated) == len(rows)
+    window_supported_by_rows = complete_timestamps and len(within) == len(rows)
+    result: dict[str, Any] = {
+        "entries_checked": len(rows),
+        "rows_with_timestamps": len(dated),
+        "rows_in_requested_window": len(within),
+        "window_supported_by_rows": window_supported_by_rows,
+        "requested_start": start.isoformat(),
+        "requested_end": end.isoformat(),
+    }
+    if dated:
+        result["observed_earliest"] = min(dated).isoformat()
+        result["observed_latest"] = max(dated).isoformat()
+    return result
+
+
 def render_comprehensive_system_audit(
     snapshot: dict[str, Any],
     performance: dict[str, Any] | None,
