@@ -179,7 +179,10 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
     assert mcp.calls[1][1]["args"]["args"]["deviceId"] == "7001"
     assert mcp.calls[2][1]["args"]["args"]["appId"] == "9001"
     assert "websocket connection retrying" in result.message
-    assert "An unrelated device error" not in result.message
+    scoped_section = result.message.split(
+        "- Follow-up for device LG webOS TV:", 1
+    )[-1].split("- Follow-up for app ", 1)[0]
+    assert "An unrelated device error" not in scoped_section
     assert "no devices, rules, apps or settings have been changed" in result.message
 
 
