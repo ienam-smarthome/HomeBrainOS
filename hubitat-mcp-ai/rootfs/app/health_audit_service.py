@@ -1079,6 +1079,20 @@ def render_comprehensive_system_audit(
             f"- Scoped investigation target: {kind} {name} (ID {item.get('id') or '?'})"
             f" — {item.get('selection') or 'performance outlier'}{elapsed}."
         )
+        quality = item.get("time_quality") or {}
+        if quality.get("chronology_withheld_rows"):
+            lines.append(
+                f"  - Timestamp integrity: {quality.get('ambiguous_timezone_rows', 0)} "
+                "timezone-ambiguous, "
+                f"{quality.get('future_timestamp_rows', 0)} apparently future, "
+                f"{quality.get('undated_rows', 0)} undated rows. Chronology withheld "
+                "for those rows; do not infer BST/UTC offsets without source metadata."
+            )
+            if quality.get("raw_examples"):
+                lines.append(
+                    "  - Example unverified source time(s): "
+                    + ", ".join(str(v) for v in quality["raw_examples"]) + "."
+                )
         if item.get("error"):
             lines.append(f"- Follow-up log read for {kind} {name} failed: {item['error']}.")
         elif item.get("groups"):
@@ -1277,7 +1291,10 @@ async def run_comprehensive_chat_audit(
                         if prefix in str(row.get("message") or "")
                         or name.casefold() in str(row.get("message") or "").casefold()
                     ]
-                    findings, _ = _log_findings(rows)
+                    safe_rows, time_quality = _audit_log_time_quality(
+                        rows, checked_at=checked_at,
+                    )
+                    findings, _ = _log_findings(safe_rows)
                     evidence.append({
                         "tool": gateway.name,
                         "sub_tool": "hub_get_logs",
@@ -1299,8 +1316,9 @@ async def run_comprehensive_chat_audit(
                         "matching_rows": len(rows),
                         "elapsed_ms": elapsed_ms,
                         "returned_rows": len(_log_rows(response)),
+                        "time_quality": time_quality,
                         **({
-                            "live_push_evidence": _live_push_log_evidence(rows),
+                            "live_push_evidence": _live_push_log_evidence(safe_rows),
                         } if "sensecap d1" in name.casefold() else {}),
                         "groups": (
                             findings["error_groups"] + findings["warning_groups"]
@@ -1354,8 +1372,12 @@ async def run_comprehensive_chat_audit(
                     if not tool_succeeded(older_result):
                         raise ValueError("historical bounded log request failed")
                     older_rows = _log_rows(older_result)
-                    older_findings, _ = _log_findings(older_rows)
+                    safe_older, history_time_quality = _audit_log_time_quality(
+                        older_rows, checked_at=checked_at,
+                    )
+                    older_findings, _ = _log_findings(safe_older)
                     historical_logs = {
+                        "time_quality": history_time_quality,
                         **_bounded_log_window_evidence(
                             older_rows,
                             start=started_at - timedelta(hours=24),
