@@ -1057,6 +1057,8 @@ class HealthAuditService:
             previous = self.latest()
             issues: list[dict[str, Any]] = []
             sections: dict[str, Any] = {}
+            stage_timings_ms: dict[str, int] = {}
+            stage_started = time.monotonic()
 
             try:
                 mcp_health = await self.mcp.health()
@@ -1065,6 +1067,8 @@ class HealthAuditService:
                     "online": False,
                     "error": f"{type(exc).__name__}: {str(exc)[:300]}",
                 }
+            stage_timings_ms["mcp_health"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
             online = bool(mcp_health.get("online"))
             sections["mcp"] = dict(mcp_health)
             if not online:
@@ -1095,6 +1099,8 @@ class HealthAuditService:
                         )
                     )
             sections["mcp"]["tool_count"] = len(tools)
+            stage_timings_ms["tool_inventory"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
 
             devices: list[dict[str, Any]] = []
             if online:
@@ -1147,6 +1153,8 @@ class HealthAuditService:
             else:
                 sections["devices"] = {"available": False, "reason": "MCP offline"}
 
+            stage_timings_ms["device_inventory"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
             hub = _hub_device_summary(devices)
             sections["hub"] = hub
             update_status = str(hub.get("update_status") or "").casefold()
@@ -1218,6 +1226,8 @@ class HealthAuditService:
                             key="automation-audit",
                         )
                     )
+                stage_timings_ms["automation_inventory"] = round((time.monotonic() - stage_started) * 1000)
+                stage_started = time.monotonic()
                 log_section, log_issues = await self._logs(tool_map)
                 sections["logs"] = log_section
                 issues.extend(log_issues)
@@ -1225,6 +1235,8 @@ class HealthAuditService:
                 sections["automations"] = {"available": False, "reason": "MCP offline"}
                 sections["logs"] = {"available": False, "reason": "MCP offline"}
 
+            stage_timings_ms["log_snapshot"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
             severities = {"critical": 0, "warning": 0, "info": 0}
             for item in issues:
                 severity = str(item.get("severity") or "info")
@@ -1350,7 +1362,9 @@ class HealthAuditService:
                     f"{'s' if attention_count != 1 else ''} need attention{breakdown}."
                 )
 
+            stage_timings_ms["aggregation"] = round((time.monotonic() - stage_started) * 1000)
             result = {
+                "stage_timings_ms": stage_timings_ms,
                 "snapshot_schema_version": _SNAPSHOT_SCHEMA_VERSION,
                 "change_tracking_state": (
                     "compared"
