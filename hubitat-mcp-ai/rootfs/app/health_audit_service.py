@@ -671,6 +671,73 @@ def _bounded_log_window_evidence(
     return result
 
 
+_EXPLICIT_OFFSET = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})$", re.I)
+
+
+def _audit_log_time_quality(
+    rows: list[dict[str, Any]], *, checked_at: str | datetime | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Withhold unverified log chronology; never guess Hubitat's timezone.
+
+    The generic date parser assumes UTC for naive strings. Hubitat log sources
+    can use local wall-clock time, so treating such strings as UTC is unsafe.
+    Explicit offsets and epoch timestamps are eligible, but a timestamp more
+    than 60 seconds beyond the snapshot check is also untrustworthy.
+    The underlying message and severity are never removed.
+    """
+    reference = _core._parse_datetime(checked_at)
+    sanitized: list[dict[str, Any]] = []
+    ambiguous = future = undated = 0
+    examples: list[str] = []
+    for row in rows:
+        copy = dict(row)
+        values = {_core._normalized_key(key): key for key in row}
+        key = next(
+            (values[_core._normalized_key(candidate)]
+             for candidate in _core._TIMESTAMP_KEYS
+             if _core._normalized_key(candidate) in values
+             and row[values[_core._normalized_key(candidate)]] not in (None, "")),
+            None,
+        )
+        if key is None:
+            undated += 1
+        else:
+            raw = row[key]
+            verified_zone = (
+                isinstance(raw, (int, float))
+                or isinstance(raw, datetime) and raw.tzinfo is not None
+                or isinstance(raw, str) and bool(_EXPLICIT_OFFSET.search(raw.strip()))
+            )
+            parsed = _core._parse_datetime(raw) if verified_zone else None
+            if not verified_zone or parsed is None:
+                ambiguous += 1
+                if len(examples) < 2:
+                    examples.append(str(raw)[:60])
+            elif reference is not None and parsed > reference + timedelta(seconds=60):
+                future += 1
+                if len(examples) < 2:
+                    examples.append(str(raw)[:60])
+            else:
+                sanitized.append(copy)
+                continue
+        # Keep the row for severity analysis, but block all its time fields so
+        # _log_findings / _live_push_log_evidence cannot infer event ordering.
+        for candidate in list(copy):
+            if _core._normalized_key(candidate) in {
+                _core._normalized_key(field) for field in _core._TIMESTAMP_KEYS
+            }:
+                copy[candidate] = None
+        sanitized.append(copy)
+    return sanitized, {
+        "rows": len(rows),
+        "undated_rows": undated,
+        "ambiguous_timezone_rows": ambiguous,
+        "future_timestamp_rows": future,
+        "chronology_withheld_rows": undated + ambiguous + future,
+        "raw_examples": examples,
+    }
+
+
 def _scoped_log_pattern_summary(targeted_logs: list[dict[str, Any]] | None) -> dict[str, Any]:
     """Summarise observed warning/error patterns, not inferred outages.
 
