@@ -673,6 +673,12 @@ def _log_level(row: dict[str, Any]) -> str:
         return "error"
     if any(token in explicit for token in ("warn", "warning")):
         return "warning"
+    # An explicitly INFO/DEBUG/TRACE row must never be promoted to an error
+    # because its ordinary explanation contains words such as "failed",
+    # "not triggered", or "timeout". Fall back to text heuristics only
+    # when no recognised severity was supplied.
+    if explicit in {"info", "information", "informational", "debug", "trace", "fine", "verbose"}:
+        return "info"
 
     message = _log_message(row)
     if _ERROR_WORDS.search(message):
@@ -746,6 +752,33 @@ def _log_timestamp(row: dict[str, Any]) -> datetime | None:
     return None
 
 
+def _structured_mcp_entry(message: str) -> str | None:
+    """Extract the complete nested MCP message before raw log truncation.
+
+    The server prefixes its JSON with "app|ID|Name|[MCP1] ". The details
+    may contain long request IDs and metadata, causing a 500-character raw
+    slice to hide the actual error. Parse only valid embedded JSON; don't
+    mistake unrelated braces in ordinary log messages for structured data.
+    """
+    raw = str(message or "")
+    start = raw.find("{")
+    if start < 0 or "[MCP1]" not in raw[:start]:
+        return None
+    try:
+        payload = json.loads(raw[start:])
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    entry = payload.get("entry")
+    if not isinstance(entry, dict):
+        return None
+    detail = entry.get("message")
+    if not detail and isinstance(entry.get("details"), dict):
+        detail = entry["details"].get("error")
+    return " ".join(str(detail).split()) if detail else None
+
+
 def _log_summary(message: str, fingerprint: str) -> str:
     if fingerprint.startswith("mcp rule server|vrb feed missing "):
         summary = fingerprint.split("|", 1)[1]
@@ -754,6 +787,9 @@ def _log_summary(message: str, fingerprint: str) -> str:
         "|shell connection timed out"
     ):
         return "ADB shell connection timed out; the retained TCP shell channel was closed."
+    plain = _structured_mcp_entry(message)
+    if plain:
+        return plain[:500]
     summary = _VOLATILE_LOG_FIELDS.sub(r"\1#", str(message or ""))
     summary = _VOLATILE_LOG_TOKENS.sub("#", summary)
     return " ".join(summary.split())[:500]
@@ -791,7 +827,9 @@ def _log_findings(rows: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict
             key,
             {
                 "level": level,
-                "message": message[:500],
+                "message": (
+                    _structured_mcp_entry(message) or message
+                )[:500],
                 "summary": _log_summary(message, fingerprint),
                 "fingerprint": fingerprint,
                 "source": source,
