@@ -550,9 +550,34 @@ def _fault_first_log_targets(
         })
 
     devices = (snapshot.get("sections") or {}).get("devices") or {}
+    older_devices = ((previous_snapshot or {}).get("sections") or {}).get("devices") or {}
+    previous_offline = {
+        str(row.get("id")): str(row.get("state") or "")
+        for row in older_devices.get("offline") or []
+        if isinstance(row, dict) and row.get("id") not in (None, "")
+    }
+    still_offline: list[dict[str, Any]] = []
     for row in devices.get("offline") or []:
-        if isinstance(row, dict):
-            add("device", row.get("id"), row.get("label"), "explicit offline state")
+        if not isinstance(row, dict):
+            continue
+        identifier = str(row.get("id") or "")
+        if identifier in previous_offline and (
+            previous_offline[identifier] == str(row.get("state") or "")
+        ):
+            still_offline.append(row)
+        else:
+            add(
+                "device", identifier, row.get("label"),
+                "new/changed offline state" if previous_snapshot is not None
+                else "explicit offline state",
+            )
+
+    identity_by_name: dict[str, set[str]] = {}
+    for row in devices.get("inventory_labels") or []:
+        if isinstance(row, dict) and row.get("id") not in (None, "") and row.get("label"):
+            identity_by_name.setdefault(
+                str(row["label"]).strip().casefold(), set()
+            ).add(str(row["id"]))
 
     def add_issue_targets(issues: Any, *, selection: str) -> None:
         for issue in issues if isinstance(issues, list) else []:
@@ -572,24 +597,34 @@ def _fault_first_log_targets(
                     "app" if match.group("kind") == "app" else "device",
                     match.group("id"), match.group("name"), selection,
                 )
+            # A log alert may identify a device only by label (e.g. ADB).
+            # Use ONLY a unique exact ID/name pair from the same live snapshot.
+            title = str(issue.get("title") or "").strip()
+            matching_ids = identity_by_name.get(title.casefold()) or set()
+            if len(matching_ids) == 1:
+                add("device", next(iter(matching_ids)), title, selection)
 
     add_issue_targets(snapshot.get("issues"), selection="observed fault")
     add_issue_targets(
         (previous_snapshot or {}).get("issues"),
         selection="previously observed fault",
     )
-    # A single previous snapshot may not retain an earlier transient D1 alert.
-    # If it is a sampled performance app, one additional bounded read can
-    # check for an explicit successful push without claiming that it recovered.
+    # Do not repeatedly spend the full diagnostic budget on unchanged offline
+    # flags. Sample at most one; the other offline verdicts remain reported.
+    if still_offline and len(targets) < 4:
+        index = 0
+        checked_at = _core._parse_datetime(snapshot.get("checked_at"))
+        if checked_at is not None:
+            index = (int(checked_at.timestamp()) // 60) % len(still_offline)
+        row = still_offline[index]
+        add("device", row.get("id"), row.get("label"), "unchanged offline sample")
+
+
+    # A transient SenseCap error can disappear from the capped main log
+    # sample. When identifiable in performance data, check for recovery.
     for row in (performance or {}).get("appStats", []):
         if isinstance(row, dict) and "sensecap d1" in str(row.get("name") or "").casefold():
-            add(
-                "app", row.get("id"), row.get("name"),
-                "live-push recovery check",
-            )
-            # A performance sample can contain multiple distinct IDs sharing a
-            # display name. Keep investigating by ID within the shared budget;
-            # the first name match is not proof that all other IDs are the same.
+            add("app", row.get("id"), row.get("name"), "live-push recovery check")
 
     performance_targets = select_adaptive_log_targets(performance or {})
     if len(targets) >= 2:
@@ -669,6 +704,73 @@ def _bounded_log_window_evidence(
         result["observed_earliest"] = min(dated).isoformat()
         result["observed_latest"] = max(dated).isoformat()
     return result
+
+
+_EXPLICIT_OFFSET = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})$", re.I)
+
+
+def _audit_log_time_quality(
+    rows: list[dict[str, Any]], *, checked_at: str | datetime | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Withhold unverified log chronology; never guess Hubitat's timezone.
+
+    The generic date parser assumes UTC for naive strings. Hubitat log sources
+    can use local wall-clock time, so treating such strings as UTC is unsafe.
+    Explicit offsets and epoch timestamps are eligible, but a timestamp more
+    than 60 seconds beyond the snapshot check is also untrustworthy.
+    The underlying message and severity are never removed.
+    """
+    reference = _core._parse_datetime(checked_at)
+    sanitized: list[dict[str, Any]] = []
+    ambiguous = future = undated = 0
+    examples: list[str] = []
+    for row in rows:
+        copy = dict(row)
+        values = {_core._normalized_key(key): key for key in row}
+        key = next(
+            (values[_core._normalized_key(candidate)]
+             for candidate in _core._TIMESTAMP_KEYS
+             if _core._normalized_key(candidate) in values
+             and row[values[_core._normalized_key(candidate)]] not in (None, "")),
+            None,
+        )
+        if key is None:
+            undated += 1
+        else:
+            raw = row[key]
+            verified_zone = (
+                isinstance(raw, (int, float))
+                or isinstance(raw, datetime) and raw.tzinfo is not None
+                or isinstance(raw, str) and bool(_EXPLICIT_OFFSET.search(raw.strip()))
+            )
+            parsed = _core._parse_datetime(raw) if verified_zone else None
+            if not verified_zone or parsed is None:
+                ambiguous += 1
+                if len(examples) < 2:
+                    examples.append(str(raw)[:60])
+            elif reference is not None and parsed > reference + timedelta(seconds=60):
+                future += 1
+                if len(examples) < 2:
+                    examples.append(str(raw)[:60])
+            else:
+                sanitized.append(copy)
+                continue
+        # Keep the row for severity analysis, but block all its time fields so
+        # _log_findings / _live_push_log_evidence cannot infer event ordering.
+        for candidate in list(copy):
+            if _core._normalized_key(candidate) in {
+                _core._normalized_key(field) for field in _core._TIMESTAMP_KEYS
+            }:
+                copy[candidate] = None
+        sanitized.append(copy)
+    return sanitized, {
+        "rows": len(rows),
+        "undated_rows": undated,
+        "ambiguous_timezone_rows": ambiguous,
+        "future_timestamp_rows": future,
+        "chronology_withheld_rows": undated + ambiguous + future,
+        "raw_examples": examples,
+    }
 
 
 def _scoped_log_pattern_summary(targeted_logs: list[dict[str, Any]] | None) -> dict[str, Any]:
@@ -1012,6 +1114,20 @@ def render_comprehensive_system_audit(
             f"- Scoped investigation target: {kind} {name} (ID {item.get('id') or '?'})"
             f" — {item.get('selection') or 'performance outlier'}{elapsed}."
         )
+        quality = item.get("time_quality") or {}
+        if quality.get("chronology_withheld_rows"):
+            lines.append(
+                f"  - Timestamp integrity: {quality.get('ambiguous_timezone_rows', 0)} "
+                "timezone-ambiguous, "
+                f"{quality.get('future_timestamp_rows', 0)} apparently future, "
+                f"{quality.get('undated_rows', 0)} undated rows. Chronology withheld "
+                "for those rows; do not infer BST/UTC offsets without source metadata."
+            )
+            if quality.get("raw_examples"):
+                lines.append(
+                    "  - Example unverified source time(s): "
+                    + ", ".join(str(v) for v in quality["raw_examples"]) + "."
+                )
         if item.get("error"):
             lines.append(f"- Follow-up log read for {kind} {name} failed: {item['error']}.")
         elif item.get("groups"):
@@ -1063,6 +1179,21 @@ def render_comprehensive_system_audit(
                 )
         for group in item.get("groups") or []:
             detail = " ".join(str(group.get(field) or "") for field in ("message", "summary"))
+            lower_detail = detail.casefold()
+            if "metering_cluster" in lower_detail and "0x84" in lower_detail:
+                lines.append(
+                    "  - **Zigbee metering:** The device returned code 0x84 for a "
+                    "METERING_CLUSTER command. Its meaning and effect on current "
+                    "meter readings are not established by these logs. Inspect "
+                    "the driver command and independently check recent metering "
+                    "updates before changing the driver or reporting interval."
+                )
+            if "adb shell connection timed out" in lower_detail:
+                lines.append(
+                    "  - **ADB connection:** The retained shell timed out. Verify "
+                    "the streamer's IP reachability and supported ADB reconnect "
+                    "state using read-only information before changing settings."
+                )
             if "attributeNames" in detail and (
                 "format='summary'" in detail or "format 'summary'" in detail
             ):
@@ -1210,7 +1341,10 @@ async def run_comprehensive_chat_audit(
                         if prefix in str(row.get("message") or "")
                         or name.casefold() in str(row.get("message") or "").casefold()
                     ]
-                    findings, _ = _log_findings(rows)
+                    safe_rows, time_quality = _audit_log_time_quality(
+                        rows, checked_at=checked_at,
+                    )
+                    findings, _ = _log_findings(safe_rows)
                     evidence.append({
                         "tool": gateway.name,
                         "sub_tool": "hub_get_logs",
@@ -1232,8 +1366,9 @@ async def run_comprehensive_chat_audit(
                         "matching_rows": len(rows),
                         "elapsed_ms": elapsed_ms,
                         "returned_rows": len(_log_rows(response)),
+                        "time_quality": time_quality,
                         **({
-                            "live_push_evidence": _live_push_log_evidence(rows),
+                            "live_push_evidence": _live_push_log_evidence(safe_rows),
                         } if "sensecap d1" in name.casefold() else {}),
                         "groups": (
                             findings["error_groups"] + findings["warning_groups"]
@@ -1287,8 +1422,12 @@ async def run_comprehensive_chat_audit(
                     if not tool_succeeded(older_result):
                         raise ValueError("historical bounded log request failed")
                     older_rows = _log_rows(older_result)
-                    older_findings, _ = _log_findings(older_rows)
+                    safe_older, history_time_quality = _audit_log_time_quality(
+                        older_rows, checked_at=checked_at,
+                    )
+                    older_findings, _ = _log_findings(safe_older)
                     historical_logs = {
+                        "time_quality": history_time_quality,
                         **_bounded_log_window_evidence(
                             older_rows,
                             start=started_at - timedelta(hours=24),

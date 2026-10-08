@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.119**.
+Current add-on version: **0.16.120**.
 
 ## Architecture
+
+0.16.120 adds conservative log time-integrity checks: timezone-less and apparent future-dated log entries cannot establish UTC incident chronology or SenseCap recovery. Sources whose timezone metadata is absent remain unverified rather than receiving an assumed one-hour BST correction. Comprehensive audits now preserve exact device label/ID pairs for unambiguous ADB incident targeting and prioritise fresh observed failures over repeatedly querying unchanged offline status. They also provide bounded Zigbee metering and ADB follow-up guidance without inferring root causes. All diagnostic reads remain non-mutating.
+
 
 0.16.119 consolidates additional scoped WARN/ERROR patterns separately from the main health-alert count, with occurrence counts, available timestamp ranges, and no inference that each row is a distinct outage. It corrects the active v3 offline-device classification (rather than its overridden frozen-core variant) to retain actual source attribute, battery and last activity when supplied. SenseCap D1 follow-ups distinguish live-push and config-push failures without claiming a common cause or recovery, and scoped log receipts show wall-clock latency. After three or more scoped log reads, the redundant unsupported historical extra request is skipped with an explicit coverage disclaimer. The audit remains read-only.
 

@@ -17,6 +17,8 @@ from health_audit_service import (  # noqa: E402
     _fault_first_log_targets,
     _live_push_log_evidence,
     _scoped_log_pattern_summary,
+    _audit_log_time_quality,
+    _log_findings,
     _device_findings,
     _bounded_log_window_evidence,
 )
@@ -765,3 +767,132 @@ def test_busy_audit_skips_redundant_older_log_request_without_coverage_claim() -
     assert not any(r.get("evidence_kind") == "chat_audit_historical_logs"
                    for r in result.evidence)
     assert all(r.get("mutates") is False for r in result.evidence)
+
+
+
+def test_timezone_naive_and_future_log_times_never_assert_utc_chronology() -> None:
+    from frozen_core import health_audit_service_core as core
+    rows = [
+        {"timestamp": "2026-10-08 15:00:58", "level": "WARN",
+         "message": "app|4129|SenseCap D1 Settings|live push failed"},
+        {"timestamp": "2026-10-08T15:00:58+00:00", "level": "WARN",
+         "message": "app|4129|SenseCap D1 Settings|live push failed"},
+        {"timestamp": "2026-10-08T13:59:00Z", "level": "WARN",
+         "message": "app|4129|SenseCap D1 Settings|live push failed"},
+        {"level": "INFO", "message": "app|4129|SenseCap D1 Settings|no date"},
+    ]
+    safe, quality = _audit_log_time_quality(
+        rows, checked_at="2026-10-08T14:02:08Z",
+    )
+    assert quality["ambiguous_timezone_rows"] == 1
+    assert quality["future_timestamp_rows"] == 1
+    assert quality["undated_rows"] == 1
+    assert quality["chronology_withheld_rows"] == 3
+    assert core._log_timestamp(safe[0]) is None
+    assert core._log_timestamp(safe[1]) is None
+    assert core._log_timestamp(safe[2]).isoformat() == "2026-10-08T13:59:00+00:00"
+    assert core._log_timestamp(rows[0]) is None
+    assert rows[0]["timestamp"] == "2026-10-08 15:00:58"
+    findings, _ = _log_findings(safe)
+    assert findings["warning_groups"][0]["last_seen"] == "2026-10-08T13:59:00+00:00"
+
+
+def test_future_logged_success_does_not_invent_sensecap_recovery() -> None:
+    rows = [
+        {"timestamp": "2026-10-08T13:53:00+00:00", "level": "WARN",
+         "message": "app|4129|SenseCap D1 Settings|live push failed (HTTP 408)"},
+        {"timestamp": "2026-10-08T15:02:00+00:00", "level": "INFO",
+         "message": "app|4129|SenseCap D1 Settings|live push succeeded"},
+    ]
+    safe, quality = _audit_log_time_quality(rows, checked_at="2026-10-08T14:02:08Z")
+    assert quality["future_timestamp_rows"] == 1
+    evidence = _live_push_log_evidence(safe)
+    assert evidence["success_rows"] == 1
+    assert evidence["later_success_observed"] is False
+    assert evidence["latest_success"] is None
+
+
+def test_no_automatic_bst_offset_is_applied_to_naive_source_times() -> None:
+    rows = [{"date": "2026-10-08 15:01:00",
+             "message": "app|4129|SenseCap D1 Settings|live push failed",
+             "level": "WARN"}]
+    safe, details = _audit_log_time_quality(
+        rows, checked_at="2026-10-08T14:02:08+00:00"
+    )
+    assert details["ambiguous_timezone_rows"] == 1
+    assert safe[0]["date"] is None
+    assert details["raw_examples"] == ["2026-10-08 15:01:00"]
+
+
+def test_unchanged_offline_devices_yield_to_new_adb_and_metering_alerts() -> None:
+    snapshot = _snapshot()
+    snapshot["sections"]["devices"]["offline"] = [
+        {"id": "4718", "label": "Livingroom TRV", "state": "offline"},
+        {"id": "3483", "label": "Tuya Remote (bedroom 3)", "state": "offline"},
+    ]
+    snapshot["sections"]["devices"]["inventory_labels"] = [
+        {"id": "5300", "label": "Google TV Streamer (ADB)"},
+        {"id": "5313", "label": "Dehumidifier 1"},
+    ]
+    snapshot["issues"].extend([
+        {"severity": "warning", "title": "Dehumidifier 1",
+         "detail": "dev|5313|Dehumidifier 1|zigbee METERING_CLUSTER command 0x00 error: 0x84"},
+        {"severity": "warning", "title": "Google TV Streamer (ADB)",
+         "detail": "ADB shell connection timed out"},
+        {"severity": "warning", "title": "SenseCap D1 Settings",
+         "detail": "app|4129|SenseCap D1 Settings|config push failed"},
+    ])
+    previous = {"sections": {"devices": {"offline": [
+        {"id": "4718", "state": "offline"},
+        {"id": "3483", "state": "offline"},
+    ]}}}
+    targets = _fault_first_log_targets(snapshot, _performance(), previous_snapshot=previous)
+    identifiers = [t["id"] for t in targets]
+    assert identifiers[:3] == ["5313", "5300", "4129"]
+    assert len(targets) == 4
+    assert len(set(identifiers).intersection({"4718", "3483"})) == 1
+    assert targets[-1]["selection"] == "unchanged offline sample"
+
+
+def test_ambiguous_name_mapping_never_guesses_device_id() -> None:
+    snapshot = _snapshot()
+    snapshot["sections"]["devices"]["inventory_labels"] = [
+        {"id": "8101", "label": "Google TV Streamer (ADB)"},
+        {"id": "8102", "label": "Google TV Streamer (ADB)"},
+    ]
+    snapshot["issues"].append({
+        "severity": "warning", "title": "Google TV Streamer (ADB)",
+        "detail": "ADB shell connection timed out",
+    })
+    assert _fault_first_log_targets(snapshot, None) == []
+
+
+def test_scoped_footnote_flags_unverified_timestamp_rows() -> None:
+    report = render_comprehensive_system_audit(
+        _snapshot(), _performance(), targeted_logs=[{
+            "kind": "app", "id": "4129", "name": "SenseCap D1 Settings",
+            "selection": "observed fault",
+            "groups": [{"level": "warning", "count": 3, "summary": "Timed out"}],
+            "time_quality": {
+                "ambiguous_timezone_rows": 1, "future_timestamp_rows": 2,
+                "undated_rows": 0, "chronology_withheld_rows": 3,
+                "raw_examples": ["2026-10-08T15:00:00+00:00"],
+            },
+        }],
+    )
+    assert "Timestamp integrity: 1 timezone-ambiguous, 2 apparently future" in report
+    assert "Example unverified source time(s)" in report
+    assert "do not infer BST/UTC offsets" in report
+
+
+def test_dehumidifier_command_response_is_not_diagnosed_as_failed_meter_reading() -> None:
+    report = render_comprehensive_system_audit(
+        _snapshot(), _performance(), targeted_logs=[{
+            "kind": "device", "id": "5313", "name": "Dehumidifier 1",
+            "groups": [{
+                "level": "warning", "count": 3,
+                "message": "dev|5313|Dehumidifier 1|zigbee METERING_CLUSTER command 0x00 error: 0x84",
+            }],
+        }],
+    )
+    assert "effect on current meter readings are not established" in report

@@ -761,6 +761,13 @@ def _log_timestamp(row: dict[str, Any]) -> datetime | None:
     values = {_normalized_key(key): value for key, value in row.items()}
     for key in _TIMESTAMP_KEYS:
         value = values.get(_normalized_key(key))
+        # Hubitat raw logs can use local wall-clock timestamps. Assuming UTC
+        # for a string without an explicit timezone would fabricate ordering.
+        # Keep such log rows but do not claim a UTC event time.
+        if isinstance(value, str) and not re.search(
+            r"(?:Z|[+-]\d{2}:?\d{2})$", value.strip(), re.I
+        ):
+            continue
         parsed = _parse_datetime(value)
         if parsed is not None:
             return parsed
@@ -1112,6 +1119,15 @@ class HealthAuditService:
                         if item.get("id") not in (None, "")
                         or item.get("deviceId") not in (None, "")
                     })
+                    # Exact ID/name pairs allow the read-only chat audit to
+                    # resolve source-labelled ADB faults without guessing IDs.
+                    device_section["inventory_labels"] = [
+                        {"id": _device_id(item), "label": _label(item)}
+                        for item in devices if (
+                            item.get("id") not in (None, "")
+                            or item.get("deviceId") not in (None, "")
+                        )
+                    ]
                     sections["devices"] = device_section
                     issues.extend(device_issues)
                 except Exception as exc:
