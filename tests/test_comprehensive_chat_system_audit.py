@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
@@ -13,6 +14,8 @@ from health_audit_service import (  # noqa: E402
     render_comprehensive_system_audit,
     run_comprehensive_chat_audit,
     _concise_log_message,
+    _fault_first_log_targets,
+    _bounded_log_window_evidence,
 )
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 
@@ -419,3 +422,123 @@ def test_incomplete_live_context_never_claims_device_absence() -> None:
         r.get("evidence_kind") == "chat_audit_inventory_crosscheck" and r["success"]
         for r in result.evidence
     )
+
+
+
+def test_fault_first_prioritises_live_push_error_over_performance_only() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"].append({
+        "severity": "warning",
+        "title": "SenseCap D1 Settings",
+        "detail": (
+            "app|4129|SenseCap D1 Settings|SenseCap D1 live push failed "
+            "(HTTP 408). Live updates are suspended; retry with backoff."
+        ),
+    })
+    targets = _fault_first_log_targets(snapshot, _performance())
+    assert [(t["kind"], t["id"]) for t in targets] == [
+        ("app", "4129"), ("device", "7001"), ("app", "9001"),
+    ]
+    assert targets[0]["selection"] == "observed fault"
+    assert all(t["id"].isdecimal() for t in targets)
+
+
+def test_fault_first_deduplicates_and_skips_name_only_automations() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"].extend([
+        {
+            "severity": "warning",
+            "title": "Automation broken: Test",
+            "detail": "Hubitat marked the automation name *BROKEN*. app|9000|Fake Rule|",
+        },
+        {
+            "severity": "warning",
+            "title": "A failure",
+            "detail": "app|9001|SenseCap D1 Settings|failed HTTP 408",
+        },
+    ])
+    targets = _fault_first_log_targets(snapshot, _performance())
+    assert [t["id"] for t in targets] == ["9001", "7001"]
+    assert "9000" not in [t["id"] for t in targets]
+
+
+def test_fault_followup_executes_even_if_performance_stats_unavailable() -> None:
+    class D1Audit:
+        async def run(self, *, reason):
+            snapshot = _snapshot()
+            snapshot["sections"]["logs"]["entries_checked"] = 2
+            snapshot["issues"].append({
+                "severity": "warning",
+                "title": "SenseCap D1 Settings",
+                "detail": "app|4129|SenseCap D1 Settings|HTTP 408 live push failed",
+            })
+            return snapshot
+
+    mcp = _FakeMCP(performance_ok=False)
+    result = asyncio.run(run_comprehensive_chat_audit(D1Audit(), mcp))
+    assert len(mcp.calls) == 2
+    assert mcp.calls[-1][1]["args"]["args"]["appId"] == "4129"
+    assert "Scoped investigation target: app SenseCap D1 Settings (ID 4129)" in result.message
+    assert "SenseCap D1 live push" in result.message
+    assert all(e["mutates"] is False for e in result.evidence)
+
+
+def test_history_zero_rows_cannot_verify_time_window() -> None:
+    start = datetime(2026, 10, 7, 13, tzinfo=timezone.utc)
+    end = datetime(2026, 10, 8, 7, tzinfo=timezone.utc)
+    verdict = _bounded_log_window_evidence([], start=start, end=end)
+    assert verdict["entries_checked"] == 0
+    assert verdict["window_supported_by_rows"] is False
+    snapshot = _snapshot()
+    report = render_comprehensive_system_audit(
+        snapshot, _performance(), historical_logs=verdict
+    )
+    assert "Historical window unverified" in report
+    assert "server retention or support for the requested time filters" in report
+
+
+def test_historical_timestamps_validate_membership_not_completeness() -> None:
+    start = datetime(2026, 10, 7, 13, tzinfo=timezone.utc)
+    end = datetime(2026, 10, 8, 7, tzinfo=timezone.utc)
+    inside = {"timestamp": "2026-10-07T15:00:00Z", "level": "ERROR", "message": "failure"}
+    outside = {"timestamp": "2026-10-08T08:00:00Z", "level": "ERROR", "message": "failure"}
+    valid = _bounded_log_window_evidence([inside], start=start, end=end)
+    assert valid["window_supported_by_rows"] is True
+    assert valid["observed_earliest"] == "2026-10-07T15:00:00+00:00"
+    mixed = _bounded_log_window_evidence([inside, outside], start=start, end=end)
+    assert mixed["window_supported_by_rows"] is False
+    assert mixed["rows_in_requested_window"] == 1
+    assert _bounded_log_window_evidence(
+        [inside, {"level": "ERROR", "message": "undated"}], start=start, end=end
+    )["window_supported_by_rows"] is False
+
+
+def test_validation_error_lists_known_tool_but_not_unknown_requester() -> None:
+    snapshot = _snapshot()
+    group = {
+        "level": "error", "count": 1,
+        "message": (
+            "Validation error in hub_list_devices: attributeNames applies only "
+            "to format='context' (got format='summary')"
+        ),
+    }
+    rendered = render_comprehensive_system_audit(
+        snapshot, _performance(), targeted_logs=[{
+            "kind": "app", "id": "4151", "name": "MCP Rule Server",
+            "selection": "observed fault", "matching_rows": 1, "groups": [group],
+        }]
+    )
+    assert "MCP device-list validation" in rendered
+    assert "original requesting caller" in rendered
+    assert "correct the caller's projection" in rendered
+
+
+def test_unmatched_performance_devices_display_ids() -> None:
+    snapshot = _snapshot()
+    snapshot["sections"]["devices"]["inventory_ids"] = ["1001"]
+    report = render_comprehensive_system_audit(
+        snapshot, _performance(),
+        context_reconciliation={"complete": True, "found": [], "absent": ["LG webOS TV"]},
+    )
+    assert "LG webOS TV (ID 7001)" in report
+    assert "remain hypotheses" in report
