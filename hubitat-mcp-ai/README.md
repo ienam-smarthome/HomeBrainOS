@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.118**.
+Current add-on version: **0.16.119**.
 
 ## Architecture
+
+0.16.119 consolidates additional scoped WARN/ERROR patterns separately from the main health-alert count, with occurrence counts, available timestamp ranges, and no inference that each row is a distinct outage. It corrects the active v3 offline-device classification (rather than its overridden frozen-core variant) to retain actual source attribute, battery and last activity when supplied. SenseCap D1 follow-ups distinguish live-push and config-push failures without claiming a common cause or recovery, and scoped log receipts show wall-clock latency. After three or more scoped log reads, the redundant unsupported historical extra request is skipped with an explicit coverage disclaimer. The audit remains read-only.
+
 
 0.16.118 follows up explicit offline devices by their structured inventory IDs, shows the actual offline-status attribute, battery and last-activity evidence when supplied, and makes bounded device-scoped log requests before performance-only leads. It also retains prior SenseCap D1 HTTP 408 warnings as follow-up candidates and distinguishes explicit timestamped successful live-push records from mere absence of errors. The historical log evidence receipts now separately describe tool success and whether any returned records substantiate the requested window; zero rows cannot confirm coverage. The audit remains strictly read-only and neither identifies untraced third-party callers nor executes repairs.
 
