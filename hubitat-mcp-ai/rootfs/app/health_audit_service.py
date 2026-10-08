@@ -442,6 +442,16 @@ def _audit_followups(
         for row in quiet if isinstance(row, dict)
     }
     rows: list[str] = []
+    if "sensecap d1" in text and (
+        "http 408" in text or "live push failed" in text
+        or "live updates are suspended" in text
+    ):
+        rows.append(
+            "- **SenseCap D1 live push:** The reported HTTP timeout suspended "
+            "live updates pending automatic backoff/retry. Check current reachability "
+            "and a later successful push before calling this recovered; do not "
+            "assume the retry has succeeded."
+        )
     if "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
         rows.append(
             "- **SenseCap D1:** Verify its current IP/reachability and configuration "
@@ -478,6 +488,83 @@ def _audit_followups(
             "state, device references and execution errors before editing it."
         )
     return rows[:6]
+
+
+_AUDIT_SOURCE_PREFIX = re.compile(r"\b(?P<kind>app|dev)\|(?P<id>\d+)\|(?P<name>[^|]{2,100})\|")
+
+
+def _fault_first_log_targets(
+    snapshot: dict[str, Any], performance: dict[str, Any] | None
+) -> list[dict[str, str]]:
+    """Choose a bounded set of read-only follow-ups from observed alerts first.
+
+    Keep the existing strongest performance device and app as secondary leads.
+    Do not infer a device ID from a name or invent unsupported MCP tools.
+    """
+    from performance_host_plan import select_adaptive_log_targets
+
+    targets: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def append(kind: str, identifier: str, name: str) -> None:
+        if kind not in {"device", "app"} or not identifier.isdecimal():
+            return
+        key = (kind, identifier)
+        if key not in seen and len(targets) < 4:
+            seen.add(key)
+            targets.append({
+                "kind": kind, "id": identifier, "name": name[:100],
+                "selection": "observed fault" if checking_issues else "performance outlier",
+            })
+
+    checking_issues = True
+    for item in snapshot.get("issues", []) or []:
+        if not isinstance(item, dict) or item.get("severity") not in ("critical", "warning"):
+            continue
+        if _name_only_broken_marker(item):
+            continue
+        content = " ".join(str(item.get(key) or "") for key in ("title", "detail"))
+        for match in _AUDIT_SOURCE_PREFIX.finditer(content):
+            append(
+                "app" if match.group("kind") == "app" else "device",
+                match.group("id"), match.group("name").strip(),
+            )
+        if len(targets) >= 2:
+            break  # reserve slots for independent performance leads
+
+    checking_issues = False
+    for target in select_adaptive_log_targets(performance or {}):
+        append(str(target["kind"]), str(target["id"]), str(target["name"]))
+    return targets[:4]
+
+
+def _bounded_log_window_evidence(
+    rows: list[dict[str, Any]], *, start: datetime, end: datetime
+) -> dict[str, Any]:
+    """Verify returned timestamps, never confuse a successful call with coverage."""
+    parsed = [
+        _core._log_timestamp(row)
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    dated = [ts for ts in parsed if ts is not None]
+    within = [
+        ts for ts in dated if start <= ts <= end
+    ]
+    complete_timestamps = bool(rows) and len(dated) == len(rows)
+    window_supported_by_rows = complete_timestamps and len(within) == len(rows)
+    result: dict[str, Any] = {
+        "entries_checked": len(rows),
+        "rows_with_timestamps": len(dated),
+        "rows_in_requested_window": len(within),
+        "window_supported_by_rows": window_supported_by_rows,
+        "requested_start": start.isoformat(),
+        "requested_end": end.isoformat(),
+    }
+    if dated:
+        result["observed_earliest"] = min(dated).isoformat()
+        result["observed_latest"] = max(dated).isoformat()
+    return result
 
 
 def render_comprehensive_system_audit(
@@ -603,7 +690,8 @@ def render_comprehensive_system_audit(
             )
             if unlisted:
                 example = ", ".join(
-                    str(row.get("name") or row["id"]) for row in unlisted[:4]
+                    f"{row.get('name') or 'Unknown'} (ID {row['id']})"
+                    for row in unlisted[:4]
                 )
                 lines.append(
                     f"- Performance IDs outside this MCP inventory sample: {example}. "
@@ -624,7 +712,8 @@ def render_comprehensive_system_audit(
                         if absent:
                             lines.append(
                                 "- IDs still unexplained after live-context cross-check: "
-                                + ", ".join(absent) + "."
+                                + ", ".join(absent) + ". Historical performance "
+                                "entries or different visibility remain hypotheses."
                             )
                     else:
                         lines.append(
@@ -685,6 +774,25 @@ def render_comprehensive_system_audit(
                 f"- {count} returned rows in a separate older-log window "
                 "(maximum 200). This does not certify complete historical coverage."
             )
+            if not historical_logs.get("window_supported_by_rows"):
+                lines.append(
+                    "- **Historical window unverified:** the response contained "
+                    "no rows, missing row timestamps or timestamps outside the "
+                    "requested boundaries. A successful request does not confirm "
+                    "server retention or support for the requested time filters."
+                )
+            else:
+                lines.append(
+                    "- Returned timestamps fall within the requested historical "
+                    "window, but this does not establish that every event was returned."
+                )
+            if historical_logs.get("observed_earliest"):
+                lines.append(
+                    "- Observed timestamps: "
+                    f"{historical_logs['observed_earliest']} to "
+                    f"{historical_logs['observed_latest']} "
+                    f"({historical_logs.get('rows_with_timestamps', 0)} dated rows)."
+                )
             if count >= 200:
                 lines.append(
                     "- Older-window sample also saturated: some historical "
@@ -700,6 +808,10 @@ def render_comprehensive_system_audit(
     for item in targeted_logs or []:
         kind = item.get("kind") or "target"
         name = item.get("name") or item.get("id") or "unknown"
+        lines.append(
+            f"- Scoped investigation target: {kind} {name} (ID {item.get('id') or '?'})"
+            f" — {item.get('selection') or 'performance outlier'}."
+        )
         if item.get("error"):
             lines.append(f"- Follow-up log read for {kind} {name} failed: {item['error']}.")
         elif item.get("groups"):
@@ -718,6 +830,19 @@ def render_comprehensive_system_audit(
                 f"- Follow-up for {kind} {name}: no matching warnings/errors "
                 "in the returned 6h sample (not proof of no earlier issues)."
             )
+        for group in item.get("groups") or []:
+            detail = " ".join(str(group.get(field) or "") for field in ("message", "summary"))
+            if "attributeNames" in detail and (
+                "format='summary'" in detail or "format 'summary'" in detail
+            ):
+                lines.append(
+                    "  - **MCP device-list validation:** The observed request combines "
+                    "attributeNames with format='summary', which the MCP gateway rejects. "
+                    "The log identifies hub_list_devices but does not identify the "
+                    "original requesting caller. Inspect server request tracing and "
+                    "correct the caller's projection; no Hubitat change was made."
+                )
+                break
 
     lines.extend(("", "### Evidence-based next checks"))
     lines.extend(_audit_followups(snapshot, performance) or [
@@ -742,8 +867,6 @@ async def run_comprehensive_chat_audit(
     """Reuse the full System Check, then inspect performance outliers safely."""
     from automation_status_service import AutomationStatusOutcome
     from mcp_client import tool_succeeded
-    from performance_host_plan import select_adaptive_log_targets
-
     snapshot = await audit.run(reason="chat")
     evidence: list[dict[str, Any]] = []
     checked_at = snapshot.get("checked_at")
@@ -823,65 +946,65 @@ async def run_comprehensive_chat_audit(
                 ),
             })
 
-            if stats is not None:
-                for target in select_adaptive_log_targets(stats)[:2]:
-                    kind = target["kind"]
-                    identifier = target["id"]
-                    name = target["name"]
-                    scope = "deviceId" if kind == "device" else "appId"
-                    args = _gateway_arguments(
-                        gateway,
-                        "hub_get_logs",
-                        {scope: identifier, "since": "6h", "limit": 120},
-                    )
-                    try:
-                        response = await mcp.call_tool(gateway.name, args)
-                        if not tool_succeeded(response):
-                            raise ValueError("filtered log read failed")
-                        prefix = ("dev|" if kind == "device" else "app|") + identifier + "|"
-                        rows = [
-                            row for row in _log_rows(response)
-                            if prefix in str(row.get("message") or "")
-                            or name.casefold() in str(row.get("message") or "").casefold()
-                        ]
-                        findings, _ = _log_findings(rows)
-                        evidence.append({
-                            "tool": gateway.name,
-                            "sub_tool": "hub_get_logs",
-                            "arguments": args,
-                            "timestamp": checked_at,
-                            "success": True,
-                            "supports_live_claim": True,
-                            "evidence_kind": "chat_audit_scoped_logs",
-                            "mutates": False,
-                            "effect": "read",
-                            "summary": (
-                                f"{kind} {name} (ID {identifier}): "
-                                f"{len(rows)} matched rows in a bounded 6h log request"
-                            ),
-                        })
-                        targeted_logs.append({
-                            **target,
-                            "matching_rows": len(rows),
-                            "groups": (
-                                findings["error_groups"] + findings["warning_groups"]
-                            )[:3],
-                        })
-                    except Exception as exc:
-                        error = f"{type(exc).__name__}: {str(exc)[:120]}"
-                        evidence.append({
-                            "tool": gateway.name,
-                            "sub_tool": "hub_get_logs",
-                            "arguments": args,
-                            "timestamp": checked_at,
-                            "success": False,
-                            "supports_live_claim": False,
-                            "evidence_kind": "chat_audit_scoped_logs",
-                            "mutates": False,
-                            "effect": "read",
-                            "summary": f"{kind} {name} scoped logs failed: {error}",
-                        })
-                        targeted_logs.append({**target, "error": error})
+            for target in _fault_first_log_targets(snapshot, stats):
+                kind = target["kind"]
+                identifier = target["id"]
+                name = target["name"]
+                scope = "deviceId" if kind == "device" else "appId"
+                args = _gateway_arguments(
+                    gateway,
+                    "hub_get_logs",
+                    {scope: identifier, "since": "6h", "limit": 120},
+                )
+                try:
+                    response = await mcp.call_tool(gateway.name, args)
+                    if not tool_succeeded(response):
+                        raise ValueError("filtered log read failed")
+                    prefix = ("dev|" if kind == "device" else "app|") + identifier + "|"
+                    rows = [
+                        row for row in _log_rows(response)
+                        if prefix in str(row.get("message") or "")
+                        or name.casefold() in str(row.get("message") or "").casefold()
+                    ]
+                    findings, _ = _log_findings(rows)
+                    evidence.append({
+                        "tool": gateway.name,
+                        "sub_tool": "hub_get_logs",
+                        "arguments": args,
+                        "timestamp": checked_at,
+                        "success": True,
+                        "supports_live_claim": True,
+                        "evidence_kind": "chat_audit_scoped_logs",
+                        "mutates": False,
+                        "effect": "read",
+                        "summary": (
+                            f"{kind} {name} (ID {identifier}): "
+                            f"{len(rows)} matched rows in a bounded 6h log request"
+                        ),
+                    })
+                    targeted_logs.append({
+                        **target,
+                        "matching_rows": len(rows),
+                        "returned_rows": len(_log_rows(response)),
+                        "groups": (
+                            findings["error_groups"] + findings["warning_groups"]
+                        )[:3],
+                    })
+                except Exception as exc:
+                    error = f"{type(exc).__name__}: {str(exc)[:120]}"
+                    evidence.append({
+                        "tool": gateway.name,
+                        "sub_tool": "hub_get_logs",
+                        "arguments": args,
+                        "timestamp": checked_at,
+                        "success": False,
+                        "supports_live_claim": False,
+                        "evidence_kind": "chat_audit_scoped_logs",
+                        "mutates": False,
+                        "effect": "read",
+                        "summary": f"{kind} {name} scoped logs failed: {error}",
+                    })
+                    targeted_logs.append({**target, "error": error})
             # A saturated 24h sample can be all recent INFO rows. Fetch one
             # explicitly older, bounded, disjoint segment using the existing
             # supported since/until window contract (not a guessed severity
@@ -905,7 +1028,11 @@ async def run_comprehensive_chat_audit(
                     older_rows = _log_rows(older_result)
                     older_findings, _ = _log_findings(older_rows)
                     historical_logs = {
-                        "entries_checked": len(older_rows),
+                        **_bounded_log_window_evidence(
+                            older_rows,
+                            start=started_at - timedelta(hours=24),
+                            end=started_at - timedelta(hours=6),
+                        ),
                         "groups": (
                             older_findings["error_groups"] +
                             older_findings["warning_groups"]

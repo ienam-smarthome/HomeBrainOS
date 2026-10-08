@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.116**.
+Current add-on version: **0.16.117**.
 
 ## Architecture
+
+0.16.117 investigates health-audit-confirmed log faults ahead of generic performance outliers (up to four bounded, deduplicated scoped reads), even when performance statistics are unavailable. It verifies returned historical-log timestamp boundaries rather than treating a successful empty response as proof of historical coverage, adds explicit SenseCap D1 live-push recovery checks, captures MCP device-list schema-validation evidence without inventing the requesting caller, and labels unmatched performance-device IDs. No automatic writes or AI synthesis are included.
+
 
 0.16.116 prevents INFO/DEBUG/TRACE automation messages from becoming false log-error alerts, extracts full MCP Rule Server entry messages before truncation, separates independent alert signals from unverified *BROKEN* name markers in audit headlines, adds a single bounded older-log sample when 24h logs hit the 200-row limit, and cross-checks unmatched performance-device IDs against complete live-context inventory when available. All audit activity stays read-only and no Gemma reasoning or unattended repair is added.
 
