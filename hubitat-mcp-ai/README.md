@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.113**.
+Current add-on version: **0.16.114**.
 
 ## Architecture
+
+0.16.114 routes broad chat requests for hub logs, device/app statistics and issues through the existing read-only System Check (device health, automations and grouped log warnings), then adds bounded performance leaders and targeted log follow-ups. Quiet event-driven devices are shown as observations, not automatically declared offline. No changes to Hubitat devices, apps or rules are performed by this report.
+
 
 0.16.113 canonicalises model-authored temporal-history interval tables whenever deterministic `observedIntervals` are available on an otherwise safe duration answer. The first On/Off/Duration table is replaced with HomeBrain's exact 24-hour clock and `sec`/`min` rendering, preventing model rounding such as `170s -> 3m` while preserving surrounding prose and unrelated Markdown tables.
 
