@@ -1112,6 +1112,15 @@ class HealthAuditService:
                         if item.get("id") not in (None, "")
                         or item.get("deviceId") not in (None, "")
                     })
+                    # Exact ID/name pairs allow the read-only chat audit to
+                    # resolve source-labelled ADB faults without guessing IDs.
+                    device_section["inventory_labels"] = [
+                        {"id": _device_id(item), "label": _label(item)}
+                        for item in devices if (
+                            item.get("id") not in (None, "")
+                            or item.get("deviceId") not in (None, "")
+                        )
+                    ]
                     sections["devices"] = device_section
                     issues.extend(device_issues)
                 except Exception as exc:
