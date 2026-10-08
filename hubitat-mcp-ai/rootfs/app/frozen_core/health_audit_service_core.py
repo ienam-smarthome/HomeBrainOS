@@ -1121,9 +1121,24 @@ class HealthAuditService:
             stage_started = time.monotonic()
 
             devices: list[dict[str, Any]] = []
+            device_read_metrics: dict[str, Any] = {}
             if online:
                 try:
-                    devices = list(await self.mcp.get_cached_devices(refresh=True))
+                    read_started = time.monotonic()
+                    audit_reader = getattr(self.mcp, "get_audit_devices", None)
+                    if callable(audit_reader):
+                        devices, device_read_metrics = await audit_reader()
+                        devices = list(devices)
+                    else:
+                        devices = list(await self.mcp.get_cached_devices(refresh=True))
+                        device_read_metrics = {
+                            "source": "legacy_refreshed_manifest",
+                            "complete": False,
+                        }
+                    stage_timings_ms["device_acquisition"] = round(
+                        (time.monotonic() - read_started) * 1000
+                    )
+                    classify_started = time.monotonic()
                     device_section, device_issues = _device_findings(
                         devices,
                         low_battery_threshold=self.low_battery_threshold,
@@ -1152,6 +1167,10 @@ class HealthAuditService:
                             or item.get("deviceId") not in (None, "")
                         )
                     ]
+                    device_section["read_provenance"] = device_read_metrics
+                    stage_timings_ms["device_classification"] = round(
+                        (time.monotonic() - classify_started) * 1000
+                    )
                     sections["devices"] = device_section
                     issues.extend(device_issues)
                 except Exception as exc:

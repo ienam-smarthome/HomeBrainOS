@@ -899,6 +899,8 @@ def render_comprehensive_system_audit(
             ("mcp_health", "MCP health"),
             ("tool_inventory", "MCP tool discovery"),
             ("device_inventory", "Device inventory and classification"),
+            ("device_acquisition", "Fresh device data acquisition (MCP, waits and decode)"),
+            ("device_classification", "Local device classification and identity indexes"),
             ("automation_inventory", "Automation inventory"),
             ("log_snapshot", "Initial log sample"),
             ("aggregation", "Finding aggregation"),
@@ -912,6 +914,19 @@ def render_comprehensive_system_audit(
         for key, label in labels:
             if isinstance(timings.get(key), (float, int)):
                 lines.append(f"- {label}: {timings[key]} ms.")
+        source = devices.get("read_provenance") or {}
+        if source:
+            lines.append(
+                f"- Device evidence source: {source.get('source') or 'unknown'}"
+                f", mode={source.get('mode') or 'not reported'}"
+                f", pages={source.get('pages', 'unknown')}"
+                f", fresh projection verified={source.get('complete') is True}."
+            )
+            if source.get("source") == "full_detailed_fallback":
+                lines.append(
+                    "- The lean read did not pass verification; the existing "
+                    "fully refreshed detailed manifest was used instead."
+                )
         lines.append(
             f"- System Check total: {snapshot.get('elapsed_ms', 'unknown')} ms; "
             "follow-up diagnostics add further time."

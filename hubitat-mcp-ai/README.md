@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.121**.
+Current add-on version: **0.16.122**.
 
 ## Architecture
+
+0.16.122 improves the fresh System Check device inventory without reusing stale identity state or weakening online evidence. It requests a lean detailed device projection (identity, capabilities, attributes, last activity) that excludes commands and does not replace the command-capable shared cache. When the gateway reports a reliable total and page boundaries, remaining pages may be fetched concurrently through the existing MCP concurrency gate. Incomplete/mismatched pages and projection errors fall back to the original fully refreshed detailed manifest. The audit separately measures fresh device data acquisition and local health classification and reports the source and verified projection status. Live performance improvement depends on upstream pagination capabilities and has not been measured in production.
+
 
 0.16.121 adds an opt-in Home Assistant add-on option `sensecap_d1_intentionally_powered_off` (default `false`). Set this to `true` while the SenseCap D1 is deliberately without power, and return it to `false` when the device is powered on. The comprehensive report labels this as user-supplied context, not an MCP-verified condition; existing warnings remain visible and repeated SenseCap scoped reads are suppressed while the option is active.
 

@@ -1016,3 +1016,50 @@ def test_ai_timeout_or_error_does_not_break_deterministic_system_audit() -> None
     assert "Comprehensive Hubitat audit" in result.message
     assert any(e.get("evidence_kind") == "non_authoritative_model_hypotheses"
                and e["success"] is False for e in result.evidence)
+
+
+
+def test_system_check_records_fresh_device_acquisition_and_local_classification(tmp_path):
+    from frozen_core.health_audit_service_core import HealthAuditService
+    from types import SimpleNamespace
+
+    class AuditMCP:
+        async def health(self):
+            return {"online": True}
+        async def list_tools(self, refresh=False):
+            return []
+        async def get_audit_devices(self):
+            return [{
+                "id": "4718", "label": "Livingroom TRV",
+                "attributes": [{"name": "healthStatus", "currentValue": "offline"}],
+                "capabilities": ["Battery"],
+                "lastActivity": "2026-10-08T11:01:04Z",
+            }], {
+                "source": "fresh_projected_gateway",
+                "mode": "one_page", "pages": 1,
+                "devices": 1, "complete": True, "read_elapsed_ms": 15,
+            }
+        async def get_cached_devices(self, refresh=False):
+            raise AssertionError("audit should request fresh lean projection first")
+
+    class AutomationSource:
+        async def snapshot(self, advisory=False):
+            return SimpleNamespace(automation_counts={}, automation_items=[])
+
+    service = HealthAuditService(
+        AuditMCP(), AutomationSource(),
+        snapshot_path=tmp_path / "audit.json",
+        now_factory=lambda: datetime(2026, 10, 8, 14, tzinfo=timezone.utc),
+    )
+    snapshot = asyncio.run(service.run(reason="chat"))
+    timings = snapshot["stage_timings_ms"]
+    assert "device_acquisition" in timings
+    assert "device_classification" in timings
+    assert timings["device_inventory"] >= timings["device_acquisition"]
+    assert snapshot["sections"]["devices"]["offline_count"] == 1
+    assert snapshot["sections"]["devices"]["read_provenance"]["complete"] is True
+    report = render_comprehensive_system_audit(snapshot, None)
+    assert "Fresh device data acquisition" in report
+    assert "Local device classification" in report
+    assert "Device evidence source: fresh_projected_gateway" in report
+    assert "fresh projection verified=True" in report
