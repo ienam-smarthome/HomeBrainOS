@@ -819,8 +819,6 @@ async def run_comprehensive_chat_audit(
     """Reuse the full System Check, then inspect performance outliers safely."""
     from automation_status_service import AutomationStatusOutcome
     from mcp_client import tool_succeeded
-    from performance_host_plan import select_adaptive_log_targets
-
     snapshot = await audit.run(reason="chat")
     evidence: list[dict[str, Any]] = []
     checked_at = snapshot.get("checked_at")
@@ -901,7 +899,7 @@ async def run_comprehensive_chat_audit(
             })
 
             if stats is not None:
-                for target in select_adaptive_log_targets(stats)[:2]:
+                for target in _fault_first_log_targets(snapshot, stats):
                     kind = target["kind"]
                     identifier = target["id"]
                     name = target["name"]
@@ -940,6 +938,7 @@ async def run_comprehensive_chat_audit(
                         targeted_logs.append({
                             **target,
                             "matching_rows": len(rows),
+                            "returned_rows": len(_log_rows(response)),
                             "groups": (
                                 findings["error_groups"] + findings["warning_groups"]
                             )[:3],
@@ -982,7 +981,11 @@ async def run_comprehensive_chat_audit(
                     older_rows = _log_rows(older_result)
                     older_findings, _ = _log_findings(older_rows)
                     historical_logs = {
-                        "entries_checked": len(older_rows),
+                        **_bounded_log_window_evidence(
+                            older_rows,
+                            start=started_at - timedelta(hours=24),
+                            end=started_at - timedelta(hours=6),
+                        ),
                         "groups": (
                             older_findings["error_groups"] +
                             older_findings["warning_groups"]
