@@ -1050,6 +1050,15 @@ class HealthAuditService:
                         previously_stale_ids=_previous_stale_ids(previous),
                         now=checked_at,
                     )
+                    # Retain exact MCP-visible identities for a bounded comparison
+                    # with performance-stat leaders. Counts alone refer to
+                    # different populations and cannot prove missing devices.
+                    device_section["inventory_ids"] = sorted({
+                        str(item.get("id") or item.get("deviceId"))
+                        for item in devices
+                        if item.get("id") not in (None, "")
+                        or item.get("deviceId") not in (None, "")
+                    })
                     sections["devices"] = device_section
                     issues.extend(device_issues)
                 except Exception as exc:
