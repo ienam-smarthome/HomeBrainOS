@@ -712,7 +712,14 @@ def _log_message(row: dict[str, Any]) -> str:
     return " ".join(str(row).split())
 
 
+_SLOW_LOGS_JSON_MS = re.compile(
+    r"slow internal GET /logs/json took\s+(\d+)ms", re.I
+)
+
+
 def _log_group_key(message: str) -> str:
+    if _SLOW_LOGS_JSON_MS.search(str(message or "")):
+        return "hubrt|slow internal GET /logs/json"
     adb_timeout = _ADB_TIMEOUT.search(str(message or ""))
     if adb_timeout:
         label = " ".join(str(adb_timeout.group("label") or "ADB device").split())
@@ -802,6 +809,8 @@ def _structured_mcp_entry(message: str) -> str | None:
 
 
 def _log_summary(message: str, fingerprint: str) -> str:
+    if fingerprint == "hubrt|slow internal GET /logs/json":
+        return "Hub runtime slow internal GET /logs/json exceeded its relay time budget."
     if fingerprint.startswith("mcp rule server|vrb feed missing "):
         summary = fingerprint.split("|", 1)[1]
         return f"VRB{summary[3:]}."
@@ -861,6 +870,15 @@ def _log_findings(rows: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict
             },
         )
         group["count"] += 1
+        slow_log_match = _SLOW_LOGS_JSON_MS.search(message)
+        if slow_log_match:
+            elapsed = int(slow_log_match.group(1))
+            group["duration_min_ms"] = min(
+                group.get("duration_min_ms", elapsed), elapsed
+            )
+            group["duration_max_ms"] = max(
+                group.get("duration_max_ms", elapsed), elapsed
+            )
         if group.get("source") is None and source:
             group["source"] = source
         if timestamp is not None:
