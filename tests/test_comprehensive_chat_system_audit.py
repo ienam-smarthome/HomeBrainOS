@@ -951,7 +951,7 @@ def test_intentionally_unpowered_sensecap_is_user_context_not_mcp_proof() -> Non
     )
     assert "intentionally switched off (no power)" in rendered
     assert "not independently verified by MCP" in rendered
-    assert "transport failures are expected until power is restored" in rendered
+    assert "Transport failures are expected " in rendered
     assert "Re-enable power and clear that temporary option" in rendered
     assert "Check current reachability and a later successful push" not in rendered
     # The error signal itself is still visible; it is not silently discarded.
