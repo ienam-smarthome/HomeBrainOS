@@ -399,6 +399,163 @@ class HubitatMCPClient:
             if self._device_manifest_inflight is task:
                 self._device_manifest_inflight = None
 
+    async def get_audit_devices(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Fetch fresh health evidence without command metadata or cache pollution.
+
+        The detailed command-capable manifest remains untouched. Concurrent
+        page reads are permitted only when the gateway explicitly reports a
+        numeric total and advancing page offsets. Failed/incomplete reads fall
+        back to the existing fully refreshed detailed manifest, never a stale
+        identity cache or a partially returned audit result.
+        """
+        started = time.monotonic()
+        generation = self._live_device_snapshot_generation
+        pages_fetched = 0
+
+        async def fallback(reason: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+            devices = await self.get_cached_devices(refresh=True)
+            return list(devices), {
+                "source": "full_detailed_fallback",
+                "reason": reason,
+                "pages": pages_fetched,
+                "read_elapsed_ms": round((time.monotonic() - started) * 1000),
+                "complete": False,  # no separate proof of projection coverage
+            }
+
+        tools = {tool.name for tool in await self.list_tools()}
+        if "hub_read_devices" not in tools:
+            return await fallback("projected_gateway_unavailable")
+
+        plan = device_read_plan(
+            include_states=True,
+            include_capabilities=True,
+            include_last_activity=True,
+        )
+        page_size = 50
+
+        async def page_at(offset: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+            nonlocal pages_fetched
+            args = {
+                "tool": "hub_list_devices",
+                "args": plan.arguments(limit=page_size, offset=offset),
+            }
+            result = await self.call_tool("hub_read_devices", args)
+            pages_fetched += 1
+            if not tool_succeeded(result):
+                raise MCPError("projected page request was rejected")
+            page = self._find_device_page(result.data)
+            devices = self._find_device_list(result.data)
+            if devices is None or not all(isinstance(item, dict) for item in devices):
+                raise MCPError("projected page lacks a device list")
+            if not projected_state_shape_is_usable(devices, plan.state_field):
+                raise MCPError("projected page lacks required device attributes")
+            return page, devices
+
+        try:
+            first_page, first_devices = await page_at(0)
+            if first_page is None:
+                raise MCPError("projected list has no pagination metadata")
+            value = first_page.get("total", first_page.get("totalDevices"))
+            total = None
+            if value is not None and not isinstance(value, bool):
+                try:
+                    total = int(value)
+                except (ValueError, TypeError):
+                    pass
+            has_more = first_page.get("hasMore") is True
+            if not has_more:
+                if total is not None and total != len(first_devices):
+                    raise MCPError("one-page result disagrees with total")
+                devices = first_devices
+                mode = "one_page"
+            else:
+                next_offset = first_page.get("nextOffset")
+                try:
+                    offset = int(next_offset)
+                except (ValueError, TypeError):
+                    raise MCPError("missing advancing nextOffset")
+                if offset <= 0:
+                    raise MCPError("pagination did not advance")
+
+                if total is not None and 0 < total <= self._MAX_DEVICE_PAGES * page_size:
+                    # Only parallelise pages when the server supplies a total
+                    # and the first page advances by exactly the requested size.
+                    if offset != page_size or len(first_devices) != page_size:
+                        raise MCPError("unexpected first-page boundary")
+                    offsets = list(range(offset, total, page_size))
+                    if len(offsets) + 1 > self._MAX_DEVICE_PAGES:
+                        raise MCPError("pagination exceeds hard page cap")
+                    bounded = asyncio.Semaphore(self.max_concurrent_calls)
+
+                    async def fetch(offset: int):
+                        async with bounded:
+                            return await page_at(offset)
+
+                    results = await asyncio.gather(
+                        *(fetch(item) for item in offsets)
+                    )
+                    devices = list(first_devices)
+                    for index, (page, rows) in enumerate(results):
+                        requested_offset = offsets[index]
+                        if page is None:
+                            raise MCPError("page missing pagination metadata")
+                        expected_count = min(page_size, total - requested_offset)
+                        if len(rows) != expected_count:
+                            raise MCPError("page size changed during audit")
+                        if requested_offset + expected_count < total:
+                            if page.get("hasMore") is not True:
+                                raise MCPError("pagination ended before reported total")
+                            if int(page.get("nextOffset") or 0) != requested_offset + page_size:
+                                raise MCPError("unexpected next page offset")
+                        elif page.get("hasMore") is True:
+                            raise MCPError("pagination continued past reported total")
+                        devices.extend(rows)
+                    mode = "bounded_parallel_pages"
+                else:
+                    # No trustworthy total: follow the server's advancing
+                    # offsets, sequentially, and reject incomplete cursors.
+                    devices = list(first_devices)
+                    current_offset = 0
+                    page = first_page
+                    while page.get("hasMore") is True:
+                        if pages_fetched >= self._MAX_DEVICE_PAGES:
+                            raise MCPError("pagination exceeded hard page cap")
+                        requested = int(page.get("nextOffset") or 0)
+                        if requested <= current_offset:
+                            raise MCPError("pagination offset did not advance")
+                        current_offset = requested
+                        page, rows = await page_at(requested)
+                        if page is None:
+                            raise MCPError("page missing pagination metadata")
+                        devices.extend(rows)
+                    mode = "verified_serial_pages"
+
+            identifiers = [
+                str(item.get("id") or item.get("deviceId") or "")
+                for item in devices
+            ]
+            if (
+                not devices
+                or any(not identifier for identifier in identifiers)
+                or len(identifiers) != len(set(identifiers))
+                or (total is not None and len(devices) != total)
+                or generation != self._live_device_snapshot_generation
+            ):
+                raise MCPError("projected inventory identity/total verification failed")
+            return list(devices), {
+                "source": "fresh_projected_gateway",
+                "mode": mode,
+                "pages": pages_fetched,
+                "devices": len(devices),
+                "read_elapsed_ms": round((time.monotonic() - started) * 1000),
+                "complete": True,
+            }
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("Fresh audit projection unavailable: %s", exc)
+            return await fallback(type(exc).__name__)
+
     async def _refresh_cached_devices(self) -> list[dict[str, Any]]:
         generation = self._live_device_snapshot_generation
         tools = await self.list_tools()
