@@ -692,6 +692,27 @@ def render_comprehensive_system_audit(
         )
     lines.extend(("", "### Observed alerts (not necessarily proven causes)"))
     lines.extend(_audit_issue_lines(snapshot))
+    offline_rows = [r for r in devices.get("offline", []) if isinstance(r, dict)]
+    if offline_rows:
+        lines.extend((
+            "",
+            "### Offline-device evidence (identity-grounded)",
+            "The status originates from the MCP detailed device attributes. "
+            "It does not alone establish whether the cause is radio reachability, "
+            "device power, driver configuration or a stale status attribute.",
+        ))
+        for row in offline_rows[:8]:
+            level = (
+                f"{row['battery']}%" if row.get("battery") is not None
+                else "not supplied"
+            )
+            lines.append(
+                f"- {row.get('label') or 'Unnamed'} (ID {row.get('id') or '?'}): "
+                f"state={row.get('state') or 'unknown'}, "
+                f"source={row.get('source_attribute') or 'unspecified'}, "
+                f"battery={level}, last recorded activity="
+                f"{row.get('last_activity') or 'not supplied'}."
+            )
 
     quiet = devices.get("no_recent_activity") or []
     if isinstance(quiet, list) and quiet:
@@ -893,6 +914,20 @@ def render_comprehensive_system_audit(
                 f"- Follow-up for {kind} {name}: no matching warnings/errors "
                 "in the returned 6h sample (not proof of no earlier issues)."
             )
+        if "sensecap" in str(name).casefold() and "live_push_evidence" in item:
+            observed = item["live_push_evidence"]
+            if observed.get("later_success_observed"):
+                lines.append(
+                    "- SenseCap live-push follow-up: an explicit successful push/resume "
+                    "log is newer than the sampled failed push. This supports an "
+                    "observed recovery event, not guaranteed ongoing operation."
+                )
+            else:
+                lines.append(
+                    "- SenseCap live-push follow-up: no timestamp-supported later "
+                    "successful push was established in the returned log sample; "
+                    "recovery remains unverified."
+                )
         for group in item.get("groups") or []:
             detail = " ".join(str(group.get(field) or "") for field in ("message", "summary"))
             if "attributeNames" in detail and (
