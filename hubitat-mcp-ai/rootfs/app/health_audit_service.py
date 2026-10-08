@@ -494,48 +494,111 @@ _AUDIT_SOURCE_PREFIX = re.compile(r"\b(?P<kind>app|dev)\|(?P<id>\d+)\|(?P<name>[
 
 
 def _fault_first_log_targets(
-    snapshot: dict[str, Any], performance: dict[str, Any] | None
+    snapshot: dict[str, Any],
+    performance: dict[str, Any] | None,
+    *,
+    previous_snapshot: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    """Choose a bounded set of read-only follow-ups from observed alerts first.
+    """Select at most four identity-grounded investigation targets, faults first.
 
-    Keep the existing strongest performance device and app as secondary leads.
-    Do not infer a device ID from a name or invent unsupported MCP tools.
+    Prefer explicit offline IDs and current error-source IDs. A recently reported
+    SenseCap live-push failure remains worth investigating after it drops from
+    the capped latest error sample. Do not infer an ID from a label alone.
     """
     from performance_host_plan import select_adaptive_log_targets
 
     targets: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
-    def append(kind: str, identifier: str, name: str) -> None:
+    def add(kind: str, identifier: Any, name: Any, selection: str) -> None:
+        identifier = str(identifier or "").strip()
         if kind not in {"device", "app"} or not identifier.isdecimal():
             return
         key = (kind, identifier)
-        if key not in seen and len(targets) < 4:
-            seen.add(key)
-            targets.append({
-                "kind": kind, "id": identifier, "name": name[:100],
-                "selection": "observed fault" if checking_issues else "performance outlier",
-            })
+        if key in seen or len(targets) >= 4:
+            return
+        seen.add(key)
+        targets.append({
+            "kind": kind, "id": identifier,
+            "name": str(name or identifier).strip()[:100],
+            "selection": selection,
+        })
 
-    checking_issues = True
-    for item in snapshot.get("issues", []) or []:
-        if not isinstance(item, dict) or item.get("severity") not in ("critical", "warning"):
-            continue
-        if _name_only_broken_marker(item):
-            continue
-        content = " ".join(str(item.get(key) or "") for key in ("title", "detail"))
-        for match in _AUDIT_SOURCE_PREFIX.finditer(content):
-            append(
-                "app" if match.group("kind") == "app" else "device",
-                match.group("id"), match.group("name").strip(),
-            )
-        if len(targets) >= 2:
-            break  # reserve slots for independent performance leads
+    devices = (snapshot.get("sections") or {}).get("devices") or {}
+    for row in devices.get("offline") or []:
+        if isinstance(row, dict):
+            add("device", row.get("id"), row.get("label"), "explicit offline state")
 
-    checking_issues = False
-    for target in select_adaptive_log_targets(performance or {}):
-        append(str(target["kind"]), str(target["id"]), str(target["name"]))
-    return targets[:4]
+    def add_issue_targets(issues: Any, *, selection: str) -> None:
+        for issue in issues if isinstance(issues, list) else []:
+            if not isinstance(issue, dict) or issue.get("severity") not in ("critical", "warning"):
+                continue
+            if _name_only_broken_marker(issue):
+                continue
+            content = " ".join(str(issue.get(k) or "") for k in ("title", "detail"))
+            if selection == "previously observed fault" and not (
+                "sensecap d1" in content.casefold()
+                and ("live push failed" in content.casefold()
+                     or "live updates are suspended" in content.casefold())
+            ):
+                continue
+            for match in _AUDIT_SOURCE_PREFIX.finditer(content):
+                add(
+                    "app" if match.group("kind") == "app" else "device",
+                    match.group("id"), match.group("name"), selection,
+                )
+
+    add_issue_targets(snapshot.get("issues"), selection="observed fault")
+    add_issue_targets(
+        (previous_snapshot or {}).get("issues"),
+        selection="previously observed fault",
+    )
+
+    performance_targets = select_adaptive_log_targets(performance or {})
+    if len(targets) >= 2:
+        # When faults have occupied most of the budget, favour the app source
+        # so a recurring MCP Rule Server failure still gets attention.
+        performance_targets.sort(key=lambda item: item.get("kind") != "app")
+    for target in performance_targets:
+        add(target["kind"], target["id"], target["name"], "performance outlier")
+    return targets
+
+
+def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Report only observed SenseCap log messages; never infer resumed service."""
+    errors: list[datetime] = []
+    successes: list[datetime] = []
+    failed = 0
+    succeeded = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        message = _core._log_message(row).casefold()
+        if "sensecap" not in message and "live push" not in message:
+            continue
+        timestamp = _core._log_timestamp(row)
+        if ("live push failed" in message or "live updates are suspended" in message):
+            failed += 1
+            if timestamp is not None:
+                errors.append(timestamp)
+        if any(phrase in message for phrase in (
+            "live push succeeded", "live push successful",
+            "live updates resumed", "live push resumed",
+        )):
+            succeeded += 1
+            if timestamp is not None:
+                successes.append(timestamp)
+    newer_success = bool(successes) and (
+        not errors or max(successes) > max(errors)
+    )
+    return {
+        "failure_rows": failed,
+        "success_rows": succeeded,
+        "latest_failure": max(errors).isoformat() if errors else None,
+        "latest_success": max(successes).isoformat() if successes else None,
+        # Even a positive log does not establish current continuous service.
+        "later_success_observed": newer_success,
+    }
 
 
 def _bounded_log_window_evidence(
