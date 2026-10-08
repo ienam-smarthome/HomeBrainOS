@@ -832,7 +832,9 @@ def render_comprehensive_system_audit(
             )
         for group in item.get("groups") or []:
             detail = " ".join(str(group.get(field) or "") for field in ("message", "summary"))
-            if "attributeNames" in detail and "format='summary'" in detail:
+            if "attributeNames" in detail and (
+                "format='summary'" in detail or "format 'summary'" in detail
+            ):
                 lines.append(
                     "  - **MCP device-list validation:** The observed request combines "
                     "attributeNames with format='summary', which the MCP gateway rejects. "
