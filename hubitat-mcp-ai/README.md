@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.114**.
+Current add-on version: **0.16.115**.
 
 ## Architecture
+
+0.16.115 differentiates automation *BROKEN* name markers from verified failure signals in chat reports, reconciles source-specific performance/device populations by exact sampled IDs, marks 200-row log-sample saturation, extracts concise MCP structured-error messages, and emits per-source evidence receipts and targeted read-only repair checks. This does not enable unattended Hubitat changes or add a model synthesis round.
+
 
 0.16.114 routes broad chat requests for hub logs, device/app statistics and issues through the existing read-only System Check (device health, automations and grouped log warnings), then adds bounded performance leaders and targeted log follow-ups. Quiet event-driven devices are shown as observations, not automatically declared offline. No changes to Hubitat devices, apps or rules are performed by this report.
 

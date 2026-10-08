@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -325,24 +327,157 @@ def is_comprehensive_system_audit_request(prompt: str) -> bool:
     return is_investigation and has_logs and broad_scope
 
 
+def _name_only_broken_marker(item: dict[str, Any]) -> bool:
+    """A *BROKEN* name marker is a reported label, not a verified runtime fault."""
+    detail = str(item.get("detail") or "").casefold()
+    return (
+        "marked the automation name *broken*" in detail
+        and "reports broken=true" not in detail
+    )
+
+
 def _audit_issue_lines(snapshot: dict[str, Any], *, limit: int = 12) -> list[str]:
     issues = [
         row for row in snapshot.get("issues", [])
         if isinstance(row, dict) and row.get("severity") in ("critical", "warning")
     ]
+    confirmed_signals = [item for item in issues if not _name_only_broken_marker(item)]
+    name_markers = [item for item in issues if _name_only_broken_marker(item)]
     lines = []
-    for row in issues[:limit]:
+    for row in confirmed_signals[:limit]:
         severity = str(row.get("severity") or "warning").upper()
         title = str(row.get("title") or "Unknown issue").strip()
         detail = str(row.get("detail") or "").strip()
         count = int(row.get("count") or 1)
-        suffix = f" ({count} observations in the checked sample)" if count > 1 else ""
+        suffix = f" ({count} observations in checked sample)" if count > 1 else ""
         lines.append(f"- **{severity}: {title}**{suffix} — {detail}")
-    if len(issues) > limit:
-        lines.append(f"- … and {len(issues) - limit} additional findings in System Check.")
+    if len(confirmed_signals) > limit:
+        lines.append(
+            f"- … and {len(confirmed_signals) - limit} additional alerts in System Check."
+        )
     if not lines:
-        lines.append("- No confirmed alert signals were found in the sources that returned data.")
+        lines.append("- No independent fault signal was returned from the checked sources.")
+    if name_markers:
+        lines.extend((
+            "",
+            f"### Automations flagged by name only — {len(name_markers)}, unverified",
+            "These automations carry *BROKEN* in their names, but the supplied "
+            "status data does not independently demonstrate a current execution "
+            "failure. Do not treat these markers as confirmed broken rules.",
+        ))
+        for item in name_markers[:15]:
+            lines.append(
+                f"- {str(item.get('title') or 'Unnamed automation').removeprefix('Automation broken: ')}"
+            )
+        if len(name_markers) > 15:
+            lines.append(f"- … and {len(name_markers) - 15} more name-marked automations.")
     return lines
+
+
+def _performance_population_total(
+    performance: dict[str, Any], kind: str
+) -> int | None:
+    """Only read explicitly labelled source totals; never infer from top-N rows."""
+    summary = performance.get(f"{kind}Summary")
+    if not isinstance(summary, dict):
+        return None
+    names = ("totalDevices", "totalApps", "totalCount", "count", "total")
+    for key in names:
+        value = summary.get(key)
+        if isinstance(value, bool):
+            continue
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number >= 0:
+            return number
+    return None
+
+
+def _concise_log_message(message: Any) -> str:
+    """Read MCP structured log entry.message instead of displaying raw JSON blobs."""
+    text = " ".join(str(message or "").split())
+    start = text.find("{")
+    if start >= 0:
+        try:
+            payload = json.loads(text[start:])
+            entry = payload.get("entry") if isinstance(payload, dict) else None
+            if isinstance(entry, dict):
+                detail = entry.get("details")
+                message = entry.get("message") or (
+                    detail.get("error") if isinstance(detail, dict) else None
+                )
+                if message:
+                    text = " ".join(str(message).split())
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    # The upstream group may truncate the JSON after the nested message,
+    # making json.loads impossible. A bounded quoted-field fallback still
+    # extracts the actual log text rather than a raw transport envelope.
+    if '"entry"' in text and '"message"' in text and '"appId"' in text:
+        nested = re.search(r'"message"\s*:\s*("(?:\\.|[^"\\])*")', text)
+        if nested:
+            try:
+                parsed = json.loads(nested.group(1))
+                text = " ".join(str(parsed).split())
+            except (TypeError, ValueError):
+                pass
+    return re.sub(r"[\r\n\t]+", " ", text)[:280]
+
+
+def _audit_followups(
+    snapshot: dict[str, Any], performance: dict[str, Any] | None
+) -> list[str]:
+    issues = snapshot.get("issues") or []
+    text = " ".join(
+        f"{row.get('title', '')} {row.get('detail', '')}"
+        for row in issues if isinstance(row, dict)
+    ).casefold()
+    quiet = (snapshot.get("sections") or {}).get("devices", {}).get(
+        "no_recent_activity", []
+    ) or []
+    quiet_labels = {
+        str(row.get("label") or "").casefold()
+        for row in quiet if isinstance(row, dict)
+    }
+    rows: list[str] = []
+    if "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
+        rows.append(
+            "- **SenseCap D1:** Verify its current IP/reachability and configuration "
+            "push endpoint. A failed config push does not prove live updates stopped."
+        )
+    if "mcp rule server" in text:
+        rows.append(
+            "- **MCP Rule Server:** Inspect logged server errors and request latency. "
+            "Correct unsupported device-list projection arguments at their caller "
+            "before retrying; do not restart the hub for one slow log request."
+        )
+    if "lg webos tv" in quiet_labels and isinstance(performance, dict):
+        performance_names = {
+            str(row.get("name") or "").casefold()
+            for row in performance.get("deviceStats", []) if isinstance(row, dict)
+        }
+        if "lg webos tv" in performance_names:
+            rows.append(
+                "- **LG webOS TV:** High historical performance share and old "
+                "activity coexist; verify TV reachability, driver connectivity "
+                "and older events. This does not establish the cause of load."
+            )
+    if any(
+        isinstance(row, dict) and row.get("category") == "device-offline"
+        for row in issues
+    ):
+        rows.append(
+            "- **Unavailable devices:** Confirm power, battery and radio/network "
+            "reachability individually before attempting re-pairing or resets."
+        )
+    if any(isinstance(row, dict) and _name_only_broken_marker(row) for row in issues):
+        rows.append(
+            "- **Name-marked automations:** Inspect each rule's actual enabled "
+            "state, device references and execution errors before editing it."
+        )
+    return rows[:6]
 
 
 def render_comprehensive_system_audit(
@@ -364,11 +499,14 @@ def render_comprehensive_system_audit(
         "**Read-only:** no devices, rules, apps or settings have been changed.",
         "",
         "### Coverage",
-        f"- Devices: {devices.get('total', 'unavailable')} inventoried; "
+        f"- Devices: {devices.get('total', 'unavailable')} in the MCP-visible "
+        "detailed device inventory; "
         f"{devices.get('offline_count', 'unknown')} explicitly reported unavailable; "
         f"{devices.get('low_battery_count', 'unknown')} low-battery reports.",
-        f"- Automations: {automations.get('total', 'unavailable')} checked; "
-        f"{automations.get('attention_count', 'unknown')} broken, paused or unknown.",
+        f"- Automations: {automations.get('total', 'unavailable')} distinct "
+        "apps/rules normalised from the automation sources; "
+        f"{automations.get('attention_count', 'unknown')} flagged for attention "
+        "(including unverified name markers).",
         f"- Logs: {logs.get('entries_checked', 'unavailable')} returned rows "
         f"(requested lookback: {logs.get('checked_hours', 'unknown')} hours, "
         "at most 200 rows). This is not proof that older or omitted events are absent.",
@@ -381,7 +519,13 @@ def render_comprehensive_system_audit(
     ]
     if unavailable:
         lines.append("- Incomplete sources: " + ", ".join(unavailable) + ".")
-    lines.extend(("", "### Findings requiring attention"))
+    if logs.get("entries_checked") == 200:
+        lines.append(
+            "- **Log window saturated:** all 200 requested rows were returned. "
+            "Older errors in the 24-hour period may have been displaced by newer events; "
+            "this does not verify complete 24-hour log coverage."
+        )
+    lines.extend(("", "### Observed alerts (not necessarily proven causes)"))
     lines.extend(_audit_issue_lines(snapshot))
 
     quiet = devices.get("no_recent_activity") or []
@@ -412,6 +556,56 @@ def render_comprehensive_system_audit(
             f"\nExplicit reporting expectations missed: {len(overdue)}. "
             "A missed update does not by itself identify the cause."
         )
+
+    lines.extend(("", "### Source scope and ID reconciliation"))
+    if isinstance(performance, dict):
+        for kind, label, source_key in (
+            ("device", "Device", "deviceStats"),
+            ("app", "App", "appStats"),
+        ):
+            total = _performance_population_total(performance, kind)
+            listed = performance.get(source_key)
+            sample_size = len(listed) if isinstance(listed, list) else 0
+            source_total = str(total) if total is not None else "not supplied"
+            lines.append(
+                f"- {label} performance source: {source_total} reported total; "
+                f"{sample_size} top-ranked rows returned. The top-ranked sample "
+                "must not be treated as a full inventory."
+            )
+        inventory_ids = devices.get("inventory_ids")
+        if isinstance(inventory_ids, list):
+            ids = set(map(str, inventory_ids))
+            performance_rows = performance.get("deviceStats") or []
+            selected = [
+                row for row in performance_rows
+                if isinstance(row, dict) and row.get("id") not in (None, "")
+            ]
+            matched = [row for row in selected if str(row.get("id")) in ids]
+            unlisted = [row for row in selected if str(row.get("id")) not in ids]
+            lines.append(
+                f"- Exact ID overlap: {len(matched)} of {len(selected)} sampled "
+                "performance-device IDs appear in the MCP detailed inventory."
+            )
+            if unlisted:
+                example = ", ".join(
+                    str(row.get("name") or row["id"]) for row in unlisted[:4]
+                )
+                lines.append(
+                    f"- Performance IDs outside this MCP inventory sample: {example}. "
+                    "Different visibility/scope or paging could explain this; "
+                    "it does NOT prove these devices are missing from Hubitat."
+                )
+        else:
+            lines.append(
+                "- Full inventory IDs were not provided; exact device population "
+                "reconciliation is unverified."
+            )
+        lines.append(
+            "- App performance statistics and normalised automation app/rule items "
+            "are not equivalent populations; a count difference alone is not a fault."
+        )
+    else:
+        lines.append("- Performance scope is unknown because that source was unavailable.")
 
     lines.extend(("", "### Performance leaders (not automatic faults)"))
     if isinstance(performance, dict):
@@ -454,7 +648,8 @@ def render_comprehensive_system_audit(
             )
             for group in item["groups"][:3]:
                 lines.append(
-                    f"  - [{group.get('level')}] {group.get('summary')} "
+                    f"  - [{group.get('level')}] "
+                    f"{_concise_log_message(group.get('message') or group.get('summary'))} "
                     f"({group.get('count')} rows)"
                 )
         else:
@@ -463,14 +658,18 @@ def render_comprehensive_system_audit(
                 "in the returned 6h sample (not proof of no earlier issues)."
             )
 
+    lines.extend(("", "### Evidence-based next checks"))
+    lines.extend(_audit_followups(snapshot, performance) or [
+        "- No specific fix is justified from the currently returned fault evidence."
+    ])
     lines.extend((
         "",
-        "### Repair status and next action",
-        "- No repairs performed. Confirmed log symptoms are not proof of a root cause.",
-        "- Check affected device reachability, driver configuration and recent "
-        "events before changing or disabling anything.",
-        "- For any repair that changes Hubitat state, request the specific "
-        "action and use the existing verification/confirmation workflow.",
+        "### Repair status",
+        "- No repairs performed; current and historical co-observations do not prove causality.",
+        "- Any Hubitat mutation requires a separate explicitly targeted request, "
+        "verified capability and the existing confirmation safeguards.",
+        "- This report is host-assembled from MCP reads; no Gemma reasoning round "
+        "was used to infer missing evidence.",
     ))
     return "\n".join(lines)
 
@@ -485,6 +684,42 @@ async def run_comprehensive_chat_audit(
     from performance_host_plan import select_adaptive_log_targets
 
     snapshot = await audit.run(reason="chat")
+    evidence: list[dict[str, Any]] = []
+    checked_at = snapshot.get("checked_at")
+    evidence.append({
+        "tool": "health_audit.run",
+        "success": True,
+        "timestamp": checked_at,
+        "supports_live_claim": True,
+        "evidence_kind": "read_only_system_audit_snapshot",
+        "mutates": False,
+        "effect": "read",
+        "summary": (
+            f"System Check {snapshot.get('status', 'unknown')}; "
+            f"{snapshot.get('attention_count', '?')} flagged findings"
+        ),
+    })
+    for label, key in (("devices", "devices"), ("automations", "automations"), ("logs", "logs")):
+        section = (snapshot.get("sections") or {}).get(key) or {}
+        complete = section.get("available") is not False and (
+            ("total" in section) if key != "logs" else section.get("available") is True
+        )
+        evidence.append({
+            "tool": "health_audit.run",
+            "sub_tool": key,
+            "timestamp": checked_at,
+            "success": bool(complete),
+            "supports_live_claim": bool(complete),
+            "evidence_kind": "audit_source_section",
+            "mutates": False,
+            "effect": "read",
+            "summary": (
+                f"{label} section {'available' if complete else 'unavailable'}; "
+                f"{section.get('total', section.get('entries_checked', '?'))} "
+                "records/items in the returned source"
+            ),
+        })
+
     stats: dict[str, Any] | None = None
     performance_error: str | None = None
     targeted_logs: list[dict[str, Any]] = []
@@ -500,10 +735,30 @@ async def run_comprehensive_chat_audit(
                 {"limit": 20, "sortBy": "pct", "type": "both"},
             )
             response = await mcp.call_tool(gateway.name, arguments)
-            if tool_succeeded(response) and isinstance(response.data, dict):
+            valid_performance = (
+                tool_succeeded(response) and isinstance(response.data, dict)
+                and isinstance(response.data.get("deviceStats"), list)
+                and isinstance(response.data.get("appStats"), list)
+            )
+            if valid_performance:
                 stats = response.data
             else:
-                performance_error = "performance tool returned no successful data"
+                performance_error = "performance tool returned no usable device/app data"
+            evidence.append({
+                "tool": gateway.name,
+                "sub_tool": "hub_get_performance_stats",
+                "arguments": arguments,
+                "timestamp": checked_at,
+                "success": bool(valid_performance),
+                "supports_live_claim": bool(valid_performance),
+                "evidence_kind": "chat_audit_performance_stats",
+                "mutates": False,
+                "effect": "read",
+                "summary": (
+                    "top-ranked device/app rows"
+                    if valid_performance else "performance read unavailable or incomplete"
+                ),
+            })
 
             if stats is not None:
                 for target in select_adaptive_log_targets(stats)[:2]:
@@ -527,6 +782,21 @@ async def run_comprehensive_chat_audit(
                             or name.casefold() in str(row.get("message") or "").casefold()
                         ]
                         findings, _ = _log_findings(rows)
+                        evidence.append({
+                            "tool": gateway.name,
+                            "sub_tool": "hub_get_logs",
+                            "arguments": args,
+                            "timestamp": checked_at,
+                            "success": True,
+                            "supports_live_claim": True,
+                            "evidence_kind": "chat_audit_scoped_logs",
+                            "mutates": False,
+                            "effect": "read",
+                            "summary": (
+                                f"{kind} {name} (ID {identifier}): "
+                                f"{len(rows)} matched rows in a bounded 6h log request"
+                            ),
+                        })
                         targeted_logs.append({
                             **target,
                             "matching_rows": len(rows),
@@ -535,9 +805,20 @@ async def run_comprehensive_chat_audit(
                             )[:3],
                         })
                     except Exception as exc:
-                        targeted_logs.append({
-                            **target, "error": f"{type(exc).__name__}: {str(exc)[:120]}"
+                        error = f"{type(exc).__name__}: {str(exc)[:120]}"
+                        evidence.append({
+                            "tool": gateway.name,
+                            "sub_tool": "hub_get_logs",
+                            "arguments": args,
+                            "timestamp": checked_at,
+                            "success": False,
+                            "supports_live_claim": False,
+                            "evidence_kind": "chat_audit_scoped_logs",
+                            "mutates": False,
+                            "effect": "read",
+                            "summary": f"{kind} {name} scoped logs failed: {error}",
                         })
+                        targeted_logs.append({**target, "error": error})
     except Exception as exc:
         performance_error = f"{type(exc).__name__}: {str(exc)[:160]}"
 
@@ -548,20 +829,7 @@ async def run_comprehensive_chat_audit(
     return AutomationStatusOutcome(
         message=message,
         route="comprehensive-system-audit",
-        evidence=[{
-            "tool": "health_audit.run",
-            "success": True,
-            "timestamp": snapshot.get("checked_at"),
-            "supports_live_claim": True,
-            "evidence_kind": "read_only_system_audit_snapshot",
-            "mutates": False,
-            "effect": "read",
-            "summary": (
-                f"System Check {snapshot.get('status', 'unknown')}; "
-                f"{snapshot.get('attention_count', '?')} attention findings; "
-                f"performance {'available' if stats is not None else 'unavailable'}"
-            ),
-        }],
+        evidence=evidence,
     )
 
 
