@@ -421,7 +421,9 @@ def render_comprehensive_system_audit(
                 if isinstance(row, dict) and row.get("name")
             ]
             ranked.sort(
-                key=lambda row: float(str(row.get("pctBusy") or "0").replace("%", "")),
+                key=lambda row: _core._safe_float(
+                    str(row.get("pctBusy") or "0").replace("%", "")
+                ) or 0.0,
                 reverse=True,
             )
             for row in ranked[:3]:
