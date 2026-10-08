@@ -1174,6 +1174,21 @@ def render_comprehensive_system_audit(
                 )
         for group in item.get("groups") or []:
             detail = " ".join(str(group.get(field) or "") for field in ("message", "summary"))
+            lower_detail = detail.casefold()
+            if "metering_cluster" in lower_detail and "0x84" in lower_detail:
+                lines.append(
+                    "  - **Zigbee metering:** The device returned code 0x84 for a "
+                    "METERING_CLUSTER command. Its meaning and effect on current "
+                    "meter readings are not established by these logs. Inspect "
+                    "the driver command and independently check recent metering "
+                    "updates before changing the driver or reporting interval."
+                )
+            if "adb shell connection timed out" in lower_detail:
+                lines.append(
+                    "  - **ADB connection:** The retained shell timed out. Verify "
+                    "the streamer's IP reachability and supported ADB reconnect "
+                    "state using read-only information before changing settings."
+                )
             if "attributeNames" in detail and (
                 "format='summary'" in detail or "format 'summary'" in detail
             ):
