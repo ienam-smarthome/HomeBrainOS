@@ -126,7 +126,31 @@ def _device_findings(
         )
         if explicitly_offline or explicitly_unreachable:
             reason = str(state or "not reachable").strip()
-            offline.append({"id": identifier, "label": label, "state": reason})
+            health_keys = (
+                _core._HEALTH_STATE_KEYS if explicitly_offline
+                else _core._BOOL_ONLINE_KEYS
+            )
+            source_attribute = next(
+                (
+                    key for key in health_keys
+                    if _core._first(values, (key,)) not in (None, "")
+                ),
+                None,
+            )
+            has_activity, raw_activity, activity_at = _core._activity_value(device)
+            offline.append({
+                "id": identifier,
+                "label": label,
+                "state": reason,
+                "source_attribute": source_attribute,
+                "battery": round(battery, 1) if battery is not None else None,
+                "last_activity": (
+                    activity_at.isoformat() if activity_at
+                    else str(raw_activity) if has_activity and raw_activity not in (None, "")
+                    else None
+                ),
+                "reachability_independently_verified": False,
+            })
             issues.append(
                 _core._issue(
                     "device-offline",
