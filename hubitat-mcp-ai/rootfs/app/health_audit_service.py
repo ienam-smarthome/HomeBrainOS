@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -839,6 +840,7 @@ def render_comprehensive_system_audit(
     historical_logs: dict[str, Any] | None = None,
     context_reconciliation: dict[str, Any] | None = None,
     sensecap_known_unpowered: bool = False,
+    ai_advisory: str | None = None,
 ) -> str:
     """Render checked data, neutral quiet-device observations and repair status."""
     sections = snapshot.get("sections") or {}
@@ -1237,14 +1239,27 @@ def render_comprehensive_system_audit(
     ) or [
         "- No specific fix is justified from the currently returned fault evidence."
     ])
+    if ai_advisory:
+        lines.extend((
+            "",
+            "### Optional AI diagnostic hypotheses — unverified",
+            "Model-generated investigation suggestions only. These do not "
+            "replace MCP evidence or authorize device changes.",
+            ai_advisory[:1800],
+        ))
     lines.extend((
         "",
         "### Repair status",
         "- No repairs performed; current and historical co-observations do not prove causality.",
         "- Any Hubitat mutation requires a separate explicitly targeted request, "
         "verified capability and the existing confirmation safeguards.",
-        "- This report is host-assembled from MCP reads; no Gemma reasoning round "
-        "was used to infer missing evidence.",
+        (
+            "- Deterministic evidence was host-assembled; an optional bounded AI "
+            "advisory was requested but cannot establish additional facts."
+            if ai_advisory else
+            "- This report is host-assembled from MCP reads; no Gemma reasoning round "
+            "was used to infer missing evidence."
+        ),
     ))
     return "\n".join(lines)
 
@@ -1252,6 +1267,7 @@ def render_comprehensive_system_audit(
 async def run_comprehensive_chat_audit(
     audit: Any,
     mcp: Any,
+    *, analysis_chat: Any = None,
 ) -> Any:
     """Reuse the full System Check, then inspect performance outliers safely."""
     from automation_status_service import AutomationStatusOutcome
@@ -1567,6 +1583,52 @@ async def run_comprehensive_chat_audit(
         context_reconciliation=context_reconciliation,
         sensecap_known_unpowered=sensecap_known_unpowered,
     )
+    if callable(analysis_chat):
+        # Explicit opt-in: one short, tool-free model pass, never executing
+        # suggestions. The deterministic report remains authoritative.
+        system_prompt = (
+            "You are analysing a read-only Hubitat diagnostic report. "
+            "Return at most three brief, evidence-linked investigative hypotheses. "
+            "Use only the supplied report. Separate known user configuration from "
+            "verified device evidence. Do not invent IP addresses, missing tools, "
+            "diagnoses or repairs. Never request or execute a state change. "
+            "If the SenseCap device is intentionally unpowered, say that is "
+            "the user-reported explanation for its transport failures."
+        )
+        try:
+            response = await asyncio.wait_for(
+                analysis_chat([
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message[:7000]},
+                ], []),
+                timeout=12.0,
+            )
+            advisory = str(
+                response.get("content") or "" if isinstance(response, dict) else ""
+            ).strip()[:1800]
+            if advisory:
+                message = render_comprehensive_system_audit(
+                    snapshot, stats, performance_error=performance_error,
+                    targeted_logs=targeted_logs, historical_logs=historical_logs,
+                    context_reconciliation=context_reconciliation,
+                    sensecap_known_unpowered=sensecap_known_unpowered,
+                    ai_advisory=advisory,
+                )
+                evidence.append({
+                    "tool": "optional_ai_advisory", "timestamp": checked_at,
+                    "success": True, "supports_live_claim": False,
+                    "evidence_kind": "non_authoritative_model_hypotheses",
+                    "mutates": False, "effect": "read",
+                    "summary": "Tool-free optional AI analysis; no additional facts or actions",
+                })
+        except Exception as exc:
+            evidence.append({
+                "tool": "optional_ai_advisory", "timestamp": checked_at,
+                "success": False, "supports_live_claim": False,
+                "evidence_kind": "non_authoritative_model_hypotheses",
+                "mutates": False, "effect": "read",
+                "summary": f"Optional AI analysis unavailable: {type(exc).__name__}",
+            })
     return AutomationStatusOutcome(
         message=message,
         route="comprehensive-system-audit",
