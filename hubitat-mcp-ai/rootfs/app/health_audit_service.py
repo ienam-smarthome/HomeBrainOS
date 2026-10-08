@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -1003,9 +1004,13 @@ def render_comprehensive_system_audit(
     for item in targeted_logs or []:
         kind = item.get("kind") or "target"
         name = item.get("name") or item.get("id") or "unknown"
+        elapsed = (
+            f", read {item['elapsed_ms']}ms"
+            if item.get("elapsed_ms") is not None else ""
+        )
         lines.append(
             f"- Scoped investigation target: {kind} {name} (ID {item.get('id') or '?'})"
-            f" — {item.get('selection') or 'performance outlier'}."
+            f" — {item.get('selection') or 'performance outlier'}{elapsed}."
         )
         if item.get("error"):
             lines.append(f"- Follow-up log read for {kind} {name} failed: {item['error']}.")
@@ -1193,8 +1198,10 @@ async def run_comprehensive_chat_audit(
                     "hub_get_logs",
                     {scope: identifier, "since": "6h", "limit": 120},
                 )
+                read_started = time.monotonic()
                 try:
                     response = await mcp.call_tool(gateway.name, args)
+                    elapsed_ms = round((time.monotonic() - read_started) * 1000)
                     if not tool_succeeded(response):
                         raise ValueError("filtered log read failed")
                     prefix = ("dev|" if kind == "device" else "app|") + identifier + "|"
@@ -1212,6 +1219,7 @@ async def run_comprehensive_chat_audit(
                         "success": True,
                         "supports_live_claim": True,
                         "evidence_kind": "chat_audit_scoped_logs",
+                        "elapsed_ms": elapsed_ms,
                         "mutates": False,
                         "effect": "read",
                         "summary": (
@@ -1222,6 +1230,7 @@ async def run_comprehensive_chat_audit(
                     targeted_logs.append({
                         **target,
                         "matching_rows": len(rows),
+                        "elapsed_ms": elapsed_ms,
                         "returned_rows": len(_log_rows(response)),
                         **({
                             "live_push_evidence": _live_push_log_evidence(rows),
@@ -1231,6 +1240,7 @@ async def run_comprehensive_chat_audit(
                         )[:3],
                     })
                 except Exception as exc:
+                    elapsed_ms = round((time.monotonic() - read_started) * 1000)
                     error = f"{type(exc).__name__}: {str(exc)[:120]}"
                     evidence.append({
                         "tool": gateway.name,
@@ -1240,11 +1250,12 @@ async def run_comprehensive_chat_audit(
                         "success": False,
                         "supports_live_claim": False,
                         "evidence_kind": "chat_audit_scoped_logs",
+                        "elapsed_ms": elapsed_ms,
                         "mutates": False,
                         "effect": "read",
                         "summary": f"{kind} {name} scoped logs failed: {error}",
                     })
-                    targeted_logs.append({**target, "error": error})
+                    targeted_logs.append({**target, "error": error, "elapsed_ms": elapsed_ms})
             # A saturated 24h sample can be all recent INFO rows. Fetch one
             # explicitly older, bounded, disjoint segment using the existing
             # supported since/until window contract (not a guessed severity
