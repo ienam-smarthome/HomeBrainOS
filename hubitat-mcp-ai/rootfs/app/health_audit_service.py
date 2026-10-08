@@ -1163,12 +1163,20 @@ async def run_comprehensive_chat_audit(
                     evidence.append({
                         "tool": gateway.name, "sub_tool": "hub_get_logs",
                         "arguments": older_args, "timestamp": checked_at,
-                        "success": True, "supports_live_claim": True,
+                        "success": True,
+                        "supports_live_claim": bool(
+                            historical_logs.get("window_supported_by_rows")
+                        ),
                         "evidence_kind": "chat_audit_historical_logs",
                         "mutates": False, "effect": "read",
                         "summary": (
                             f"historical 24h-to-6h bounded window: {len(older_rows)} "
-                            "returned rows (max 200), no completeness guarantee"
+                            "returned rows (max 200); timestamp membership "
+                            + (
+                                "verified for returned records, not exhaustive"
+                                if historical_logs.get("window_supported_by_rows")
+                                else "unverified (empty/undated/out-of-window)"
+                            )
                         ),
                     })
                 except Exception as exc:
