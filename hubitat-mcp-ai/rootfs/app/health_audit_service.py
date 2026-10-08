@@ -666,6 +666,49 @@ def _bounded_log_window_evidence(
     return result
 
 
+def _scoped_log_pattern_summary(targeted_logs: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Summarise observed warning/error patterns, not inferred outages.
+
+    Targets are identity-deduplicated by the planner. Individual log rows are
+    occurrences, not separate incidents; matching patterns from scoped reads
+    may also overlap the initial System Check snapshot.
+    """
+    patterns: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for target in targeted_logs or []:
+        if not isinstance(target, dict) or target.get("error"):
+            continue
+        kind = str(target.get("kind") or "")
+        identifier = str(target.get("id") or "")
+        for group in target.get("groups") or []:
+            if not isinstance(group, dict):
+                continue
+            key = (
+                kind, identifier,
+                str(group.get("level") or ""),
+                str(group.get("fingerprint") or group.get("summary") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            patterns.append({
+                "name": str(target.get("name") or identifier),
+                "id": identifier,
+                "level": str(group.get("level") or "unknown"),
+                "detail": _concise_log_message(
+                    group.get("summary") or group.get("message")
+                ),
+                "rows": max(0, int(group.get("count") or 0)),
+                "first_seen": group.get("first_seen"),
+                "last_seen": group.get("last_seen"),
+            })
+    return {
+        "patterns": patterns,
+        "pattern_count": len(patterns),
+        "rows": sum(item["rows"] for item in patterns),
+    }
+
+
 def render_comprehensive_system_audit(
     snapshot: dict[str, Any],
     performance: dict[str, Any] | None,
@@ -690,10 +733,14 @@ def render_comprehensive_system_audit(
     status = "ATTENTION" if other_count else (
         "REVIEW NAME MARKERS" if marker_count else "NO ALERTS OBSERVED"
     )
+    scoped_summary = _scoped_log_pattern_summary(targeted_logs)
     lines = [
         f"## Comprehensive Hubitat audit — {status}",
         f"Alert signals: {other_count} from current health/log/automation data; "
         f"{marker_count} name-only *BROKEN* markers (not verified failures).",
+        f"Scoped diagnostics: {scoped_summary['pattern_count']} warning/error "
+        f"patterns across {scoped_summary['rows']} matched log rows. "
+        "These may overlap the main alerts; log rows are not separate outages.",
         f"Checked: {snapshot.get('checked_at') or 'time not available'} (hub report).",
         "**Read-only:** no devices, rules, apps or settings have been changed.",
         "",
@@ -881,9 +928,33 @@ def render_comprehensive_system_audit(
             f"- Performance statistics unavailable: {performance_error or 'source did not return usable data'}."
         )
 
+    if scoped_summary["patterns"]:
+        lines.extend((
+            "",
+            "### Additional scoped diagnostic findings",
+            "Counts represent repeated log rows grouped by source and message, "
+            "not distinct outages. This sampled evidence is not a full event history.",
+        ))
+        for pattern in scoped_summary["patterns"][:8]:
+            window = (
+                f"; observed {pattern['first_seen']} to {pattern['last_seen']}"
+                if pattern.get("first_seen") and pattern.get("last_seen")
+                else "; event timestamps unavailable"
+            )
+            lines.append(
+                f"- [{pattern['level']}] {pattern['name']} (ID {pattern['id']}): "
+                f"{pattern['rows']} matching log rows — {pattern['detail']}{window}."
+            )
+
     if historical_logs is not None:
         lines.extend(("", "### Older-log follow-up (24h to 6h before audit)"))
-        if historical_logs.get("error"):
+        if historical_logs.get("skipped_reason"):
+            lines.append(
+                "- Historical read skipped: "
+                + str(historical_logs["skipped_reason"])
+                + " Earlier errors remain unverified."
+            )
+        elif historical_logs.get("error"):
             lines.append(
                 "- Historical bounded log read failed: "
                 + str(historical_logs["error"]) + ". No historical claims made."
