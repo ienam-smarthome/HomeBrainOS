@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -325,24 +327,146 @@ def is_comprehensive_system_audit_request(prompt: str) -> bool:
     return is_investigation and has_logs and broad_scope
 
 
+def _name_only_broken_marker(item: dict[str, Any]) -> bool:
+    """A *BROKEN* name marker is a reported label, not a verified runtime fault."""
+    detail = str(item.get("detail") or "").casefold()
+    return (
+        "marked the automation name *broken*" in detail
+        and "reports broken=true" not in detail
+    )
+
+
 def _audit_issue_lines(snapshot: dict[str, Any], *, limit: int = 12) -> list[str]:
     issues = [
         row for row in snapshot.get("issues", [])
         if isinstance(row, dict) and row.get("severity") in ("critical", "warning")
     ]
+    confirmed_signals = [item for item in issues if not _name_only_broken_marker(item)]
+    name_markers = [item for item in issues if _name_only_broken_marker(item)]
     lines = []
-    for row in issues[:limit]:
+    for row in confirmed_signals[:limit]:
         severity = str(row.get("severity") or "warning").upper()
         title = str(row.get("title") or "Unknown issue").strip()
         detail = str(row.get("detail") or "").strip()
         count = int(row.get("count") or 1)
-        suffix = f" ({count} observations in the checked sample)" if count > 1 else ""
+        suffix = f" ({count} observations in checked sample)" if count > 1 else ""
         lines.append(f"- **{severity}: {title}**{suffix} — {detail}")
-    if len(issues) > limit:
-        lines.append(f"- … and {len(issues) - limit} additional findings in System Check.")
+    if len(confirmed_signals) > limit:
+        lines.append(
+            f"- … and {len(confirmed_signals) - limit} additional alerts in System Check."
+        )
     if not lines:
-        lines.append("- No confirmed alert signals were found in the sources that returned data.")
+        lines.append("- No independent fault signal was returned from the checked sources.")
+    if name_markers:
+        lines.extend((
+            "",
+            f"### Automations flagged by name only — {len(name_markers)}, unverified",
+            "These automations carry *BROKEN* in their names, but the supplied "
+            "status data does not independently demonstrate a current execution "
+            "failure. Do not treat these markers as confirmed broken rules.",
+        ))
+        for item in name_markers[:15]:
+            lines.append(
+                f"- {str(item.get('title') or 'Unnamed automation').removeprefix('Automation broken: ')}"
+            )
+        if len(name_markers) > 15:
+            lines.append(f"- … and {len(name_markers) - 15} more name-marked automations.")
     return lines
+
+
+def _performance_population_total(
+    performance: dict[str, Any], kind: str
+) -> int | None:
+    """Only read explicitly labelled source totals; never infer from top-N rows."""
+    summary = performance.get(f"{kind}Summary")
+    if not isinstance(summary, dict):
+        return None
+    names = ("totalDevices", "totalApps", "totalCount", "count", "total")
+    for key in names:
+        value = summary.get(key)
+        if isinstance(value, bool):
+            continue
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number >= 0:
+            return number
+    return None
+
+
+def _concise_log_message(message: Any) -> str:
+    """Read MCP structured log entry.message instead of displaying raw JSON blobs."""
+    text = " ".join(str(message or "").split())
+    start = text.find("{")
+    if start >= 0:
+        try:
+            payload = json.loads(text[start:])
+            entry = payload.get("entry") if isinstance(payload, dict) else None
+            if isinstance(entry, dict):
+                detail = entry.get("details")
+                message = entry.get("message") or (
+                    detail.get("error") if isinstance(detail, dict) else None
+                )
+                if message:
+                    text = " ".join(str(message).split())
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    return re.sub(r"[\r\n\t]+", " ", text)[:280]
+
+
+def _audit_followups(
+    snapshot: dict[str, Any], performance: dict[str, Any] | None
+) -> list[str]:
+    issues = snapshot.get("issues") or []
+    text = " ".join(
+        f"{row.get('title', '')} {row.get('detail', '')}"
+        for row in issues if isinstance(row, dict)
+    ).casefold()
+    quiet = (snapshot.get("sections") or {}).get("devices", {}).get(
+        "no_recent_activity", []
+    ) or []
+    quiet_labels = {
+        str(row.get("label") or "").casefold()
+        for row in quiet if isinstance(row, dict)
+    }
+    rows: list[str] = []
+    if "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
+        rows.append(
+            "- **SenseCap D1:** Verify its current IP/reachability and configuration "
+            "push endpoint. A failed config push does not prove live updates stopped."
+        )
+    if "mcp rule server" in text:
+        rows.append(
+            "- **MCP Rule Server:** Inspect logged server errors and request latency. "
+            "Correct unsupported device-list projection arguments at their caller "
+            "before retrying; do not restart the hub for one slow log request."
+        )
+    if "lg webos tv" in quiet_labels and isinstance(performance, dict):
+        performance_names = {
+            str(row.get("name") or "").casefold()
+            for row in performance.get("deviceStats", []) if isinstance(row, dict)
+        }
+        if "lg webos tv" in performance_names:
+            rows.append(
+                "- **LG webOS TV:** High historical performance share and old "
+                "activity coexist; verify TV reachability, driver connectivity "
+                "and older events. This does not establish the cause of load."
+            )
+    if any(
+        isinstance(row, dict) and row.get("category") == "device-offline"
+        for row in issues
+    ):
+        rows.append(
+            "- **Unavailable devices:** Confirm power, battery and radio/network "
+            "reachability individually before attempting re-pairing or resets."
+        )
+    if any(isinstance(row, dict) and _name_only_broken_marker(row) for row in issues):
+        rows.append(
+            "- **Name-marked automations:** Inspect each rule's actual enabled "
+            "state, device references and execution errors before editing it."
+        )
+    return rows[:6]
 
 
 def render_comprehensive_system_audit(
