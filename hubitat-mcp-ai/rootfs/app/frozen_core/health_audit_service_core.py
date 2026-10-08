@@ -765,7 +765,7 @@ def _log_timestamp(row: dict[str, Any]) -> datetime | None:
         # for a string without an explicit timezone would fabricate ordering.
         # Keep such log rows but do not claim a UTC event time.
         if isinstance(value, str) and not re.search(
-            r"(?:Z|[+-]\d{2}:?\\d{2})$", value.strip(), re.I
+            r"(?:Z|[+-]\d{2}:?\d{2})$", value.strip(), re.I
         ):
             continue
         parsed = _parse_datetime(value)
