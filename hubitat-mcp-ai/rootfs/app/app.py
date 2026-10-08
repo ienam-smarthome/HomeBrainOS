@@ -465,7 +465,10 @@ async def _agent_request(request: ChatRequest) -> Any:
 async def _answer_result(request: ChatRequest, connection: Request | None = None) -> Any:
     try:
         operation: Awaitable[Any]
-        if automation_status.matches_request(request.message):
+        if (
+            automation_status.matches_request(request.message)
+            and not is_comprehensive_system_audit_request(request.message)
+        ):
             if automation_status.is_advisory_request(
                 request.message
             ) and automation_status.wants_new_automation_ideas(request.message):
