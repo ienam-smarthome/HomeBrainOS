@@ -566,7 +566,11 @@ def _fault_first_log_targets(
         ):
             still_offline.append(row)
         else:
-            add("device", identifier, row.get("label"), "new/changed offline state")
+            add(
+                "device", identifier, row.get("label"),
+                "new/changed offline state" if previous_snapshot is not None
+                else "explicit offline state",
+            )
 
     identity_by_name: dict[str, set[str]] = {}
     for row in devices.get("inventory_labels") or []:
@@ -605,12 +609,6 @@ def _fault_first_log_targets(
         (previous_snapshot or {}).get("issues"),
         selection="previously observed fault",
     )
-    # A transient SenseCap error can disappear from the capped main log
-    # sample. When identifiable in performance data, check for recovery.
-    for row in (performance or {}).get("appStats", []):
-        if isinstance(row, dict) and "sensecap d1" in str(row.get("name") or "").casefold():
-            add("app", row.get("id"), row.get("name"), "live-push recovery check")
-
     # Do not repeatedly spend the full diagnostic budget on unchanged offline
     # flags. Sample at most one; the other offline verdicts remain reported.
     if still_offline and len(targets) < 4:
@@ -620,6 +618,13 @@ def _fault_first_log_targets(
             index = (int(checked_at.timestamp()) // 60) % len(still_offline)
         row = still_offline[index]
         add("device", row.get("id"), row.get("label"), "unchanged offline sample")
+
+
+    # A transient SenseCap error can disappear from the capped main log
+    # sample. When identifiable in performance data, check for recovery.
+    for row in (performance or {}).get("appStats", []):
+        if isinstance(row, dict) and "sensecap d1" in str(row.get("name") or "").casefold():
+            add("app", row.get("id"), row.get("name"), "live-push recovery check")
 
     performance_targets = select_adaptive_log_targets(performance or {})
     if len(targets) >= 2:
