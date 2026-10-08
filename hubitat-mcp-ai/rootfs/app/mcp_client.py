@@ -464,6 +464,8 @@ class HubitatMCPClient:
                     pass
             has_more = first_page.get("hasMore") is True
             if not has_more:
+                if total is None and first_page.get("hasMore") is not False:
+                    raise MCPError("page lacks terminal marker or a verified total")
                 if total is not None and total != len(first_devices):
                     raise MCPError("one-page result disagrees with total")
                 devices = first_devices
