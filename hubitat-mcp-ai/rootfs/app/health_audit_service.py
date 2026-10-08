@@ -494,48 +494,123 @@ _AUDIT_SOURCE_PREFIX = re.compile(r"\b(?P<kind>app|dev)\|(?P<id>\d+)\|(?P<name>[
 
 
 def _fault_first_log_targets(
-    snapshot: dict[str, Any], performance: dict[str, Any] | None
+    snapshot: dict[str, Any],
+    performance: dict[str, Any] | None,
+    *,
+    previous_snapshot: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    """Choose a bounded set of read-only follow-ups from observed alerts first.
+    """Select at most four identity-grounded investigation targets, faults first.
 
-    Keep the existing strongest performance device and app as secondary leads.
-    Do not infer a device ID from a name or invent unsupported MCP tools.
+    Prefer explicit offline IDs and current error-source IDs. A recently reported
+    SenseCap live-push failure remains worth investigating after it drops from
+    the capped latest error sample. Do not infer an ID from a label alone.
     """
     from performance_host_plan import select_adaptive_log_targets
 
     targets: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
-    def append(kind: str, identifier: str, name: str) -> None:
+    def add(kind: str, identifier: Any, name: Any, selection: str) -> None:
+        identifier = str(identifier or "").strip()
         if kind not in {"device", "app"} or not identifier.isdecimal():
             return
         key = (kind, identifier)
-        if key not in seen and len(targets) < 4:
-            seen.add(key)
-            targets.append({
-                "kind": kind, "id": identifier, "name": name[:100],
-                "selection": "observed fault" if checking_issues else "performance outlier",
-            })
+        if key in seen or len(targets) >= 4:
+            return
+        seen.add(key)
+        targets.append({
+            "kind": kind, "id": identifier,
+            "name": str(name or identifier).strip()[:100],
+            "selection": selection,
+        })
 
-    checking_issues = True
-    for item in snapshot.get("issues", []) or []:
-        if not isinstance(item, dict) or item.get("severity") not in ("critical", "warning"):
-            continue
-        if _name_only_broken_marker(item):
-            continue
-        content = " ".join(str(item.get(key) or "") for key in ("title", "detail"))
-        for match in _AUDIT_SOURCE_PREFIX.finditer(content):
-            append(
-                "app" if match.group("kind") == "app" else "device",
-                match.group("id"), match.group("name").strip(),
+    devices = (snapshot.get("sections") or {}).get("devices") or {}
+    for row in devices.get("offline") or []:
+        if isinstance(row, dict):
+            add("device", row.get("id"), row.get("label"), "explicit offline state")
+
+    def add_issue_targets(issues: Any, *, selection: str) -> None:
+        for issue in issues if isinstance(issues, list) else []:
+            if not isinstance(issue, dict) or issue.get("severity") not in ("critical", "warning"):
+                continue
+            if _name_only_broken_marker(issue):
+                continue
+            content = " ".join(str(issue.get(k) or "") for k in ("title", "detail"))
+            if selection == "previously observed fault" and not (
+                "sensecap d1" in content.casefold()
+                and ("live push failed" in content.casefold()
+                     or "live updates are suspended" in content.casefold())
+            ):
+                continue
+            for match in _AUDIT_SOURCE_PREFIX.finditer(content):
+                add(
+                    "app" if match.group("kind") == "app" else "device",
+                    match.group("id"), match.group("name"), selection,
+                )
+
+    add_issue_targets(snapshot.get("issues"), selection="observed fault")
+    add_issue_targets(
+        (previous_snapshot or {}).get("issues"),
+        selection="previously observed fault",
+    )
+    # A single previous snapshot may not retain an earlier transient D1 alert.
+    # If it is a sampled performance app, one additional bounded read can
+    # check for an explicit successful push without claiming that it recovered.
+    for row in (performance or {}).get("appStats", []):
+        if isinstance(row, dict) and "sensecap d1" in str(row.get("name") or "").casefold():
+            add(
+                "app", row.get("id"), row.get("name"),
+                "live-push recovery check",
             )
-        if len(targets) >= 2:
-            break  # reserve slots for independent performance leads
+            # A performance sample can contain multiple distinct IDs sharing a
+            # display name. Keep investigating by ID within the shared budget;
+            # the first name match is not proof that all other IDs are the same.
 
-    checking_issues = False
-    for target in select_adaptive_log_targets(performance or {}):
-        append(str(target["kind"]), str(target["id"]), str(target["name"]))
-    return targets[:4]
+    performance_targets = select_adaptive_log_targets(performance or {})
+    if len(targets) >= 2:
+        # When faults have occupied most of the budget, favour the app source
+        # so a recurring MCP Rule Server failure still gets attention.
+        performance_targets.sort(key=lambda item: item.get("kind") != "app")
+    for target in performance_targets:
+        add(target["kind"], target["id"], target["name"], "performance outlier")
+    return targets
+
+
+def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Report only observed SenseCap log messages; never infer resumed service."""
+    errors: list[datetime] = []
+    successes: list[datetime] = []
+    failed = 0
+    succeeded = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        message = _core._log_message(row).casefold()
+        if "sensecap" not in message and "live push" not in message:
+            continue
+        timestamp = _core._log_timestamp(row)
+        if ("live push failed" in message or "live updates are suspended" in message):
+            failed += 1
+            if timestamp is not None:
+                errors.append(timestamp)
+        if any(phrase in message for phrase in (
+            "live push succeeded", "live push successful",
+            "live updates resumed", "live push resumed",
+        )):
+            succeeded += 1
+            if timestamp is not None:
+                successes.append(timestamp)
+    newer_success = bool(successes and errors) and (
+        max(successes) > max(errors)
+    )
+    return {
+        "failure_rows": failed,
+        "success_rows": succeeded,
+        "latest_failure": max(errors).isoformat() if errors else None,
+        "latest_success": max(successes).isoformat() if successes else None,
+        # Even a positive log does not establish current continuous service.
+        "later_success_observed": newer_success,
+    }
 
 
 def _bounded_log_window_evidence(
@@ -629,6 +704,27 @@ def render_comprehensive_system_audit(
         )
     lines.extend(("", "### Observed alerts (not necessarily proven causes)"))
     lines.extend(_audit_issue_lines(snapshot))
+    offline_rows = [r for r in devices.get("offline", []) if isinstance(r, dict)]
+    if offline_rows:
+        lines.extend((
+            "",
+            "### Offline-device evidence (identity-grounded)",
+            "The status originates from the MCP detailed device attributes. "
+            "It does not alone establish whether the cause is radio reachability, "
+            "device power, driver configuration or a stale status attribute.",
+        ))
+        for row in offline_rows[:8]:
+            level = (
+                f"{row['battery']}%" if row.get("battery") is not None
+                else "not supplied"
+            )
+            lines.append(
+                f"- {row.get('label') or 'Unnamed'} (ID {row.get('id') or '?'}): "
+                f"state={row.get('state') or 'unknown'}, "
+                f"source={row.get('source_attribute') or 'unspecified'}, "
+                f"battery={level}, last recorded activity="
+                f"{row.get('last_activity') or 'not supplied'}."
+            )
 
     quiet = devices.get("no_recent_activity") or []
     if isinstance(quiet, list) and quiet:
@@ -830,6 +926,20 @@ def render_comprehensive_system_audit(
                 f"- Follow-up for {kind} {name}: no matching warnings/errors "
                 "in the returned 6h sample (not proof of no earlier issues)."
             )
+        if "sensecap" in str(name).casefold() and "live_push_evidence" in item:
+            observed = item["live_push_evidence"]
+            if observed.get("later_success_observed"):
+                lines.append(
+                    "- SenseCap live-push follow-up: an explicit successful push/resume "
+                    "log is newer than the sampled failed push. This supports an "
+                    "observed recovery event, not guaranteed ongoing operation."
+                )
+            else:
+                lines.append(
+                    "- SenseCap live-push follow-up: no timestamp-supported later "
+                    "successful push was established in the returned log sample; "
+                    "recovery remains unverified."
+                )
         for group in item.get("groups") or []:
             detail = " ".join(str(group.get(field) or "") for field in ("message", "summary"))
             if "attributeNames" in detail and (
@@ -868,6 +978,15 @@ async def run_comprehensive_chat_audit(
     from automation_status_service import AutomationStatusOutcome
     from mcp_client import tool_succeeded
     snapshot = await audit.run(reason="chat")
+    previous_method = getattr(audit, "previous", None)
+    previous_snapshot: dict[str, Any] | None = None
+    if callable(previous_method):
+        try:
+            previous_value = previous_method()
+            if isinstance(previous_value, dict):
+                previous_snapshot = previous_value
+        except Exception:
+            pass
     evidence: list[dict[str, Any]] = []
     checked_at = snapshot.get("checked_at")
     evidence.append({
@@ -946,7 +1065,9 @@ async def run_comprehensive_chat_audit(
                 ),
             })
 
-            for target in _fault_first_log_targets(snapshot, stats):
+            for target in _fault_first_log_targets(
+                snapshot, stats, previous_snapshot=previous_snapshot,
+            ):
                 kind = target["kind"]
                 identifier = target["id"]
                 name = target["name"]
@@ -986,6 +1107,9 @@ async def run_comprehensive_chat_audit(
                         **target,
                         "matching_rows": len(rows),
                         "returned_rows": len(_log_rows(response)),
+                        **({
+                            "live_push_evidence": _live_push_log_evidence(rows),
+                        } if "sensecap d1" in name.casefold() else {}),
                         "groups": (
                             findings["error_groups"] + findings["warning_groups"]
                         )[:3],
@@ -1041,12 +1165,20 @@ async def run_comprehensive_chat_audit(
                     evidence.append({
                         "tool": gateway.name, "sub_tool": "hub_get_logs",
                         "arguments": older_args, "timestamp": checked_at,
-                        "success": True, "supports_live_claim": True,
+                        "success": True,
+                        "supports_live_claim": bool(
+                            historical_logs.get("window_supported_by_rows")
+                        ),
                         "evidence_kind": "chat_audit_historical_logs",
                         "mutates": False, "effect": "read",
                         "summary": (
                             f"historical 24h-to-6h bounded window: {len(older_rows)} "
-                            "returned rows (max 200), no completeness guarantee"
+                            "returned rows (max 200); timestamp membership "
+                            + (
+                                "verified for returned records, not exhaustive"
+                                if historical_logs.get("window_supported_by_rows")
+                                else "unverified (empty/undated/out-of-window)"
+                            )
                         ),
                     })
                 except Exception as exc:

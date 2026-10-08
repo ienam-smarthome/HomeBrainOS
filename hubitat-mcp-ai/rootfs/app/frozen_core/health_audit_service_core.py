@@ -435,10 +435,25 @@ def _device_findings(
         explicitly_unreachable = online_flag is not None and _false_like(online_flag)
         if explicitly_offline or explicitly_unreachable:
             reason = str(state or "not reachable").strip()
+            state_keys = (
+                _HEALTH_STATE_KEYS if explicitly_offline else _BOOL_ONLINE_KEYS
+            )
+            source_key = next(
+                (
+                    key for key in state_keys
+                    if _first(values, (key,)) not in (None, "")
+                ),
+                "unknown",
+            )
+            _, _, activity_at = _activity_value(device)
+            battery_value = _safe_float(_first(values, ("battery",)))
             row = {
                 "id": identifier,
                 "label": label,
                 "state": reason,
+                "source_attribute": source_key,
+                "battery": round(battery_value, 1) if battery_value is not None else None,
+                "last_activity": activity_at.isoformat() if activity_at else None,
             }
             offline.append(row)
             issues.append(

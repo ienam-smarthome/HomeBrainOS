@@ -15,6 +15,7 @@ from health_audit_service import (  # noqa: E402
     run_comprehensive_chat_audit,
     _concise_log_message,
     _fault_first_log_targets,
+    _live_push_log_evidence,
     _bounded_log_window_evidence,
 )
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
@@ -179,8 +180,8 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
     assert [call[1]["args"]["tool"] for call in mcp.calls] == [
         "hub_get_performance_stats", "hub_get_logs", "hub_get_logs", "hub_get_logs",
     ]
-    assert mcp.calls[1][1]["args"]["args"]["deviceId"] == "7001"
-    assert mcp.calls[2][1]["args"]["args"]["appId"] == "9001"
+    assert mcp.calls[1][1]["args"]["args"]["appId"] == "9001"
+    assert mcp.calls[2][1]["args"]["args"]["deviceId"] == "7001"
     assert "websocket connection retrying" in result.message
     scoped_section = result.message.split(
         "- Follow-up for device LG webOS TV:", 1
@@ -437,7 +438,7 @@ def test_fault_first_prioritises_live_push_error_over_performance_only() -> None
     })
     targets = _fault_first_log_targets(snapshot, _performance())
     assert [(t["kind"], t["id"]) for t in targets] == [
-        ("app", "4129"), ("device", "7001"), ("app", "9001"),
+        ("app", "4129"), ("app", "9001"), ("device", "7001"),
     ]
     assert targets[0]["selection"] == "observed fault"
     assert all(t["id"].isdecimal() for t in targets)
@@ -542,3 +543,110 @@ def test_unmatched_performance_devices_display_ids() -> None:
     )
     assert "LG webOS TV (ID 7001)" in report
     assert "remain hypotheses" in report
+
+
+
+def test_structured_offline_ids_are_selected_before_performance() -> None:
+    snapshot = _snapshot()
+    snapshot["sections"]["devices"]["offline"] = [
+        {"id": "1234", "label": "Livingroom TRV", "state": "offline",
+         "source_attribute": "healthStatus", "battery": None},
+        {"id": "5678", "label": "Tuya Remote (bedroom 3)",
+         "state": "offline", "source_attribute": "connectionStatus"},
+    ]
+    targets = _fault_first_log_targets(snapshot, _performance())
+    assert [t["id"] for t in targets] == ["1234", "5678", "9001", "7001"]
+    assert targets[0]["selection"] == "explicit offline state"
+    assert targets[1]["selection"] == "explicit offline state"
+    message = render_comprehensive_system_audit(snapshot, _performance())
+    assert "Livingroom TRV (ID 1234)" in message
+    assert "source=healthStatus, battery=not supplied" in message
+    assert "Tuya Remote (bedroom 3) (ID 5678)" in message
+
+
+def test_offline_identity_not_invented_from_name_only_alert() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"].append({
+        "severity": "warning",
+        "title": "Device unavailable: Mystery Contact",
+        "detail": "offline",
+    })
+    targets = _fault_first_log_targets(snapshot, None)
+    assert targets == []
+
+
+def test_previous_live_push_error_receives_a_read_only_followup() -> None:
+    snapshot = _snapshot()
+    snapshot["sections"]["devices"]["offline"] = [{
+        "id": "1234", "label": "Livingroom TRV", "state": "offline",
+    }]
+    previous = {"issues": [{
+        "severity": "warning",
+        "title": "SenseCap D1 Settings",
+        "detail": "app|4129|SenseCap D1 Settings|live push failed (HTTP 408)",
+    }]}
+    targets = _fault_first_log_targets(snapshot, _performance(), previous_snapshot=previous)
+    assert [t["id"] for t in targets][:2] == ["1234", "4129"]
+    assert targets[1]["selection"] == "previously observed fault"
+
+
+def test_sensecap_performance_app_can_be_sampled_for_recovery_without_alert() -> None:
+    snapshot = _snapshot()
+    performance = _performance()
+    performance["appStats"].append({
+        "id": "4129", "name": "SenseCap D1 Settings",
+        "pctBusy": 9, "pctTotal": 0.5, "averageMs": 200,
+    })
+    targets = _fault_first_log_targets(snapshot, performance)
+    assert any(t["id"] == "4129" and t["selection"] == "live-push recovery check"
+               for t in targets)
+
+
+def test_sensecap_success_does_not_assume_continuous_recovery() -> None:
+    rows = [
+        {"timestamp": "2026-10-08T10:00:00Z", "level": "ERROR",
+         "message": "app|4129|SenseCap D1 Settings|live push failed HTTP 408"},
+        {"timestamp": "2026-10-08T10:15:00Z", "level": "INFO",
+         "message": "app|4129|SenseCap D1 Settings|live push succeeded"},
+    ]
+    evidence = _live_push_log_evidence(rows)
+    assert evidence["failure_rows"] == 1
+    assert evidence["success_rows"] == 1
+    assert evidence["later_success_observed"] is True
+    report = render_comprehensive_system_audit(_snapshot(), _performance(),
+        targeted_logs=[{
+            "kind": "app", "id": "4129", "name": "SenseCap D1 Settings",
+            "matching_rows": 2, "groups": [], "live_push_evidence": evidence,
+        }])
+    assert "observed recovery event, not guaranteed ongoing operation" in report
+    no_recovery = _live_push_log_evidence(rows[:1])
+    assert no_recovery["later_success_observed"] is False
+
+
+def test_undated_sensecap_success_does_not_verify_after_failure() -> None:
+    evidence = _live_push_log_evidence([{
+        "level": "INFO", "message": "SenseCap D1 live push succeeded"
+    }])
+    assert evidence["success_rows"] == 1
+    assert evidence["later_success_observed"] is False
+
+
+def test_end_to_end_offline_log_reads_use_actual_ids_and_remain_read_only() -> None:
+    class OfflineAudit:
+        async def run(self, *, reason):
+            snapshot = _snapshot()
+            snapshot["sections"]["logs"]["entries_checked"] = 10
+            snapshot["sections"]["devices"]["offline"] = [
+                {"id": "1234", "label": "Livingroom TRV", "state": "offline"},
+                {"id": "5678", "label": "Tuya Remote (bedroom 3)", "state": "offline"},
+            ]
+            return snapshot
+    mcp = _FakeMCP()
+    result = asyncio.run(run_comprehensive_chat_audit(OfflineAudit(), mcp))
+    scoped = [args["args"]["args"] for _, args in mcp.calls
+              if args["args"]["tool"] == "hub_get_logs"]
+    assert scoped[0]["deviceId"] == "1234"
+    assert scoped[1]["deviceId"] == "5678"
+    assert len(scoped) <= 4
+    assert all(item["mutates"] is False and item["effect"] == "read"
+               for item in result.evidence)
