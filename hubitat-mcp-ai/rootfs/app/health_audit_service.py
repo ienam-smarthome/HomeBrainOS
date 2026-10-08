@@ -562,7 +562,9 @@ def _fault_first_log_targets(
                 "app", row.get("id"), row.get("name"),
                 "live-push recovery check",
             )
-            break
+            # A performance sample can contain multiple distinct IDs sharing a
+            # display name. Keep investigating by ID within the shared budget;
+            # the first name match is not proof that all other IDs are the same.
 
     performance_targets = select_adaptive_log_targets(performance or {})
     if len(targets) >= 2:
