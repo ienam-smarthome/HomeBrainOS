@@ -553,6 +553,16 @@ def _fault_first_log_targets(
         (previous_snapshot or {}).get("issues"),
         selection="previously observed fault",
     )
+    # A single previous snapshot may not retain an earlier transient D1 alert.
+    # If it is a sampled performance app, one additional bounded read can
+    # check for an explicit successful push without claiming that it recovered.
+    for row in (performance or {}).get("appStats", []):
+        if isinstance(row, dict) and "sensecap d1" in str(row.get("name") or "").casefold():
+            add(
+                "app", row.get("id"), row.get("name"),
+                "live-push recovery check",
+            )
+            break
 
     performance_targets = select_adaptive_log_targets(performance or {})
     if len(targets) >= 2:
@@ -966,6 +976,15 @@ async def run_comprehensive_chat_audit(
     from automation_status_service import AutomationStatusOutcome
     from mcp_client import tool_succeeded
     snapshot = await audit.run(reason="chat")
+    previous_method = getattr(audit, "previous", None)
+    previous_snapshot: dict[str, Any] | None = None
+    if callable(previous_method):
+        try:
+            previous_value = previous_method()
+            if isinstance(previous_value, dict):
+                previous_snapshot = previous_value
+        except Exception:
+            pass
     evidence: list[dict[str, Any]] = []
     checked_at = snapshot.get("checked_at")
     evidence.append({
@@ -1044,7 +1063,9 @@ async def run_comprehensive_chat_audit(
                 ),
             })
 
-            for target in _fault_first_log_targets(snapshot, stats):
+            for target in _fault_first_log_targets(
+                snapshot, stats, previous_snapshot=previous_snapshot,
+            ):
                 kind = target["kind"]
                 identifier = target["id"]
                 name = target["name"]
@@ -1084,6 +1105,9 @@ async def run_comprehensive_chat_audit(
                         **target,
                         "matching_rows": len(rows),
                         "returned_rows": len(_log_rows(response)),
+                        **({
+                            "live_push_evidence": _live_push_log_evidence(rows),
+                        } if "sensecap d1" in name.casefold() else {}),
                         "groups": (
                             findings["error_groups"] + findings["warning_groups"]
                         )[:3],
