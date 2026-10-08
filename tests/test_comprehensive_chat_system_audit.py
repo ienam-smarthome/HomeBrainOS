@@ -12,6 +12,7 @@ from health_audit_service import (  # noqa: E402
     is_comprehensive_system_audit_request,
     render_comprehensive_system_audit,
     run_comprehensive_chat_audit,
+    _concise_log_message,
 )
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
 
@@ -211,3 +212,104 @@ def test_chat_request_uses_full_audit_before_general_agent(monkeypatch) -> None:
 
     assert result.message == "Full audit completed"
     assert invoked == [(app_module.health_audit, app_module.mcp)]
+
+
+
+def test_name_only_broken_markers_are_unverified_not_confirmed_faults() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"].append({
+        "category": "automation",
+        "severity": "warning",
+        "title": "Automation broken: Tuya Remote: button 4 pushed",
+        "detail": "Hubitat marked the automation name *BROKEN*.",
+    })
+    snapshot["issues"].append({
+        "category": "automation",
+        "severity": "warning",
+        "title": "Automation broken: Hallway Lighting",
+        "detail": "Hubitat reports broken=true.",
+    })
+    report = render_comprehensive_system_audit(snapshot, _performance())
+    assert "Automations flagged by name only — 1, unverified" in report
+    assert "- Tuya Remote: button 4 pushed" in report
+    assert "**WARNING: Automation broken: Hallway Lighting**" in report
+    assert "**WARNING: Automation broken: Tuya Remote" not in report
+    assert "does not independently demonstrate a current execution failure" in report
+    assert "Name-marked automations" in report
+
+
+def test_populations_are_not_subtracted_and_exact_sample_id_overlap_is_used() -> None:
+    snapshot = _snapshot()
+    snapshot["sections"]["devices"]["inventory_ids"] = ["7001", "8009"]
+    performance = _performance()
+    performance["deviceSummary"] = {"totalDevices": 370}
+    performance["appSummary"] = {"totalApps": 202}
+    performance["deviceStats"].append({
+        "id": "9999", "name": "Unselected Thing",
+        "pctBusy": 0.1, "pctTotal": 0.01, "averageMs": 20,
+    })
+    report = render_comprehensive_system_audit(snapshot, performance)
+    assert "370 reported total; 2 top-ranked rows returned" in report
+    assert "202 reported total; 1 top-ranked rows returned" in report
+    assert "Exact ID overlap: 1 of 2 sampled" in report
+    assert "Unselected Thing" in report
+    assert "does NOT prove these devices are missing from Hubitat" in report
+    assert "are not equivalent populations" in report
+
+
+def test_saturated_log_sample_warns_of_partial_coverage() -> None:
+    report = render_comprehensive_system_audit(_snapshot(), _performance())
+    assert "**Log window saturated:**" in report
+    assert "not verify complete 24-hour log coverage" in report
+    snapshot = _snapshot()
+    snapshot["sections"]["logs"]["entries_checked"] = 5
+    assert "**Log window saturated:**" not in render_comprehensive_system_audit(
+        snapshot, _performance()
+    )
+
+
+def test_nested_mcp_rule_server_log_uses_meaningful_message() -> None:
+    raw = (
+        "app|4151|MCP Rule Server|[MCP1] "
+        '{"appId":"4151","entry":{"component":"server","level":"error",'
+        '"message":"Validation error in hub_list_devices: incompatible projection",'
+        '"timestamp":"2026-10-08T11:00:00Z"}}'
+    )
+    assert _concise_log_message(raw) == (
+        "Validation error in hub_list_devices: incompatible projection"
+    )
+    truncated = raw[:-3]
+    assert "Validation error in hub_list_devices" in _concise_log_message(truncated)
+
+
+def test_diagnostic_receipts_track_each_source_without_claiming_mutation() -> None:
+    mcp = _FakeMCP()
+    result = asyncio.run(run_comprehensive_chat_audit(_FakeAudit(), mcp))
+    kinds = [(row["tool"], row.get("sub_tool")) for row in result.evidence]
+    assert ("health_audit.run", "devices") in kinds
+    assert ("health_audit.run", "automations") in kinds
+    assert ("health_audit.run", "logs") in kinds
+    assert ("hub_manage_logs", "hub_get_performance_stats") in kinds
+    assert kinds.count(("hub_manage_logs", "hub_get_logs")) == 2
+    assert all(row["effect"] == "read" and row["mutates"] is False for row in result.evidence)
+    assert result.evidence[0]["summary"].endswith("flagged findings")
+
+
+def test_incomplete_audit_sources_have_unsuccessful_receipts() -> None:
+    class IncompleteAudit:
+        async def run(self, *, reason):
+            snapshot = _snapshot()
+            snapshot["sections"]["devices"] = {"available": False}
+            snapshot["sections"]["logs"] = {"available": False}
+            return snapshot
+
+    result = asyncio.run(run_comprehensive_chat_audit(IncompleteAudit(), _FakeMCP()))
+    by_section = {
+        receipt.get("sub_tool"): receipt
+        for receipt in result.evidence
+        if receipt.get("evidence_kind") == "audit_source_section"
+    }
+    assert not by_section["devices"]["success"]
+    assert not by_section["logs"]["supports_live_claim"]
+    assert by_section["automations"]["success"]
+    assert "Incomplete sources: device inventory, logs" in result.message
