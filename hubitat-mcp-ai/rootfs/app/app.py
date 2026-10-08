@@ -120,6 +120,8 @@ def load_options() -> dict[str, Any]:
         "one_time_rule_cleanup_time": "01:00",
         "one_time_rule_cleanup_grace_minutes": 10,
         "health_check_log_hours": 24,
+        "sensecap_d1_intentionally_powered_off": False,
+        "comprehensive_audit_ai_analysis_enabled": False,
         "health_check_low_battery": 20,
         "health_check_stale_hours": 24,
         "health_check_long_stale_hours": 168,
@@ -176,6 +178,11 @@ health_audit = HealthAuditService(
     long_stale_hours=int(OPTIONS.get("health_check_long_stale_hours") or 168),
     cluster_minutes=int(OPTIONS.get("health_check_cluster_minutes") or 15),
     motion_active_hours=int(OPTIONS.get("health_check_motion_active_hours") or 2),
+)
+# Explicit add-on setting supplied by the user; never infer physical power
+# status from repeated transport errors, and never persist this as an MCP fact.
+health_audit.sensecap_d1_intentionally_powered_off = _bool(
+    OPTIONS.get("sensecap_d1_intentionally_powered_off"), False
 )
 pushover_notifier = PushoverNotifier(
     enabled=_bool(OPTIONS.get("pushover_enabled"), False),
@@ -443,6 +450,10 @@ async def _agent_request(request: ChatRequest) -> Any:
             # Reuse the existing full System Check instead of stopping after a
             # brief performance/log snapshot. This route is read-only, even if
             # a broad request also asks to "fix" discovered problems.
+            if _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False):
+                return await run_comprehensive_chat_audit(
+                    health_audit, mcp, analysis_chat=agent.transport.chat,
+                )
             return await run_comprehensive_chat_audit(health_audit, mcp)
         if is_broad_performance_request(request.message):
             outcome = await collect_broad_performance_outcome(agent, request.message)

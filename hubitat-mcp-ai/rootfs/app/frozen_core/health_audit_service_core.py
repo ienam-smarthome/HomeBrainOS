@@ -712,7 +712,14 @@ def _log_message(row: dict[str, Any]) -> str:
     return " ".join(str(row).split())
 
 
+_SLOW_LOGS_JSON_MS = re.compile(
+    r"slow internal GET /logs/json took\s+(\d+)ms", re.I
+)
+
+
 def _log_group_key(message: str) -> str:
+    if _SLOW_LOGS_JSON_MS.search(str(message or "")):
+        return "hubrt|slow internal GET /logs/json"
     adb_timeout = _ADB_TIMEOUT.search(str(message or ""))
     if adb_timeout:
         label = " ".join(str(adb_timeout.group("label") or "ADB device").split())
@@ -802,6 +809,8 @@ def _structured_mcp_entry(message: str) -> str | None:
 
 
 def _log_summary(message: str, fingerprint: str) -> str:
+    if fingerprint == "hubrt|slow internal GET /logs/json":
+        return "Hub runtime slow internal GET /logs/json exceeded its relay time budget."
     if fingerprint.startswith("mcp rule server|vrb feed missing "):
         summary = fingerprint.split("|", 1)[1]
         return f"VRB{summary[3:]}."
@@ -861,6 +870,15 @@ def _log_findings(rows: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict
             },
         )
         group["count"] += 1
+        slow_log_match = _SLOW_LOGS_JSON_MS.search(message)
+        if slow_log_match:
+            elapsed = int(slow_log_match.group(1))
+            group["duration_min_ms"] = min(
+                group.get("duration_min_ms", elapsed), elapsed
+            )
+            group["duration_max_ms"] = max(
+                group.get("duration_max_ms", elapsed), elapsed
+            )
         if group.get("source") is None and source:
             group["source"] = source
         if timestamp is not None:
@@ -1057,6 +1075,8 @@ class HealthAuditService:
             previous = self.latest()
             issues: list[dict[str, Any]] = []
             sections: dict[str, Any] = {}
+            stage_timings_ms: dict[str, int] = {}
+            stage_started = time.monotonic()
 
             try:
                 mcp_health = await self.mcp.health()
@@ -1065,6 +1085,8 @@ class HealthAuditService:
                     "online": False,
                     "error": f"{type(exc).__name__}: {str(exc)[:300]}",
                 }
+            stage_timings_ms["mcp_health"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
             online = bool(mcp_health.get("online"))
             sections["mcp"] = dict(mcp_health)
             if not online:
@@ -1095,6 +1117,8 @@ class HealthAuditService:
                         )
                     )
             sections["mcp"]["tool_count"] = len(tools)
+            stage_timings_ms["tool_inventory"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
 
             devices: list[dict[str, Any]] = []
             if online:
@@ -1147,6 +1171,8 @@ class HealthAuditService:
             else:
                 sections["devices"] = {"available": False, "reason": "MCP offline"}
 
+            stage_timings_ms["device_inventory"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
             hub = _hub_device_summary(devices)
             sections["hub"] = hub
             update_status = str(hub.get("update_status") or "").casefold()
@@ -1218,6 +1244,8 @@ class HealthAuditService:
                             key="automation-audit",
                         )
                     )
+                stage_timings_ms["automation_inventory"] = round((time.monotonic() - stage_started) * 1000)
+                stage_started = time.monotonic()
                 log_section, log_issues = await self._logs(tool_map)
                 sections["logs"] = log_section
                 issues.extend(log_issues)
@@ -1225,6 +1253,8 @@ class HealthAuditService:
                 sections["automations"] = {"available": False, "reason": "MCP offline"}
                 sections["logs"] = {"available": False, "reason": "MCP offline"}
 
+            stage_timings_ms["log_snapshot"] = round((time.monotonic() - stage_started) * 1000)
+            stage_started = time.monotonic()
             severities = {"critical": 0, "warning": 0, "info": 0}
             for item in issues:
                 severity = str(item.get("severity") or "info")
@@ -1350,7 +1380,9 @@ class HealthAuditService:
                     f"{'s' if attention_count != 1 else ''} need attention{breakdown}."
                 )
 
+            stage_timings_ms["aggregation"] = round((time.monotonic() - stage_started) * 1000)
             result = {
+                "stage_timings_ms": stage_timings_ms,
                 "snapshot_schema_version": _SNAPSHOT_SCHEMA_VERSION,
                 "change_tracking_state": (
                     "compared"

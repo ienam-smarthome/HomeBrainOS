@@ -3,9 +3,14 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.120**.
+Current add-on version: **0.16.121**.
 
 ## Architecture
+
+0.16.121 adds an opt-in Home Assistant add-on option `sensecap_d1_intentionally_powered_off` (default `false`). Set this to `true` while the SenseCap D1 is deliberately without power, and return it to `false` when the device is powered on. The comprehensive report labels this as user-supplied context, not an MCP-verified condition; existing warnings remain visible and repeated SenseCap scoped reads are suppressed while the option is active.
+
+The release also groups slow `/logs/json` warnings with different numerical durations into one diagnostic pattern with observed min/max milliseconds; measures System Check stages independently (MCP health, tool inventory, device inventory, automations, initial logs, and aggregation); and adds an opt-in `comprehensive_audit_ai_analysis_enabled` option (default `false`) for one short, read-only, tool-free Gemma advisory limited to evidence-based hypotheses. The deterministic source report remains authoritative and all Hubitat write confirmation safeguards remain unchanged.
+
 
 0.16.120 adds conservative log time-integrity checks: timezone-less and apparent future-dated log entries cannot establish UTC incident chronology or SenseCap recovery. Sources whose timezone metadata is absent remain unverified rather than receiving an assumed one-hour BST correction. Comprehensive audits now preserve exact device label/ID pairs for unambiguous ADB incident targeting and prioritise fresh observed failures over repeatedly querying unchanged offline status. They also provide bounded Zigbee metering and ADB follow-up guidance without inferring root causes. All diagnostic reads remain non-mutating.
 

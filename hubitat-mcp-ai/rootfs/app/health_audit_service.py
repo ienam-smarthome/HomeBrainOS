@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -452,7 +453,8 @@ def _concise_log_message(message: Any) -> str:
 
 
 def _audit_followups(
-    snapshot: dict[str, Any], performance: dict[str, Any] | None
+    snapshot: dict[str, Any], performance: dict[str, Any] | None,
+    *, sensecap_known_unpowered: bool = False,
 ) -> list[str]:
     issues = snapshot.get("issues") or []
     text = " ".join(
@@ -467,7 +469,14 @@ def _audit_followups(
         for row in quiet if isinstance(row, dict)
     }
     rows: list[str] = []
-    if "sensecap d1" in text and (
+    if sensecap_known_unpowered:
+        rows.append(
+            "- **SenseCap D1 power:** The user has marked this device intentionally "
+            "unpowered in the add-on configuration. Transport failures are expected "
+            "until power is restored. Re-enable power and clear that temporary option "
+            "before testing connectivity or changing network settings."
+        )
+    if not sensecap_known_unpowered and "sensecap d1" in text and (
         "http 408" in text or "live push failed" in text
         or "live updates are suspended" in text
     ):
@@ -477,7 +486,7 @@ def _audit_followups(
             "and a later successful push before calling this recovered; do not "
             "assume the retry has succeeded."
         )
-    if "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
+    if not sensecap_known_unpowered and "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
         rows.append(
             "- **SenseCap D1:** Verify its current IP/reachability and configuration "
             "push endpoint. A failed config push does not prove live updates stopped."
@@ -523,6 +532,7 @@ def _fault_first_log_targets(
     performance: dict[str, Any] | None,
     *,
     previous_snapshot: dict[str, Any] | None = None,
+    sensecap_known_unpowered: bool = False,
 ) -> list[dict[str, str]]:
     """Select at most four identity-grounded investigation targets, faults first.
 
@@ -540,6 +550,11 @@ def _fault_first_log_targets(
         if kind not in {"device", "app"} or not identifier.isdecimal():
             return
         key = (kind, identifier)
+        if (
+            sensecap_known_unpowered and kind == "app"
+            and "sensecap d1" in str(name or "").casefold()
+        ):
+            return
         if key in seen or len(targets) >= 4:
             return
         seen.add(key)
@@ -806,6 +821,8 @@ def _scoped_log_pattern_summary(targeted_logs: list[dict[str, Any]] | None) -> d
                     group.get("summary") or group.get("message")
                 ),
                 "rows": max(0, int(group.get("count") or 0)),
+                "duration_min_ms": group.get("duration_min_ms"),
+                "duration_max_ms": group.get("duration_max_ms"),
                 "first_seen": group.get("first_seen"),
                 "last_seen": group.get("last_seen"),
             })
@@ -824,6 +841,8 @@ def render_comprehensive_system_audit(
     targeted_logs: list[dict[str, Any]] | None = None,
     historical_logs: dict[str, Any] | None = None,
     context_reconciliation: dict[str, Any] | None = None,
+    sensecap_known_unpowered: bool = False,
+    ai_advisory: str | None = None,
 ) -> str:
     """Render checked data, neutral quiet-device observations and repair status."""
     sections = snapshot.get("sections") or {}
@@ -874,12 +893,45 @@ def render_comprehensive_system_audit(
     ]
     if unavailable:
         lines.append("- Incomplete sources: " + ", ".join(unavailable) + ".")
+    timings = snapshot.get("stage_timings_ms") or {}
+    if isinstance(timings, dict) and timings:
+        labels = (
+            ("mcp_health", "MCP health"),
+            ("tool_inventory", "MCP tool discovery"),
+            ("device_inventory", "Device inventory and classification"),
+            ("automation_inventory", "Automation inventory"),
+            ("log_snapshot", "Initial log sample"),
+            ("aggregation", "Finding aggregation"),
+        )
+        lines.extend((
+            "",
+            "### Measured System Check stage timings",
+            "Durations are per-step wall-clock observations, not hub CPU "
+            "usage or independent evidence of a device fault.",
+        ))
+        for key, label in labels:
+            if isinstance(timings.get(key), (float, int)):
+                lines.append(f"- {label}: {timings[key]} ms.")
+        lines.append(
+            f"- System Check total: {snapshot.get('elapsed_ms', 'unknown')} ms; "
+            "follow-up diagnostics add further time."
+        )
     if logs.get("entries_checked") == 200:
         lines.append(
             "- **Log window saturated:** all 200 requested rows were returned. "
             "Older errors in the 24-hour period may have been displaced by newer events; "
             "this does not verify complete 24-hour log coverage."
         )
+    if sensecap_known_unpowered:
+        lines.extend((
+            "",
+            "### Temporary user-reported device condition",
+            "- **SenseCap D1: intentionally switched off (no power)** — supplied "
+            "by the user through the add-on option, not independently verified "
+            "by MCP. Its live/config push failures are expected while unpowered; "
+            "they are not evidence of an unexplained network fault. Once powered "
+            "back on, clear the option and verify communications resume.",
+        ))
     lines.extend(("", "### Observed alerts (not necessarily proven causes)"))
     lines.extend(_audit_issue_lines(snapshot))
     offline_rows = [r for r in devices.get("offline", []) if isinstance(r, dict)]
@@ -1048,9 +1100,16 @@ def render_comprehensive_system_audit(
                 if pattern.get("first_seen") and pattern.get("last_seen")
                 else "; event timestamps unavailable"
             )
+            duration = (
+                f"; observed request duration "
+                f"{pattern['duration_min_ms']}–{pattern['duration_max_ms']} ms"
+                if pattern.get("duration_min_ms") is not None
+                and pattern.get("duration_max_ms") is not None else ""
+            )
             lines.append(
                 f"- [{pattern['level']}] {pattern['name']} (ID {pattern['id']}): "
-                f"{pattern['rows']} matching log rows — {pattern['detail']}{window}."
+                f"{pattern['rows']} matching log rows — {pattern['detail']}"
+                f"{duration}{window}."
             )
 
     if historical_logs is not None:
@@ -1207,17 +1266,32 @@ def render_comprehensive_system_audit(
                 break
 
     lines.extend(("", "### Evidence-based next checks"))
-    lines.extend(_audit_followups(snapshot, performance) or [
+    lines.extend(_audit_followups(
+        snapshot, performance, sensecap_known_unpowered=sensecap_known_unpowered,
+    ) or [
         "- No specific fix is justified from the currently returned fault evidence."
     ])
+    if ai_advisory:
+        lines.extend((
+            "",
+            "### Optional AI diagnostic hypotheses — unverified",
+            "Model-generated investigation suggestions only. These do not "
+            "replace MCP evidence or authorize device changes.",
+            ai_advisory[:1800],
+        ))
     lines.extend((
         "",
         "### Repair status",
         "- No repairs performed; current and historical co-observations do not prove causality.",
         "- Any Hubitat mutation requires a separate explicitly targeted request, "
         "verified capability and the existing confirmation safeguards.",
-        "- This report is host-assembled from MCP reads; no Gemma reasoning round "
-        "was used to infer missing evidence.",
+        (
+            "- Deterministic evidence was host-assembled; an optional bounded AI "
+            "advisory was requested but cannot establish additional facts."
+            if ai_advisory else
+            "- This report is host-assembled from MCP reads; no Gemma reasoning round "
+            "was used to infer missing evidence."
+        ),
     ))
     return "\n".join(lines)
 
@@ -1225,11 +1299,15 @@ def render_comprehensive_system_audit(
 async def run_comprehensive_chat_audit(
     audit: Any,
     mcp: Any,
+    *, analysis_chat: Any = None,
 ) -> Any:
     """Reuse the full System Check, then inspect performance outliers safely."""
     from automation_status_service import AutomationStatusOutcome
     from mcp_client import tool_succeeded
     snapshot = await audit.run(reason="chat")
+    sensecap_known_unpowered = bool(
+        getattr(audit, "sensecap_d1_intentionally_powered_off", False)
+    )
     previous_method = getattr(audit, "previous", None)
     previous_snapshot: dict[str, Any] | None = None
     if callable(previous_method):
@@ -1319,6 +1397,7 @@ async def run_comprehensive_chat_audit(
 
             for target in _fault_first_log_targets(
                 snapshot, stats, previous_snapshot=previous_snapshot,
+                sensecap_known_unpowered=sensecap_known_unpowered,
             ):
                 kind = target["kind"]
                 identifier = target["id"]
@@ -1534,7 +1613,54 @@ async def run_comprehensive_chat_audit(
         snapshot, stats, performance_error=performance_error,
         targeted_logs=targeted_logs, historical_logs=historical_logs,
         context_reconciliation=context_reconciliation,
+        sensecap_known_unpowered=sensecap_known_unpowered,
     )
+    if callable(analysis_chat):
+        # Explicit opt-in: one short, tool-free model pass, never executing
+        # suggestions. The deterministic report remains authoritative.
+        system_prompt = (
+            "You are analysing a read-only Hubitat diagnostic report. "
+            "Return at most three brief, evidence-linked investigative hypotheses. "
+            "Use only the supplied report. Separate known user configuration from "
+            "verified device evidence. Do not invent IP addresses, missing tools, "
+            "diagnoses or repairs. Never request or execute a state change. "
+            "If the SenseCap device is intentionally unpowered, say that is "
+            "the user-reported explanation for its transport failures."
+        )
+        try:
+            response = await asyncio.wait_for(
+                analysis_chat([
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message[:7000]},
+                ], []),
+                timeout=12.0,
+            )
+            advisory = str(
+                response.get("content") or "" if isinstance(response, dict) else ""
+            ).strip()[:1800]
+            if advisory:
+                message = render_comprehensive_system_audit(
+                    snapshot, stats, performance_error=performance_error,
+                    targeted_logs=targeted_logs, historical_logs=historical_logs,
+                    context_reconciliation=context_reconciliation,
+                    sensecap_known_unpowered=sensecap_known_unpowered,
+                    ai_advisory=advisory,
+                )
+                evidence.append({
+                    "tool": "optional_ai_advisory", "timestamp": checked_at,
+                    "success": True, "supports_live_claim": False,
+                    "evidence_kind": "non_authoritative_model_hypotheses",
+                    "mutates": False, "effect": "read",
+                    "summary": "Tool-free optional AI analysis; no additional facts or actions",
+                })
+        except Exception as exc:
+            evidence.append({
+                "tool": "optional_ai_advisory", "timestamp": checked_at,
+                "success": False, "supports_live_claim": False,
+                "evidence_kind": "non_authoritative_model_hypotheses",
+                "mutates": False, "effect": "read",
+                "summary": f"Optional AI analysis unavailable: {type(exc).__name__}",
+            })
     return AutomationStatusOutcome(
         message=message,
         route="comprehensive-system-audit",

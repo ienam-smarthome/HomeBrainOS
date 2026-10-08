@@ -896,3 +896,123 @@ def test_dehumidifier_command_response_is_not_diagnosed_as_failed_meter_reading(
         }],
     )
     assert "effect on current meter readings are not established" in report
+
+
+
+def test_slow_logs_json_duration_changes_group_into_one_pattern() -> None:
+    from frozen_core.health_audit_service_core import _log_findings
+    rows = [
+        {"level": "warning", "message": (
+            "[hubrt] slow internal GET /logs/json took 10061ms (ok), "
+            "at or over the 8000ms cloud-relay budget"
+        )},
+        {"level": "warning", "message": (
+            "[hubrt] slow internal GET /logs/json took 8268ms (ok), "
+            "at or over the 8000ms cloud-relay budget"
+        )},
+        {"level": "warning", "message": (
+            "[hubrt] slow internal GET /logs/json took 8608ms (ok), "
+            "at or over the 8000ms cloud-relay budget"
+        )},
+    ]
+    findings, _ = _log_findings(rows)
+    warnings = findings["warning_groups"]
+    assert len(warnings) == 1
+    assert warnings[0]["count"] == 3
+    assert warnings[0]["duration_min_ms"] == 8268
+    assert warnings[0]["duration_max_ms"] == 10061
+    message = render_comprehensive_system_audit(
+        _snapshot(), _performance(), targeted_logs=[{
+            "kind": "app", "id": "4151", "name": "MCP Rule Server",
+            "groups": warnings,
+        }]
+    )
+    assert "1 warning/error patterns across 3 matched log rows" in message
+    assert "8268–10061 ms" in message
+
+
+def test_intentionally_unpowered_sensecap_is_user_context_not_mcp_proof() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"].append({
+        "severity": "warning", "title": "SenseCap D1 Settings",
+        "detail": "app|4129|SenseCap D1 Settings|live push failed HTTP 408",
+    })
+    performance = _performance()
+    performance["appStats"].append({
+        "id": "4129", "name": "SenseCap D1 Settings",
+        "pctBusy": 12, "pctTotal": 1, "averageMs": 44,
+    })
+    targets = _fault_first_log_targets(
+        snapshot, performance, sensecap_known_unpowered=True,
+    )
+    assert all("sensecap d1" not in t["name"].casefold() for t in targets)
+    rendered = render_comprehensive_system_audit(
+        snapshot, performance, sensecap_known_unpowered=True,
+    )
+    assert "intentionally switched off (no power)" in rendered
+    assert "not independently verified by MCP" in rendered
+    assert "Transport failures are expected " in rendered
+    assert "Re-enable power and clear that temporary option" in rendered
+    assert "Check current reachability and a later successful push" not in rendered
+    # The error signal itself is still visible; it is not silently discarded.
+    assert "live push failed HTTP 408" in rendered
+
+
+def test_sensecap_normal_fault_analysis_returns_when_unpowered_option_cleared() -> None:
+    snapshot = _snapshot()
+    snapshot["issues"].append({
+        "severity": "warning", "title": "SenseCap D1 Settings",
+        "detail": "app|4129|SenseCap D1 Settings|live push failed HTTP 408",
+    })
+    targets = _fault_first_log_targets(snapshot, None)
+    assert any(t["id"] == "4129" for t in targets)
+    report = render_comprehensive_system_audit(snapshot, None)
+    assert "intentionally switched off" not in report
+    assert "Check current reachability and a later successful push" in report
+
+
+def test_measured_stage_timings_are_reported_without_cpu_assumptions() -> None:
+    snapshot = _snapshot()
+    snapshot["stage_timings_ms"] = {
+        "mcp_health": 18, "tool_inventory": 24,
+        "device_inventory": 5300, "automation_inventory": 8200,
+        "log_snapshot": 9000, "aggregation": 9,
+    }
+    snapshot["elapsed_ms"] = 22700
+    report = render_comprehensive_system_audit(snapshot, _performance())
+    assert "Measured System Check stage timings" in report
+    assert "Device inventory and classification: 5300 ms" in report
+    assert "Automation inventory: 8200 ms" in report
+    assert "Initial log sample: 9000 ms" in report
+    assert "System Check total: 22700 ms" in report
+    assert "not hub CPU usage" in report
+
+
+def test_optional_model_analysis_is_tool_free_advisory_and_non_mutating() -> None:
+    observed = []
+    async def fake_chat(messages, tools):
+        observed.append((messages, tools))
+        return {"content": "Hypothesis: Check whether the socket still has power."}
+    audit = _FakeAudit()
+    mcp = _FakeMCP()
+    result = asyncio.run(run_comprehensive_chat_audit(
+        audit, mcp, analysis_chat=fake_chat,
+    ))
+    assert len(observed) == 1
+    assert observed[0][1] == []
+    assert "Optional AI diagnostic hypotheses — unverified" in result.message
+    assert "Hypothesis: Check whether the socket still has power" in result.message
+    assert any(e.get("evidence_kind") == "non_authoritative_model_hypotheses"
+               and e["mutates"] is False and not e["supports_live_claim"]
+               for e in result.evidence)
+
+
+def test_ai_timeout_or_error_does_not_break_deterministic_system_audit() -> None:
+    async def bad_chat(messages, tools):
+        raise RuntimeError("model unavailable")
+    result = asyncio.run(run_comprehensive_chat_audit(
+        _FakeAudit(), _FakeMCP(), analysis_chat=bad_chat,
+    ))
+    assert "Comprehensive Hubitat audit" in result.message
+    assert any(e.get("evidence_kind") == "non_authoritative_model_hypotheses"
+               and e["success"] is False for e in result.evidence)
