@@ -16,6 +16,8 @@ from health_audit_service import (  # noqa: E402
     _concise_log_message,
     _fault_first_log_targets,
     _live_push_log_evidence,
+    _scoped_log_pattern_summary,
+    _device_findings,
     _bounded_log_window_evidence,
 )
 from mcp_client import MCPTool, MCPToolResult  # noqa: E402
@@ -650,3 +652,116 @@ def test_end_to_end_offline_log_reads_use_actual_ids_and_remain_read_only() -> N
     assert len(scoped) <= 4
     assert all(item["mutates"] is False and item["effect"] == "read"
                for item in result.evidence)
+
+
+
+def test_active_offline_path_preserves_health_source_battery_and_last_seen() -> None:
+    inventory = [{
+        "id": "4718", "label": "Livingroom TRV",
+        "healthStatus": "offline", "battery": 54,
+        "lastActivity": "2026-10-07T19:00:00Z",
+    }, {
+        "id": "3483", "label": "Tuya Remote (bedroom 3)",
+        "connected": False,
+    }]
+    section, issues = _device_findings(inventory, low_battery_threshold=20)
+    offline = {row["id"]: row for row in section["offline"]}
+    assert offline["4718"]["source_attribute"] == "healthStatus"
+    assert offline["4718"]["battery"] == 54
+    assert offline["4718"]["last_activity"] == "2026-10-07T19:00:00+00:00"
+    assert offline["4718"]["reachability_independently_verified"] is False
+    assert offline["3483"]["source_attribute"] == "connected"
+    assert offline["3483"]["battery"] is None
+    assert offline["3483"]["last_activity"] is None
+    assert section["offline_count"] == 2
+    assert len([r for r in issues if r["category"] == "device-offline"]) == 2
+
+
+def test_scoped_warning_patterns_count_log_rows_not_outages() -> None:
+    targeted = [{
+        "kind": "app", "id": "4129", "name": "SenseCap D1 Settings",
+        "groups": [
+            {
+                "level": "warning", "count": 17,
+                "fingerprint": "sensecap-live-push-failed",
+                "summary": "SenseCap live push failed (HTTP 408)",
+                "first_seen": "2026-10-08T09:00:00+00:00",
+                "last_seen": "2026-10-08T13:00:00+00:00",
+            },
+            {
+                "level": "warning", "count": 5,
+                "fingerprint": "sensecap-config-push-failed",
+                "summary": "SenseCap config push failed (No route to host)",
+            },
+        ],
+    }, {
+        "kind": "app", "id": "4151", "name": "MCP Rule Server",
+        "groups": [{"level": "warning", "count": 2,
+                    "fingerprint": "relay-slow-logs", "summary": "Slow internal GET /logs/json"}],
+    }]
+    summary = _scoped_log_pattern_summary(targeted)
+    assert summary["pattern_count"] == 3
+    assert summary["rows"] == 24
+    report = render_comprehensive_system_audit(_snapshot(), _performance(), targeted_logs=targeted)
+    assert "Scoped diagnostics: 3 warning/error patterns across 24 matched log rows" in report
+    assert "log rows are not separate outages" in report
+    assert "17 matching log rows" in report
+    assert "observed 2026-10-08T09:00:00+00:00" in report
+    assert "event timestamps unavailable" in report
+
+
+def test_scoped_summary_deduplicates_identical_target_and_group() -> None:
+    group = {"level": "warning", "count": 4,
+             "fingerprint": "same", "summary": "Recurring failure"}
+    target = {"kind": "app", "id": "4129", "name": "SenseCap D1 Settings",
+              "groups": [group]}
+    assert _scoped_log_pattern_summary([target, target])["rows"] == 4
+
+
+def test_sensecap_live_and_config_errors_are_distinct_with_no_auto_repair_claim() -> None:
+    rows = [{
+        "level": "WARN", "message": (
+            "app|4129|SenseCap D1 Settings|SenseCap D1 live push failed (HTTP 408)"
+        ),
+    }, {
+        "level": "WARN", "message": (
+            "app|4129|SenseCap D1 Settings|SenseCap D1 config push failed (No route to host)"
+        ),
+    }]
+    observed = _live_push_log_evidence(rows)
+    assert observed["failure_rows"] == 1
+    assert observed["config_failure_rows"] == 1
+    assert not observed["later_success_observed"]
+    report = render_comprehensive_system_audit(
+        _snapshot(), _performance(), targeted_logs=[{
+            "kind": "app", "id": "4129", "name": "SenseCap D1 Settings",
+            "matching_rows": 2, "groups": [],
+            "live_push_evidence": observed,
+        }],
+    )
+    assert "1 live-push failure rows, 1 configuration-push failure rows" in report
+    assert "do not establish causality" in report
+    assert "recovery remains unverified" in report
+
+
+def test_busy_audit_skips_redundant_older_log_request_without_coverage_claim() -> None:
+    class BusyAudit:
+        async def run(self, *, reason):
+            snapshot = _snapshot()
+            snapshot["sections"]["devices"]["offline"] = [
+                {"id": "4718", "label": "Livingroom TRV", "state": "offline"},
+                {"id": "3483", "label": "Tuya Remote (bedroom 3)", "state": "offline"},
+            ]
+            snapshot["issues"].append({
+                "severity": "warning", "title": "SenseCap D1 Settings",
+                "detail": "app|4129|SenseCap D1 Settings|live push failed HTTP 408",
+            })
+            return snapshot
+    mcp = _FakeMCP()
+    result = asyncio.run(run_comprehensive_chat_audit(BusyAudit(), mcp))
+    assert [item[1]["args"]["tool"] for item in mcp.calls].count("hub_get_logs") == 4
+    assert "Historical read skipped:" in result.message
+    assert "Earlier errors remain unverified" in result.message
+    assert not any(r.get("evidence_kind") == "chat_audit_historical_logs"
+                   for r in result.evidence)
+    assert all(r.get("mutates") is False for r in result.evidence)

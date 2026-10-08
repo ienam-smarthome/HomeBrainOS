@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -126,7 +127,31 @@ def _device_findings(
         )
         if explicitly_offline or explicitly_unreachable:
             reason = str(state or "not reachable").strip()
-            offline.append({"id": identifier, "label": label, "state": reason})
+            health_keys = (
+                _core._HEALTH_STATE_KEYS if explicitly_offline
+                else _core._BOOL_ONLINE_KEYS
+            )
+            source_attribute = next(
+                (
+                    key for key in health_keys
+                    if _core._first(values, (key,)) not in (None, "")
+                ),
+                None,
+            )
+            has_activity, raw_activity, activity_at = _core._activity_value(device)
+            offline.append({
+                "id": identifier,
+                "label": label,
+                "state": reason,
+                "source_attribute": source_attribute,
+                "battery": round(battery, 1) if battery is not None else None,
+                "last_activity": (
+                    activity_at.isoformat() if activity_at
+                    else str(raw_activity) if has_activity and raw_activity not in (None, "")
+                    else None
+                ),
+                "reachability_independently_verified": False,
+            })
             issues.append(
                 _core._issue(
                     "device-offline",
@@ -581,6 +606,7 @@ def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
     errors: list[datetime] = []
     successes: list[datetime] = []
     failed = 0
+    config_failed = 0
     succeeded = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -593,6 +619,8 @@ def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
             failed += 1
             if timestamp is not None:
                 errors.append(timestamp)
+        if "config push failed" in message:
+            config_failed += 1
         if any(phrase in message for phrase in (
             "live push succeeded", "live push successful",
             "live updates resumed", "live push resumed",
@@ -605,6 +633,7 @@ def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
     return {
         "failure_rows": failed,
+        "config_failure_rows": config_failed,
         "success_rows": succeeded,
         "latest_failure": max(errors).isoformat() if errors else None,
         "latest_success": max(successes).isoformat() if successes else None,
@@ -642,6 +671,49 @@ def _bounded_log_window_evidence(
     return result
 
 
+def _scoped_log_pattern_summary(targeted_logs: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Summarise observed warning/error patterns, not inferred outages.
+
+    Targets are identity-deduplicated by the planner. Individual log rows are
+    occurrences, not separate incidents; matching patterns from scoped reads
+    may also overlap the initial System Check snapshot.
+    """
+    patterns: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for target in targeted_logs or []:
+        if not isinstance(target, dict) or target.get("error"):
+            continue
+        kind = str(target.get("kind") or "")
+        identifier = str(target.get("id") or "")
+        for group in target.get("groups") or []:
+            if not isinstance(group, dict):
+                continue
+            key = (
+                kind, identifier,
+                str(group.get("level") or ""),
+                str(group.get("fingerprint") or group.get("summary") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            patterns.append({
+                "name": str(target.get("name") or identifier),
+                "id": identifier,
+                "level": str(group.get("level") or "unknown"),
+                "detail": _concise_log_message(
+                    group.get("summary") or group.get("message")
+                ),
+                "rows": max(0, int(group.get("count") or 0)),
+                "first_seen": group.get("first_seen"),
+                "last_seen": group.get("last_seen"),
+            })
+    return {
+        "patterns": patterns,
+        "pattern_count": len(patterns),
+        "rows": sum(item["rows"] for item in patterns),
+    }
+
+
 def render_comprehensive_system_audit(
     snapshot: dict[str, Any],
     performance: dict[str, Any] | None,
@@ -666,10 +738,14 @@ def render_comprehensive_system_audit(
     status = "ATTENTION" if other_count else (
         "REVIEW NAME MARKERS" if marker_count else "NO ALERTS OBSERVED"
     )
+    scoped_summary = _scoped_log_pattern_summary(targeted_logs)
     lines = [
         f"## Comprehensive Hubitat audit — {status}",
         f"Alert signals: {other_count} from current health/log/automation data; "
         f"{marker_count} name-only *BROKEN* markers (not verified failures).",
+        f"Scoped diagnostics: {scoped_summary['pattern_count']} warning/error "
+        f"patterns across {scoped_summary['rows']} matched log rows. "
+        "These may overlap the main alerts; log rows are not separate outages.",
         f"Checked: {snapshot.get('checked_at') or 'time not available'} (hub report).",
         "**Read-only:** no devices, rules, apps or settings have been changed.",
         "",
@@ -857,9 +933,33 @@ def render_comprehensive_system_audit(
             f"- Performance statistics unavailable: {performance_error or 'source did not return usable data'}."
         )
 
+    if scoped_summary["patterns"]:
+        lines.extend((
+            "",
+            "### Additional scoped diagnostic findings",
+            "Counts represent repeated log rows grouped by source and message, "
+            "not distinct outages. This sampled evidence is not a full event history.",
+        ))
+        for pattern in scoped_summary["patterns"][:8]:
+            window = (
+                f"; observed {pattern['first_seen']} to {pattern['last_seen']}"
+                if pattern.get("first_seen") and pattern.get("last_seen")
+                else "; event timestamps unavailable"
+            )
+            lines.append(
+                f"- [{pattern['level']}] {pattern['name']} (ID {pattern['id']}): "
+                f"{pattern['rows']} matching log rows — {pattern['detail']}{window}."
+            )
+
     if historical_logs is not None:
         lines.extend(("", "### Older-log follow-up (24h to 6h before audit)"))
-        if historical_logs.get("error"):
+        if historical_logs.get("skipped_reason"):
+            lines.append(
+                "- Historical read skipped: "
+                + str(historical_logs["skipped_reason"])
+                + " Earlier errors remain unverified."
+            )
+        elif historical_logs.get("error"):
             lines.append(
                 "- Historical bounded log read failed: "
                 + str(historical_logs["error"]) + ". No historical claims made."
@@ -904,9 +1004,13 @@ def render_comprehensive_system_audit(
     for item in targeted_logs or []:
         kind = item.get("kind") or "target"
         name = item.get("name") or item.get("id") or "unknown"
+        elapsed = (
+            f", read {item['elapsed_ms']}ms"
+            if item.get("elapsed_ms") is not None else ""
+        )
         lines.append(
             f"- Scoped investigation target: {kind} {name} (ID {item.get('id') or '?'})"
-            f" — {item.get('selection') or 'performance outlier'}."
+            f" — {item.get('selection') or 'performance outlier'}{elapsed}."
         )
         if item.get("error"):
             lines.append(f"- Follow-up log read for {kind} {name} failed: {item['error']}.")
@@ -928,6 +1032,23 @@ def render_comprehensive_system_audit(
             )
         if "sensecap" in str(name).casefold() and "live_push_evidence" in item:
             observed = item["live_push_evidence"]
+            lines.append(
+                "- SenseCap correlation: "
+                f"{observed.get('failure_rows', 0)} live-push failure rows, "
+                f"{observed.get('config_failure_rows', 0)} configuration-push "
+                "failure rows; these may share a network cause, but the logs "
+                "do not establish causality or distinct outage counts."
+            )
+            if observed.get("latest_failure"):
+                lines.append(
+                    "- Latest timestamped live-push failure: "
+                    + str(observed["latest_failure"]) + "."
+                )
+            if observed.get("latest_success"):
+                lines.append(
+                    "- Latest timestamped explicit live-push success: "
+                    + str(observed["latest_success"]) + "."
+                )
             if observed.get("later_success_observed"):
                 lines.append(
                     "- SenseCap live-push follow-up: an explicit successful push/resume "
@@ -1077,8 +1198,10 @@ async def run_comprehensive_chat_audit(
                     "hub_get_logs",
                     {scope: identifier, "since": "6h", "limit": 120},
                 )
+                read_started = time.monotonic()
                 try:
                     response = await mcp.call_tool(gateway.name, args)
+                    elapsed_ms = round((time.monotonic() - read_started) * 1000)
                     if not tool_succeeded(response):
                         raise ValueError("filtered log read failed")
                     prefix = ("dev|" if kind == "device" else "app|") + identifier + "|"
@@ -1096,6 +1219,7 @@ async def run_comprehensive_chat_audit(
                         "success": True,
                         "supports_live_claim": True,
                         "evidence_kind": "chat_audit_scoped_logs",
+                        "elapsed_ms": elapsed_ms,
                         "mutates": False,
                         "effect": "read",
                         "summary": (
@@ -1106,6 +1230,7 @@ async def run_comprehensive_chat_audit(
                     targeted_logs.append({
                         **target,
                         "matching_rows": len(rows),
+                        "elapsed_ms": elapsed_ms,
                         "returned_rows": len(_log_rows(response)),
                         **({
                             "live_push_evidence": _live_push_log_evidence(rows),
@@ -1115,6 +1240,7 @@ async def run_comprehensive_chat_audit(
                         )[:3],
                     })
                 except Exception as exc:
+                    elapsed_ms = round((time.monotonic() - read_started) * 1000)
                     error = f"{type(exc).__name__}: {str(exc)[:120]}"
                     evidence.append({
                         "tool": gateway.name,
@@ -1124,17 +1250,28 @@ async def run_comprehensive_chat_audit(
                         "success": False,
                         "supports_live_claim": False,
                         "evidence_kind": "chat_audit_scoped_logs",
+                        "elapsed_ms": elapsed_ms,
                         "mutates": False,
                         "effect": "read",
                         "summary": f"{kind} {name} scoped logs failed: {error}",
                     })
-                    targeted_logs.append({**target, "error": error})
+                    targeted_logs.append({**target, "error": error, "elapsed_ms": elapsed_ms})
             # A saturated 24h sample can be all recent INFO rows. Fetch one
             # explicitly older, bounded, disjoint segment using the existing
             # supported since/until window contract (not a guessed severity
             # filter). Never label this a complete historical audit.
             audit_logs = (snapshot.get("sections") or {}).get("logs") or {}
-            if audit_logs.get("entries_checked") == 200 and checked_at:
+            if (
+                audit_logs.get("entries_checked") == 200 and checked_at
+                and len(targeted_logs) >= 3
+            ):
+                historical_logs = {
+                    "skipped_reason": (
+                        "three or more fault/performance log scopes already checked; "
+                        "avoid another potentially slow /logs/json request on this run."
+                    )
+                }
+            elif audit_logs.get("entries_checked") == 200 and checked_at:
                 started_at = datetime.fromisoformat(str(checked_at).replace("Z", "+00:00"))
                 older_args = _gateway_arguments(
                     gateway,
