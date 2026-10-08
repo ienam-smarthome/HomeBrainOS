@@ -452,7 +452,8 @@ def _concise_log_message(message: Any) -> str:
 
 
 def _audit_followups(
-    snapshot: dict[str, Any], performance: dict[str, Any] | None
+    snapshot: dict[str, Any], performance: dict[str, Any] | None,
+    *, sensecap_known_unpowered: bool = False,
 ) -> list[str]:
     issues = snapshot.get("issues") or []
     text = " ".join(
@@ -467,7 +468,14 @@ def _audit_followups(
         for row in quiet if isinstance(row, dict)
     }
     rows: list[str] = []
-    if "sensecap d1" in text and (
+    if sensecap_known_unpowered:
+        rows.append(
+            "- **SenseCap D1 power:** The user has marked this device intentionally "
+            "unpowered in the add-on configuration. Transport failures are expected "
+            "until power is restored. Re-enable power and clear that temporary option "
+            "before testing connectivity or changing network settings."
+        )
+    if not sensecap_known_unpowered and "sensecap d1" in text and (
         "http 408" in text or "live push failed" in text
         or "live updates are suspended" in text
     ):
@@ -477,7 +485,7 @@ def _audit_followups(
             "and a later successful push before calling this recovered; do not "
             "assume the retry has succeeded."
         )
-    if "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
+    if not sensecap_known_unpowered and "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
         rows.append(
             "- **SenseCap D1:** Verify its current IP/reachability and configuration "
             "push endpoint. A failed config push does not prove live updates stopped."
@@ -523,6 +531,7 @@ def _fault_first_log_targets(
     performance: dict[str, Any] | None,
     *,
     previous_snapshot: dict[str, Any] | None = None,
+    sensecap_known_unpowered: bool = False,
 ) -> list[dict[str, str]]:
     """Select at most four identity-grounded investigation targets, faults first.
 
@@ -540,6 +549,11 @@ def _fault_first_log_targets(
         if kind not in {"device", "app"} or not identifier.isdecimal():
             return
         key = (kind, identifier)
+        if (
+            sensecap_known_unpowered and kind == "app"
+            and "sensecap d1" in str(name or "").casefold()
+        ):
+            return
         if key in seen or len(targets) >= 4:
             return
         seen.add(key)
@@ -824,6 +838,7 @@ def render_comprehensive_system_audit(
     targeted_logs: list[dict[str, Any]] | None = None,
     historical_logs: dict[str, Any] | None = None,
     context_reconciliation: dict[str, Any] | None = None,
+    sensecap_known_unpowered: bool = False,
 ) -> str:
     """Render checked data, neutral quiet-device observations and repair status."""
     sections = snapshot.get("sections") or {}
@@ -880,6 +895,16 @@ def render_comprehensive_system_audit(
             "Older errors in the 24-hour period may have been displaced by newer events; "
             "this does not verify complete 24-hour log coverage."
         )
+    if sensecap_known_unpowered:
+        lines.extend((
+            "",
+            "### Temporary user-reported device condition",
+            "- **SenseCap D1: intentionally switched off (no power)** — supplied "
+            "by the user through the add-on option, not independently verified "
+            "by MCP. Its live/config push failures are expected while unpowered; "
+            "they are not evidence of an unexplained network fault. Once powered "
+            "back on, clear the option and verify communications resume.",
+        ))
     lines.extend(("", "### Observed alerts (not necessarily proven causes)"))
     lines.extend(_audit_issue_lines(snapshot))
     offline_rows = [r for r in devices.get("offline", []) if isinstance(r, dict)]
@@ -1207,7 +1232,9 @@ def render_comprehensive_system_audit(
                 break
 
     lines.extend(("", "### Evidence-based next checks"))
-    lines.extend(_audit_followups(snapshot, performance) or [
+    lines.extend(_audit_followups(
+        snapshot, performance, sensecap_known_unpowered=sensecap_known_unpowered,
+    ) or [
         "- No specific fix is justified from the currently returned fault evidence."
     ])
     lines.extend((
@@ -1230,6 +1257,9 @@ async def run_comprehensive_chat_audit(
     from automation_status_service import AutomationStatusOutcome
     from mcp_client import tool_succeeded
     snapshot = await audit.run(reason="chat")
+    sensecap_known_unpowered = bool(
+        getattr(audit, "sensecap_d1_intentionally_powered_off", False)
+    )
     previous_method = getattr(audit, "previous", None)
     previous_snapshot: dict[str, Any] | None = None
     if callable(previous_method):
@@ -1319,6 +1349,7 @@ async def run_comprehensive_chat_audit(
 
             for target in _fault_first_log_targets(
                 snapshot, stats, previous_snapshot=previous_snapshot,
+                sensecap_known_unpowered=sensecap_known_unpowered,
             ):
                 kind = target["kind"]
                 identifier = target["id"]
@@ -1534,6 +1565,7 @@ async def run_comprehensive_chat_audit(
         snapshot, stats, performance_error=performance_error,
         targeted_logs=targeted_logs, historical_logs=historical_logs,
         context_reconciliation=context_reconciliation,
+        sensecap_known_unpowered=sensecap_known_unpowered,
     )
     return AutomationStatusOutcome(
         message=message,
