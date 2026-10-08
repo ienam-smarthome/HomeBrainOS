@@ -450,6 +450,10 @@ async def _agent_request(request: ChatRequest) -> Any:
             # Reuse the existing full System Check instead of stopping after a
             # brief performance/log snapshot. This route is read-only, even if
             # a broad request also asks to "fix" discovered problems.
+            if _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False):
+                return await run_comprehensive_chat_audit(
+                    health_audit, mcp, analysis_chat=agent.transport.chat,
+                )
             return await run_comprehensive_chat_audit(health_audit, mcp)
         if is_broad_performance_request(request.message):
             outcome = await collect_broad_performance_outcome(agent, request.message)
