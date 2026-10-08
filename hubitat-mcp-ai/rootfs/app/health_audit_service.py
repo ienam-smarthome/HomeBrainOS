@@ -299,8 +299,278 @@ _log_findings = _core._log_findings
 _log_rows = _core._log_rows
 _previous_stale_ids = _core._previous_stale_ids
 
+def is_comprehensive_system_audit_request(prompt: str) -> bool:
+    """Narrow read-only chat shortcut for whole-hub diagnostic requests.
+
+    This selects a report workflow, not a tool's read/write effect. Every
+    underlying MCP action is a fixed read. Specific repair commands continue
+    through the normal agent and its tool-based confirmation checks.
+    """
+    words = " ".join(str(prompt or "").casefold().split())
+    if any(phrase in words for phrase in (
+        "comprehensive system audit", "full system audit",
+        "comprehensive hub audit", "full hub audit",
+        "run system check", "full system check",
+    )):
+        return True
+    is_investigation = any(
+        phrase in words for phrase in (
+            "check", "audit", "inspect", "investigate", "diagnose", "review",
+        )
+    )
+    has_logs = "logs" in words or "log entries" in words
+    broad_scope = sum(
+        token in words for token in ("device", "app", "hub event", "statistics", "stats")
+    ) >= 2
+    return is_investigation and has_logs and broad_scope
+
+
+def _audit_issue_lines(snapshot: dict[str, Any], *, limit: int = 12) -> list[str]:
+    issues = [
+        row for row in snapshot.get("issues", [])
+        if isinstance(row, dict) and row.get("severity") in ("critical", "warning")
+    ]
+    lines = []
+    for row in issues[:limit]:
+        severity = str(row.get("severity") or "warning").upper()
+        title = str(row.get("title") or "Unknown issue").strip()
+        detail = str(row.get("detail") or "").strip()
+        count = int(row.get("count") or 1)
+        suffix = f" ({count} observations in the checked sample)" if count > 1 else ""
+        lines.append(f"- **{severity}: {title}**{suffix} — {detail}")
+    if len(issues) > limit:
+        lines.append(f"- … and {len(issues) - limit} additional findings in System Check.")
+    if not lines:
+        lines.append("- No confirmed alert signals were found in the sources that returned data.")
+    return lines
+
+
+def render_comprehensive_system_audit(
+    snapshot: dict[str, Any],
+    performance: dict[str, Any] | None,
+    *,
+    performance_error: str | None = None,
+    targeted_logs: list[dict[str, Any]] | None = None,
+) -> str:
+    """Render checked data, neutral quiet-device observations and repair status."""
+    sections = snapshot.get("sections") or {}
+    devices = sections.get("devices") or {}
+    automations = sections.get("automations") or {}
+    logs = sections.get("logs") or {}
+    status = str(snapshot.get("status") or "unknown").upper()
+    lines = [
+        f"## Comprehensive Hubitat audit — {status}",
+        f"Checked: {snapshot.get('checked_at') or 'time not available'} (hub report).",
+        "**Read-only:** no devices, rules, apps or settings have been changed.",
+        "",
+        "### Coverage",
+        f"- Devices: {devices.get('total', 'unavailable')} inventoried; "
+        f"{devices.get('offline_count', 'unknown')} explicitly reported unavailable; "
+        f"{devices.get('low_battery_count', 'unknown')} low-battery reports.",
+        f"- Automations: {automations.get('total', 'unavailable')} checked; "
+        f"{automations.get('attention_count', 'unknown')} broken, paused or unknown.",
+        f"- Logs: {logs.get('entries_checked', 'unavailable')} returned rows "
+        f"(requested lookback: {logs.get('checked_hours', 'unknown')} hours, "
+        "at most 200 rows). This is not proof that older or omitted events are absent.",
+    ]
+    unavailable = [
+        label for label, section in (
+            ("device inventory", devices), ("automations", automations), ("logs", logs)
+        )
+        if section.get("available") is False
+    ]
+    if unavailable:
+        lines.append("- Incomplete sources: " + ", ".join(unavailable) + ".")
+    lines.extend(("", "### Findings requiring attention"))
+    lines.extend(_audit_issue_lines(snapshot))
+
+    quiet = devices.get("no_recent_activity") or []
+    if isinstance(quiet, list) and quiet:
+        ranked = sorted(
+            (item for item in quiet if isinstance(item, dict)),
+            key=lambda item: float(item.get("age_hours") or 0),
+            reverse=True,
+        )
+        lines.extend((
+            "",
+            f"### Quiet devices — {len(ranked)} observations, **not offline verdicts**",
+            "These devices have old recorded activity. Event-driven sensors may "
+            "normally remain quiet; reachability must be independently checked.",
+        ))
+        for item in ranked[:8]:
+            lines.append(
+                f"- {item.get('label') or item.get('id') or 'Unknown'}: "
+                f"last activity {item.get('last_activity') or 'unknown'} "
+                f"({item.get('age_hours', '?')} hours ago)."
+            )
+        if len(ranked) > 8:
+            lines.append(f"- … and {len(ranked) - 8} more quiet devices in System Check.")
+
+    overdue = devices.get("expected_update_overdue") or []
+    if overdue:
+        lines.append(
+            f"\nExplicit reporting expectations missed: {len(overdue)}. "
+            "A missed update does not by itself identify the cause."
+        )
+
+    lines.extend(("", "### Performance leaders (not automatic faults)"))
+    if isinstance(performance, dict):
+        for kind, key in (("Device", "deviceStats"), ("App", "appStats")):
+            ranked = [
+                row for row in performance.get(key, [])
+                if isinstance(row, dict) and row.get("name")
+            ]
+            ranked.sort(
+                key=lambda row: _core._safe_float(
+                    str(row.get("pctBusy") or "0").replace("%", "")
+                ) or 0.0,
+                reverse=True,
+            )
+            for row in ranked[:3]:
+                lines.append(
+                    f"- {kind} {row['name']} (ID {row.get('id', '?')}): "
+                    f"pctBusy={row.get('pctBusy', 'unknown')}%, "
+                    f"pctTotal={row.get('pctTotal', 'unknown')}%, "
+                    f"averageMs={row.get('averageMs', 'unknown')}."
+                )
+        lines.append(
+            "Performance data is a top-ranked sample, not an audit of every device "
+            "or app. Busy percentages do not establish errors or their causes."
+        )
+    else:
+        lines.append(
+            f"- Performance statistics unavailable: {performance_error or 'source did not return usable data'}."
+        )
+
+    for item in targeted_logs or []:
+        kind = item.get("kind") or "target"
+        name = item.get("name") or item.get("id") or "unknown"
+        if item.get("error"):
+            lines.append(f"- Follow-up log read for {kind} {name} failed: {item['error']}.")
+        elif item.get("groups"):
+            lines.append(
+                f"- Follow-up for {kind} {name}: {item.get('matching_rows', 0)} "
+                "matching log rows within 6h; observed messages:"
+            )
+            for group in item["groups"][:3]:
+                lines.append(
+                    f"  - [{group.get('level')}] {group.get('summary')} "
+                    f"({group.get('count')} rows)"
+                )
+        else:
+            lines.append(
+                f"- Follow-up for {kind} {name}: no matching warnings/errors "
+                "in the returned 6h sample (not proof of no earlier issues)."
+            )
+
+    lines.extend((
+        "",
+        "### Repair status and next action",
+        "- No repairs performed. Confirmed log symptoms are not proof of a root cause.",
+        "- Check affected device reachability, driver configuration and recent "
+        "events before changing or disabling anything.",
+        "- For any repair that changes Hubitat state, request the specific "
+        "action and use the existing verification/confirmation workflow.",
+    ))
+    return "\n".join(lines)
+
+
+async def run_comprehensive_chat_audit(
+    audit: Any,
+    mcp: Any,
+) -> Any:
+    """Reuse the full System Check, then inspect performance outliers safely."""
+    from automation_status_service import AutomationStatusOutcome
+    from mcp_client import tool_succeeded
+    from performance_host_plan import select_adaptive_log_targets
+
+    snapshot = await audit.run(reason="chat")
+    stats: dict[str, Any] | None = None
+    performance_error: str | None = None
+    targeted_logs: list[dict[str, Any]] = []
+    try:
+        tools = {tool.name: tool for tool in await mcp.list_tools()}
+        gateway = tools.get("hub_manage_logs") or tools.get("hub_read_diagnostics")
+        if gateway is None:
+            performance_error = "no supported log/performance gateway"
+        else:
+            arguments = _gateway_arguments(
+                gateway,
+                "hub_get_performance_stats",
+                {"limit": 20, "sortBy": "pct", "type": "both"},
+            )
+            response = await mcp.call_tool(gateway.name, arguments)
+            if tool_succeeded(response) and isinstance(response.data, dict):
+                stats = response.data
+            else:
+                performance_error = "performance tool returned no successful data"
+
+            if stats is not None:
+                for target in select_adaptive_log_targets(stats)[:2]:
+                    kind = target["kind"]
+                    identifier = target["id"]
+                    name = target["name"]
+                    scope = "deviceId" if kind == "device" else "appId"
+                    args = _gateway_arguments(
+                        gateway,
+                        "hub_get_logs",
+                        {scope: identifier, "since": "6h", "limit": 120},
+                    )
+                    try:
+                        response = await mcp.call_tool(gateway.name, args)
+                        if not tool_succeeded(response):
+                            raise ValueError("filtered log read failed")
+                        prefix = ("dev|" if kind == "device" else "app|") + identifier + "|"
+                        rows = [
+                            row for row in _log_rows(response)
+                            if prefix in str(row.get("message") or "")
+                            or name.casefold() in str(row.get("message") or "").casefold()
+                        ]
+                        findings, _ = _log_findings(rows)
+                        targeted_logs.append({
+                            **target,
+                            "matching_rows": len(rows),
+                            "groups": (
+                                findings["error_groups"] + findings["warning_groups"]
+                            )[:3],
+                        })
+                    except Exception as exc:
+                        targeted_logs.append({
+                            **target, "error": f"{type(exc).__name__}: {str(exc)[:120]}"
+                        })
+    except Exception as exc:
+        performance_error = f"{type(exc).__name__}: {str(exc)[:160]}"
+
+    message = render_comprehensive_system_audit(
+        snapshot, stats, performance_error=performance_error,
+        targeted_logs=targeted_logs,
+    )
+    return AutomationStatusOutcome(
+        message=message,
+        route="comprehensive-system-audit",
+        evidence=[{
+            "tool": "health_audit.run",
+            "success": True,
+            "timestamp": snapshot.get("checked_at"),
+            "supports_live_claim": True,
+            "evidence_kind": "read_only_system_audit_snapshot",
+            "mutates": False,
+            "effect": "read",
+            "summary": (
+                f"System Check {snapshot.get('status', 'unknown')}; "
+                f"{snapshot.get('attention_count', '?')} attention findings; "
+                f"performance {'available' if stats is not None else 'unavailable'}"
+            ),
+        }],
+    )
+
+
+
 __all__ = [
     "HealthAuditService",
+    "is_comprehensive_system_audit_request",
+    "render_comprehensive_system_audit",
+    "run_comprehensive_chat_audit",
     "_device_findings",
     "_freshness_seconds",
     "_gateway_arguments",
