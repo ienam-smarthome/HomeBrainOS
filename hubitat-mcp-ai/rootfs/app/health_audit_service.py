@@ -891,6 +891,29 @@ def render_comprehensive_system_audit(
     ]
     if unavailable:
         lines.append("- Incomplete sources: " + ", ".join(unavailable) + ".")
+    timings = snapshot.get("stage_timings_ms") or {}
+    if isinstance(timings, dict) and timings:
+        labels = (
+            ("mcp_health", "MCP health"),
+            ("tool_inventory", "MCP tool discovery"),
+            ("device_inventory", "Device inventory and classification"),
+            ("automation_inventory", "Automation inventory"),
+            ("log_snapshot", "Initial log sample"),
+            ("aggregation", "Finding aggregation"),
+        )
+        lines.extend((
+            "",
+            "### Measured System Check stage timings",
+            "Durations are per-step wall-clock observations, not hub CPU "
+            "usage or independent evidence of a device fault.",
+        ))
+        for key, label in labels:
+            if isinstance(timings.get(key), (float, int)):
+                lines.append(f"- {label}: {timings[key]} ms.")
+        lines.append(
+            f"- System Check total: {snapshot.get('elapsed_ms', 'unknown')} ms; "
+            "follow-up diagnostics add further time."
+        )
     if logs.get("entries_checked") == 200:
         lines.append(
             "- **Log window saturated:** all 200 requested rows were returned. "
