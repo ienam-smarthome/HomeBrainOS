@@ -180,8 +180,8 @@ def test_full_chat_audit_collects_scoped_followups_without_mutations() -> None:
     assert [call[1]["args"]["tool"] for call in mcp.calls] == [
         "hub_get_performance_stats", "hub_get_logs", "hub_get_logs", "hub_get_logs",
     ]
-    assert mcp.calls[1][1]["args"]["args"]["deviceId"] == "7001"
-    assert mcp.calls[2][1]["args"]["args"]["appId"] == "9001"
+    assert mcp.calls[1][1]["args"]["args"]["appId"] == "9001"
+    assert mcp.calls[2][1]["args"]["args"]["deviceId"] == "7001"
     assert "websocket connection retrying" in result.message
     scoped_section = result.message.split(
         "- Follow-up for device LG webOS TV:", 1
@@ -438,7 +438,7 @@ def test_fault_first_prioritises_live_push_error_over_performance_only() -> None
     })
     targets = _fault_first_log_targets(snapshot, _performance())
     assert [(t["kind"], t["id"]) for t in targets] == [
-        ("app", "4129"), ("device", "7001"), ("app", "9001"),
+        ("app", "4129"), ("app", "9001"), ("device", "7001"),
     ]
     assert targets[0]["selection"] == "observed fault"
     assert all(t["id"].isdecimal() for t in targets)
