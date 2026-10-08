@@ -598,8 +598,8 @@ def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
             succeeded += 1
             if timestamp is not None:
                 successes.append(timestamp)
-    newer_success = bool(successes) and (
-        not errors or max(successes) > max(errors)
+    newer_success = bool(successes and errors) and (
+        max(successes) > max(errors)
     )
     return {
         "failure_rows": failed,
