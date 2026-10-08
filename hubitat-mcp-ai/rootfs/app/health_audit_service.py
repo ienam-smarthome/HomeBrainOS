@@ -605,6 +605,7 @@ def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
     errors: list[datetime] = []
     successes: list[datetime] = []
     failed = 0
+    config_failed = 0
     succeeded = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -617,6 +618,8 @@ def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
             failed += 1
             if timestamp is not None:
                 errors.append(timestamp)
+        if "config push failed" in message:
+            config_failed += 1
         if any(phrase in message for phrase in (
             "live push succeeded", "live push successful",
             "live updates resumed", "live push resumed",
@@ -629,6 +632,7 @@ def _live_push_log_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
     return {
         "failure_rows": failed,
+        "config_failure_rows": config_failed,
         "success_rows": succeeded,
         "latest_failure": max(errors).isoformat() if errors else None,
         "latest_success": max(successes).isoformat() if successes else None,
@@ -1023,6 +1027,23 @@ def render_comprehensive_system_audit(
             )
         if "sensecap" in str(name).casefold() and "live_push_evidence" in item:
             observed = item["live_push_evidence"]
+            lines.append(
+                "- SenseCap correlation: "
+                f"{observed.get('failure_rows', 0)} live-push failure rows, "
+                f"{observed.get('config_failure_rows', 0)} configuration-push "
+                "failure rows; these may share a network cause, but the logs "
+                "do not establish causality or distinct outage counts."
+            )
+            if observed.get("latest_failure"):
+                lines.append(
+                    "- Latest timestamped live-push failure: "
+                    + str(observed["latest_failure"]) + "."
+                )
+            if observed.get("latest_success"):
+                lines.append(
+                    "- Latest timestamped explicit live-push success: "
+                    + str(observed["latest_success"]) + "."
+                )
             if observed.get("later_success_observed"):
                 lines.append(
                     "- SenseCap live-push follow-up: an explicit successful push/resume "
@@ -1229,7 +1250,17 @@ async def run_comprehensive_chat_audit(
             # supported since/until window contract (not a guessed severity
             # filter). Never label this a complete historical audit.
             audit_logs = (snapshot.get("sections") or {}).get("logs") or {}
-            if audit_logs.get("entries_checked") == 200 and checked_at:
+            if (
+                audit_logs.get("entries_checked") == 200 and checked_at
+                and len(targeted_logs) >= 3
+            ):
+                historical_logs = {
+                    "skipped_reason": (
+                        "three or more fault/performance log scopes already checked; "
+                        "avoid another potentially slow /logs/json request on this run."
+                    )
+                }
+            elif audit_logs.get("entries_checked") == 200 and checked_at:
                 started_at = datetime.fromisoformat(str(checked_at).replace("Z", "+00:00"))
                 older_args = _gateway_arguments(
                     gateway,
