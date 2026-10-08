@@ -412,6 +412,17 @@ def _concise_log_message(message: Any) -> str:
                     text = " ".join(str(message).split())
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
+    # The upstream group may truncate the JSON after the nested message,
+    # making json.loads impossible. A bounded quoted-field fallback still
+    # extracts the actual log text rather than a raw transport envelope.
+    if '"entry"' in text and '"message"' in text and '"appId"' in text:
+        nested = re.search(r'"message"\s*:\s*("(?:\\.|[^"\\])*")', text)
+        if nested:
+            try:
+                parsed = json.loads(nested.group(1))
+                text = " ".join(str(parsed).split())
+            except (TypeError, ValueError):
+                pass
     return re.sub(r"[\r\n\t]+", " ", text)[:280]
 
 
@@ -638,7 +649,7 @@ def render_comprehensive_system_audit(
             for group in item["groups"][:3]:
                 lines.append(
                     f"  - [{group.get('level')}] "
-                    f"{_concise_log_message(group.get('summary'))} "
+                    f"{_concise_log_message(group.get('message') or group.get('summary'))} "
                     f"({group.get('count')} rows)"
                 )
         else:
@@ -673,6 +684,42 @@ async def run_comprehensive_chat_audit(
     from performance_host_plan import select_adaptive_log_targets
 
     snapshot = await audit.run(reason="chat")
+    evidence: list[dict[str, Any]] = []
+    checked_at = snapshot.get("checked_at")
+    evidence.append({
+        "tool": "health_audit.run",
+        "success": True,
+        "timestamp": checked_at,
+        "supports_live_claim": True,
+        "evidence_kind": "read_only_system_audit_snapshot",
+        "mutates": False,
+        "effect": "read",
+        "summary": (
+            f"System Check {snapshot.get('status', 'unknown')}; "
+            f"{snapshot.get('attention_count', '?')} flagged findings"
+        ),
+    })
+    for label, key in (("devices", "devices"), ("automations", "automations"), ("logs", "logs")):
+        section = (snapshot.get("sections") or {}).get(key) or {}
+        complete = section.get("available") is not False and (
+            ("total" in section) if key != "logs" else section.get("available") is True
+        )
+        evidence.append({
+            "tool": "health_audit.run",
+            "sub_tool": key,
+            "timestamp": checked_at,
+            "success": bool(complete),
+            "supports_live_claim": bool(complete),
+            "evidence_kind": "audit_source_section",
+            "mutates": False,
+            "effect": "read",
+            "summary": (
+                f"{label} section {'available' if complete else 'unavailable'}; "
+                f"{section.get('total', section.get('entries_checked', '?'))} "
+                "records/items in the returned source"
+            ),
+        })
+
     stats: dict[str, Any] | None = None
     performance_error: str | None = None
     targeted_logs: list[dict[str, Any]] = []
@@ -688,10 +735,30 @@ async def run_comprehensive_chat_audit(
                 {"limit": 20, "sortBy": "pct", "type": "both"},
             )
             response = await mcp.call_tool(gateway.name, arguments)
-            if tool_succeeded(response) and isinstance(response.data, dict):
+            valid_performance = (
+                tool_succeeded(response) and isinstance(response.data, dict)
+                and isinstance(response.data.get("deviceStats"), list)
+                and isinstance(response.data.get("appStats"), list)
+            )
+            if valid_performance:
                 stats = response.data
             else:
-                performance_error = "performance tool returned no successful data"
+                performance_error = "performance tool returned no usable device/app data"
+            evidence.append({
+                "tool": gateway.name,
+                "sub_tool": "hub_get_performance_stats",
+                "arguments": arguments,
+                "timestamp": checked_at,
+                "success": bool(valid_performance),
+                "supports_live_claim": bool(valid_performance),
+                "evidence_kind": "chat_audit_performance_stats",
+                "mutates": False,
+                "effect": "read",
+                "summary": (
+                    "top-ranked device/app rows"
+                    if valid_performance else "performance read unavailable or incomplete"
+                ),
+            })
 
             if stats is not None:
                 for target in select_adaptive_log_targets(stats)[:2]:
@@ -715,6 +782,21 @@ async def run_comprehensive_chat_audit(
                             or name.casefold() in str(row.get("message") or "").casefold()
                         ]
                         findings, _ = _log_findings(rows)
+                        evidence.append({
+                            "tool": gateway.name,
+                            "sub_tool": "hub_get_logs",
+                            "arguments": args,
+                            "timestamp": checked_at,
+                            "success": True,
+                            "supports_live_claim": True,
+                            "evidence_kind": "chat_audit_scoped_logs",
+                            "mutates": False,
+                            "effect": "read",
+                            "summary": (
+                                f"{kind} {name} (ID {identifier}): "
+                                f"{len(rows)} matched rows in a bounded 6h log request"
+                            ),
+                        })
                         targeted_logs.append({
                             **target,
                             "matching_rows": len(rows),
@@ -723,9 +805,20 @@ async def run_comprehensive_chat_audit(
                             )[:3],
                         })
                     except Exception as exc:
-                        targeted_logs.append({
-                            **target, "error": f"{type(exc).__name__}: {str(exc)[:120]}"
+                        error = f"{type(exc).__name__}: {str(exc)[:120]}"
+                        evidence.append({
+                            "tool": gateway.name,
+                            "sub_tool": "hub_get_logs",
+                            "arguments": args,
+                            "timestamp": checked_at,
+                            "success": False,
+                            "supports_live_claim": False,
+                            "evidence_kind": "chat_audit_scoped_logs",
+                            "mutates": False,
+                            "effect": "read",
+                            "summary": f"{kind} {name} scoped logs failed: {error}",
                         })
+                        targeted_logs.append({**target, "error": error})
     except Exception as exc:
         performance_error = f"{type(exc).__name__}: {str(exc)[:160]}"
 
@@ -736,20 +829,7 @@ async def run_comprehensive_chat_audit(
     return AutomationStatusOutcome(
         message=message,
         route="comprehensive-system-audit",
-        evidence=[{
-            "tool": "health_audit.run",
-            "success": True,
-            "timestamp": snapshot.get("checked_at"),
-            "supports_live_claim": True,
-            "evidence_kind": "read_only_system_audit_snapshot",
-            "mutates": False,
-            "effect": "read",
-            "summary": (
-                f"System Check {snapshot.get('status', 'unknown')}; "
-                f"{snapshot.get('attention_count', '?')} attention findings; "
-                f"performance {'available' if stats is not None else 'unavailable'}"
-            ),
-        }],
+        evidence=evidence,
     )
 
 
