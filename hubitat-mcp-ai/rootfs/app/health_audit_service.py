@@ -784,6 +784,8 @@ async def run_comprehensive_chat_audit(
     stats: dict[str, Any] | None = None
     performance_error: str | None = None
     targeted_logs: list[dict[str, Any]] = []
+    historical_logs: dict[str, Any] | None = None
+    context_reconciliation: dict[str, Any] | None = None
     try:
         tools = {tool.name: tool for tool in await mcp.list_tools()}
         gateway = tools.get("hub_manage_logs") or tools.get("hub_read_diagnostics")
@@ -880,12 +882,123 @@ async def run_comprehensive_chat_audit(
                             "summary": f"{kind} {name} scoped logs failed: {error}",
                         })
                         targeted_logs.append({**target, "error": error})
+            # A saturated 24h sample can be all recent INFO rows. Fetch one
+            # explicitly older, bounded, disjoint segment using the existing
+            # supported since/until window contract (not a guessed severity
+            # filter). Never label this a complete historical audit.
+            audit_logs = (snapshot.get("sections") or {}).get("logs") or {}
+            if audit_logs.get("entries_checked") == 200 and checked_at:
+                started_at = datetime.fromisoformat(str(checked_at).replace("Z", "+00:00"))
+                older_args = _gateway_arguments(
+                    gateway,
+                    "hub_get_logs",
+                    {
+                        "since": (started_at - timedelta(hours=24)).isoformat(),
+                        "until": (started_at - timedelta(hours=6)).isoformat(),
+                        "limit": 200,
+                    },
+                )
+                try:
+                    older_result = await mcp.call_tool(gateway.name, older_args)
+                    if not tool_succeeded(older_result):
+                        raise ValueError("historical bounded log request failed")
+                    older_rows = _log_rows(older_result)
+                    older_findings, _ = _log_findings(older_rows)
+                    historical_logs = {
+                        "entries_checked": len(older_rows),
+                        "groups": (
+                            older_findings["error_groups"] +
+                            older_findings["warning_groups"]
+                        )[:5],
+                    }
+                    evidence.append({
+                        "tool": gateway.name, "sub_tool": "hub_get_logs",
+                        "arguments": older_args, "timestamp": checked_at,
+                        "success": True, "supports_live_claim": True,
+                        "evidence_kind": "chat_audit_historical_logs",
+                        "mutates": False, "effect": "read",
+                        "summary": (
+                            f"historical 24h-to-6h bounded window: {len(older_rows)} "
+                            "returned rows (max 200), no completeness guarantee"
+                        ),
+                    })
+                except Exception as exc:
+                    error = f"{type(exc).__name__}: {str(exc)[:120]}"
+                    historical_logs = {"error": error}
+                    evidence.append({
+                        "tool": gateway.name, "sub_tool": "hub_get_logs",
+                        "arguments": older_args, "timestamp": checked_at,
+                        "success": False, "supports_live_claim": False,
+                        "evidence_kind": "chat_audit_historical_logs",
+                        "mutates": False, "effect": "read",
+                        "summary": error,
+                    })
     except Exception as exc:
         performance_error = f"{type(exc).__name__}: {str(exc)[:160]}"
 
+    # Check unmatched performance identities against a separate live-context
+    # source only when available and demonstrably complete. This check does
+    # not change or repair the detailed inventory.
+    if isinstance(stats, dict):
+        inventory_ids = {
+            str(value) for value in (
+                (snapshot.get("sections") or {}).get("devices") or {}
+            ).get("inventory_ids", [])
+        }
+        unmatched = [
+            row for row in (stats.get("deviceStats") or [])
+            if isinstance(row, dict) and row.get("id") not in (None, "")
+            and str(row["id"]) not in inventory_ids
+        ] if inventory_ids else []
+        read_context = getattr(mcp, "get_live_context", None)
+        if unmatched and callable(read_context):
+            from device_read_contract import live_context_is_complete
+            try:
+                context = await read_context(refresh=False)
+                complete = live_context_is_complete(context)
+                context_ids = {
+                    str(row.get("id") or row.get("deviceId"))
+                    for row in (context.get("devices") or [])
+                    if isinstance(row, dict)
+                } if complete else set()
+                context_reconciliation = {
+                    "complete": complete,
+                    "found": [
+                        str(row.get("name") or row["id"])
+                        for row in unmatched if str(row["id"]) in context_ids
+                    ],
+                    "absent": [
+                        str(row.get("name") or row["id"])
+                        for row in unmatched if str(row["id"]) not in context_ids
+                    ] if complete else [],
+                }
+                evidence.append({
+                    "tool": "hubitat://context",
+                    "timestamp": checked_at, "success": complete,
+                    "supports_live_claim": complete,
+                    "evidence_kind": "chat_audit_inventory_crosscheck",
+                    "mutates": False, "effect": "read",
+                    "summary": (
+                        f"live context {'complete' if complete else 'incomplete'}; "
+                        f"{len(context_reconciliation['found'])}/{len(unmatched)} "
+                        "unmatched performance IDs found" if complete
+                        else "live-context identity cross-check incomplete"
+                    ),
+                })
+            except Exception as exc:
+                context_reconciliation = {"complete": False}
+                evidence.append({
+                    "tool": "hubitat://context", "timestamp": checked_at,
+                    "success": False, "supports_live_claim": False,
+                    "evidence_kind": "chat_audit_inventory_crosscheck",
+                    "mutates": False, "effect": "read",
+                    "summary": f"live-context cross-check failed: {type(exc).__name__}",
+                })
+
     message = render_comprehensive_system_audit(
         snapshot, stats, performance_error=performance_error,
-        targeted_logs=targeted_logs,
+        targeted_logs=targeted_logs, historical_logs=historical_logs,
+        context_reconciliation=context_reconciliation,
     )
     return AutomationStatusOutcome(
         message=message,
