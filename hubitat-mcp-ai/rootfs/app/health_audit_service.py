@@ -550,9 +550,30 @@ def _fault_first_log_targets(
         })
 
     devices = (snapshot.get("sections") or {}).get("devices") or {}
+    older_devices = ((previous_snapshot or {}).get("sections") or {}).get("devices") or {}
+    previous_offline = {
+        str(row.get("id")): str(row.get("state") or "")
+        for row in older_devices.get("offline") or []
+        if isinstance(row, dict) and row.get("id") not in (None, "")
+    }
+    still_offline: list[dict[str, Any]] = []
     for row in devices.get("offline") or []:
-        if isinstance(row, dict):
-            add("device", row.get("id"), row.get("label"), "explicit offline state")
+        if not isinstance(row, dict):
+            continue
+        identifier = str(row.get("id") or "")
+        if identifier in previous_offline and (
+            previous_offline[identifier] == str(row.get("state") or "")
+        ):
+            still_offline.append(row)
+        else:
+            add("device", identifier, row.get("label"), "new/changed offline state")
+
+    identity_by_name: dict[str, set[str]] = {}
+    for row in devices.get("inventory_labels") or []:
+        if isinstance(row, dict) and row.get("id") not in (None, "") and row.get("label"):
+            identity_by_name.setdefault(
+                str(row["label"]).strip().casefold(), set()
+            ).add(str(row["id"]))
 
     def add_issue_targets(issues: Any, *, selection: str) -> None:
         for issue in issues if isinstance(issues, list) else []:
@@ -572,24 +593,33 @@ def _fault_first_log_targets(
                     "app" if match.group("kind") == "app" else "device",
                     match.group("id"), match.group("name"), selection,
                 )
+            # A log alert may identify a device only by label (e.g. ADB).
+            # Use ONLY a unique exact ID/name pair from the same live snapshot.
+            title = str(issue.get("title") or "").strip()
+            matching_ids = identity_by_name.get(title.casefold()) or set()
+            if len(matching_ids) == 1:
+                add("device", next(iter(matching_ids)), title, selection)
 
     add_issue_targets(snapshot.get("issues"), selection="observed fault")
     add_issue_targets(
         (previous_snapshot or {}).get("issues"),
         selection="previously observed fault",
     )
-    # A single previous snapshot may not retain an earlier transient D1 alert.
-    # If it is a sampled performance app, one additional bounded read can
-    # check for an explicit successful push without claiming that it recovered.
+    # A transient SenseCap error can disappear from the capped main log
+    # sample. When identifiable in performance data, check for recovery.
     for row in (performance or {}).get("appStats", []):
         if isinstance(row, dict) and "sensecap d1" in str(row.get("name") or "").casefold():
-            add(
-                "app", row.get("id"), row.get("name"),
-                "live-push recovery check",
-            )
-            # A performance sample can contain multiple distinct IDs sharing a
-            # display name. Keep investigating by ID within the shared budget;
-            # the first name match is not proof that all other IDs are the same.
+            add("app", row.get("id"), row.get("name"), "live-push recovery check")
+
+    # Do not repeatedly spend the full diagnostic budget on unchanged offline
+    # flags. Sample at most one; the other offline verdicts remain reported.
+    if still_offline and len(targets) < 4:
+        index = 0
+        checked_at = _core._parse_datetime(snapshot.get("checked_at"))
+        if checked_at is not None:
+            index = (int(checked_at.timestamp()) // 60) % len(still_offline)
+        row = still_offline[index]
+        add("device", row.get("id"), row.get("label"), "unchanged offline sample")
 
     performance_targets = select_adaptive_log_targets(performance or {})
     if len(targets) >= 2:
