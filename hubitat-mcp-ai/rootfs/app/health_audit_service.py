@@ -442,6 +442,16 @@ def _audit_followups(
         for row in quiet if isinstance(row, dict)
     }
     rows: list[str] = []
+    if "sensecap d1" in text and (
+        "http 408" in text or "live push failed" in text
+        or "live updates are suspended" in text
+    ):
+        rows.append(
+            "- **SenseCap D1 live push:** The reported HTTP timeout suspended "
+            "live updates pending automatic backoff/retry. Check current reachability "
+            "and a later successful push before calling this recovered; do not "
+            "assume the retry has succeeded."
+        )
     if "sensecap d1" in text and ("unreachable" in text or "no route to host" in text):
         rows.append(
             "- **SenseCap D1:** Verify its current IP/reachability and configuration "
@@ -680,7 +690,8 @@ def render_comprehensive_system_audit(
             )
             if unlisted:
                 example = ", ".join(
-                    str(row.get("name") or row["id"]) for row in unlisted[:4]
+                    f"{row.get('name') or 'Unknown'} (ID {row['id']})"
+                    for row in unlisted[:4]
                 )
                 lines.append(
                     f"- Performance IDs outside this MCP inventory sample: {example}. "
@@ -701,7 +712,8 @@ def render_comprehensive_system_audit(
                         if absent:
                             lines.append(
                                 "- IDs still unexplained after live-context cross-check: "
-                                + ", ".join(absent) + "."
+                                + ", ".join(absent) + ". Historical performance "
+                                "entries or different visibility remain hypotheses."
                             )
                     else:
                         lines.append(
@@ -762,6 +774,25 @@ def render_comprehensive_system_audit(
                 f"- {count} returned rows in a separate older-log window "
                 "(maximum 200). This does not certify complete historical coverage."
             )
+            if not historical_logs.get("window_supported_by_rows"):
+                lines.append(
+                    "- **Historical window unverified:** the response contained "
+                    "no rows, missing row timestamps or timestamps outside the "
+                    "requested boundaries. A successful request does not confirm "
+                    "server retention or support for the requested time filters."
+                )
+            else:
+                lines.append(
+                    "- Returned timestamps fall within the requested historical "
+                    "window, but this does not establish that every event was returned."
+                )
+            if historical_logs.get("observed_earliest"):
+                lines.append(
+                    "- Observed timestamps: "
+                    f"{historical_logs['observed_earliest']} to "
+                    f"{historical_logs['observed_latest']} "
+                    f"({historical_logs.get('rows_with_timestamps', 0)} dated rows)."
+                )
             if count >= 200:
                 lines.append(
                     "- Older-window sample also saturated: some historical "
@@ -777,6 +808,10 @@ def render_comprehensive_system_audit(
     for item in targeted_logs or []:
         kind = item.get("kind") or "target"
         name = item.get("name") or item.get("id") or "unknown"
+        lines.append(
+            f"- Scoped investigation target: {kind} {name} (ID {item.get('id') or '?'})"
+            f" — {item.get('selection') or 'performance outlier'}."
+        )
         if item.get("error"):
             lines.append(f"- Follow-up log read for {kind} {name} failed: {item['error']}.")
         elif item.get("groups"):
@@ -795,6 +830,17 @@ def render_comprehensive_system_audit(
                 f"- Follow-up for {kind} {name}: no matching warnings/errors "
                 "in the returned 6h sample (not proof of no earlier issues)."
             )
+        for group in item.get("groups") or []:
+            detail = " ".join(str(group.get(field) or "") for field in ("message", "summary"))
+            if "attributeNames" in detail and "format='summary'" in detail:
+                lines.append(
+                    "  - **MCP device-list validation:** The observed request combines "
+                    "attributeNames with format='summary', which the MCP gateway rejects. "
+                    "The log identifies hub_list_devices but does not identify the "
+                    "original requesting caller. Inspect server request tracing and "
+                    "correct the caller's projection; no Hubitat change was made."
+                )
+                break
 
     lines.extend(("", "### Evidence-based next checks"))
     lines.extend(_audit_followups(snapshot, performance) or [
