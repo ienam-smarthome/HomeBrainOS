@@ -944,66 +944,65 @@ async def run_comprehensive_chat_audit(
                 ),
             })
 
-            if stats is not None:
-                for target in _fault_first_log_targets(snapshot, stats):
-                    kind = target["kind"]
-                    identifier = target["id"]
-                    name = target["name"]
-                    scope = "deviceId" if kind == "device" else "appId"
-                    args = _gateway_arguments(
-                        gateway,
-                        "hub_get_logs",
-                        {scope: identifier, "since": "6h", "limit": 120},
-                    )
-                    try:
-                        response = await mcp.call_tool(gateway.name, args)
-                        if not tool_succeeded(response):
-                            raise ValueError("filtered log read failed")
-                        prefix = ("dev|" if kind == "device" else "app|") + identifier + "|"
-                        rows = [
-                            row for row in _log_rows(response)
-                            if prefix in str(row.get("message") or "")
-                            or name.casefold() in str(row.get("message") or "").casefold()
-                        ]
-                        findings, _ = _log_findings(rows)
-                        evidence.append({
-                            "tool": gateway.name,
-                            "sub_tool": "hub_get_logs",
-                            "arguments": args,
-                            "timestamp": checked_at,
-                            "success": True,
-                            "supports_live_claim": True,
-                            "evidence_kind": "chat_audit_scoped_logs",
-                            "mutates": False,
-                            "effect": "read",
-                            "summary": (
-                                f"{kind} {name} (ID {identifier}): "
-                                f"{len(rows)} matched rows in a bounded 6h log request"
-                            ),
-                        })
-                        targeted_logs.append({
-                            **target,
-                            "matching_rows": len(rows),
-                            "returned_rows": len(_log_rows(response)),
-                            "groups": (
-                                findings["error_groups"] + findings["warning_groups"]
-                            )[:3],
-                        })
-                    except Exception as exc:
-                        error = f"{type(exc).__name__}: {str(exc)[:120]}"
-                        evidence.append({
-                            "tool": gateway.name,
-                            "sub_tool": "hub_get_logs",
-                            "arguments": args,
-                            "timestamp": checked_at,
-                            "success": False,
-                            "supports_live_claim": False,
-                            "evidence_kind": "chat_audit_scoped_logs",
-                            "mutates": False,
-                            "effect": "read",
-                            "summary": f"{kind} {name} scoped logs failed: {error}",
-                        })
-                        targeted_logs.append({**target, "error": error})
+            for target in _fault_first_log_targets(snapshot, stats):
+                kind = target["kind"]
+                identifier = target["id"]
+                name = target["name"]
+                scope = "deviceId" if kind == "device" else "appId"
+                args = _gateway_arguments(
+                    gateway,
+                    "hub_get_logs",
+                    {scope: identifier, "since": "6h", "limit": 120},
+                )
+                try:
+                    response = await mcp.call_tool(gateway.name, args)
+                    if not tool_succeeded(response):
+                        raise ValueError("filtered log read failed")
+                    prefix = ("dev|" if kind == "device" else "app|") + identifier + "|"
+                    rows = [
+                        row for row in _log_rows(response)
+                        if prefix in str(row.get("message") or "")
+                        or name.casefold() in str(row.get("message") or "").casefold()
+                    ]
+                    findings, _ = _log_findings(rows)
+                    evidence.append({
+                        "tool": gateway.name,
+                        "sub_tool": "hub_get_logs",
+                        "arguments": args,
+                        "timestamp": checked_at,
+                        "success": True,
+                        "supports_live_claim": True,
+                        "evidence_kind": "chat_audit_scoped_logs",
+                        "mutates": False,
+                        "effect": "read",
+                        "summary": (
+                            f"{kind} {name} (ID {identifier}): "
+                            f"{len(rows)} matched rows in a bounded 6h log request"
+                        ),
+                    })
+                    targeted_logs.append({
+                        **target,
+                        "matching_rows": len(rows),
+                        "returned_rows": len(_log_rows(response)),
+                        "groups": (
+                            findings["error_groups"] + findings["warning_groups"]
+                        )[:3],
+                    })
+                except Exception as exc:
+                    error = f"{type(exc).__name__}: {str(exc)[:120]}"
+                    evidence.append({
+                        "tool": gateway.name,
+                        "sub_tool": "hub_get_logs",
+                        "arguments": args,
+                        "timestamp": checked_at,
+                        "success": False,
+                        "supports_live_claim": False,
+                        "evidence_kind": "chat_audit_scoped_logs",
+                        "mutates": False,
+                        "effect": "read",
+                        "summary": f"{kind} {name} scoped logs failed: {error}",
+                    })
+                    targeted_logs.append({**target, "error": error})
             # A saturated 24h sample can be all recent INFO rows. Fetch one
             # explicitly older, bounded, disjoint segment using the existing
             # supported since/until window contract (not a guessed severity
