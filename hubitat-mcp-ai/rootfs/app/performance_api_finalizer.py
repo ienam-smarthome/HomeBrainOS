@@ -1458,6 +1458,12 @@ async def finalize_performance_api_outcome(
     if probe_history_repaired:
         _counter(outcome, "performance_api_probe_history_inference_repaired")
 
+    guarded, absence_label_repaired = _repair_scheduler_unverified_absence_labels(
+        guarded, inventory_report
+    )
+    if absence_label_repaired:
+        _counter(outcome, "performance_api_scheduler_absence_labels_repaired")
+
     from performance_host_plan import (
         is_whole_hub_optimization_request,
         is_scheduler_optimization_request,
