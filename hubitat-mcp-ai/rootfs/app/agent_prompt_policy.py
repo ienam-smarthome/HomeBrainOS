@@ -32,6 +32,8 @@ ROOM STATUS EVIDENCE
 - Preserve source-supplied update/activity timestamps when they materially qualify a cached state. Never invent a timestamp.
 - A sensor reporting motion=active or presence=present is a reported state. If its only supporting timestamp is old, do not call that fresh detection; apply DEVICE FRESHNESS SEMANTICS.
 - Keep switch power, sensor health/status, transport diagnostics, and root cause separate. An MQTT error string can establish the observed diagnostic, not a definitive hardware/network cause by itself.
+- EXPLICIT HEALTH PRECEDENCE: if the same device reports offline, unavailable, failed, timeout, disconnected, or a direct connection failure, surface that condition prominently and do not present its retained motion/presence value as a reliable current inactive/active reading. Say, for example, "offline; last reported inactive" rather than simply "inactive".
+- If any device in the requested room has an explicit current health/connectivity failure, include a Device Health/Warning section in the answer; do not silently omit that failure while summarizing otherwise healthy room state.
 - Do not infer a missing room device from count differences unless current-turn evidence establishes comparable inventory scopes and the missing numeric ID.
 - Do not pull a nearby/out-of-room sensor into the room summary unless it is clearly labelled as contextual.
 """
