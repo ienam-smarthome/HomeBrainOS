@@ -6,6 +6,7 @@ a CPU-consumption measurement. Missing ownership/method fields stay unknown.
 from __future__ import annotations
 
 from collections import Counter
+import re
 from typing import Any
 
 _LIST_FIELDS = ("jobs", "entries", "items", "scheduledJobs", "schedules", "jobList", "jobEntries")
@@ -13,6 +14,12 @@ _TOTAL_FIELDS = ("count", "total", "totalCount", "scheduledJobCount")
 _OWNER_FIELDS = (("appId", "app"), ("deviceId", "device"))
 _METHOD_FIELDS = ("handlerMethod", "methodName", "method", "handler", "callback", "handlerName")
 _NEXT_FIELDS = ("nextRun", "nextRunTime", "nextScheduledRun", "nextExecution", "nextRunAt")
+_JOB_KEY_FIELDS = ("jobId", "jobKey", "scheduleId", "scheduleKey", "id")
+# This is a *candidate*, not a verified ownership relationship. Hubitat
+# scheduler keys such as dev7334Once encode a plausible parent identifier.
+# Never interpret arbitrary device display names as owner IDs.
+_JOB_KEY_CANDIDATE = re.compile(r"^(app|dev)([1-9][0-9]{0,8})Once$", re.I)
+
 
 
 def _pick(row: dict[str, Any], names: tuple[str, ...]) -> str:
@@ -46,7 +53,13 @@ def _extract_rows(section: Any) -> list[dict[str, Any]] | None:
     if possible_rows and len(possible_rows) == len(
         [key for key in section if key not in _TOTAL_FIELDS]
     ):
-        return possible_rows
+        # Preserve the scheduler's map key (it may be the only place the
+        # encoded parent reference survives), but do not change source rows.
+        return [
+            {**value, "__schedulerMapKey": str(key)}
+            for key, value in section.items()
+            if key not in _TOTAL_FIELDS and isinstance(value, dict)
+        ]
     return None
 
 
@@ -78,6 +91,9 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
             break
 
     groups: Counter[tuple[str, str, str]] = Counter()
+    candidate_groups: Counter[tuple[str, str, str]] = Counter()
+    candidate_key_examples: list[str] = []
+    candidate_rows = 0
     methods: Counter[str] = Counter()
     next_runs: Counter[str] = Counter()
     unattributed = 0
@@ -96,7 +112,22 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
                 if isinstance(nested, dict) and nested.get("id") is not None:
                     owner_type, owner_id = kind, str(nested["id"])[:80]
                     break
+        # Decode only an exact, narrowly recognized scheduler-key pattern.
+        # This is explicitly NOT a verified owner from the row. A separate
+        # app/device inventory is needed to establish that relationship.
+        candidate_kind = ""
+        candidate_id = ""
         if not owner_id:
+            job_key = _pick(row, _JOB_KEY_FIELDS)
+            if not job_key:
+                job_key = str(row.get("__schedulerMapKey") or "")
+            match = _JOB_KEY_CANDIDATE.fullmatch(job_key)
+            if match:
+                candidate_kind = "app" if match.group(1).casefold() == "app" else "device"
+                candidate_id = match.group(2)
+                candidate_rows += 1
+                if len(candidate_key_examples) < 3:
+                    candidate_key_examples.append(job_key)
             unattributed += 1
         method = _pick(row, _METHOD_FIELDS)
         if not method:
@@ -104,6 +135,8 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
             method = "unknown method"
         methods[method] += 1
         groups[(owner_type or "unknown", owner_id or "unknown", method)] += 1
+        if candidate_id:
+            candidate_groups[(candidate_kind, candidate_id, method)] += 1
         next_run = _pick(row, _NEXT_FIELDS)
         if next_run:
             next_runs[next_run] += 1
@@ -112,6 +145,13 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         {"ownerType": key[0], "ownerId": key[1], "method": key[2], "jobs": count}
         for key, count in sorted(groups.items(), key=lambda it: (-it[1], it[0]))
         if key[1] != "unknown"
+    ][:max_groups]
+    inferred_groups = [
+        {"ownerType": key[0], "candidateOwnerId": key[1],
+         "method": key[2], "jobs": count, "attribution": "scheduler-key-pattern"}
+        for key, count in sorted(
+            candidate_groups.items(), key=lambda item: (-item[1], item[0])
+        )
     ][:max_groups]
     observed_count = len(rows)
     reported = total if total is not None else observed_count
@@ -122,6 +162,9 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         "completeRows": total is None or total == observed_count,
         "ownerIdentifiedRows": observed_count - unattributed,
         "unattributedRows": unattributed,
+        "keyPatternCandidateRows": candidate_rows,
+        "keyPatternCandidateExamples": candidate_key_examples,
+        "topCandidateOwnerMethods": inferred_groups,
         "unknownMethodRows": unknown_method,
         "topOwnerMethods": grouped,
         "topMethods": [
@@ -170,6 +213,21 @@ def render_job_workload_summary(summary: dict[str, Any]) -> str:
             "No authoritative owner IDs were available in these rows; "
             "job ownership cannot yet be ranked."
         )
+    candidates = summary.get("topCandidateOwnerMethods") or []
+    if candidates:
+        lines.extend([
+            "",
+            "**Unverified owner candidates decoded from job keys**",
+            "These are NOT confirmed owners. Verify each candidate against "
+            "the current app/device inventory before changing schedules.",
+            "| Candidate type | Candidate ID | Handler | Job entries |",
+            "| --- | --- | --- | ---: |",
+        ])
+        for row in candidates:
+            lines.append(
+                f"| {row['ownerType']} | {row['candidateOwnerId']} | "
+                f"{str(row['method']).replace('|', '/')} | {row['jobs']} |"
+            )
     methods = summary.get("topMethods") or []
     if methods:
         lines.extend([
