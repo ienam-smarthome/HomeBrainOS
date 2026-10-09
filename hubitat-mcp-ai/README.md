@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.124**.
+Current add-on version: **0.16.125**.
 
 ## Architecture
+
+0.16.125 removes the repeated app-count line from the collapsible inventory UI and clarifies that empty structured Rule Machine data from `hub_read_rules` does not mean zero rules exist. It preserves read-only behaviour and requires independent verification of Rule Machine coverage.
 
 0.16.124 provides a brief configuration-only summary for requests to show broken automations, avoiding the full healthy app list. It qualifies empty Rule Machine tool results as incomplete coverage, distinguishes tool failure, preserves exact IDs for flagged entries, and does not equate enabled apps with verified runtime success. Other automation inventory requests retain the detailed presentation.
 
