@@ -15,6 +15,7 @@ from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 from performance_job_analysis import summarize_job_workload, render_job_workload_summary
 from performance_inventory_check import render_scheduler_inventory_crosscheck
+from scheduler_report_sanitizer import sanitize_scheduler_overview
 from request_runtime import set_request_stage, safe_partial_outcome
 
 logger = logging.getLogger("HomeBrainOS.PerformanceFinalizer")
@@ -1243,6 +1244,12 @@ async def finalize_performance_api_outcome(
         if metric_denial_changed:
             _counter(outcome, "performance_api_metric_denial_repair")
 
+    from performance_host_plan import is_scheduler_optimization_request
+    scheduler_job_replaced = False
+    if is_scheduler_optimization_request(user_prompt):
+        guarded, scheduler_job_replaced, _cadence_replaced = sanitize_scheduler_overview(
+            guarded, scheduled_digest, evidence
+        )
     guarded, owner_label_repaired = _qualify_job_key_owner_labels(
         guarded, scheduled_digest
     )
@@ -1274,7 +1281,8 @@ async def finalize_performance_api_outcome(
         if scheduled_digest:
             job_section = render_job_workload_summary(scheduled_digest)
             if job_section:
-                guarded += "\n\n" + job_section
+                if not scheduler_job_replaced:
+                    guarded += "\n\n" + job_section
                 _counter(outcome, "performance_job_ownership_analyzed")
         if isinstance(inventory_report, dict):
             inventory_section = render_scheduler_inventory_crosscheck(inventory_report)

@@ -54,7 +54,7 @@ def _rows_and_coverage(data: Any, kind: str) -> tuple[list[dict[str, Any]], dict
     )
     return rows, {
         "status": "available",
-        "source": str(value.get("identitySource") or "hub_list_devices")[:80],
+        "source": str(value.get("identitySource") or ("hub_list_apps" if kind == "apps" else "hub_list_devices"))[:80],
         "rowsReturned": len(rows),
         "reportedTotal": reported,
         "complete": complete,
@@ -163,7 +163,7 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
         "### Scheduled-job entity cross-check (read-only)",
         "A matching Hubitat entity ID **confirms that the entity was listed**, "
         "not that it owns, schedules, or executes the job.",
-        "| Candidate kind | Unique candidate IDs | Listed entities | Not listed in returned rows | Not checked | Inventory coverage |",
+        "| Candidate kind | Unique candidate IDs | Listed entities | Absent from returned source | Not checked | Inventory coverage |",
         "| --- | ---: | ---: | ---: | ---: | --- |",
     ]
     for kind in ("device", "app"):
@@ -178,8 +178,10 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
             status = "read unavailable"
         elif not coverage.get("complete"):
             status += " (partial/unverified completeness)"
+        elif coverage.get("source") == "hubitat://context":
+            status += " (complete context response; hub-wide census unverified)"
         else:
-            status += " (complete)"
+            status += " (complete returned inventory)"
         lines.append(
             f"| {kind} | {section.get('candidateIds', 0)} | "
             f"{section.get('presentInReturnedInventory', 0)} | "
@@ -205,13 +207,15 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
         examples = section.get("notListedExamples") or []
         if examples:
             lines.append(
-                f"**{kind.capitalize()} candidate IDs absent from a complete returned inventory "
+                f"**{kind.capitalize()} candidate IDs absent from the returned "
+                f"{(section.get('inventory') or {}).get('source', 'inventory')} snapshot "
                 f"(inspect; not proof of stale scheduled jobs):** "
                 + ", ".join(str(item) for item in examples) + "."
             )
     lines.append(
-        "Not listed does **not** prove a deleted or orphaned entity, especially "
-        "when inventory completeness is not verified. A performance overlap "
-        "is an investigation lead, not a quantified saving."
+        "Returned-resource completeness is **not** an independent hub-wide device census. "
+        "An ID absent from the MCP context snapshot may exist elsewhere on Hubitat. "
+        "Do not label such IDs deleted, obsolete, or orphaned without a separate read. "
+        "A performance overlap is an investigation lead, not a quantified saving."
     )
     return "\n".join(lines)
