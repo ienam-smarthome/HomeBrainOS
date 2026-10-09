@@ -731,6 +731,15 @@ def _repair_unverified_app_cleanup_and_empty_scoped_reads(
     corrected: list[str] = []
     for line in lines:
         bare = line.rstrip("\n")
+        # Both numbered sections and '**Hypothesis 2: LG webOS TV**'
+        # headings can identify the target of a later scoped-log claim.
+        if re.match(r"(?i)^\s*\*{0,2}Hypothesis\s+\d+:", bare):
+            active_target = None
+            empty_target_reported = False
+            for target in empty_targets:
+                if target[0].casefold() in bare.casefold():
+                    active_target = target
+                    break
         # A numbered diagnostic heading opens a target-scoped section.
         if re.match(r"^\s*\d+[.)]\s+\*{0,2}", bare):
             active_target = None
@@ -1133,8 +1142,12 @@ async def finalize_performance_api_outcome(
     if causal_repaired:
         _counter(outcome, "performance_api_invalid_cleanup_inference_repaired")
 
-    from performance_host_plan import is_whole_hub_optimization_request
-    if is_whole_hub_optimization_request(user_prompt):
+    from performance_host_plan import (
+        is_whole_hub_optimization_request,
+        is_scheduler_optimization_request,
+    )
+    if (is_whole_hub_optimization_request(user_prompt)
+            or is_scheduler_optimization_request(user_prompt)):
         if scheduled_digest:
             job_section = render_job_workload_summary(scheduled_digest)
             if job_section:
