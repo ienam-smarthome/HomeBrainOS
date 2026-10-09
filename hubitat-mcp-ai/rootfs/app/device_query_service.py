@@ -240,6 +240,22 @@ class DeviceQueryService:
             }:
                 timestamps[str(key)] = value
         result: dict[str, Any] = {"states": states}
+        health_values: list[dict[str, Any]] = []
+        for key, value in states.items():
+            normalized = cls._normalized_attribute(str(key))
+            rendered = str(value or "").strip()
+            folded = rendered.casefold()
+            if normalized in {"sensorstatus", "healthstatus", "status", "mqttstatus"} and (
+                folded in {"offline", "unavailable", "failed", "failure", "timeout", "disconnected"}
+                or any(token in folded for token in ("connect fail", "connection fail", "mqtt fail"))
+            ):
+                health_values.append({"attribute": key, "value": value})
+        if health_values:
+            # Deterministic precedence marker: final synthesis must not present a
+            # retained motion/presence value as a healthy current reading when the
+            # same source explicitly reports a connectivity/health failure.
+            result["health_alerts"] = health_values
+            result["activity_state_reliability"] = "qualified_by_explicit_health_failure"
         if timestamps:
             result["timestamps"] = timestamps
         return result
