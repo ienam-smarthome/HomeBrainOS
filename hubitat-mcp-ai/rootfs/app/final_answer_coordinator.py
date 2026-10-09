@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from automation_diagnostic_policy import (
+    is_automation_runtime_diagnostic,
+    is_integration_runtime_diagnostic,
+)
 from causal_native_logs import (
     correlate_native_log_boundaries,
     render_native_log_correlation,
@@ -354,7 +358,11 @@ class FinalAnswerCoordinator:
             messages,
         )
         causal = is_causal_investigation(original_user)
-        investigative = is_history_investigation(original_user)
+        investigative = (
+            is_history_investigation(original_user)
+            or is_automation_runtime_diagnostic(original_user)
+            or is_integration_runtime_diagnostic(original_user)
+        )
         performance_semantic_validation = _performance_semantic_validation_needed(evidence)
         performance_log_validation = performance_validation_needed(evidence)
         evidence_scoped = investigative or performance_semantic_validation

@@ -52,6 +52,33 @@ def is_broad_automation_runtime_diagnostic(prompt: str) -> bool:
     )
 
 
+_INTEGRATION_SUBJECT = re.compile(
+    r"\b(?:integrations?|polling|telemetry|api|service|"
+    r"octopus\s+energy|meter\s+data)\b", re.I
+)
+
+INTEGRATION_DIAGNOSTIC_INSTRUCTION = (
+    "\n\nINTEGRATION DIAGNOSTICS — BOUNDED LOG EVIDENCE\n"
+    "Investigate current evidence of integration errors and successful telemetry "
+    "separately; check the integration app's own errors where tools permit. "
+    "Recent INFO logs or an online attribute show recent apparent operation, "
+    "not continuous health and not the absence of earlier polling failures. "
+    "For filtered or capped logs state precisely what was checked, how many "
+    "rows were returned, the limit and whether full lookback coverage is "
+    "independently verified. Never say there were no failures throughout "
+    "24 hours from a latest-N log sample; infer recovery only when failure "
+    "then later success timestamps are reliably ordered. Source-local naive "
+    "time values do not establish UTC chronology. Identify what could not "
+    "be verified, keep conclusions bounded, and do not mutate settings."
+)
+
+
+def is_integration_runtime_diagnostic(prompt: str) -> bool:
+    """Dedicated model investigation for integration health and failed polls."""
+    text = str(prompt or "").strip()
+    return bool(_INTEGRATION_SUBJECT.search(text) and _DIAGNOSTIC.search(text))
+
+
 AUTOMATION_DIAGNOSTIC_INSTRUCTION = (
     "\n\nAUTOMATION DIAGNOSIS — EVIDENCE-FIRST INVESTIGATION\n"
     "The user asks about an automation failure, not merely the app inventory. "
@@ -75,4 +102,6 @@ __all__ = [
     "AUTOMATION_DIAGNOSTIC_INSTRUCTION",
     "is_automation_runtime_diagnostic",
     "is_broad_automation_runtime_diagnostic",
+    "is_integration_runtime_diagnostic",
+    "INTEGRATION_DIAGNOSTIC_INSTRUCTION",
 ]
