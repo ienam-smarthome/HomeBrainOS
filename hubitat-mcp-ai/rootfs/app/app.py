@@ -462,6 +462,11 @@ async def _agent_request(request: ChatRequest) -> Any:
                 _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False)
             )
             if reasoned:
+                if broad_automation_diagnostic:
+                    return await run_comprehensive_chat_audit(
+                        health_audit, mcp, analysis_chat=agent.transport.chat,
+                        analysis_focus=request.message,
+                    )
                 return await run_comprehensive_chat_audit(
                     health_audit, mcp, analysis_chat=agent.transport.chat,
                 )
