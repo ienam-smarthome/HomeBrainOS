@@ -101,6 +101,7 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
     candidate_methods: Counter[tuple[str, str]] = Counter()
     candidate_owner_totals: Counter[tuple[str, str]] = Counter()
     methods: Counter[str] = Counter()
+    no_candidate_methods: Counter[str] = Counter()
     next_runs: Counter[str] = Counter()
     unattributed = 0
     unknown_method = 0
@@ -160,6 +161,8 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
                 unknown_method += 1
                 method = "unknown method"
         methods[method] += 1
+        if not owner_id and not candidate_id:
+            no_candidate_methods[method] += 1
         groups[(owner_type or "unknown", owner_id or "unknown", method)] += 1
         if candidate_id:
             candidate_groups[(candidate_kind, candidate_id, method)] += 1
@@ -218,6 +221,10 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         "keyPatternCandidateExamples": candidate_key_examples,
         "keyPatternCandidateTypes": dict(candidate_types),
         "rowsWithoutOwnerCandidate": unattributed - candidate_rows,
+        "topNoCandidateMethods": [
+            {"method": method, "jobs": count}
+            for method, count in no_candidate_methods.most_common(8)
+        ],
         "keyPatternUniqueOwners": {
             kind: sum(1 for key in candidate_owner_totals if key[0] == kind)
             for kind in ("device", "app")
@@ -351,6 +358,23 @@ def render_job_workload_summary(summary: dict[str, Any]) -> str:
         lines.append(
             "These two candidate tables are separately ranked and show only "
             "the most frequent owner/method combinations, not all matched rows."
+        )
+
+    unassigned_methods = summary.get("topNoCandidateMethods") or []
+    if unassigned_methods:
+        lines.extend([
+            "",
+            "**Scheduled entries with no owner candidate, grouped by handler**",
+            "| Handler | Entries with no candidate |",
+            "| --- | ---: |",
+        ])
+        for item in unassigned_methods[:8]:
+            lines.append(
+                f"| {str(item['method']).replace('|', '/')} | {item['jobs']} |"
+            )
+        lines.append(
+            "These entries lack an ID usable for entity cross-checking. "
+            "Method names alone cannot identify an owning app or device."
         )
 
     methods = summary.get("topMethods") or []
