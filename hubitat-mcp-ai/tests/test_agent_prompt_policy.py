@@ -47,3 +47,6 @@ def test_room_status_prompt_preserves_provenance_and_freshness_boundaries():
     assert "do not call that fresh detection" in prompt
     assert "root cause separate" in prompt
     assert "missing numeric ID" in prompt
+    assert "EXPLICIT HEALTH PRECEDENCE" in prompt
+    assert "offline; last reported inactive" in prompt
+    assert "Device Health/Warning section" in prompt
