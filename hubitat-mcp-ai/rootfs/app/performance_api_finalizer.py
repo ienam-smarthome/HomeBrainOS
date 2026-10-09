@@ -639,10 +639,10 @@ def _repair_unattributed_performance_recommendations(
     if not _has_configuration_evidence(evidence):
         for pattern in (
             r"(?im)^(?P<prefix>\s*\d+[.)]\s+)"
-            r"(?:\*{0,2})?MCP Rule Server(?:\*{0,2})?:?\s*"
+            r"\*{0,2}MCP Rule Server:?\*{0,2}:?\s*"
             r"Verify if (?:the )?references to missing apps?\b[^\n]*$",
             r"(?im)^(?P<prefix>\s*\d+[.)]\s+)"
-            r"(?:\*{0,2})?MCP Rule Server(?:\*{0,2})?:?\s*"
+            r"\*{0,2}MCP Rule Server:?\*{0,2}:?\s*"
             r"Inspect (?:the )?MCP Rule Server configuration "
             r"for references to app IDs?\b[^\n]*$",
             r"(?im)^(?P<prefix>\s*[-*]\s+(?:\*{0,2}Verification:?\*{0,2}:?\s*)?)"
