@@ -966,10 +966,46 @@ class DeviceQueryService:
         if context_attribute is not None:
             source, devices = await self._bulk_live_devices({context_attribute})
         elif normalized_attribute in _CONTEXT_STRUCTURAL_FIELDS:
-            # hubitat://context already carries stable identity, room and
-            # capabilities for every device. Structural filters therefore do not
-            # need the much slower detailed hub_list_devices inventory.
             source, devices = await self._bulk_live_devices(set())
+            if normalized_attribute == "room" and self._tool_succeeded(source):
+                # Inventory completeness does not establish health coverage.
+                room_key = str(expected).strip().casefold()
+                room_devices = [
+                    item for item in devices
+                    if str(item.get("room") or item.get("roomName") or "").strip().casefold() == room_key
+                ]
+                health_keys = {"sensorstatus", "healthstatus", "mqttstatus", "lastmessage", "lasterror"}
+                missing_health = any(
+                    not any(
+                        self._normalized_attribute(str(key)) in health_keys
+                        for key in self._device_attributes(item)
+                    )
+                    for item in room_devices
+                )
+                # Preserve the zero-extra-call structural room path. Only a
+                # device explicitly advertising MQTT/status diagnostics needs
+                # enrichment; missing fields on ordinary sensors are normal.
+                diagnostic_candidates = [
+                    item for item in room_devices
+                    if any(token in str(item.get("label") or item.get("name") or "").casefold()
+                           for token in ("mqtt", "mr60bha"))
+                ]
+                if missing_health and diagnostic_candidates and callable(getattr(self._mcp, "call_tool", None)):
+                    detailed_source, detailed_devices = await self._live_devices(enrich_identity=True)
+                    if self._tool_succeeded(detailed_source):
+                        detailed_by_id = {
+                            str(item.get("id") or item.get("deviceId")): item
+                            for item in detailed_devices
+                            if item.get("id") or item.get("deviceId")
+                        }
+                        devices = [
+                            {**item, **detailed_by_id[str(item.get("id") or item.get("deviceId"))]}
+                            if str(item.get("id") or item.get("deviceId")) in detailed_by_id
+                            else item
+                            for item in devices
+                        ]
+                    else:
+                        logger.warning("Room health reconciliation unavailable; using partial context")
         else:
             source, devices = await self._live_devices(enrich_identity=False)
         if not self._tool_succeeded(source):
