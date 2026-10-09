@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from contextvars import ContextVar
@@ -13,7 +14,9 @@ from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 from performance_job_analysis import summarize_job_workload, render_job_workload_summary
-from request_runtime import set_request_stage, safe_partial_outcome, remember_verified_outcome
+from request_runtime import set_request_stage, safe_partial_outcome
+
+logger = logging.getLogger("HomeBrainOS.PerformanceFinalizer")
 
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
 _METRICS_TOOL = "hub_get_metrics"
