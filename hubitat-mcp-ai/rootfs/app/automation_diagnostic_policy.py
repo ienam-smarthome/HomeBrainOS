@@ -53,12 +53,12 @@ def is_broad_automation_runtime_diagnostic(prompt: str) -> bool:
 
 
 _INTEGRATION_SUBJECT = re.compile(
-    r"\\b(?:integrations?|polling|telemetry|api|service|"
-    r"octopus\\s+energy|meter\\s+data)\\b", re.I
+    r"\b(?:integrations?|polling|telemetry|api|service|"
+    r"octopus\s+energy|meter\s+data)\b", re.I
 )
 
 INTEGRATION_DIAGNOSTIC_INSTRUCTION = (
-    "\\n\\nINTEGRATION DIAGNOSTICS — BOUNDED LOG EVIDENCE\\n"
+    "\n\nINTEGRATION DIAGNOSTICS — BOUNDED LOG EVIDENCE\n"
     "Investigate current evidence of integration errors and successful telemetry "
     "separately; check the integration app's own errors where tools permit. "
     "Recent INFO logs or an online attribute show recent apparent operation, "
