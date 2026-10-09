@@ -26,6 +26,7 @@ import time
 
 from performance_job_analysis import summarize_job_workload
 from performance_inventory_check import reconcile_scheduler_candidates
+from scheduler_secondary_inventory import probe_secondary_device_inventory
 from device_read_contract import live_context_is_complete
 from request_runtime import set_request_stage
 
@@ -406,6 +407,23 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                     devices=inventories.get("device"),
                     performance=performance_data,
                 )
+
+                # The compact context may exclude devices exposed by a
+                # different MCP inventory route. Corroborate context-absent
+                # candidate identities via a separate, capped read-only path.
+                # This NEVER upgrades scheduler-key ownership to verified.
+                device_inventory = inventories.get("device")
+                if (isinstance(device_inventory, dict)
+                        and device_inventory.get("identitySource") == "hubitat://context"
+                        and (identity_report.get("device") or {}).get("inventory", {}).get("complete")):
+                    set_request_stage("Checking context-absent device IDs against secondary source")
+                    secondary = await probe_secondary_device_inventory(
+                        agent.executor,
+                        candidate_ids.get("device") or [],
+                        device_inventory,
+                    )
+                    if secondary is not None:
+                        identity_report["secondaryDeviceSource"] = secondary
 
         targets = _select_adaptive_log_target_records(performance_data)
         if targets:
