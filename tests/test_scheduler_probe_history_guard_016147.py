@@ -67,3 +67,23 @@ The target-scoped diagnostic read returned 13 non-diagnostic log observation(s).
     assert "do not prove orphaned devices" in fixed
     assert "Do not remove references from this evidence" in fixed
     assert "| **Unattributed Jobs**" in fixed
+
+
+def test_repairs_live_016148_generic_recommendation_and_no_longer_present_hypothesis():
+    draft = """### Identified Inefficiencies & Diagnostic Hypotheses
+
+**1. Failed Device Lookups (MCP Rule Server)**
+- **Observation:** Errors mention IDs 6921, 6918, 6911, 6913, 6910, and 2065.
+- **Diagnostic Hypothesis:** The MCP Rule Server is attempting to poll devices that are no longer present in the hub inventory.
+
+### Recommended Inspection Steps
+
+- **Configuration Audit:** Review the MCP Rule Server (App 4151) settings to remove or update references to the missing device IDs (6921, 6918, 6911, 6913, 6910, 2065).
+- **Reporting Review:** Keep this unrelated recommendation.
+"""
+    fixed, changed = _repair_scheduler_probe_history_inference(draft, _report())
+    assert changed is True
+    assert "no longer present in the hub inventory" not in fixed
+    assert "remove or update references" not in fixed
+    assert fixed.count("unresolved lookup observations only") >= 2
+    assert "Keep this unrelated recommendation" in fixed
