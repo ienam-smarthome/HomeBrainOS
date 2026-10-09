@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.132**.
+Current add-on version: **0.16.133**.
 
 ## Architecture
+
+v0.16.133 adds a final consistency check for performance investigations: failed reads against deleted app IDs 2954/2597 are treated as requests that need caller provenance, not automatic stale MCP Rule Server dependencies or cleanup opportunities, unless actual configuration was inspected. A scoped log read returning zero rows is explicitly reported as an observed absence in that sample rather than falsely described as no tool read. Performance optimisations remain read-only and require independently verified configuration and dependency evidence before recommending changes.
 
 0.16.132 adds an evidence coverage summary to broad whole-hub efficiency reports. These reports now disclose top-N performance limits, capped recent logs, the difference between shared job timestamps and actual contention, and the fact that the existing performance planner does not independently inspect every app/rule dependency. It also catches additional variants of model-generated recommendations that incorrectly infer MCP Rule Server persistent references to deleted apps from failed lookup requests. All operations remain read-only.
 

@@ -664,6 +664,106 @@ def _repair_unattributed_performance_recommendations(
     return corrected, corrected != text
 
 
+def _repair_unverified_app_cleanup_and_empty_scoped_reads(
+    message: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """Repair two evidence contradictions found in the live 0.16.132 output.
+
+    Requests to deleted app IDs are not evidence that a Rule Server retains
+    those IDs. Also distinguish a successful zero-row scoped log read from
+    the claim that no scoped read occurred. Avoid inferential app cleanup.
+    """
+    original = str(message or "")
+    lines = original.splitlines(keepends=True)
+    config_verified = _has_configuration_evidence(evidence)
+    empty_targets: list[tuple[str, str, str]] = []
+    for receipt in evidence:
+        if not isinstance(receipt, dict) or receipt.get("success") is not True:
+            continue
+        if _sub_tool(receipt) != "hub_get_logs":
+            continue
+        details = receipt.get("details")
+        if not isinstance(details, dict) or details.get("logCount") != 0:
+            continue
+        target = details.get("adaptiveTarget")
+        if not isinstance(target, dict):
+            continue
+        name = str(target.get("name") or "").strip()
+        if not name or str(target.get("kind") or "") != "device":
+            continue
+        identifier = str(target.get("id") or "").strip()
+        request_args = receipt.get("arguments") or {}
+        options = request_args.get("args") if isinstance(request_args, dict) else {}
+        window = str((options or {}).get("since") or "the requested window")
+        empty_targets.append((name, identifier, window))
+
+    active_target: tuple[str, str, str] | None = None
+    empty_target_reported = False
+    corrected: list[str] = []
+    for line in lines:
+        bare = line.rstrip("\n")
+        # A numbered diagnostic heading opens a target-scoped section.
+        if re.match(r"^\s*\d+[.)]\s+\*{0,2}", bare):
+            active_target = None
+            empty_target_reported = False
+            for target in empty_targets:
+                if target[0].casefold() in bare.casefold():
+                    active_target = target
+                    break
+        if re.match(r"^\s*(?:#{1,6}\s+|\*{0,2}Recommended Inspection Steps)", bare, re.I):
+            active_target = None
+
+        if not config_verified and re.search(r"\b(?:2954|2597)\b", bare):
+            recommending_cleanup = re.search(
+                r"(?i)\b(?:remove|cleanup|clean.up|references?|"
+                r"inspect.*configuration|verify.*(?:expected|deleted))\b",
+                bare,
+            )
+            context = re.search(
+                r"(?i)\b(?:MCP Rule Server|App Cleanup|Verification)\b",
+                bare,
+            )
+            if recommending_cleanup and context:
+                leader = re.match(r"^(\s*(?:\d+[.)]\s+|[-*+]\s+))", bare)
+                prefix = leader.group(1) if leader else ""
+                corrected.append(
+                    prefix
+                    + "Trace which diagnostic request queried deleted apps "
+                    "2954/2597 and check its caller/parameters. The failed "
+                    "lookups do not establish persisted MCP Rule Server "
+                    "references or an actionable performance saving.\n"
+                )
+                continue
+
+        if active_target and re.search(
+            r"(?i)No target-scoped diagnostic evidence was read "
+            r"for this outlier in this turn", bare
+        ):
+            name, identifier, window = active_target
+            leader = re.match(r"^(\s*(?:\d+[.)]\s+|[-*+]\s+)?)", bare)
+            prefix = leader.group(1) if leader else ""
+            if not empty_target_reported:
+                corrected.append(
+                    prefix + f"The scoped log read for {name} "
+                    + (f"(ID {identifier}) " if identifier else "")
+                    + f"succeeded but returned no rows for {window}. "
+                    "Its measured latency remains unexplained; zero log "
+                    "rows do not prove normal operation.\n"
+                )
+                empty_target_reported = True
+            else:
+                corrected.append(
+                    prefix + "Next check: inspect driver configuration and "
+                    "connection behaviour without changing settings.\n"
+                )
+            continue
+
+        corrected.append(line)
+    fixed = "".join(corrected)
+    return fixed, fixed != original
+
+
 def _performance_review_coverage(
     evidence: list[dict[str, Any]],
 ) -> str:
@@ -971,6 +1071,12 @@ async def finalize_performance_api_outcome(
     )
     if recommendation_repaired:
         _counter(outcome, "performance_api_recommendation_attribution_repaired")
+
+    guarded, causal_repaired = _repair_unverified_app_cleanup_and_empty_scoped_reads(
+        guarded, evidence
+    )
+    if causal_repaired:
+        _counter(outcome, "performance_api_invalid_cleanup_inference_repaired")
 
     from performance_host_plan import is_whole_hub_optimization_request
     if is_whole_hub_optimization_request(user_prompt):
