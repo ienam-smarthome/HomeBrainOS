@@ -632,7 +632,117 @@ def _repair_unattributed_performance_recommendations(
             ),
             corrected,
         )
+    # Broad diagnosis output may phrase the same false dependency inference
+    # as "Verify if references to missing apps are expected or removable"
+    # instead of "Inspect configuration ...". Keep the error visible, but
+    # require request provenance before attributing a stored reference.
+    if not _has_configuration_evidence(evidence):
+        for pattern in (
+            r"(?im)^(?P<prefix>\s*\d+[.)]\s+)"
+            r"(?:\*{0,2})?MCP Rule Server(?:\*{0,2})?:?\s*"
+            r"Verify if (?:the )?references to missing apps?\b[^\n]*$",
+            r"(?im)^(?P<prefix>\s*\d+[.)]\s+)"
+            r"(?:\*{0,2})?MCP Rule Server(?:\*{0,2})?:?\s*"
+            r"Inspect (?:the )?MCP Rule Server configuration "
+            r"for references to app IDs?\b[^\n]*$",
+            r"(?im)^(?P<prefix>\s*[-*]\s+(?:\*{0,2}Verification:?\*{0,2}:?\s*)?)"
+            r"Inspect (?:the )?MCP Rule Server configuration "
+            r"for references to app IDs?\b[^\n]*$",
+        ):
+            corrected = re.sub(
+                pattern,
+                lambda match: (
+                    match.group("prefix")
+                    + "Trace the caller and input parameters of the failed "
+                    "app-configuration requests. A lookup for deleted app "
+                    "IDs is not evidence that MCP Rule Server retains those "
+                    "IDs in its configuration or that the errors explain "
+                    "its measured performance share."
+                ),
+                corrected,
+            )
     return corrected, corrected != text
+
+
+def _performance_review_coverage(
+    evidence: list[dict[str, Any]],
+) -> str:
+    """State exactly which read-only sources and completeness limits were observed."""
+    successful = [
+        row for row in evidence
+        if isinstance(row, dict) and row.get("success") is True
+    ]
+    if not successful:
+        return ""
+    notes: list[str] = []
+    perf = next((r for r in successful if _sub_tool(r) == _PERFORMANCE_TOOL), None)
+    if perf:
+        arguments = perf.get("arguments") or {}
+        args = arguments.get("args") if isinstance(arguments, dict) else {}
+        if isinstance(args, dict) and args.get("limit"):
+            notes.append(
+                f"Performance ranking requested up to {args['limit']} entries; "
+                "this is not an exhaustive inventory of every device or application."
+            )
+    jobs = next((r for r in successful if _sub_tool(r) == _JOBS_TOOL), None)
+    if jobs:
+        notes.append(
+            "Scheduled jobs were retrieved, but sharing a next-run timestamp "
+            "does not establish a CPU bottleneck or prove staggering would help."
+        )
+    logs = next((
+        r for r in successful if _sub_tool(r) == _LOG_TOOL
+        and (r.get("evidence_kind") == "host_planned_performance_source"
+             or r.get("evidence_kind") == "performance_api_recent_logs")
+    ), None)
+    if logs:
+        arguments = logs.get("arguments") or {}
+        args = arguments.get("args") if isinstance(arguments, dict) else {}
+        details = logs.get("details") or {}
+        if isinstance(args, dict) and isinstance(details, dict):
+            try:
+                limit = int(args.get("limit") or 0)
+                count = int(details.get("logCount") or 0)
+            except (ValueError, TypeError):
+                limit = count = 0
+            if limit and count >= limit:
+                window = str(args.get("since") or "the requested window")
+                notes.append(
+                    f"The recent {window} log query returned {count} rows "
+                    f"against its {limit}-row cap; earlier events in that "
+                    "window may be missing from this sample."
+                )
+            clusters = (details.get("hostDerivedTiming") or {}).get("sameSecondClusters", [])
+            if isinstance(clusters, list):
+                large_clusters = [
+                    int(cluster.get("rowCount") or 0)
+                    for cluster in clusters if isinstance(cluster, dict)
+                    and int(cluster.get("rowCount") or 0) >= 20
+                ]
+                if large_clusters:
+                    notes.append(
+                        "The log sample includes same-second bursts ("
+                        + ", ".join(str(n) for n in large_clusters[:3])
+                        + " rows); inspect source-level DEBUG logging before "
+                        "concluding the bursts are avoidable device work."
+                    )
+    inspected_inventory = any(
+        _sub_tool(row) in {"hub_list_apps", "hub_list_rules", "hub_list_devices",
+                           "hub_get_app_config", "hub_get_rule"}
+        for row in successful
+    )
+    if not inspected_inventory:
+        notes.append(
+            "This performance scan did not independently inspect every "
+            "installed app, Rule Machine action, device configuration or "
+            "automation dependency; treat recommendations as inspection "
+            "candidates rather than verified savings."
+        )
+    if not notes:
+        return ""
+    return "\n\n### Review coverage and limitations\n" + "".join(
+        f"- {note}\n" for note in notes
+    )
 
 
 async def finalize_performance_api_outcome(
@@ -861,6 +971,13 @@ async def finalize_performance_api_outcome(
     )
     if recommendation_repaired:
         _counter(outcome, "performance_api_recommendation_attribution_repaired")
+
+    from performance_host_plan import is_whole_hub_optimization_request
+    if is_whole_hub_optimization_request(user_prompt):
+        coverage = _performance_review_coverage(evidence)
+        if coverage:
+            guarded += coverage
+            _counter(outcome, "performance_api_coverage_disclosed")
 
     outcome.message = guarded
     outcome.evidence = evidence
