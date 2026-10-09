@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.138**.
+Current add-on version: **0.16.139**.
 
 ## Architecture
+
+Version 0.16.139 provides a bounded read-only comparison of scheduler-key candidate IDs with current app and device identity listings. Each identity request has a six-second deadline and does not request device states. An ID match verifies only that the entity appeared in Hubitat's returned inventory; scheduler ownership remains unverified. Inventory completeness and performance overlaps are reported, without automatic optimisation changes.
+
 
 v0.16.138 corrects a presentation bias in scheduled-job analysis: app-key jobs and device-key jobs are ranked independently from the same complete structured snapshot, not via one top-10 list which can exclude all devices on ties. The report separates confirmed explicit owner IDs, unverified key-derived candidate IDs, and rows with no candidate. The final model packet retains this full numerical coverage within the scheduler size budget, and an additional presentation check marks model-generated app/device owner labels as unverified when the source contains no confirmed owner identities. Job counts still do not establish unnecessary execution or savings.
 
