@@ -420,3 +420,44 @@ def test_app_inventory_reports_correct_source_not_device_gateway():
         devices=None,
     )
     assert report["app"]["inventory"]["source"] == "hub_list_apps"
+
+
+def test_host_scheduler_workflow_probes_context_absent_ids_without_confirming_owner():
+    from performance_host_plan import collect_broad_performance_outcome
+
+    class _Context:
+        async def get_live_context(self):
+            return {"devices": [{"id": 1089, "name": "Hub Info"}],
+                    "totalDevices": 1, "idsComplete": True}
+
+    class _SecondaryExecutor(_Executor):
+        async def execute(self, gateway, arguments, **kwargs):
+            result = await super().execute(gateway, arguments, **kwargs)
+            if arguments["tool"] == "hub_get_jobs":
+                jobs = result.result.data["scheduledJobs"]
+                jobs["count"] = 3
+                jobs["jobs"].append({
+                    "id": "dev2065Once.checkEventInterval",
+                    "method": "checkEventInterval",
+                })
+            return result
+
+    agent = _Agent()
+    agent.executor = _SecondaryExecutor()
+    agent.executor.mcp = _Context()
+    outcome = asyncio.run(collect_broad_performance_outcome(
+        agent, "Analyse all scheduled jobs by owning app and handler. Read-only."
+    ))
+    summary = outcome.metrics["scheduler_inventory_crosscheck"]
+    assert summary["device"]["presentInReturnedInventory"] == 1
+    assert summary["device"]["notListedInReturnedInventory"] == 1
+    second = summary["secondaryDeviceSource"]
+    assert second["candidateIdsAbsentFromContext"] == 1
+    assert second["foundInSecondarySource"] == 0
+    assert second["unresolvedCandidateIds"] == 1
+    assert second["ownershipVerified"] is False
+    device_calls = [c for c in agent.executor.calls if c[0] == "hub_list_devices"]
+    assert len(device_calls) == 1
+    assert device_calls[0][1]["args"]["fields"] == ["id", "name", "label"]
+    assert len(agent.executor.evidence.rows) == 3
+    assert all(row[2]["mutates"] is False for row in agent.executor.evidence.rows)
