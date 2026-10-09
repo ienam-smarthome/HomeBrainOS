@@ -900,6 +900,52 @@ def _repair_unverified_app_cleanup_and_empty_scoped_reads(
     return fixed, fixed != original
 
 
+def _repair_scheduler_unverified_absence_labels(
+    message: str,
+    inventory_report: dict[str, Any] | None,
+) -> tuple[str, bool]:
+    """Remove orphan/missing/deleted labels unsupported by scheduler inventories."""
+    original = str(message or "")
+    if not isinstance(inventory_report, dict):
+        return original, False
+    device = inventory_report.get("device") or {}
+    absent = {str(v).strip() for v in (device.get("notListedExamples") or []) if str(v).strip()}
+    secondary = inventory_report.get("secondaryDeviceSource") or {}
+    absent.update(str(v).strip() for v in (secondary.get("probedExamples") or []) if str(v).strip())
+    if not absent:
+        return original, False
+
+    out: list[str] = []
+    for line in original.splitlines(keepends=True):
+        bare = line.rstrip("\n")
+        low = bare.casefold()
+        # Table/summary labels must not turn source absence into entity absence.
+        if "jobs scheduled for missing entities" in low:
+            line = re.sub(
+                r"(?i)Jobs scheduled for missing entities",
+                "Scheduler candidates absent from returned device source",
+                line,
+            )
+        if re.search(r"(?i)\borphaned\s+job\s+audit\b", line):
+            line = re.sub(r"(?i)Orphaned\s+Job\s+Audit", "Unresolved Candidate Audit", line)
+        if re.search(r"(?i)\bremnants?\s+of\s+deleted\s+devices?\b", line):
+            line = re.sub(
+                r"(?i)remnants?\s+of\s+deleted\s+devices?",
+                "unresolved candidates requiring an independent device/configuration source",
+                line,
+            )
+        # Candidate labels such as "(Not in inventory)" overstate a source-scoped
+        # absence. Keep the useful distinction but name the source limitation.
+        line = re.sub(
+            r"(?i)\(Not in inventory\)",
+            "(not listed in returned device source; unresolved)",
+            line,
+        )
+        out.append(line)
+    fixed = "".join(out)
+    return fixed, fixed != original
+
+
 def _repair_scheduler_probe_history_inference(
     message: str,
     inventory_report: dict[str, Any] | None,
@@ -1411,6 +1457,12 @@ async def finalize_performance_api_outcome(
     )
     if probe_history_repaired:
         _counter(outcome, "performance_api_probe_history_inference_repaired")
+
+    guarded, absence_label_repaired = _repair_scheduler_unverified_absence_labels(
+        guarded, inventory_report
+    )
+    if absence_label_repaired:
+        _counter(outcome, "performance_api_scheduler_absence_labels_repaired")
 
     from performance_host_plan import (
         is_whole_hub_optimization_request,

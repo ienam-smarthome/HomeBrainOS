@@ -4,7 +4,10 @@ from pathlib import Path
 APP = Path(__file__).resolve().parents[1] / "hubitat-mcp-ai" / "rootfs" / "app"
 sys.path.insert(0, str(APP))
 
-from performance_api_finalizer import _repair_scheduler_probe_history_inference
+from performance_api_finalizer import (
+    _repair_scheduler_probe_history_inference,
+    _repair_scheduler_unverified_absence_labels,
+)
 
 
 def _report():
@@ -87,3 +90,18 @@ def test_repairs_live_016148_generic_recommendation_and_no_longer_present_hypoth
     assert "remove or update references" not in fixed
     assert fixed.count("unresolved lookup observations only") >= 2
     assert "Keep this unrelated recommendation" in fixed
+
+
+def test_repairs_live_016149_missing_orphan_deleted_scheduler_labels():
+    draft = """| Candidate device (unverified) | 2065 (Not in inventory) | checkEventInterval | scheduler-key-pattern |
+| Unresolved Devices | Jobs scheduled for missing entities | 43 candidate device IDs in scheduler not present in returned inventory |
+3. **Orphaned Job Audit:** Investigate the 43 device IDs present in the scheduler but absent from the device inventory to determine if they are remnants of deleted devices.
+"""
+    fixed, changed = _repair_scheduler_unverified_absence_labels(draft, _report())
+    assert changed is True
+    assert "Not in inventory" not in fixed
+    assert "missing entities" not in fixed
+    assert "Orphaned Job Audit" not in fixed
+    assert "deleted devices" not in fixed
+    assert "not listed in returned device source; unresolved" in fixed
+    assert "Unresolved Candidate Audit" in fixed
