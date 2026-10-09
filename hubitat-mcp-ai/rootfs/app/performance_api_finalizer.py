@@ -900,6 +900,90 @@ def _repair_unverified_app_cleanup_and_empty_scoped_reads(
     return fixed, fixed != original
 
 
+def _repair_scheduler_probe_history_inference(
+    message: str,
+    inventory_report: dict[str, Any] | None,
+) -> tuple[str, bool]:
+    """Do not turn known scheduler-probe not-found logs into orphan diagnoses.
+
+    A previous HomeBrain request can leave Rule Server "Device not found" rows
+    in the later log window. Current-turn ordering alone cannot distinguish
+    those historical diagnostic side effects from independent hub activity.
+    When the same IDs are explicitly recorded as scheduler probe examples,
+    fail closed: preserve the unresolved lookup fact but remove cleanup claims.
+    """
+    original = str(message or "")
+    if not isinstance(inventory_report, dict):
+        return original, False
+    secondary = inventory_report.get("secondaryDeviceSource")
+    if not isinstance(secondary, dict) or not secondary.get("probeMayEmitExpectedNotFoundLogs"):
+        return original, False
+    probe_ids = {
+        str(value).strip()
+        for value in (secondary.get("probedExamples") or [])
+        if str(value).strip()
+    }
+    if not probe_ids:
+        return original, False
+
+    lines = original.splitlines(keepends=True)
+    output: list[str] = []
+    in_rule_server_section = False
+    for line in lines:
+        bare = line.rstrip("\n")
+        heading = bool(re.match(r"^\s*(?:#{1,6}\s+|\*{0,2}\d+[.)]\s+)", bare))
+        if heading:
+            low = bare.casefold()
+            in_rule_server_section = "mcp rule server" in low and any(
+                token in low for token in ("orphan", "missing", "device", "request", "error")
+            )
+            if in_rule_server_section and ("orphan" in low or "missing" in low):
+                line = re.sub(
+                    r"(?i)Orphaned?\s+Device\s+Requests?|Missing\s+Device\s+Requests?",
+                    "Unresolved Device Lookup Observations",
+                    line,
+                )
+
+        low = bare.casefold()
+        ids_on_line = set(re.findall(r"\b\d{3,9}\b", bare))
+        probe_overlap = bool(ids_on_line & probe_ids)
+        unsupported = (
+            in_rule_server_section
+            and (
+                "orphan" in low
+                or "no longer exist" in low
+                or "non-existent" in low
+                or "remove orphan" in low
+                or ("remove" in low and ("reference" in low or "device" in low))
+                or ("configuration" in low and ("reference" in low or "target" in low))
+            )
+        )
+        if unsupported:
+            leader = re.match(r"^(\s*(?:[-*+]\s+|\*{0,2}(?:Observation|Diagnostic Hypothesis|Verification|Recommendation):?\*{0,2}\s*)?)", bare, re.I)
+            prefix = leader.group(1) if leader else ""
+            output.append(
+                prefix
+                + "These device IDs are unresolved lookup observations only. "
+                "They overlap IDs HomeBrain may probe during scheduler diagnostics; "
+                "historical Rule Server not-found rows can therefore be diagnostic "
+                "side effects from an earlier request. Do not infer deletion, "
+                "persisted configuration references, or safe removal without "
+                "independent provenance/configuration evidence.\n"
+            )
+            continue
+        if probe_overlap and in_rule_server_section and (
+            "device not found" in low or "error" in low
+        ):
+            line = line.rstrip("\n") + (
+                " These IDs overlap the scheduler diagnostic probe set; the log "
+                "rows do not independently establish an orphaned-device condition.\n"
+            )
+        output.append(line)
+
+    repaired = "".join(output)
+    return repaired, repaired != original
+
+
 def _performance_review_coverage(
     evidence: list[dict[str, Any]],
 ) -> str:
@@ -1271,6 +1355,12 @@ async def finalize_performance_api_outcome(
     )
     if causal_repaired:
         _counter(outcome, "performance_api_invalid_cleanup_inference_repaired")
+
+    guarded, probe_history_repaired = _repair_scheduler_probe_history_inference(
+        guarded, inventory_report
+    )
+    if probe_history_repaired:
+        _counter(outcome, "performance_api_probe_history_inference_repaired")
 
     from performance_host_plan import (
         is_whole_hub_optimization_request,
