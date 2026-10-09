@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-_LIST_FIELDS = ("jobs", "entries", "items", "scheduledJobs", "schedules")
+_LIST_FIELDS = ("jobs", "entries", "items", "scheduledJobs", "schedules", "jobList", "jobEntries")
 _TOTAL_FIELDS = ("count", "total", "totalCount", "scheduledJobCount")
 _OWNER_FIELDS = (("appId", "app"), ("deviceId", "device"))
 _METHOD_FIELDS = ("handlerMethod", "methodName", "method", "handler", "callback", "handlerName")
@@ -41,8 +41,12 @@ def _extract_rows(section: Any) -> list[dict[str, Any]] | None:
             collections.extend(value)
     if collections:
         return collections
-    if section and all(isinstance(v, dict) for v in section.values()):
-        return list(section.values())
+    possible_rows = [value for key, value in section.items()
+                     if key not in _TOTAL_FIELDS and isinstance(value, dict)]
+    if possible_rows and len(possible_rows) == len(
+        [key for key in section if key not in _TOTAL_FIELDS]
+    ):
+        return possible_rows
     return None
 
 
@@ -165,6 +169,25 @@ def render_job_workload_summary(summary: dict[str, Any]) -> str:
         lines.append(
             "No authoritative owner IDs were available in these rows; "
             "job ownership cannot yet be ranked."
+        )
+    methods = summary.get("topMethods") or []
+    if methods:
+        lines.extend([
+            "",
+            "**Scheduled entries by handler (where identified)**",
+            "| Handler | Entries |",
+            "| --- | ---: |",
+        ])
+        for item in methods[:8]:
+            lines.append(
+                f"| {str(item['method']).replace('|', '/')} | {item['jobs']} |"
+            )
+    clusters = summary.get("sameNextRunGroups") or []
+    if clusters:
+        lines.append(
+            "Shared next-run timestamps were observed (largest group "
+            f"{clusters[0]['jobs']} entries), but these do not prove "
+            "simultaneous execution or CPU contention."
         )
     lines.append("These are scheduled entries, not measured executed calls or verified CPU savings.")
     return "\n".join(lines)
