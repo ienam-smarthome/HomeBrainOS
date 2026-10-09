@@ -118,11 +118,22 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         candidate_kind = ""
         candidate_id = ""
         if not owner_id:
-            job_key = _pick(row, _JOB_KEY_FIELDS)
-            if not job_key:
-                job_key = str(row.get("__schedulerMapKey") or "")
-            match = _JOB_KEY_CANDIDATE.fullmatch(job_key)
+            job_keys = [
+                str(row[key]).strip()
+                for key in _JOB_KEY_FIELDS
+                if isinstance(row.get(key), (str, int))
+                and str(row[key]).strip()
+            ]
+            # A numeric/GUID row ID may coexist with an encoded schedule-map
+            # key; do not lose the latter simply because 'id' is populated.
+            job_keys.append(str(row.get("__schedulerMapKey") or ""))
+            match = next(
+                (candidate for key in job_keys
+                 if (candidate := _JOB_KEY_CANDIDATE.fullmatch(key))),
+                None,
+            )
             if match:
+                job_key = match.group(0)
                 candidate_kind = "app" if match.group(1).casefold() == "app" else "device"
                 candidate_id = match.group(2)
                 candidate_rows += 1
