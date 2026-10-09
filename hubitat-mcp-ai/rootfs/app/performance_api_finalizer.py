@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -12,6 +13,7 @@ from performance_live_semantic_guard import guard_live_performance_semantics
 from synthesis_validator import consume_performance_repair_issues
 from tool_executor import ToolExecutor
 from performance_job_analysis import summarize_job_workload, render_job_workload_summary
+from request_runtime import set_request_stage, safe_partial_outcome, remember_verified_outcome
 
 _PERFORMANCE_TOOL = "hub_get_performance_stats"
 _METRICS_TOOL = "hub_get_metrics"
@@ -1049,7 +1051,33 @@ async def finalize_performance_api_outcome(
         return response
 
     coordinator = FinalAnswerCoordinator(single_pass_chat, lambda: evidence)
-    message = await coordinator.answer(messages)
+    set_request_stage("Generating AI recommendations")
+    synthesis_timeout = max(
+        3.0, float(getattr(agent, "performance_synthesis_timeout_seconds", 30))
+    )
+    try:
+        message = await asyncio.wait_for(
+            coordinator.answer(messages), timeout=synthesis_timeout
+        )
+    except asyncio.TimeoutError:
+        _counter(outcome, "performance_api_synthesis_timeout")
+        _set_timing(
+            outcome, "performance_api_model",
+            round(synthesis_timeout * 1000),
+        )
+        logger.warning(
+            "Performance synthesis exceeded %.1fs; returning verified evidence only",
+            synthesis_timeout,
+        )
+        # Never reuse the unsupported first model draft as a recommendation.
+        timeout_outcome = safe_partial_outcome(
+            outcome, reason=f"{synthesis_timeout:g}s AI synthesis limit"
+        )
+        _set_timing(
+            timeout_outcome, "performance_api_finalize",
+            round((time.monotonic() - started) * 1000),
+        )
+        return timeout_outcome
     if provider_rounds:
         _counter(outcome, "model_rounds", provider_rounds)
 
@@ -1116,6 +1144,7 @@ async def finalize_performance_api_outcome(
 
     outcome.message = guarded
     outcome.evidence = evidence
+    set_request_stage("Finalising recommendations")
     _set_timing(
         outcome,
         "performance_api_finalize",
