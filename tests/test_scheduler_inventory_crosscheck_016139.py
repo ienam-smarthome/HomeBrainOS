@@ -199,3 +199,23 @@ def test_no_scheduler_question_does_not_add_inventory_reads():
     assert "hub_get_jobs" not in calls
     assert "hub_list_apps" not in calls
     assert "hub_list_devices" not in calls
+
+
+
+def test_slow_identity_read_is_bounded_and_retains_other_inventory(monkeypatch):
+    import performance_host_plan as plan
+    monkeypatch.setattr(plan, "_SCHEDULER_INVENTORY_TIMEOUT_SECONDS", 0.03)
+    agent = _Agent(slow_device=True)
+    import time
+    started = time.monotonic()
+    outcome = asyncio.run(plan.collect_broad_performance_outcome(
+        agent, "Analyse scheduled jobs and group by owning app and handler for efficiency."
+    ))
+    assert time.monotonic() - started < 1.0
+    result = outcome.metrics["scheduler_inventory_crosscheck"]
+    assert result["app"]["presentInReturnedInventory"] == 1
+    assert result["device"]["inventory"]["status"] == "unavailable"
+    assert result["device"]["presentInReturnedInventory"] == 0
+    assert agent.request_metrics.counters["scheduler_inventory_timeout"] == 1
+    assert len(agent.executor.evidence.rows) == 2
+    assert any(not receipt[2]["success"] for receipt in agent.executor.evidence.rows)
