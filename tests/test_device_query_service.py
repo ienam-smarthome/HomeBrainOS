@@ -741,3 +741,24 @@ async def test_non_room_filter_keeps_compact_result_shape():
     match = result.data["matches"][0]
     assert "states" not in match
     assert "timestamps" not in match
+
+
+@pytest.mark.asyncio
+async def test_room_filter_marks_offline_state_as_activity_reliability_warning():
+    sensor = device(
+        "Seeed Studio MR60BHA2", "Living Room", ["MotionSensor", "Switch"],
+        motion="inactive", switch="on", sensorStatus="offline",
+    )
+    service = DeviceQueryService(QueryMCP([sensor]), lambda *args, **kwargs: None)
+
+    result = await service.filter_devices({
+        "attribute": "room", "operator": "eq", "value": "Living Room"
+    })
+
+    match = result.data["matches"][0]
+    assert match["states"]["motion"] == "inactive"
+    assert match["states"]["sensorStatus"] == "offline"
+    assert match["health_alerts"] == [
+        {"attribute": "sensorStatus", "value": "offline"}
+    ]
+    assert match["activity_state_reliability"] == "qualified_by_explicit_health_failure"
