@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 from api_response_builder import build_agent_response
 from automation_ideas_service import suggest_new_automations
 from automation_status_service import AutomationStatusService
+from automation_diagnostic_policy import is_broad_automation_runtime_diagnostic
 from device_read_contract import live_context_devices, live_context_is_complete
 from device_state_summary import (
     active_non_light_switches,
@@ -446,7 +447,8 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     try:
-        if is_comprehensive_system_audit_request(request.message):
+        if (is_comprehensive_system_audit_request(request.message)
+                or is_broad_automation_runtime_diagnostic(request.message)):
             # Reuse the existing full System Check instead of stopping after a
             # brief performance/log snapshot. This route is read-only, even if
             # a broad request also asks to "fix" discovered problems.
@@ -479,6 +481,7 @@ async def _answer_result(request: ChatRequest, connection: Request | None = None
         if (
             automation_status.matches_request(request.message)
             and not is_comprehensive_system_audit_request(request.message)
+            and not is_broad_automation_runtime_diagnostic(request.message)
         ):
             if automation_status.is_advisory_request(
                 request.message
