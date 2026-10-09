@@ -212,6 +212,34 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
                 f"(inspect; not proof of stale scheduled jobs):** "
                 + ", ".join(str(item) for item in examples) + "."
             )
+    secondary = report.get("secondaryDeviceSource")
+    if isinstance(secondary, dict):
+        lines.extend([
+            "",
+            "**Second-source device-ID check (read-only; ownership not confirmed)**",
+            f"Source: {secondary.get('source', 'unavailable')}; "
+            f"{secondary.get('pageCount', 0)} identity-only page(s), "
+            f"{secondary.get('rowsReturned', 0)} unique records; "
+            f"status: {secondary.get('status', 'unavailable')}.",
+            f"Of {secondary.get('candidateIdsAbsentFromContext', 0)} candidate IDs "
+            f"not found in the context resource, "
+            f"{secondary.get('foundInSecondarySource', 0)} appeared in the second source; "
+            f"{secondary.get('unresolvedCandidateIds', 0)} remain unconfirmed. "
+            "Neither an additional match nor an unconfirmed ID proves job ownership, "
+            "deletion, a redundant schedule, or a Hubitat-wide census.",
+        ])
+        present_examples = secondary.get("presentExamples") or []
+        if present_examples:
+            lines.append(
+                "Additional source-confirmed IDs (examples): "
+                + ", ".join(
+                    str(row.get("id")) + (
+                        " (" + str(row.get("name"))[:70].replace("|", "/") + ")"
+                        if row.get("name") else ""
+                    )
+                    for row in present_examples[:6] if isinstance(row, dict)
+                ) + "."
+            )
     lines.append(
         "Returned-resource completeness is **not** an independent hub-wide device census. "
         "An ID absent from the MCP context snapshot may exist elsewhere on Hubitat. "
