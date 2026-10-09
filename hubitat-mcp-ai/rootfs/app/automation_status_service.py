@@ -494,18 +494,35 @@ class AutomationStatusService:
         counts = cls.status_counts(items)
         attention_count = sum(counts[status] for status in _ATTENTION_STATUSES)
         conflict_count = sum(bool(item.get("status_conflict")) for item in items)
-        summary = f"Hubitat returned {len(items)} automation items."
+        app_count = sum(item.get("type") == "app" for item in items)
+        rule_count = sum(item.get("type") == "rule" for item in items)
+        summary = (
+            f"Hubitat returned {len(items)} automation items "
+            f"({app_count} app instances, {rule_count} Rule Machine entries)."
+        )
         if attention_count:
-            summary += f" {attention_count} need attention."
+            summary += f" {attention_count} have configuration status flags requiring review."
         if conflict_count:
             summary += f" {conflict_count} have conflicting source-state signals."
-        lines = [summary]
+        lines = [
+            summary,
+            "",
+            "Configuration inventory only: enabled/not-disabled does not prove an "
+            "automation ran successfully. Runtime errors, device availability, "
+            "invalid actions and missing dependencies were not verified by this check. "
+            "A *BROKEN* name marker alone does not identify a failing action. "
+            "For execution failures, run the comprehensive read-only System Check.",
+        ]
         for status in ("broken", "paused", "unknown", "disabled", "active"):
             matching = [item for item in items if item["status"] == status]
             if matching:
                 lines.append(f"\n### {status.title()} ({len(matching)})")
                 lines.extend(
-                    f"- [{status.upper()}] {item.get('display_name') or item['name']} ({item['type']})"
+                    f"- [{status.upper()}] {item.get('display_name') or item['name']} "
+                    f"({item['type']}, ID {item.get('id') or 'unknown'})"
+                    + (" [Hubitat name marker; cause unverified]"
+                       if status == "broken" and "marked the automation name" in
+                       str(item.get("status_reason") or "") else "")
                     + (" [conflicting source state]" if item.get("status_conflict") else "")
                     for item in matching
                 )
