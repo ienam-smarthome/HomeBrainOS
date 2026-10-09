@@ -1,7 +1,7 @@
-"""Bounded second-source identity probe for context-absent scheduler candidates.
+"""Bounded targeted identity probe for context-absent scheduler candidates.
 
-A second MCP tool route can establish additional entity *presence*, never
-scheduler ownership or deletion. Strictly no attributes, commands, or writes.
+A targeted MCP read can establish additional entity *presence*, never scheduler
+ownership or deletion. Strictly no attributes, commands, configuration or writes.
 """
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ import asyncio
 import time
 from typing import Any
 
-_MAX_PAGES = 4
-_PAGE_SIZE = 100
 _TIME_BUDGET = 4.5
-_FIELDS = ["id", "name", "label"]
+_MAX_TARGETS = 6
+_MAX_CONCURRENT = 2
 
 
 def _id(value: Any) -> str:
@@ -22,18 +21,17 @@ def _id(value: Any) -> str:
     return str(int(item)) if item.isascii() and item.isdecimal() and int(item) > 0 else ""
 
 
-def _page(data: Any) -> dict[str, Any] | None:
+def _device(data: Any) -> dict[str, Any] | None:
     current = data
-    for _ in range(4):
-        if isinstance(current, list):
-            return {"devices": current}
+    for _ in range(5):
         if not isinstance(current, dict):
             return None
-        if isinstance(current.get("devices"), list):
+        identifier = _id(current.get("id", current.get("deviceId")))
+        if identifier:
             return current
         current = next(
-            (current.get(k) for k in ("result", "data", "output", "content")
-             if isinstance(current.get(k), (dict, list))), None
+            (current.get(k) for k in ("device", "result", "data", "output", "content")
+             if isinstance(current.get(k), dict)), None
         )
     return None
 
@@ -54,58 +52,62 @@ async def probe_secondary_device_inventory(
     context: Any,
     *,
     budget_seconds: float = _TIME_BUDGET,
-    page_size: int = _PAGE_SIZE,
-    max_pages: int = _MAX_PAGES,
+    max_targets: int = _MAX_TARGETS,
+    max_concurrent: int = _MAX_CONCURRENT,
+    **_legacy_options: Any,
 ) -> dict[str, Any] | None:
-    """Probe only when the live context had real IDs that need corroboration.
+    """Target a small sample of context-absent IDs with hub_get_device.
 
-    At most four projected identity pages, total deadline 4.5 seconds.
-    Unverified absence remains 'unresolved' even when a page appears complete.
-    Caller must have already validated context structural completeness.
+    The v0.16.144 identity-list fallback timed out before returning its first
+    page on the live hub. A single-device read is the narrowest available MCP
+    operation and avoids enumerating hundreds of devices merely to corroborate
+    scheduler-key candidates.
+
+    A successful response counts only when its numeric returned ID equals the
+    requested candidate. Failure/not-found/timeout all remain unresolved:
+    none is proof that a device was deleted. The total stage has one 4.5-second
+    deadline and at most two reads in flight.
     """
 
     missing = context_absent_candidates(candidate_ids, context)
     if not missing:
         return None
 
-    page_size = min(100, max(1, int(page_size)))
-    max_pages = min(4, max(1, int(max_pages)))
     budget_seconds = min(4.5, max(0.01, float(budget_seconds)))
+    max_targets = min(6, max(1, int(max_targets)))
+    max_concurrent = min(2, max(1, int(max_concurrent)))
+    targets = sorted(missing, key=int)[:max_targets]
     started = time.monotonic()
-    offset = 0
-    total: int | None = None
-    seen: dict[str, str] = {}
-    duplicate = False
-    page_count = 0
-    complete = False
-    status = "partial"
+    semaphore = asyncio.Semaphore(max_concurrent)
 
-    for _ in range(max_pages):
-        remaining = budget_seconds - (time.monotonic() - started)
-        if remaining <= 0:
-            status = "timed_out"
-            break
-        arguments = {
-            "tool": "hub_list_devices",
-            "args": {"detailed": False, "fields": list(_FIELDS),
-                     "limit": page_size, "offset": offset},
-        }
+    async def read_one(identifier: str) -> tuple[str, dict[str, Any] | None, str]:
+        arguments = {"tool": "hub_get_device", "args": {"deviceId": identifier}}
         read_started = time.monotonic()
         success = False
-        page: dict[str, Any] | None = None
+        row: dict[str, Any] | None = None
+        status = "unresolved"
         try:
-            response = await asyncio.wait_for(
-                executor.execute(
-                    "hub_read_devices", arguments, supports_live_claim=True,
-                    evidence_kind="host_planned_scheduler_secondary_inventory",
-                    record_evidence=False,
-                ),
-                timeout=remaining,
-            )
+            async with semaphore:
+                remaining = budget_seconds - (time.monotonic() - started)
+                if remaining <= 0:
+                    return identifier, None, "timed_out"
+                response = await asyncio.wait_for(
+                    executor.execute(
+                        "hub_read_devices", arguments, supports_live_claim=True,
+                        evidence_kind="host_planned_scheduler_targeted_identity",
+                        record_evidence=False,
+                    ),
+                    timeout=remaining,
+                )
             if bool(getattr(response, "success", False)):
                 value = getattr(getattr(response, "result", None), "data", None)
-                page = _page(value)
-                success = page is not None
+                candidate = _device(value)
+                if candidate is not None and _id(
+                    candidate.get("id", candidate.get("deviceId"))
+                ) == identifier:
+                    row = candidate
+                    success = True
+                    status = "present"
         except asyncio.CancelledError:
             raise
         except asyncio.TimeoutError:
@@ -118,80 +120,72 @@ async def probe_secondary_device_inventory(
             recorder.record(
                 "hub_read_devices", arguments, success=success,
                 elapsed_ms=round((time.monotonic() - read_started) * 1000),
-                summary=("Secondary identity page read succeeded" if success
-                         else "Secondary identity page unavailable"),
+                summary=("Targeted scheduler candidate identity confirmed"
+                         if success else
+                         "Targeted scheduler candidate identity unresolved"),
                 supports_live_claim=success,
-                evidence_kind="host_planned_scheduler_secondary_inventory",
+                evidence_kind="host_planned_scheduler_targeted_identity",
                 mutates=False, effect="read",
             )
-        if not success or page is None:
-            if status == "partial":
-                status = "unavailable" if not page_count else "partial"
-            break
+        return identifier, row, status
 
-        page_count += 1
-        rows = page["devices"]
-        if not all(isinstance(x, dict) for x in rows):
-            status = "partial"
-            break
-        for row in rows:
-            identifier = _id(row.get("id", row.get("deviceId")))
-            if not identifier or identifier in seen:
-                duplicate = True
-                continue
-            seen[identifier] = " ".join(
-                str(row.get("label") or row.get("name") or "").split()
-            )[:80]
+    tasks = [asyncio.create_task(read_one(identifier)) for identifier in targets]
+    try:
+        results = await asyncio.wait_for(
+            asyncio.gather(*tasks), timeout=budget_seconds + 0.05
+        )
+    except asyncio.TimeoutError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        results = [
+            task.result() for task in tasks
+            if task.done() and not task.cancelled() and task.exception() is None
+        ]
 
-        reported = page.get("total", page.get("totalDevices"))
-        try:
-            if reported is not None and not isinstance(reported, bool):
-                parsed = int(reported)
-                if parsed < 0 or (total is not None and parsed != total):
-                    duplicate = True
-                else:
-                    total = parsed
-        except (ValueError, TypeError):
-            pass
+    by_id = {identifier: (row, status) for identifier, row, status in results}
+    present = {
+        identifier: row for identifier, (row, status) in by_id.items()
+        if status == "present" and row is not None
+    }
+    timed_out = sum(1 for _identifier, (_row, status) in by_id.items()
+                    if status == "timed_out")
+    attempted = len(by_id)
+    unattempted = len(missing) - attempted
+    unresolved = len(missing) - len(present)
 
-        has_more = page.get("hasMore")
-        # Completeness must have explicit pagination confirmation and stable
-        # cardinality: absent IDs are still scoped to this MCP tool route.
-        if has_more is False:
-            complete = (not duplicate and total is not None
-                        and len(seen) == total)
-            break
-        if has_more is not True:
-            complete = (not duplicate and total is not None
-                        and len(seen) == total and page_count == 1)
-            break
-        next_offset = page.get("nextOffset")
-        try:
-            proposed = int(next_offset)
-        except (TypeError, ValueError):
-            break
-        if proposed <= offset or proposed > offset + page_size:
-            break
-        offset = proposed
+    if timed_out:
+        stage_status = "timed_out"
+    elif attempted < len(targets):
+        stage_status = "partial"
+    elif present:
+        stage_status = "sampled"
+    else:
+        stage_status = "unresolved"
 
-    matches = sorted(missing.intersection(seen), key=int)
-    unresolved = missing.difference(seen)
     return {
-        "status": ("complete" if complete else
-                   "partial" if page_count else status),
-        "source": "hub_read_devices/hub_list_devices",
-        "pageCount": page_count,
-        "rowsReturned": len(seen),
-        "reportedTotal": total,
+        "status": stage_status,
+        "source": "hub_read_devices/hub_get_device",
+        "probeMode": "targeted-sample",
         "boundedSeconds": budget_seconds,
         "elapsedMs": round((time.monotonic() - started) * 1000),
         "candidateIdsAbsentFromContext": len(missing),
-        "foundInSecondarySource": len(matches),
-        "unresolvedCandidateIds": len(unresolved),
+        "targetLimit": max_targets,
+        "attemptedCandidateIds": attempted,
+        "foundInSecondarySource": len(present),
+        "unresolvedCandidateIds": unresolved,
+        "unattemptedCandidateIds": unattempted,
         "presentExamples": [
-            {"id": identifier, "name": seen[identifier]} for identifier in matches[:6]
+            {
+                "id": identifier,
+                "name": " ".join(
+                    str(row.get("label") or row.get("name") or "").split()
+                )[:80],
+            }
+            for identifier, row in sorted(present.items(), key=lambda item: int(item[0]))
         ],
-        "unresolvedExamples": sorted(unresolved, key=int)[:5],
+        "probedExamples": targets,
         "ownershipVerified": False,
         "hubWideCensusVerified": False,
     }
