@@ -3,9 +3,11 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.122**.
+Current add-on version: **0.16.123**.
 
 ## Architecture
+
+0.16.123 clarifies the fast automation-status inventory: it separates app and Rule Machine population counts, keeps legacy status headings and summary wording, displays available app IDs, and warns that enablement or a Hubitat broken-name marker is not proof of successful runtime execution. It recommends the existing comprehensive read-only System Check for runtime faults. This release does not yet add automatic per-action target verification or retire any Roborock rules.
 
 0.16.122 improves the fresh System Check device inventory without reusing stale identity state or weakening online evidence. It requests a lean detailed device projection (identity, capabilities, attributes, last activity) that excludes commands and does not replace the command-capable shared cache. When the gateway reports a reliable total and page boundaries, remaining pages may be fetched concurrently through the existing MCP concurrency gate. Incomplete/mismatched pages and projection errors fall back to the original fully refreshed detailed manifest. The audit separately measures fresh device data acquisition and local health classification and reports the source and verified projection status. Live performance improvement depends on upstream pagination capabilities and has not been measured in production.
 
