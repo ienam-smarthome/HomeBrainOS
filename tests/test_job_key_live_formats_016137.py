@@ -62,7 +62,7 @@ def test_full_job_key_in_name_field_only_is_exact_candidate():
 
 def test_untrusted_names_and_disagreeing_method_cannot_be_owner_candidates():
     d = summarize_job_workload({"scheduledJobs": [
-        {"id": "dev1234Recur.sessionTickExtra", "method": "sessionTick"},
+        {"id": "dev1234Recur.sessionTickExtra", "method": "sessionTickExtra"},
         {"id": "dev1234Recur.sessionTick", "method": "differentMethod"},
         {"name": "Device dev1234Recur.sessionTick", "method": "sessionTick"},
         {"id": "dev1234Recur.sessionTickExtra.text", "method": "sessionTick"},
