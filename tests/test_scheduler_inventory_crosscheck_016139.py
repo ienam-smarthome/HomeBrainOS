@@ -74,8 +74,10 @@ def test_unavailable_inventory_does_not_fabricate_missing_entities():
     report = reconcile_scheduler_candidates(sample_jobs(), apps=None, devices=None)
     assert report["app"]["inventory"]["status"] == "unavailable"
     assert report["device"]["inventory"]["status"] == "unavailable"
-    assert report["app"]["notListedInReturnedInventory"] == 1
-    assert "read unavailable" in render_scheduler_inventory_crosscheck(report)
+    assert report["app"]["notListedInReturnedInventory"] == 0
+    assert report["app"]["notCheckedDueToUnavailableInventory"] == 1
+    assert report["device"]["notCheckedDueToUnavailableInventory"] == 2
+    assert "| device | 2 | 0 | 0 | 2 | read unavailable |" in render_scheduler_inventory_crosscheck(report)
 
 
 def test_wrong_entity_type_and_duplicate_id_are_not_accepted():
@@ -297,3 +299,96 @@ def test_host_scheduler_inventory_timeout_runs_with_real_request_metrics(monkeyp
     assert outcome.metrics["scheduler_inventory_crosscheck"]["device"][
         "inventory"
     ]["status"] == "unavailable"
+
+
+def test_complete_app_inventory_exposes_unlisted_candidate_id_without_deletion_claim():
+    report = reconcile_scheduler_candidates(
+        sample_jobs(),
+        apps={"apps": [{"id": 4209}], "totalOnHub": 1},
+        devices=None,
+    )
+    assert report["app"]["notListedExamples"] == ["1418"]
+    assert report["app"]["notCheckedDueToUnavailableInventory"] == 0
+    rendering = render_scheduler_inventory_crosscheck(report)
+    assert "absent from a complete returned inventory" in rendering
+    assert "1418" in rendering
+    assert "not proof of stale scheduled jobs" in rendering
+
+
+def test_complete_compact_context_skips_slow_device_list_and_proves_identity():
+    """Real MCP client offers a complete hubitat://context resource."""
+    from performance_host_plan import collect_broad_performance_outcome
+
+    class _Context:
+        async def get_live_context(self):
+            return {
+                "devices": [{"id": 1089, "name": "Hub Info",
+                             "attributes": {"switch": "on"}}],
+                "totalDevices": 1,
+                "idsComplete": True,
+            }
+
+    agent = _Agent(slow_device=True)
+    agent.executor.mcp = _Context()
+    outcome = asyncio.run(collect_broad_performance_outcome(
+        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+    ))
+    device = outcome.metrics["scheduler_inventory_crosscheck"]["device"]
+    assert device["presentInReturnedInventory"] == 1
+    assert device["inventory"]["complete"] is True
+    assert device["inventory"]["source"] == "hubitat://context"
+    assert not any(call[0] == "hub_list_devices" for call in agent.executor.calls)
+    receipt = [x for x in agent.executor.evidence.rows
+               if x[0] == "hub_read_devices"][0]
+    assert receipt[1]["resource"] == "hubitat://context"
+    assert receipt[2]["mutates"] is False
+    assert "attributes" not in str(receipt)
+
+
+def test_incomplete_compact_context_is_not_promoted_to_complete_when_fallback_times_out(
+    monkeypatch,
+):
+    import performance_host_plan as plan
+
+    class _PartialContext:
+        async def get_live_context(self):
+            return {
+                "devices": [{"id": 1089, "name": "Hub Info"}],
+                "totalDevices": 370,
+                "idsComplete": False,
+            }
+
+    monkeypatch.setattr(plan, "_SCHEDULER_INVENTORY_TIMEOUT_SECONDS", 0.03)
+    agent = _Agent(slow_device=True)
+    agent.executor.mcp = _PartialContext()
+    outcome = asyncio.run(plan.collect_broad_performance_outcome(
+        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+    ))
+    section = outcome.metrics["scheduler_inventory_crosscheck"]["device"]
+    assert section["presentInReturnedInventory"] == 1
+    assert section["notListedInReturnedInventory"] == 0
+    assert section["notCheckedDueToUnavailableInventory"] == 0
+    assert section["inventory"]["complete"] is False
+    assert section["inventory"]["source"] == "hubitat://context"
+    assert agent.request_metrics.counters["scheduler_inventory_timeout"] == 1
+
+
+def test_compact_context_reader_failure_uses_bounded_list_fallback():
+    from performance_host_plan import collect_broad_performance_outcome
+
+    class _UnavailableContext:
+        async def get_live_context(self):
+            raise RuntimeError("resource unavailable")
+
+    agent = _Agent()
+    agent.executor.mcp = _UnavailableContext()
+    outcome = asyncio.run(collect_broad_performance_outcome(
+        agent, "Analyse scheduled jobs by owning app and handler for efficiency."
+    ))
+    section = outcome.metrics["scheduler_inventory_crosscheck"]["device"]
+    assert section["presentInReturnedInventory"] == 1
+    assert "hub_list_devices" in [call[0] for call in agent.executor.calls]
+    fallback_args = [call[1]["args"] for call in agent.executor.calls
+                     if call[0] == "hub_list_devices"][0]
+    assert fallback_args["limit"] == 125
+    assert fallback_args["fields"] == ["id", "name", "label", "room"]
