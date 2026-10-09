@@ -1063,3 +1063,43 @@ def test_system_check_records_fresh_device_acquisition_and_local_classification(
     assert "Local device classification" in report
     assert "Device evidence source: fresh_projected_gateway" in report
     assert "fresh projection verified=True" in report
+
+
+
+def test_optional_ai_commentary_cuts_at_complete_markdown_boundary() -> None:
+    from health_audit_service import _complete_ai_advisory
+    long_text = (
+        "**Investigation**\n\n"
+        "1. **Observed Google TV timeouts**\n"
+        "* Evidence: 7 warning rows. Consider connection health.\n\n"
+        "2. **SenseCap D1**\n"
+        "* Evidence: 49 timeouts and 24 unreachable rows. Check configuration.\n\n"
+        "3. **MCP Rule Server tooling errors**\n"
+        "* **Evidence:** " + "Details from a further log message. " * 90
+    )
+    result = _complete_ai_advisory(long_text, max_chars=370)
+    assert result.endswith("*(Further AI commentary omitted; audit evidence above is complete.)*")
+    assert "3. **MCP Rule Server tooling errors**" not in result
+    assert result.count("**") % 2 == 0
+    assert "1. **Observed Google TV timeouts**" in result
+
+
+def test_intentionally_unpowered_sensecap_is_explicit_in_ai_input() -> None:
+    observed = []
+
+    async def fake_chat(messages, tools):
+        observed.append((messages, tools))
+        return {"content": "Known expected outage; no network repair warranted while powered off."}
+
+    audit = _FakeAudit()
+    audit.sensecap_d1_intentionally_powered_off = True
+    result = asyncio.run(run_comprehensive_chat_audit(
+        audit, _FakeMCP(), analysis_chat=fake_chat,
+        analysis_focus="which automations are failing?",
+    ))
+    assert observed and observed[0][1] == []
+    prompt = observed[0][0][0]["content"]
+    assert "intentionally unpowered" in prompt
+    assert "Treat its reachability failures as expected" in prompt
+    assert "which automations are failing?" in observed[0][0][1]["content"]
+    assert "Known expected outage" in result.message
