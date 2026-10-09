@@ -149,6 +149,9 @@ class _Executor:
             "hub_list_apps": {"apps": [{"id": 1418, "label": "Calendar"}], "totalOnHub": 1},
             "hub_list_devices": {"devices": [{"id": 1089, "label": "Hub Info"}], "total": 1},
         }
+        if subtool == "hub_get_device":
+            return SimpleNamespace(success=False, result=SimpleNamespace(data=None),
+                                   elapsed_ms=3, effect="read")
         return SimpleNamespace(success=True, result=SimpleNamespace(data=results[subtool]),
                                elapsed_ms=3, effect="read")
 
@@ -456,8 +459,10 @@ def test_host_scheduler_workflow_probes_context_absent_ids_without_confirming_ow
     assert second["foundInSecondarySource"] == 0
     assert second["unresolvedCandidateIds"] == 1
     assert second["ownershipVerified"] is False
-    device_calls = [c for c in agent.executor.calls if c[0] == "hub_list_devices"]
+    device_calls = [c for c in agent.executor.calls if c[0] == "hub_get_device"]
     assert len(device_calls) == 1
-    assert device_calls[0][1]["args"]["fields"] == ["id", "name", "label"]
+    assert device_calls[0][1]["args"]["deviceId"] == "2065"
+    assert second["attemptedCandidateIds"] == 1
+    assert second["source"] == "hub_read_devices/hub_get_device"
     assert len(agent.executor.evidence.rows) == 3
     assert all(row[2]["mutates"] is False for row in agent.executor.evidence.rows)
