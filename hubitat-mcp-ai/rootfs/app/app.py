@@ -123,6 +123,7 @@ def load_options() -> dict[str, Any]:
         "health_check_log_hours": 24,
         "sensecap_d1_intentionally_powered_off": False,
         "comprehensive_audit_ai_analysis_enabled": False,
+        "automation_diagnostic_ai_analysis_enabled": True,
         "health_check_low_battery": 20,
         "health_check_stale_hours": 24,
         "health_check_long_stale_hours": 168,
@@ -447,12 +448,20 @@ async def _agent_request(request: ChatRequest) -> Any:
 
     token = set_history_window_request(parse_history_window_request(request.message))
     try:
+        broad_automation_diagnostic = is_broad_automation_runtime_diagnostic(
+            request.message
+        )
         if (is_comprehensive_system_audit_request(request.message)
-                or is_broad_automation_runtime_diagnostic(request.message)):
-            # Reuse the existing full System Check instead of stopping after a
-            # brief performance/log snapshot. This route is read-only, even if
-            # a broad request also asks to "fix" discovered problems.
-            if _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False):
+                or broad_automation_diagnostic):
+            # Broad failures receive the existing evidence-rich read-only
+            # System Check, plus an optional tool-free AI synthesis. This is
+            # separate from the manual audit's existing opt-in setting.
+            reasoned = (
+                _bool(OPTIONS.get("automation_diagnostic_ai_analysis_enabled"), True)
+                if broad_automation_diagnostic else
+                _bool(OPTIONS.get("comprehensive_audit_ai_analysis_enabled"), False)
+            )
+            if reasoned:
                 return await run_comprehensive_chat_audit(
                     health_audit, mcp, analysis_chat=agent.transport.chat,
                 )
