@@ -67,7 +67,7 @@ def test_incomplete_inventory_never_promotes_unlisted_candidate_to_deleted():
     assert report["device"]["inventory"]["complete"] is False
     assert report["app"]["inventory"]["complete"] is False
     assert "partial/unverified completeness" in render_scheduler_inventory_crosscheck(report)
-    assert "does **not** prove a deleted or orphaned entity" in render_scheduler_inventory_crosscheck(report)
+    assert "Do not label such IDs deleted" in render_scheduler_inventory_crosscheck(report)
 
 
 def test_unavailable_inventory_does_not_fabricate_missing_entities():
@@ -310,7 +310,7 @@ def test_complete_app_inventory_exposes_unlisted_candidate_id_without_deletion_c
     assert report["app"]["notListedExamples"] == ["1418"]
     assert report["app"]["notCheckedDueToUnavailableInventory"] == 0
     rendering = render_scheduler_inventory_crosscheck(report)
-    assert "absent from a complete returned inventory" in rendering
+    assert "absent from the returned hub_list_apps snapshot" in rendering
     assert "1418" in rendering
     assert "not proof of stale scheduled jobs" in rendering
 
@@ -392,3 +392,31 @@ def test_compact_context_reader_failure_uses_bounded_list_fallback():
                      if call[0] == "hub_list_devices"][0]
     assert fallback_args["limit"] == 125
     assert fallback_args["fields"] == ["id", "name", "label", "room"]
+
+
+def test_context_completeness_does_not_mean_all_hub_devices_are_present():
+    digest = sample_jobs()
+    report = reconcile_scheduler_candidates(
+        digest,
+        apps={"apps": [{"id": 1418}], "totalOnHub": 1},
+        devices={"devices": [{"id": 1089}], "totalDevices": 1,
+                 "idsComplete": True, "identitySource": "hubitat://context"},
+    )
+    device = report["device"]
+    assert device["inventory"]["complete"] is True
+    assert device["presentInReturnedInventory"] == 1
+    assert device["notListedInReturnedInventory"] == 1
+    message = render_scheduler_inventory_crosscheck(report)
+    assert "complete context response; hub-wide census unverified" in message
+    assert "may exist elsewhere on Hubitat" in message
+    assert "absent from the returned hubitat://context snapshot" in message
+    assert "deleted or orphaned entity" not in message
+
+
+def test_app_inventory_reports_correct_source_not_device_gateway():
+    report = reconcile_scheduler_candidates(
+        sample_jobs(),
+        apps={"apps": [{"id": 1418}], "totalOnHub": 1},
+        devices=None,
+    )
+    assert report["app"]["inventory"]["source"] == "hub_list_apps"
