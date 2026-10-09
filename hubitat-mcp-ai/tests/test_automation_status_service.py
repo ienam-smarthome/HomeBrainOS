@@ -99,3 +99,48 @@ async def test_rule_listing_tool_error_cannot_establish_live_rule_coverage():
     assert "unavailable (hub_list_rules returned a tool error)" in outcome.message
     assert all(item["type"] != "rule" for item in outcome.automation_items)
     assert outcome.evidence[-1]["supports_live_claim"] is False
+
+
+def test_reconcile_rule_and_installed_app_rows_by_id():
+    app = {"id": "2844", "name": "Fridge Auto ON", "display_name": "Fridge Auto ON",
+           "type": "app", "status": "active", "source": "hub_read_apps_code"}
+    rule = {**app, "type": "rule", "source": "hub_read_rules", "active": True}
+    merged = AutomationStatusService._merge_inventory([app, rule])
+    assert len(merged) == 1
+    assert merged[0]["id"] == "2844"
+    assert merged[0]["type"] == "rule"
+    assert set(merged[0]["sources"]) == {"hub_read_apps_code", "hub_read_rules"}
+
+
+def test_reconcile_retains_broken_marker_and_keeps_distinct_anonymous_apps():
+    app = {"id": "2957", "name": "Button 3 *BROKEN*", "display_name": "Button 3",
+           "type": "app", "status": "broken", "source": "hub_read_apps_code"}
+    rule = {**app, "name": "Button 3", "type": "rule", "status": "active",
+            "source": "hub_read_rules"}
+    rows = AutomationStatusService._merge_inventory([app, rule])
+    assert len(rows) == 1
+    assert rows[0]["status"] == "broken"
+    assert rows[0]["type"] == "rule"
+    assert len(AutomationStatusService._merge_inventory([
+        {"id": None, "name": "button pushed", "type": "app", "status": "active"},
+        {"id": None, "name": "button pushed", "type": "app", "status": "active"},
+    ])) == 2
+
+
+@pytest.mark.asyncio
+async def test_snapshot_reconciles_38_rule_rows_already_in_154_installed_apps():
+    app_rows = [{"id": str(n), "name": f"App {n}", "disabled": n < 18}
+                for n in range(154)]
+    rule_rows = [{"id": str(n), "name": f"App {n}", "disabled": n < 5,
+                  "status": "disabled" if n < 5 else "active"}
+                 for n in range(38)]
+    service = AutomationStatusService(FakeMCPClient({
+        "hub_read_apps_code": MCPToolResult(name="hub_read_apps_code", arguments={}, raw={},
+                                            text="ok", data={"apps": app_rows}),
+        "hub_read_rules": MCPToolResult(name="hub_read_rules", arguments={}, raw={},
+                                      text="ok", data={"rules": rule_rows}),
+    }))
+    outcome = await service.snapshot(brief=True)
+    assert len(outcome.automation_items) == 154
+    assert "154 installed app instances" in outcome.message
+    assert "38 structured entries" in outcome.message
