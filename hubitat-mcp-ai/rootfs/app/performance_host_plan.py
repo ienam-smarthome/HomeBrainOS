@@ -26,6 +26,7 @@ import time
 
 from performance_job_analysis import summarize_job_workload
 from performance_inventory_check import reconcile_scheduler_candidates
+from device_read_contract import live_context_is_complete
 from request_runtime import set_request_stage
 
 
@@ -268,9 +269,9 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
             if arguments.get("tool") == "hub_get_jobs" and result is not None:
                 job_data = getattr(result, "data", None)
 
-        # At most two compact, read-only inventory reads, concurrently bounded
-        # to six seconds. Avoid triggering an unbounded detail-state scan:
-        # device fields contain *identities only*. No model round is added.
+        # At most two bounded read-only inventory stages: app instances and a
+        # compact device context resource with a first-page identity fallback.
+        # Each stage has a six-second total deadline; no model round is added.
         if job_data is not None:
             job_digest = summarize_job_workload(job_data)
             candidate_ids = job_digest.get("candidateIdsByType") or {}
@@ -283,7 +284,7 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                     ("device", "hub_read_devices",
                      {"tool": "hub_list_devices", "args": {
                          "detailed": False, "fields": ["id", "name", "label", "room"],
-                         "limit": 450, "offset": 0
+                         "limit": 125, "offset": 0
                      }}),
                 )
 
@@ -292,37 +293,102 @@ async def collect_broad_performance_outcome(agent: Any, user_prompt: str) -> Any
                 ) -> tuple[str, Any]:
                     started = time.monotonic()
                     data = None
+                    partial_context = None
                     success = False
                     summary = "Read timed out or failed"
-                    try:
-                        execution = await asyncio.wait_for(
-                            agent.executor.execute(
-                                gateway, arguments,
-                                supports_live_claim=True,
-                                evidence_kind="host_planned_scheduler_inventory",
-                                record_evidence=False,
-                            ),
-                            timeout=_SCHEDULER_INVENTORY_TIMEOUT_SECONDS,
-                        )
-                        success = bool(execution.success)
-                        if success and execution.result is not None:
-                            data = getattr(execution.result, "data", None)
-                        summary = ("Identity inventory read succeeded" if success
-                                   else "Identity inventory read failed")
-                    except asyncio.TimeoutError:
-                        summary = "Identity inventory read exceeded configured short time limit"
-                        agent.request_metrics.increment(
-                            "scheduler_inventory_timeout"
-                        )
-                    except Exception:
-                        summary = "Identity inventory read unavailable"
-                        agent.request_metrics.increment(
-                            "scheduler_inventory_read_failure"
-                        )
+                    receipt_arguments = arguments
+
+                    # The MCP client already offers a compact bulk identity
+                    # resource. Prefer it over requesting hundreds of devices
+                    # through the slower list endpoint. Retain only identity
+                    # fields, never full live state or secrets.
+                    reader = getattr(getattr(agent.executor, "mcp", None),
+                                     "get_live_context", None)
+                    if kind == "device" and callable(reader):
+                        try:
+                            context = await asyncio.wait_for(
+                                reader(),
+                                timeout=_SCHEDULER_INVENTORY_TIMEOUT_SECONDS,
+                            )
+                            if isinstance(context, dict) and isinstance(
+                                context.get("devices"), list
+                            ):
+                                identities = [
+                                    {field: row[field] for field in (
+                                        "id", "deviceId", "label", "name"
+                                    ) if field in row}
+                                    for row in context["devices"]
+                                    if isinstance(row, dict)
+                                ]
+                                projected = {
+                                    "devices": identities,
+                                    "totalDevices": context.get("totalDevices"),
+                                    "idsComplete": context.get("idsComplete"),
+                                    "partial": not live_context_is_complete(context),
+                                    "identitySource": "hubitat://context",
+                                }
+                                if live_context_is_complete(context):
+                                    data = projected
+                                    success = True
+                                    receipt_arguments = {
+                                        "resource": "hubitat://context",
+                                        "projection": "device identities only",
+                                    }
+                                    summary = "Compact device identity resource read succeeded"
+                                else:
+                                    partial_context = projected
+                        except asyncio.TimeoutError:
+                            # The same overall six-second budget still applies.
+                            pass
+                        except Exception:
+                            # Resource unavailable: the bounded list fallback
+                            # can still work on older MCP server versions.
+                            pass
+
+                    if not success:
+                        try:
+                            remaining = (
+                                _SCHEDULER_INVENTORY_TIMEOUT_SECONDS
+                                - (time.monotonic() - started)
+                            )
+                            if remaining <= 0:
+                                raise asyncio.TimeoutError()
+                            execution = await asyncio.wait_for(
+                                agent.executor.execute(
+                                    gateway, arguments,
+                                    supports_live_claim=True,
+                                    evidence_kind="host_planned_scheduler_inventory",
+                                    record_evidence=False,
+                                ),
+                                timeout=remaining,
+                            )
+                            success = bool(execution.success)
+                            if success and execution.result is not None:
+                                data = getattr(execution.result, "data", None)
+                            summary = ("Identity inventory read succeeded" if success
+                                       else "Identity inventory read failed")
+                        except asyncio.TimeoutError:
+                            summary = "Identity inventory exceeded six-second total budget"
+                            agent.request_metrics.increment("scheduler_inventory_timeout")
+                        except Exception:
+                            summary = "Identity inventory read unavailable"
+                            agent.request_metrics.increment("scheduler_inventory_read_failure")
+
+                    if data is None and partial_context is not None:
+                        # A partial context can prove present IDs, but cannot
+                        # prove an absent ID is removed. Do not turn it into a
+                        # complete result, even if the list fallback times out.
+                        data = partial_context
+                        success = True
+                        receipt_arguments = {
+                            "resource": "hubitat://context",
+                            "projection": "partial device identities only",
+                        }
+                        summary += "; preserved incomplete context identities"
                     recorder = getattr(agent.executor, "evidence", None)
                     if callable(getattr(recorder, "record", None)):
                         recorder.record(
-                            gateway, arguments, success=success,
+                            gateway, receipt_arguments, success=success,
                             elapsed_ms=round((time.monotonic() - started) * 1000),
                             summary=summary, supports_live_claim=success,
                             evidence_kind="host_planned_scheduler_inventory",
