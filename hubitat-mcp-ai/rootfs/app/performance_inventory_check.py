@@ -218,13 +218,14 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
             "",
             "**Second-source device-ID check (read-only; ownership not confirmed)**",
             f"Source: {secondary.get('source', 'unavailable')}; "
-            f"{secondary.get('pageCount', 0)} identity-only page(s), "
-            f"{secondary.get('rowsReturned', 0)} unique records; "
+            f"{secondary.get('attemptedCandidateIds', 0)} targeted ID read(s) attempted "
+            f"(limit {secondary.get('targetLimit', 0)}); "
             f"status: {secondary.get('status', 'unavailable')}.",
             f"Of {secondary.get('candidateIdsAbsentFromContext', 0)} candidate IDs "
             f"not found in the context resource, "
-            f"{secondary.get('foundInSecondarySource', 0)} appeared in the second source; "
-            f"{secondary.get('unresolvedCandidateIds', 0)} remain unconfirmed. "
+            f"{secondary.get('foundInSecondarySource', 0)} appeared in the targeted source; "
+            f"{secondary.get('unresolvedCandidateIds', 0)} remain unconfirmed, including "
+            f"{secondary.get('unattemptedCandidateIds', 0)} not sampled in this bounded check. "
             "Neither an additional match nor an unconfirmed ID proves job ownership, "
             "deletion, a redundant schedule, or a Hubitat-wide census.",
         ])
