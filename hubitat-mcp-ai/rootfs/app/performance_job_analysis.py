@@ -18,7 +18,10 @@ _JOB_KEY_FIELDS = ("jobId", "jobKey", "scheduleId", "scheduleKey", "id")
 # This is a *candidate*, not a verified ownership relationship. Hubitat
 # scheduler keys such as dev7334Once encode a plausible parent identifier.
 # Never interpret arbitrary device display names as owner IDs.
-_JOB_KEY_CANDIDATE = re.compile(r"^(app|dev)([1-9][0-9]{0,8})Once$", re.I)
+_JOB_KEY_CANDIDATE = re.compile(
+    r"^(app|dev)([1-9][0-9]{0,8})(Once|Recur)"
+    r"(?:\.([A-Za-z][A-Za-z0-9_$]{0,99}))?$", re.I
+)
 
 
 
@@ -94,6 +97,7 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
     candidate_groups: Counter[tuple[str, str, str]] = Counter()
     candidate_key_examples: list[str] = []
     candidate_rows = 0
+    candidate_types: Counter[str] = Counter()
     methods: Counter[str] = Counter()
     next_runs: Counter[str] = Counter()
     unattributed = 0
@@ -120,7 +124,7 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         if not owner_id:
             job_keys = [
                 str(row[key]).strip()
-                for key in _JOB_KEY_FIELDS
+                for key in (*_JOB_KEY_FIELDS, "jobName", "name")
                 if isinstance(row.get(key), (str, int))
                 and str(row[key]).strip()
             ]
@@ -134,16 +138,25 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
             )
             if match:
                 job_key = match.group(0)
-                candidate_kind = "app" if match.group(1).casefold() == "app" else "device"
-                candidate_id = match.group(2)
-                candidate_rows += 1
-                if len(candidate_key_examples) < 3:
-                    candidate_key_examples.append(job_key)
+                key_method = match.group(4) or ""
+                row_method = _pick(row, _METHOD_FIELDS)
+                # A disagreement between independent method fields is not
+                # sufficient to resolve ownership: report it as unknown.
+                if not key_method or not row_method or key_method.casefold() == row_method.casefold():
+                    candidate_kind = "app" if match.group(1).casefold() == "app" else "device"
+                    candidate_id = match.group(2)
+                    candidate_rows += 1
+                    candidate_types[candidate_kind] += 1
+                    if len(candidate_key_examples) < 3:
+                        candidate_key_examples.append(job_key)
             unattributed += 1
         method = _pick(row, _METHOD_FIELDS)
         if not method:
-            unknown_method += 1
-            method = "unknown method"
+            if candidate_id and match and match.group(4):
+                method = match.group(4)[:100]
+            else:
+                unknown_method += 1
+                method = "unknown method"
         methods[method] += 1
         groups[(owner_type or "unknown", owner_id or "unknown", method)] += 1
         if candidate_id:
@@ -175,6 +188,7 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         "unattributedRows": unattributed,
         "keyPatternCandidateRows": candidate_rows,
         "keyPatternCandidateExamples": candidate_key_examples,
+        "keyPatternCandidateTypes": dict(candidate_types),
         "topCandidateOwnerMethods": inferred_groups,
         "unknownMethodRows": unknown_method,
         "topOwnerMethods": grouped,
@@ -225,6 +239,14 @@ def render_job_workload_summary(summary: dict[str, Any]) -> str:
             "job ownership cannot yet be ranked."
         )
     candidates = summary.get("topCandidateOwnerMethods") or []
+    candidate_count = int(summary.get("keyPatternCandidateRows") or 0)
+    if candidate_count:
+        breakdown = summary.get("keyPatternCandidateTypes") or {}
+        lines.append(
+            f"{candidate_count} of {examined} rows contain strict, unverified "
+            "owner candidates in scheduler job keys "
+            f"(device: {breakdown.get('device', 0)}, app: {breakdown.get('app', 0)})."
+        )
     if candidates:
         lines.extend([
             "",
