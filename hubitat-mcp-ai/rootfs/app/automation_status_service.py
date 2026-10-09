@@ -335,8 +335,12 @@ class AutomationStatusService:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "elapsed_ms": elapsed_ms,
             "success": not bool(getattr(result, "is_error", False)),
-            "supports_live_claim": True,
-            "evidence_kind": "authoritative_automation_status",
+            "supports_live_claim": (not bool(getattr(result, "is_error", False)) and
+                                    bool(result.data) and not (
+                                        isinstance(result.data, dict) and
+                                        result.data.get("success") is False
+                                    )),
+            "evidence_kind": "automation_inventory_read",
             "arguments": arguments,
             "summary": f"normalised live automation status from {tool}",
         }
@@ -570,7 +574,7 @@ class AutomationStatusService:
     async def snapshot(self, *, advisory: bool = False, brief: bool = False) -> AutomationStatusOutcome:
         calls = (
             ("hub_read_apps_code", {"tool": "hub_list_apps", "args": {"scope": "instances"}}, "app"),
-            ("hub_read_rules", {}, "rule"),
+            ("hub_read_rules", {"tool": "hub_list_rules", "args": {}}, "rule"),
         )
         items: list[dict[str, Any]] = []
         evidence: list[dict[str, Any]] = []
@@ -586,15 +590,18 @@ class AutomationStatusService:
                     round((time.monotonic() - started) * 1000),
                 )
             )
-            if not getattr(result, "is_error", False):
+            usable = not getattr(result, "is_error", False) and not (
+                isinstance(result.data, dict) and result.data.get("success") is False
+            )
+            if usable:
                 found = self._items_from_result(result, item_type=item_type, source=tool)
                 items.extend(found)
                 if item_type == "rule":
-                    rule_coverage = (f"{len(found)} structured entries returned" if found else
+                    rule_coverage = (f"{len(found)} structured entries returned; completeness not independently verified" if found else
                                      "no structured rule entries in hub_read_rules response; "
                                      "coverage unavailable (not evidence of zero rules)")
             elif item_type == "rule":
-                rule_coverage = "unavailable (hub_read_rules tool failed)"
+                rule_coverage = "unavailable (hub_list_rules returned a tool error)"
         unique = {(i["type"], i.get("id") or "", i["name"].casefold()): i for i in items}
         ordered = sorted(
             unique.values(),
