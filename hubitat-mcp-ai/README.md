@@ -3,9 +3,12 @@
 Home Assistant add-on providing a native Ollama Online function-calling bridge
 to kingpanther13's Hubitat MCP Rule Server.
 
-Current add-on version: **0.16.129**.
+Current add-on version: **0.16.130**.
 
 ## Architecture
+
+HomeBrain 0.16.130 prioritizes a whole-hub optimisation intent over the narrower health-only audit when the user asks to review all devices/apps/rules/logs for efficiency. Scheduled-job evidence is requested automatically for these optimisation reviews. A Markdown presentation repair keeps recommendation rows intact when deterministic reasoning guards insert qualifications. Evidence instructions explicitly distinguish failed MCP lookup requests to deleted apps from persistent internal Rule Server dependencies. This remains a read-only, evidence-limited inspection; results must not imply guaranteed savings or silently change Hubitat configurations.
+
 
 0.16.129 broadens investigative reasoning to integration/polling failure questions. A sampled/capped log window cannot establish no past outages; model conclusions receive a final evidence check. Optional AI audit commentary now ends at a coherent text boundary. If SenseCap D1 is deliberately disconnected, set \`sensecap_d1_intentionally_powered_off: true\` in add-on options so reports classify its connectivity warnings as expected. This option is per-user and is **not** enabled globally.
 
