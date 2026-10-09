@@ -105,3 +105,22 @@ def test_repairs_live_016149_missing_orphan_deleted_scheduler_labels():
     assert "deleted devices" not in fixed
     assert "not listed in returned device source; unresolved" in fixed
     assert "Unresolved Candidate Audit" in fixed
+
+
+def test_repairs_live_016150_cleanup_heading_system_table_and_action_without_ids():
+    draft = """| **System Errors** | MCP Rule Server: Multiple "Device not found" errors for IDs 6918, 6921, 6911, 6913, 6910, 2065 | Adaptive Diagnostic Logs |
+
+* **Orphaned References:** The MCP Rule Server is explicitly logging errors when attempting to access six specific device IDs that were not present in the returned device inventory.
+
+1. **MCP Rule Server Cleanup (Hypothesis):** The target-scoped diagnostic read did not establish a mechanism.
+    * These device IDs are unresolved lookup observations only.
+    * **Action:** Remove orphaned device references to reduce error log volume.
+"""
+    fixed, changed = _repair_scheduler_probe_history_inference(draft, _report())
+    assert changed is True
+    assert "**System Errors**" in fixed
+    assert "Multiple \"Device not found\" errors" not in fixed
+    assert "**Orphaned References:**" not in fixed
+    assert "Remove orphaned device references" not in fixed
+    assert "Do not infer deletion" in fixed
+    assert "Do not remove references from this evidence" in fixed
