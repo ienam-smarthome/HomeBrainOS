@@ -976,16 +976,36 @@ def _repair_scheduler_probe_history_inference(
                 bare = line.rstrip("\\n")
                 low = bare.casefold()
 
-        unsupported = (
-            in_rule_server_section
+        unsupported_claim = (
+            "orphan" in low
+            or "no longer exist" in low
+            or "no longer present" in low
+            or "non-existent" in low
+            or "remove orphan" in low
+            or ("remove" in low and ("reference" in low or "device" in low))
+            or ("configuration" in low and ("reference" in low or "target" in low))
+        )
+        # Once this response has explicitly tied Rule Server not-found rows to
+        # the scheduler probe IDs, cleanup/deletion claims can reappear later
+        # under generic recommendation headings. Catch those self-contained
+        # lines too instead of relying on section state.
+        global_probe_cleanup_claim = (
+            unsupported_claim
             and (
-                "orphan" in low
-                or "no longer exist" in low
-                or "non-existent" in low
-                or "remove orphan" in low
-                or ("remove" in low and ("reference" in low or "device" in low))
-                or ("configuration" in low and ("reference" in low or "target" in low))
+                "mcp rule server" in low
+                or "missing device" in low
+                or "missing device ids" in low
+                or "device ids" in low
             )
+            and (
+                probe_overlap
+                or any(probe_id in bare for probe_id in probe_ids)
+                or ("remove" in low and "reference" in low)
+            )
+        )
+        unsupported = (
+            (in_rule_server_section and unsupported_claim)
+            or global_probe_cleanup_claim
         )
         if unsupported:
             leader = re.match(r"^(\s*(?:[-*+]\s+|\*{0,2}(?:Observation|Diagnostic Hypothesis|Verification|Recommendation):?\*{0,2}\s*)?)", bare, re.I)
