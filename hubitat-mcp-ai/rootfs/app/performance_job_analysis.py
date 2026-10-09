@@ -226,6 +226,16 @@ def summarize_job_workload(payload: Any, *, max_groups: int = 10) -> dict[str, A
         "topCandidateAppMethods": _top_kind_methods("app"),
         "topCandidateDeviceOwners": _top_kind_owners("device"),
         "topCandidateAppOwners": _top_kind_owners("app"),
+        # Full distinct identity sets are host-only. The model packet strips
+        # them; they exist to validate candidate IDs in one bounded inventory
+        # cross-check without guessing from the truncated top tables.
+        "candidateIdsByType": {
+            kind: sorted(
+                {key[1] for key in candidate_owner_totals if key[0] == kind},
+                key=lambda identifier: int(identifier),
+            )
+            for kind in ("device", "app")
+        },
         "topCandidateMethodsByType": {
             kind: [
                 {"method": key[1], "jobs": count}
