@@ -47,13 +47,14 @@ def _rows_and_coverage(data: Any, kind: str) -> tuple[list[dict[str, Any]], dict
             break
     partial = any(
         value.get(key) is True for key in ("truncated", "partial", "hasMore")
-    ) or value.get("nextOffset") not in (None, "", 0)
+    ) or value.get("nextOffset") not in (None, "", 0) or value.get("idsComplete") is False
     complete = (
         reported is not None and len(rows) == reported and not partial
         and len(rows) == len(value[kind])
     )
     return rows, {
         "status": "available",
+        "source": str(value.get("identitySource") or "hub_list_devices")[:80],
         "rowsReturned": len(rows),
         "reportedTotal": reported,
         "complete": complete,
@@ -115,7 +116,11 @@ def reconcile_scheduler_candidates(
         ids = {_safe_id(raw) for raw in candidates.get(kind, [])}
         ids.discard("")
         present = ids.intersection(found)
-        unlisted = ids - present
+        # No inventory read means no ID was checked. Never turn a timeout
+        # into a misleading count of missing or unlisted hub devices.
+        available = coverage.get("status") == "available"
+        unlisted = ids - present if available else set()
+        unchecked = ids if not available else set()
         verified_examples = [
             {"id": identifier, "name": found[identifier]}
             for identifier in sorted(present, key=int)[:5]
@@ -142,9 +147,10 @@ def reconcile_scheduler_candidates(
             "candidateIds": len(ids),
             "presentInReturnedInventory": len(present),
             "notListedInReturnedInventory": len(unlisted),
+            "notCheckedDueToUnavailableInventory": len(unchecked),
             "inventory": coverage,
             "presentExamples": verified_examples,
-            "notListedExamples": sorted(unlisted, key=int)[:5],
+            "notListedExamples": sorted(unlisted, key=int)[:5] if coverage.get("complete") else [],
             "topMeasuredOverlaps": measured[:4],
         }
     return result
@@ -157,8 +163,8 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
         "### Scheduled-job entity cross-check (read-only)",
         "A matching Hubitat entity ID **confirms that the entity was listed**, "
         "not that it owns, schedules, or executes the job.",
-        "| Candidate kind | Unique candidate IDs | Listed entities | Not listed in returned rows | Inventory coverage |",
-        "| --- | ---: | ---: | ---: | --- |",
+        "| Candidate kind | Unique candidate IDs | Listed entities | Not listed in returned rows | Not checked | Inventory coverage |",
+        "| --- | ---: | ---: | ---: | ---: | --- |",
     ]
     for kind in ("device", "app"):
         section = report.get(kind) or {}
@@ -177,7 +183,8 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
         lines.append(
             f"| {kind} | {section.get('candidateIds', 0)} | "
             f"{section.get('presentInReturnedInventory', 0)} | "
-            f"{section.get('notListedInReturnedInventory', 0)} | {status} |"
+            f"{section.get('notListedInReturnedInventory', 0)} | "
+            f"{section.get('notCheckedDueToUnavailableInventory', 0)} | {status} |"
         )
     for kind in ("device", "app"):
         section = report.get(kind) or {}
@@ -193,6 +200,15 @@ def render_scheduler_inventory_crosscheck(report: dict[str, Any]) -> str:
                 lines.append(
                     f"| {row['id']} | {safe_name} | {row['pctTotal']:.3f}% |"
                 )
+    for kind in ("app", "device"):
+        section = report.get(kind) or {}
+        examples = section.get("notListedExamples") or []
+        if examples:
+            lines.append(
+                f"**{kind.capitalize()} candidate IDs absent from a complete returned inventory "
+                f"(inspect; not proof of stale scheduled jobs):** "
+                + ", ".join(str(item) for item in examples) + "."
+            )
     lines.append(
         "Not listed does **not** prove a deleted or orphaned entity, especially "
         "when inventory completeness is not verified. A performance overlap "
