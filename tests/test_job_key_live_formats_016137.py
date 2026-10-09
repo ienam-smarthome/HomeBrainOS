@@ -54,8 +54,8 @@ def test_map_key_with_row_id_unrelated_and_recur_suffix():
     assert d["ownerIdentifiedRows"] == 0
 
 
-def test_full_job_key_in_name_field_only_is_exact_candidate():
-    d = summarize_job_workload({"scheduledJobs": [{"name": "dev7889Recur.autoPoll"}]})
+def test_full_job_key_in_jobname_field_only_is_exact_candidate():
+    d = summarize_job_workload({"scheduledJobs": [{"jobName": "dev7889Recur.autoPoll"}]})
     assert d["keyPatternCandidateRows"] == 1
     assert d["topCandidateOwnerMethods"][0]["method"] == "autoPoll"
 
